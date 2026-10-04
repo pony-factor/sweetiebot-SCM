@@ -370,7 +370,12 @@ python3 scripts/install.py
 
 The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MODEL`, and `SCM_TOOLKIT_AI_LOW_MEMORY_GIB` can temporarily override the corresponding Git-config values.
 
-### Codex composer colors
+### Codex composer appearance
+
+Enable **Hide access label** in the configurator's **Codex** section to show only
+the permission icon instead of text such as **Full access**. It defaults to off
+and preserves the access menu and the current mode for screen readers. The Git
+setting is `scm-toolkit.codex-hide-access-label`.
 
 The send button and composer labels have separate color controls in the local
 configurator's **Codex** section. Set `scm-toolkit.codex-send-background` for the
