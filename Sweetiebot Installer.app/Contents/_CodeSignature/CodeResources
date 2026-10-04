@@ -102,7 +102,7 @@
 		</data>
 		<key>Resources/toolkit/efs/extension.js</key>
 		<data>
-		MABbRIhTKBFLyxPD5Esyf6QReBA=
+		w/5TgXv9lKivjFJKI0ALp1rE8BQ=
 		</data>
 		<key>Resources/toolkit/efs/extract.js</key>
 		<data>
@@ -131,6 +131,10 @@
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<data>
 		YruQ/lWxiqg/x6o0b6MJJ2HGwFg=
+		</data>
+		<key>Resources/toolkit/efs/push_recovery.js</key>
+		<data>
+		HHipIewnI1KuQQRzQ+ndM1fyct0=
 		</data>
 		<key>Resources/toolkit/efs/search_index.js</key>
 		<data>
@@ -491,11 +495,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			MABbRIhTKBFLyxPD5Esyf6QReBA=
+			w/5TgXv9lKivjFJKI0ALp1rE8BQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			pF6jawW995qnq+VCNlgAjkUeiXvIYecS160OagGQ3NU=
+			/vMQAprTLY1FSeyNQTSwW+i1MA5NeJPc9tnewc12rU0=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/extract.js</key>
@@ -573,6 +577,17 @@
 			<key>hash2</key>
 			<data>
 			QFpNJJvzBHXURVe0IUb8a/v5N/nGgZ2lpOn5kB+6alI=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/push_recovery.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			HHipIewnI1KuQQRzQ+ndM1fyct0=
+			</data>
+			<key>hash2</key>
+			<data>
+			SzJBl0JiPhEPlhz0MCwxKwu07ObTOPhrzi/ux4fUCpc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/search_index.js</key>
