@@ -8,7 +8,7 @@ import subprocess
 DEFAULT_SETTINGS = {
     "branchPicker": True,
     "ponyBranch": True,
-    "branchNameDisabledPacks": "pony-life",
+    "branchNameDisabledPacks": "pony-life,idw-comics",
     "branchCustomNames": "",
     "branchNameImports": "[]",
     "shortPlaceholder": True,
