@@ -51,6 +51,30 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertIn(name, packs["tamers12345"]["names"])
         self.assertNotIn("lauren-faust", all_names)
 
+    def test_pony_life_names_are_separate_from_g4_packs(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        pony_life_names = {
+            "buttershy",
+            "derek",
+            "dishwater-slog",
+            "matt",
+            "octavio-pie",
+            "potion-nova",
+            "smallfry",
+            "zesty",
+        }
+
+        self.assertTrue(pony_life_names.issubset(packs["pony-life"]["names"]))
+
+        g4_names = {
+            name
+            for pack in catalog["packs"]
+            if pack["id"].startswith("g4-")
+            for name in pack["names"]
+        }
+        self.assertTrue(pony_life_names.isdisjoint(g4_names))
+
     def test_imports_accept_single_pack_array_or_catalog_object(self):
         pack = {"id": "friends", "label": "Friends", "names": ["one", "two"]}
         self.assertEqual(

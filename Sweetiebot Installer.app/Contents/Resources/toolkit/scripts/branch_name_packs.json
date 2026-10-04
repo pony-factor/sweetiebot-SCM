@@ -98,7 +98,6 @@
         "burning-passion",
         "butter-pop",
         "butternut",
-        "buttershy",
         "buzzsaw-mccolt",
         "meadow-flower",
         "calamity-mane",
@@ -460,7 +459,6 @@
         "posey-bloom",
         "posey-petals",
         "posh-ponycayenne",
-        "potion-nova",
         "powder-rouge",
         "power-chord",
         "precious",
@@ -682,7 +680,6 @@
         "scarlet-heart",
         "yuma-spurs",
         "zapp",
-        "zesty",
         "zesty-gourmand",
         "zoom-zephyrwing",
         "fizzlepop-berrytwist"
@@ -707,8 +704,6 @@
         "affero",
         "al-roker",
         "alphabittle-blossomforth",
-        "derek",
-        "matt",
         "ancient-artifact",
         "cratus",
         "announcer-ponymadden",
@@ -830,7 +825,6 @@
         "diamond-cutter",
         "starke-kragen",
         "dirtbound",
-        "dishwater-slog",
         "earl-grey",
         "doctor-horse",
         "modus-ponens",
@@ -1031,7 +1025,6 @@
         "scouts-honor",
         "pine-breeze",
         "pink-drink",
-        "octavio-pie",
         "igneous-rock-pie",
         "pipe-down",
         "pokerhooves",
@@ -1424,7 +1417,6 @@
         "shady-daze",
         "skeedaddle",
         "skid-marks",
-        "smallfry",
         "snails",
         "cucumber-seed",
         "snips",
@@ -1472,6 +1464,21 @@
         "capper-dapperpaws": "https://mlp.fandom.com/wiki/Capper",
         "queen-chrysalis": "https://mlp.fandom.com/wiki/Queen_Chrysalis"
       }
+    },
+    {
+      "id": "pony-life",
+      "label": "Pony Life",
+      "description": "Pony Life-only pony characters, kept separate from the Friendship Is Magic G4 roster.",
+      "names": [
+        "buttershy",
+        "derek",
+        "dishwater-slog",
+        "matt",
+        "octavio-pie",
+        "potion-nova",
+        "smallfry",
+        "zesty"
+      ]
     },
     {
       "id": "equestria-girls",
