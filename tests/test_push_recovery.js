@@ -48,8 +48,19 @@ async function run() {
   repository.state.HEAD = head();
   const merge = repository.merge;
   repository.merge = async () => { throw new Error('merge conflict'); };
-  await assert.rejects(invoke(), /merge conflict/);
+  await assert.rejects(invoke(), /merging origin\/main encountered conflicts/);
   assert.equal(calls.splice(0).length, 1, 'Conflicts prevent retrying the push');
+  repository.merge = merge;
+  for (const [failure, expected] of [
+    [{ gitErrorCode: 'Conflict', stdout: 'CONFLICT (content): Merge conflict in file.txt' }, /merging origin\/main encountered conflicts.*Resolve.*complete the merge/],
+    [{ stderr: 'fatal: You have not concluded your merge (MERGE_HEAD exists).' }, /merge is unfinished.*finish or abort/],
+    [{ stderr: 'error: rebase is in progress' }, /rebase is in progress.*finish or abort/],
+    [{ message: 'Git error' }, /Push paused while merging origin\/main.*Open Git Output/]
+  ]) {
+    repository.merge = async () => { throw Object.assign(new Error('Git error'), failure); };
+    await assert.rejects(invoke(), error => expected.test(error.message) && Boolean(error.cause));
+    calls.length = 0;
+  }
   repository.merge = merge;
   const push = repository.push;
   repository.push = async () => {
