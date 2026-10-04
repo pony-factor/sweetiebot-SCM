@@ -27,7 +27,7 @@ const sandbox = vm.createContext({
     } };
   }
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../workspace-search-extension/codex_refresh.js'), 'utf8'), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/codex_refresh.js'), 'utf8'), sandbox);
 const context = { subscriptions: [], extensionUri: { fsPath: '/toolkit' } };
 const vscode = {
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },

@@ -51,7 +51,7 @@ The installer modifies the installed VS Code workbench files. VS Code updates ca
 - `scripts/`: Python installers, configuration tools, and their branch-name catalog.
 - `assets/workbench/`: JavaScript and CSS injected into the VS Code workbench.
 - `assets/codex/`: JavaScript injected into the Codex extension.
-- `workspace-search-extension/`: companion VS Code extension code.
+- `efs/`: companion VS Code extension code.
 - `tests/`: Python and JavaScript tests.
 
 Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m unittest discover -s tests`.
@@ -257,7 +257,7 @@ The normal installer also installs a small companion VS Code extension into `~/.
 
 Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Workspace Search view into its own Activity Bar container. The panel title and container label use `scm-toolkit.workspace-search-label` and default to **EFS**. Rerun `python3 scripts/install.py` and reload VS Code after changing either setting.
 
-The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `workspace-search-extension/THIRD_PARTY_NOTICES.md`.
+The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `efs/THIRD_PARTY_NOTICES.md`.
 
 Install the default local embedding model once:
 

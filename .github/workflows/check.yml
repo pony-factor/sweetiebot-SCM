@@ -30,12 +30,12 @@ jobs:
       - name: Check injected JavaScript syntax
         run: |
           node --check assets/workbench/picker.js
-          node --check workspace-search-extension/core.js
-          node --check workspace-search-extension/ollama.js
-          node --check workspace-search-extension/extract.js
-          node --check workspace-search-extension/search_index.js
-          node --check workspace-search-extension/view.js
-          node --check workspace-search-extension/extension.js
+          node --check efs/core.js
+          node --check efs/ollama.js
+          node --check efs/extract.js
+          node --check efs/search_index.js
+          node --check efs/view.js
+          node --check efs/extension.js
           node tests/test_workspace_search_core.js
           node tests/test_workspace_search_index.js
           node tests/test_settings_browser.js

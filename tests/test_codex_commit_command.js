@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 async function run() {
-  const manifest = require('../workspace-search-extension/package.json');
+  const manifest = require('../efs/package.json');
   assert(manifest.activationEvents.includes('onCommand:scmToolkit.prepareCodexCommit'),
     'The first Codex commit command must activate the extension in a fresh window');
   let command, active = false, bridgeInstalled = false, progress = 0;
@@ -42,7 +42,7 @@ async function run() {
       return child;
     } }; }
   });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../workspace-search-extension/codex_commit.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/codex_commit.js'), 'utf8'), sandbox);
   const vscode = {
     Uri: { from: uri => uri, joinPath: (uri, file) => ({ fsPath: `${uri.fsPath}/${file}` }) },
     extensions: { getExtension: id => id === 'vscode.git'

@@ -60,7 +60,7 @@ async function run() {
     },
     context: { extensionUri: {}, extensionPath: '/extension' }
   });
-  vm.runInContext(fs.readFileSync(require.resolve('../workspace-search-extension/extension.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(require.resolve('../efs/extension.js'), 'utf8'), sandbox);
   const open = () => vm.runInContext('openSettings(context)', sandbox);
   const tick = () => new Promise(resolve => setImmediate(resolve));
 

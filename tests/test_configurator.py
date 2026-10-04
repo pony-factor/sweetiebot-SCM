@@ -38,7 +38,7 @@ class SubmissionTests(unittest.TestCase):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
         self.assertEqual(set(controls), set(toolkit_settings.DEFAULT_SETTINGS))
-        package = json.loads((Path(__file__).parent.parent / "workspace-search-extension/package.json").read_text())
+        package = json.loads((Path(__file__).parent.parent / "efs/package.json").read_text())
         properties = set(package["contributes"]["configuration"]["properties"])
         exposed = {
             f"{root}.{key}"

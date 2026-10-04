@@ -91,5 +91,5 @@ for (const terminal of ['idle', 'notLoaded', 'systemError']) {
   f.controller.dispose();
   assert.equal(f.children.length, 0);
 }
-assert.equal(require('../workspace-search-extension/package.json').contributes.configuration.properties['scmToolkit.codexKeepAwake'].default, true);
+assert.equal(require('../efs/package.json').contributes.configuration.properties['scmToolkit.codexKeepAwake'].default, true);
 console.log('Codex keep-awake lifecycle checks passed.');

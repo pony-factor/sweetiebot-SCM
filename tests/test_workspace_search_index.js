@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const {normalizeVector} = require('../workspace-search-extension/core');
+const {normalizeVector} = require('../efs/core');
 
 async function run() {
   let model = 'first:embed', unavailable = false, persisted;
@@ -20,7 +20,7 @@ async function run() {
   };
   const sandbox = {module: {exports: {}}, Buffer, setTimeout, clearTimeout, require(name) {
     if (name === 'vscode') return vscode;
-    if (name === './core') return require('../workspace-search-extension/core');
+    if (name === './core') return require('../efs/core');
     if (name === './extract') return {extractText: async () => 'A meaningful example passage.'};
     if (name === './ollama') return {embedTexts: async (settings, texts) => {
       calls.push(settings.embeddingModel);
@@ -29,7 +29,7 @@ async function run() {
     }};
     return require(name);
   }};
-  vm.runInNewContext(fs.readFileSync(require.resolve('../workspace-search-extension/search_index.js'), 'utf8'), sandbox);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search_index.js'), 'utf8'), sandbox);
   const index = new sandbox.module.exports.SearchIndex({globalStorageUri: {}}, () => ({embeddingModel: model, resultLimit: 10, mode: 'semantic'}));
   unavailable = true;
   await index.refresh();

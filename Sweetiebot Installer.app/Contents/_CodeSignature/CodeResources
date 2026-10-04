@@ -68,6 +68,62 @@
 		<data>
 		4xH1v8jbMXxXv9u7uYSeahVcx0A=
 		</data>
+		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
+		<data>
+		5sLEvrOg8QFn1qTXdaxMEbMn1CQ=
+		</data>
+		<key>Resources/toolkit/efs/branch_actions.js</key>
+		<data>
+		/7vBebSxd2zz1DmsnhxNH5VFl6U=
+		</data>
+		<key>Resources/toolkit/efs/branch_maintenance.js</key>
+		<data>
+		hClnJuT1UO9aZutbfW65iQlL3EY=
+		</data>
+		<key>Resources/toolkit/efs/codex_commit.js</key>
+		<data>
+		TSLGvQGbI4RKjXRvmYKKPKRE37Y=
+		</data>
+		<key>Resources/toolkit/efs/codex_refresh.js</key>
+		<data>
+		hvwW6uhwlKNx1ljcH+depjzW9Qo=
+		</data>
+		<key>Resources/toolkit/efs/core.js</key>
+		<data>
+		MPJuzziyQbqC9JSZmuZPyS6ru9s=
+		</data>
+		<key>Resources/toolkit/efs/extension.js</key>
+		<data>
+		Pb35mXsTZ6nsZa7iyNhl5VCT3ZE=
+		</data>
+		<key>Resources/toolkit/efs/extract.js</key>
+		<data>
+		BcbjYKUL9I+sgBlMWmHtaQxEZ+8=
+		</data>
+		<key>Resources/toolkit/efs/media/efs.svg</key>
+		<data>
+		vry1V95wL/GUULFkpbyOyRATIYU=
+		</data>
+		<key>Resources/toolkit/efs/ollama.js</key>
+		<data>
+		U5VhDWjoERhYJGW8DVPbZFRwq4M=
+		</data>
+		<key>Resources/toolkit/efs/package.json</key>
+		<data>
+		+X4sgfqpphhVeVhaiRoKsxUSfy4=
+		</data>
+		<key>Resources/toolkit/efs/pull_request.js</key>
+		<data>
+		YruQ/lWxiqg/x6o0b6MJJ2HGwFg=
+		</data>
+		<key>Resources/toolkit/efs/search_index.js</key>
+		<data>
+		8/qGhUKnSAdWgvozetQDK74tDsk=
+		</data>
+		<key>Resources/toolkit/efs/view.js</key>
+		<data>
+		glRK1zMOpc1ynO6L4qmwW+qf7X4=
+		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
 		VO0N91fhXCENqIGKKRSMncu91hE=
@@ -82,7 +138,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/build_installer_app.py</key>
 		<data>
-		kIzgKHza3htX59QPKJsbXmhAKxc=
+		KWRQnfQaT7EiIEDIsAfzKjeqN8s=
 		</data>
 		<key>Resources/toolkit/scripts/chatgpt_integration.py</key>
 		<data>
@@ -142,63 +198,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
-		cx0cHmsHS2XDOB2WtgFehzDMLbY=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/THIRD_PARTY_NOTICES.md</key>
-		<data>
-		5sLEvrOg8QFn1qTXdaxMEbMn1CQ=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/branch_actions.js</key>
-		<data>
-		/7vBebSxd2zz1DmsnhxNH5VFl6U=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/branch_maintenance.js</key>
-		<data>
-		hClnJuT1UO9aZutbfW65iQlL3EY=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/codex_commit.js</key>
-		<data>
-		TSLGvQGbI4RKjXRvmYKKPKRE37Y=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/codex_refresh.js</key>
-		<data>
-		hvwW6uhwlKNx1ljcH+depjzW9Qo=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/core.js</key>
-		<data>
-		MPJuzziyQbqC9JSZmuZPyS6ru9s=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/extension.js</key>
-		<data>
-		Pb35mXsTZ6nsZa7iyNhl5VCT3ZE=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/extract.js</key>
-		<data>
-		BcbjYKUL9I+sgBlMWmHtaQxEZ+8=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/media/efs.svg</key>
-		<data>
-		vry1V95wL/GUULFkpbyOyRATIYU=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/ollama.js</key>
-		<data>
-		U5VhDWjoERhYJGW8DVPbZFRwq4M=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/package.json</key>
-		<data>
-		+X4sgfqpphhVeVhaiRoKsxUSfy4=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/pull_request.js</key>
-		<data>
-		YruQ/lWxiqg/x6o0b6MJJ2HGwFg=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/search_index.js</key>
-		<data>
-		8/qGhUKnSAdWgvozetQDK74tDsk=
-		</data>
-		<key>Resources/toolkit/workspace-search-extension/view.js</key>
-		<data>
-		glRK1zMOpc1ynO6L4qmwW+qf7X4=
+		REzexe+ZhPMxl98IMLqOZrfpRN4=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -379,6 +379,160 @@
 			rwerZJ7jAUfmEMtZ7uAwrWMnll6UVy14s7XrrVSqyEY=
 			</data>
 		</dict>
+		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			5sLEvrOg8QFn1qTXdaxMEbMn1CQ=
+			</data>
+			<key>hash2</key>
+			<data>
+			pR6WNuO23RFtzYuTIgV9R9YTknDQg9mBwWx5V1bwyd8=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/branch_actions.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			/7vBebSxd2zz1DmsnhxNH5VFl6U=
+			</data>
+			<key>hash2</key>
+			<data>
+			SfMPUL5agRYQyIClXUG6jtAwct2y/afYZTqrtwYyt6I=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/branch_maintenance.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			hClnJuT1UO9aZutbfW65iQlL3EY=
+			</data>
+			<key>hash2</key>
+			<data>
+			fNu5O8kxc0tWkZ1f7L/3LjgrpRtquFMEcwapIS7E+d4=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/codex_commit.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			TSLGvQGbI4RKjXRvmYKKPKRE37Y=
+			</data>
+			<key>hash2</key>
+			<data>
+			KYC4ARsWuS9Mm0ExdmhsFsquao4EyTp6QVYbGRuUIbs=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/codex_refresh.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			hvwW6uhwlKNx1ljcH+depjzW9Qo=
+			</data>
+			<key>hash2</key>
+			<data>
+			veu7nZfEZH4JoJooTwh0SYViXXz1UuZF/7E85U9YrkE=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/core.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			MPJuzziyQbqC9JSZmuZPyS6ru9s=
+			</data>
+			<key>hash2</key>
+			<data>
+			kRTdQ4ouCldd8c+g21npFtR62S8LybfTM0zCDxe7WNw=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/extension.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			Pb35mXsTZ6nsZa7iyNhl5VCT3ZE=
+			</data>
+			<key>hash2</key>
+			<data>
+			z8rR0WYKNjzIOfJXflE4WERWAa1MT4AuEOCHNMvHSiE=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/extract.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			BcbjYKUL9I+sgBlMWmHtaQxEZ+8=
+			</data>
+			<key>hash2</key>
+			<data>
+			SesVh53ZKvUvrclT8ZhOeusEa0fDK1dMwC/VSqBTrUs=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/media/efs.svg</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			vry1V95wL/GUULFkpbyOyRATIYU=
+			</data>
+			<key>hash2</key>
+			<data>
+			Tl9tjyk/Pp1A1d3LsYLnD8UNDIxJUlGTd5oAQWO8QYc=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/ollama.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			U5VhDWjoERhYJGW8DVPbZFRwq4M=
+			</data>
+			<key>hash2</key>
+			<data>
+			yP5+H0SRefzqOTKx99y01zm5JeH6y9HemMhPkhYmFDU=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/package.json</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			+X4sgfqpphhVeVhaiRoKsxUSfy4=
+			</data>
+			<key>hash2</key>
+			<data>
+			T2WhDwJPDWRyHSBcc5mJ7SUCQoBfCu0+x1NOOH/L6fc=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/pull_request.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			YruQ/lWxiqg/x6o0b6MJJ2HGwFg=
+			</data>
+			<key>hash2</key>
+			<data>
+			QFpNJJvzBHXURVe0IUb8a/v5N/nGgZ2lpOn5kB+6alI=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/search_index.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			8/qGhUKnSAdWgvozetQDK74tDsk=
+			</data>
+			<key>hash2</key>
+			<data>
+			gSJWmTjHXGdcuZ/3u2ZKvd2vVbdW/IiBfquN0uzWjvs=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/view.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			glRK1zMOpc1ynO6L4qmwW+qf7X4=
+			</data>
+			<key>hash2</key>
+			<data>
+			iWXqbGxbfWDmz8lE52uy1zxKmkWImsDMD6bOMA0j/UQ=
+			</data>
+		</dict>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<dict>
 			<key>hash</key>
@@ -416,11 +570,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			kIzgKHza3htX59QPKJsbXmhAKxc=
+			KWRQnfQaT7EiIEDIsAfzKjeqN8s=
 			</data>
 			<key>hash2</key>
 			<data>
-			K40zhLJiJOmlJUZUtPZzRItTC6IJLOk5J0XmaTsVTNg=
+			xtJFWkjw0QnAi4pyw/NCpvkQdP3wNnbbs5Ovf0Uf3ow=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/chatgpt_integration.py</key>
@@ -581,165 +735,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			cx0cHmsHS2XDOB2WtgFehzDMLbY=
+			REzexe+ZhPMxl98IMLqOZrfpRN4=
 			</data>
 			<key>hash2</key>
 			<data>
-			JEqk0g66iwoX4aHT4sTBGinNMNvZ5UfIIFKszZ/NVBs=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/THIRD_PARTY_NOTICES.md</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			5sLEvrOg8QFn1qTXdaxMEbMn1CQ=
-			</data>
-			<key>hash2</key>
-			<data>
-			pR6WNuO23RFtzYuTIgV9R9YTknDQg9mBwWx5V1bwyd8=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/branch_actions.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			/7vBebSxd2zz1DmsnhxNH5VFl6U=
-			</data>
-			<key>hash2</key>
-			<data>
-			SfMPUL5agRYQyIClXUG6jtAwct2y/afYZTqrtwYyt6I=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/branch_maintenance.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			hClnJuT1UO9aZutbfW65iQlL3EY=
-			</data>
-			<key>hash2</key>
-			<data>
-			fNu5O8kxc0tWkZ1f7L/3LjgrpRtquFMEcwapIS7E+d4=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/codex_commit.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			TSLGvQGbI4RKjXRvmYKKPKRE37Y=
-			</data>
-			<key>hash2</key>
-			<data>
-			KYC4ARsWuS9Mm0ExdmhsFsquao4EyTp6QVYbGRuUIbs=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/codex_refresh.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			hvwW6uhwlKNx1ljcH+depjzW9Qo=
-			</data>
-			<key>hash2</key>
-			<data>
-			veu7nZfEZH4JoJooTwh0SYViXXz1UuZF/7E85U9YrkE=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/core.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			MPJuzziyQbqC9JSZmuZPyS6ru9s=
-			</data>
-			<key>hash2</key>
-			<data>
-			kRTdQ4ouCldd8c+g21npFtR62S8LybfTM0zCDxe7WNw=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/extension.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			Pb35mXsTZ6nsZa7iyNhl5VCT3ZE=
-			</data>
-			<key>hash2</key>
-			<data>
-			z8rR0WYKNjzIOfJXflE4WERWAa1MT4AuEOCHNMvHSiE=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/extract.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			BcbjYKUL9I+sgBlMWmHtaQxEZ+8=
-			</data>
-			<key>hash2</key>
-			<data>
-			SesVh53ZKvUvrclT8ZhOeusEa0fDK1dMwC/VSqBTrUs=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/media/efs.svg</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			vry1V95wL/GUULFkpbyOyRATIYU=
-			</data>
-			<key>hash2</key>
-			<data>
-			Tl9tjyk/Pp1A1d3LsYLnD8UNDIxJUlGTd5oAQWO8QYc=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/ollama.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			U5VhDWjoERhYJGW8DVPbZFRwq4M=
-			</data>
-			<key>hash2</key>
-			<data>
-			yP5+H0SRefzqOTKx99y01zm5JeH6y9HemMhPkhYmFDU=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/package.json</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			+X4sgfqpphhVeVhaiRoKsxUSfy4=
-			</data>
-			<key>hash2</key>
-			<data>
-			T2WhDwJPDWRyHSBcc5mJ7SUCQoBfCu0+x1NOOH/L6fc=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/pull_request.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			YruQ/lWxiqg/x6o0b6MJJ2HGwFg=
-			</data>
-			<key>hash2</key>
-			<data>
-			QFpNJJvzBHXURVe0IUb8a/v5N/nGgZ2lpOn5kB+6alI=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/search_index.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			8/qGhUKnSAdWgvozetQDK74tDsk=
-			</data>
-			<key>hash2</key>
-			<data>
-			gSJWmTjHXGdcuZ/3u2ZKvd2vVbdW/IiBfquN0uzWjvs=
-			</data>
-		</dict>
-		<key>Resources/toolkit/workspace-search-extension/view.js</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			glRK1zMOpc1ynO6L4qmwW+qf7X4=
-			</data>
-			<key>hash2</key>
-			<data>
-			iWXqbGxbfWDmz8lE52uy1zxKmkWImsDMD6bOMA0j/UQ=
+			0uqq4KVnv51YeA33ZQPSdgWUnzU7yxQSJaA6EVtQLQk=
 			</data>
 		</dict>
 	</dict>

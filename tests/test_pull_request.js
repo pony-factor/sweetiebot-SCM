@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { githubRepository, pullRequestPrompt, registerPullRequestCommand } = require('../workspace-search-extension/pull_request');
+const { githubRepository, pullRequestPrompt, registerPullRequestCommand } = require('../efs/pull_request');
 
 async function run() {
   for (const remote of ['https://github.com/owner/repo.git', 'git@github.com:owner/repo.git', 'ssh://git@github.com/owner/repo.git']) {
@@ -73,7 +73,7 @@ async function run() {
     const fallback = new URL(calls.at(-1).options.url).searchParams.get('q');
     assert(fallback.includes('in repository "/selected repository", against'));
   }
-  assert(require('../workspace-search-extension/package.json').activationEvents.includes('onCommand:scmToolkit.openPullRequestChat'));
+  assert(require('../efs/package.json').activationEvents.includes('onCommand:scmToolkit.openPullRequestChat'));
 
   const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
   const callbackSource = source.match(/    const createPullRequest = ([\s\S]*?)\n    };/)[1];

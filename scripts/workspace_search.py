@@ -12,7 +12,7 @@ from pathlib import Path
 from toolkit_settings import load_settings, VSCODE_SETTINGS
 
 HERE = Path(__file__).resolve().parent
-SOURCE = HERE.parent / "workspace-search-extension"
+SOURCE = HERE.parent / "efs"
 STANDALONE_CONTAINER_ID = "scmToolkit.workspaceSearchContainer"
 
 

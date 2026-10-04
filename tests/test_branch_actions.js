@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands } = require('../workspace-search-extension/branch_actions');
+const { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands } = require('../efs/branch_actions');
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 

@@ -1,8 +1,4 @@
-rename workspace-search-extension to efs and cp to main
 
-
-
-as you can see on soem of the last jfwootne4/emails commits, it still doent reall yhandle laghe diffs very well. i  want it to be conetanrined to provididn only a good oeut.u. nono of thi 'papperas to be'' bs. it shoeld be decisiisve ane it is sure of its laerllnig. taht and you know me betterd guess as needed but always mainnat teh form and make it look lik. they are als e using git dusticitns, wihch iyou are sepposde to do wehn commititng diretwily to moain. bit they are bebing trcitated nd arent complel and try to use markedown ofrmtitnig wihchi is innaparrnit. platidekt only 
 
 
 
@@ -27,7 +23,7 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
 instead of saynig "Work locally" i want the text next to the locatin icon to show the % remaniing in th enext 5hr, inless tho tatal weely perecent is lawor thean use that. als ewehn you opn that menu to see the limits remeaneng subitem, it correctly centers the time on th 5hr but not the dayps left on teh weeks l resest, w
 hich shoeld be num days left rather than absolete date
 
-
+when i delet a brach and goback to main after maring a pr im getting failde to exectu git error even tohegh evevnyhnig works
 
 auto-brach-pruning merged prs
 

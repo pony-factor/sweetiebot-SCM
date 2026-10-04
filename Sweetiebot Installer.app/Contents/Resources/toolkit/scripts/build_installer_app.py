@@ -27,7 +27,7 @@ def build(destination: Path) -> None:
             ("scripts", {".py", ".json"}),
             ("assets/workbench", {".js", ".css"}),
             ("assets/codex", {".js", ".css"}),
-            ("workspace-search-extension", {".js", ".json", ".svg", ".md"}),
+            ("efs", {".js", ".json", ".svg", ".md"}),
         ):
             for source in (ROOT / directory).rglob("*"):
                 if source.is_file() and source.suffix in suffixes:
