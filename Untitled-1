@@ -3,24 +3,15 @@
 
 
 
-
-> git push origin main:main
-To https://github.com/windsorUwU/studio.git
- ! [rejected]        main -> main (non-fast-forward)
-error: failed to push some refs to 'https://github.com/windsorUwU/studio.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
-
-
-
 instead of saynig "Work locally" i want the text next to the locatin icon to show the % remaniing in th enext 5hr, inless tho tatal weely perecent is lawor thean use that. als ewehn you opn that menu to see the limits remeaneng subitem, it correctly centers the time on th 5hr but not the dayps left on teh weeks l resest, w
 hich shoeld be num days left rather than absolete date
 
 when i delet a brach and goback to main after maring a pr im getting failde to exectu git error even tohegh evevnyhnig works
 
-auto-brach-pruning merged prs
+auto-brach-pruning merged prs -- same logic but for older barcheds, periodically cehkcs outnsanding local archengs
+mergeing a pr at orgiin shoeld autmatically delet it from locol assuming no extra changes, bring you makc to main as needed
+closing a pr withit merging doestn effect
+
 
 
 remev th egpt profix form the active model dispay. and replan emediem with Med, light with Low, and extra high with Uber. toggle setting to do
@@ -31,3 +22,12 @@ i want to medif the githum pull reusets tab. it shoelt auta reest wohn im activo
 
 
 right cilinig on efs resnelts soheld capy the file path into soemitng crilkcable withn vscode. repolac the perctentag centetaney with a decmanl and make it a diffrente cololr font (s ue the theme accent)
+
+
+
+for deer resesaech , teh floder sececeton ui shoeld allow you to hover over filedrns and see the contes reatehr tahn listi ng all of them as indeidevla items with eth same startig pathe. also, it hosehld dispay a conifocitn with the final live url of the improt. also the file names are still not really tha tgood. see if you can use the converotn as context or soemting idc
+
+
+once you soty tynug efs shoeld aetamitaclly seach. the seach shoeld be triggered by enter or a smallr time tirinec citemark icon iwtihn ith eintput boxk.
+
+the cemmit and push cehcehbo can be the saem cololr as nomal lik eteh tohers
