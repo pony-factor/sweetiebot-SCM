@@ -124,7 +124,7 @@ def pull_requests(repo):
     return data if isinstance(data, list) else None
 
 
-def prune_repo(repo, dry_run=False):
+def prune_repo(repo, dry_run=False, branch_filter=None):
     metadata = github_repo(repo)
     if not metadata:
         return []
@@ -157,6 +157,8 @@ def prune_repo(repo, dry_run=False):
     protected = checked_out_branches(repo)
     pruned = []
     for (branch, expected_oid), number in candidates.items():
+        if branch_filter is not None and branch != branch_filter:
+            continue
         if branch == default_branch or branch in protected:
             continue
         if branches.get(branch) != expected_oid:
@@ -196,6 +198,7 @@ def main():
     parser.add_argument("--repo", action="append", type=Path, default=[], help="An open local Git repository; may be repeated")
     parser.add_argument("--force", action="store_true", help="Ignore the ten-minute scan interval")
     parser.add_argument("--dry-run", action="store_true", help="Show branches that would be pruned")
+    parser.add_argument("--branch", help="Limit cleanup to one local branch")
     args = parser.parse_args()
 
     if not GIT or not GH or not due(args.force):
@@ -205,7 +208,7 @@ def main():
     try:
         for repo in list(dict.fromkeys(path.resolve() for path in args.repo))[:MAX_REPOS]:
             try:
-                found.extend(prune_repo(repo, args.dry_run))
+                found.extend(prune_repo(repo, args.dry_run, args.branch))
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
                 continue
     finally:

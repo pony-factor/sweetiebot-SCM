@@ -3,10 +3,8 @@
 
 
 
-instead of saynig "Work locally" i want the text next to the locatin icon to show the % remaniing in th enext 5hr, inless tho tatal weely perecent is lawor thean use that. als ewehn you opn that menu to see the limits remeaneng subitem, it correctly centers the time on th 5hr but not the dayps left on teh weeks l resest, w
-hich shoeld be num days left rather than absolete date
 
-when i delet a brach and goback to main after maring a pr im getting failde to exectu git error even tohegh evevnyhnig works
+
 
 auto-brach-pruning merged prs -- same logic but for older barcheds, periodically cehkcs outnsanding local archengs
 mergeing a pr at orgiin shoeld autmatically delet it from locol assuming no extra changes, bring you makc to main as needed

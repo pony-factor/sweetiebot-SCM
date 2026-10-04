@@ -45,15 +45,28 @@ class BranchCleanupTests(unittest.TestCase):
 
     def test_removes_exact_merged_tip_even_without_ancestry(self):
         self.git('switch', 'topic')
-        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'feature')
+        (self.repo / 'feature.txt').write_text('merged feature\n')
+        self.git('add', 'feature.txt')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'feature')
         self.pr['headRefOid'] = self.git('rev-parse', 'HEAD')
         self.git('switch', 'main')
+        self.git('merge', '--squash', 'topic')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'squash feature')
+        deletion = subprocess.run(['git', 'branch', '-d', 'topic'], cwd=self.repo, text=True, capture_output=True)
+        self.assertNotEqual(deletion.returncode, 0)
+        self.assertIn('not fully merged', deletion.stderr)
         self.assertEqual(len(prune.prune_repo(self.repo)), 1)
         self.assertFalse(self.exists())
 
     def test_dry_run_preserves_branch(self):
         self.assertEqual(len(prune.prune_repo(self.repo, True)), 1)
         self.assertTrue(self.exists())
+
+    def test_targeted_cleanup_preserves_other_branches(self):
+        self.assertEqual(prune.prune_repo(self.repo, branch_filter='other'), [])
+        self.assertTrue(self.exists())
+        self.assertEqual(len(prune.prune_repo(self.repo, branch_filter='topic')), 1)
+        self.assertFalse(self.exists())
 
     def test_changed_tip_is_preserved(self):
         self.pr['headRefOid'] = '0' * 40

@@ -21,6 +21,7 @@ function fixture() {
     async merge(ref) { calls.push(['merge', ref]); },
     async getRefs(opts) {
       calls.push(['refs', opts]);
+      if (opts.pattern === 'refs/heads') return [{ name: 'main' }, { name: 'topic' }];
       return [{ name: 'used' }, { name: 'origin/remote-used' }, { name: 'origin/main' }];
     },
     async createBranch(...args) { calls.push(['create', ...args]); },
@@ -155,6 +156,32 @@ async function run() {
     const { repository } = fixture();
     repository[method] = async () => { throw new Error(`${method} failed`); };
     await assert.rejects(deleteBranch(repository, { ...options, branch: 'topic' }), new RegExp(`${method} failed`));
+  }
+  {
+    const { repository } = fixture();
+    repository.deleteBranch = async () => { throw new Error('Failed to execute git'); };
+    const getRefs = repository.getRefs;
+    repository.getRefs = async opts => opts.pattern === 'refs/heads' ? [{ name: 'main' }] : getRefs(opts);
+    assert.equal(await deleteBranch(repository, { ...options, branch: 'topic' }), 'topic');
+    assert.equal(repository.state.HEAD.name, 'main');
+  }
+  for (const verified of [true, false]) {
+    const { repository } = fixture();
+    repository.deleteBranch = async () => {
+      throw Object.assign(new Error('Failed to execute git'), { stderr: "error: The branch 'topic' is not fully merged." });
+    };
+    let cleaned = false;
+    const getRefs = repository.getRefs;
+    repository.getRefs = async opts => cleaned && verified && opts.pattern === 'refs/heads'
+      ? [{ name: 'main' }] : getRefs(opts);
+    const operation = deleteBranch(repository, { ...options, branch: 'topic' }, async (repo, branch) => {
+      assert.equal(repo.state.HEAD.name, 'main');
+      assert.equal(branch, 'topic');
+      cleaned = true;
+    });
+    if (verified) assert.equal(await operation, 'topic');
+    else await assert.rejects(operation, /could not be verified.*preserved/);
+    assert(cleaned);
   }
   {
     const { repository, calls } = fixture();

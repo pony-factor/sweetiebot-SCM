@@ -1,5 +1,18 @@
 'use strict';
 
+const { execFile } = require('node:child_process');
+const { existsSync } = require('node:fs');
+const path = require('node:path');
+const { promisify } = require('node:util');
+
+async function cleanupMergedBranch(repository, branch) {
+  const installedScript = path.join(__dirname, 'prune_merged_branches.py');
+  const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/prune_merged_branches.py');
+  await promisify(execFile)(process.platform === 'win32' ? 'python' : 'python3', [
+    script, '--force', '--repo', repository.rootUri.fsPath, `--branch=${branch}`
+  ], { timeout: 120000 });
+}
+
 async function returnHome(repository) {
   await repository.checkout('main');
   await repository.status();
@@ -94,7 +107,7 @@ async function publishBranch(repository, { branch, remote }) {
   return true;
 }
 
-async function deleteBranch(repository, { branch, defaultBranch, remote }) {
+async function deleteBranch(repository, { branch, defaultBranch, remote }, cleanup = cleanupMergedBranch) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot delete ${defaultBranch}.`);
   await repository.status();
   if (repository.state.HEAD?.name !== branch) {
@@ -107,7 +120,24 @@ async function deleteBranch(repository, { branch, defaultBranch, remote }) {
     throw new Error(`Cannot delete ${branch}: it still exists on ${remote}.`);
   }
   await syncDefaultBranch(repository, defaultBranch, remote);
-  await repository.deleteBranch(branch, false);
+  try {
+    await repository.deleteBranch(branch, false);
+  } catch (error) {
+    const stillExists = async () => (await repository.getRefs({ pattern: 'refs/heads' }))
+      .some(ref => ref.name === branch);
+    // Automatic cleanup may have removed the branch after checkout.
+    if (!await stillExists()) return branch;
+    if (error?.gitErrorCode !== 'BranchNotFullyMerged' && !/not fully merged/i.test(errorText(error))) {
+      throw error;
+    }
+    // Squash merges do not satisfy Git's ancestry check. Reuse cleanup's
+    // GitHub PR verification and atomic tip check rather than force-delete.
+    await cleanup(repository, branch);
+    if (await stillExists()) {
+      throw new Error(`Cannot delete ${branch}: its current tip could not be verified as a merged pull request. The branch was preserved; you are now on ${defaultBranch}.`);
+    }
+    await repository.status();
+  }
   return branch;
 }
 
