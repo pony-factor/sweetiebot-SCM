@@ -100,6 +100,24 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(parsed["cmdClickCloseOthers"])
         self.assertTrue(parsed["browserChatgptHome"])
 
+    def test_pony_life_pack_defaults_off(self):
+        self.assertEqual(install.DEFAULT_SETTINGS["branchNameDisabledPacks"], "pony-life")
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS,
+            [],
+            "Ready",
+            "test-token",
+            "Save",
+        )
+        self.assertIn(
+            '<input type="checkbox" name="branchNamePack" value="pony-life">',
+            page,
+        )
+        self.assertNotIn(
+            '<input type="checkbox" name="branchNamePack" value="pony-life" checked>',
+            page,
+        )
+
     def test_parses_optional_composer_colors(self):
         values = form_values()
         values['codexSendBackground'] = ['#43AF49']
@@ -255,6 +273,23 @@ class SubmissionTests(unittest.TestCase):
 
 
 class GitConfigTests(unittest.TestCase):
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_disabled_pack_setting_can_be_explicitly_empty(self, read_string, read_bool):
+        read_bool.side_effect = lambda _key, default: default
+
+        def read_value(key, default, preserve_empty=False):
+            if key == "scm-toolkit.branch-name-disabled-packs":
+                self.assertTrue(preserve_empty)
+                return ""
+            return default
+
+        read_string.side_effect = read_value
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["branchNameDisabledPacks"], "")
+
     @patch("configurator.shutil.which", return_value="/usr/bin/git")
     @patch("configurator.subprocess.run")
     def test_saves_every_supported_setting(self, run, _which):
