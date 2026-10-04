@@ -172,7 +172,7 @@ git config --global scm-toolkit.codex-hide-chat-timestamps true
 git config --global scm-toolkit.codex-hide-dictation true
 git config --global scm-toolkit.default-branch main
 git config --global scm-toolkit.remote origin
-git config --global scm-toolkit.branch-name-disabled-packs ""
+git config --global scm-toolkit.branch-name-disabled-packs "pony-life,idw-comics"
 git config --global scm-toolkit.branch-custom-names ""
 git config --global scm-toolkit.branch-name-imports '[]'
 ```
@@ -217,7 +217,7 @@ The equivalent `~/.gitconfig` block is:
     codex-hide-dictation = true
     default-branch = main
     remote = origin
-    branch-name-disabled-packs =
+    branch-name-disabled-packs = pony-life,idw-comics
     branch-custom-names =
     branch-name-imports = []
 ```
@@ -251,7 +251,7 @@ Random branch names are data-driven. Built-in packs live in `scripts/branch_name
 
 Pack IDs and names are lowercase branch-safe slugs containing letters, numbers, and hyphens. Built-in packs keep each branch-name slug unique across packs; shared characters use one canonical slug rather than duplicate entries. The G4 catalog also strips import-only role and episode descriptors (for example, `Knowledgeable ShopperRainbowshine` becomes `rainbowshine`) while retaining genuine multiword names such as `fleur-de-lis`. A pack may also include a `sources` object keyed by a name when a naming choice needs provenance. This keeps contributed lists as data instead of picker logic.
 
-Built-in community packs also include a dedicated **Convention mascots** set and a **4chan /mlp/** set; the latter intentionally includes Anonfilly but excludes generic `anon`, `anonpony`, and Aryanne. The web configurator enables every pack by default. Disabling a pack stores only its ID in `scm-toolkit.branch-name-disabled-packs`, so newly added packs remain enabled by default. Custom names are stored in `scm-toolkit.branch-custom-names`. Third-party packs can be pasted into **Imported packs** as one pack object, an array of packs, or a `{"packs":[...]}` object and are stored in `scm-toolkit.branch-name-imports`.
+Built-in community packs also include a dedicated **Convention mascots** set and a **4chan /mlp/** set; the latter intentionally includes Anonfilly but excludes generic `anon`, `anonpony`, and Aryanne. Most packs are enabled by default; **Pony Life** and **IDW comics** are opt-in and start disabled. Disabling a pack stores its ID in `scm-toolkit.branch-name-disabled-packs`. Custom names are stored in `scm-toolkit.branch-custom-names`. Third-party packs can be pasted into **Imported packs** as one pack object, an array of packs, or a `{"packs":[...]}` object and are stored in `scm-toolkit.branch-name-imports`.
 
 ### Workspace Search
 
