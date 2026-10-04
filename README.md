@@ -170,6 +170,7 @@ git config --global scm-toolkit.chatgpt-custom-instructions ""
 git config --global scm-toolkit.chatgpt-web-codex-coauthor true
 git config --global scm-toolkit.codex-hide-chat-timestamps true
 git config --global scm-toolkit.codex-hide-dictation true
+git config --global scm-toolkit.codex-short-model-labels true
 git config --global scm-toolkit.default-branch main
 git config --global scm-toolkit.remote origin
 git config --global scm-toolkit.branch-name-disabled-packs ""
