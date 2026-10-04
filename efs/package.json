@@ -25,7 +25,8 @@
     "onCommand:scmToolkit.openSettings",
     "onStartupFinished",
     "onCommand:scmToolkit.workspaceSearch.clearIndex",
-    "onCommand:scmToolkit.chatgpt.searchRepositories"
+    "onCommand:scmToolkit.chatgpt.searchRepositories",
+    "onCommand:scmToolkit.squashMergePullRequest"
   ],
   "contributes": {
     "views": {
@@ -54,6 +55,11 @@
         "command": "scmToolkit.chatgpt.searchRepositories",
         "title": "Search Linked GitHub Repositories",
         "icon": "$(github)"
+      },
+      {
+        "command": "scmToolkit.squashMergePullRequest",
+        "title": "Squash and Merge into main",
+        "icon": "$(git-merge)"
       }
     ],
     "menus": {
@@ -62,6 +68,13 @@
           "command": "scmToolkit.workspaceSearch.clearIndex",
           "when": "view == scmToolkit.workspaceSearch",
           "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "scmToolkit.squashMergePullRequest",
+          "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
+          "group": "inline@2"
         }
       ]
     },
@@ -150,6 +163,16 @@
           "default": true,
           "scope": "window",
           "description": "Open Sweetie Bot / Source Control when each VS Code window starts, then return keyboard focus to the editor."
+        },
+        "scmToolkit.pullRequestAutoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh the GitHub Pull Requests list when visible and focused, and every 5 seconds while active."
+        },
+        "scmToolkit.pullRequestQuickMerge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show an inline button to squash and merge a GitHub pull request into main without opening it."
         }
       }
     }
