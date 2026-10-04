@@ -29,17 +29,25 @@
     border-radius: var(--vscode-cornerRadius-small, 4px);
 }
 
-.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button {
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
     border: 0;
     background: transparent !important;
     color: var(--vscode-foreground) !important;
 }
 
-.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-dropdown-button {
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-dropdown-button,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
     border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
 }
 
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
+    box-sizing: border-box;
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+}
+
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:hover,
-.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:hover {
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:hover,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings:hover {
     background: var(--vscode-toolbar-hoverBackground) !important;
 }

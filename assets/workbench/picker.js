@@ -58,11 +58,25 @@ function scmToolkitCustomizeCommitButtonLabel(widget, label) {
 }
 
 function scmToolkitAttachCommitSettings(widget, button) {
-    const root = widget.element.closest('.scm-view');
-    const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
-    if (!root || !Observer) return;
+    const doc = widget.element.ownerDocument;
+    const Observer = doc.defaultView?.MutationObserver;
+    if (!Observer) return;
+
+    let observedRoot;
+    const observeRoot = root => {
+        if (observedRoot === root) return;
+        observer.disconnect();
+        observer.observe(root, {
+            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index']
+        });
+        observedRoot = root;
+    };
 
     const update = () => {
+        const root = widget.element.closest('.scm-view');
+        // Input widgets are constructed before their list row enters the sidebar.
+        if (!root) return;
+        observeRoot(root);
         const inputRow = widget.element.closest('.monaco-list-row');
         const index = inputRow?.getAttribute('data-index');
         const rows = inputRow?.parentElement;
@@ -78,11 +92,9 @@ function scmToolkitAttachCommitSettings(widget, button) {
         }
     };
 
-    update();
     const observer = new Observer(update);
-    observer.observe(root, {
-        subtree: true, childList: true, attributes: true, attributeFilter: ['data-index']
-    });
+    observeRoot(widget.element.closest('.scm-view') ?? doc.documentElement);
+    update();
     widget.disposables.add({
         dispose() {
             observer.disconnect();
