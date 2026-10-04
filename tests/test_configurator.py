@@ -100,8 +100,11 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(parsed["cmdClickCloseOthers"])
         self.assertTrue(parsed["browserChatgptHome"])
 
-    def test_pony_life_pack_defaults_off(self):
-        self.assertEqual(install.DEFAULT_SETTINGS["branchNameDisabledPacks"], "pony-life")
+    def test_optional_name_packs_default_off(self):
+        self.assertEqual(
+            set(install.DEFAULT_SETTINGS["branchNameDisabledPacks"].split(",")),
+            {"pony-life", "idw-comics"},
+        )
         page = configurator.render_form(
             install.DEFAULT_SETTINGS,
             [],
@@ -109,14 +112,15 @@ class SubmissionTests(unittest.TestCase):
             "test-token",
             "Save",
         )
-        self.assertIn(
-            '<input type="checkbox" name="branchNamePack" value="pony-life">',
-            page,
-        )
-        self.assertNotIn(
-            '<input type="checkbox" name="branchNamePack" value="pony-life" checked>',
-            page,
-        )
+        for pack_id in ("pony-life", "idw-comics"):
+            self.assertIn(
+                f'<input type="checkbox" name="branchNamePack" value="{pack_id}">',
+                page,
+            )
+            self.assertNotIn(
+                f'<input type="checkbox" name="branchNamePack" value="{pack_id}" checked>',
+                page,
+            )
 
     def test_parses_optional_composer_colors(self):
         values = form_values()
