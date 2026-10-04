@@ -68,6 +68,8 @@ To rebuild the app from this checkout:
 python3 scripts/build_installer_app.py
 ```
 
+The builder reuses the **Sweetiebot Installer Local Signing** certificate in your login Keychain. On another Mac, create a self-signed **Code Signing** certificate with that name using Keychain Access → Certificate Assistant → Create a Certificate, or select an existing signing identity with `--signing-identity` (also available as `SWEETIEBOT_SIGNING_IDENTITY`). Keep the same certificate and bundle identifier across rebuilds so macOS can recognize the app and retain its permission. The builder stops if the identity is missing or ambiguous instead of using ad hoc signing. Switching an existing app to this certificate may require granting App Management once more. Signing keys stay in Keychain and are never bundled with the installer.
+
 Clone the repository and enter it:
 
 ```sh

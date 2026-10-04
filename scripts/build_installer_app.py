@@ -2,7 +2,9 @@
 """Build a self-contained macOS app for double-click installation."""
 
 import argparse
+import os
 import plistlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -10,9 +12,33 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "Sweetiebot Installer.app"
+SIGNING_IDENTITY = "Sweetiebot Installer Local Signing"
 
 
-def build(destination: Path) -> None:
+def signing_identity(name: str) -> str:
+    """Resolve one persistent Keychain identity; never fall back to ad hoc signing."""
+    if not name.strip() or name == "-":
+        raise ValueError("A persistent code-signing identity is required.")
+    result = subprocess.run(
+        ["security", "find-identity", "-v", "-p", "codesigning"],
+        check=True, capture_output=True, text=True,
+    )
+    matches = [
+        fingerprint for fingerprint, label in re.findall(
+            r'\b([0-9A-Fa-f]{40}) "([^"]+)"', result.stdout
+        ) if name == label or name.upper() == fingerprint.upper()
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected one valid Keychain signing identity for {name!r}, found {len(matches)}. "
+            "Create a Code Signing certificate in Keychain Access, or select an existing "
+            "identity with --signing-identity. Keep using the same certificate for rebuilds."
+        )
+    return matches[0]
+
+
+def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
+    fingerprint = signing_identity(identity)
     destination = destination.expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent) as staging:
@@ -46,7 +72,11 @@ def build(destination: Path) -> None:
         )
         with info_path.open("wb") as stream:
             plistlib.dump(info, stream)
-        subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True)
+        subprocess.run(
+            ["codesign", "--force", "--sign", fingerprint, "--timestamp=none", str(app)],
+            check=True,
+        )
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
         if destination.exists():
             if not destination.is_dir() or destination.suffix != ".app":
                 raise ValueError(f"Refusing to replace non-app destination: {destination}")
@@ -58,4 +88,10 @@ def build(destination: Path) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / APP_NAME)
-    build(parser.parse_args().output)
+    parser.add_argument(
+        "--signing-identity",
+        default=os.environ.get("SWEETIEBOT_SIGNING_IDENTITY", SIGNING_IDENTITY),
+        help="Persistent Keychain certificate name or SHA-1 fingerprint",
+    )
+    args = parser.parse_args()
+    build(args.output, args.signing_identity)
