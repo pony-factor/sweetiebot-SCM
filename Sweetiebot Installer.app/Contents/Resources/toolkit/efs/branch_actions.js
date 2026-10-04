@@ -9,23 +9,61 @@ async function returnHome(repository) {
   return 'main';
 }
 
+function errorText(error) {
+  return [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
+}
+
+async function retryConnection(operation) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= 2 || !/timed? out|timeout|connection (?:reset|closed)|could not resolve host|failed to connect|HTTP (?:502|503|504)|requested URL returned error: (?:502|503|504)/i.test(errorText(error))) {
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
 async function syncDefaultBranch(repository, defaultBranch, remote) {
   await repository.checkout(defaultBranch);
-  await repository.status();
-  if (repository.state.HEAD?.name !== defaultBranch) {
-    throw new Error(`Could not switch to ${defaultBranch}.`);
-  }
+  const checkBranch = async () => {
+    await repository.status();
+    if (repository.state.HEAD?.name !== defaultBranch) {
+      throw new Error(`Could not switch to ${defaultBranch}, or the active branch changed while syncing it.`);
+    }
+  };
+  await checkBranch();
   const upstream = repository.state.HEAD.upstream;
   if (!upstream || upstream.remote !== remote) {
     throw new Error(`${defaultBranch} must track a branch on ${remote} before syncing.`);
   }
-  await repository.pull();
-  await repository.status();
-  if (repository.state.HEAD?.name !== defaultBranch) {
-    throw new Error(`The active branch changed while syncing ${defaultBranch}.`);
-  }
-  if (repository.state.HEAD.ahead > 0) {
-    await repository.push(remote, `${defaultBranch}:${upstream.name}`);
+  for (let attempt = 0; ; attempt++) {
+    // Fetch and merge explicitly: VS Code's throttled pull can retain a failed
+    // queued request after a timeout, preventing later attempts from running.
+    await retryConnection(async () => {
+      await checkBranch();
+      await repository.fetch({ remote });
+    });
+    await checkBranch();
+    await repository.merge(`${remote}/${upstream.name}`);
+    await checkBranch();
+    if (!repository.state.HEAD.ahead) return;
+    try {
+      await retryConnection(async () => {
+        await checkBranch();
+        await repository.push(remote, `${defaultBranch}:${upstream.name}`);
+      });
+      await checkBranch();
+      return;
+    } catch (error) {
+      // Another writer can advance the remote between fetching and pushing.
+      // Merge their changes before retrying; never force-push or rebase.
+      if (attempt >= 2 || !/non-fast-forward|fetch first|tip of your current branch is behind/i.test(errorText(error))) {
+        throw error;
+      }
+    }
   }
 }
 

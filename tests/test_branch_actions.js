@@ -88,12 +88,12 @@ async function run() {
     const { repository, calls } = fixture();
     assert.equal(await createBranch(repository, options, () => 0), 'fresh');
     assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
-    assert(calls.findIndex(call => call[0] === 'pull') < calls.findIndex(call => call[0] === 'refs'));
+    assert(calls.findIndex(call => call[0] === 'merge') < calls.findIndex(call => call[0] === 'refs'));
     assert(!calls.some(call => call[0] === 'push'));
   }
-  for (const method of ['checkout', 'pull', 'push']) {
+  for (const method of ['checkout', 'fetch', 'merge', 'push']) {
     const { repository, calls } = fixture();
-    if (method === 'push') repository.pull = async () => { repository.state.HEAD.ahead = 1; };
+    if (method === 'push') repository.merge = async () => { repository.state.HEAD.ahead = 1; };
     repository[method] = async () => { throw new Error(`${method} failed`); };
     await assert.rejects(createBranch(repository, options), new RegExp(`${method} failed`));
     assert(!calls.some(call => call[0] === 'create'));
@@ -102,13 +102,13 @@ async function run() {
     const { repository, calls } = fixture();
     repository.checkout = async () => {}; // A cancelled checkout must not continue.
     await assert.rejects(createBranch(repository, options), /Could not switch/);
-    assert(!calls.some(call => call[0] === 'create' || call[0] === 'pull'));
+    assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge'));
   }
   {
     const { repository, calls } = fixture();
     repository.checkout = async name => { repository.state.HEAD = { name }; };
     await assert.rejects(createBranch(repository, options), /must track/);
-    assert(!calls.some(call => call[0] === 'create' || call[0] === 'pull'));
+    assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge'));
   }
   {
     const { repository } = fixture();
@@ -138,7 +138,7 @@ async function run() {
     await deleteBranch(repository, { ...options, branch: 'topic' });
     assert.deepEqual(calls[1], ['fetch', { remote: 'origin', prune: true }]);
     assert.deepEqual(calls.at(-1), ['delete', 'topic', false]);
-    assert(calls.findIndex(call => call[0] === 'pull') < calls.findIndex(call => call[0] === 'delete'));
+    assert(calls.findIndex(call => call[0] === 'merge') < calls.findIndex(call => call[0] === 'delete'));
   }
   for (const refs of [[], [{ name: 'origin/topic' }]]) {
     const { repository, calls } = fixture();
@@ -151,16 +151,79 @@ async function run() {
     await assert.rejects(deleteBranch(repository, { ...options, branch }), /Cannot delete|active branch changed/);
     assert(!calls.some(call => call[0] === 'fetch' || call[0] === 'delete'));
   }
-  for (const method of ['fetch', 'pull', 'deleteBranch']) {
+  for (const method of ['fetch', 'merge', 'deleteBranch']) {
     const { repository } = fixture();
     repository[method] = async () => { throw new Error(`${method} failed`); };
     await assert.rejects(deleteBranch(repository, { ...options, branch: 'topic' }), new RegExp(`${method} failed`));
   }
   {
     const { repository, calls } = fixture();
-    repository.pull = async () => { repository.state.HEAD.ahead = 2; };
+    repository.merge = async () => { repository.state.HEAD.ahead = 2; };
     await createBranch(repository, options, () => 0);
     assert.deepEqual(calls.find(call => call[0] === 'push'), ['push', 'origin', 'main:main']);
+  }
+  {
+    const { repository, calls } = fixture();
+    // The old pull request stays rejected, but it must no longer be used.
+    repository.pull = async () => { throw new Error('cached timeout'); };
+    let attempts = 0;
+    repository.fetch = async () => {
+      calls.push(['fetch']);
+      if (++attempts === 1) throw Object.assign(new Error('Failed to execute git'), {
+        stderr: 'Recv failure: Operation timed out'
+      });
+    };
+    assert.equal(await createBranch(repository, options, () => 0), 'fresh');
+    assert.equal(attempts, 2);
+    assert.equal(repository.inputBox.value, 'Existing draft');
+  }
+  for (const failure of ['timeout', 'Authentication failed']) {
+    const { repository, calls } = fixture();
+    let attempts = 0;
+    repository.fetch = async () => { attempts++; throw new Error(failure); };
+    await assert.rejects(createBranch(repository, options), new RegExp(failure));
+    assert.equal(attempts, failure === 'timeout' ? 3 : 1);
+    assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge' || call[0] === 'push'));
+  }
+  {
+    const { repository, calls } = fixture();
+    repository.fetch = async () => { repository.state.HEAD.name = 'changed'; };
+    await assert.rejects(createBranch(repository, options), /active branch changed/);
+    assert(!calls.some(call => call[0] === 'merge' || call[0] === 'create'));
+  }
+  {
+    const { repository, calls } = fixture();
+    repository.merge = async () => {
+      repository.state.mergeChanges.push({});
+      throw new Error('CONFLICT (content): Merge conflict');
+    };
+    await assert.rejects(createBranch(repository, options), /CONFLICT/);
+    assert(!calls.some(call => call[0] === 'push' || call[0] === 'create'));
+  }
+  for (const failure of ['non-fast-forward', 'Recv failure: Connection reset by peer']) {
+    const { repository, calls } = fixture();
+    repository.merge = async ref => {
+      calls.push(['merge', ref]);
+      repository.state.HEAD.ahead = 2;
+    };
+    let attempts = 0;
+    repository.push = async (...args) => {
+      calls.push(['push', ...args]);
+      if (++attempts === 1) throw Object.assign(new Error('Failed to execute git'), { stderr: failure });
+    };
+    assert.equal(await createBranch(repository, options, () => 0), 'fresh');
+    assert.equal(attempts, 2);
+    assert.equal(calls.filter(call => call[0] === 'fetch').length, failure === 'non-fast-forward' ? 2 : 1);
+    assert(calls.filter(call => call[0] === 'push').every(call => call.length === 3));
+  }
+  {
+    const { repository, calls } = fixture();
+    repository.merge = async () => { repository.state.HEAD.ahead = 1; };
+    let attempts = 0;
+    repository.push = async () => { attempts++; throw new Error('non-fast-forward'); };
+    await assert.rejects(createBranch(repository, options), /non-fast-forward/);
+    assert.equal(attempts, 3);
+    assert(!calls.some(call => call[0] === 'create'));
   }
   {
     const { repository } = fixture();
