@@ -13,6 +13,7 @@ class BranchCleanupTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
         self.git('init', '-b', 'main')
+        self.git('remote', 'add', 'origin', 'git@github.com:owner/repo.git')
         self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'base')
         self.git('branch', 'topic')
         self.oid = self.git('rev-parse', 'topic')
@@ -76,6 +77,89 @@ class BranchCleanupTests(unittest.TestCase):
     def test_checked_out_worktree_is_preserved(self):
         self.git('worktree', 'add', str(self.repo / 'other'), 'topic')
         self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertTrue(self.exists())
+
+    def test_current_merged_branch_returns_to_main(self):
+        self.git('switch', 'topic')
+        self.assertEqual(len(prune.prune_repo(self.repo)), 1)
+        self.assertEqual(self.git('branch', '--show-current'), 'main')
+        self.assertFalse(self.exists())
+
+    def test_dirty_current_branch_is_preserved(self):
+        self.git('switch', 'topic')
+        (self.repo / 'draft.txt').write_text('uncommitted work\n')
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_committed_extra_work_on_current_branch_is_preserved(self):
+        self.git('switch', 'topic')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'extra work')
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_current_branch_dry_run_does_not_switch(self):
+        self.git('switch', 'topic')
+        self.assertEqual(len(prune.prune_repo(self.repo, True)), 1)
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_closed_unmerged_pr_does_nothing(self):
+        self.git('switch', 'topic')
+        self.pr.update(state='CLOSED', mergedAt=None)
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_older_pr_lookup_is_scoped_to_local_head_and_origin(self):
+        previous = self.fake_run
+        def scoped(command, **kwargs):
+            if command[:3] == ['fake-gh', 'pr', 'list']:
+                self.assertIn('--head', command)
+                self.assertEqual(command[command.index('--head') + 1], 'topic')
+                self.assertEqual(command[command.index('--repo') + 1], 'github.com/owner/repo')
+            return previous(command, **kwargs)
+        prune.run.side_effect = scoped
+        self.assertEqual(len(prune.prune_repo(self.repo)), 1)
+
+    def test_missing_origin_preserves_branches(self):
+        self.git('remote', 'remove', 'origin')
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertTrue(self.exists())
+
+    def test_switch_failure_preserves_current_branch(self):
+        self.git('switch', 'topic')
+        self.git('branch', '-D', 'main')
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_in_progress_operation_preserves_current_branch(self):
+        self.git('switch', 'topic')
+        (self.repo / '.git' / 'MERGE_HEAD').write_text(self.oid + '\n')
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_staged_changes_preserve_current_branch(self):
+        self.git('switch', 'topic')
+        (self.repo / 'staged.txt').write_text('staged work\n')
+        self.git('add', 'staged.txt')
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
+        self.assertTrue(self.exists())
+
+    def test_changed_remote_verification_preserves_current_branch(self):
+        self.git('switch', 'topic')
+        previous = self.fake_run
+        def changed(command, **kwargs):
+            if command[:3] == ['fake-gh', 'pr', 'view']:
+                return subprocess.CompletedProcess(command, 0, json.dumps(dict(self.pr, state='CLOSED', mergedAt=None)), '')
+            return previous(command, **kwargs)
+        prune.run.side_effect = changed
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertEqual(self.git('branch', '--show-current'), 'topic')
         self.assertTrue(self.exists())
 
     def test_fork_nondefault_and_open_pr_are_preserved(self):

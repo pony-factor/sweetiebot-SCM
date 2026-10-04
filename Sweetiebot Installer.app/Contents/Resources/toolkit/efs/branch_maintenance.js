@@ -17,7 +17,12 @@ function registerBranchMaintenance(vscode, context) {
     running = child;
     const clear = () => { if (running === child) running = undefined; };
     child.once('error', clear);
-    child.once('exit', clear);
+    child.once('exit', () => {
+      clear();
+      if (!disposed) {
+        for (const repo of repositories) void repo.status().catch(() => {});
+      }
+    });
   };
   const run = () => void scan().catch(() => {});
   const timer = setInterval(run, 10 * 60 * 1000);
