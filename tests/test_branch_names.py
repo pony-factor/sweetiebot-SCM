@@ -51,6 +51,14 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertIn(name, packs["tamers12345"]["names"])
         self.assertNotIn("lauren-faust", all_names)
 
+    def test_g4_stallions_use_full_wacky_hair_day_and_spray_name(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        names = packs["g4-stallions"]["names"]
+
+        self.assertIn("wacky-hair-day-and-spray", names)
+        self.assertNotIn("day-and-spray", names)
+
     def test_pony_life_names_are_separate_from_g4_packs(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
