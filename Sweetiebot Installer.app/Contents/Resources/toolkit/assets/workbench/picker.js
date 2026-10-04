@@ -126,7 +126,7 @@ async function scmToolkitPullCleanRepository(provider, commands, repositoryArgum
         return false;
     }
 
-    await commands.executeCommand('git.pull', repositoryArgument);
+    await commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument);
     return true;
 }
 
@@ -173,7 +173,7 @@ function scmToolkitEnableBlankStateRefresh(
         try {
             await scmToolkitPullCleanRepository(provider, commands, repositoryArgument);
         } catch {
-            // Keep automatic pulls best-effort; the built-in Git extension owns Git errors.
+            // Background sync is best-effort and does not open Git's error notifications.
         }
     };
 
@@ -983,7 +983,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
             });
-            notifications.info(`Deleted local branch ${branch}.`);
         } catch (error) {
             notifications.error(error);
         } finally {

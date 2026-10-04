@@ -185,7 +185,7 @@ class TransformTests(unittest.TestCase):
         self.assertNotIn("scm-toolkit-refreshing", js)
         self.assertIn("historyItemRemoteRef.get()", js)
         self.assertIn("resolveHistoryItemRefsCommonAncestor", js)
-        self.assertIn("commands.executeCommand('git.pull', repositoryArgument)", js)
+        self.assertIn("commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument)", js)
         self.assertIn("scm-toolkit-autocomplete", css)
         self.assertIn("scm-toolkit-auto-publish", css)
         self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)

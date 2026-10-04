@@ -20,6 +20,7 @@
     "onCommand:scmToolkit.createBranch",
     "onCommand:scmToolkit.publishBranch",
     "onCommand:scmToolkit.deleteBranch",
+    "onCommand:scmToolkit.autoPullClean",
     "onCommand:scmToolkit.syncBranch",
     "onView:scmToolkit.workspaceSearch",
     "onCommand:scmToolkit.openSettings",

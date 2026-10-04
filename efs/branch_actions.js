@@ -5,6 +5,28 @@ const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
+const repositoryOperations = new WeakMap();
+
+function queueRepositoryOperation(repository, operation) {
+  const previous = repositoryOperations.get(repository) ?? Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  repositoryOperations.set(repository, current);
+  return current.finally(() => {
+    if (repositoryOperations.get(repository) === current) repositoryOperations.delete(repository);
+  });
+}
+
+async function autoPullClean(repository) {
+  // Read fresh extension-host state after earlier branch operations finish.
+  await repository.status();
+  const { HEAD: head, indexChanges = [], workingTreeChanges = [], mergeChanges = [] } = repository.state;
+  if (!head?.upstream || !head.behind || head.ahead !== 0
+      || indexChanges.length || workingTreeChanges.length || mergeChanges.length) return false;
+  await repository.merge(`${head.upstream.remote}/${head.upstream.name}`);
+  await repository.status();
+  return true;
+}
+
 async function cleanupMergedBranch(repository, branch) {
   const installedScript = path.join(__dirname, 'prune_merged_branches.py');
   const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/prune_merged_branches.py');
@@ -169,6 +191,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote }) {
 function registerBranchCommands(vscode, context) {
   for (const [command, action] of [
     ['scmToolkit.returnHome', returnHome],
+    ['scmToolkit.autoPullClean', autoPullClean],
     ['scmToolkit.createBranch', createBranch],
     ['scmToolkit.publishBranch', publishBranch],
     ['scmToolkit.deleteBranch', deleteBranch],
@@ -185,9 +208,9 @@ function registerBranchCommands(vscode, context) {
       const repositoryUri = vscode.Uri.from(uri?.rootUri ?? uri);
       const repository = git.getAPI(1).getRepository(repositoryUri);
       if (!repository) throw new Error('The selected Git repository is unavailable.');
-      return action(repository, options);
+      return queueRepositoryOperation(repository, () => action(repository, options));
     }));
   }
 }
 
-module.exports = { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands };
+module.exports = { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean };

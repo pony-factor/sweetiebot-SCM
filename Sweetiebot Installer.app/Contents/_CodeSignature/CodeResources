@@ -74,7 +74,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		FA2ZBEbr9cPQpIvY07Z2ness3rY=
+		jliB9A0j4sGAkHxnq1ECDKRX7OQ=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -82,7 +82,7 @@
 		</data>
 		<key>Resources/toolkit/efs/branch_actions.js</key>
 		<data>
-		yc7SDc9S4BEryLQvxZkxqJ29IYs=
+		S7Vw0U+M2X1g9LrC1F98KJrjq/I=
 		</data>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
 		<data>
@@ -118,7 +118,7 @@
 		</data>
 		<key>Resources/toolkit/efs/package.json</key>
 		<data>
-		+X4sgfqpphhVeVhaiRoKsxUSfy4=
+		vwEWoznZgWpvKjKLpal3h/Zqcy8=
 		</data>
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<data>
@@ -406,11 +406,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			FA2ZBEbr9cPQpIvY07Z2ness3rY=
+			jliB9A0j4sGAkHxnq1ECDKRX7OQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			pnw4L4Fs4dKqO9bRGDMl264FPXtgVlfL64FN0VpnxCk=
+			SQxJ5ZD8RkvqS4MhZT2u//drJ/8vXNmGMUc12ZYwXms=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -428,11 +428,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			yc7SDc9S4BEryLQvxZkxqJ29IYs=
+			S7Vw0U+M2X1g9LrC1F98KJrjq/I=
 			</data>
 			<key>hash2</key>
 			<data>
-			Rgy/PkS3JVi5vexW1KFz7xkWooEKnPnL6/xAp7NImsA=
+			KfgfDzYpPuTz1A77pLR0R3oK+/n+VfPJMKwqLO4xU1w=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
@@ -527,11 +527,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			+X4sgfqpphhVeVhaiRoKsxUSfy4=
+			vwEWoznZgWpvKjKLpal3h/Zqcy8=
 			</data>
 			<key>hash2</key>
 			<data>
-			T2WhDwJPDWRyHSBcc5mJ7SUCQoBfCu0+x1NOOH/L6fc=
+			j9MNOZnkY7WNN0PSdDm/wyFc6IjigrSZcTG0ieNFFww=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/pull_request.js</key>

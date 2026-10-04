@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands } = require('../efs/branch_actions');
+const { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean } = require('../efs/branch_actions');
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 
@@ -31,6 +31,22 @@ function fixture() {
 }
 
 async function run() {
+  for (const state of [
+    { ahead: 0, behind: 1 },
+    { ahead: 1, behind: 1 },
+    { ahead: 0, behind: 0 },
+    { ahead: 0, behind: 1, dirty: 'indexChanges' },
+    { ahead: 0, behind: 1, dirty: 'workingTreeChanges' },
+    { ahead: 0, behind: 1, dirty: 'mergeChanges' }
+  ]) {
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' },
+      ahead: state.ahead, behind: state.behind };
+    if (state.dirty) repository.state[state.dirty] = [{}];
+    const expected = state.ahead === 0 && state.behind > 0 && !state.dirty;
+    assert.equal(await autoPullClean(repository), expected);
+    assert.equal(calls.some(call => call[0] === 'merge'), expected);
+  }
   {
     const { repository, calls } = fixture();
     assert.equal(await returnHome(repository), 'main');
@@ -273,7 +289,7 @@ async function run() {
     };
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
-    assert.equal(context.subscriptions.length, 5);
+    assert.equal(context.subscriptions.length, 6);
     assert.equal(await commands.get('scmToolkit.returnHome')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('scmToolkit.createBranch')(uri, options), 'fresh');
     assert.equal(await commands.get('scmToolkit.createBranch')({ ...uri }, options), 'fresh');
@@ -289,6 +305,38 @@ async function run() {
     assert.equal(await commands.get('scmToolkit.deleteBranch')({ rootUri: uri }, {
       ...options, branch: 'topic'
     }), 'topic');
+
+    // Polling sees main behind during cleanup, but its update must wait until
+    // cleanup finishes and then recheck the now-current branch state.
+    repository.state.HEAD = { name: 'topic' };
+    let releaseMerge;
+    let startedMerge;
+    const started = new Promise(resolve => { startedMerge = resolve; });
+    const gate = new Promise(resolve => { releaseMerge = resolve; });
+    let merges = 0;
+    repository.merge = async () => {
+      merges++;
+      repository.state.HEAD.behind = 1;
+      startedMerge();
+      await gate;
+      repository.state.HEAD.behind = 0;
+    };
+    const deletion = commands.get('scmToolkit.deleteBranch')({ rootUri: uri }, {
+      ...options, branch: 'topic'
+    });
+    await started;
+    const background = commands.get('scmToolkit.autoPullClean')({ rootUri: uri });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(merges, 1, 'Background updates must not overlap branch cleanup');
+    releaseMerge();
+    assert.equal(await deletion, 'topic');
+    assert.equal(await background, false, 'Recheck state after waiting for cleanup');
+    assert.equal(merges, 1);
+
+    repository.checkout = async () => { throw new Error('Checkout blocked'); };
+    await assert.rejects(commands.get('scmToolkit.returnHome')(uri), /Checkout blocked/);
+    assert.equal(await commands.get('scmToolkit.autoPullClean')(uri), false,
+      'A failed operation must not block subsequent background work');
   }
   console.log('Branch action regression checks passed.');
 }

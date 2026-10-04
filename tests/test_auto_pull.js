@@ -55,7 +55,7 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
     commands: { async executeCommand(command, argument) {
       assert.equal(argument, 'selected-repository');
       calls.push(command);
-      if (command === 'git.pull') localRef.revision = remoteRef.revision;
+      if (command === 'scmToolkit.autoPullClean') localRef.revision = remoteRef.revision;
     } },
     currentRepositoryArgument: 'selected-repository',
     blankStateRefreshDisposable: undefined
@@ -74,13 +74,13 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
     await tick();
     const expected = hidden ? [] : [
       ...(settings.blankStateRefresh ? ['git.refresh'] : []),
-      ...(settings.autoPullClean && upstream && ancestor === 'local' ? ['git.pull'] : [])
+      ...(settings.autoPullClean && upstream && ancestor === 'local' ? ['scmToolkit.autoPullClean'] : [])
     ];
     assert.deepEqual(calls, expected);
     assert.equal([...timers.values()][0].delay, hidden ? 5000 : 1500);
     await tick();
-    assert.equal(calls.filter(command => command === 'git.pull').length,
-      expected.includes('git.pull') ? 1 : 0, 'Do not pull again after catching up');
+    assert.equal(calls.filter(command => command === 'scmToolkit.autoPullClean').length,
+      expected.includes('scmToolkit.autoPullClean') ? 1 : 0, 'Do not pull again after catching up');
     provider.groups[0].resources = [{}];
     resourceListener();
     assert.equal(timers.size, 0, 'Dirty repositories stop polling');
