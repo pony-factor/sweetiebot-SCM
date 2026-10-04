@@ -275,6 +275,81 @@ class TitleTests(unittest.TestCase):
         self.assertIn("dedicated Sync button", prompt)
         self.assertIn("file count, diff size, and file moves", prompt)
 
+    def test_entire_large_prompt_is_bounded_and_keeps_rules_and_totals(self):
+        with patch.object(ai_commit, "recent_subjects", return_value="Update notes\n" * 500):
+            prompt = ai_commit.prompt_for_diff(
+                "file | 1000 +++\n" * 1000,
+                "\n".join(f"diff --git a/{i}.eml b/{i}.eml\n-Subject: Message {i}\n" + "-QUJD" * 500 for i in range(100)),
+                "Change totals: 100 deleted\n" + "D\tarchive/email.eml\n" * 1000,
+                include_description=True, conversation_context="Background " * 3000,
+            )
+        self.assertLessEqual(len(prompt), (ai_commit.NUM_CTX - 768) * 2)
+        self.assertIn("100 deleted", prompt)
+        self.assertIn("99.eml", prompt)
+        self.assertTrue(prompt.endswith("complete sentences."))
+
+    def test_encoded_attachment_does_not_dominate_patch(self):
+        diff = "diff --git a/mail.eml b/mail.eml\n-Subject: Archive notice\n" + ("-QUJD" + "QUJD" * 200 + "\n") * 500 + "+Subject: Updated archive notice"
+        sampled = ai_commit.sample_diff_for_prompt(diff)
+        self.assertIn("Archive notice", sampled)
+        self.assertIn("Updated archive notice", sampled)
+        self.assertLess(len(sampled), 250)
+
+    def test_json_response_has_plain_text_and_complete_sentences(self):
+        title, body = ai_commit.sanitize_generated_message(
+            '{"subject":"📧 **Remove redundant emails**","description":"Remove `duplicate.eml` from the **archive**. Preserve [metadata](https://example.test)."}',
+            include_description=True,
+        )
+        self.assertEqual(title, "📧 Remove redundant emails")
+        self.assertEqual(body, "Remove duplicate.eml from the archive. Preserve metadata.")
+        self.assertEqual(ai_commit.sanitize_description("Remove duplicates while preserving"), "")
+        self.assertEqual(ai_commit.sanitize_description("Remove duplicates. " + "Continue " * 60 + "."), "Remove duplicates.")
+
+    def test_bad_model_response_retries_then_uses_operation_summary(self):
+        for bad in [
+            {"response": "The provided text appears to be a Git diff.\n\nHere is a breakdown."},
+            {"response": '{"subject":"📧 Remove redundant emails","description":"This appears to remove duplicates."}'},
+            {"response": '{"subject":"📧 Remove redundant emails","description":"Remove duplicate email files while"}'},
+            {"response": '{"subject":"📧 Remove redundant emails","description":"Remove duplicates."}', "done_reason": "length"},
+        ]:
+            with self.subTest(bad=bad), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                    ("staged_file_context", "Change totals: 2 deleted"),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=bad))
+                self.assertEqual(ai_commit.generate_message("", "", ["a.eml", "b.eml"], include_description=True),
+                                 ("📧 Remove 2 archived emails", "Remove 2 email files from the repository."))
+                self.assertEqual(generate.call_count, 2)
+
+    def test_removal_claims_require_evidence_from_this_change(self):
+        self.assertTrue(ai_commit.has_unsupported_removal_claim("Remove redundant emails.", "deleted file mode 100644"))
+        self.assertTrue(ai_commit.has_unsupported_removal_claim("These files are no longer needed.", "800 deleted"))
+        self.assertFalse(ai_commit.has_unsupported_removal_claim("Remove duplicate emails.", "archive/duplicate.eml"))
+        with patch.object(ai_commit, "recent_subjects", return_value="📦 Preserve archive metadata\n🧹 Remove redundant MBOX chunks"):
+            prompt = ai_commit.prompt_for_diff("", "")
+        history = prompt.split("Recent repository subjects:\n")[1].split("Staged diff stat:")[0]
+        self.assertNotIn("redundant", history)
+        self.assertNotIn("metadata", history)
+
+    def test_retry_accepts_valid_structured_message(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""), ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
+                {"response": "It appears to be a diff"},
+                {"response": '{"subject":"📧 Remove duplicate archived emails","description":"Remove redundant email copies from the archive."}'},
+            ]))
+            self.assertEqual(ai_commit.generate_message("", "-Subject: duplicate copy", ["a.eml"], include_description=True),
+                             ("📧 Remove duplicate archived emails", "Remove redundant email copies from the archive."))
+            self.assertEqual(generate.call_count, 2)
+            self.assertEqual(generate.call_args.args[1]["format"]["type"], "object")
+
     def test_title_preference_references_global_agents(self):
         with patch.object(ai_commit.Path, "read_text", return_value="Never stage changes.\nCommit titles should use my current title style.\n"):
             self.assertEqual(ai_commit.commit_title_preference(), "Commit titles should use my current title style.")
@@ -298,7 +373,7 @@ class TitleTests(unittest.TestCase):
                         stack.enter_context(patch.object(ai_commit, name, return_value=value))
                     self.assertEqual(
                         ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True, conversation_context=context, require_model=bool(context)),
-                        ("📝 Update 2 staged files", ""),
+                        ("📝 Update 2 staged files", "Update the 2 staged files."),
                     )
 
     def test_generated_title_without_emoji_gets_one_and_preserves_description(self):
