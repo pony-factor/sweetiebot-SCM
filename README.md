@@ -651,6 +651,8 @@ python3 scripts/prune_merged_branches.py --repo /path/to/repository --force --dr
 
 The installer also applies reversible fixes to supported GitHub Pull Requests extension builds. It suppresses the automatic cleanup prompt when the repository already deletes branches on merge, while retaining the manual Delete Branch action and explicitly configured native automatic deletion. The PR-number link keeps its existing click handler as its sole opening path. Rerun the installer after updating that extension; unsupported assets are skipped with a warning.
 
+The GitHub Pull Requests list refreshes when it becomes visible or the window regains focus, then every 5 seconds while active. Hover over a PR to use **Squash and Merge into main** without opening its description. The button uses the authenticated GitHub CLI, verifies that the PR is open, ready for review, and targets `main`, and merges only the freshly fetched head commit. GitHub branch protections remain in effect. After a completed merge, guarded cleanup returns an eligible clean local PR branch to the default branch and removes it; dirty worktrees and changed local heads are preserved. Queued merges wait for completion before cleanup. Both features can be toggled in the gear page using `pull-request-auto-refresh` and `pull-request-quick-merge`.
+
 
 Automatic staged commits remove trailing spaces and tabs from added or changed text lines and normalize the final newline. Existing untouched lines, LF/CRLF style, file modes, cached attribute exclusions, and unstaged edits are preserved. Explicit-message commits keep their existing behavior.
 

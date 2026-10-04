@@ -7,6 +7,7 @@ const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
+const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerCodexRefresh } = require('./codex_refresh');
 
@@ -48,7 +49,9 @@ async function openSettings(context) {
       openPanelOnStartup,
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
-      codexKeepAwake: scm.get('codexKeepAwake', true)
+      codexKeepAwake: scm.get('codexKeepAwake', true),
+      pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
+      pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true)
     },
     editorSettings: {
       'inlineSuggest.enabled': vscode.workspace.getConfiguration('editor').get('inlineSuggest.enabled', true)
@@ -227,6 +230,7 @@ async function activate(context) {
   registerBranchCommands(vscode, context);
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
+  registerGitHubPullRequestActions(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);
   const provider = new WorkspaceSearchViewProvider(index, settings);
