@@ -142,7 +142,7 @@
 		</data>
 		<key>Resources/toolkit/efs/view.js</key>
 		<data>
-		6vNn+tPmgM8lUajVNwWIkYroTl0=
+		alUnRvRqnFwP+VYGL74lw1+6to0=
 		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
@@ -150,7 +150,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<data>
-		PkONud8kKWClffwPlZ9cU7S4ovg=
+		mj5GF+N7bFkne+ORIwBBs9seFHc=
 		</data>
 		<key>Resources/toolkit/scripts/branch_names.py</key>
 		<data>
@@ -218,7 +218,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/toolkit_settings.py</key>
 		<data>
-		grx46xw47Cvefp/t6lF3024VWTQ=
+		j0Fz7rHizzwoczlM4gyDbA1/MxE=
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
@@ -605,11 +605,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			6vNn+tPmgM8lUajVNwWIkYroTl0=
+			alUnRvRqnFwP+VYGL74lw1+6to0=
 			</data>
 			<key>hash2</key>
 			<data>
-			mYCZkbPZe3QLIt8E6mzJQLY+M9ZxKUFw2HDUxBnc+5U=
+			6aXbv6Ha62BZeJrKzXbpAJybBxiqLW/GxceflHRMwAU=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
@@ -627,11 +627,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			PkONud8kKWClffwPlZ9cU7S4ovg=
+			mj5GF+N7bFkne+ORIwBBs9seFHc=
 			</data>
 			<key>hash2</key>
 			<data>
-			xnPKKE3wDcFw8JOXuXLjP3m3vkzfUsLD5HwKLyvt8mM=
+			LotsFEwVmPLShRev/+Q0FuIkeCEbP2c1Ak/KrDnEFrM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_names.py</key>
@@ -814,11 +814,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			grx46xw47Cvefp/t6lF3024VWTQ=
+			j0Fz7rHizzwoczlM4gyDbA1/MxE=
 			</data>
 			<key>hash2</key>
 			<data>
-			SEYLAFHLv5on7ngXhcqxkvhMuqQUqrS3d9zqays2OIk=
+			BBtBbacXxvM8iwhzbBuq7mlwz5wW4MQyN1zwyNECFHs=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
