@@ -36,8 +36,6 @@ jobs:
           node --check efs/search_index.js
           node --check efs/view.js
           node --check efs/extension.js
-          node tests/test_workspace_search_core.js
-          node tests/test_workspace_search_index.js
-          node tests/test_settings_browser.js
-          node tests/test_branch_actions.js
-          node tests/test_pull_request.js
+          for test_file in tests/test_*.js; do
+            node "$test_file" || exit "$?"
+          done
