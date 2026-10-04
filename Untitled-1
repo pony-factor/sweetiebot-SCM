@@ -1,0 +1,32 @@
+rename workspace-search-extension to efs and cp to main
+
+
+
+as you can see on soem of the last jfwootne4/emails commits, it still doent reall yhandle laghe diffs very well. i  want it to be conetanrined to provididn only a good oeut.u. nono of thi 'papperas to be'' bs. it shoeld be decisiisve ane it is sure of its laerllnig. taht and you know me betterd guess as needed but always mainnat teh form and make it look lik. they are als e using git dusticitns, wihch iyou are sepposde to do wehn commititng diretwily to moain. bit they are bebing trcitated nd arent complel and try to use markedown ofrmtitnig wihchi is innaparrnit. platidekt only 
+
+
+
+move the hom btton to the left of the new pr bitton and then move the gear button into the commit box to the right of teh droepdown arrow
+
+
+
+
+the fi weher you commit and push into an upstream commit to pull doent wor. rememebr it was suppsod to atutamutcally comine them and just sedt it. 
+
+> git push origin main:main
+To https://github.com/windsorUwU/studio.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/windsorUwU/studio.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+
+
+
+instead of saynig "Work locally" i want the text next to the locatin icon to show the % remaniing in th enext 5hr, inless tho tatal weely perecent is lawor thean use that. als ewehn you opn that menu to see the limits remeaneng subitem, it correctly centers the time on th 5hr but not the dayps left on teh weeks l resest, w
+hich shoeld be num days left rather than absolete date
+
+
+
+auto-brach-pruning merged prs
