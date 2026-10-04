@@ -8,7 +8,7 @@ import subprocess
 DEFAULT_SETTINGS = {
     "branchPicker": True,
     "ponyBranch": True,
-    "branchNameDisabledPacks": "",
+    "branchNameDisabledPacks": "pony-life",
     "branchCustomNames": "",
     "branchNameImports": "[]",
     "shortPlaceholder": True,
@@ -90,7 +90,7 @@ def read_git_bool(key, default):
     return result.stdout.strip() == "true"
 
 
-def read_git_string(key, default):
+def read_git_string(key, default, preserve_empty=False):
     try:
         result = subprocess.run(
             ["git", "config", "--global", "--get", key],
@@ -105,15 +105,21 @@ def read_git_string(key, default):
     if result.returncode != 0:
         raise RuntimeError(f"Unable to read global Git config key {key}: {result.stderr.strip()}")
     value = result.stdout.strip()
-    return value or default
+    return value if value or preserve_empty else default
 
 
 def load_settings():
     settings = {}
     for name, default in DEFAULT_SETTINGS.items():
         git_key = SETTING_KEYS[name]
-        reader = read_git_bool if isinstance(default, bool) else read_git_string
-        settings[name] = reader(git_key, default)
+        if isinstance(default, bool):
+            settings[name] = read_git_bool(git_key, default)
+        else:
+            settings[name] = read_git_string(
+                git_key,
+                default,
+                preserve_empty=name == "branchNameDisabledPacks",
+            )
     return settings
 
 
