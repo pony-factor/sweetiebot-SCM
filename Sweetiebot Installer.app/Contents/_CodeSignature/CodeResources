@@ -58,15 +58,15 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/outlined_buttons.css</key>
 		<data>
-		Aq7m35RRyA69deMzbq9HbbDQX18=
+		WJKp4MgViK+zUe6VbqMhJYQSybw=
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.css</key>
 		<data>
-		F1VJEsNMFZmRRP3RSuoFKU/i0NI=
+		vRxUTTXcSd3xus/byrg5TNHxBX0=
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		4xH1v8jbMXxXv9u7uYSeahVcx0A=
+		Ysvpw8fgWtzOL7f7SYh4tS3ae5A=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -126,7 +126,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
-		VO0N91fhXCENqIGKKRSMncu91hE=
+		pDrycdBwrr1XEIObeukdmBhVugE=
 		</data>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<data>
@@ -350,33 +350,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Aq7m35RRyA69deMzbq9HbbDQX18=
+			WJKp4MgViK+zUe6VbqMhJYQSybw=
 			</data>
 			<key>hash2</key>
 			<data>
-			/efEAwgVEvWfLGJ2XRiXDdkyM8HCMA7Ezy1WRu5075M=
+			/ZrS2DaRjn76wt2s9bSMv9+i+Ss13lI0/jeFqOCUUx8=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/picker.css</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			F1VJEsNMFZmRRP3RSuoFKU/i0NI=
+			vRxUTTXcSd3xus/byrg5TNHxBX0=
 			</data>
 			<key>hash2</key>
 			<data>
-			X6fTUst2Kkx4Vm9/M7dMl0E+LyNjjS6ctJC9VGhuNAw=
+			xzrB7vBgO8/nmELayExIW+WND3xlXf9q3zi9r1AnViw=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			4xH1v8jbMXxXv9u7uYSeahVcx0A=
+			Ysvpw8fgWtzOL7f7SYh4tS3ae5A=
 			</data>
 			<key>hash2</key>
 			<data>
-			rwerZJ7jAUfmEMtZ7uAwrWMnll6UVy14s7XrrVSqyEY=
+			9v+XxdgK2Nlzjs0OacTkr7VCQq2e3JUBpbJ9w8cS0Yc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -537,11 +537,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			VO0N91fhXCENqIGKKRSMncu91hE=
+			pDrycdBwrr1XEIObeukdmBhVugE=
 			</data>
 			<key>hash2</key>
 			<data>
-			wpXKxPQob42QXXcAXGd87hHAXibPGK7JT8b3+ci3d7o=
+			aYDY+dxI0mOs/T/2bTZqQL9MVVAU2n7a+Qc/NoLXwQI=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>

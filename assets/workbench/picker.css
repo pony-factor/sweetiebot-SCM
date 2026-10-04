@@ -2,15 +2,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 26px;
-    width: 26px;
+    flex: 0 0 27px;
+    width: 27px;
     height: 26px;
     padding: 0;
     border: 0;
-    border-right: 1px solid var(--vscode-widget-border, transparent);
-    border-radius: 3px 0 0 3px;
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
+    border-radius: 0;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
     cursor: pointer;
 }
 
@@ -19,7 +18,7 @@
 }
 
 .scm-view .scm-editor > .scm-toolkit-home:hover:not(:disabled) {
-    background: var(--vscode-button-hoverBackground);
+    background: var(--vscode-toolbar-hoverBackground);
 }
 
 .scm-view .scm-editor > .scm-toolkit-home:focus-visible {
@@ -43,7 +42,7 @@
     padding: 0 6px;
     border: 0;
     border-right: 1px solid var(--vscode-widget-border, transparent);
-    border-radius: 0;
+    border-radius: 3px 0 0 3px;
     background: var(--vscode-button-background);
     color: var(--vscode-button-foreground);
     font: inherit;
@@ -437,33 +436,39 @@
     border-radius: 0;
 }
 
-.scm-view .scm-editor > .scm-toolkit-settings {
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 27px;
     width: 27px;
-    height: 26px;
+    align-self: stretch;
     padding: 0;
     border: 0;
-    border-radius: 0 3px 3px 0;
-    background: transparent;
-    color: var(--vscode-descriptionForeground);
+    border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+    border-radius: 0 var(--vscode-cornerRadius-small, 4px) var(--vscode-cornerRadius-small, 4px) 0;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
     cursor: pointer;
 }
 
-.scm-view .scm-editor > .scm-toolkit-settings[hidden] {
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings[hidden] {
     display: none;
 }
 
-.scm-view .scm-editor > .scm-toolkit-settings:hover {
-    background: var(--vscode-toolbar-hoverBackground);
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings:hover {
+    background: var(--vscode-button-hoverBackground);
 }
 
-.scm-view .scm-editor > .scm-toolkit-settings:focus-visible {
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings:focus-visible {
     outline: 1px solid var(--vscode-focusBorder);
     outline-offset: -1px;
+}
+
+.scm-view .scm-toolkit-commit-settings > .monaco-dropdown-button {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
 }
 
 /* Includes Source Control Graph, which also uses .scm-view. */

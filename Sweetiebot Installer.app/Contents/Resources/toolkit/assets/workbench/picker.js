@@ -57,6 +57,41 @@ function scmToolkitCustomizeCommitButtonLabel(widget, label) {
     observer.observe(root, { subtree: true, childList: true, characterData: true });
 }
 
+function scmToolkitAttachCommitSettings(widget, button) {
+    const root = widget.element.closest('.scm-view');
+    const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
+    if (!root || !Observer) return;
+
+    const update = () => {
+        const inputRow = widget.element.closest('.monaco-list-row');
+        const index = inputRow?.getAttribute('data-index');
+        const rows = inputRow?.parentElement;
+        const actionRow = index === null || index === undefined ? undefined
+            : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
+        const dropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
+        if (button.parentElement === dropdown) return;
+        button.parentElement?.classList.remove('scm-toolkit-commit-settings');
+        button.remove();
+        if (dropdown) {
+            dropdown.classList.add('scm-toolkit-commit-settings');
+            dropdown.append(button);
+        }
+    };
+
+    update();
+    const observer = new Observer(update);
+    observer.observe(root, {
+        subtree: true, childList: true, attributes: true, attributeFilter: ['data-index']
+    });
+    widget.disposables.add({
+        dispose() {
+            observer.disconnect();
+            button.parentElement?.classList.remove('scm-toolkit-commit-settings');
+            button.remove();
+        }
+    });
+}
+
 async function scmToolkitPullCleanRepository(provider, commands, repositoryArgument) {
     const hasChanges = () => provider.groups.some(group => group.resources.length > 0);
     if (hasChanges()) return false;
@@ -433,7 +468,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     settingsButton.title = 'Open SCM Toolkit settings';
     settingsButton.setAttribute('aria-label', 'Open SCM Toolkit settings');
 
-    widget.element.prepend(homeButton, branchButton);
+    widget.element.prepend(branchButton);
+    scmToolkitAttachCommitSettings(widget, settingsButton);
     widget.element.append(
         pushControl,
         syncButton,
@@ -443,9 +479,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         codexButton,
         autoPublishButton,
         secondDivider,
+        homeButton,
         pullRequestButton,
-        ponyBranchButton,
-        settingsButton
+        ponyBranchButton
     );
 
     let currentCommand;
@@ -1021,12 +1057,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const ponyBranchWidth = ponyBranchButton.hidden
                 ? 0
                 : ponyBranchButton.getBoundingClientRect().width;
-            const settingsWidth = settingsButton.hidden
-                ? 0
-                : settingsButton.getBoundingClientRect().width;
             return homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
                 + autocompleteWidth + codexWidth + autoPublishWidth + secondDividerWidth
-                + pullRequestWidth + ponyBranchWidth + settingsWidth;
+                + pullRequestWidth + ponyBranchWidth;
         },
 
         bind(input) {
@@ -1103,30 +1136,26 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 'scm-toolkit-has-following-control',
                 !deleteButton.hidden || !autocompleteButton.hidden || !codexButton.hidden
                     || !autoPublishButton.hidden || !pullRequestButton.hidden
-                    || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             deleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !autocompleteButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
-                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
             );
             autocompleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
-                    || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             codexButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !autoPublishButton.hidden || !pullRequestButton.hidden
-                    || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             pullRequestButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !ponyBranchButton.hidden || !settingsButton.hidden
-            );
-            ponyBranchButton.classList.toggle(
-                'scm-toolkit-has-following-control',
-                !settingsButton.hidden
+                !ponyBranchButton.hidden
             );
 
             if (settings.shortPlaceholder) {
