@@ -1,4 +1,3 @@
-.scm-view .scm-editor > .scm-toolkit-home,
 .scm-view .scm-editor > .scm-toolkit-branch {
     --vscode-button-background: transparent;
     --vscode-button-foreground: var(--vscode-foreground);
@@ -15,7 +14,6 @@
     --vscode-button-hoverBackground: var(--vscode-toolbar-hoverBackground);
 }
 
-.scm-view .scm-editor > .scm-toolkit-home:hover:not(:disabled),
 .scm-view .scm-editor > .scm-toolkit-branch:hover {
     background: var(--vscode-toolbar-hoverBackground);
 }

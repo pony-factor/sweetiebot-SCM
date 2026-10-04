@@ -433,7 +433,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     settingsButton.title = 'Open SCM Toolkit settings';
     settingsButton.setAttribute('aria-label', 'Open SCM Toolkit settings');
 
-    widget.element.prepend(homeButton, branchButton);
+    widget.element.prepend(branchButton, settingsButton);
     widget.element.append(
         pushControl,
         syncButton,
@@ -443,9 +443,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         codexButton,
         autoPublishButton,
         secondDivider,
+        homeButton,
         pullRequestButton,
-        ponyBranchButton,
-        settingsButton
+        ponyBranchButton
     );
 
     let currentCommand;
@@ -1103,30 +1103,26 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 'scm-toolkit-has-following-control',
                 !deleteButton.hidden || !autocompleteButton.hidden || !codexButton.hidden
                     || !autoPublishButton.hidden || !pullRequestButton.hidden
-                    || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             deleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !autocompleteButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
-                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
             );
             autocompleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
-                    || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             codexButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !autoPublishButton.hidden || !pullRequestButton.hidden
-                    || !ponyBranchButton.hidden || !settingsButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             pullRequestButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !ponyBranchButton.hidden || !settingsButton.hidden
-            );
-            ponyBranchButton.classList.toggle(
-                'scm-toolkit-has-following-control',
-                !settingsButton.hidden
+                !ponyBranchButton.hidden
             );
 
             if (settings.shortPlaceholder) {
