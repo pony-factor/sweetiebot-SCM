@@ -52,6 +52,10 @@
 		<data>
 		I0Fs/CZ7l1KUrKkUY2+FvWDykkc=
 		</data>
+		<key>Resources/toolkit/assets/codex/codex-short-model-labels.js</key>
+		<data>
+		fbBWzuORj2ZMC3PAr6QJsOtYVYU=
+		</data>
 		<key>Resources/toolkit/assets/codex/codex-usage.js</key>
 		<data>
 		N/nSXbwnSAk02Q1kDIvwwADRxII=
@@ -170,7 +174,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
-		+UFDnTQ+lR4yvBXjLnY3P8hqfiY=
+		RC1Hrn9aCGhXb+jmm3yyIXaSBa8=
 		</data>
 		<key>Resources/toolkit/scripts/configure.py</key>
 		<data>
@@ -182,7 +186,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		at0iuhDoWtB/3Kl0dG90GKcdMNw=
+		TJdP9HUpVrsO+Vgk3HWT9eUgMYQ=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -202,7 +206,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/toolkit_settings.py</key>
 		<data>
-		Iar79ZIR8BRMwt25eQIiqspMBLs=
+		0AzwNYFZMoR8q76jcBZOQkrklI8=
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
@@ -341,6 +345,17 @@
 			<key>hash2</key>
 			<data>
 			9lv5Nl6m5oGeInVGuazTP9wGmPs6f4McULCJkpMZKEA=
+			</data>
+		</dict>
+		<key>Resources/toolkit/assets/codex/codex-short-model-labels.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			fbBWzuORj2ZMC3PAr6QJsOtYVYU=
+			</data>
+			<key>hash2</key>
+			<data>
+			mU9Yf8ctVhx2CzscnUsXuuu3yD7rCICosPEUTvEG+Eg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-usage.js</key>
@@ -666,11 +681,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			+UFDnTQ+lR4yvBXjLnY3P8hqfiY=
+			RC1Hrn9aCGhXb+jmm3yyIXaSBa8=
 			</data>
 			<key>hash2</key>
 			<data>
-			EURFGSW/fGHXNvGDHLenCdF9eMcBIjXWfwtdI0i2+GA=
+			mYd4aa0KWMmwLoGtbhzUgIQ6fxzAXu+c71IMxFN2lDg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configure.py</key>
@@ -699,11 +714,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			at0iuhDoWtB/3Kl0dG90GKcdMNw=
+			TJdP9HUpVrsO+Vgk3HWT9eUgMYQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			PXv2PbAfFFfZnU/G8QF54b5s3uKQv7MbT4D2vt//8pQ=
+			hcOMS8OUnCS2NGQ0tQmNUIIcrJMafqSB3tSWgIqkI2U=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
@@ -754,11 +769,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Iar79ZIR8BRMwt25eQIiqspMBLs=
+			0AzwNYFZMoR8q76jcBZOQkrklI8=
 			</data>
 			<key>hash2</key>
 			<data>
-			zdTPFn5zOJudYwtaIfkyrzBr7UFbx09ORtvpt59tI4U=
+			t1ASC3g8493sURjOV5NWSaKhWEUmmYyTt4LfDAvt/U8=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>

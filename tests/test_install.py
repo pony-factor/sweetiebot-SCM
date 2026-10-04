@@ -670,6 +670,25 @@ class CodexTimestampTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
 
+class CodexModelLabelTests(unittest.TestCase):
+    def test_toggle_and_removal_preserve_other_patches(self):
+        self.assertFalse(install.DEFAULT_SETTINGS["codexShortModelLabels"])
+        original = "const app='codex';"
+        other = install.transform_codex(original, hide_dictation=True)
+        patched = install.transform_codex(other, hide_dictation=True, short_model_labels=True)
+        self.assertIn(install.CODEX_LABELS_START, patched)
+        self.assertEqual(install.transform_codex(patched, hide_dictation=True, short_model_labels=True), patched)
+        self.assertEqual(install.transform_codex(patched, hide_dictation=True), other)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_incomplete_patch_is_rejected(self):
+        with self.assertRaises(ValueError):
+            install.transform_codex("const app='codex';" + install.CODEX_LABELS_END)
+
+    def test_model_control_bundle_is_discovered(self):
+        self.assertTrue(install.codex_bundle_matches('"data-composer-navigation-target":`reasoning`,"data-selected-reasoning-effort":effort'))
+
+
 class CodexDictationTests(unittest.TestCase):
     def test_dictation_hiding_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexHideDictation"])

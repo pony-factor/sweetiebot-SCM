@@ -30,6 +30,10 @@ CODEX_TIMESTAMPS_END = '\n/* scm-toolkit-codex-timestamps:end */\n'
 CODEX_DICTATION_START = '\n/* scm-toolkit-codex-dictation:start */\n'
 CODEX_DICTATION_END = '\n/* scm-toolkit-codex-dictation:end */\n'
 
+CODEX_LABELS_START = '\n/* scm-toolkit-codex-model-labels:start */\n'
+CODEX_LABELS_END = '\n/* scm-toolkit-codex-model-labels:end */\n'
+
+
 def ai_wrapper_path():
     configured = os.environ.get(
         "SCM_TOOLKIT_AI_WRAPPER_PATH", "~/.local/bin/scm-toolkit-git"
@@ -464,7 +468,13 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False):
+    if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
+        raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
+    if CODEX_LABELS_START in js:
+        before, rest = js.split(CODEX_LABELS_START, 1)
+        _, after = rest.split(CODEX_LABELS_END, 1)
+        js = before + after
     js = codex_image_drop.transform(js, remove=remove)
     if CODEX_DICTATION_START in js:
         js = strip_codex_dictation_payload(js)
@@ -525,6 +535,9 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + (CODEX_ASSETS / "codex-hide-dictation.js").read_text()
             + CODEX_DICTATION_END
         )
+
+    if not remove and short_model_labels:
+        js += CODEX_LABELS_START + (CODEX_ASSETS / "codex-short-model-labels.js").read_text() + CODEX_LABELS_END
 
     return js
 
@@ -592,6 +605,9 @@ def application_paths(app_path):
 
 def codex_bundle_matches(text):
     if CODEX_START in text or CODEX_PROMOTIONS_START in text or CODEX_TIMESTAMPS_START in text or CODEX_DICTATION_START in text:
+        return True
+
+    if CODEX_LABELS_START in text or ('data-selected-reasoning-effort' in text and 'data-composer-navigation-target' in text):
         return True
 
     # Discover by feature, independently of compiler output and patch support.
@@ -776,6 +792,7 @@ def main():
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
         or settings["codexHideDictation"]
+        or settings["codexShortModelLabels"]
         or args.uninstall
     )
     if not codex_paths and should_find_codex:
@@ -796,6 +813,7 @@ def main():
                 hide_promotions=settings["codexHidePromotions"],
                 hide_timestamps=settings["codexHideChatTimestamps"],
                 hide_dictation=settings["codexHideDictation"],
+                short_model_labels=settings["codexShortModelLabels"],
                 remove=args.uninstall,
             )
         except ValueError as error:
@@ -805,6 +823,7 @@ def main():
                 or CODEX_PROMOTIONS_START in codex_old
                 or CODEX_TIMESTAMPS_START in codex_old
                 or CODEX_DICTATION_START in codex_old
+                or CODEX_LABELS_START in codex_old
             ):
                 raise
             print(f"Warning: {error} Skipping optional Codex customizations.")

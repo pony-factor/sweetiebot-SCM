@@ -237,6 +237,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="browserChatgptHome"', page)
         self.assertIn('name="codexHideChatTimestamps"', page)
         self.assertIn('name="codexHideDictation"', page)
+        self.assertIn('name="codexShortModelLabels"', page)
         self.assertIn('name="workspaceSearchActivityBar"', page)
         self.assertIn('name="workspaceSearchLabel"', page)
         self.assertIn('name="workspaceSearchAskOllama"', page)
