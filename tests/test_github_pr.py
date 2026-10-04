@@ -8,6 +8,17 @@ LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick
 
 
 class GitHubPRTests(unittest.TestCase):
+    def test_tree_refresh_is_reversible_idempotent_and_guarded(self):
+        source = 's.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});' + 'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)}'
+        patched = github_pr.transform_refresh(source)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+        self.assertIn('return this.prsTreeModel', patched)
+        with self.assertRaises(ValueError):
+            github_pr.transform_refresh(source + source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_refresh(patched.replace('5000', '10000', 1))
+
     def test_reversible_idempotent_and_guarded(self):
         for kind, original in [('host', HOST), ('webview', LINK)]:
             source = 'prefix;' + original + ';suffix;'
