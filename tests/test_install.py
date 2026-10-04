@@ -94,7 +94,7 @@ class TransformTests(unittest.TestCase):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
 
         self.assertEqual(css.count("background: var(--vscode-input-background);"), 6)
-        self.assertEqual(css.count("background: transparent;"), 5)
+        self.assertEqual(css.count("background: transparent;"), 4)
 
     def test_branch_selector_uses_the_vscode_button_colors(self):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
