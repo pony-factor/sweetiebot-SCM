@@ -56,7 +56,8 @@ class WorkspaceSearchViewProvider {
           authority: 'file',
           path: `${uri.path}:${line}`
         }).toString();
-        await vscode.env.clipboard.writeText(link);
+        const label = `${result.relative}:${line}`.replace(/[\\[\]]/g, '\\$&');
+        await vscode.env.clipboard.writeText(`[${label}](${link})`);
       }
       return;
     }
