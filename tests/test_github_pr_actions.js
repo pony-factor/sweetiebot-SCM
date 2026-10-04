@@ -39,6 +39,33 @@ async function main() {
     await deleteMergedRemoteBranch({ ...result, pr }, () => { throw new Error('Must not delete protected/fork branch'); });
   }
   await deleteMergedRemoteBranch(result, async () => ({ stdout: '[]' }));
+  const missingRef = Object.assign(new Error('gh failed'), {
+    stderr: 'gh: Reference does not exist (HTTP 404)'
+  });
+  const topicRef = { ref: 'refs/heads/topic', object: { sha: open.headRefOid } };
+  const prefixedRef = { ref: 'refs/heads/topic-other', object: { sha: open.headRefOid } };
+  for (const remaining of [[], [prefixedRef]]) {
+    let lookups = 0;
+    await deleteMergedRemoteBranch(result, async args => {
+      if (args.includes('DELETE')) throw missingRef;
+      if (args[0] === 'pr') return { stdout: '[]' };
+      return { stdout: JSON.stringify(++lookups === 1 ? [topicRef] : remaining) };
+    });
+    assert.equal(lookups, 2, 'Confirm automatic deletion after a raced DELETE');
+  }
+  for (const failure of [missingRef, Object.assign(new Error('Forbidden'), { stderr: 'gh: Forbidden (HTTP 403)' })]) {
+    await assert.rejects(deleteMergedRemoteBranch(result, async args => {
+      if (args.includes('DELETE')) throw failure;
+      return { stdout: JSON.stringify(args[0] === 'pr' ? [] : [topicRef]) };
+    }), error => error === failure);
+  }
+  let lookups = 0;
+  await assert.rejects(deleteMergedRemoteBranch(result, async args => {
+    if (args.includes('DELETE')) throw missingRef;
+    if (args[0] === 'pr') return { stdout: '[]' };
+    if (++lookups > 1) throw new Error('Lookup failed');
+    return { stdout: JSON.stringify([topicRef]) };
+  }), /Lookup failed/);
   await assert.rejects(deleteMergedRemoteBranch(result, async () => ({ stdout: JSON.stringify([
     { ref: 'refs/heads/topic', object: { sha: 'b'.repeat(40) } }
   ]) })), /new commits/);

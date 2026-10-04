@@ -34,16 +34,27 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
   const { pr, repo } = result;
   if (!result.merged || pr.isCrossRepository || !pr.headRefName || pr.headRefName === 'main') return;
   const ref = `repos/${repo}/git/refs/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`;
+  const readRefs = async () => JSON.parse((await execute(['api', `repos/${repo}/git/matching-refs/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`])).stdout);
   // The repository may already delete branches on merge. Check presence without
   // treating an already-deleted branch as a failure.
-  const refs = JSON.parse((await execute(['api', `repos/${repo}/git/matching-refs/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`])).stdout);
+  const refs = await readRefs();
   const current = refs.find(candidate => candidate.ref === `refs/heads/${pr.headRefName}`);
   if (!current) return;
   if (current.object?.sha !== pr.headRefOid) throw new Error('Remote branch has new commits; it was preserved.');
   const open = JSON.parse((await execute(['pr', 'list', '--repo', repo, '--head', pr.headRefName,
     '--state', 'open', '--limit', '1', '--json', 'number'])).stdout);
   if (open.length) throw new Error('Remote branch is used by another open pull request; it was preserved.');
-  await execute(['api', '--method', 'DELETE', ref]);
+  try {
+    await execute(['api', '--method', 'DELETE', ref]);
+  } catch (error) {
+    // GitHub's automatic deletion can race with the checks above. A 404 is
+    // successful cleanup only when a fresh lookup confirms the exact ref is gone.
+    if (/\bHTTP 404\b/.test(`${error.stderr || ''}\n${error.message || ''}`)) {
+      const remaining = await readRefs();
+      if (!remaining.some(candidate => candidate.ref === `refs/heads/${pr.headRefName}`)) return;
+    }
+    throw error;
+  }
 }
 
 function registerGitHubPullRequestActions(vscode, context) {
