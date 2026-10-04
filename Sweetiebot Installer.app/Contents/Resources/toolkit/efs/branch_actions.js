@@ -2,6 +2,8 @@
 
 const { execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
+const { mkdtemp, rm } = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
@@ -61,8 +63,8 @@ async function retryConnection(operation) {
   }
 }
 
-async function syncDefaultBranch(repository, defaultBranch, remote) {
-  await repository.checkout(defaultBranch);
+async function syncDefaultBranch(repository, defaultBranch, remote, checkout = true) {
+  if (checkout) await repository.checkout(defaultBranch);
   const checkBranch = async () => {
     await repository.status();
     if (repository.state.HEAD?.name !== defaultBranch) {
@@ -102,9 +104,66 @@ async function syncDefaultBranch(repository, defaultBranch, remote) {
   }
 }
 
+async function syncDefaultBranchInBackground(repository, defaultBranch, remote) {
+  await repository.status();
+  const original = repository.state.HEAD?.name;
+  if (original === defaultBranch) {
+    await syncDefaultBranch(repository, defaultBranch, remote, false);
+    return `refs/heads/${defaultBranch}`;
+  }
+  const run = promisify(execFile);
+  const git = async (cwd, args) => (await run('git', args, {
+    cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no' }
+  })).stdout.trim();
+  const root = repository.rootUri.fsPath;
+  const upstream = await git(root, ['rev-parse', '--symbolic-full-name', `${defaultBranch}@{upstream}`]);
+  const prefix = `refs/remotes/${remote}/`;
+  if (!upstream.startsWith(prefix)) throw new Error(`${defaultBranch} must track a branch on ${remote} before syncing.`);
+  const checkBranch = async () => {
+    await repository.status();
+    if (repository.state.HEAD?.name !== original) {
+      throw new Error('The active branch changed while preparing the new branch.');
+    }
+  };
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-branch-'));
+  const worktree = path.join(temporary, 'worktree');
+  let added = false;
+  try {
+    await checkBranch();
+    // Checking main out in a separate worktree reserves it without switching
+    // the user's editor or disturbing their working files.
+    await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
+    added = true;
+    for (let attempt = 0; ; attempt++) {
+      await retryConnection(() => git(worktree, ['fetch', remote]));
+      await checkBranch();
+      try {
+        await git(worktree, ['merge', '--no-edit', upstream]);
+      } catch (error) {
+        throw new Error(`Could not sync ${defaultBranch} in the background. ${errorText(error).includes('CONFLICT') ? 'Its local and remote changes conflict; sync and resolve them before creating a new branch.' : error.stderr?.trim() || error.message} Your current branch was preserved.`, { cause: error });
+      }
+      const tip = await git(worktree, ['rev-parse', 'HEAD']);
+      const ahead = await git(worktree, ['rev-list', '--count', `${upstream}..HEAD`]);
+      if (ahead === '0') return tip;
+      await checkBranch();
+      try {
+        await retryConnection(() => git(worktree, ['push', remote, `${defaultBranch}:${upstream.slice(prefix.length)}`]));
+        return tip;
+      } catch (error) {
+        if (attempt >= 2 || !/non-fast-forward|fetch first/i.test(errorText(error))) throw error;
+      }
+    }
+  } finally {
+    if (added) await git(root, ['worktree', 'remove', '--force', worktree]);
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 async function createBranch(repository, { defaultBranch, remote, names }, random = Math.random) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
-  await syncDefaultBranch(repository, defaultBranch, remote);
+  await repository.status();
+  const original = repository.state.HEAD?.name;
+  const start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
   const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
   const used = new Set(refs.flatMap(ref => [
     ref.name,
@@ -113,7 +172,9 @@ async function createBranch(repository, { defaultBranch, remote, names }, random
   const available = [...new Set(names)].filter(name => !used.has(name));
   if (!available.length) throw new Error('All configured pony branch names are already in use.');
   const branch = available[Math.floor(random() * available.length)];
-  await repository.createBranch(branch, true, 'HEAD');
+  await repository.status();
+  if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
+  await repository.createBranch(branch, true, start);
   return branch;
 }
 
