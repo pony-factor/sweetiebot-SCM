@@ -3,7 +3,6 @@
 
 
 
-the fi weher you commit and push into an upstream commit to pull doent wor. rememebr it was suppsod to atutamutcally comine them and just sedt it. 
 
 > git push origin main:main
 To https://github.com/windsorUwU/studio.git
