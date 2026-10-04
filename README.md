@@ -396,6 +396,10 @@ stylesheet, so rerun the installer after updating the extension.
 When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
 Codex extension show the time remaining as a live countdown such as `4h 23m`. The
 display rounds to the nearest minute and refreshes as the countdown changes.
+The local composer label beside the location icon shows the smaller remaining
+percentage of the five-hour and weekly usage limits. Until usage data is available,
+it shows **Work locally**. The usage submenu shows centered reset countdowns;
+weekly resets display the number of days left instead of a calendar date.
 
 To install or refresh only this optional Codex patch without touching the SCM
 workbench patch, run:

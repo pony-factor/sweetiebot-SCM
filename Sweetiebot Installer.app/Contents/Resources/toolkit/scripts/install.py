@@ -7,6 +7,7 @@ import os
 import re
 import workspace_search
 import codex_colors
+import codex_usage
 import codex_context
 import codex_keep_awake
 import codex_image_drop
@@ -762,6 +763,14 @@ def main():
             paths.append(awake_path)
             old.append(awake_old)
             new.append(awake_new)
+    for usage_path, usage_old, usage_new in codex_usage.patch_files(
+        args.codex_extension,
+        enabled=settings["codexUsageResetCountdown"] and not args.uninstall,
+    ):
+        paths.append(usage_path)
+        old.append(usage_old)
+        new.append(usage_new)
+
     should_find_codex = (
         settings["codexUsageResetCountdown"]
         or settings["codexHidePromotions"]

@@ -52,6 +52,10 @@
 		<data>
 		I0Fs/CZ7l1KUrKkUY2+FvWDykkc=
 		</data>
+		<key>Resources/toolkit/assets/codex/codex-usage.js</key>
+		<data>
+		N/nSXbwnSAk02Q1kDIvwwADRxII=
+		</data>
 		<key>Resources/toolkit/assets/workbench/hide_progress.css</key>
 		<data>
 		PHzhj8y/RJZn+5glSC/7I+A+eDk=
@@ -160,6 +164,10 @@
 		<data>
 		9FxYh2WzPZgkEF2+ImwmsquEpTU=
 		</data>
+		<key>Resources/toolkit/scripts/codex_usage.py</key>
+		<data>
+		0UK/aK4UqGOh1lECO6hoQFpubFw=
+		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
 		+UFDnTQ+lR4yvBXjLnY3P8hqfiY=
@@ -174,7 +182,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		LVIbos5rGrN7oCEAqOH+f3LQeL0=
+		at0iuhDoWtB/3Kl0dG90GKcdMNw=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -333,6 +341,17 @@
 			<key>hash2</key>
 			<data>
 			9lv5Nl6m5oGeInVGuazTP9wGmPs6f4McULCJkpMZKEA=
+			</data>
+		</dict>
+		<key>Resources/toolkit/assets/codex/codex-usage.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			N/nSXbwnSAk02Q1kDIvwwADRxII=
+			</data>
+			<key>hash2</key>
+			<data>
+			9vgLo/xQt6Ls5XprgUIqm36NL83kS5PpdZzihmr6PBo=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/hide_progress.css</key>
@@ -632,6 +651,17 @@
 			J3nlSSagLz/k01m3LSAXmLtJpbqqmyXKLIf2TIEF07w=
 			</data>
 		</dict>
+		<key>Resources/toolkit/scripts/codex_usage.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			0UK/aK4UqGOh1lECO6hoQFpubFw=
+			</data>
+			<key>hash2</key>
+			<data>
+			AO9ngregH1LH/dS4yhtqIIDqegOQyQOx6WRwbCWzfXY=
+			</data>
+		</dict>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<dict>
 			<key>hash</key>
@@ -669,11 +699,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			LVIbos5rGrN7oCEAqOH+f3LQeL0=
+			at0iuhDoWtB/3Kl0dG90GKcdMNw=
 			</data>
 			<key>hash2</key>
 			<data>
-			qb9YaBy350cClwYeUTr8cBFxXz2oS3KXYl7M4ZvZZTI=
+			PXv2PbAfFFfZnU/G8QF54b5s3uKQv7MbT4D2vt//8pQ=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
