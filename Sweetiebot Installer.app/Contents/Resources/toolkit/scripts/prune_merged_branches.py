@@ -2,6 +2,7 @@
 """Prune local branches whose GitHub pull requests have safely merged."""
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -87,8 +88,18 @@ def local_branches(repo):
 
 
 def github_repo(repo):
+    origin = run([GIT, "remote", "get-url", "origin"], cwd=repo, timeout=10)
+    if origin.returncode:
+        return None
+    match = re.fullmatch(
+        r"(?:https?://|ssh://git@|git@)([^/:]+)[:/]([^/]+)/([^/]+?)(?:\.git)?/?",
+        origin.stdout.strip(),
+    )
+    if not match:
+        return None
+    host, owner, name = match.groups()
     result = run(
-        [GH, "repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
+        [GH, "repo", "view", f"{host}/{owner}/{name}", "--json", "nameWithOwner,defaultBranchRef"],
         cwd=repo,
     )
     if result.returncode:
@@ -101,14 +112,16 @@ def github_repo(repo):
         return None
     if not name or not default:
         return None
-    return name, default
+    return f"{host}/{name}", default
 
 
-def pull_requests(repo):
+def pull_requests(repo, repository, branch):
     result = run(
         [
             GH, "pr", "list",
-            "--state", "all",
+            "--repo", repository,
+            "--head", branch,
+            "--state", "merged",
             "--limit", str(MAX_PRS),
             "--json",
             "number,state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt",
@@ -124,48 +137,63 @@ def pull_requests(repo):
     return data if isinstance(data, list) else None
 
 
+def current_branch(repo):
+    result = run([GIT, "symbolic-ref", "--quiet", "--short", "HEAD"], cwd=repo, timeout=10)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def return_to_default(repo, branch, default_branch, expected_oid, dry_run=False):
+    """Switch only a clean, unchanged branch in this worktree."""
+    if current_branch(repo) != branch or local_branches(repo).get(branch) != expected_oid:
+        return False
+    status = run([GIT, "status", "--porcelain", "--untracked-files=all"], cwd=repo, timeout=10)
+    if status.returncode or status.stdout:
+        return False
+    for marker in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "BISECT_START"):
+        location = run([GIT, "rev-parse", "--git-path", marker], cwd=repo, timeout=10)
+        if location.returncode or (Path(repo) / location.stdout.strip()).exists():
+            return False
+    if default_branch not in local_branches(repo):
+        return False
+    if dry_run:
+        return True
+    result = run([GIT, "switch", "--no-guess", default_branch], cwd=repo, timeout=10)
+    return result.returncode == 0 and current_branch(repo) == default_branch
+
+
 def prune_repo(repo, dry_run=False, branch_filter=None):
     metadata = github_repo(repo)
     if not metadata:
         return []
     name_with_owner, default_branch = metadata
-    prs = pull_requests(repo)
-    if prs is None:
-        return []
-
-    open_heads = {
-        pr.get("headRefName")
-        for pr in prs
-        if not pr.get("isCrossRepository") and pr.get("state") == "OPEN"
-    }
-    candidates = {}
-    for pr in prs:
-        branch = pr.get("headRefName")
-        oid = pr.get("headRefOid")
-        if (
-            pr.get("isCrossRepository")
-            or pr.get("baseRefName") != default_branch
-            or not pr.get("mergedAt")
-            or not branch
-            or not oid
-            or branch in open_heads
-        ):
-            continue
-        candidates[(branch, oid)] = pr.get("number")
-
     branches = local_branches(repo)
     protected = checked_out_branches(repo)
+    candidates = {}
+    for branch, local_oid in branches.items():
+        if branch == default_branch or (branch_filter is not None and branch != branch_filter):
+            continue
+        if branch in protected and current_branch(repo) != branch:
+            continue
+        # Query each outstanding local head, rather than only recent repository PRs.
+        for pr in pull_requests(repo, name_with_owner, branch) or []:
+            if (pr.get("state") == "MERGED" and pr.get("mergedAt")
+                    and not pr.get("isCrossRepository")
+                    and pr.get("baseRefName") == default_branch
+                    and pr.get("headRefName") == branch
+                    and pr.get("headRefOid") == local_oid):
+                candidates[(branch, local_oid)] = pr.get("number")
+
     pruned = []
     for (branch, expected_oid), number in candidates.items():
         if branch_filter is not None and branch != branch_filter:
             continue
-        if branch == default_branch or branch in protected:
+        if branch == default_branch:
             continue
         if branches.get(branch) != expected_oid:
             continue
-        current = run([GH, "pr", "view", str(number), "--json",
+        current = run([GH, "pr", "view", str(number), "--repo", name_with_owner, "--json",
                        "state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt"], cwd=repo)
-        opened = run([GH, "pr", "list", "--state", "open", "--head", branch,
+        opened = run([GH, "pr", "list", "--repo", name_with_owner, "--state", "open", "--head", branch,
                       "--limit", "1", "--json", "number"], cwd=repo)
         try:
             verified = json.loads(current.stdout)
@@ -177,8 +205,12 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
                 or not verified.get("mergedAt") or verified.get("isCrossRepository")
                 or verified.get("baseRefName") != default_branch
                 or verified.get("headRefName") != branch
-                or verified.get("headRefOid") != expected_oid
-                or branch in checked_out_branches(repo)):
+                or verified.get("headRefOid") != expected_oid):
+            continue
+        if branch in checked_out_branches(repo):
+            if not return_to_default(repo, branch, default_branch, expected_oid, dry_run):
+                continue
+        if not dry_run and branch in checked_out_branches(repo):
             continue
         if dry_run:
             pruned.append((name_with_owner, branch, number))

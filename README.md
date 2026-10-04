@@ -640,7 +640,7 @@ python3 scripts/install.py --uninstall --check
 
 ## Automatic merged-branch cleanup
 
-Sweetiebot checks open local repositories when VS Code starts and every ten minutes. It uses authenticated `gh` to verify that a same-repository PR merged into the default branch. A local branch is removed only if its tip still equals the recorded PR head, no PR for that branch is open, and no worktree has it checked out. Git removes the reference with the expected SHA, preserving a branch that moves during cleanup. Remote branches are left to GitHub’s repository setting.
+Sweetiebot checks open local repositories when VS Code starts and every ten minutes. It looks up merged PRs for each outstanding local branch on `origin`, including older PRs outside the repository's recent history. It uses authenticated `gh` to verify that a same-repository PR merged into the default branch. A local branch is removed only if its tip still equals the recorded PR head and no PR for that branch is open. If the merged branch is active, Sweetiebot switches to the local default branch (normally `main`) before removing it, provided there are no uncommitted changes or Git operations in progress. Branches checked out in other worktrees are preserved. Git removes the reference with the expected SHA, preserving a branch that moves during cleanup. Closing a PR without merging leaves its local branch alone. Remote branches are left to GitHub’s repository setting.
 
 Preview one repository without deleting branches:
 
