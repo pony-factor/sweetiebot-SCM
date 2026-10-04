@@ -263,18 +263,38 @@ function scmToolkitBranchNamePool() {
 
 
 async function scmToolkitPushWithPullRetry(repository, originalPush) {
+    const head = repository.HEAD;
     try {
-        await originalPush.call(repository);
+        await originalPush.call(repository, head);
     } catch (error) {
         if (
             error?.gitErrorCode !== 'PushRejected'
-            || typeof repository.pull !== 'function'
+            || !head?.name
+            || !head.upstream?.remote
+            || !head.upstream?.name
+            || typeof repository.fetch !== 'function'
+            || typeof repository.merge !== 'function'
         ) {
             throw error;
         }
 
-        await repository.pull();
-        await originalPush.call(repository);
+        const checkBranch = () => {
+            const current = repository.HEAD;
+            if (
+                current?.name !== head.name
+                || current.upstream?.remote !== head.upstream.remote
+                || current.upstream?.name !== head.upstream.name
+            ) {
+                throw new Error('The active branch changed before its upstream changes could be merged and pushed.');
+            }
+        };
+        checkBranch();
+        await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name });
+        checkBranch();
+        // Merge explicitly: plain pull can refuse divergent branches or use rebase/ff-only settings.
+        await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`);
+        checkBranch();
+        await originalPush.call(repository, repository.HEAD);
     }
 }
 
