@@ -106,6 +106,25 @@ class BranchNamePackTests(unittest.TestCase):
         }
         self.assertTrue(pony_life_names.isdisjoint(g4_names))
 
+    def test_idw_comics_pack_covers_named_comic_roster(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        names = packs["idw-comics"]["names"]
+
+        self.assertEqual(len(names), 301)
+        for name in (
+            "acacia-pie",
+            "captain-hoofbeard",
+            "emperor-incitatus",
+            "humdrum",
+            "radiant-hope",
+            "shadow-lock",
+            "sweet-cream-scoops",
+            "winter-comet",
+        ):
+            self.assertIn(name, names)
+        self.assertFalse(any("unnamed" in name for name in names))
+
     def test_imports_accept_single_pack_array_or_catalog_object(self):
         pack = {"id": "friends", "label": "Friends", "names": ["one", "two"]}
         self.assertEqual(
