@@ -115,6 +115,32 @@ async function run() {
     await assert.rejects(createBranch(repository, options), new RegExp(`${method} failed`));
     assert(!calls.some(call => call[0] === 'create'));
   }
+  for (const dirty of ['indexChanges', 'workingTreeChanges']) {
+    const { repository, calls } = fixture();
+    const changes = [{}];
+    repository.state[dirty] = changes;
+    repository.merge = async () => { throw new Error('Local changes would be overwritten'); };
+    assert.equal(await createBranch(repository, options, () => 0), 'fresh');
+    assert.equal(repository.state[dirty], changes);
+    assert.equal(repository.inputBox.value, 'Existing draft');
+    assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
+    assert(!calls.some(call => ['fetch', 'merge', 'push'].includes(call[0])));
+  }
+  {
+    const { repository, calls } = fixture();
+    repository.state.mergeChanges = [{}];
+    await assert.rejects(createBranch(repository, options), /Resolve the merge conflicts/);
+    assert.deepEqual(calls, [['status']]);
+  }
+  for (const cancelled of [false, true]) {
+    const { repository, calls } = fixture();
+    repository.state.indexChanges = [{}];
+    repository.checkout = async () => {
+      if (!cancelled) throw new Error('Local changes would be overwritten');
+    };
+    await assert.rejects(createBranch(repository, options), /Local changes would be overwritten|Could not switch/);
+    assert(!calls.some(call => ['fetch', 'merge', 'push', 'create'].includes(call[0])));
+  }
   {
     const { repository, calls } = fixture();
     repository.checkout = async () => {}; // A cancelled checkout must not continue.

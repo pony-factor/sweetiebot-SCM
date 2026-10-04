@@ -786,7 +786,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || unavailable;
 
         const description =
-            `Sync ${settings.defaultBranch} with ${settings.remote} and create a random pony branch`;
+            `Create a random pony branch from ${settings.defaultBranch}; sync first when there are no uncommitted changes`;
         ponyBranchButton.setAttribute('aria-label', description);
         ponyBranchTooltip.textContent = description;
     };

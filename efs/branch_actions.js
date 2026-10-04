@@ -104,7 +104,21 @@ async function syncDefaultBranch(repository, defaultBranch, remote) {
 
 async function createBranch(repository, { defaultBranch, remote, names }, random = Math.random) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
-  await syncDefaultBranch(repository, defaultBranch, remote);
+  await repository.status();
+  if (repository.state.mergeChanges?.length) {
+    throw new Error('Resolve the merge conflicts before creating a new branch.');
+  }
+  if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
+    // A remote merge can overwrite pending edits. Branch from the local base
+    // instead, carrying the worktree and index through Git's normal checkout.
+    await repository.checkout(defaultBranch);
+    await repository.status();
+    if (repository.state.HEAD?.name !== defaultBranch) {
+      throw new Error(`Could not switch to ${defaultBranch}.`);
+    }
+  } else {
+    await syncDefaultBranch(repository, defaultBranch, remote);
+  }
   const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
   const used = new Set(refs.flatMap(ref => [
     ref.name,

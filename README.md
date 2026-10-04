@@ -13,7 +13,7 @@ Current features:
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
-- optionally create a freshly synced branch from `main` using configurable built-in, imported, and custom name packs
+- optionally create a branch from `main` using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline autocomplete
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
@@ -588,11 +588,14 @@ The button uses the existing `mcp-pull-request` visibility setting and no longer
 
 When `pony-branch` is enabled, a branch-create button appears at the far right of
 the SCM message row. It checks out the configured `default-branch` (normally
-`main`), pulls its upstream and pushes any outgoing commits, then creates and
-checks out a new branch directly from the synchronized HEAD. These operations
+`main`). With a clean worktree, it syncs its upstream and pushes any outgoing
+commits, then creates and checks out a new branch from the synchronized HEAD.
+With staged or unstaged changes, it skips syncing and creates the branch from
+local HEAD, carrying the changes and their staging into the new branch. These operations
 use the built-in Git extension's API through the toolkit companion extension.
-The default branch must track the configured remote; checkout or sync failures
-stop branch creation and display the error.
+Syncing requires the default branch to track the configured remote. Checkout
+or sync failures stop branch creation and display the error; unresolved merge
+conflicts also stop branch creation.
 
 The branch name is chosen randomly from a built-in, branch-safe pool. Its canon
 portion covers the named G4 pony roster (excluding explicitly unnamed placeholders
