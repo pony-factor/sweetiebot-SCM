@@ -248,13 +248,40 @@ async function deleteBranch(repository, { branch, defaultBranch, remote }, clean
   if (repository.state.HEAD?.name !== branch) {
     throw new Error('The active branch changed; select the branch to delete again.');
   }
+  if (repository.state.mergeChanges?.length) {
+    throw new Error('Resolve the merge conflicts before deleting the branch.');
+  }
   await repository.fetch({ remote, prune: true });
+  await repository.status();
+  if (repository.state.HEAD?.name !== branch) {
+    throw new Error('The active branch changed while preparing branch cleanup.');
+  }
   const refs = await repository.getRefs({ pattern: `refs/remotes/${remote}` });
   if (!refs.length) throw new Error(`Cannot delete ${branch}: ${remote} could not be verified.`);
   if (refs.some(ref => ref.name === `${remote}/${branch}`)) {
     throw new Error(`Cannot delete ${branch}: it still exists on ${remote}.`);
   }
-  await syncDefaultBranch(repository, defaultBranch, remote);
+  const home = await repository.getBranch(defaultBranch);
+  if (home.upstream?.remote !== remote || !home.upstream.name) {
+    throw new Error(`${defaultBranch} must track a branch on ${remote} before syncing.`);
+  }
+  // Advance the inactive local ref before checkout. Checking out stale main
+  // first can reject edits based on the merged topic, even when updated main
+  // can carry them intact. Git rejects non-fast-forwards and worktree-held refs;
+  // this never creates a merge commit, pushes, stashes, or changes staging.
+  await repository.fetch({
+    remote: '.',
+    ref: `refs/remotes/${remote}/${home.upstream.name}:refs/heads/${defaultBranch}`
+  });
+  await repository.status();
+  if (repository.state.HEAD?.name !== branch) {
+    throw new Error('The active branch changed while preparing branch cleanup.');
+  }
+  await repository.checkout(defaultBranch);
+  await repository.status();
+  if (repository.state.HEAD?.name !== defaultBranch) {
+    throw new Error(`Could not switch to ${defaultBranch}.`);
+  }
   try {
     await repository.deleteBranch(branch, false);
   } catch (error) {
