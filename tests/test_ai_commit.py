@@ -156,6 +156,7 @@ class PostCommitRoutingTests(unittest.TestCase):
                 for name, value in [
                     ("manual_spellcheck_enabled", False), ("feature_enabled", True),
                     ("normalize_staged_final_newlines", []), ("staged_diff", ("1 file", "diff", ["note.md"])),
+                    ("github_split_groups", [["note.md"]]),
                     ("generate_message", ("Title", "")), ("should_add_default_branch_description", False),
                     ("git_config_bool", True), ("load_post_commit_spellcheck", worker),
                 ]:
