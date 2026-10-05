@@ -741,7 +741,7 @@ def commit_title_preference() -> str:
     return "Commit titles should start with one professional emoji that matches the change type, followed by a space and a concise imperative title."
 
 
-def ollama_json(path: str, payload: dict | None = None, timeout: int = 120) -> dict:
+def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> dict:
     url = f"{OLLAMA_BASE}{path}"
     data = None
     headers = {}
@@ -1060,7 +1060,16 @@ def generate_message(
         return fallback_message(files, include_description, file_context)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         if require_model:
-            raise RuntimeError("Local Ollama could not generate a commit message.") from exc
+            cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+            if isinstance(cause, TimeoutError):
+                detail = "The request timed out after 300 seconds; Ollama may be busy with OCR or another model. Let that work finish, then try again."
+            elif isinstance(exc, urllib.error.HTTPError):
+                detail = f"Ollama returned HTTP {exc.code} for model {model}."
+            elif isinstance(exc, urllib.error.URLError):
+                detail = "Could not connect to the local Ollama service. Check that Ollama is running, then try again."
+            else:
+                detail = "Ollama returned an invalid response. Try again."
+            raise RuntimeError(f"Local Ollama could not generate a commit message. {detail}") from exc
         print(
             f"scm-toolkit: local model unavailable ({exc}); using fallback title",
             file=sys.stderr,
