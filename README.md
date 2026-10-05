@@ -129,6 +129,8 @@ After installation, the gear at the right end of the Source Control message row 
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
 
+With **Automatically pull clean branches** enabled, a visible, clean SCM repository fetches its tracked upstream at most once a minute and merges only when strictly behind. Staged changes, unstaged changes, merge conflicts, and divergent commits pause automatic pulling. It resumes when the repository is clean again.
+
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
 
 **Keep awake while Codex works** is enabled by default on macOS. It prevents idle system sleep while any Codex task in the window is active and releases the assertion when all tasks finish, fail, or are interrupted. The display can still turn off. Set `scmToolkit.codexKeepAwake` to `false` in VS Code Settings to disable it immediately, or change the default in the toolkit configurator (`scm-toolkit.codex-keep-awake`). Reload the window after first installing the feature. It has no effect on other operating systems.
@@ -587,9 +589,9 @@ The button uses the existing `mcp-pull-request` visibility setting and no longer
 ### Pony branch
 
 When `pony-branch` is enabled, a branch-create button appears at the far right of
-the SCM message row. It checks out the configured `default-branch` (normally
-`main`). With a clean worktree, it syncs its upstream and pushes any outgoing
-commits, then creates and checks out a new branch from the synchronized HEAD.
+the SCM message row. With a clean worktree, it syncs the configured
+`default-branch` (normally `main`) in a temporary worktree when needed, pushes
+any outgoing commits, and creates a branch from the synchronized HEAD.
 With staged or unstaged changes, it skips syncing and creates the branch from
 local HEAD, carrying the changes and their staging into the new branch. These operations
 use the built-in Git extension's API through the toolkit companion extension.

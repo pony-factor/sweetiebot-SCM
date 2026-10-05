@@ -5,10 +5,10 @@ const { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, regis
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 
-function fixture() {
+function fixture(onMain = false) {
   const calls = [];
   const repository = {
-    state: { HEAD: { name: 'topic' }, mergeChanges: [] },
+    state: { HEAD: onMain ? { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0 } : { name: 'topic' }, mergeChanges: [] },
     inputBox: { value: 'Existing draft' },
     async status() { calls.push(['status']); },
     async checkout(name) {
@@ -46,6 +46,32 @@ async function run() {
     const expected = state.ahead === 0 && state.behind > 0 && !state.dirty;
     assert.equal(await autoPullClean(repository), expected);
     assert.equal(calls.some(call => call[0] === 'merge'), expected);
+  }
+  {
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', commit: 'local', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 0 };
+    repository.fetch = async opts => { calls.push(['fetch', opts]); repository.state.HEAD.behind = 1; };
+    assert.equal(await autoPullClean(repository, { fetch: true }), true);
+    assert.deepEqual(calls.find(call => call[0] === 'fetch'), ['fetch', { remote: 'origin', ref: 'main' }]);
+    assert.deepEqual(calls.find(call => call[0] === 'merge'), ['merge', 'origin/main']);
+  }
+  for (const mutation of ['name', 'commit', 'upstream', 'dirty', 'ahead']) {
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', commit: 'local', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 1 };
+    repository.fetch = async () => {
+      if (mutation === 'upstream') repository.state.HEAD.upstream.name = 'other';
+      else if (mutation === 'dirty') repository.state.indexChanges = [{}];
+      else repository.state.HEAD[mutation] = mutation === 'ahead' ? 1 : 'changed';
+    };
+    assert.equal(await autoPullClean(repository, { fetch: true }), false);
+    assert(!calls.some(call => call[0] === 'merge'));
+  }
+  for (const dirty of ['indexChanges', 'workingTreeChanges', 'mergeChanges']) {
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 1 };
+    repository.state[dirty] = [{}];
+    assert.equal(await autoPullClean(repository, { fetch: true }), false);
+    assert(!calls.some(call => ['fetch', 'merge'].includes(call[0])));
   }
   {
     const { repository, calls } = fixture();
@@ -102,14 +128,14 @@ async function run() {
     assert.equal(repository.inputBox.value, 'Edited during sync');
   }
   {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     assert.equal(await createBranch(repository, options, () => 0), 'fresh');
-    assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
+    assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'refs/heads/main']);
     assert(calls.findIndex(call => call[0] === 'merge') < calls.findIndex(call => call[0] === 'refs'));
     assert(!calls.some(call => call[0] === 'push'));
   }
-  for (const method of ['checkout', 'fetch', 'merge', 'push']) {
-    const { repository, calls } = fixture();
+  for (const method of ['fetch', 'merge', 'push']) {
+    const { repository, calls } = fixture(true);
     if (method === 'push') repository.merge = async () => { repository.state.HEAD.ahead = 1; };
     repository[method] = async () => { throw new Error(`${method} failed`); };
     await assert.rejects(createBranch(repository, options), new RegExp(`${method} failed`));
@@ -142,19 +168,29 @@ async function run() {
     assert(!calls.some(call => ['fetch', 'merge', 'push', 'create'].includes(call[0])));
   }
   {
-    const { repository, calls } = fixture();
-    repository.checkout = async () => {}; // A cancelled checkout must not continue.
-    await assert.rejects(createBranch(repository, options), /Could not switch/);
-    assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge'));
+    const { repository, calls } = fixture(true);
+    await createBranch(repository, options);
+    assert(!calls.some(call => call[0] === 'checkout'), 'Already on main: no redundant checkout');
   }
   {
-    const { repository, calls } = fixture();
-    repository.checkout = async name => { repository.state.HEAD = { name }; };
+    const { repository, calls } = fixture(true);
+    repository.state.HEAD = { name: 'main' };
     await assert.rejects(createBranch(repository, options), /must track/);
     assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge'));
   }
   {
-    const { repository } = fixture();
+    const { repository, calls } = fixture(true);
+    const getRefs = repository.getRefs;
+    repository.getRefs = async opts => {
+      const refs = await getRefs.call(repository, opts);
+      repository.state.HEAD = { name: 'changed' };
+      return refs;
+    };
+    await assert.rejects(createBranch(repository, options), /active branch changed/);
+    assert(!calls.some(call => call[0] === 'create'));
+  }
+  {
+    const { repository } = fixture(true);
     await assert.rejects(createBranch(repository, { ...options, names: ['used', 'remote-used'] }), /already in use/);
   }
   {
@@ -226,13 +262,13 @@ async function run() {
     assert(cleaned);
   }
   {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     repository.merge = async () => { repository.state.HEAD.ahead = 2; };
     await createBranch(repository, options, () => 0);
     assert.deepEqual(calls.find(call => call[0] === 'push'), ['push', 'origin', 'main:main']);
   }
   {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     // The old pull request stays rejected, but it must no longer be used.
     repository.pull = async () => { throw new Error('cached timeout'); };
     let attempts = 0;
@@ -247,7 +283,7 @@ async function run() {
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
   for (const failure of ['timeout', 'Authentication failed']) {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     let attempts = 0;
     repository.fetch = async () => { attempts++; throw new Error(failure); };
     await assert.rejects(createBranch(repository, options), new RegExp(failure));
@@ -255,13 +291,13 @@ async function run() {
     assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge' || call[0] === 'push'));
   }
   {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     repository.fetch = async () => { repository.state.HEAD.name = 'changed'; };
     await assert.rejects(createBranch(repository, options), /active branch changed/);
     assert(!calls.some(call => call[0] === 'merge' || call[0] === 'create'));
   }
   {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     repository.merge = async () => {
       repository.state.mergeChanges.push({});
       throw new Error('CONFLICT (content): Merge conflict');
@@ -270,7 +306,7 @@ async function run() {
     assert(!calls.some(call => call[0] === 'push' || call[0] === 'create'));
   }
   for (const failure of ['non-fast-forward', 'Recv failure: Connection reset by peer']) {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     repository.merge = async ref => {
       calls.push(['merge', ref]);
       repository.state.HEAD.ahead = 2;
@@ -286,7 +322,7 @@ async function run() {
     assert(calls.filter(call => call[0] === 'push').every(call => call.length === 3));
   }
   {
-    const { repository, calls } = fixture();
+    const { repository, calls } = fixture(true);
     repository.merge = async () => { repository.state.HEAD.ahead = 1; };
     let attempts = 0;
     repository.push = async () => { attempts++; throw new Error('non-fast-forward'); };
