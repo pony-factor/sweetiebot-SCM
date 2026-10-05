@@ -10,7 +10,7 @@
       .scm-toolkit-inline-location { position: absolute !important; margin: 0 !important;
         z-index: 2; pointer-events: auto !important; }
       .scm-toolkit-location-overflow { overflow: visible !important;
-        position: relative !important; z-index: 3 !important; pointer-events: auto !important; }
+        position: relative !important; z-index: 11 !important; pointer-events: auto !important; }
       .scm-toolkit-empty-utility { min-height: 0 !important; height: 0 !important;
         padding-block: 0 !important; margin-block: 0 !important; border: 0 !important; overflow: visible !important; }
     `;
