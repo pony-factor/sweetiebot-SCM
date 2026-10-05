@@ -42,8 +42,9 @@ def transform(js, enabled=True):
     if jsx is None or query is None:
         raise ValueError('Unsupported Codex build: composer usage data anchor does not match.')
     replacement = (
-        f'function {label[0]}(e){{let{{data:usage}}={query[2]}({query[3]}),'
+        f'function {label[0]}(e){{let{{data:usage,refetch}}={query[2]}({query[3]}),'
         'percent=scmToolkitRemainingUsage(usage);'
+        'scmToolkitKeepUsageFresh(refetch);'
         'return e.isRemoteHost?`Remote`:percent==null?`…`:`${percent}%`;}'
     )
     edits = [(label[1], replacement)]
