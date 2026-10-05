@@ -147,6 +147,8 @@ Set options with `git config --global`:
 git config --global scm-toolkit.branch-picker true
 git config --global scm-toolkit.pony-branch true
 git config --global scm-toolkit.short-placeholder true
+git config --global scm-toolkit.commit-button-label "Send"
+git config --global scm-toolkit.commit-and-send-button-label "Send"
 git config --global scm-toolkit.source-control-label "Sweetie Bot"
 git config --global scm-toolkit.open-panel-on-startup true
 git config --global scm-toolkit.workspace-search-activity-bar false
@@ -193,6 +195,8 @@ The equivalent `~/.gitconfig` block is:
     branch-picker = true
     pony-branch = true
     short-placeholder = true
+    commit-button-label = Send
+    commit-and-send-button-label = Send
     source-control-label = Sweetie Bot
     open-panel-on-startup = true
     workspace-search-activity-bar = false
@@ -508,6 +512,8 @@ This option uses the same `--codex-only` install/refresh path as the other Codex
 customizations.
 
 ### Commit and push
+
+The normal commit action and the commit-and-send state have independent text overrides. Set `scm-toolkit.commit-button-label` for ordinary commits and `scm-toolkit.commit-and-send-button-label` for the primary action while `git.postCommitCommand` is `push`. Both default to **Send**.
 
 When `commit-and-push` is enabled, the checkbox mirrors VS Code's `git.postCommitCommand` setting. Checking it sets the value to `push`; unchecking it sets the value to `none`.
 

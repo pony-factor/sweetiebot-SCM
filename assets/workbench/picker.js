@@ -34,27 +34,79 @@ function scmToolkitHideOutgoingSyncCount(widget) {
     observer.observe(root, { subtree: true, childList: true, characterData: true });
 }
 
-function scmToolkitCustomizeCommitButtonLabel(widget, label) {
-    const value = String(label ?? '').trim();
-    const root = widget.element.closest('.scm-view');
-    const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
-    if (!value || !root || !Observer) return;
+function scmToolkitCustomizeCommitButtonLabel(
+    widget,
+    configuration,
+    commitLabel,
+    commitAndSendLabel
+) {
+    const commitValue = String(commitLabel ?? '').trim();
+    const commitAndSendValue = String(commitAndSendLabel ?? '').trim();
+    const doc = widget.element.ownerDocument;
+    const Observer = doc.defaultView?.MutationObserver;
+    if ((!commitValue && !commitAndSendValue) || !Observer) return;
 
-    globalThis.__scmToolkitCommitButtonLabel = value;
-    const observedRoots = globalThis.__scmToolkitCommitLabelRoots ??= new WeakSet();
-    const update = () => {
-        const button = root.querySelector(
-            '.button-container > .monaco-button-dropdown > .monaco-button:first-child'
-        );
-        const current = globalThis.__scmToolkitCommitButtonLabel;
-        if (button && current && button.textContent !== current) button.textContent = current;
+    let observedRoot;
+    const selector = [
+        '.button-container > .monaco-button-dropdown > .monaco-button:first-child',
+        '.button-container > .monaco-button:first-child',
+    ].join(', ');
+
+    const observeRoot = root => {
+        if (observedRoot === root) return;
+        observer.disconnect();
+        observer.observe(root, {
+            subtree: true,
+            childList: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['data-index'],
+        });
+        observedRoot = root;
     };
 
-    update();
-    if (observedRoots.has(root)) return;
-    observedRoots.add(root);
+    const update = () => {
+        const root = widget.element.closest('.scm-view');
+        if (!root) return;
+        observeRoot(root);
+
+        const inputRow = widget.element.closest('.monaco-list-row');
+        const index = inputRow?.getAttribute('data-index');
+        const rows = inputRow?.parentElement;
+        const actionRow = index === null || index === undefined ? undefined
+            : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
+        const button = actionRow?.querySelector(selector) ?? root.querySelector(selector);
+        const current = configuration.getValue('git.postCommitCommand') === 'push'
+            ? (commitAndSendValue || commitValue)
+            : commitValue;
+        if (!button || !current) return;
+
+        const labelNode = button.querySelector(
+            '.monaco-button-label, .monaco-button-label-short'
+        );
+        const target = labelNode ?? button;
+        if (target.textContent !== current) target.textContent = current;
+    };
+
     const observer = new Observer(update);
-    observer.observe(root, { subtree: true, childList: true, characterData: true });
+    observer.observe(doc.documentElement, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['data-index'],
+    });
+    update();
+
+    const configurationDisposable = configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('git.postCommitCommand')) update();
+    });
+    widget.disposables.add({
+        dispose() {
+            observer.disconnect();
+            configurationDisposable.dispose();
+        }
+    });
 }
 
 function scmToolkitAttachCommitSettings(widget, button) {
@@ -523,8 +575,13 @@ async function scmToolkitRecordPullRequestSource(
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);
-    if (settings.commitButtonLabel) {
-        scmToolkitCustomizeCommitButtonLabel(widget, settings.commitButtonLabel);
+    if (settings.commitButtonLabel || settings.commitAndSendButtonLabel) {
+        scmToolkitCustomizeCommitButtonLabel(
+            widget,
+            configuration,
+            settings.commitButtonLabel,
+            settings.commitAndSendButtonLabel
+        );
     }
     const homeButton = doc.createElement('button');
     homeButton.type = 'button';
