@@ -9,7 +9,8 @@
       }
       .scm-toolkit-inline-location { position: absolute !important; margin: 0 !important;
         z-index: 2; pointer-events: auto !important; }
-      .scm-toolkit-location-overflow { overflow: visible !important; }
+      .scm-toolkit-location-overflow { overflow: visible !important;
+        position: relative !important; z-index: 3 !important; pointer-events: auto !important; }
       .scm-toolkit-empty-utility { min-height: 0 !important; height: 0 !important;
         padding-block: 0 !important; margin-block: 0 !important; border: 0 !important; overflow: visible !important; }
     `;
@@ -28,7 +29,8 @@
             const access = composer.querySelector('button[data-composer-navigation-target="permissions"]');
             // The native utility rail clips its descendants. The inline button
             // sits outside those bounds, so every intervening wrapper must allow
-            // both painting and mouse hit testing outside its original box.
+            // painting and hit testing and sit above the composer footer. A
+            // z-index on the button alone cannot escape a lower stacking context.
             for (let wrapper = location.parentElement; wrapper && wrapper !== composer;
                 wrapper = wrapper.parentElement) {
                 if (!wrapper.classList.contains('scm-toolkit-location-overflow')) {
