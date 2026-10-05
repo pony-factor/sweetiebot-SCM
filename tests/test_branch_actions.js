@@ -49,6 +49,32 @@ async function run() {
   }
   {
     const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', commit: 'local', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 0 };
+    repository.fetch = async opts => { calls.push(['fetch', opts]); repository.state.HEAD.behind = 1; };
+    assert.equal(await autoPullClean(repository, { fetch: true }), true);
+    assert.deepEqual(calls.find(call => call[0] === 'fetch'), ['fetch', { remote: 'origin', ref: 'main' }]);
+    assert.deepEqual(calls.find(call => call[0] === 'merge'), ['merge', 'origin/main']);
+  }
+  for (const mutation of ['name', 'commit', 'upstream', 'dirty', 'ahead']) {
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', commit: 'local', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 1 };
+    repository.fetch = async () => {
+      if (mutation === 'upstream') repository.state.HEAD.upstream.name = 'other';
+      else if (mutation === 'dirty') repository.state.indexChanges = [{}];
+      else repository.state.HEAD[mutation] = mutation === 'ahead' ? 1 : 'changed';
+    };
+    assert.equal(await autoPullClean(repository, { fetch: true }), false);
+    assert(!calls.some(call => call[0] === 'merge'));
+  }
+  for (const dirty of ['indexChanges', 'workingTreeChanges', 'mergeChanges']) {
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 1 };
+    repository.state[dirty] = [{}];
+    assert.equal(await autoPullClean(repository, { fetch: true }), false);
+    assert(!calls.some(call => ['fetch', 'merge'].includes(call[0])));
+  }
+  {
+    const { repository, calls } = fixture();
     assert.equal(await returnHome(repository), 'main');
     assert.deepEqual(calls, [['checkout', 'main'], ['status']]);
     assert.equal(repository.inputBox.value, 'Existing draft');
@@ -114,6 +140,32 @@ async function run() {
     repository[method] = async () => { throw new Error(`${method} failed`); };
     await assert.rejects(createBranch(repository, options), new RegExp(`${method} failed`));
     assert(!calls.some(call => call[0] === 'create'));
+  }
+  for (const dirty of ['indexChanges', 'workingTreeChanges']) {
+    const { repository, calls } = fixture();
+    const changes = [{}];
+    repository.state[dirty] = changes;
+    repository.merge = async () => { throw new Error('Local changes would be overwritten'); };
+    assert.equal(await createBranch(repository, options, () => 0), 'fresh');
+    assert.equal(repository.state[dirty], changes);
+    assert.equal(repository.inputBox.value, 'Existing draft');
+    assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
+    assert(!calls.some(call => ['fetch', 'merge', 'push'].includes(call[0])));
+  }
+  {
+    const { repository, calls } = fixture();
+    repository.state.mergeChanges = [{}];
+    await assert.rejects(createBranch(repository, options), /Resolve the merge conflicts/);
+    assert.deepEqual(calls, [['status']]);
+  }
+  for (const cancelled of [false, true]) {
+    const { repository, calls } = fixture();
+    repository.state.indexChanges = [{}];
+    repository.checkout = async () => {
+      if (!cancelled) throw new Error('Local changes would be overwritten');
+    };
+    await assert.rejects(createBranch(repository, options), /Local changes would be overwritten|Could not switch/);
+    assert(!calls.some(call => ['fetch', 'merge', 'push', 'create'].includes(call[0])));
   }
   {
     const { repository, calls } = fixture(true);

@@ -13,7 +13,7 @@ Current features:
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
-- optionally create a freshly synced branch from `main` using configurable built-in, imported, and custom name packs
+- optionally create a branch from `main` using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline autocomplete
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
@@ -128,6 +128,8 @@ It opens an app-like settings page in the default browser, prefilled with the cu
 After installation, the gear at the right end of the Source Control message row opens the same local settings page directly. The companion extension starts the loopback configurator and opens it in VS Code’s native Integrated Browser in the current window. Clicking the gear again focuses the existing settings tab. This requires a VS Code version with the Integrated Browser; older versions show an update message. The repository checkout and manual URL entry are not required.
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
+
+With **Automatically pull clean branches** enabled, a visible, clean SCM repository fetches its tracked upstream at most once a minute and merges only when strictly behind. Staged changes, unstaged changes, merge conflicts, and divergent commits pause automatic pulling. It resumes when the repository is clean again.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
 
@@ -587,12 +589,15 @@ The button uses the existing `mcp-pull-request` visibility setting and no longer
 ### Pony branch
 
 When `pony-branch` is enabled, a branch-create button appears at the far right of
-the SCM message row. It checks out the configured `default-branch` (normally
-`main`), pulls its upstream and pushes any outgoing commits, then creates and
-checks out a new branch directly from the synchronized HEAD. These operations
+the SCM message row. With a clean worktree, it syncs the configured
+`default-branch` (normally `main`) in a temporary worktree when needed, pushes
+any outgoing commits, and creates a branch from the synchronized HEAD.
+With staged or unstaged changes, it skips syncing and creates the branch from
+local HEAD, carrying the changes and their staging into the new branch. These operations
 use the built-in Git extension's API through the toolkit companion extension.
-The default branch must track the configured remote; checkout or sync failures
-stop branch creation and display the error.
+Syncing requires the default branch to track the configured remote. Checkout
+or sync failures stop branch creation and display the error; unresolved merge
+conflicts also stop branch creation.
 
 The branch name is chosen randomly from a built-in, branch-safe pool. Its canon
 portion covers the named G4 pony roster (excluding explicitly unnamed placeholders

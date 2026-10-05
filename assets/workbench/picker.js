@@ -159,6 +159,7 @@ function scmToolkitEnableBlankStateRefresh(
     let refreshing = false;
     let disposed = false;
     let lastAutoPullState;
+    let lastAutoFetch;
 
     const hasChanges = () => provider.groups.some(group => group.resources.length > 0);
 
@@ -170,6 +171,12 @@ function scmToolkitEnableBlankStateRefresh(
 
     const maybeAutoPull = async () => {
         if (!autoPullClean || hasChanges()) return;
+
+        const now = Date.now();
+        if (lastAutoFetch === undefined || now - lastAutoFetch >= 60000) {
+            lastAutoFetch = now;
+            await commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument, { fetch: true });
+        }
 
         const historyProvider = provider.historyProvider.get();
         const localRef = historyProvider?.historyItemRef.get();
@@ -786,7 +793,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || unavailable;
 
         const description =
-            `Sync ${settings.defaultBranch} with ${settings.remote} and create a random pony branch`;
+            `Create a random pony branch from ${settings.defaultBranch}; sync first when there are no uncommitted changes`;
         ponyBranchButton.setAttribute('aria-label', description);
         ponyBranchTooltip.textContent = description;
     };

@@ -18,9 +18,20 @@ function queueRepositoryOperation(repository, operation) {
   });
 }
 
-async function autoPullClean(repository) {
+async function autoPullClean(repository, { fetch = false } = {}) {
   // Read fresh extension-host state after earlier branch operations finish.
   await repository.status();
+  const previous = { ...repository.state.HEAD, upstream: { ...repository.state.HEAD?.upstream } };
+  if (fetch) {
+    if (!previous.upstream.remote || !previous.upstream.name || repository.state.indexChanges?.length
+        || repository.state.workingTreeChanges?.length || repository.state.mergeChanges?.length) return false;
+    await repository.fetch({ remote: previous.upstream.remote, ref: previous.upstream.name });
+    await repository.status();
+    const current = repository.state.HEAD;
+    if (current?.name !== previous.name || current?.commit !== previous.commit
+        || current?.upstream?.remote !== previous.upstream.remote
+        || current?.upstream?.name !== previous.upstream.name) return false;
+  }
   const { HEAD: head, indexChanges = [], workingTreeChanges = [], mergeChanges = [] } = repository.state;
   if (!head?.upstream || !head.behind || head.ahead !== 0
       || indexChanges.length || workingTreeChanges.length || mergeChanges.length) return false;
@@ -162,8 +173,23 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
 async function createBranch(repository, { defaultBranch, remote, names }, random = Math.random) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
-  const original = repository.state.HEAD?.name;
-  const start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
+  if (repository.state.mergeChanges?.length) {
+    throw new Error('Resolve the merge conflicts before creating a new branch.');
+  }
+  let original = repository.state.HEAD?.name;
+  let start;
+  if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
+    // Preserve pending edits and their staging by avoiding a remote merge.
+    await repository.checkout(defaultBranch);
+    await repository.status();
+    if (repository.state.HEAD?.name !== defaultBranch) {
+      throw new Error(`Could not switch to ${defaultBranch}.`);
+    }
+    original = defaultBranch;
+    start = 'HEAD';
+  } else {
+    start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
+  }
   const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
   const used = new Set(refs.flatMap(ref => [
     ref.name,
