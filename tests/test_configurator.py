@@ -375,6 +375,26 @@ class ModelSetupTests(unittest.TestCase):
         self.assertIn('name="workspaceSearchEmbeddingModel"', page)
         self.assertIn('class="download-model"', page)
 
+    def test_model_picker_uses_anchored_custom_dropdown(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS,
+            ["qwen3-embedding:0.6b", "qwen2.5-coder:7b"],
+            "Ready",
+            "test-token",
+            "Save",
+        )
+
+        self.assertIn('class="model-picker"', page)
+        self.assertIn('class="model-options" role="listbox"', page)
+        self.assertIn('role="combobox"', page)
+        self.assertIn('class="model-picker-toggle"', page)
+        self.assertIn('position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000', page)
+        self.assertIn("function openModelPicker", page)
+        self.assertIn("function chooseModel", page)
+        self.assertIn("You can still enter a model tag manually.", page)
+        self.assertNotIn("<datalist", page)
+        self.assertNotIn('list="ollama-models"', page)
+
 
 class ServerTests(unittest.TestCase):
     @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
