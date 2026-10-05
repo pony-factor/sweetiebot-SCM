@@ -792,12 +792,13 @@ def main():
         old.append(usage_old)
         new.append(usage_new)
 
-    for composer_path, composer_old, composer_new in codex_composer.patch_files(
-        args.codex_extension, placeholder=settings.get("codexPlaceholder", ""), remove=args.uninstall,
-    ):
+    # PR #93 injected layout code directly into Codex's app-initial webview bundle.
+    # Retire that customization and clean it from already-patched extensions while
+    # leaving the other reversible Codex customizations intact.
+    for composer_path, composer_old, composer_new in codex_composer.patch_files(args.codex_extension):
         if composer_path in paths:
             index = paths.index(composer_path)
-            new[index] = codex_composer.transform(new[index], settings.get("codexPlaceholder", ""), args.uninstall)
+            new[index] = codex_composer.transform(new[index])
         else:
             paths.append(composer_path)
             old.append(composer_old)
