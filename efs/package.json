@@ -15,6 +15,7 @@
   "activationEvents": [
     "onCommand:scmToolkit.returnHome",
     "onCommand:scmToolkit.openPullRequestChat",
+    "onCommand:scmToolkit.openPullRequestBatchChat",
     "onCommand:scmToolkit.prepareCodexCommit",
     "onCommand:scmToolkit.generateCodexCommitMessage",
     "onCommand:scmToolkit.createBranch",
@@ -61,6 +62,11 @@
         "command": "scmToolkit.squashMergeSelectedPullRequest",
         "title": "Squash and Merge into main",
         "icon": "$(git-merge)"
+      },
+      {
+        "command": "scmToolkit.openPullRequestBatchChat",
+        "title": "Squash Selected Pull Requests with ChatGPT",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
@@ -69,6 +75,11 @@
           "command": "scmToolkit.workspaceSearch.clearIndex",
           "when": "view == scmToolkit.workspaceSearch",
           "group": "navigation@1"
+        },
+        {
+          "command": "scmToolkit.openPullRequestBatchChat",
+          "when": "view == pr:github && !isWeb",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
