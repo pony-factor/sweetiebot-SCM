@@ -180,6 +180,25 @@ async function run() {
 
   const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
   const callbackSource = source.match(/    const createPullRequest = ([\s\S]*?)\n    };/)[1];
+  const chatSourceFunction = source.match(/function scmToolkitChatgptConversationSource\(doc\) \{[\s\S]*?\n\}/)[0];
+  const coordinatesFunction = source.match(/function scmToolkitGithubCoordinates\(repositoryUrl\) \{[\s\S]*?\n\}/)[0];
+  const helperContext = vm.createContext({});
+  vm.runInContext(`${chatSourceFunction}\n${coordinatesFunction}\nthis.chatSource = scmToolkitChatgptConversationSource; this.coordinates = scmToolkitGithubCoordinates;`, helperContext);
+  const browserUuid = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+  const browserSource = helperContext.chatSource({
+    querySelectorAll() {
+      return [
+        { value: 'https://example.com', getClientRects: () => [1] },
+        { value: `https://chatgpt.com/c/${browserUuid}`, getClientRects: () => [1] }
+      ];
+    }
+  });
+  assert.equal(browserSource.uuid, browserUuid);
+  assert.equal(browserSource.url, `https://chatgpt.com/c/${browserUuid}`);
+  assert.equal(helperContext.coordinates('https://github.com/owner/repo').owner, 'owner');
+  assert.equal(helperContext.coordinates('https://github.com/owner/repo').repo, 'repo');
+  assert.equal(helperContext.coordinates('https://gitlab.com/owner/repo'), undefined);
+
   const pickerSource = {
     kind: 'chatgpt',
     uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -201,6 +220,11 @@ async function run() {
     creatingPullRequest: false,
     creatingPonyBranch: false,
     scmToolkitChatgptConversationSource() { return pickerSource; },
+    recorded: [],
+    async scmToolkitRecordPullRequestSource(_doc, _mcpService, _settings, launch, branch, base, source) {
+      this.recorded.push({ launch, branch, base, source });
+    },
+    mcpService: {},
     refreshBranchControls() {},
     notifications: { error(error) { throw error; } },
     commands: { async executeCommand(id, root, options) {
@@ -211,11 +235,18 @@ async function run() {
       assert.equal(options.mcpServer, 'codex-drafter');
       assert.equal(options.mcpTool, 'github_create_pull_request');
       assert.deepEqual(options.source, pickerSource);
+      return { source: pickerSource, repositoryUrl: 'https://github.com/owner/repo' };
     } }
   });
   const click = vm.runInContext(`(${callbackSource}\n    })`, sandbox);
   await click({ stopPropagation() {} });
+  await Promise.resolve();
   assert.equal(sandbox.creatingPullRequest, false);
+  assert.equal(sandbox.recorded.length, 1);
+  assert.equal(sandbox.recorded[0].branch, 'draft');
+  assert.equal(sandbox.recorded[0].base, 'main');
+  assert.deepEqual(sandbox.recorded[0].source, pickerSource);
+  assert.equal(sandbox.recorded[0].launch.repositoryUrl, 'https://github.com/owner/repo');
 
   console.log('Kafania pull-request bridge checks passed.');
 }
