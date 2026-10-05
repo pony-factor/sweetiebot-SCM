@@ -20,6 +20,10 @@
 		<data>
 		ar5xmDs9mPpaINVXiVlVqUCB8ao=
 		</data>
+		<key>Resources/toolkit/assets/codex/codex-composer-controls.js</key>
+		<data>
+		RT4Dh4VL0BADYYMfdTKXURDWeVI=
+		</data>
 		<key>Resources/toolkit/assets/codex/codex-context-host.js</key>
 		<data>
 		Mx8HP1SsLfGNat90pb3DJJHEh3Y=
@@ -168,6 +172,10 @@
 		<data>
 		qxSIDppv4sPeuuuyz9J+YbOOflk=
 		</data>
+		<key>Resources/toolkit/scripts/codex_composer.py</key>
+		<data>
+		CqYppPDH522uWSB5am8G5GpmuLU=
+		</data>
 		<key>Resources/toolkit/scripts/codex_context.py</key>
 		<data>
 		vWPxwhy7ptrR07Y+f8eSS3CfR5M=
@@ -190,7 +198,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
-		Lmp+o4glijM12Udi3z1l5aSmUKY=
+		dTzl11oHtSI1kqqVkl2KK/F9OKo=
 		</data>
 		<key>Resources/toolkit/scripts/configure.py</key>
 		<data>
@@ -202,7 +210,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		Qqk6HZEAuZLI/NQOgIh2GPBa9G8=
+		P/4qBsN4v3F6Lu36LJj0avvatrE=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -222,7 +230,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/toolkit_settings.py</key>
 		<data>
-		TlKcFLn4fUF8i3vN8D7ps04wkP0=
+		bsLlF0COQ8tKlUdNkedTEvB5jhA=
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
@@ -273,6 +281,17 @@
 			<key>hash2</key>
 			<data>
 			NV2dNLwgykV7aWfTBywUILBA9Lidl7F51PrkQw77SbM=
+			</data>
+		</dict>
+		<key>Resources/toolkit/assets/codex/codex-composer-controls.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			RT4Dh4VL0BADYYMfdTKXURDWeVI=
+			</data>
+			<key>hash2</key>
+			<data>
+			FCQ/xGAY0jhGiJZrN2O6sZ8w4e9oBPCFJqEtxXfHo1k=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-context-host.js</key>
@@ -682,6 +701,17 @@
 			q6IZ49CCaMfVc+Fec+0gNmOoAuv2CtDo5tr6hrLz5gE=
 			</data>
 		</dict>
+		<key>Resources/toolkit/scripts/codex_composer.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			CqYppPDH522uWSB5am8G5GpmuLU=
+			</data>
+			<key>hash2</key>
+			<data>
+			52uhPL65XC1oCks8QHVelAqU3adq5WvYb2g7QpXCNkU=
+			</data>
+		</dict>
 		<key>Resources/toolkit/scripts/codex_context.py</key>
 		<dict>
 			<key>hash</key>
@@ -741,11 +771,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Lmp+o4glijM12Udi3z1l5aSmUKY=
+			dTzl11oHtSI1kqqVkl2KK/F9OKo=
 			</data>
 			<key>hash2</key>
 			<data>
-			a9spNg1cYAkyND8JasgwPPDAYb0zzVT2GmDWxZrE4m4=
+			g8OjongJp70J/bL1xb7IPgOagRHLMVkBO+QjLGZ8Z2k=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configure.py</key>
@@ -774,11 +804,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Qqk6HZEAuZLI/NQOgIh2GPBa9G8=
+			P/4qBsN4v3F6Lu36LJj0avvatrE=
 			</data>
 			<key>hash2</key>
 			<data>
-			t0F5uyhpmjEqK4Jrr3oy1DOOxgPUP2V9x+XWUk0jgZM=
+			zEXsghAUjHaaeag/yJxn9a0NhOS9jDjpstiRavmp/4o=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
@@ -829,11 +859,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			TlKcFLn4fUF8i3vN8D7ps04wkP0=
+			bsLlF0COQ8tKlUdNkedTEvB5jhA=
 			</data>
 			<key>hash2</key>
 			<data>
-			3QTTzE9rd3IZT0a+TeAI1Wsno7R9/eBmRXmxODMwZT8=
+			aYLRdf6DqKv4MP1uApZNha9+tUgNlTbn8JNSs2sWon4=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
