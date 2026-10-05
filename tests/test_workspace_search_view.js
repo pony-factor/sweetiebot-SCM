@@ -4,8 +4,19 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 async function run() {
+  const clipboard = [];
+  const vscodeStub = {
+    Uri: {
+      parse(value) { return {path: String(value).replace(/^file:\/\//, '')}; },
+      from(parts) { return {toString: () => `${parts.scheme}://${parts.authority}${parts.path}`}; }
+    },
+    env: {
+      uriScheme: 'vscode',
+      clipboard: {async writeText(value) { clipboard.push(value); }}
+    }
+  };
   const sandbox = { module: { exports: {} }, require(name) {
-    if (name === 'vscode') return {};
+    if (name === 'vscode') return vscodeStub;
     if (name === './extract') return { TEXT_EXTENSIONS: new Set() };
     if (name === './ollama') return {};
     return require(name);
@@ -32,6 +43,12 @@ async function run() {
   assert.equal(messages.filter(m => m.type === 'error').length, 0);
   assert.equal(provider.lastResults.length, 0);
 
+  provider.lastResults = [{uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 4}];
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[0], '[new.txt:5](vscode://file/tmp/new.txt:5)');
+  assert.equal(messages.at(-1).type, 'copied');
+  assert.equal(messages.at(-1).index, 0);
+
   const elements = new Map();
   for (const id of ['search', 'query', 'mode', 'status', 'answer', 'results']) {
     elements.set(id, {value: id === 'mode' ? 'hybrid' : '', listeners: {},
@@ -41,6 +58,9 @@ async function run() {
   const timers = new Map(); let nextTimer = 0; const sent = [];
   const html = provider.html({cspSource: 'test'});
   assert.match(html, /class="search-input".*class="search-button"/);
+  assert.match(html, /copy-status\.copied/);
+  assert.match(html, /contrastCheckColor/);
+  assert.match(html, /message\.type==='copied'/);
   const page = {document: {getElementById: id => elements.get(id)},
     acquireVsCodeApi: () => ({postMessage: message => sent.push(message)}),
     setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
