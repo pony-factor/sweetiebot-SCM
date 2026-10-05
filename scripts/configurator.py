@@ -404,7 +404,13 @@ def _setting_control(setting: Setting, current: object) -> str:
             '<div class="setting field-row model-row">'
             f'<span><label for="{name}"><strong>{label}</strong></label><small>{description}</small>'
             f'<small class="model-status" data-model="{name}" role="status"></small></span>'
-            f'<input id="{name}"{attrs} name="{name}" value="{value}"{list_attr}{required}>'
+            f'<div class="model-picker" data-model-picker="{name}">'
+            f'<input id="{name}"{attrs} name="{name}" value="{value}"{required} autocomplete="off" '
+            f'role="combobox" aria-autocomplete="list" aria-expanded="false" '
+            f'aria-controls="{name}-options">'
+            f'<button type="button" class="model-picker-toggle" data-model="{name}" '
+            f'aria-label="Choose {label}" aria-expanded="false">▾</button>'
+            f'<div id="{name}-options" class="model-options" role="listbox" hidden></div></div>'
             f'<button type="button" class="download-model" data-model="{name}">Download</button></div>'
         )
     return (
@@ -450,7 +456,6 @@ def render_form(
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
         sections.append(f'<section><h2>{html.escape(section)}</h2>{status}{controls}</section>')
 
-    options = "".join(f'<option value="{html.escape(model, quote=True)}"></option>' for model in models)
     error_html = f'<div class="error" role="alert">{html.escape(error)}</div>' if error else ""
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
@@ -463,14 +468,14 @@ def render_form(
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 main{{width:min(880px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 section{{margin:16px 0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}h2{{font-size:16px;margin:10px 0}}
-.setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px}}.model-row input{{width:min(280px,38%)}}.model-row button{{flex:none}}button:disabled{{opacity:.6;cursor:default}}
+.setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
 .field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;max-height:320px;overflow:auto;padding:3px}}.pack-card{{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg);transition:border-color .15s,background .15s}}.pack-card:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg))}}.pack-card:has(input:focus-visible){{outline:2px solid var(--accent);outline-offset:1px}}.pack-card input{{accent-color:var(--accent);width:16px;height:16px;flex:none}}.pack-card[hidden]{{display:none}}.pack-card strong{{font-size:13px}}.pack-card small{{font-size:12px}}
-@media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
+@media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
 </style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
-{error_html}<form method="post" action="{action}">{''.join(sections)}<datalist id="ollama-models">{options}</datalist>
+{error_html}<form method="post" action="{action}">{''.join(sections)}
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 const settingsForm = document.querySelector('form');
@@ -571,6 +576,143 @@ if (packSearch) {{
 
 let installedModels = {models_json};
 const normalizeModel = name => name.split('/').pop().includes(':') ? name : name + ':latest';
+const modelPickers = [...document.querySelectorAll('.model-picker')];
+
+function modelInput(picker) {{
+  return picker.querySelector('input[role="combobox"]');
+}}
+
+function closeModelPicker(picker) {{
+  const input = modelInput(picker);
+  const toggle = picker.querySelector('.model-picker-toggle');
+  const options = picker.querySelector('.model-options');
+  options.hidden = true;
+  input.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-expanded', 'false');
+}}
+
+function focusModelInput(picker) {{
+  const input = modelInput(picker);
+  if (document.activeElement === input) return;
+  picker.dataset.suppressOpen = 'true';
+  input.focus();
+}}
+
+function renderModelOptions(picker, filter = '') {{
+  const input = modelInput(picker);
+  const options = picker.querySelector('.model-options');
+  const needle = filter.trim().toLocaleLowerCase();
+  const matches = installedModels.filter(name => !needle || name.toLocaleLowerCase().includes(needle));
+  options.replaceChildren();
+  if (!matches.length) {{
+    const empty = document.createElement('div');
+    empty.className = 'model-option-empty';
+    empty.textContent = installedModels.length
+      ? 'No installed models match. You can still enter a model tag manually.'
+      : 'No installed models. You can still enter a model tag manually.';
+    options.append(empty);
+  }} else {{
+    for (const name of matches) {{
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'model-option';
+      option.setAttribute('role', 'option');
+      option.dataset.value = name;
+      option.textContent = name;
+      option.setAttribute(
+        'aria-selected',
+        normalizeModel(name) === normalizeModel(input.value.trim()) ? 'true' : 'false'
+      );
+      options.append(option);
+    }}
+  }}
+}}
+
+function openModelPicker(picker, filter = '') {{
+  const input = modelInput(picker);
+  const toggle = picker.querySelector('.model-picker-toggle');
+  const options = picker.querySelector('.model-options');
+  renderModelOptions(picker, filter);
+  options.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+  toggle.setAttribute('aria-expanded', 'true');
+}}
+
+function chooseModel(picker, value) {{
+  const input = modelInput(picker);
+  input.value = value;
+  input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  closeModelPicker(picker);
+  focusModelInput(picker);
+}}
+
+for (const picker of modelPickers) {{
+  const input = modelInput(picker);
+  const toggle = picker.querySelector('.model-picker-toggle');
+  const options = picker.querySelector('.model-options');
+
+  input.addEventListener('focus', () => {{
+    if (picker.dataset.suppressOpen) {{
+      delete picker.dataset.suppressOpen;
+      return;
+    }}
+    openModelPicker(picker);
+  }});
+  input.addEventListener('input', () => openModelPicker(picker, input.value));
+  input.addEventListener('keydown', event => {{
+    if (event.key === 'Escape') {{
+      closeModelPicker(picker);
+      return;
+    }}
+    if (event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    openModelPicker(picker);
+    options.querySelector('.model-option')?.focus();
+  }});
+
+  toggle.addEventListener('mousedown', event => event.preventDefault());
+  toggle.addEventListener('click', () => {{
+    if (options.hidden) {{
+      openModelPicker(picker);
+      input.focus();
+    }} else {{
+      closeModelPicker(picker);
+      focusModelInput(picker);
+    }}
+  }});
+
+  options.addEventListener('mousedown', event => event.preventDefault());
+  options.addEventListener('click', event => {{
+    const option = event.target.closest('.model-option');
+    if (option) chooseModel(picker, option.dataset.value);
+  }});
+  options.addEventListener('keydown', event => {{
+    const option = event.target.closest('.model-option');
+    if (!option) return;
+    const choices = [...options.querySelectorAll('.model-option')];
+    const index = choices.indexOf(option);
+    if (event.key === 'Enter' || event.key === ' ') {{
+      event.preventDefault();
+      chooseModel(picker, option.dataset.value);
+    }} else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {{
+      event.preventDefault();
+      const offset = event.key === 'ArrowDown' ? 1 : -1;
+      choices[(index + offset + choices.length) % choices.length]?.focus();
+    }} else if (event.key === 'Escape') {{
+      event.preventDefault();
+      closeModelPicker(picker);
+      focusModelInput(picker);
+    }}
+  }});
+}}
+
+document.addEventListener('pointerdown', event => {{
+  for (const picker of modelPickers) {{
+    if (!picker.contains(event.target)) closeModelPicker(picker);
+  }}
+}});
+
 function updateModelRows() {{
   for (const button of document.querySelectorAll('.download-model')) {{
     const input = document.getElementById(button.dataset.model);
@@ -611,8 +753,9 @@ for (const button of document.querySelectorAll('.download-model')) {{
       if (!success) throw new Error('Download interrupted. Retry to resume.');
       const list = await fetch('/models' + location.search).then(r => r.json());
       installedModels = list.models;
-      const choices = document.getElementById('ollama-models'); choices.replaceChildren();
-      for (const name of installedModels) {{ const option = document.createElement('option'); option.value = name; choices.append(option); }}
+      for (const picker of modelPickers) {{
+        if (!picker.querySelector('.model-options').hidden) renderModelOptions(picker);
+      }}
       delete button.dataset.busy;
       updateModelRows();
     }} catch (error) {{ status.textContent = 'Could not download: ' + error.message; button.disabled = false; }}
