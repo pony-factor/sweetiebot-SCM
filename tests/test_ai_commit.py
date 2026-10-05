@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 from contextlib import ExitStack
 import unittest
@@ -25,6 +28,55 @@ class GitOutputTests(unittest.TestCase):
             )
 
         self.assertEqual(output, "prefix\ufffdsuffix")
+
+
+class GithubSplitTests(unittest.TestCase):
+    def test_packs_staged_payload_at_100_mib(self):
+        mib = 1024**2
+        groups = ai_commit._pack_large_commit_groups([
+            ("a.bin", 60 * mib), ("b.bin", 40 * mib), ("c.bin", 1 * mib)
+        ])
+        self.assertEqual(groups, [["a.bin", "b.bin"], ["c.bin"]])
+
+    def test_rejects_single_staged_blob_over_github_limit(self):
+        with patch.object(ai_commit, "staged_blob_sizes", return_value=[
+            ("huge.bin", ai_commit.GITHUB_FILE_MAX_BYTES + 1)
+        ]):
+            with self.assertRaisesRegex(RuntimeError, "larger than 100 MiB"):
+                ai_commit.github_split_groups(["huge.bin"])
+
+    def test_splits_aggregate_payload_over_target(self):
+        mib = 1024**2
+        with patch.object(ai_commit, "staged_blob_sizes", return_value=[
+            ("a.bin", 60 * mib), ("b.bin", 60 * mib)
+        ]):
+            self.assertEqual(ai_commit.github_split_groups(["a.bin", "b.bin"]), [["a.bin"], ["b.bin"]])
+
+    def test_split_commits_use_temporary_indexes_and_leave_stage_clean(self):
+        git = shutil.which("git")
+        if not git:
+            self.skipTest("git is unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            def run(*args):
+                return subprocess.run([git, "-C", tmp, *args], check=True, capture_output=True, text=True)
+            run("init", "--quiet")
+            run("config", "user.name", "Sweetiebot Test")
+            run("config", "user.email", "sweetiebot@example.test")
+            Path(tmp, "base.txt").write_text("base\n", encoding="utf-8")
+            run("add", "base.txt")
+            run("commit", "--quiet", "-m", "base")
+            Path(tmp, "a.txt").write_text("a\n", encoding="utf-8")
+            Path(tmp, "b.txt").write_text("b\n", encoding="utf-8")
+            run("add", "a.txt", "b.txt")
+            with patch.object(ai_commit, "REAL_GIT", git), patch.object(
+                ai_commit, "GIT_GLOBAL_ARGS", ["-C", tmp]
+            ), patch.object(
+                ai_commit, "generate_message", side_effect=[("🐞 Add a", ""), ("🐞 Add b", "")]
+            ), patch.object(ai_commit, "should_add_default_branch_description", return_value=False):
+                result = ai_commit.commit_split_groups(["-C", tmp, "commit", "--quiet"], [["a.txt"], ["b.txt"]])
+            self.assertEqual(result, 0)
+            self.assertEqual(run("log", "-2", "--pretty=%s").stdout.splitlines(), ["🐞 Add b", "🐞 Add a"])
+            self.assertEqual(run("status", "--porcelain").stdout, "")
 
 
 class RoutingTests(unittest.TestCase):
@@ -104,6 +156,7 @@ class PostCommitRoutingTests(unittest.TestCase):
                 for name, value in [
                     ("manual_spellcheck_enabled", False), ("feature_enabled", True),
                     ("normalize_staged_final_newlines", []), ("staged_diff", ("1 file", "diff", ["note.md"])),
+                    ("github_split_groups", [["note.md"]]),
                     ("generate_message", ("Title", "")), ("should_add_default_branch_description", False),
                     ("git_config_bool", True), ("load_post_commit_spellcheck", worker),
                 ]:
