@@ -176,7 +176,9 @@ async function run() {
   await assert.rejects(callback(uri, { branch: 'main', base: 'main' }), /other than/);
   repository.state.HEAD.name = 'draft';
 
-  assert(require('../efs/package.json').activationEvents.includes('onCommand:scmToolkit.openPullRequestChat'));
+  const packageJson = require('../efs/package.json');
+  assert(packageJson.activationEvents.includes('onCommand:scmToolkit.openPullRequestChat'));
+  assert(packageJson.activationEvents.includes('onUri'));
 
   const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
   const callbackSource = source.match(/    const createPullRequest = ([\s\S]*?)\n    };/)[1];
