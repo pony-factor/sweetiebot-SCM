@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -24,6 +25,11 @@ MAX_FILE_CONTEXT_CHARS = int(
     os.environ.get("SCM_TOOLKIT_AI_MAX_FILE_CONTEXT_CHARS", "5000")
 )
 MAX_DIFF_SECTIONS = int(os.environ.get("SCM_TOOLKIT_AI_MAX_DIFF_SECTIONS", "20"))
+
+# GitHub blocks regular repository files larger than 100 MiB. Sweetiebot uses
+# that same size as an aggregate auto-split target for blank automatic commits.
+GITHUB_FILE_MAX_BYTES = 100 * 1024 * 1024
+AUTO_SPLIT_TARGET_BYTES = GITHUB_FILE_MAX_BYTES
 
 IMAGE_EXTENSIONS = {
     ".avif",
@@ -532,10 +538,11 @@ def normalize_staged_final_newlines() -> list[str]:
         if cleaned.endswith(b"\r"):
             updated = cleaned + b"\n"
         else:
-            trimmed = cleaned
-            while trimmed.endswith((b"\r\n", b"\n")):
-                trimmed = trimmed[:-2] if trimmed.endswith(b"\r\n") else trimmed[:-1]
-            updated = trimmed + newline
+            trailing_blank_lines = re.search(rb"(?:(?:\r\n|\n)[ \t]*)+$", cleaned)
+            if trailing_blank_lines:
+                updated = cleaned[:trailing_blank_lines.start()] + newline
+            else:
+                updated = cleaned + newline
         if updated == data:
             continue
         hashed = repo_git("hash-object", "-w", "--stdin", input_data=updated)
@@ -581,6 +588,134 @@ def staged_diff() -> tuple[str, str, list[str]]:
         if line.strip()
     ]
     return stat, diff, files
+
+
+def _staged_raw_diff(*paths: str, binary: bool = False) -> bytes:
+    args = ["diff", "--cached", "--no-ext-diff", "--no-color"]
+    if binary:
+        args.append("--binary")
+    if paths:
+        args.extend(["--", *paths])
+    result = git_bytes(*args)
+    if result.returncode != 0:
+        scope = ", ".join(paths) if paths else "staged changes"
+        raise RuntimeError(f"could not inspect staged changes for {scope}")
+    return result.stdout
+
+
+def staged_blob_sizes(files: list[str]) -> list[tuple[str, int]]:
+    """Return final staged Git-object sizes, treating deletions as zero bytes."""
+    if not files:
+        return []
+    entries = git_bytes("ls-files", "--stage", "-z", "--", *files)
+    if entries.returncode != 0:
+        raise RuntimeError("could not inspect staged Git objects")
+    shas_by_path: dict[str, bytes] = {}
+    for raw_entry in entries.stdout.split(b"\0"):
+        if not raw_entry:
+            continue
+        try:
+            metadata, raw_path = raw_entry.split(b"\t", 1)
+            _mode, sha, stage = metadata.split()
+        except ValueError as exc:
+            raise RuntimeError("could not parse staged Git-object metadata") from exc
+        if stage == b"0":
+            shas_by_path[os.fsdecode(raw_path)] = sha
+    unique_shas = list(dict.fromkeys(shas_by_path.values()))
+    sizes_by_sha: dict[bytes, int] = {}
+    if unique_shas:
+        checked = git_bytes(
+            "cat-file",
+            "--batch-check=%(objectname) %(objectsize)",
+            input_data=b"".join(sha + b"\n" for sha in unique_shas),
+        )
+        if checked.returncode != 0:
+            raise RuntimeError("could not measure staged Git objects")
+        for line in checked.stdout.splitlines():
+            try:
+                sha, raw_size = line.split(None, 1)
+                sizes_by_sha[sha] = int(raw_size)
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError("could not parse staged Git-object sizes") from exc
+    return [(path, sizes_by_sha.get(shas_by_path.get(path, b""), 0)) for path in files]
+
+
+def _pack_large_commit_groups(metrics: list[tuple[str, int]], limit: int = AUTO_SPLIT_TARGET_BYTES) -> list[list[str]]:
+    groups: list[list[str]] = []
+    group: list[str] = []
+    size = 0
+    for path, blob_size in metrics:
+        if group and size + blob_size > limit:
+            groups.append(group)
+            group = []
+            size = 0
+        group.append(path)
+        size += blob_size
+    if group:
+        groups.append(group)
+    return groups
+
+
+def github_split_groups(files: list[str]) -> list[list[str]]:
+    """Split large staged payloads while honoring GitHub's per-file hard limit."""
+    metrics = staged_blob_sizes(files)
+    oversized = [(path, size) for path, size in metrics if size > GITHUB_FILE_MAX_BYTES]
+    if oversized:
+        path, size = max(oversized, key=lambda item: item[1])
+        raise RuntimeError(
+            f"{path} is {size / 1024**2:.1f} MiB in the staged snapshot. "
+            "GitHub blocks regular Git files larger than 100 MiB; splitting the commit "
+            "cannot make that final file smaller. Use Sweetiebot's confirmed file split "
+            "in VS Code, split the file manually, or track it with Git LFS."
+        )
+    if sum(size for _, size in metrics) <= AUTO_SPLIT_TARGET_BYTES:
+        return [files] if files else []
+    return _pack_large_commit_groups(metrics)
+
+
+def commit_split_groups(argv: list[str], groups: list[list[str]]) -> int:
+    """Commit 100-MiB-sized file groups through temporary indexes."""
+    original_index = os.environ.get("GIT_INDEX_FILE")
+    committed = 0
+    for number, paths in enumerate(groups, start=1):
+        patch = _staged_raw_diff(*paths, binary=True)
+        if not patch:
+            continue
+        with tempfile.TemporaryDirectory(prefix="scm-toolkit-index-") as directory:
+            os.environ["GIT_INDEX_FILE"] = os.path.join(directory, "index")
+            try:
+                head = git_bytes("rev-parse", "--verify", "HEAD")
+                setup = git_bytes("read-tree", "HEAD") if head.returncode == 0 else git_bytes("read-tree", "--empty")
+                if setup.returncode != 0:
+                    raise RuntimeError("could not initialize a temporary index for split commits")
+                applied = git_bytes("apply", "--cached", "--binary", "--whitespace=nowarn", "-", input_data=patch)
+                if applied.returncode != 0:
+                    raise RuntimeError("could not stage a split commit chunk in the temporary index")
+                stat, diff, staged_files = staged_diff()
+                if not stat and not diff:
+                    continue
+                title, description = generate_message(
+                    stat, diff, staged_files,
+                    include_description=should_add_default_branch_description(),
+                )
+                message_args = ["-m", title]
+                if description:
+                    message_args.extend(["-m", description])
+                result = subprocess.run([REAL_GIT, *argv, *message_args], check=False)
+                if result.returncode != 0:
+                    return result.returncode
+                committed += 1
+                print(f"scm-toolkit: split commit {number}/{len(groups)} ({len(staged_files)} files)", file=sys.stderr)
+            finally:
+                if original_index is None:
+                    os.environ.pop("GIT_INDEX_FILE", None)
+                else:
+                    os.environ["GIT_INDEX_FILE"] = original_index
+    if committed:
+        remaining = git_bytes("diff", "--cached", "--quiet")
+        if remaining.returncode != 0:
+            raise RuntimeError("automatic commit splitting left staged changes behind; the staged index was not modified, so retry after reviewing it")
+    return 0
 
 
 def path_kind(path: str) -> str | None:
@@ -1143,6 +1278,14 @@ def main() -> None:
     stat, diff, files = staged_diff()
     if not stat and not diff:
         os.execv(REAL_GIT, [REAL_GIT, *argv])
+
+    try:
+        split_groups = github_split_groups(files)
+        if len(split_groups) > 1:
+            raise SystemExit(commit_split_groups(argv, split_groups))
+    except RuntimeError as exc:
+        print(f"scm-toolkit: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
     title, description = generate_message(
         stat,

@@ -44,7 +44,7 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 - GnuPG, only if you want the configurator to import a PGP signing key
 - Ollama is required for local AI commit-title generation and semantic Workspace Search; exact Workspace Search still works if embeddings are unavailable
 
-The installer modifies the installed VS Code workbench files. VS Code updates can replace those files, so rerun the installer after an update if the patch disappears. VS Code may also show an installation-integrity warning after its application files are modified.
+The installer modifies the installed VS Code workbench files. VS Code updates can replace those files. After installing this version once, the companion extension automatically restores supported patches at startup, after extension changes, and every five minutes. VS Code may also show an installation-integrity warning after its application files are modified.
 
 ## Repository layout
 
@@ -58,7 +58,7 @@ Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m un
 
 ## Install
 
-On macOS, double-click **Sweetiebot Installer.app** to install without typing a Terminal command. The app includes its installer files, so you can move it to your Applications folder. Close and reopen your VS Code windows afterward, and run the app again after VS Code updates.
+On macOS, double-click **Sweetiebot Installer.app** to install without typing a Terminal command. The app includes its installer files, so you can move it to your Applications folder. Close and reopen your VS Code windows afterward. Once this version is installed, supported customizations are restored automatically after VS Code and extension updates.
 
 On the first run, macOS may require you to allow **Sweetiebot Installer** in **System Settings → Privacy & Security → App Management**. The app offers an **Open Settings** button when access is blocked; grant access and double-click the app again.
 
@@ -76,6 +76,12 @@ Clone the repository and enter it:
 git clone https://github.com/JFWooten4/custom-vscode-scm-toolkit.git
 cd custom-vscode-scm-toolkit
 ```
+
+Automatic repair uses the bundled patch definitions and your saved settings; it does not download new Sweetie Bot releases. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful repair offers **Reload Window**; it never reloads your work automatically. Turn it off with **Automatically restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
+
+Repair is serialized across windows and skips companion-extension installation. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require an updated Sweetie Bot release.
+
+The checked-in signed installer app must be rebuilt on macOS with the existing signing identity to distribute this change; editing its bundled files directly invalidates the signature. Existing users need one installation of the rebuilt app (or `python3 scripts/install.py` from this checkout) to enable automatic repair.
 
 Validate that the currently installed VS Code build matches the guarded patch anchors without changing anything:
 
@@ -129,7 +135,7 @@ After installation, the gear at the right end of the Source Control message row 
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
 
-With **Automatically pull clean branches** enabled, `main` fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, and changed branch tips or upstreams also pause pulling.
+With **Automatically pull clean branches** enabled, `main` fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Sweetiebot pauses these ref-moving pulls for the full lifetime of a VS Code commit so background syncing cannot advance `HEAD` between Git reading and updating the branch ref. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, changed branch tips or upstreams also pause pulling.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
 
@@ -302,6 +308,8 @@ Use the absolute path shown by `python3 scripts/install.py`; do not rely on `~` 
 
 When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blank message summarizes the staged diff through the configured local Ollama model. On the configured `default-branch` (normally `main`), `ai-default-branch-description = true` asks the model for a subject plus one or two substantive sentences describing what changed and, when clear from the diff, its purpose or effect. Other branches keep the subject-only format. A manually entered message is never replaced by generated commit content; when manual spellcheck is enabled, only its subject line may receive spelling corrections. Amend/fixup/squash/reuse-message mode, path-limited blank commits, or `--all` keep their existing behavior.
 
+Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-commit split target. When a blank automatic commit contains multiple staged files whose final Git blobs total more than 100 MiB, Sweetiebot splits them at file boundaries into smaller commits through temporary indexes, leaving the real staged index intact while the split runs. If one staged file itself exceeds 100 MiB, Sweetiebot does **not** change it automatically: VS Code shows a modal confirmation with **Split file**, **Git LFS docs**, and **Cancel**. Only after **Split file** is chosen does Sweetiebot replace the oversized working-tree file with numbered `.part001`, `.part002`, … files of at most 95 MiB and stage that replacement. It refuses the automatic file split when the file has unstaged changes or when a target part already exists, and restores the original if splitting or staging fails. GitHub's softer diff-view ceilings (20,000 lines or 1 MB total raw diff, 20,000 lines or 500 KB for one file, 300 files, and 25 renderable files) produce a VS Code warning with a clickable **Commit anyway** bypass instead of forcing a split. Files over 50 MiB also receive GitHub's large-file warning with the same bypass. Existing legacy `~/.local/bin/git-auto-title` installations are refreshed alongside `scm-toolkit-git`, so older VS Code configurations receive the current binary-safe Git output handling.
+
 **Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject.
 
 Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other agent instructions are excluded from the generation prompt. Without that preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
@@ -404,7 +412,7 @@ restore the theme. All three settings default to blank.
 Run `python3 scripts/install.py` after changing them and reopen the VS Code window.
 These overrides apply only to the Codex composer controls, independently of
 VS Code's general foreground color. Codex extension updates can replace the
-stylesheet, so rerun the installer after updating the extension.
+stylesheet; automatic app repair restores supported customizations after updates.
 
 If Codex stopped loading after the retired inline composer patch from PR #93,
 repair the installed OpenAI extension directly from a current checkout:
@@ -446,8 +454,7 @@ workbench patch, run:
 python3 scripts/install.py --codex-only
 ```
 
-Codex extension updates can replace the patched webview bundle. Rerun the command
-after an extension update if the countdown disappears.
+Codex extension updates can replace the patched webview bundle. Automatic app repair restores supported customizations; reload when prompted.
 
 ### Codex promotion hiding
 
@@ -615,11 +622,17 @@ The trailer is added after a blank line and is not duplicated if it is already
 present. If the commit fails and VS Code leaves the message untouched, the toolkit
 restores the original message.
 
-### Pull requests in ChatGPT
+### Pull requests through Kafania
 
-The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, local repository path, GitHub repository, and base branch in its prompt. It asks ChatGPT to read the branch diff and explain the work's intent and effects in concise paragraphs or short bullets, across code, prose, research, and brainstorming. Titles reflect the actual scope, and description length follows the substantive changes. Lists, headings, and compact tables are encouraged when they make the description easier to read. The description leads with the substantive change and documents the work for the record after merge, without reviewer questions or checklists. The prompt distinguishes source collection, interpretation, and draft changes, separates observed changes from inferred intent, treats rough notes and placeholders plainly, and explains unfamiliar shorthand only when supported by context. It avoids exhaustive file inventories, procedural narration, and routine verification boilerplate, and ends the description with a centered pony image linking to Kefania. Its alt text attributes only the automatically written PR description.
+The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 
-The button uses the existing `mcp-pull-request` visibility setting and no longer needs an MCP server or tool. ChatGPT needs access to the repository to read its changes; the prompt asks for access when the repository is unavailable. Opening the chat does not stage, commit, or push local changes.
+The request directs ChatGPT to publish through the configured Kafania MCP server and tool (by default `codex-drafter` / `github_create_pull_request`). If that Kafania tool is unavailable, the prompt asks ChatGPT not to substitute another GitHub writer.
+
+When the Integrated Browser is already showing a private ChatGPT conversation, Sweetiebot records its `/c/<uuid>` URL as the source. Otherwise it asks the patched Codex extension for the active local conversation UUID and a read-only context snapshot. The Codex UUID is linked through a Sweetiebot VS Code deep link so the author can reopen the local session even though it is not public.
+
+That source metadata is passed to Kafania. Kafania formats it as a separate pull-request comment and can include a short conversation-intent summary, which is intentionally distinct from the diff-based PR description. Source UUIDs are never invented when neither ChatGPT nor Codex exposes one.
+
+The two repositories are expected to be checked out beside each other so Sweetiebot can read `../kefania/PULL_REQUEST.md`. Opening the drafting chat does not stage, commit, or push local changes.
 
 ### Pony branch
 

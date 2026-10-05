@@ -7,10 +7,12 @@ const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
+const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
+const { registerCommitLimitCommand } = require('./commit_limits');
 
 const VIEW_ID = 'scmToolkit.workspaceSearch';
 const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
@@ -48,6 +50,7 @@ async function openSettings(context) {
     workspaceSearch: settings(),
     vscodeSettings: {
       openPanelOnStartup,
+      automaticAppRepair: scm.get('automaticAppRepair', true),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       codexKeepAwake: scm.get('codexKeepAwake', true),
@@ -221,6 +224,7 @@ function settings() {
 }
 
 async function activate(context) {
+  registerCommitLimitCommand(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context);
   // Hidden panel tabs can still be restored as the active container.
@@ -232,6 +236,7 @@ async function activate(context) {
   registerBranchCommands(vscode, context);
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
+  registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);
