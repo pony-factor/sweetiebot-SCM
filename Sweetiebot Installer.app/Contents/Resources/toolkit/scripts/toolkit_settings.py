@@ -1,4 +1,4 @@
-"""Global Git-backed settings shared by the SCM Toolkit installers and UI."""
+"""Global Git-backed settings shared by the Sweetiebot SCM installers and UI."""
 
 from __future__ import annotations
 

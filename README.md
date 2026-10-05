@@ -1,4 +1,4 @@
-# Custom VS Code SCM Toolkit
+# Sweetiebot SCM
 
 A small source-control UI patch for Visual Studio Code. It keeps the built-in Git workflow, but adds a compact branch selector and optional SCM controls around the commit-message box.
 
@@ -450,7 +450,7 @@ the form. Only the resulting public fingerprint is saved to Git configuration;
 `commit.gpgsign` is enabled and the private key is never echoed into generated
 configuration or command output.
 
-The companion extension exposes `SCM Toolkit: Search Linked GitHub Repositories`.
+The companion extension exposes `Sweetiebot SCM: Search Linked GitHub Repositories`.
 It authenticates through VS Code's GitHub provider and searches the repositories
 visible to that linked account, so the toolkit does not maintain a second repository
 access list or a separate personal access token.

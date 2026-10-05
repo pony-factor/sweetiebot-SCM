@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install or remove the SCM Toolkit Workspace Search companion extension."""
+"""Install or remove the Sweetiebot SCM companion extension."""
 
 from __future__ import annotations
 
