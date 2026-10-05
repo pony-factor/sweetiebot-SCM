@@ -183,7 +183,7 @@ async function splitOversizedFile(cwd, item, partBytes = SPLIT_PART_BYTES) {
   const backupPath = `${sourcePath}.scm-toolkit-original-${token}`;
   let source;
   let sourceMoved = false;
-  let finalsCreated = false;
+  const finalPathsCreated = [];
 
   try {
     source = await fs.promises.open(sourcePath, 'r');
@@ -213,8 +213,8 @@ async function splitOversizedFile(cwd, item, partBytes = SPLIT_PART_BYTES) {
     sourceMoved = true;
     for (let index = 0; index < tempPaths.length; index += 1) {
       await fs.promises.rename(tempPaths[index], partAbsolutePaths[index]);
+      finalPathsCreated.push(partAbsolutePaths[index]);
     }
-    finalsCreated = true;
 
     await gitBuffer(cwd, ['add', '-A', '--', relativePath, ...partPaths]);
     await fs.promises.unlink(backupPath);
@@ -225,10 +225,8 @@ async function splitOversizedFile(cwd, item, partBytes = SPLIT_PART_BYTES) {
     for (const tempPath of tempPaths) {
       try { await fs.promises.unlink(tempPath); } catch {}
     }
-    if (finalsCreated) {
-      for (const partPath of partAbsolutePaths) {
-        try { await fs.promises.unlink(partPath); } catch {}
-      }
+    for (const partPath of finalPathsCreated) {
+      try { await fs.promises.unlink(partPath); } catch {}
     }
     if (sourceMoved) {
       try { await fs.promises.rename(backupPath, sourcePath); } catch {}
