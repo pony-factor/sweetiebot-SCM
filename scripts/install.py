@@ -690,7 +690,10 @@ def main():
         type=Path,
         help="Path to an OpenAI Codex VS Code extension directory",
     )
+    parser.add_argument("--repair", action="store_true", help="Repair app patches without reinstalling companion tools")
     args = parser.parse_args()
+    if args.repair and (args.uninstall or args.configure or args.codex_only):
+        parser.error("--repair cannot be combined with --uninstall, --configure, or --codex-only")
 
     if args.configure and (args.uninstall or args.check or args.codex_only):
         parser.error("--configure cannot be combined with --uninstall, --check, or --codex-only")
@@ -714,7 +717,7 @@ def main():
     wrapper_path = ai_wrapper_path()
     wrapper_changed = (
         False
-        if args.codex_only
+        if args.codex_only or args.repair
         else sync_ai_wrapper(
             remove=args.uninstall, check=True, destination=wrapper_path
         )
@@ -722,7 +725,7 @@ def main():
     model_picker_path = ai_model_picker_path()
     model_picker_changed = (
         False
-        if args.codex_only
+        if args.codex_only or args.repair
         else sync_model_picker(
             enabled=settings["aiModelPicker"],
             remove=args.uninstall,
@@ -732,7 +735,7 @@ def main():
     )
     workspace_search_changed = (
         False
-        if args.codex_only
+        if args.codex_only or args.repair
         else workspace_search.sync_extension(
             remove=args.uninstall,
             check=True,
@@ -867,7 +870,7 @@ def main():
             if old != [path.read_text() for path in paths]:
                 raise RuntimeError("VS Code changed during validation; retry the command.")
             write_pair(paths, new, old)
-        if not args.codex_only:
+        if not args.codex_only and not args.repair:
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
             sync_model_picker(
                 enabled=settings["aiModelPicker"],
@@ -882,7 +885,7 @@ def main():
     action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
     target = "Codex customizations" if args.codex_only else "SCM toolkit"
     print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
-    if not args.codex_only:
+    if not args.codex_only and not args.repair:
         if args.uninstall:
             print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")
         else:

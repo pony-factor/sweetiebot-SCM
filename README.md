@@ -44,7 +44,7 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 - GnuPG, only if you want the configurator to import a PGP signing key
 - Ollama is required for local AI commit-title generation and semantic Workspace Search; exact Workspace Search still works if embeddings are unavailable
 
-The installer modifies the installed VS Code workbench files. VS Code updates can replace those files, so rerun the installer after an update if the patch disappears. VS Code may also show an installation-integrity warning after its application files are modified.
+The installer modifies the installed VS Code workbench files. VS Code updates can replace those files. After installing this version once, the companion extension automatically restores supported patches at startup, after extension changes, and every five minutes. VS Code may also show an installation-integrity warning after its application files are modified.
 
 ## Repository layout
 
@@ -58,7 +58,7 @@ Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m un
 
 ## Install
 
-On macOS, double-click **Sweetiebot Installer.app** to install without typing a Terminal command. The app includes its installer files, so you can move it to your Applications folder. Close and reopen your VS Code windows afterward, and run the app again after VS Code updates.
+On macOS, double-click **Sweetiebot Installer.app** to install without typing a Terminal command. The app includes its installer files, so you can move it to your Applications folder. Close and reopen your VS Code windows afterward. Once this version is installed, supported customizations are restored automatically after VS Code and extension updates.
 
 On the first run, macOS may require you to allow **Sweetiebot Installer** in **System Settings → Privacy & Security → App Management**. The app offers an **Open Settings** button when access is blocked; grant access and double-click the app again.
 
@@ -76,6 +76,12 @@ Clone the repository and enter it:
 git clone https://github.com/JFWooten4/custom-vscode-scm-toolkit.git
 cd custom-vscode-scm-toolkit
 ```
+
+Automatic repair uses the bundled patch definitions and your saved settings; it does not download new Sweetie Bot releases. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful repair offers **Reload Window**; it never reloads your work automatically. Turn it off with **Automatically restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
+
+Repair is serialized across windows and skips companion-extension installation. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require an updated Sweetie Bot release.
+
+The checked-in signed installer app must be rebuilt on macOS with the existing signing identity to distribute this change; editing its bundled files directly invalidates the signature. Existing users need one installation of the rebuilt app (or `python3 scripts/install.py` from this checkout) to enable automatic repair.
 
 Validate that the currently installed VS Code build matches the guarded patch anchors without changing anything:
 
@@ -404,7 +410,7 @@ restore the theme. All three settings default to blank.
 Run `python3 scripts/install.py` after changing them and reopen the VS Code window.
 These overrides apply only to the Codex composer controls, independently of
 VS Code's general foreground color. Codex extension updates can replace the
-stylesheet, so rerun the installer after updating the extension.
+stylesheet; automatic app repair restores supported customizations after updates.
 
 ### Codex usage-reset countdown
 
@@ -423,8 +429,7 @@ workbench patch, run:
 python3 scripts/install.py --codex-only
 ```
 
-Codex extension updates can replace the patched webview bundle. Rerun the command
-after an extension update if the countdown disappears.
+Codex extension updates can replace the patched webview bundle. Automatic app repair restores supported customizations; reload when prompted.
 
 ### Codex promotion hiding
 

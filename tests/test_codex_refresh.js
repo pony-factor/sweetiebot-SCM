@@ -5,21 +5,27 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const timers = new Map();
+const intervals = new Map();
+let enabled = true, installed = true;
+const notices = [];
 let timerId = 0, changed, extensionPath = '/extensions/codex-old', launches = 0;
 const children = [];
 const sandbox = vm.createContext({
-  module: { exports: {} }, process: { platform: 'darwin' },
+  module: { exports: {} }, process: { platform: 'darwin', env: {} },
+  setInterval(fn) { intervals.set(++timerId, fn); return timerId; },
+  clearInterval(id) { intervals.delete(id); },
   setTimeout(fn) { timers.set(++timerId, fn); return timerId; },
   clearTimeout(id) { timers.delete(id); },
   require(name) {
+    if (name === 'path') return path;
     assert.equal(name, 'child_process');
     return { spawn(executable, args) {
       launches++;
       assert.equal(executable, 'python3');
-      assert.deepEqual(Array.from(args), ['/toolkit/codex-customizations/scripts/install.py',
-        '--codex-only', '--codex-extension', extensionPath]);
+      assert.deepEqual(Array.from(args), ['/toolkit/codex-customizations/scripts/repair.py',
+        '--app', '/Custom/Code.app', ...(installed ? ['--codex-extension', extensionPath] : [])]);
       const callbacks = new Map();
-      const child = { stdout: { on() {} }, stderr: { on() {} },
+      const child = { stdout: { on(event, fn) { callbacks.set('stdout', fn); } }, stderr: { on() {} },
         on(event, fn) { callbacks.set(event, fn); },
         kill() { this.killed = true; }, callbacks };
       children.push(child);
@@ -30,10 +36,14 @@ const sandbox = vm.createContext({
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/codex_refresh.js'), 'utf8'), sandbox);
 const context = { subscriptions: [], extensionUri: { fsPath: '/toolkit' } };
 const vscode = {
+  env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },
+  workspace: { getConfiguration() { return { get() { return enabled; } }; },
+    onDidChangeConfiguration() { return { dispose() {} }; } },
+  commands: { executeCommand() {} },
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },
-  window: { createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
+  window: { showInformationMessage(message) { notices.push(message); return Promise.resolve(); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
   extensions: {
-    getExtension() { return { extensionPath }; },
+    getExtension() { return installed ? { extensionPath } : undefined; },
     onDidChange(fn) { changed = fn; return { dispose() {} }; }
   }
 };
@@ -52,8 +62,17 @@ extensionPath = '/extensions/codex-new';
 children[0].callbacks.get('close')(0);
 tick();
 assert.equal(launches, 2, 'queued repair resolves the new selected extension path');
-context.subscriptions.at(-1).dispose();
-assert.equal(children[1].killed, true);
+children[1].callbacks.get('stdout')('Installed SCM toolkit for VS Code 1.0. Reload VS Code.');
 children[1].callbacks.get('close')(0);
+assert.equal(notices.length, 1, 'successful repair offers a reload');
+enabled = false; changed(); tick();
+assert.equal(launches, 2, 'disabled repair cannot launch');
+enabled = true; installed = false;
+[...intervals.values()][0](); tick();
+assert.equal(launches, 3, 'workbench repair works without Codex installed');
+context.subscriptions.at(-1).dispose();
+assert.equal(children[2].killed, true);
+children[2].callbacks.get('close')(0);
+assert.equal(intervals.size, 0);
 assert.equal(timers.size, 0, 'disposal cancels repair and its timeout');
 console.log('Codex update repair lifecycle checks passed.');
