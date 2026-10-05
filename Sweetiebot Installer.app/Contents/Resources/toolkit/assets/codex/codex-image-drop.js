@@ -5,6 +5,8 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
     if (!state) {
         const targets = new Set();
         const body = document.body;
+        // Capture before history rows and their hover cards can intercept the drag.
+        const surface = window;
         let active;
         const select = event => {
             const entries = [...targets].reverse().filter(entry => !entry.root
@@ -30,7 +32,9 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
             const forwarded = new Proxy(event, {
                 get(target, property) {
                     if (property === 'type') return firstEnter ? 'dragenter' : 'dragover';
-                    if (property === 'currentTarget') return entry?.root ?? body;
+                    // Native overlay rendering follows currentTarget. Use the whole
+                    // webview even when the composer portal covers only the prompt.
+                    if (property === 'currentTarget') return body;
                     const value = Reflect.get(target, property, target);
                     return typeof value === 'function' ? value.bind(target) : value;
                 },
@@ -56,11 +60,15 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 active = undefined;
                 if (event.defaultPrevented) event.stopPropagation();
             },
+            dragend(event) {
+                active?.leave(event);
+                active = undefined;
+            },
         };
         for (const [type, handler] of Object.entries(handlers)) {
-            body.addEventListener(type, handler, true);
+            surface.addEventListener(type, handler, true);
         }
-        state = globalThis[key] = { targets, body, handlers, release(entry) {
+        state = globalThis[key] = { targets, surface, handlers, release(entry) {
             if (active === entry) {
                 entry.leave({ type: 'dragleave' });
                 active = undefined;
@@ -74,7 +82,7 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
         state.targets.delete(entry);
         if (state.targets.size) return;
         for (const [type, handler] of Object.entries(state.handlers)) {
-            state.body.removeEventListener(type, handler, true);
+            state.surface.removeEventListener(type, handler, true);
         }
         delete globalThis[key];
     };
