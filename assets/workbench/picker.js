@@ -385,6 +385,22 @@ function scmToolkitReleaseCommitBeforePush(repository, configuration, notificati
     };
 }
 
+function scmToolkitChatgptConversationSource(doc) {
+    const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+    const pattern = new RegExp('^https://chatgpt\\.com/c/(' + uuid + ')(?:[/?#]|$)', 'i');
+    for (const input of doc.querySelectorAll('input')) {
+        if (typeof input.getClientRects === 'function' && !input.getClientRects().length) continue;
+        const match = String(input.value ?? '').trim().match(pattern);
+        if (!match) continue;
+        return {
+            kind: 'chatgpt',
+            uuid: match[1],
+            url: `https://chatgpt.com/c/${match[1]}`,
+        };
+    }
+    return undefined;
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);
@@ -747,7 +763,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
         pullRequestTooltip.textContent = branch === settings.defaultBranch
             ? `${settings.defaultBranch} is the pull-request base branch`
-            : `Draft a pull request for ${branch ?? 'the current branch'} in ChatGPT`;
+            : `Draft a pull request for ${branch ?? 'the current branch'} with Kafania in ChatGPT`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -769,10 +785,14 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         creatingPullRequest = true;
         refreshBranchControls();
         try {
+            const source = scmToolkitChatgptConversationSource(doc);
             await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
                 branch,
                 base: settings.defaultBranch,
                 remote: settings.remote,
+                mcpServer: settings.mcpPrServer,
+                mcpTool: settings.mcpPrTool,
+                source,
             });
         } catch (error) {
             notifications.error(error);
