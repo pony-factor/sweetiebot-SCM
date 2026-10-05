@@ -538,10 +538,11 @@ def normalize_staged_final_newlines() -> list[str]:
         if cleaned.endswith(b"\r"):
             updated = cleaned + b"\n"
         else:
-            trimmed = cleaned
-            while trimmed.endswith((b"\r\n", b"\n")):
-                trimmed = trimmed[:-2] if trimmed.endswith(b"\r\n") else trimmed[:-1]
-            updated = trimmed + newline
+            trailing_blank_lines = re.search(rb"(?:(?:\r\n|\n)[ \t]*)+$", cleaned)
+            if trailing_blank_lines:
+                updated = cleaned[:trailing_blank_lines.start()] + newline
+            else:
+                updated = cleaned + newline
         if updated == data:
             continue
         hashed = repo_git("hash-object", "-w", "--stdin", input_data=updated)

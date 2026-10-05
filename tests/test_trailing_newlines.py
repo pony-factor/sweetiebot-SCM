@@ -47,6 +47,26 @@ class TrailingNewlineTests(unittest.TestCase):
         self.assertEqual(self.git("show", ":example.txt").stdout, expected)
         self.assertEqual(path.read_bytes(), expected)
 
+    def test_trims_whitespace_only_blank_lines_at_eof(self):
+        path = self.repo / "example.txt"
+        path.write_bytes(b"first\n\nsecond\n  \n\t\n")
+        self.git("add", "example.txt")
+
+        self.assertEqual(self.normalize(), ["example.txt"])
+        expected = b"first\n\nsecond\n"
+        self.assertEqual(self.git("show", ":example.txt").stdout, expected)
+        self.assertEqual(path.read_bytes(), expected)
+
+    def test_trims_whitespace_only_crlf_blank_lines_at_eof(self):
+        path = self.repo / "windows.txt"
+        path.write_bytes(b"first\r\n\r\nlast\r\n  \r\n\t\r\n")
+        self.git("add", "windows.txt")
+
+        self.assertEqual(self.normalize(), ["windows.txt"])
+        expected = b"first\r\n\r\nlast\r\n"
+        self.assertEqual(self.git("show", ":windows.txt").stdout, expected)
+        self.assertEqual(path.read_bytes(), expected)
+
     def test_trims_extra_crlf_newlines(self):
         self.git("config", "core.autocrlf", "false")
         path = self.repo / "windows.txt"
