@@ -265,6 +265,32 @@ class ManualSpellcheckTests(unittest.TestCase):
 
 
 class TitleTests(unittest.TestCase):
+    def test_required_model_reports_timeout_connection_and_http_failures(self):
+        failures = [
+            (TimeoutError("timed out"), "timed out after 300 seconds"),
+            (ai_commit.urllib.error.URLError(TimeoutError("timed out")), "timed out after 300 seconds"),
+            (ai_commit.urllib.error.URLError(ConnectionRefusedError()), "Check that Ollama is running"),
+            (ai_commit.urllib.error.HTTPError("http://127.0.0.1:11434/api/generate", 503, "busy", {}, None), "HTTP 503 for model local"),
+        ]
+        for error, expected in failures:
+            with self.subTest(error=error), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("recent_subjects", ""), ("staged_file_context", ""),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    ai_commit.generate_message("", "", ["a.py"], require_model=True)
+
+    def test_ollama_request_allows_time_queued_behind_ocr(self):
+        with patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{"response":"ok"}'
+            self.assertEqual(ai_commit.ollama_json("/api/generate", {"model": "local"}), {"response": "ok"})
+            self.assertEqual(request.call_args.kwargs["timeout"], 300)
+
     @patch.object(ai_commit, "recent_subjects", return_value="Fix parser\nAdd tests")
     def test_prompt_is_repository_scoped(self, _subjects):
         prompt = ai_commit.prompt_for_diff("1 file changed", "diff --git a/a b/a")
