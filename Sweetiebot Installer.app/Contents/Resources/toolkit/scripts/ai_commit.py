@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -24,6 +25,16 @@ MAX_FILE_CONTEXT_CHARS = int(
     os.environ.get("SCM_TOOLKIT_AI_MAX_FILE_CONTEXT_CHARS", "5000")
 )
 MAX_DIFF_SECTIONS = int(os.environ.get("SCM_TOOLKIT_AI_MAX_DIFF_SECTIONS", "20"))
+
+# GitHub diff-view ceilings. Automatic commits are split before crossing these
+# limits so each generated commit remains reviewable in GitHub's commit view.
+GITHUB_DIFF_MAX_LINES = 20_000
+GITHUB_DIFF_MAX_BYTES = 1_000_000
+GITHUB_DIFF_MAX_FILES = 300
+GITHUB_DIFF_MAX_RENDERABLE_FILES = 25
+GITHUB_FILE_DIFF_MAX_LINES = 20_000
+GITHUB_FILE_DIFF_MAX_BYTES = 500_000
+GITHUB_COMMIT_LIST_MAX = 250
 
 IMAGE_EXTENSIONS = {
     ".avif",
@@ -47,6 +58,7 @@ DOCUMENT_EXTENSIONS = {
     ".pdf",
     ".rtf",
 }
+GITHUB_RENDERABLE_EXTENSIONS = IMAGE_EXTENSIONS | {".pdf", ".geojson"}
 
 EXPLICIT_MESSAGE_FLAGS = {
     "-e",
@@ -581,6 +593,191 @@ def staged_diff() -> tuple[str, str, list[str]]:
         if line.strip()
     ]
     return stat, diff, files
+
+
+def _diff_line_count(data: bytes) -> int:
+    if not data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
+
+
+def _staged_raw_diff(*paths: str, binary: bool = False) -> bytes:
+    args = ["diff", "--cached", "--no-ext-diff", "--no-color"]
+    if binary:
+        args.append("--binary")
+    if paths:
+        args.extend(["--", *paths])
+    result = git_bytes(*args)
+    if result.returncode != 0:
+        scope = ", ".join(paths) if paths else "staged changes"
+        raise RuntimeError(f"could not inspect GitHub diff size for {scope}")
+    return result.stdout
+
+
+def _raw_diff_sections(data: bytes) -> list[bytes]:
+    starts = [match.start() for match in re.finditer(rb"(?m)^diff --git ", data)]
+    return [
+        data[start : starts[index + 1] if index + 1 < len(starts) else len(data)]
+        for index, start in enumerate(starts)
+    ]
+
+
+def _github_renderable(path: str) -> bool:
+    return os.path.splitext(path.lower())[1] in GITHUB_RENDERABLE_EXTENSIONS
+
+
+def _pack_github_diff_groups(
+    metrics: list[tuple[str, int, int, bool]]
+) -> list[list[str]]:
+    groups: list[list[str]] = []
+    group: list[str] = []
+    lines = 0
+    size = 0
+    renderables = 0
+
+    for path, file_lines, file_size, renderable in metrics:
+        next_renderables = renderables + int(renderable)
+        would_overflow = bool(group) and (
+            len(group) + 1 > GITHUB_DIFF_MAX_FILES
+            or lines + file_lines > GITHUB_DIFF_MAX_LINES
+            or size + file_size > GITHUB_DIFF_MAX_BYTES
+            or next_renderables > GITHUB_DIFF_MAX_RENDERABLE_FILES
+        )
+        if would_overflow:
+            groups.append(group)
+            group = []
+            lines = 0
+            size = 0
+            renderables = 0
+            next_renderables = int(renderable)
+
+        group.append(path)
+        lines += file_lines
+        size += file_size
+        renderables = next_renderables
+
+    if group:
+        groups.append(group)
+    return groups
+
+
+def github_split_groups(files: list[str]) -> list[list[str]]:
+    """Partition staged files to GitHub's documented diff-view limits."""
+    if not files:
+        return []
+
+    raw = _staged_raw_diff()
+    sections = _raw_diff_sections(raw)
+    if len(sections) != len(files):
+        sections = [_staged_raw_diff(path) for path in files]
+
+    metrics = []
+    for path, section in zip(files, sections):
+        lines = _diff_line_count(section)
+        size = len(section)
+        if lines > GITHUB_FILE_DIFF_MAX_LINES or size > GITHUB_FILE_DIFF_MAX_BYTES:
+            raise RuntimeError(
+                f"{path} alone exceeds GitHub's single-file diff limit "
+                f"({GITHUB_FILE_DIFF_MAX_LINES:,} lines or "
+                f"{GITHUB_FILE_DIFF_MAX_BYTES // 1000:,} KB). "
+                "Split that file's change before committing."
+            )
+        metrics.append((path, lines, size, _github_renderable(path)))
+
+    total_renderables = sum(int(metric[3]) for metric in metrics)
+    within_total_limit = (
+        len(files) <= GITHUB_DIFF_MAX_FILES
+        and _diff_line_count(raw) <= GITHUB_DIFF_MAX_LINES
+        and len(raw) <= GITHUB_DIFF_MAX_BYTES
+        and total_renderables <= GITHUB_DIFF_MAX_RENDERABLE_FILES
+    )
+    if within_total_limit:
+        return [files]
+
+    groups = _pack_github_diff_groups(metrics)
+    if len(groups) > GITHUB_COMMIT_LIST_MAX:
+        raise RuntimeError(
+            f"the staged change would require {len(groups)} commits to stay within "
+            f"GitHub diff limits, exceeding GitHub's {GITHUB_COMMIT_LIST_MAX}-commit "
+            "comparison list; reduce the staged change first"
+        )
+    return groups
+
+
+def commit_split_groups(argv: list[str], groups: list[list[str]]) -> int:
+    """Commit GitHub-sized chunks through temporary indexes without touching the real index."""
+    original_index = os.environ.get("GIT_INDEX_FILE")
+    committed = 0
+
+    for number, paths in enumerate(groups, start=1):
+        patch = _staged_raw_diff(*paths, binary=True)
+        if not patch:
+            continue
+
+        with tempfile.TemporaryDirectory(prefix="scm-toolkit-index-") as directory:
+            os.environ["GIT_INDEX_FILE"] = os.path.join(directory, "index")
+            try:
+                head = git_bytes("rev-parse", "--verify", "HEAD")
+                setup = (
+                    git_bytes("read-tree", "HEAD")
+                    if head.returncode == 0
+                    else git_bytes("read-tree", "--empty")
+                )
+                if setup.returncode != 0:
+                    raise RuntimeError("could not initialize a temporary index for split commits")
+
+                applied = git_bytes(
+                    "apply",
+                    "--cached",
+                    "--binary",
+                    "--whitespace=nowarn",
+                    "-",
+                    input_data=patch,
+                )
+                if applied.returncode != 0:
+                    raise RuntimeError(
+                        "could not stage a GitHub-sized commit chunk in the temporary index"
+                    )
+
+                stat, diff, staged_files = staged_diff()
+                if not stat and not diff:
+                    continue
+                title, description = generate_message(
+                    stat,
+                    diff,
+                    staged_files,
+                    include_description=should_add_default_branch_description(),
+                )
+                message_args = ["-m", title]
+                if description:
+                    message_args.extend(["-m", description])
+                result = subprocess.run(
+                    [REAL_GIT, *argv, *message_args],
+                    check=False,
+                )
+                if result.returncode != 0:
+                    return result.returncode
+                committed += 1
+                print(
+                    f"scm-toolkit: split commit {number}/{len(groups)} "
+                    f"({len(staged_files)} files)",
+                    file=sys.stderr,
+                )
+            finally:
+                if original_index is None:
+                    os.environ.pop("GIT_INDEX_FILE", None)
+                else:
+                    os.environ["GIT_INDEX_FILE"] = original_index
+
+    if committed:
+        remaining = git_bytes("diff", "--cached", "--quiet")
+        if remaining.returncode != 0:
+            raise RuntimeError(
+                "automatic commit splitting left staged changes behind; "
+                "the staged index was not modified, so retry after reviewing it"
+            )
+    return 0
+
 
 
 def path_kind(path: str) -> str | None:
@@ -1143,6 +1340,14 @@ def main() -> None:
     stat, diff, files = staged_diff()
     if not stat and not diff:
         os.execv(REAL_GIT, [REAL_GIT, *argv])
+
+    try:
+        split_groups = github_split_groups(files)
+        if len(split_groups) > 1:
+            raise SystemExit(commit_split_groups(argv, split_groups))
+    except RuntimeError as exc:
+        print(f"scm-toolkit: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
     title, description = generate_message(
         stat,
