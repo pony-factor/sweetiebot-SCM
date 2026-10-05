@@ -122,6 +122,26 @@ class SubmissionTests(unittest.TestCase):
                 page,
             )
 
+    def test_branch_name_bundles_render_as_browsable_tabs(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS,
+            [],
+            "Ready",
+            "test-token",
+            "Save",
+        )
+
+        self.assertIn('class="pack-tabs" role="tablist"', page)
+        self.assertIn('class="pack-tab" role="tab"', page)
+        self.assertIn('class="pack-panel" role="tabpanel"', page)
+        self.assertIn('class="pack-names"', page)
+        self.assertIn('Find a bundle or name', page)
+        self.assertIn('queen-chrysalis', page)
+        self.assertIn('Use this bundle', page)
+        self.assertIn("ArrowRight", page)
+        self.assertNotIn('class="pack-grid"', page)
+        self.assertNotIn('class="pack-card"', page)
+
     def test_parses_optional_composer_colors(self):
         values = form_values()
         values['codexSendBackground'] = ['#43AF49']

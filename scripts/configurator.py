@@ -298,29 +298,58 @@ def _pack_controls(current: dict[str, object]) -> str:
     except ValueError:
         catalog = load_catalog()
 
-    controls = []
-    for pack in catalog["packs"]:
+    hidden_inputs = []
+    tabs = []
+    panels = []
+    for index, pack in enumerate(catalog["packs"]):
         pack_id = str(pack["id"])
+        label = str(pack["label"])
+        description = str(pack.get("description", "")).strip()
+        names = [str(name) for name in pack["names"]]
+        count = len(names)
         checked = "" if pack_id in disabled else " checked"
-        description = str(pack.get("description", ""))
-        count = len(pack["names"])
-        detail = f"{description} {count} name{'s' if count != 1 else ''}.".strip()
         escaped_id = html.escape(pack_id, quote=True)
-        controls.append(
+        selected = "true" if index == 0 else "false"
+        tab_index = "0" if index == 0 else "-1"
+        hidden = "" if index == 0 else " hidden"
+        description_html = html.escape(description or "No description provided.")
+        names_html = "".join(
+            f'<code class="pack-name">{html.escape(name)}</code>'
+            for name in names
+        )
+        hidden_inputs.append(
             f'<input type="hidden" name="branchNameKnownPack" value="{escaped_id}">'
-            f'<label class="pack-card" title="{html.escape(detail, quote=True)}">'
+        )
+        tabs.append(
+            f'<button type="button" class="pack-tab" role="tab" '
+            f'id="pack-tab-{escaped_id}" data-pack-id="{escaped_id}" '
+            f'aria-controls="pack-panel-{escaped_id}" aria-selected="{selected}" '
+            f'tabindex="{tab_index}"><strong>{html.escape(label)}</strong>'
+            f'<small>{count}</small></button>'
+        )
+        panels.append(
+            f'<section class="pack-panel" role="tabpanel" id="pack-panel-{escaped_id}" '
+            f'data-pack-id="{escaped_id}" aria-labelledby="pack-tab-{escaped_id}"{hidden}>'
+            '<div class="pack-panel-head"><span>'
+            f'<strong>{html.escape(label)}</strong><small>{description_html}</small></span>'
+            '<label class="pack-enable">'
             f'<input type="checkbox" name="branchNamePack" value="{escaped_id}"{checked}>'
-            f'<span><strong>{html.escape(str(pack["label"]))}</strong>'
-            f'<small>{count} names</small></span></label>'
+            '<span>Use this bundle</span></label></div>'
+            f'<div class="pack-name-heading"><span>{count} name{"s" if count != 1 else ""}</span>'
+            '<small>These are the branch names this bundle can generate.</small></div>'
+            f'<div class="pack-names">{names_html}</div></section>'
         )
     return (
         '<fieldset class="pack-picker"><legend>Name bundles</legend>'
-        '<p>Choose the bundles to draw branch names from.</p>'
+        '<p>Browse each bundle before deciding whether it belongs in the random branch-name pool.</p>'
         '<div class="pack-toolbar"><input type="search" id="pack-search" '
-        'aria-label="Find name bundles" placeholder="Find a bundle…">'
+        'aria-label="Find name bundles or names" placeholder="Find a bundle or name…">'
         '<output id="pack-count" aria-live="polite"></output></div>'
-        '<div class="pack-grid">' + "".join(controls) + '</div>'
-        '<p id="pack-empty" hidden>No matching bundles.</p></fieldset>'
+        + "".join(hidden_inputs)
+        + '<div class="pack-tabs" role="tablist" aria-label="Branch name bundles">'
+        + "".join(tabs) + '</div>'
+        + '<div class="pack-panels">' + "".join(panels) + '</div>'
+        + '<p id="pack-empty" hidden>No bundles or names match that search.</p></fieldset>'
     )
 
 
@@ -466,7 +495,8 @@ section{{margin:16px 0;padding:8px 20px;background:var(--panel);border:1px solid
 .field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
-.pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;max-height:320px;overflow:auto;padding:3px}}.pack-card{{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg);transition:border-color .15s,background .15s}}.pack-card:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg))}}.pack-card:has(input:focus-visible){{outline:2px solid var(--accent);outline-offset:1px}}.pack-card input{{accent-color:var(--accent);width:16px;height:16px;flex:none}}.pack-card[hidden]{{display:none}}.pack-card strong{{font-size:13px}}.pack-card small{{font-size:12px}}
+.pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
+
 @media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
 </style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
 {error_html}<form method="post" action="{action}">{''.join(sections)}<datalist id="ollama-models">{options}</datalist>
@@ -549,22 +579,71 @@ if (settingsForm) {{
 }}
 
 const packSearch = document.getElementById('pack-search');
-const packCards = [...document.querySelectorAll('.pack-card')];
+const packTabs = [...document.querySelectorAll('.pack-tab')];
+const packPanels = [...document.querySelectorAll('.pack-panel')];
+let activePackId = packTabs.find(tab => tab.getAttribute('aria-selected') === 'true')?.dataset.packId || '';
+
+function packPanel(id) {{
+  return packPanels.find(panel => panel.dataset.packId === id);
+}}
+
+function activatePack(id, focus = false) {{
+  const nextTab = packTabs.find(tab => tab.dataset.packId === id && !tab.hidden);
+  if (!nextTab) return;
+  activePackId = id;
+  for (const tab of packTabs) {{
+    const active = tab === nextTab;
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
+  }}
+  for (const panel of packPanels) panel.hidden = panel.dataset.packId !== id;
+  if (focus) nextTab.focus();
+}}
+
 function updatePacks() {{
   const query = packSearch.value.trim().toLocaleLowerCase();
   let visible = 0;
   let selected = 0;
-  for (const card of packCards) {{
-    card.hidden = !card.textContent.toLocaleLowerCase().includes(query);
-    if (!card.hidden) visible++;
-    if (card.querySelector('input').checked) selected++;
+  for (const tab of packTabs) {{
+    const panel = packPanel(tab.dataset.packId);
+    const searchable = (tab.textContent + ' ' + (panel?.textContent || '')).toLocaleLowerCase();
+    tab.hidden = !!query && !searchable.includes(query);
+    if (!tab.hidden) visible++;
+    const checkbox = panel?.querySelector('input[name="branchNamePack"]');
+    const enabled = !!checkbox?.checked;
+    tab.classList.toggle('is-enabled', enabled);
+    if (enabled) selected++;
   }}
-  document.getElementById('pack-count').textContent = `${{selected}} / ${{packCards.length}} selected`;
+  const activeTab = packTabs.find(tab => tab.dataset.packId === activePackId);
+  if (!activeTab || activeTab.hidden) {{
+    const firstVisible = packTabs.find(tab => !tab.hidden);
+    if (firstVisible) activatePack(firstVisible.dataset.packId);
+    else for (const panel of packPanels) panel.hidden = true;
+  }}
+  document.getElementById('pack-count').textContent = `${{selected}} / ${{packTabs.length}} selected`;
   document.getElementById('pack-empty').hidden = visible > 0;
 }}
+
 if (packSearch) {{
   packSearch.addEventListener('input', updatePacks);
-  for (const card of packCards) card.addEventListener('change', updatePacks);
+  for (const tab of packTabs) {{
+    tab.addEventListener('click', () => activatePack(tab.dataset.packId));
+    tab.addEventListener('keydown', event => {{
+      const visibleTabs = packTabs.filter(item => !item.hidden);
+      const index = visibleTabs.indexOf(tab);
+      let nextIndex = index;
+      if (event.key === 'ArrowRight') nextIndex = (index + 1) % visibleTabs.length;
+      else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + visibleTabs.length) % visibleTabs.length;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = visibleTabs.length - 1;
+      else return;
+      event.preventDefault();
+      activatePack(visibleTabs[nextIndex].dataset.packId, true);
+    }});
+  }}
+  for (const panel of packPanels) {{
+    panel.querySelector('input[name="branchNamePack"]')?.addEventListener('change', updatePacks);
+  }}
   updatePacks();
 }}
 
