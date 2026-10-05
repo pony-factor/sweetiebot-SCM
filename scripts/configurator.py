@@ -419,6 +419,8 @@ def render_form(
     token: str,
     action_label: str,
     error: str = "",
+    *,
+    finish_on_save: bool = True,
 ) -> str:
     sections = []
     for section in dict.fromkeys(setting.section for setting in SETTINGS):
@@ -450,6 +452,8 @@ def render_form(
     error_html = f'<div class="error" role="alert">{html.escape(error)}</div>' if error else ""
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
+    submit_label = action_label if finish_on_save else "Import signing key"
+    submit_hidden = "" if finish_on_save else " hidden"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sweetiebot SCM Setup</title><style>
@@ -465,41 +469,51 @@ section{{margin:16px 0;padding:8px 20px;background:var(--panel);border:1px solid
 @media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
 </style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
 {error_html}<form method="post" action="{action}">{''.join(sections)}<datalist id="ollama-models">{options}</datalist>
-<div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save">{html.escape(action_label)}</button></div></form>
+<div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
 let autosaveTimer = null;
 let saveChain = Promise.resolve();
+let editVersion = 0;
+const finishOnSave = {json.dumps(finish_on_save)};
 
-async function persistSettings() {{
+async function persistSettings(importKey = false) {{
+  const version = editVersion;
   saveStatus.textContent = 'Saving…';
   saveStatus.classList.remove('error-state');
   const data = new FormData(settingsForm);
-  data.delete('pgpSecretKey');
+  if (!importKey) data.delete('pgpSecretKey');
   data.delete('action');
   try {{
-    const response = await fetch('/autosave' + location.search, {{
+    const response = await fetch((importKey ? '/save' : '/autosave') + location.search, {{
       method: 'POST',
       body: new URLSearchParams(data)
     }});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Unable to save settings.');
-    saveStatus.textContent = 'Saved';
+    if (importKey) {{
+      settingsForm.elements.pgpSecretKey.value = '';
+      settingsForm.querySelector('button[type="submit"]').hidden = true;
+    }}
+    if (version === editVersion) saveStatus.textContent = 'Saved';
+    return true;
   }} catch (error) {{
     saveStatus.textContent = 'Not saved: ' + error.message;
     saveStatus.classList.add('error-state');
+    return false;
   }}
 }}
 
 function queueAutosave() {{
-  saveChain = saveChain.then(persistSettings, persistSettings);
+  saveChain = saveChain.then(() => persistSettings(), () => persistSettings());
   return saveChain;
 }}
 
 function scheduleAutosave(event) {{
   const target = event.target;
   if (!target?.name || target.name === 'pgpSecretKey' || target.name === 'action') return;
+  editVersion++;
   clearTimeout(autosaveTimer);
   saveStatus.textContent = 'Unsaved changes';
   saveStatus.classList.remove('error-state');
@@ -510,6 +524,11 @@ function scheduleAutosave(event) {{
 }}
 
 if (settingsForm) {{
+  if (!finishOnSave) {{
+    settingsForm.elements.pgpSecretKey.addEventListener('input', event => {{
+      settingsForm.querySelector('button[type="submit"]').hidden = !event.target.value.trim();
+    }});
+  }}
   settingsForm.addEventListener('input', scheduleAutosave);
   settingsForm.addEventListener('change', scheduleAutosave);
   settingsForm.addEventListener('submit', async event => {{
@@ -519,8 +538,12 @@ if (settingsForm) {{
       autosaveTimer = null;
       queueAutosave();
     }}
-    await saveChain;
-    HTMLFormElement.prototype.submit.call(settingsForm);
+    if (await saveChain === false) return;
+    if (finishOnSave) HTMLFormElement.prototype.submit.call(settingsForm);
+    else {{
+      saveChain = saveChain.then(() => persistSettings(true));
+      await saveChain;
+    }}
   }});
 }}
 
@@ -694,7 +717,7 @@ def run_configurator(
                 self._send_json({"models": names, "status": status})
                 return
             names, status = fetch_ollama_models()
-            self._send(render_form(session_settings, names, status, token, action_label))
+            self._send(render_form(session_settings, names, status, token, action_label, finish_on_save=open_browser))
 
         def do_POST(self) -> None:
             if not self._authorized():
@@ -736,7 +759,6 @@ def run_configurator(
                 parsed = {}
                 try:
                     parsed = parse_submission(values)
-                    validate_models(parsed)
                     save_settings(parsed)
                     sync_codex_instructions(
                         str(parsed["chatgptCustomInstructions"]),
@@ -758,7 +780,8 @@ def run_configurator(
             parsed = {}
             try:
                 parsed = parse_submission(values)
-                validate_models(parsed)
+                if open_browser:
+                    validate_models(parsed)
                 save_settings(parsed)
                 sync_codex_instructions(
                     str(parsed["chatgptCustomInstructions"]),
@@ -766,6 +789,9 @@ def run_configurator(
                 )
                 import_pgp_secret_key(values.get("pgpSecretKey", [""])[0])
             except (RuntimeError, ValueError) as error:
+                if not open_browser:
+                    self._send_json({"saved": False, "error": str(error)}, 400)
+                    return
                 names, status = fetch_ollama_models()
                 submitted = dict(session_settings)
                 submitted.update(parsed)
@@ -775,8 +801,11 @@ def run_configurator(
             outcome["saved"] = True
             if not open_browser:
                 print(json.dumps(extension_settings_payload(parsed)), flush=True)
-            self._send(_result_page(True))
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            if open_browser:
+                self._send(_result_page(True))
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+            else:
+                self._send_json({"saved": True})
 
         def log_message(self, _format: str, *_args: object) -> None:
             return
