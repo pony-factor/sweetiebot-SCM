@@ -21,7 +21,7 @@ async function run() {
   const sandbox = {module: {exports: {}}, Buffer, setTimeout, clearTimeout, require(name) {
     if (name === 'vscode') return vscode;
     if (name === './core') return require('../efs/core');
-    if (name === './extract') return {extractText: async () => 'A meaningful example passage.'};
+    if (name === './extract') return {extractText: async () => 'Header.\nA meaningful example passage.\nFooter.'};
     if (name === './ollama') return {embedTexts: async (settings, texts) => {
       calls.push(settings.embeddingModel);
       if (unavailable) throw new Error('Model missing');
@@ -38,6 +38,7 @@ async function run() {
   let result = await index.search('example', 'semantic');
   assert.equal(result.warning, '');
   assert.equal(result.results.length, 1, 'Installing a model must recover previously unembedded passages');
+  assert.equal(result.results[0].line, 1, 'Search results should point at the matching line inside the indexed chunk');
   assert.equal(persisted.embeddingModel, model);
   model = 'second:embed';
   calls.length = 0;
