@@ -1,10 +1,14 @@
 'use strict';
 
 const assert = require('assert');
-const { keywordScore, chunkText, normalizeVector, cosine } = require('../workspace-search-extension/core');
-const { normalizeBaseUrl } = require('../workspace-search-extension/ollama');
+const { keywordScore, chunkText, normalizeVector, cosine } = require('../efs/core');
+const { normalizeBaseUrl } = require('../efs/ollama');
 
 assert(keywordScore('DTC federal reserve', 'DTC applied for Federal Reserve membership') > 0.7);
+assert.strictEqual(keywordScore('fedaral resreve', 'Federal Reserve membership'), 0);
+assert(keywordScore('fedaral resreve', 'Federal Reserve membership', { fuzzy: true }) > 0.5);
+assert(keywordScore('tranfer agnet', 'registered transfer agent records', { fuzzy: true }) > 0.5);
+assert.strictEqual(keywordScore('cat', 'cut', { fuzzy: true }), 0);
 assert(chunkText('alpha '.repeat(600)).length > 1);
 const unit = normalizeVector([3, 4]);
 assert(Math.abs(cosine(unit, unit) - 1) < 1e-9);
