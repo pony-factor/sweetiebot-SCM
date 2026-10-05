@@ -19,6 +19,7 @@ function fixture(onMain = false) {
     async push(...args) { calls.push(['push', ...args]); },
     async fetch(opts) { calls.push(['fetch', opts]); },
     async merge(ref) { calls.push(['merge', ref]); },
+    async getBranch(name) { return { name, upstream: { remote: 'origin', name: 'main' } }; },
     async getRefs(opts) {
       calls.push(['refs', opts]);
       if (opts.pattern === 'refs/heads') return [{ name: 'main' }, { name: 'topic' }];
@@ -217,7 +218,10 @@ async function run() {
     await deleteBranch(repository, { ...options, branch: 'topic' });
     assert.deepEqual(calls[1], ['fetch', { remote: 'origin', prune: true }]);
     assert.deepEqual(calls.at(-1), ['delete', 'topic', false]);
-    assert(calls.findIndex(call => call[0] === 'merge') < calls.findIndex(call => call[0] === 'delete'));
+    const advance = calls.findIndex(call => call[0] === 'fetch' && call[1].remote === '.');
+    assert.deepEqual(calls[advance], ['fetch', { remote: '.', ref: 'refs/remotes/origin/main:refs/heads/main' }]);
+    assert(advance < calls.findIndex(call => call[0] === 'checkout'));
+    assert(!calls.some(call => ['merge', 'push'].includes(call[0])));
   }
   for (const refs of [[], [{ name: 'origin/topic' }]]) {
     const { repository, calls } = fixture();
@@ -230,7 +234,7 @@ async function run() {
     await assert.rejects(deleteBranch(repository, { ...options, branch }), /Cannot delete|active branch changed/);
     assert(!calls.some(call => call[0] === 'fetch' || call[0] === 'delete'));
   }
-  for (const method of ['fetch', 'merge', 'deleteBranch']) {
+  for (const method of ['fetch', 'deleteBranch']) {
     const { repository } = fixture();
     repository[method] = async () => { throw new Error(`${method} failed`); };
     await assert.rejects(deleteBranch(repository, { ...options, branch: 'topic' }), new RegExp(`${method} failed`));
@@ -351,7 +355,7 @@ async function run() {
     };
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
-    assert.equal(context.subscriptions.length, 7);
+    assert.equal(context.subscriptions.length, 9);
     assert.equal(await commands.get('scmToolkit.returnHome')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('scmToolkit.createBranch')(uri, options), 'fresh');
     assert.equal(await commands.get('scmToolkit.createBranch')({ ...uri }, options), 'fresh');
@@ -376,7 +380,8 @@ async function run() {
     const started = new Promise(resolve => { startedMerge = resolve; });
     const gate = new Promise(resolve => { releaseMerge = resolve; });
     let merges = 0;
-    repository.merge = async () => {
+    repository.fetch = async ({ remote }) => {
+      if (remote !== '.') return;
       merges++;
       repository.state.HEAD.behind = 1;
       startedMerge();
