@@ -17,11 +17,13 @@ SETTINGS = {
     "branchCustomNames": "",
     "branchNameImports": "[]",
     "shortPlaceholder": True,
-    "sourceControlLabel": "Sweetiebot",
+    "commitButtonLabel": "Send",
+    "sourceControlLabel": "Sweetie Bot",
     "filledButtons": False,
     "commitAndPush": True,
     "branchCleanup": True,
     "autocompleteToggle": True,
+    "autoPublishToggle": True,
     "codexCoauthor": True,
     "hideOutgoingSyncCount": True,
     "blankStateRefresh": True,
@@ -44,6 +46,7 @@ SETTINGS = {
     "chatgptCustomInstructions": "",
     "chatgptWebCodexCoauthor": True,
     "codexHideChatTimestamps": False,
+    "codexHideDictation": False,
     "defaultBranch": "main",
     "remote": "origin",
 }
@@ -81,21 +84,27 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
-    def test_controls_use_the_vscode_input_background(self):
-        css = (install.HERE / "picker.css").read_text()
+    def test_progress_animation_can_be_restored_from_gear_settings(self):
+        _, css = install.transform(workbench_fixture(), "base-css", settings=dict(SETTINGS, hideSCMProgress=False))
+        self.assertNotIn(".monaco-progress-container", css)
+        _, css = install.transform(workbench_fixture(), "base-css", settings=dict(SETTINGS, hideSCMProgress=True))
+        self.assertIn(".monaco-progress-container", css)
 
-        self.assertEqual(css.count("background: var(--vscode-input-background);"), 5)
+    def test_controls_use_the_vscode_input_background(self):
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
+
+        self.assertEqual(css.count("background: var(--vscode-input-background);"), 6)
         self.assertEqual(css.count("background: transparent;"), 4)
 
     def test_branch_selector_uses_the_vscode_button_colors(self):
-        css = (install.HERE / "picker.css").read_text()
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
 
         self.assertIn("background: var(--vscode-button-background);", css)
         self.assertIn("color: var(--vscode-button-foreground);", css)
         self.assertIn("background: var(--vscode-button-hoverBackground);", css)
 
     def test_unfilled_buttons_match_their_background_with_a_border(self):
-        css = (install.HERE / "outlined_buttons.css").read_text()
+        css = (install.WORKBENCH_ASSETS / "outlined_buttons.css").read_text()
 
         self.assertIn(
             ".scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown", css
@@ -123,7 +132,7 @@ class TransformTests(unittest.TestCase):
         self.assertNotIn(selector, filled_css)
 
     def test_push_control_is_centered_without_a_divider(self):
-        css = (install.HERE / "picker.css").read_text()
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
         push_css = css.split(
             ".scm-view .scm-editor > .scm-toolkit-push {", 1
         )[1].split(
@@ -136,9 +145,15 @@ class TransformTests(unittest.TestCase):
         self.assertIn("border-radius: var(--vscode-cornerRadius-small, 4px);", push_css)
 
     def test_right_side_controls_have_no_vertical_dividers(self):
-        css = (install.HERE / "picker.css").read_text()
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
 
-        for selector in ("scm-toolkit-delete-branch", "scm-toolkit-autocomplete"):
+        for selector in (
+            "scm-toolkit-delete-branch",
+            "scm-toolkit-autocomplete",
+            "scm-toolkit-codex-coauthor",
+            "scm-toolkit-pull-request",
+            "scm-toolkit-auto-publish",
+        ):
             control_css = css.split(
                 f".scm-view .scm-editor > .{selector} {{", 1
             )[1].split(
@@ -147,7 +162,7 @@ class TransformTests(unittest.TestCase):
             self.assertNotIn("border-left", control_css)
 
     def test_sync_control_uses_studio_toolbar_style(self):
-        css = (install.HERE / "picker.css").read_text()
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
         sync_css = css.split(
             ".scm-view .scm-editor > .scm-toolkit-sync-branch {", 1
         )[1].split(
@@ -167,16 +182,22 @@ class TransformTests(unittest.TestCase):
         self.assertIn("const scmToolkitSettings = ", js)
         self.assertIn("editor.inlineSuggest.enabled", js)
         self.assertIn("commands.executeCommand('git.refresh', repositoryArgument)", js)
-        self.assertIn("classList.add('scm-toolkit-refreshing')", js)
+        self.assertNotIn("scm-toolkit-refreshing", js)
         self.assertIn("historyItemRemoteRef.get()", js)
         self.assertIn("resolveHistoryItemRefsCommonAncestor", js)
-        self.assertIn("commands.executeCommand('git.pull', repositoryArgument)", js)
+        self.assertIn("commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument)", js)
         self.assertIn("scm-toolkit-autocomplete", css)
-        self.assertIn(".scm-toolkit-refreshing > .monaco-progress-container", css)
-        self.assertEqual(js.count("className = 'scm-toolkit-tooltip'"), 4)
+        self.assertIn("scm-toolkit-auto-publish", css)
+        self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)
+        self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
+        self.assertIn("'scmToolkit.publishBranch'", js)
+        self.assertIn("scmToolkit.autoPublishNewBranches", js)
+        self.assertIn('[id="workbench.view.scm"] .monaco-progress-container', css)
+        self.assertIn(".pane:has(.scm-view) > .monaco-progress-container", css)
+        self.assertEqual(js.count("className = 'scm-toolkit-tooltip'"), 5)
         self.assertIn(".scm-toolkit-autocomplete:hover > .scm-toolkit-tooltip", css)
         self.assertIn("Co-authored-by: Codex <noreply@openai.com>", js)
-        self.assertIn("currentCommitCommand = provider.acceptInputCommand", js)
+        self.assertIn("currentInput?.repository.provider.acceptInputCommand", js)
         self.assertIn("currentCommitCommand.id,", js)
         self.assertIn("...(currentCommitCommand.arguments ?? [])", js)
         self.assertNotIn("commands.executeCommand('git.commit', currentRepositoryArgument)", js)
@@ -184,13 +205,11 @@ class TransformTests(unittest.TestCase):
         self.assertIn("postCommitCommand: null", js)
         self.assertIn("scmToolkitPushWithPullRetry(repository, originalPush)", js)
         self.assertIn("error?.gitErrorCode !== 'PushRejected'", js)
-        self.assertIn("await repository.pull()", js)
-        self.assertGreaterEqual(js.count("await originalPush.call(repository)"), 2)
-        self.assertIn("mcpService.activateCollections()", js)
-        self.assertIn("mcpService.servers.get()", js)
-        self.assertIn("server.start({ promptType: 'all-untrusted' })", js)
-        self.assertIn("const result = await tool.call({", js)
-        self.assertIn("github_create_pull_request", js)
+        self.assertIn("await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name })", js)
+        self.assertIn("await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`)", js)
+        self.assertIn("await originalPush.call(repository, repository.HEAD)", js)
+        self.assertIn("commands.executeCommand('scmToolkit.openPullRequestChat', repository, {", js)
+        self.assertNotIn("mcpService.activateCollections()", js)
         self.assertIn("scm-toolkit-pull-request", css)
         self.assertIn("scm-toolkit-pony-branch", css)
         self.assertIn("scmToolkitBranchNamePool", js)
@@ -202,18 +221,17 @@ class TransformTests(unittest.TestCase):
         )
         self.assertEqual(runtime["branchNameDisabledPacks"], [])
         self.assertEqual(runtime["branchCustomNames"], [])
-        self.assertIn("commands.executeCommand('git.sync', repository)", js)
-        self.assertIn("repository.branch(branchName, true, 'HEAD')", js)
+        self.assertIn("commands.executeCommand('scmToolkit.createBranch', repository, {", js)
+        self.assertIn("currentRepositoryUri = provider.rootUri;", js)
+        self.assertIn("const repository = currentRepositoryUri;", js)
+        self.assertIn("const repositoryArgument = currentRepositoryUri;", js)
+        self.assertIn("commands.executeCommand('scmToolkit.deleteBranch', repositoryArgument, {", js)
         self.assertIn("scm-toolkit-sync-branch", css)
         self.assertIn("scm-toolkit-settings codicon codicon-gear", js)
         self.assertIn("commands.executeCommand('scmToolkit.openSettings')", js)
         self.assertIn("scm-toolkit-settings", css)
-        self.assertIn("input.value = '🔄 Sync brach to main';", js)
-        self.assertIn("await repository.fetch({ remote: settings.remote });", js)
-        self.assertIn(
-            "await repository.merge(`${settings.remote}/${settings.defaultBranch}`);",
-            js,
-        )
+        self.assertIn("commands.executeCommand('scmToolkit.syncBranch', repository, {", js)
+        self.assertIn("typeof repository.merge !== 'function'", js)
         self.assertNotIn("resolveMergeConflicts", js)
         self.assertEqual(js.count(install.START), 1)
         self.assertEqual(js.count(install.END), 1)
@@ -221,13 +239,17 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(css.count(install.END), 1)
 
     def test_source_control_label_defaults_to_sweetiebot(self):
-        self.assertEqual(install.DEFAULT_SETTINGS["sourceControlLabel"], "Sweetiebot")
+        self.assertEqual(install.DEFAULT_SETTINGS["sourceControlLabel"], "Sweetie Bot")
+
+    def test_commit_button_label_defaults_to_send(self):
+        self.assertEqual(install.DEFAULT_SETTINGS["commitButtonLabel"], "Send")
+        self.assertTrue(install.DEFAULT_SETTINGS["autoPublishToggle"])
 
     def test_source_control_label_patches_view_container_title(self):
         js, _ = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)
 
         self.assertIn(
-            'title:localize2("source control","Sweetiebot"),'
+            'title:{"value": "Sweetie Bot", "original": "Sweetie Bot"},'
             'storageId:"workbench.scm.views.state"',
             js.split(install.START, 1)[0],
         )
@@ -242,6 +264,24 @@ class TransformTests(unittest.TestCase):
             js.split(install.START, 1)[0],
         )
 
+    def test_source_control_label_bypasses_numeric_localization(self):
+        original = workbench_fixture().replace(
+            'localize2("source control","Source Control")',
+            'O(21166,"Source Control")',
+        )
+        settings = dict(SETTINGS, sourceControlLabel='My "SCM"')
+        patched = install.transform(original, "base-css", settings=settings)
+        self.assertIn(
+            'title:' + json.dumps({"value": 'My "SCM"', "original": 'My "SCM"'}),
+            patched[0].split(install.START, 1)[0],
+        )
+        self.assertNotIn('O(21166,', patched[0].split(install.START, 1)[0])
+        self.assertEqual(install.transform(*patched, settings=settings), patched)
+        self.assertEqual(
+            install.transform(*patched, remove=True, settings=settings),
+            (original, "base-css"),
+        )
+
     def test_source_control_label_round_trip(self):
         original_js = workbench_fixture()
         original_css = "base-css"
@@ -250,6 +290,17 @@ class TransformTests(unittest.TestCase):
         restored = install.transform(*patched, remove=True, settings=SETTINGS)
 
         self.assertEqual(restored, (original_js, original_css))
+
+    def test_source_control_label_follows_changes_into_panel(self):
+        original = workbench_fixture() + (
+            ';panelTitle=d(21169,null);'
+            'views.registerViews([{id:changes,containerTitle:panelTitle,'
+            'name:O(21159,"Changes"),singleViewPaneContainerTitle:panelTitle}],container);'
+        )
+        patched = install.transform(original, "base-css", settings=SETTINGS)
+        self.assertIn('panelTitle="Sweetie Bot"', patched[0].split(install.START, 1)[0])
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True, settings=SETTINGS), (original, "base-css"))
 
     def test_cmd_click_close_others_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["cmdClickCloseOthers"])
@@ -372,6 +423,24 @@ class AiWrapperTests(unittest.TestCase):
             self.assertTrue(destination.stat().st_mode & 0o111)
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
 
+    def test_installed_wrapper_loads_spellcheck_helper_and_core(self):
+        import importlib.util
+        from importlib.machinery import SourceFileLoader
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "scm-toolkit-git"
+            install.sync_ai_wrapper(destination=destination)
+            loader = SourceFileLoader("installed_commit_core", str(destination))
+            spec = importlib.util.spec_from_file_location("installed_commit_core", destination, loader=loader)
+            core = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(core)
+            worker = core.load_post_commit_spellcheck()
+            helper = destination.with_name(destination.name + "-spellcheck.py")
+            self.assertEqual(helper.read_bytes(), (install.HERE / "post_commit_spellcheck.py").read_bytes())
+            with patch.object(worker, "CORE_PATH", str(destination)):
+                self.assertTrue(callable(worker.load_core().generate_message))
+            install.sync_ai_wrapper(remove=True, destination=destination)
+            self.assertFalse(helper.exists())
+
     def test_sync_ai_wrapper_uninstall_removes_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "scm-toolkit-git"
@@ -444,6 +513,53 @@ class GitConfigTests(unittest.TestCase):
 
 
 class CodexCountdownTests(unittest.TestCase):
+    def modern_fixture(self):
+        return (
+            'let e=n.reset_at==null?null:format(d,n.reset_at,true);'
+            'x=e==null?n.title:n.title.replaceAll(`{time}`,e),'
+            'b=e==null?n.description:n.description.replaceAll(`{time}`,e),other=true;'
+            '(0,J.jsx)(`span`,{children:b});'
+            'const id=`codex.rateLimitUpsellBanner.dismiss`;'
+            'let f=a.weeklyWindow.resetsAt==null?null:format(d,a.weeklyWindow.resetsAt,true);'
+            '(0,J.jsx)(Button,{});'
+            'pe=f==null?S.description:S.description.replace(`{time}`,f),unused=true;'
+        )
+
+    def test_backend_banner_and_weekly_reset_round_trip(self):
+        original = self.modern_fixture()
+        patched = install.transform_codex(original, enabled=True)
+        self.assertIn('scmToolkitUsageResetMessage(n.title,n.reset_at,J.jsx)', patched)
+        self.assertIn('scmToolkitUsageResetMessage(n.description,n.reset_at,J.jsx)', patched)
+        self.assertIn('scmToolkitUsageResetMessage(S.description,a.weeklyWindow.resetsAt,J.jsx)', patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+        self.assertTrue(install.codex_bundle_matches(original))
+        self.assertEqual(install.transform_codex(patched, enabled=True), patched)
+
+    def test_transcript_reset_uses_live_countdown_and_restores_original(self):
+        transcript = (
+            'u=e==null?null:format(r,e);'
+            '(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`});'
+        )
+        for variant in ('upgrade', 'upgradeOrAddCredits', 'addCredits', 'retry'):
+            transcript += (
+                '(0,J.jsx)(Message,{id:`localConversation.usageLimit.' + variant + '`, '
+                'defaultMessage:`Try again at {resetDate}.`,values:{resetDate:r}});'
+            ).replace('`, defaultMessage:', '`,defaultMessage:')
+        original = self.modern_fixture() + transcript
+        patched = install.transform_codex(original, enabled=True)
+        self.assertIn('u=e==null?null:(0,J.jsx)(`scm-toolkit-usage-reset-countdown`,{"reset-at":e})', patched)
+        self.assertIn('usageLimit.upgradeOrAddCredits.countdown', patched)
+        self.assertIn('defaultMessage:`Try again in {resetDate}.`', patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+        self.assertEqual(install.transform_codex(patched, enabled=True), patched)
+
+    def test_legacy_countdown_metadata_can_still_be_removed(self):
+        original = self.fixture()
+        before, after = install.codex_countdown_edit(original)
+        patched = original.replace(before, after) + install.CODEX_START
+        patched += '/* edit:' + json.dumps([before, after]) + ' */\n' + install.CODEX_END
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
     def fixture(self):
         return (
             "function banner(){let V={},ne=123,We=false,Ge="
@@ -473,6 +589,19 @@ class CodexCountdownTests(unittest.TestCase):
 
 
 class CodexPromotionTests(unittest.TestCase):
+    def test_split_usage_and_promotion_chunks_are_both_discovered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            extension = Path(directory)
+            assets = extension / 'webview/assets'
+            assets.mkdir(parents=True)
+            banner = assets / 'usage-new-hash.js'
+            banner.write_text(CodexCountdownTests().modern_fixture())
+            promo = assets / 'promotion-new-hash.js'
+            promo.write_text('const title=`Enable Fast mode`;')
+            (assets / 'locale.js').write_text('"codex.rateLimitUpsellBanner.dismiss":"Dismiss usage banner"')
+            self.assertEqual(set(install.codex_bundle_paths(extension)), {banner, promo})
+            self.assertEqual(install.codex_bundle_path(extension), banner)
+
     def test_bundle_discovery_supports_split_extension_chunks(self):
         with tempfile.TemporaryDirectory() as directory:
             extension = Path(directory)
@@ -538,6 +667,55 @@ class CodexTimestampTests(unittest.TestCase):
         self.assertIn("scm-toolkit-usage-reset-countdown", patched)
         self.assertIn("scm-toolkit-codex-promotions:start", patched)
         self.assertIn("scm-toolkit-codex-timestamps:start", patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+
+class CodexModelLabelTests(unittest.TestCase):
+    def test_toggle_and_removal_preserve_other_patches(self):
+        self.assertFalse(install.DEFAULT_SETTINGS["codexShortModelLabels"])
+        original = "const app='codex';"
+        other = install.transform_codex(original, hide_dictation=True)
+        patched = install.transform_codex(other, hide_dictation=True, short_model_labels=True)
+        self.assertIn(install.CODEX_LABELS_START, patched)
+        self.assertEqual(install.transform_codex(patched, hide_dictation=True, short_model_labels=True), patched)
+        self.assertEqual(install.transform_codex(patched, hide_dictation=True), other)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_incomplete_patch_is_rejected(self):
+        with self.assertRaises(ValueError):
+            install.transform_codex("const app='codex';" + install.CODEX_LABELS_END)
+
+    def test_model_control_bundle_is_discovered(self):
+        self.assertTrue(install.codex_bundle_matches('"data-composer-navigation-target":`reasoning`,"data-selected-reasoning-effort":effort'))
+
+
+class CodexDictationTests(unittest.TestCase):
+    def test_dictation_hiding_is_off_by_default(self):
+        self.assertFalse(install.DEFAULT_SETTINGS["codexHideDictation"])
+
+    def test_codex_dictation_hiding_install_and_remove_round_trip(self):
+        original = "const app='codex';"
+        patched = install.transform_codex(original, hide_dictation=True)
+
+        self.assertIn("scm-toolkit-codex-dictation:start", patched)
+        self.assertIn("data-scm-toolkit-hidden-dictation", patched)
+        self.assertIn("looksLikeDictation", patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_dictation_hiding_can_coexist_with_other_codex_patches(self):
+        original = CodexCountdownTests().fixture()
+        patched = install.transform_codex(
+            original,
+            enabled=True,
+            hide_promotions=True,
+            hide_timestamps=True,
+            hide_dictation=True,
+        )
+
+        self.assertIn("scm-toolkit-usage-reset-countdown", patched)
+        self.assertIn("scm-toolkit-codex-promotions:start", patched)
+        self.assertIn("scm-toolkit-codex-timestamps:start", patched)
+        self.assertIn("scm-toolkit-codex-dictation:start", patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
 

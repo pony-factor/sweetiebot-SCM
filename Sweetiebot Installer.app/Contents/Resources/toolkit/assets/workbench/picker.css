@@ -1,0 +1,542 @@
+.scm-view .scm-editor > .scm-toolkit-home {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-home[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-home:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-home:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-home:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-branch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 auto;
+    max-width: 28%;
+    min-width: 0;
+    height: 26px;
+    padding: 0 6px;
+    border: 0;
+    border-right: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 3px 0 0 3px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    font: inherit;
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-branch[hidden] {
+    display: none;
+}
+
+.scm-toolkit-branch-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scm-view .scm-editor > .scm-toolkit-branch:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-branch:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-branch:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor:has(> .scm-toolkit-branch) > .scm-editor-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.scm-view .scm-editor:has(> .scm-toolkit-branch) {
+    border-color: transparent;
+}
+
+.monaco-workbench .part.panel .scm-view .scm-editor:has(> .scm-toolkit-branch) > .scm-editor-container {
+    outline: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-push {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 22px;
+    margin: 2px 2px 2px 0;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+    background: transparent;
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-push[hidden] {
+    display: none;
+}
+
+.scm-toolkit-push-checkbox {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+}
+
+.scm-toolkit-push-mark {
+    position: relative;
+    width: 13px;
+    height: 13px;
+    box-sizing: border-box;
+    border: 1px solid var(--vscode-descriptionForeground);
+    border-radius: 3px;
+    background: transparent;
+}
+
+.scm-toolkit-push-checkbox:checked + .scm-toolkit-push-mark::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 0;
+    width: 4px;
+    height: 8px;
+    border: solid var(--vscode-descriptionForeground);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.scm-view .scm-editor > .scm-toolkit-push:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-toolkit-push-checkbox:focus-visible + .scm-toolkit-push-mark {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
+}
+
+.scm-toolkit-push-checkbox:disabled + .scm-toolkit-push-mark {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-delete-branch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 3px 3px 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-delete-branch[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-delete-branch:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-delete-branch:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-delete-branch:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-delete-branch.scm-toolkit-has-following-control {
+    border-radius: 0;
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 3px 3px 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete.scm-toolkit-has-following-control {
+    border-radius: 0;
+}
+
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 3px 3px 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete-off::after {
+    content: '';
+    position: absolute;
+    width: 17px;
+    height: 1px;
+    border-radius: 1px;
+    background: currentColor;
+    transform: rotate(-45deg);
+}
+
+.scm-toolkit-tooltip {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 1000;
+    width: max-content;
+    max-width: 320px;
+    padding: 4px 8px;
+    border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border));
+    border-radius: 3px;
+    background: var(--vscode-editorHoverWidget-background);
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+    color: var(--vscode-editorHoverWidget-foreground);
+    font-family: var(--vscode-font-family);
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 18px;
+    white-space: normal;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .1s linear, visibility 0s linear .1s;
+}
+
+.scm-toolkit-delete-branch:hover > .scm-toolkit-tooltip,
+.scm-toolkit-delete-branch:focus-visible > .scm-toolkit-tooltip,
+.scm-toolkit-autocomplete:hover > .scm-toolkit-tooltip,
+.scm-toolkit-autocomplete:focus-visible > .scm-toolkit-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: .4s;
+}
+
+
+.scm-view .scm-editor > .scm-toolkit-autocomplete.scm-toolkit-has-following-control {
+    border-radius: 0;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pull-request {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 3px 3px 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pull-request[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pull-request:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-pull-request:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pull-request:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-toolkit-pull-request:hover > .scm-toolkit-tooltip,
+.scm-toolkit-pull-request:focus-visible > .scm-toolkit-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: .4s;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pull-request.scm-toolkit-has-following-control {
+    border-radius: 0;
+}
+
+.scm-view .scm-editor > .scm-toolkit-sync-branch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 3px 3px 0;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-sync-branch[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-sync-branch:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-sync-branch:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-sync-branch:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-sync-branch.scm-toolkit-has-following-control {
+    border-radius: 0;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pony-branch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 3px 3px 0;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pony-branch[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pony-branch:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-pony-branch:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pony-branch:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-toolkit-pony-branch:hover > .scm-toolkit-tooltip,
+.scm-toolkit-pony-branch:focus-visible > .scm-toolkit-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: .4s;
+}
+
+.scm-view .scm-editor > .scm-toolkit-pony-branch.scm-toolkit-has-following-control {
+    border-radius: 0;
+}
+
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    align-self: stretch;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+    border-radius: 0 var(--vscode-cornerRadius-small, 4px) var(--vscode-cornerRadius-small, 4px) 0;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+}
+
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings[hidden] {
+    display: none;
+}
+
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.scm-view .monaco-button-dropdown > .scm-toolkit-settings:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-toolkit-commit-settings > .monaco-dropdown-button {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+/* Includes Source Control Graph, which also uses .scm-view. */
+.scm-view .monaco-list-row:hover .monaco-action-bar .action-item:not(.disabled) .action-label.codicon:not(.disabled),
+.scm-view .monaco-action-bar .action-item:not(.disabled):hover .action-label.codicon:not(.disabled) {
+    color: #FFFFFF !important;
+}
+
+.scm-view .scm-editor > .scm-toolkit-divider {
+    display: block;
+    flex: 0 0 1px;
+    width: 1px;
+    height: 18px;
+    margin: 4px 1px;
+    background: var(--vscode-widget-border, transparent);
+    pointer-events: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-divider[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-publish {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-publish[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-publish:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-publish:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-publish:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-publish-active::after {
+    content: '✓';
+    position: absolute;
+    left: 7px;
+    top: 4px;
+    font-size: 12px;
+    line-height: 13px;
+}
+
+.scm-toolkit-auto-publish:hover > .scm-toolkit-tooltip,
+.scm-toolkit-auto-publish:focus-visible > .scm-toolkit-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: .4s;
+}
