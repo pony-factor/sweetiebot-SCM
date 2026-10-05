@@ -58,7 +58,7 @@
         "icon": "$(github)"
       },
       {
-        "command": "scmToolkit.squashMergePullRequest",
+        "command": "scmToolkit.squashMergeSelectedPullRequest",
         "title": "Squash and Merge into main",
         "icon": "$(git-merge)"
       }
@@ -73,7 +73,7 @@
       ],
       "view/item/context": [
         {
-          "command": "scmToolkit.squashMergePullRequest",
+          "command": "scmToolkit.squashMergeSelectedPullRequest",
           "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
         }

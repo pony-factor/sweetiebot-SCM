@@ -1,4 +1,12 @@
 function installPullRequestRefresh(vscode, view, owner) {
+  // Resolve tree nodes in the extension host that owns the GitHub PR tree.
+  owner._register(vscode.commands.registerCommand('scmToolkit.squashMergeSelectedPullRequest', node => {
+    const model = node?.pullRequestModel ?? node;
+    return vscode.commands.executeCommand('scmToolkit.squashMergePullRequest', {
+      url: model?.html_url ?? model?.url,
+      number: model?.number
+    });
+  }));
   let timer;
   let running = false;
   let disposed = false;
