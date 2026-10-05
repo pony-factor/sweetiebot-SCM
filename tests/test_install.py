@@ -18,6 +18,7 @@ SETTINGS = {
     "branchNameImports": "[]",
     "shortPlaceholder": True,
     "commitButtonLabel": "Send",
+    "commitAndSendButtonLabel": "Send and Push",
     "sourceControlLabel": "Sweetie Bot",
     "filledButtons": False,
     "commitAndPush": True,
@@ -194,6 +195,9 @@ class TransformTests(unittest.TestCase):
         self.assertIn("scm-toolkit-auto-publish", css)
         self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
+        self.assertIn("settings.commitAndSendButtonLabel", js)
+        self.assertIn("configuration.getValue('git.postCommitCommand') === 'push'", js)
+        self.assertIn("'.button-container > .monaco-button:first-child'", js)
         self.assertIn("'scmToolkit.publishBranch'", js)
         self.assertIn("scmToolkit.autoPublishNewBranches", js)
         self.assertIn('[id="workbench.view.scm"] .monaco-progress-container', css)
@@ -249,6 +253,7 @@ class TransformTests(unittest.TestCase):
 
     def test_commit_button_label_defaults_to_send(self):
         self.assertEqual(install.DEFAULT_SETTINGS["commitButtonLabel"], "Send")
+        self.assertEqual(install.DEFAULT_SETTINGS["commitAndSendButtonLabel"], "Send")
         self.assertTrue(install.DEFAULT_SETTINGS["autoPublishToggle"])
 
     def test_source_control_label_patches_view_container_title(self):

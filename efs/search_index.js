@@ -2,7 +2,7 @@
 
 const vscode = require('vscode');
 const crypto = require('crypto');
-const { chunkText, keywordScore, cosine } = require('./core');
+const { chunkText, keywordScore, bestMatchingLine, cosine } = require('./core');
 const { extractText } = require('./extract');
 const { embedTexts } = require('./ollama');
 
@@ -189,7 +189,10 @@ class SearchIndex {
                 : (!queryVector || !chunk.vector)
                     ? exact
                     : semantic * 0.78 + exact * 0.22;
-        if (score > 0) scored.push({ uri: file.uri, relative, line: chunk.line, text: chunk.text, score });
+        if (score > 0) {
+          const line = bestMatchingLine(query, chunk.text, chunk.line, { fuzzy: selectedMode === 'hybrid' });
+          scored.push({ uri: file.uri, relative, line, text: chunk.text, score });
+        }
       }
     }
     scored.sort((a, b) => b.score - a.score);

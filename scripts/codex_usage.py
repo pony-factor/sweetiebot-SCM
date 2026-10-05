@@ -45,7 +45,7 @@ def transform(js, enabled=True):
         f'function {label[0]}(e){{let{{data:usage,refetch}}={query[2]}({query[3]}),'
         'percent=scmToolkitRemainingUsage(usage);'
         'scmToolkitKeepUsageFresh(refetch);'
-        'return e.isRemoteHost?`Remote`:percent==null?`Work locally`:`${percent}%`;}'
+        'return e.isRemoteHost?`Remote`:percent==null?`…`:`${percent}%`;}'
     )
     edits = [(label[1], replacement)]
     home = re.search(
