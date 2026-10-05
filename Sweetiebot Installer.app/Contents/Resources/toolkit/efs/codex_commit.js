@@ -56,7 +56,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     if (root.scheme !== 'file') throw new Error('Local commit generation requires a local repository.');
     return vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: 'Generating commit message from staged changes with local Ollama', cancellable: false
+      title: 'Generating commit message ✨', cancellable: false
     }, async () => {
       let context = '';
       try {

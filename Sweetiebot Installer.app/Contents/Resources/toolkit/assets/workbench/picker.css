@@ -119,9 +119,9 @@
     width: 13px;
     height: 13px;
     box-sizing: border-box;
-    border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+    border: 1px solid var(--vscode-descriptionForeground);
     border-radius: 3px;
-    background: var(--vscode-input-background);
+    background: transparent;
 }
 
 .scm-toolkit-push-checkbox:checked + .scm-toolkit-push-mark::after {
@@ -131,7 +131,7 @@
     top: 0;
     width: 4px;
     height: 8px;
-    border: solid var(--vscode-checkbox-foreground, var(--vscode-input-foreground));
+    border: solid var(--vscode-descriptionForeground);
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
 }
