@@ -1,0 +1,53 @@
+.scm-view .scm-editor > .scm-toolkit-branch {
+    --vscode-button-background: transparent;
+    --vscode-button-foreground: var(--vscode-foreground);
+    --vscode-button-hoverBackground: var(--vscode-toolbar-hoverBackground);
+    box-sizing: border-box;
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+    background: transparent;
+    color: var(--vscode-foreground);
+}
+
+.scm-view:not(.scm-history-view) .button-container {
+    --vscode-button-background: transparent;
+    --vscode-button-foreground: var(--vscode-foreground);
+    --vscode-button-hoverBackground: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-branch:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button {
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+    background: transparent !important;
+    color: var(--vscode-foreground) !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown {
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
+    border: 0;
+    background: transparent !important;
+    color: var(--vscode-foreground) !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-dropdown-button,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
+    border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
+    box-sizing: border-box;
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button:hover,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:hover,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings:hover {
+    background: var(--vscode-toolbar-hoverBackground) !important;
+}

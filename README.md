@@ -1,4 +1,4 @@
-# Custom VS Code SCM Toolkit
+# Sweetiebot SCM
 
 A small source-control UI patch for Visual Studio Code. It keeps the built-in Git workflow, but adds a compact branch selector and optional SCM controls around the commit-message box.
 
@@ -9,8 +9,11 @@ Current features:
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
 - shorten the commit-message placeholder to `Message`
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
+- clean up unchanged local branches after their same-repository PR merges into the default branch
+- suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
+- open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
-- optionally create a freshly synced branch from `main` using configurable built-in, imported, and custom name packs
+- optionally create a branch from `main` using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline autocomplete
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
@@ -24,7 +27,8 @@ Current features:
 - optionally spellcheck manually entered commit subjects with the configured local model
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
 - optionally hide Codex promotional cards such as the Fast mode upsell
-- mirror ChatGPT web custom instructions into Codex global instructions using the local configurator
+- optionally hide the Codex dictation microphone button
+- mirror ChatGPT web custom instructions into the global personalization used by the Codex VS Code extension
 - optionally require the Codex Web co-author trailer for web/GitHub-tool commits
 - import a PGP secret key directly into GnuPG without persisting the private material in toolkit settings
 - search repositories through the linked GitHub authentication session instead of maintaining a separate repo allow-list
@@ -42,7 +46,29 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 
 The installer modifies the installed VS Code workbench files. VS Code updates can replace those files, so rerun the installer after an update if the patch disappears. VS Code may also show an installation-integrity warning after its application files are modified.
 
+## Repository layout
+
+- `scripts/`: Python installers, configuration tools, and their branch-name catalog.
+- `assets/workbench/`: JavaScript and CSS injected into the VS Code workbench.
+- `assets/codex/`: JavaScript injected into the Codex extension.
+- `efs/`: companion VS Code extension code.
+- `tests/`: Python and JavaScript tests.
+
+Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m unittest discover -s tests`.
+
 ## Install
+
+On macOS, double-click **Sweetiebot Installer.app** to install without typing a Terminal command. The app includes its installer files, so you can move it to your Applications folder. Close and reopen your VS Code windows afterward, and run the app again after VS Code updates.
+
+On the first run, macOS may require you to allow **Sweetiebot Installer** in **System Settings → Privacy & Security → App Management**. The app offers an **Open Settings** button when access is blocked; grant access and double-click the app again.
+
+To rebuild the app from this checkout:
+
+```sh
+python3 scripts/build_installer_app.py
+```
+
+The builder reuses the **Sweetiebot Installer Local Signing** certificate in your login Keychain. On another Mac, create a self-signed **Code Signing** certificate with that name using Keychain Access → Certificate Assistant → Create a Certificate, or select an existing signing identity with `--signing-identity` (also available as `SWEETIEBOT_SIGNING_IDENTITY`). Keep the same certificate and bundle identifier across rebuilds so macOS can recognize the app and retain its permission. The builder stops if the identity is missing or ambiguous instead of using ad hoc signing. Switching an existing app to this certificate may require granting App Management once more. Signing keys stay in Keychain and are never bundled with the installer.
 
 Clone the repository and enter it:
 
@@ -54,19 +80,19 @@ cd custom-vscode-scm-toolkit
 Validate that the currently installed VS Code build matches the guarded patch anchors without changing anything:
 
 ```sh
-python3 install.py --check
+python3 scripts/install.py --check
 ```
 
 Install the patch:
 
 ```sh
-python3 install.py
+python3 scripts/install.py
 ```
 
 To review the settings in a local browser before installing, run:
 
 ```sh
-python3 install.py --configure
+python3 scripts/install.py --configure
 ```
 
 Then reload or restart Visual Studio Code.
@@ -80,7 +106,7 @@ The default application path is:
 To target another app bundle, pass `--app`:
 
 ```sh
-python3 install.py --app "/path/to/Visual Studio Code.app"
+python3 scripts/install.py --app "/path/to/Visual Studio Code.app"
 ```
 
 If macOS blocks the write, allow the terminal or Python process you are using under **System Settings → Privacy & Security → App Management**, then run the installer again.
@@ -94,14 +120,20 @@ Toolkit settings live in your global Git config under the `scm-toolkit` section.
 Run the configurator without installing anything:
 
 ```sh
-python3 configure.py
+python3 scripts/configure.py
 ```
 
-It opens an app-like settings page in the default browser, prefilled with the current Git configuration. The page includes every toolkit switch plus the Ollama model choices and low-memory threshold. The **Branch names** section lets you toggle individual packs, add custom names, and paste third-party packs as JSON. If Ollama is running on `127.0.0.1:11434`, locally installed models appear as suggestions; model tags can still be entered manually when it is offline.
+It opens an app-like settings page in the default browser, prefilled with the current Git configuration. The page includes every toolkit switch plus the Ollama model choices and low-memory threshold. Changes save automatically to global Git config after you edit a setting, with an inline status showing whether the latest values were saved. A dedicated **Startup** section exposes **Open Sweetie Bot on startup**; when opened through VS Code, that checkbox also updates the real `scmToolkit.openPanelOnStartup` global user setting. The **Branch names** section lets you toggle individual packs, add custom names, and paste third-party packs as JSON. If Ollama is running on `127.0.0.1:11434`, locally installed models appear as suggestions; model tags can still be entered manually when it is offline. PGP secret-key import remains tied to the final action instead of autosaving private key material while it is being entered.
 
-After installation, the gear at the right end of the Source Control message row opens the same local settings page directly. The companion extension starts the loopback configurator and opens the browser automatically, so the repository checkout and manual URL entry are not required.
+After installation, the gear at the right end of the Source Control message row opens the same local settings page directly. The companion extension starts the loopback configurator and opens it in VS Code’s native Integrated Browser in the current window. Clicking the gear again focuses the existing settings tab. This requires a VS Code version with the Integrated Browser; older versions show an update message. The repository checkout and manual URL entry are not required.
+
+Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
+
+With **Automatically pull clean branches** enabled, `main` fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, and changed branch tips or upstreams also pause pulling.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
+
+**Keep awake while Codex works** is enabled by default on macOS. It prevents idle system sleep while any Codex task in the window is active and releases the assertion when all tasks finish, fail, or are interrupted. The display can still turn off. Set `scmToolkit.codexKeepAwake` to `false` in VS Code Settings to disable it immediately, or change the default in the toolkit configurator (`scm-toolkit.codex-keep-awake`). Reload the window after first installing the feature. It has no effect on other operating systems.
 
 Set options with `git config --global`:
 
@@ -109,7 +141,8 @@ Set options with `git config --global`:
 git config --global scm-toolkit.branch-picker true
 git config --global scm-toolkit.pony-branch true
 git config --global scm-toolkit.short-placeholder true
-git config --global scm-toolkit.source-control-label Sweetiebot
+git config --global scm-toolkit.source-control-label "Sweetie Bot"
+git config --global scm-toolkit.open-panel-on-startup true
 git config --global scm-toolkit.workspace-search-activity-bar false
 git config --global scm-toolkit.workspace-search-label EFS
 git config --global scm-toolkit.filled-buttons false
@@ -138,9 +171,11 @@ git config --global scm-toolkit.codex-hide-promotions true
 git config --global scm-toolkit.chatgpt-custom-instructions ""
 git config --global scm-toolkit.chatgpt-web-codex-coauthor true
 git config --global scm-toolkit.codex-hide-chat-timestamps true
+git config --global scm-toolkit.codex-hide-dictation true
+git config --global scm-toolkit.codex-short-model-labels true
 git config --global scm-toolkit.default-branch main
 git config --global scm-toolkit.remote origin
-git config --global scm-toolkit.branch-name-disabled-packs ""
+git config --global scm-toolkit.branch-name-disabled-packs "pony-life,idw-comics"
 git config --global scm-toolkit.branch-custom-names ""
 git config --global scm-toolkit.branch-name-imports '[]'
 ```
@@ -152,7 +187,8 @@ The equivalent `~/.gitconfig` block is:
     branch-picker = true
     pony-branch = true
     short-placeholder = true
-    source-control-label = Sweetiebot
+    source-control-label = Sweetie Bot
+    open-panel-on-startup = true
     workspace-search-activity-bar = false
     workspace-search-label = EFS
     filled-buttons = false
@@ -181,26 +217,31 @@ The equivalent `~/.gitconfig` block is:
     chatgpt-custom-instructions =
     chatgpt-web-codex-coauthor = true
     codex-hide-chat-timestamps = true
+    codex-hide-dictation = true
     default-branch = main
     remote = origin
-    branch-name-disabled-packs =
+    branch-name-disabled-packs = pony-life,idw-comics
     branch-custom-names =
     branch-name-imports = []
 ```
 
-The filled-button style, standalone Workspace Search Activity Bar, Cmd-click close-others gesture, Codex usage-reset countdown, Codex promotion hiding, Codex chat timestamp hiding, and ChatGPT browser homepage default to `false`; the other boolean SCM feature switches default to `true`. The Source Control app-bar label defaults to `Sweetiebot`, and the optional standalone Workspace Search container label defaults to `EFS`. With filled buttons disabled, the branch selector and native Commit button use a transparent background and a theme-aware border instead of VS Code's accent fill. The default AI models are `qwen2.5-coder:7b` for normal operation and `qwen2.5-coder:3b` for low-memory operation. The low-memory threshold defaults to 4 GiB of estimated available memory. The default protected branch is `main`, and the default remote is `origin`.
+<<<<<<< HEAD
+The filled-button style, standalone Workspace Search Activity Bar, Cmd-click close-others gesture, Codex usage-reset countdown, Codex promotion hiding, Codex chat timestamp hiding, Codex dictation hiding, and ChatGPT browser homepage default to `false`; the other boolean SCM feature switches default to `true`. The Source Control app-bar label defaults to `Sweetiebot`, and the optional standalone Workspace Search container label defaults to `EFS`. With filled buttons disabled, the branch selector and native Commit button use a transparent background and a theme-aware border instead of VS Code's accent fill. The default AI models are `qwen2.5-coder:7b` for normal operation and `qwen2.5-coder:3b` for low-memory operation. The low-memory threshold defaults to 4 GiB of estimated available memory. The default protected branch is `main`, and the default remote is `origin`.
+=======
+The filled-button style, standalone Workspace Search Activity Bar, Cmd-click close-others gesture, Codex usage-reset countdown, Codex promotion hiding, Codex chat timestamp hiding, and ChatGPT browser homepage default to `false`; the other boolean SCM feature switches default to `true`. The Source Control app-bar label defaults to `Sweetie Bot`, and the optional standalone Workspace Search container label defaults to `EFS`. With filled buttons disabled, the branch selector and native Commit button use a transparent background and a theme-aware border instead of VS Code's accent fill. The default AI models are `qwen2.5-coder:7b` for normal operation and `qwen2.5-coder:3b` for low-memory operation. The low-memory threshold defaults to 4 GiB of estimated available memory. The default protected branch is `main`, and the default remote is `origin`.
+>>>>>>> origin/main
 
 After changing toolkit Git config, rerun:
 
 ```sh
-python3 install.py
+python3 scripts/install.py
 ```
 
 Then reload Visual Studio Code. The installer resolves the Git-config values and embeds that configuration into the installed patch.
 
 ### Branch-name packs
 
-Random branch names are data-driven. Built-in packs live in `branch_name_packs.json`, and every pack uses the same small schema: The G4 pony roster is split into mares, stallions, fillies, colts, and a small source-unspecified pack; background and minor ponies remain included.
+Random branch names are data-driven. Built-in packs live in `scripts/branch_name_packs.json`, and every pack uses the same small schema: The G4 pony roster is split into mares, stallions, fillies, colts, and a small source-unspecified pack; background and minor ponies remain included.
 
 ```json
 {
@@ -213,13 +254,15 @@ Random branch names are data-driven. Built-in packs live in `branch_name_packs.j
 
 Pack IDs and names are lowercase branch-safe slugs containing letters, numbers, and hyphens. Built-in packs keep each branch-name slug unique across packs; shared characters use one canonical slug rather than duplicate entries. The G4 catalog also strips import-only role and episode descriptors (for example, `Knowledgeable ShopperRainbowshine` becomes `rainbowshine`) while retaining genuine multiword names such as `fleur-de-lis`. A pack may also include a `sources` object keyed by a name when a naming choice needs provenance. This keeps contributed lists as data instead of picker logic.
 
-Built-in community packs also include a dedicated **Convention mascots** set and a **4chan /mlp/** set; the latter intentionally includes Anonfilly but excludes generic `anon`, `anonpony`, and Aryanne. The web configurator enables every pack by default. Disabling a pack stores only its ID in `scm-toolkit.branch-name-disabled-packs`, so newly added packs remain enabled by default. Custom names are stored in `scm-toolkit.branch-custom-names`. Third-party packs can be pasted into **Imported packs** as one pack object, an array of packs, or a `{"packs":[...]}` object and are stored in `scm-toolkit.branch-name-imports`.
+Built-in community packs also include a dedicated **Convention mascots** set and a **4chan /mlp/** set; the latter intentionally includes Anonfilly but excludes generic `anon`, `anonpony`, and Aryanne. Most packs are enabled by default; **Pony Life** and **IDW comics** are opt-in and start disabled. Disabling a pack stores its ID in `scm-toolkit.branch-name-disabled-packs`. Custom names are stored in `scm-toolkit.branch-custom-names`. Third-party packs can be pasted into **Imported packs** as one pack object, an array of packs, or a `{"packs":[...]}` object and are stored in `scm-toolkit.branch-name-imports`.
 
 ### Workspace Search
 
 The normal installer also installs a small companion VS Code extension into `~/.vscode/extensions`. By default, after reloading VS Code, Source Control contains a **Workspace Search** section with an in-sidebar query box, Hybrid/Semantic/Exact modes, ranked snippets, click-to-open results, and an optional **Ask Ollama** action. It does not open Open WebUI or a separate browser window.
 
-Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Workspace Search view into its own Activity Bar container. The container label is independently configurable with `scm-toolkit.workspace-search-label` and defaults to **EFS**. Rerun `python3 install.py` and reload VS Code after changing either setting.
+Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Workspace Search view into its own Activity Bar container. The panel title and container label use `scm-toolkit.workspace-search-label` and default to **EFS**. Rerun `python3 scripts/install.py` and reload VS Code after changing either setting.
+
+The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `efs/THIRD_PARTY_NOTICES.md`.
 
 Install the default local embedding model once:
 
@@ -233,7 +276,7 @@ Hybrid search combines semantic similarity with exact term/path matching. If Oll
 
 The default **Ask Ollama** model is automatic: it first reuses a currently loaded non-embedding Ollama model, preferring the largest loaded model, then falls back to `scm-toolkit.ai-commit-model`. Set `scmToolkit.workspaceSearch.chatModel` in VS Code settings only when you want to force a different model. The embedding model is separately configurable as `scmToolkit.workspaceSearch.embeddingModel`.
 
-The companion extension only accepts loopback Ollama URLs (`127.0.0.1`, `localhost`, or `::1`). You can also install or remove just this companion extension with `python3 workspace_search.py` or `python3 workspace_search.py --uninstall`.
+The companion extension only accepts loopback Ollama URLs (`127.0.0.1`, `localhost`, or `::1`). You can also install or remove just this companion extension with `python3 scripts/workspace_search.py` or `python3 scripts/workspace_search.py --uninstall`.
 
 
 #### Historical work index
@@ -255,11 +298,13 @@ The installer places a Git wrapper at `~/.local/bin/scm-toolkit-git`. To make VS
 }
 ```
 
-Use the absolute path shown by `python3 install.py`; do not rely on `~` expansion in the setting.
+Use the absolute path shown by `python3 scripts/install.py`; do not rely on `~` expansion in the setting.
 
 When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blank message summarizes the staged diff through the configured local Ollama model. On the configured `default-branch` (normally `main`), `ai-default-branch-description = true` asks the model for a subject plus one or two substantive sentences describing what changed and, when clear from the diff, its purpose or effect. Other branches keep the subject-only format. A manually entered message is never replaced by generated commit content; when manual spellcheck is enabled, only its subject line may receive spelling corrections. Amend/fixup/squash/reuse-message mode, path-limited blank commits, or `--all` keep their existing behavior.
 
-**Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject. The prompt is generic and repository-scoped.
+**Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject.
+
+Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other agent instructions are excluded from the generation prompt. Without that preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
 The wrapper supports two independently configurable models:
 
@@ -325,22 +370,45 @@ Disable and remove the installed picker on the next installer run:
 
 ```sh
 git config --global scm-toolkit.ai-model-picker false
-python3 install.py
+python3 scripts/install.py
 ```
 
 The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MODEL`, and `SCM_TOOLKIT_AI_LOW_MEMORY_GIB` can temporarily override the corresponding Git-config values.
+
+### Codex composer appearance
+
+Enable **Hide access label** in the configurator's **Codex** section to show only
+the permission icon instead of text such as **Full access**. It defaults to off
+and preserves the access menu and the current mode for screen readers. The Git
+setting is `scm-toolkit.codex-hide-access-label`.
+
+The send button and composer labels have separate color controls in the local
+configurator's **Codex** section. Set `scm-toolkit.codex-send-background` for the
+button background, `scm-toolkit.codex-send-foreground` for its icon, and
+`scm-toolkit.codex-composer-label-color` for the **Full access** and **Work locally**
+controls. Use a hexadecimal color such as Studio green `#43AF49`; blank values
+restore the theme. All three settings default to blank.
+
+Run `python3 scripts/install.py` after changing them and reopen the VS Code window.
+These overrides apply only to the Codex composer controls, independently of
+VS Code's general foreground color. Codex extension updates can replace the
+stylesheet, so rerun the installer after updating the extension.
 
 ### Codex usage-reset countdown
 
 When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
 Codex extension show the time remaining as a live countdown such as `4h 23m`. The
 display rounds to the nearest minute and refreshes as the countdown changes.
+The local composer label beside the location icon shows the smaller remaining
+percentage of the five-hour and weekly usage limits. Until usage data is available,
+it shows **Work locally**. The usage submenu shows centered reset countdowns;
+weekly resets display the number of days left instead of a calendar date.
 
 To install or refresh only this optional Codex patch without touching the SCM
 workbench patch, run:
 
 ```sh
-python3 install.py --codex-only
+python3 scripts/install.py --codex-only
 ```
 
 Codex extension updates can replace the patched webview bundle. Rerun the command
@@ -357,15 +425,15 @@ alone.
 This option can be installed or refreshed with the same `--codex-only` command
 used by the usage-reset countdown.
 
-### ChatGPT and Codex instructions
+### Codex VS Code personalization
 
-The local configurator includes a ChatGPT section for keeping a local copy of the
-custom instructions you use on ChatGPT web. Saving the form mirrors that text into
-a managed block in `~/.codex/AGENTS.md`, which makes the same guidance available
-to Codex without overwriting unrelated global Codex instructions.
+The local configurator includes a Codex section for the personalization used by the
+Codex VS Code extension. It can keep a local copy of the custom instructions you
+use on ChatGPT web and mirror that text into a managed block in `~/.codex/AGENTS.md`
+without overwriting unrelated global Codex instructions.
 
-The "Sync from web" button is clipboard-assisted: copy the Custom Instructions text
-from ChatGPT Personalization, then click the button in the localhost configurator.
+The "Import from ChatGPT" button is clipboard-assisted: copy the Custom Instructions
+text from ChatGPT Personalization, then import it into the Codex section.
 The toolkit does not scrape ChatGPT session cookies or call a private custom-instructions
 endpoint.
 
@@ -376,13 +444,13 @@ web or GitHub-tool commits to append:
 Co-authored-by: Codex Web <noreply@openai.com>
 ```
 
-The ChatGPT section also accepts an optional ASCII-armored PGP secret key. The key
+The Codex section also accepts an optional ASCII-armored PGP secret key. The key
 is piped to GnuPG over stdin, imported into the local keyring, and discarded from
 the form. Only the resulting public fingerprint is saved to Git configuration;
 `commit.gpgsign` is enabled and the private key is never echoed into generated
 configuration or command output.
 
-The companion extension exposes `SCM Toolkit: Search Linked GitHub Repositories`.
+The companion extension exposes `Sweetiebot SCM: Search Linked GitHub Repositories`.
 It authenticates through VS Code's GitHub provider and searches the repositories
 visible to that linked account, so the toolkit does not maintain a second repository
 access list or a separate personal access token.
@@ -414,13 +482,13 @@ through the sparkle means inline autocomplete is off.
 ### Source Control label
 
 The toolkit can replace VS Code's built-in **Source Control** view-container label
-with a custom app-bar name. It defaults to **Sweetiebot**.
+with a custom app-bar name. It defaults to **Sweetie Bot**.
 
 Set another label and reinstall:
 
 ```sh
 git config --global scm-toolkit.source-control-label "My SCM"
-python3 install.py
+python3 scripts/install.py
 ```
 
 Set it back to `Source Control` to preserve VS Code's stock label while keeping
@@ -440,7 +508,7 @@ Restore VS Code's stock historical-file behavior with:
 
 ```sh
 git config --global scm-toolkit.graph-open-working-file false
-python3 install.py
+python3 scripts/install.py
 ```
 
 ### Blank-state refresh
@@ -453,11 +521,13 @@ as SCM reports a change and automatically resumes after the repository becomes
 clean again. Hidden windows back off instead of polling at the foreground rate.
 
 This uses VS Code's existing `git.refresh` command; the toolkit does not run its
-own Git status implementation. Toolkit-triggered refreshes suppress the SCM progress
-bar so the frequent polling does not flash a distracting animation.
+own Git status implementation. The SCM progress bar stays hidden, including during
+background Git fetches, so updates do not flash a distracting animation.
 
-When `auto-pull-clean` is enabled, each blank-state refresh also checks the current
-branch against its tracked upstream. The toolkit pulls only when the working tree is
+When `auto-pull-clean` is enabled, the toolkit checks the current branch against its
+tracked upstream on the same polling schedule, even when `blank-state-refresh` is
+disabled. Disabling blank-state refresh skips the extra `git.refresh` calls while
+automatic pulling continues. The toolkit pulls only when the working tree is
 still clean and the local HEAD is an ancestor of the upstream HEAD. That means a
 behind-only branch can fast-forward automatically, while branches with unpushed or
 diverged commits are left untouched. The pull uses VS Code's existing `git.pull`
@@ -479,9 +549,24 @@ left to VS Code.
 When `browser-chatgpt-home` is enabled, a blank Integrated Browser tab starts at
 `https://chatgpt.com/`. Explicit URLs continue to win, so commands and extensions
 that open a specific page are unchanged. The toggle is applied by the installer,
-so rerun `python3 install.py` and reload VS Code after changing it.
+so rerun `python3 scripts/install.py` and reload VS Code after changing it.
 
 ### Codex co-author commit
+
+Enable `scm-toolkit.codex-commit-context` to generate blank co-author commit
+messages from the current Codex conversation in the same VS Code window and the
+staged diff, using only local Ollama. The option defaults to `false`. The captured
+text stays in memory, is limited to the latest 6,000 characters of the loaded
+transcript, and supplies intent; the staged diff determines what the commit
+actually describes. Generation does not submit a Codex prompt, steer its task,
+stop it, or change focus. It also reads a retained conversation when Source
+Control hides the Codex pane, and shows progress while Ollama generates the
+message. Manually entered messages retain the usual behavior.
+
+Stage the intended changes first. An unavailable chat or local model stops the
+commit; a changed branch, index, repository, or message also stops it. Run the
+installer after enabling the setting and reopen the VS Code window once to load
+the snapshot bridge. Subsequent button presses leave Codex running.
 
 When `codex-coauthor` is enabled, an account button appears in the SCM message row.
 It appends this trailer to the current message and then runs VS Code's normal
@@ -495,27 +580,24 @@ The trailer is added after a blank line and is not duplicated if it is already
 present. If the commit fails and VS Code leaves the message untouched, the toolkit
 restores the original message.
 
-### MCP pull requests
+### Pull requests in ChatGPT
 
-When `mcp-pull-request` is enabled, a pull-request button appears at the end of
-the SCM message row for non-default branches. The control resolves the current
-GitHub repository from the configured `remote`, finds the MCP server named by
-`mcp-pr-server` in VS Code, starts it if necessary, and calls the tool named by
-`mcp-pr-tool`.
+The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, local repository path, GitHub repository, and base branch in its prompt. It asks ChatGPT to read the branch diff and explain the work's intent and effects in concise paragraphs or short bullets, across code, prose, research, and brainstorming. Titles reflect the actual scope, and description length follows the substantive changes. Lists, headings, and compact tables are encouraged when they make the description easier to read. The description leads with the substantive change and documents the work for the record after merge, without reviewer questions or checklists. The prompt distinguishes source collection, interpretation, and draft changes, separates observed changes from inferred intent, treats rough notes and placeholders plainly, and explains unfamiliar shorthand only when supported by context. It avoids exhaustive file inventories, procedural narration, and routine verification boilerplate, and ends the description with a centered pony image linking to Kefania. Its alt text attributes only the automatically written PR description.
 
-The defaults target Codex Drafter's `github_create_pull_request` tool. The
-tool receives the current GitHub owner/repository, branch as `head`, the
-configured `default-branch` as `base`, a title derived from the branch name,
-and a minimal generated prompt/body. Authentication and transport stay owned by
-VS Code's MCP configuration rather than the SCM patch.
+The button uses the existing `mcp-pull-request` visibility setting and no longer needs an MCP server or tool. ChatGPT needs access to the repository to read its changes; the prompt asks for access when the repository is unavailable. Opening the chat does not stage, commit, or push local changes.
 
 ### Pony branch
 
 When `pony-branch` is enabled, a branch-create button appears at the far right of
-the SCM message row. It checks out the configured `default-branch` (normally
-`main`), runs VS Code's normal Git sync action so that branch is synchronized
-with its upstream remote, then creates and checks out a new branch directly from
-the synchronized HEAD.
+the SCM message row. With a clean worktree, it syncs the configured
+`default-branch` (normally `main`) in a temporary worktree when needed, pushes
+any outgoing commits, and creates a branch from the synchronized HEAD.
+With staged or unstaged changes, it skips syncing and creates the branch from
+local HEAD, carrying the changes and their staging into the new branch. These operations
+use the built-in Git extension's API through the toolkit companion extension.
+Syncing requires the default branch to track the configured remote. Checkout
+or sync failures stop branch creation and display the error; unresolved merge
+conflicts also stop branch creation.
 
 The branch name is chosen randomly from a built-in, branch-safe pool. Its canon
 portion covers the named G4 pony roster (excluding explicitly unnamed placeholders
@@ -539,9 +621,8 @@ Before deletion, the control:
 1. fetches with prune
 2. verifies that the current branch no longer exists under `refs/remotes/<remote>/`
 3. refuses to delete if the configured remote cannot be verified
-4. checks out the configured default branch
-5. asks VS Code to delete the old local branch without forcing
-6. syncs the checked-out default branch
+4. checks out and syncs the configured default branch
+5. deletes the old local branch without forcing, stopping if Git rejects deletion
 
 This does not delete the remote branch.
 
@@ -552,7 +633,7 @@ Before uninstalling, clear VS Code's `git.path` setting if it points to the tool
 Remove the patch and the installed wrapper:
 
 ```sh
-python3 install.py --uninstall
+python3 scripts/install.py --uninstall
 ```
 
 Then reload or restart Visual Studio Code.
@@ -560,5 +641,34 @@ Then reload or restart Visual Studio Code.
 You can also use `--check` with `--uninstall` to validate the removal without writing:
 
 ```sh
-python3 install.py --uninstall --check
+python3 scripts/install.py --uninstall --check
 ```
+
+## Automatic merged-branch cleanup
+
+Sweetiebot checks open local repositories when VS Code starts and every ten minutes. It looks up merged PRs for each outstanding local branch on `origin`, including older PRs outside the repository's recent history. It uses authenticated `gh` to verify that a same-repository PR merged into the default branch. A local branch is removed only if its tip still equals the recorded PR head and no PR for that branch is open. If the merged branch is active, Sweetiebot switches to the local default branch (normally `main`) before removing it, provided there are no uncommitted changes or Git operations in progress. Branches checked out in other worktrees are preserved. Git removes the reference with the expected SHA, preserving a branch that moves during cleanup. Closing a PR without merging leaves its local branch alone. Remote branches are left to GitHub’s repository setting.
+
+Preview one repository without deleting branches:
+
+```sh
+python3 scripts/prune_merged_branches.py --repo /path/to/repository --force --dry-run
+```
+
+The installer also applies reversible fixes to supported GitHub Pull Requests extension builds. It suppresses the automatic cleanup prompt when the repository already deletes branches on merge, while retaining the manual Delete Branch action and explicitly configured native automatic deletion. The PR-number link keeps its existing click handler as its sole opening path. Rerun the installer after updating that extension; unsupported assets are skipped with a warning.
+
+The GitHub Pull Requests list refreshes when it becomes visible or the window regains focus, then every 5 seconds while active. Hover over a PR to use **Squash and Merge into main** without opening its description. The button uses the authenticated GitHub CLI, verifies that the PR is open, ready for review, and targets `main`, and merges only the freshly fetched head commit. GitHub branch protections remain in effect. After a completed merge, guarded cleanup returns an eligible clean local PR branch to the default branch and removes it; dirty worktrees and changed local heads are preserved. Queued merges wait for completion before cleanup. Both features can be toggled in the gear page using `pull-request-auto-refresh` and `pull-request-quick-merge`.
+
+
+Automatic staged commits remove trailing spaces and tabs from added or changed text lines and normalize the final newline. Existing untouched lines, LF/CRLF style, file modes, cached attribute exclusions, and unstaged edits are preserved. Explicit-message commits keep their existing behavior.
+
+### Post-commit Markdown spellcheck
+
+Enable **Post-commit Markdown spellcheck** in SweetieBot settings under Ollama, or run:
+
+```sh
+git config --global scm-toolkit.post-commit-spellcheck true
+```
+
+This toggle is off by default. After a successful automatic staged commit, the local Ollama model reviews changed Markdown prose and proposes conservative spelling, grammar, and ASCII punctuation corrections. Fenced code, inline code, URLs, Markdown prefixes, and line endings are protected. Unavailable models and unchanged text produce no dialog.
+
+Proposals appear as unstaged edits in Source Control. Choose **Keep edits** to review them or **Discard** to remove untouched proposals. The original commit and index remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.

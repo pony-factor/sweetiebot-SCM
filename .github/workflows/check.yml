@@ -10,6 +10,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: scripts
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,18 +22,20 @@ jobs:
           python-version: "3.x"
 
       - name: Compile Python
-        run: python3 -m py_compile install.py configurator.py branch_names.py ai_commit.py model_picker.py workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_branch_names.py tests/test_ai_commit.py tests/test_model_picker.py tests/test_workspace_search.py
+        run: python3 -m py_compile scripts/install.py scripts/configurator.py scripts/branch_names.py scripts/ai_commit.py scripts/model_picker.py scripts/workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_branch_names.py tests/test_ai_commit.py tests/test_model_picker.py tests/test_workspace_search.py
 
       - name: Run installer tests
         run: python3 -m unittest discover -s tests -v
 
       - name: Check injected JavaScript syntax
         run: |
-          node --check picker.js
-          node --check workspace-search-extension/core.js
-          node --check workspace-search-extension/ollama.js
-          node --check workspace-search-extension/extract.js
-          node --check workspace-search-extension/search_index.js
-          node --check workspace-search-extension/view.js
-          node --check workspace-search-extension/extension.js
-          node tests/test_workspace_search_core.js
+          node --check assets/workbench/picker.js
+          node --check efs/core.js
+          node --check efs/ollama.js
+          node --check efs/extract.js
+          node --check efs/search_index.js
+          node --check efs/view.js
+          node --check efs/extension.js
+          for test_file in tests/test_*.js; do
+            node "$test_file" || exit "$?"
+          done

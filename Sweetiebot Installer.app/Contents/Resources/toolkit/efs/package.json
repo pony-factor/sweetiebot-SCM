@@ -1,0 +1,181 @@
+{
+  "name": "scm-toolkit-workspace-search",
+  "displayName": "Sweetiebot SCM",
+  "description": "Local semantic and hybrid workspace search in the Source Control sidebar using Ollama.",
+  "version": "0.3.1",
+  "publisher": "jfwooten4",
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onCommand:scmToolkit.returnHome",
+    "onCommand:scmToolkit.openPullRequestChat",
+    "onCommand:scmToolkit.prepareCodexCommit",
+    "onCommand:scmToolkit.generateCodexCommitMessage",
+    "onCommand:scmToolkit.createBranch",
+    "onCommand:scmToolkit.publishBranch",
+    "onCommand:scmToolkit.deleteBranch",
+    "onCommand:scmToolkit.autoPullClean",
+    "onCommand:scmToolkit.syncBranch",
+    "onView:scmToolkit.workspaceSearch",
+    "onCommand:scmToolkit.openSettings",
+    "onStartupFinished",
+    "onCommand:scmToolkit.workspaceSearch.clearIndex",
+    "onCommand:scmToolkit.chatgpt.searchRepositories",
+    "onCommand:scmToolkit.squashMergePullRequest"
+  ],
+  "contributes": {
+    "views": {
+      "scm": [
+        {
+          "id": "scmToolkit.workspaceSearch",
+          "name": "Workspace Search",
+          "type": "webview",
+          "visibility": "visible",
+          "contextualTitle": "SCM Workspace Search"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "scmToolkit.openSettings",
+        "title": "Open Sweetiebot SCM Settings",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "scmToolkit.workspaceSearch.clearIndex",
+        "title": "Clear Workspace Search Index",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "scmToolkit.chatgpt.searchRepositories",
+        "title": "Search Linked GitHub Repositories",
+        "icon": "$(github)"
+      },
+      {
+        "command": "scmToolkit.squashMergeSelectedPullRequest",
+        "title": "Squash and Merge into main",
+        "icon": "$(git-merge)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "scmToolkit.workspaceSearch.clearIndex",
+          "when": "view == scmToolkit.workspaceSearch",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "scmToolkit.squashMergeSelectedPullRequest",
+          "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
+          "group": "inline@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Sweetiebot SCM",
+      "properties": {
+        "scmToolkit.automaticBranchCleanup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically remove eligible merged local branches on startup and every ten minutes."
+        },
+        "scmToolkit.workspaceSearch.autoReindex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh the workspace search index every two minutes."
+        },
+        "scmToolkit.autoPublishNewBranches": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically publish newly selected local branches to the configured Git remote."
+        },
+        "scmToolkit.codexKeepAwake": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Keep macOS awake while Codex is working. Releases idle-sleep prevention when all tasks finish; the display can still turn off."
+        },
+        "scmToolkit.workspaceSearch.embeddingModel": {
+          "type": "string",
+          "default": "qwen3-embedding:0.6b",
+          "description": "Ollama embedding model used to index and search workspace content."
+        },
+        "scmToolkit.workspaceSearch.askOllama": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the Ask Ollama action. Requires an explicit chat model."
+        },
+        "scmToolkit.workspaceSearch.chatModel": {
+          "type": "string",
+          "default": "",
+          "description": "Ollama chat model used by Ask Ollama. Required when Ask Ollama is enabled."
+        },
+        "scmToolkit.workspaceSearch.ollamaUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Loopback Ollama server URL. Only localhost and loopback addresses are accepted."
+        },
+        "scmToolkit.workspaceSearch.mode": {
+          "type": "string",
+          "enum": [
+            "hybrid",
+            "semantic",
+            "exact"
+          ],
+          "default": "hybrid",
+          "description": "Default ranking mode. Hybrid combines semantic and exact term matching."
+        },
+        "scmToolkit.workspaceSearch.resultLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20,
+          "description": "Maximum number of result passages shown."
+        },
+        "scmToolkit.workspaceSearch.maxFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50000,
+          "default": 5000,
+          "description": "Maximum number of workspace files considered for indexing."
+        },
+        "scmToolkit.workspaceSearch.maxFileSizeMB": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100,
+          "default": 10,
+          "description": "Maximum file size indexed directly. External document extractors may still impose their own limits."
+        },
+        "scmToolkit.workspaceSearch.exclude": {
+          "type": "string",
+          "default": "**/{.git,node_modules,dist,build,out,target,.venv,venv,__pycache__,coverage}/**",
+          "description": "Glob excluded from workspace indexing."
+        },
+        "scmToolkit.openPanelOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Open Sweetie Bot / Source Control when each VS Code window starts, then return keyboard focus to the editor."
+        },
+        "scmToolkit.pullRequestAutoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh the GitHub Pull Requests list when visible and focused, and every 5 seconds while active."
+        },
+        "scmToolkit.pullRequestQuickMerge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show an inline button to squash and merge a GitHub pull request into main without opening it."
+        }
+      }
+    }
+  }
+}

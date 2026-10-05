@@ -1,0 +1,7 @@
+/* Git refreshes can outlive their command and run independently of toolkit polling. */
+[id="workbench.view.scm"] .monaco-progress-container,
+.scm-view .monaco-progress-container,
+.pane:has(.scm-view) > .monaco-progress-container,
+.part:has([id="workbench.view.scm"]:not([style*="display: none"])) > .monaco-progress-container {
+    display: none !important;
+}
