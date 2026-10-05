@@ -80,7 +80,6 @@ class GithubSplitTests(unittest.TestCase):
 
 
 class RoutingTests(unittest.TestCase):
-class RoutingTests(unittest.TestCase):
     def test_finds_commit_after_global_option(self):
         self.assertEqual(ai_commit.commit_index(["-C", "/tmp/repo", "commit"]), 2)
 
