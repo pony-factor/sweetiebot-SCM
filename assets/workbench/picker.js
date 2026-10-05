@@ -401,6 +401,103 @@ function scmToolkitChatgptConversationSource(doc) {
     return undefined;
 }
 
+function scmToolkitGithubCoordinates(repositoryUrl) {
+    const match = String(repositoryUrl ?? '').trim().match(
+        /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/?$/i
+    );
+    return match ? { owner: match[1], repo: match[2] } : undefined;
+}
+
+function scmToolkitMcpError(result) {
+    return result?.content?.find(
+        item => item?.type === 'text' && typeof item.text === 'string'
+    )?.text || 'The Kafania MCP tool returned an error.';
+}
+
+async function scmToolkitWaitForMcpTool(doc, server, toolName) {
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        const tool = server.tools?.get?.().find(
+            candidate => candidate.definition?.name === toolName
+        );
+        if (tool) return tool;
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 100) : setTimeout(resolve, 100)));
+    }
+    return undefined;
+}
+
+async function scmToolkitKafaniaTool(doc, mcpService, serverName, toolName) {
+    if (!mcpService?.activateCollections || !mcpService?.servers?.get) return undefined;
+    await mcpService.activateCollections();
+    const wantedServer = String(serverName ?? '').toLowerCase();
+    const server = mcpService.servers.get().find(candidate => {
+        const metadata = candidate.serverMetadata?.get?.();
+        return [
+            candidate.definition?.id,
+            candidate.definition?.label,
+            metadata?.serverName,
+        ].some(name => String(name ?? '').toLowerCase() === wantedServer);
+    });
+    if (!server) return undefined;
+    await server.start({ promptType: 'all-untrusted' });
+    return scmToolkitWaitForMcpTool(doc, server, toolName);
+}
+
+async function scmToolkitWaitForChatgptConversationSource(doc, initialUuid) {
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+        const source = scmToolkitChatgptConversationSource(doc);
+        if (source && source.uuid !== initialUuid) return source;
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 250) : setTimeout(resolve, 250)));
+    }
+    return undefined;
+}
+
+async function scmToolkitRecordPullRequestSource(
+    doc,
+    mcpService,
+    settings,
+    launch,
+    branch,
+    base,
+    initialSource
+) {
+    const github = scmToolkitGithubCoordinates(launch?.repositoryUrl);
+    if (!github) return false;
+
+    let source = launch?.source || initialSource;
+    if (!source) {
+        source = await scmToolkitWaitForChatgptConversationSource(doc);
+    }
+    if (!source) return false;
+
+    const tool = await scmToolkitKafaniaTool(
+        doc,
+        mcpService,
+        settings.mcpPrServer,
+        'github_comment_pull_request_source'
+    );
+    if (!tool) return false;
+
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+        const result = await tool.call({
+            owner: github.owner,
+            repo: github.repo,
+            head: branch,
+            base,
+            source,
+        });
+        if (!result?.isError) return true;
+        const error = scmToolkitMcpError(result);
+        if (!/No open pull request found/i.test(error)) {
+            throw new Error(error);
+        }
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 2000) : setTimeout(resolve, 2000)));
+    }
+    return false;
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);
@@ -786,7 +883,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
         try {
             const source = scmToolkitChatgptConversationSource(doc);
-            await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
+            const launch = await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
                 branch,
                 base: settings.defaultBranch,
                 remote: settings.remote,
@@ -794,6 +891,15 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 mcpTool: settings.mcpPrTool,
                 source,
             });
+            void scmToolkitRecordPullRequestSource(
+                doc,
+                mcpService,
+                settings,
+                launch,
+                branch,
+                settings.defaultBranch,
+                source
+            ).catch(error => notifications.error(error));
         } catch (error) {
             notifications.error(error);
         } finally {
