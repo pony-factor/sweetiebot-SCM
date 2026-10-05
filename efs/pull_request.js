@@ -168,7 +168,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     await vscode.commands.executeCommand('workbench.action.browser.open', {
       url, openToSide: false, reuseUrlFilter: url
     });
-    return { source, conversationContext };
+    return { source, conversationContext, repositoryUrl };
   }));
 }
 
