@@ -317,17 +317,11 @@ async function scmToolkitPushWithPullRetry(repository, originalPush) {
     }
 }
 
-function scmToolkitReleaseCommitBeforePush(repository, configuration, notifications) {
-    if (
-        !repository
-        || typeof repository.commit !== 'function'
-        || typeof repository.push !== 'function'
-    ) {
-        return;
-    }
+function scmToolkitGuardCommit(repository, commands, configuration, notifications) {
+    if (!repository || typeof repository.commit !== 'function') return;
 
     const wrappedRepositories =
-        globalThis.__scmToolkitAsyncPushRepositories ??= new WeakMap();
+        globalThis.__scmToolkitCommitGuardRepositories ??= new WeakMap();
     let state = wrappedRepositories.get(repository);
 
     if (!state) {
@@ -335,27 +329,55 @@ function scmToolkitReleaseCommitBeforePush(repository, configuration, notificati
         const originalPush = repository.push;
 
         const wrappedCommit = async function(message, options) {
-            const requestedPostCommitCommand = options?.postCommitCommand;
-            const configuredPostCommitCommand =
-                configuration.getValue('git.postCommitCommand');
-            const shouldReleasePush =
-                requestedPostCommitCommand === 'push'
-                || (
-                    requestedPostCommitCommand === undefined
-                    && configuredPostCommitCommand === 'push'
+            try {
+                const allowed = await commands.executeCommand(
+                    'scmToolkit.checkCommitLimits',
+                    repository.rootUri
                 );
-
-            if (!shouldReleasePush) {
-                return originalCommit.call(repository, message, options);
+                if (allowed === false) return;
+            } catch {
+                // Keep commits usable if the companion extension is temporarily unavailable.
             }
 
-            await originalCommit.call(repository, message, {
-                ...(options ?? {}),
-                postCommitCommand: null,
-            });
+            let commitLease = false;
+            try {
+                try {
+                    await commands.executeCommand('scmToolkit.beginCommit', repository.rootUri);
+                    commitLease = true;
+                } catch {
+                    // If the companion extension is unavailable, its auto-pull is unavailable too.
+                }
 
-            void scmToolkitPushWithPullRetry(repository, originalPush)
-                .catch(error => notifications.error(error));
+                const requestedPostCommitCommand = options?.postCommitCommand;
+                const configuredPostCommitCommand =
+                    configuration.getValue('git.postCommitCommand');
+                const shouldReleasePush =
+                    requestedPostCommitCommand === 'push'
+                    || (
+                        requestedPostCommitCommand === undefined
+                        && configuredPostCommitCommand === 'push'
+                    );
+
+                if (!shouldReleasePush || typeof originalPush !== 'function') {
+                    return await originalCommit.call(repository, message, options);
+                }
+
+                await originalCommit.call(repository, message, {
+                    ...(options ?? {}),
+                    postCommitCommand: null,
+                });
+
+                void scmToolkitPushWithPullRetry(repository, originalPush)
+                    .catch(error => notifications.error(error));
+            } finally {
+                if (commitLease) {
+                    try {
+                        await commands.executeCommand('scmToolkit.endCommit', repository.rootUri);
+                    } catch {
+                        // The extension may be reloading; do not turn a successful commit into an error.
+                    }
+                }
+            }
         };
 
         state = {
@@ -383,6 +405,119 @@ function scmToolkitReleaseCommitBeforePush(repository, configuration, notificati
             wrappedRepositories.delete(repository);
         }
     };
+}
+
+function scmToolkitChatgptConversationSource(doc) {
+    const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+    const pattern = new RegExp('^https://chatgpt\\.com/c/(' + uuid + ')(?:[/?#]|$)', 'i');
+    for (const input of doc.querySelectorAll('input')) {
+        if (typeof input.getClientRects === 'function' && !input.getClientRects().length) continue;
+        const match = String(input.value ?? '').trim().match(pattern);
+        if (!match) continue;
+        return {
+            kind: 'chatgpt',
+            uuid: match[1],
+            url: `https://chatgpt.com/c/${match[1]}`,
+        };
+    }
+    return undefined;
+}
+
+function scmToolkitGithubCoordinates(repositoryUrl) {
+    const match = String(repositoryUrl ?? '').trim().match(
+        /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/?$/i
+    );
+    return match ? { owner: match[1], repo: match[2] } : undefined;
+}
+
+function scmToolkitMcpError(result) {
+    return result?.content?.find(
+        item => item?.type === 'text' && typeof item.text === 'string'
+    )?.text || 'The Kafania MCP tool returned an error.';
+}
+
+async function scmToolkitWaitForMcpTool(doc, server, toolName) {
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        const tool = server.tools?.get?.().find(
+            candidate => candidate.definition?.name === toolName
+        );
+        if (tool) return tool;
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 100) : setTimeout(resolve, 100)));
+    }
+    return undefined;
+}
+
+async function scmToolkitKafaniaTool(doc, mcpService, serverName, toolName) {
+    if (!mcpService?.activateCollections || !mcpService?.servers?.get) return undefined;
+    await mcpService.activateCollections();
+    const wantedServer = String(serverName ?? '').toLowerCase();
+    const server = mcpService.servers.get().find(candidate => {
+        const metadata = candidate.serverMetadata?.get?.();
+        return [
+            candidate.definition?.id,
+            candidate.definition?.label,
+            metadata?.serverName,
+        ].some(name => String(name ?? '').toLowerCase() === wantedServer);
+    });
+    if (!server) return undefined;
+    await server.start({ promptType: 'all-untrusted' });
+    return scmToolkitWaitForMcpTool(doc, server, toolName);
+}
+
+async function scmToolkitWaitForChatgptConversationSource(doc, initialUuid) {
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+        const source = scmToolkitChatgptConversationSource(doc);
+        if (source && source.uuid !== initialUuid) return source;
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 250) : setTimeout(resolve, 250)));
+    }
+    return undefined;
+}
+
+async function scmToolkitRecordPullRequestSource(
+    doc,
+    mcpService,
+    settings,
+    launch,
+    branch,
+    base,
+    initialSource
+) {
+    const github = scmToolkitGithubCoordinates(launch?.repositoryUrl);
+    if (!github) return false;
+
+    let source = launch?.source || initialSource;
+    if (!source) {
+        source = await scmToolkitWaitForChatgptConversationSource(doc);
+    }
+    if (!source) return false;
+
+    const tool = await scmToolkitKafaniaTool(
+        doc,
+        mcpService,
+        settings.mcpPrServer,
+        'github_comment_pull_request_source'
+    );
+    if (!tool) return false;
+
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+        const result = await tool.call({
+            owner: github.owner,
+            repo: github.repo,
+            head: branch,
+            base,
+            source,
+        });
+        if (!result?.isError) return true;
+        const error = scmToolkitMcpError(result);
+        if (!/No open pull request found/i.test(error)) {
+            throw new Error(error);
+        }
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 2000) : setTimeout(resolve, 2000)));
+    }
+    return false;
 }
 
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
@@ -747,7 +882,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
         pullRequestTooltip.textContent = branch === settings.defaultBranch
             ? `${settings.defaultBranch} is the pull-request base branch`
-            : `Draft a pull request for ${branch ?? 'the current branch'} in ChatGPT`;
+            : `Draft a pull request for ${branch ?? 'the current branch'} with Kafania in ChatGPT`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -769,11 +904,24 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         creatingPullRequest = true;
         refreshBranchControls();
         try {
-            await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
+            const source = scmToolkitChatgptConversationSource(doc);
+            const launch = await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
                 branch,
                 base: settings.defaultBranch,
                 remote: settings.remote,
+                mcpServer: settings.mcpPrServer,
+                mcpTool: settings.mcpPrTool,
+                source,
             });
+            void scmToolkitRecordPullRequestSource(
+                doc,
+                mcpService,
+                settings,
+                launch,
+                branch,
+                settings.defaultBranch,
+                source
+            ).catch(error => notifications.error(error));
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1217,17 +1365,17 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 currentRepositoryArgument = command?.arguments?.[0];
 
                 if (
-                    settings.commitAndPush
-                    && currentRepositoryArgument
-                    && !widget.repositoryDisposables.__scmToolkitAsyncPushBound
+                    currentRepositoryArgument
+                    && !widget.repositoryDisposables.__scmToolkitCommitGuardBound
                 ) {
-                    const asyncPushDisposable = scmToolkitReleaseCommitBeforePush(
+                    const asyncPushDisposable = scmToolkitGuardCommit(
                         currentRepositoryArgument,
+                        commands,
                         configuration,
                         notifications
                     );
                     if (asyncPushDisposable) {
-                        widget.repositoryDisposables.__scmToolkitAsyncPushBound = true;
+                        widget.repositoryDisposables.__scmToolkitCommitGuardBound = true;
                         widget.repositoryDisposables.add(asyncPushDisposable);
                     }
                 }
