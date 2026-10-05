@@ -80,6 +80,33 @@ class RetiredComposerPatchTests(unittest.TestCase):
             (assets / "app-initial-clean.js").write_text("clean")
             self.assertEqual(list(codex_composer.patch_files(root)), [])
 
+    def test_repair_restores_partial_failed_write_and_previous_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            assets = root / "webview" / "assets"
+            assets.mkdir(parents=True)
+            original = "base" + codex_composer.START + "/* edits:[] */\nlegacy" + codex_composer.END
+            first = assets / "app-initial-a.js"
+            second = assets / "app-initial-b.js"
+            first.write_text(original)
+            second.write_text(original)
+            write_text = Path.write_text
+            failed = False
+
+            def fail_once(path, content, *args, **kwargs):
+                nonlocal failed
+                if path == second and not failed:
+                    failed = True
+                    write_text(path, "partial")
+                    raise OSError("interrupted write")
+                return write_text(path, content, *args, **kwargs)
+
+            with patch.object(Path, "write_text", fail_once):
+                with self.assertRaisesRegex(OSError, "interrupted write"):
+                    codex_composer.repair(root)
+            self.assertEqual(first.read_text(), original)
+            self.assertEqual(second.read_text(), original)
+
 
 if __name__ == "__main__":
     unittest.main()

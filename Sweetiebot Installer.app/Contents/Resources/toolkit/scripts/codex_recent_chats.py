@@ -14,7 +14,10 @@ def transform(source, remove=False):
     if START in source:
         before, remainder = source.split(START, 1)
         payload, after = remainder.split(END, 1)
-        original, replacement = json.loads(payload.strip())
+        metadata = payload.strip()
+        if metadata.startswith('/* edit:') and metadata.endswith(' */'):
+            metadata = metadata[len('/* edit:'):-len(' */')]
+        original, replacement = json.loads(metadata)
         source = before + after
         if source.count(replacement) != 1:
             raise ValueError('Installed Codex recent-chat patch changed.')
@@ -34,4 +37,4 @@ def transform(source, remove=False):
     original = match.group(0)
     replacement = f'{match["preview"]}={match["tasks"]}.slice(0,7)'
     source = source.replace(original, replacement, 1)
-    return source + START + json.dumps([original, replacement]) + END
+    return source + START + '/* edit:' + json.dumps([original, replacement]) + ' */' + END

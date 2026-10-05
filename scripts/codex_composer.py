@@ -57,8 +57,8 @@ def repair(extension_path: Path | None = None) -> list[Path]:
     written: list[tuple[Path, str]] = []
     try:
         for path, original, restored in patches:
-            path.write_text(restored)
             written.append((path, original))
+            path.write_text(restored)
     except OSError:
         for path, original in reversed(written):
             try:

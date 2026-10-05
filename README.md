@@ -415,9 +415,19 @@ python3 scripts/codex_composer.py
 
 The recovery command scans installed `openai.chatgpt-*` extensions, validates the
 old Sweetie Bot restoration metadata, removes only that retired payload, and
-restores any source text it replaced. Reload Visual Studio Code after it reports
-the restored bundle. Use `--extension "/path/to/openai.chatgpt-version"` to target
+restores any source text it replaced. Before reloading Visual Studio Code, rebuild
+and run **Sweetiebot Installer.app** from this checkout. The companion Workspace
+Search extension bundles its own Codex installer and runs it at startup; an older
+installed copy can reintroduce the retired composer patch on every reload.
+Rebuilding the app alone does not update that companion extension: run the rebuilt
+app to install the current payload. The rebuilt app retains its persistent signing
+identity. Use `--extension "/path/to/openai.chatgpt-version"` to target
 one extension directory explicitly.
+
+The current installer also migrates the recent-chat preview patch's older raw
+JSON restoration metadata into a JavaScript comment. The old metadata could be
+interpreted as a function call when another customization followed it, causing
+the webview to show **ChatGPT hit a snag** even after the composer repair.
 
 ### Codex usage-reset countdown
 
