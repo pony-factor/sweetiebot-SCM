@@ -291,6 +291,23 @@ class TitleTests(unittest.TestCase):
             self.assertEqual(ai_commit.ollama_json("/api/generate", {"model": "local"}), {"response": "ok"})
             self.assertEqual(request.call_args.kwargs["timeout"], 300)
 
+    def test_commit_endpoint_routes_locally_and_rejects_remote_addresses(self):
+        with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": "http://127.0.0.1:11435"}), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{}'
+            ai_commit.ollama_json("/api/tags")
+            self.assertEqual(request.call_args.args[0].full_url, "http://127.0.0.1:11435/api/tags")
+        for url in ["https://example.com", "http://example.com", "http://user:password@localhost:11435", "http://localhost:11435/path"]:
+            with self.subTest(url=url), patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": url}), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+                with self.assertRaisesRegex(ValueError, "local HTTP"):
+                    ai_commit.ollama_json("/api/tags")
+                request.assert_not_called()
+
+    def test_commit_endpoint_uses_git_setting_without_environment_override(self):
+        with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": ""}), patch.object(ai_commit, "git_config_string", return_value="http://127.0.0.1:11435"), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{}'
+            ai_commit.ollama_json("/api/tags")
+            self.assertEqual(request.call_args.args[0].full_url, "http://127.0.0.1:11435/api/tags")
+
     @patch.object(ai_commit, "recent_subjects", return_value="Fix parser\nAdd tests")
     def test_prompt_is_repository_scoped(self, _subjects):
         prompt = ai_commit.prompt_for_diff("1 file changed", "diff --git a/a b/a")
