@@ -53,7 +53,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         remaining = set(packs["g5-remaining"]["names"])
 
-        self.assertEqual(len(packs["g5-remaining"]["names"]), 195)
+        self.assertEqual(len(packs["g5-remaining"]["names"]), 193)
         for name in (
             "arpeggia",
             "fretlock",
@@ -93,8 +93,12 @@ class BranchNamePackTests(unittest.TestCase):
                 "astro-novalite",
             ],
         )
-        self.assertIn("dazzle-feather", remaining)
-        self.assertIn("skye-silver", remaining)
+        self.assertNotIn("dazzle-feather", remaining)
+        self.assertNotIn("skye-silver", remaining)
+        self.assertTrue(
+            remaining.isdisjoint(packs["tamers12345"]["names"]),
+            "G5 remaining must not duplicate Tamers12345 branch-name slugs",
+        )
 
         g4_names = {
             name
