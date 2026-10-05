@@ -490,7 +490,11 @@ class ServerTests(unittest.TestCase):
         result = {}
 
         def capture_output(line, **kwargs):
-            captured["url"] = json.loads(line)["url"]
+            message = json.loads(line)
+            if "url" not in message:
+                captured["settings"] = message
+                return
+            captured["url"] = message["url"]
             captured["flushed"] = kwargs.get("flush")
             ready.set()
 
@@ -512,7 +516,22 @@ class ServerTests(unittest.TestCase):
             try:
                 self.assertTrue(captured["flushed"])
                 with urllib.request.urlopen(captured["url"], timeout=5) as response:
-                    self.assertIn("Sweetiebot SCM Setup", response.read().decode())
+                    page = response.read().decode()
+                    self.assertIn("Sweetiebot SCM Setup", page)
+                    self.assertIn('value="save" hidden>Import signing key', page)
+                for path in ("/autosave", "/save", "/autosave"):
+                    values = form_values()
+                    values.pop("branchPicker")
+                    endpoint = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
+                    request = urllib.request.Request(endpoint, data=urllib.parse.urlencode(values, doseq=True).encode(), method="POST")
+                    with urllib.request.urlopen(request, timeout=5) as response:
+                        self.assertTrue(json.load(response)["saved"])
+                    self.assertTrue(thread.is_alive())
+                    self.assertFalse(save.call_args.args[0]["branchPicker"])
+                    with urllib.request.urlopen(captured["url"], timeout=5) as response:
+                        self.assertEqual(response.status, 200)
+                validate.assert_not_called()
+                self.assertIn("workspaceSearch", captured["settings"])
                 unauthorized = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
                 with self.assertRaises(urllib.error.HTTPError) as denied:
                     urllib.request.urlopen(unauthorized, timeout=5)
