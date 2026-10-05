@@ -15,6 +15,7 @@ class CodexColorTests(unittest.TestCase):
         self.assertIn('button.bg-composer-primary', patched)
         self.assertIn('[data-composer-navigation-target="permissions"]', patched)
         self.assertIn('[data-composer-navigation-target="run-location"]', patched)
+        self.assertIn('[data-composer-navigation-target="add-context"]', patched)
         self.assertNotIn('--vscode-foreground:', patched)
 
     def test_blank_colors_restore_the_theme(self):
