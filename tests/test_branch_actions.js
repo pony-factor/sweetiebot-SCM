@@ -43,7 +43,7 @@ async function run() {
     repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' },
       ahead: state.ahead, behind: state.behind };
     if (state.dirty) repository.state[state.dirty] = [{}];
-    const expected = state.ahead === 0 && state.behind > 0 && !state.dirty;
+    const expected = state.ahead === 0 && state.behind > 0 && state.dirty !== 'mergeChanges';
     assert.equal(await autoPullClean(repository), expected);
     assert.equal(calls.some(call => call[0] === 'merge'), expected);
   }
@@ -55,7 +55,7 @@ async function run() {
     assert.deepEqual(calls.find(call => call[0] === 'fetch'), ['fetch', { remote: 'origin', ref: 'main' }]);
     assert.deepEqual(calls.find(call => call[0] === 'merge'), ['merge', 'origin/main']);
   }
-  for (const mutation of ['name', 'commit', 'upstream', 'dirty', 'ahead']) {
+  for (const mutation of ['name', 'commit', 'upstream', 'ahead']) {
     const { repository, calls } = fixture();
     repository.state.HEAD = { name: 'main', commit: 'local', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 1 };
     repository.fetch = async () => {
@@ -66,7 +66,7 @@ async function run() {
     assert.equal(await autoPullClean(repository, { fetch: true }), false);
     assert(!calls.some(call => call[0] === 'merge'));
   }
-  for (const dirty of ['indexChanges', 'workingTreeChanges', 'mergeChanges']) {
+  for (const dirty of ['mergeChanges']) {
     const { repository, calls } = fixture();
     repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 1 };
     repository.state[dirty] = [{}];
@@ -351,7 +351,7 @@ async function run() {
     };
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
-    assert.equal(context.subscriptions.length, 6);
+    assert.equal(context.subscriptions.length, 7);
     assert.equal(await commands.get('scmToolkit.returnHome')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('scmToolkit.createBranch')(uri, options), 'fresh');
     assert.equal(await commands.get('scmToolkit.createBranch')({ ...uri }, options), 'fresh');

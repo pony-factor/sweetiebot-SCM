@@ -1,4 +1,4 @@
-# Custom VS Code SCM Toolkit
+# Sweetiebot SCM
 
 A small source-control UI patch for Visual Studio Code. It keeps the built-in Git workflow, but adds a compact branch selector and optional SCM controls around the commit-message box.
 
@@ -129,7 +129,7 @@ After installation, the gear at the right end of the Source Control message row 
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
 
-With **Automatically pull clean branches** enabled, a visible, clean SCM repository fetches its tracked upstream at most once a minute and merges only when strictly behind. Staged changes, unstaged changes, merge conflicts, and divergent commits pause automatic pulling. It resumes when the repository is clean again.
+With **Automatically pull clean branches** enabled, `main` fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, and changed branch tips or upstreams also pause pulling.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
 
@@ -462,7 +462,7 @@ the form. Only the resulting public fingerprint is saved to Git configuration;
 `commit.gpgsign` is enabled and the private key is never echoed into generated
 configuration or command output.
 
-The companion extension exposes `SCM Toolkit: Search Linked GitHub Repositories`.
+The companion extension exposes `Sweetiebot SCM: Search Linked GitHub Repositories`.
 It authenticates through VS Code's GitHub provider and searches the repositories
 visible to that linked account, so the toolkit does not maintain a second repository
 access list or a separate personal access token.

@@ -81,5 +81,25 @@ async function main() {
   await handler({});
   assert.equal(errors.length, 1);
   assert.deepEqual(refreshes, ['pr.refreshList']);
+  const selected = [];
+  const notices = [];
+  registerGitHubPullRequestActions({
+    commands: { registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
+      executeCommand: async id => refreshes.push(id) },
+    ProgressLocation: { Notification: 15 },
+    window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message),
+      showInformationMessage: message => notices.push(message) }
+  }, { subscriptions: [] }, async selectedUrl => {
+    selected.push(selectedUrl);
+    return { merged: false, number: '12' };
+  });
+  // GitHub PR tree nodes expose the normalized model URL, not REST's html_url.
+  await handler({ pullRequestModel: { url, number: 12 } });
+  await handler({ url, number: 12 });
+  await handler({ pullRequestModel: { html_url: url, number: 12 } });
+  assert.deepEqual(selected, [url, url, url]);
+  assert.equal(errors.length, 1);
+  assert.equal(notices.length, 3);
+  assert.deepEqual(refreshes, Array(4).fill('pr.refreshList'));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

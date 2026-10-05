@@ -194,7 +194,7 @@ def main() -> None:
     )
 
     primary_choice = choose_from_list(
-        "SCM Toolkit AI Models",
+        "Sweetiebot SCM AI Models",
         recommendation + "\n\nChoose the normal commit-title model.",
         choices,
         primary,
@@ -203,7 +203,7 @@ def main() -> None:
         return
 
     low_choice = choose_from_list(
-        "SCM Toolkit AI Models",
+        "Sweetiebot SCM AI Models",
         recommendation + "\n\nChoose the model used when available memory is low.",
         choices,
         low_memory,
@@ -227,7 +227,7 @@ def main() -> None:
             "\n\nThese selected models are not currently reported by local Ollama. "
             "Install them before use:\n" + pulls
         )
-    show_message("SCM Toolkit AI Models", message)
+    show_message("Sweetiebot SCM AI Models", message)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,9 @@
 function scmToolkitRemainingUsage(usage) {
     const windows = usage?.rate_limit;
-    const percentages = [windows?.primary_window, windows?.secondary_window]
-        .filter(bucket => bucket && [300, 10080].includes(bucket.limit_window_seconds / 60))
-        .map(bucket => bucket.used_percent)
-        .filter(Number.isFinite)
-        .map(used => Math.max(0, Math.min(100, 100 - used)));
-    return percentages.length ? Math.round(Math.min(...percentages)) : null;
+    const bucket = [windows?.primary_window, windows?.secondary_window]
+        .find(bucket => bucket?.limit_window_seconds === 300 * 60
+            && Number.isFinite(bucket.used_percent));
+    return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
 }
 
 (() => {

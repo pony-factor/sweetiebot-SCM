@@ -11,19 +11,32 @@ async function main() {
   global.setInterval = (fn, delay) => { assert.equal(delay, 5000); timers.set(++sequence, fn); return sequence; };
   global.clearInterval = id => timers.delete(id);
   try {
-    let visibility, focus, configChanged, enabled = true, calls = 0, resolve;
+    let visibility, focus, configChanged, enabled = true, calls = 0, resolve, mergeSelected;
+    const merges = [];
     const subscriptions = [];
     const view = { visible: false, onDidChangeVisibility: fn => { visibility = fn; return { dispose() {} }; } };
     const vscode = {
       window: { state: { focused: true }, onDidChangeWindowState: fn => { focus = fn; return { dispose() {} }; } },
       workspace: { getConfiguration: () => ({ get: () => enabled }),
         onDidChangeConfiguration: fn => { configChanged = fn; return { dispose() {} }; } },
-      commands: { executeCommand: id => {
+      commands: { registerCommand: (id, handler) => {
+        assert.equal(id, 'scmToolkit.squashMergeSelectedPullRequest');
+        mergeSelected = handler;
+        return { dispose() {} };
+      }, executeCommand: (id, arg) => {
+        if (id === 'scmToolkit.squashMergePullRequest') { merges.push(arg); return Promise.resolve(); }
         assert.equal(id, 'pr.refreshList'); calls++;
         return new Promise(done => { resolve = done; });
       } }
     };
     assert.equal(installPullRequestRefresh(vscode, view, { _register: item => subscriptions.push(item) }), view);
+    const url = 'https://github.com/owner/repo/pull/12';
+    await mergeSelected({ pullRequestModel: { html_url: url, number: 12 } });
+    await mergeSelected({ url, number: 12 });
+    assert.deepEqual(merges, [{ url, number: 12 }, { url, number: 12 }]);
+    const manifest = require('../efs/package.json');
+    assert.equal(manifest.contributes.menus['view/item/context'][0].command,
+      'scmToolkit.squashMergeSelectedPullRequest');
     await Promise.resolve();
     assert.equal(calls, 0);
     assert.equal(timers.size, 0);

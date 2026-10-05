@@ -98,6 +98,7 @@ SETTINGS = (
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
+    Setting("codexPlaceholder", "scm-toolkit.codex-placeholder", "Input placeholder", "Override the Codex composer placeholder. Leave blank to use the built-in text.", "Codex", "optional_text"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
     Setting("codexSendBackground", "scm-toolkit.codex-send-background", "Send button background", "Hex color for the Codex send button. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon. Leave blank to use the theme.", "Codex", "color"),
@@ -419,6 +420,8 @@ def render_form(
     token: str,
     action_label: str,
     error: str = "",
+    *,
+    finish_on_save: bool = True,
 ) -> str:
     sections = []
     for section in dict.fromkeys(setting.section for setting in SETTINGS):
@@ -450,9 +453,11 @@ def render_form(
     error_html = f'<div class="error" role="alert">{html.escape(error)}</div>' if error else ""
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
+    submit_label = action_label if finish_on_save else "Import signing key"
+    submit_hidden = "" if finish_on_save else " hidden"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SCM Toolkit Setup</title><style>
+<title>Sweetiebot SCM Setup</title><style>
 :root{{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--danger:#f85149}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 main{{width:min(880px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
@@ -463,43 +468,53 @@ section{{margin:16px 0;padding:8px 20px;background:var(--panel);border:1px solid
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;max-height:320px;overflow:auto;padding:3px}}.pack-card{{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg);transition:border-color .15s,background .15s}}.pack-card:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg))}}.pack-card:has(input:focus-visible){{outline:2px solid var(--accent);outline-offset:1px}}.pack-card input{{accent-color:var(--accent);width:16px;height:16px;flex:none}}.pack-card[hidden]{{display:none}}.pack-card strong{{font-size:13px}}.pack-card small{{font-size:12px}}
 @media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
-</style></head><body><main><header><h1>SCM Toolkit Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
+</style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
 {error_html}<form method="post" action="{action}">{''.join(sections)}<datalist id="ollama-models">{options}</datalist>
-<div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save">{html.escape(action_label)}</button></div></form>
+<div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
 let autosaveTimer = null;
 let saveChain = Promise.resolve();
+let editVersion = 0;
+const finishOnSave = {json.dumps(finish_on_save)};
 
-async function persistSettings() {{
+async function persistSettings(importKey = false) {{
+  const version = editVersion;
   saveStatus.textContent = 'Saving…';
   saveStatus.classList.remove('error-state');
   const data = new FormData(settingsForm);
-  data.delete('pgpSecretKey');
+  if (!importKey) data.delete('pgpSecretKey');
   data.delete('action');
   try {{
-    const response = await fetch('/autosave' + location.search, {{
+    const response = await fetch((importKey ? '/save' : '/autosave') + location.search, {{
       method: 'POST',
       body: new URLSearchParams(data)
     }});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Unable to save settings.');
-    saveStatus.textContent = 'Saved';
+    if (importKey) {{
+      settingsForm.elements.pgpSecretKey.value = '';
+      settingsForm.querySelector('button[type="submit"]').hidden = true;
+    }}
+    if (version === editVersion) saveStatus.textContent = 'Saved';
+    return true;
   }} catch (error) {{
     saveStatus.textContent = 'Not saved: ' + error.message;
     saveStatus.classList.add('error-state');
+    return false;
   }}
 }}
 
 function queueAutosave() {{
-  saveChain = saveChain.then(persistSettings, persistSettings);
+  saveChain = saveChain.then(() => persistSettings(), () => persistSettings());
   return saveChain;
 }}
 
 function scheduleAutosave(event) {{
   const target = event.target;
   if (!target?.name || target.name === 'pgpSecretKey' || target.name === 'action') return;
+  editVersion++;
   clearTimeout(autosaveTimer);
   saveStatus.textContent = 'Unsaved changes';
   saveStatus.classList.remove('error-state');
@@ -510,6 +525,11 @@ function scheduleAutosave(event) {{
 }}
 
 if (settingsForm) {{
+  if (!finishOnSave) {{
+    settingsForm.elements.pgpSecretKey.addEventListener('input', event => {{
+      settingsForm.querySelector('button[type="submit"]').hidden = !event.target.value.trim();
+    }});
+  }}
   settingsForm.addEventListener('input', scheduleAutosave);
   settingsForm.addEventListener('change', scheduleAutosave);
   settingsForm.addEventListener('submit', async event => {{
@@ -519,8 +539,12 @@ if (settingsForm) {{
       autosaveTimer = null;
       queueAutosave();
     }}
-    await saveChain;
-    HTMLFormElement.prototype.submit.call(settingsForm);
+    if (await saveChain === false) return;
+    if (finishOnSave) HTMLFormElement.prototype.submit.call(settingsForm);
+    else {{
+      saveChain = saveChain.then(() => persistSettings(true));
+      await saveChain;
+    }}
   }});
 }}
 
@@ -694,7 +718,7 @@ def run_configurator(
                 self._send_json({"models": names, "status": status})
                 return
             names, status = fetch_ollama_models()
-            self._send(render_form(session_settings, names, status, token, action_label))
+            self._send(render_form(session_settings, names, status, token, action_label, finish_on_save=open_browser))
 
         def do_POST(self) -> None:
             if not self._authorized():
@@ -736,7 +760,6 @@ def run_configurator(
                 parsed = {}
                 try:
                     parsed = parse_submission(values)
-                    validate_models(parsed)
                     save_settings(parsed)
                     sync_codex_instructions(
                         str(parsed["chatgptCustomInstructions"]),
@@ -758,7 +781,8 @@ def run_configurator(
             parsed = {}
             try:
                 parsed = parse_submission(values)
-                validate_models(parsed)
+                if open_browser:
+                    validate_models(parsed)
                 save_settings(parsed)
                 sync_codex_instructions(
                     str(parsed["chatgptCustomInstructions"]),
@@ -766,6 +790,9 @@ def run_configurator(
                 )
                 import_pgp_secret_key(values.get("pgpSecretKey", [""])[0])
             except (RuntimeError, ValueError) as error:
+                if not open_browser:
+                    self._send_json({"saved": False, "error": str(error)}, 400)
+                    return
                 names, status = fetch_ollama_models()
                 submitted = dict(session_settings)
                 submitted.update(parsed)
@@ -775,8 +802,11 @@ def run_configurator(
             outcome["saved"] = True
             if not open_browser:
                 print(json.dumps(extension_settings_payload(parsed)), flush=True)
-            self._send(_result_page(True))
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            if open_browser:
+                self._send(_result_page(True))
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+            else:
+                self._send_json({"saved": True})
 
         def log_message(self, _format: str, *_args: object) -> None:
             return
@@ -784,7 +814,7 @@ def run_configurator(
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     url = f"http://127.0.0.1:{server.server_port}/?token={urllib.parse.quote(token)}"
     if open_browser:
-        print(f"SCM Toolkit configurator: {url}")
+        print(f"Sweetiebot SCM configurator: {url}")
         if not webbrowser.open(url):
             print("Open the URL above in a browser.")
     else:

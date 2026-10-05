@@ -23,8 +23,7 @@ async function autoPullClean(repository, { fetch = false } = {}) {
   await repository.status();
   const previous = { ...repository.state.HEAD, upstream: { ...repository.state.HEAD?.upstream } };
   if (fetch) {
-    if (!previous.upstream.remote || !previous.upstream.name || repository.state.indexChanges?.length
-        || repository.state.workingTreeChanges?.length || repository.state.mergeChanges?.length) return false;
+    if (!previous.upstream.remote || !previous.upstream.name || repository.state.mergeChanges?.length) return false;
     await repository.fetch({ remote: previous.upstream.remote, ref: previous.upstream.name });
     await repository.status();
     const current = repository.state.HEAD;
@@ -32,10 +31,18 @@ async function autoPullClean(repository, { fetch = false } = {}) {
         || current?.upstream?.remote !== previous.upstream.remote
         || current?.upstream?.name !== previous.upstream.name) return false;
   }
-  const { HEAD: head, indexChanges = [], workingTreeChanges = [], mergeChanges = [] } = repository.state;
+  const { HEAD: head, mergeChanges = [] } = repository.state;
   if (!head?.upstream || !head.behind || head.ahead !== 0
-      || indexChanges.length || workingTreeChanges.length || mergeChanges.length) return false;
-  await repository.merge(`${head.upstream.remote}/${head.upstream.name}`);
+      || mergeChanges.length) return false;
+  if (repository.rootUri?.fsPath) {
+    // Let Git carry nonconflicting local edits; never create a merge commit or
+    // overwrite a changed path. A failed fast-forward preserves the worktree.
+    await promisify(execFile)('git', ['merge', '--ff-only', `refs/remotes/${head.upstream.remote}/${head.upstream.name}`], {
+      cwd: repository.rootUri.fsPath, timeout: 120000
+    });
+  } else {
+    await repository.merge(`${head.upstream.remote}/${head.upstream.name}`);
+  }
   await repository.status();
   return true;
 }
@@ -298,6 +305,39 @@ function registerBranchCommands(vscode, context) {
       return queueRepositoryOperation(repository, () => action(repository, options));
     }));
   }
+  let scanning = false, disposed = false;
+  const scan = async () => {
+    if (scanning || disposed) return;
+    scanning = true;
+    try {
+      const extension = vscode.extensions.getExtension('vscode.git');
+      if (!extension) return;
+      const git = await extension.activate();
+      for (const repository of git.getAPI(1).repositories ?? []) {
+        if (disposed || repository.rootUri.scheme !== 'file') continue;
+        await queueRepositoryOperation(repository, async () => {
+          await repository.status();
+          if (disposed || repository.state.HEAD?.name !== 'main') return;
+          try {
+            const { stdout } = await promisify(execFile)('git', ['config', '--bool', '--get', 'scm-toolkit.auto-pull-clean'], {
+              cwd: repository.rootUri.fsPath, timeout: 10000
+            });
+            if (stdout.trim() !== 'true') return;
+          } catch (error) {
+            if (error.code !== 1) return; // An unset preference defaults to enabled.
+          }
+          await autoPullClean(repository, { fetch: true });
+        }).catch(() => {}); // Git preserves edits when an incoming path overlaps.
+      }
+    } finally {
+      scanning = false;
+    }
+  };
+  const run = () => void scan().catch(() => {});
+  const timer = setInterval(run, 60000);
+  timer.unref?.();
+  context.subscriptions.push({ dispose() { disposed = true; clearInterval(timer); } });
+  run();
 }
 
 module.exports = { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean };

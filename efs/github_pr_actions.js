@@ -57,18 +57,18 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
   }
 }
 
-function registerGitHubPullRequestActions(vscode, context) {
+function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
   context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.squashMergePullRequest', async node => {
-    const model = node?.pullRequestModel;
-    const url = model?.html_url;
+    const model = node?.pullRequestModel ?? node;
+    const url = model?.url ?? model?.html_url;
     if (busy.has(url)) return;
     busy.add(url);
     try {
       const result = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: `Squash-merge PR #${model?.number ?? ''} into main`, cancellable: false
-      }, () => squashMergePullRequest(url));
+      }, () => merge(url));
       if (!result.merged) {
         vscode.window.showInformationMessage(`PR #${result.number} is queued for merge. Branch cleanup will wait until it merges.`);
         return;

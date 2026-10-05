@@ -504,8 +504,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     settingsButton.type = 'button';
     settingsButton.className = 'scm-toolkit-settings codicon codicon-gear';
     settingsButton.hidden = true;
-    settingsButton.title = 'Open SCM Toolkit settings';
-    settingsButton.setAttribute('aria-label', 'Open SCM Toolkit settings');
+    settingsButton.title = 'Open Sweetiebot SCM settings';
+    settingsButton.setAttribute('aria-label', 'Open Sweetiebot SCM settings');
 
     widget.element.prepend(branchButton);
     scmToolkitAttachCommitSettings(widget, settingsButton);
