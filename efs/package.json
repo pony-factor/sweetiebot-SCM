@@ -28,7 +28,8 @@
     "onStartupFinished",
     "onCommand:scmToolkit.workspaceSearch.clearIndex",
     "onCommand:scmToolkit.chatgpt.searchRepositories",
-    "onCommand:scmToolkit.squashMergePullRequest"
+    "onCommand:scmToolkit.squashMergePullRequest",
+    "onUri"
   ],
   "contributes": {
     "views": {

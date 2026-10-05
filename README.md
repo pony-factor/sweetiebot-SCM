@@ -622,11 +622,17 @@ The trailer is added after a blank line and is not duplicated if it is already
 present. If the commit fails and VS Code leaves the message untouched, the toolkit
 restores the original message.
 
-### Pull requests in ChatGPT
+### Pull requests through Kafania
 
-The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, local repository path, GitHub repository, and base branch in its prompt. It asks ChatGPT to read the branch diff and explain the work's intent and effects in concise paragraphs or short bullets, across code, prose, research, and brainstorming. Titles reflect the actual scope, and description length follows the substantive changes. Lists, headings, and compact tables are encouraged when they make the description easier to read. The description leads with the substantive change and documents the work for the record after merge, without reviewer questions or checklists. The prompt distinguishes source collection, interpretation, and draft changes, separates observed changes from inferred intent, treats rough notes and placeholders plainly, and explains unfamiliar shorthand only when supported by context. It avoids exhaustive file inventories, procedural narration, and routine verification boilerplate, and ends the description with a centered pony image linking to Kefania. Its alt text attributes only the automatically written PR description.
+The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 
-The button uses the existing `mcp-pull-request` visibility setting and no longer needs an MCP server or tool. ChatGPT needs access to the repository to read its changes; the prompt asks for access when the repository is unavailable. Opening the chat does not stage, commit, or push local changes.
+The request directs ChatGPT to publish through the configured Kafania MCP server and tool (by default `codex-drafter` / `github_create_pull_request`). If that Kafania tool is unavailable, the prompt asks ChatGPT not to substitute another GitHub writer.
+
+When the Integrated Browser is already showing a private ChatGPT conversation, Sweetiebot records its `/c/<uuid>` URL as the source. Otherwise it asks the patched Codex extension for the active local conversation UUID and a read-only context snapshot. The Codex UUID is linked through a Sweetiebot VS Code deep link so the author can reopen the local session even though it is not public.
+
+That source metadata is passed to Kafania. Kafania formats it as a separate pull-request comment and can include a short conversation-intent summary, which is intentionally distinct from the diff-based PR description. Source UUIDs are never invented when neither ChatGPT nor Codex exposes one.
+
+The two repositories are expected to be checked out beside each other so Sweetiebot can read `../kefania/PULL_REQUEST.md`. Opening the drafting chat does not stage, commit, or push local changes.
 
 ### Pony branch
 
