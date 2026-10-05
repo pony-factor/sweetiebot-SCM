@@ -664,7 +664,8 @@ def github_split_groups(files: list[str]) -> list[list[str]]:
         raise RuntimeError(
             f"{path} is {size / 1024**2:.1f} MiB in the staged snapshot. "
             "GitHub blocks regular Git files larger than 100 MiB; splitting the commit "
-            "cannot make that final file smaller. Split the file itself or track it with Git LFS."
+            "cannot make that final file smaller. Use Sweetiebot's confirmed file split "
+            "in VS Code, split the file manually, or track it with Git LFS."
         )
     if sum(size for _, size in metrics) <= AUTO_SPLIT_TARGET_BYTES:
         return [files] if files else []
