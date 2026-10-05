@@ -205,7 +205,8 @@ class TransformTests(unittest.TestCase):
         self.assertIn("currentCommitCommand.id,", js)
         self.assertIn("...(currentCommitCommand.arguments ?? [])", js)
         self.assertNotIn("commands.executeCommand('git.commit', currentRepositoryArgument)", js)
-        self.assertIn("scmToolkitReleaseCommitBeforePush(", js)
+        self.assertIn("scmToolkitGuardCommit(", js)
+        self.assertIn("'scmToolkit.checkCommitLimits'", js)
         self.assertIn("postCommitCommand: null", js)
         self.assertIn("scmToolkitPushWithPullRetry(repository, originalPush)", js)
         self.assertIn("error?.gitErrorCode !== 'PushRejected'", js)
@@ -426,6 +427,23 @@ class AiWrapperTests(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), (install.HERE / "ai_commit.py").read_bytes())
             self.assertTrue(destination.stat().st_mode & 0o111)
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
+
+    def test_sync_ai_wrapper_refreshes_existing_legacy_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp) / "bin" / "scm-toolkit-git"
+            legacy = Path(tmp) / "bin" / "git-auto-title"
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text("stale wrapper", encoding="utf-8")
+
+            with patch.object(install, "ai_wrapper_path", return_value=primary), patch.object(
+                install, "legacy_ai_wrapper_path", return_value=legacy
+            ):
+                self.assertTrue(install.sync_ai_wrapper())
+
+            expected = (install.HERE / "ai_commit.py").read_bytes()
+            self.assertEqual(primary.read_bytes(), expected)
+            self.assertEqual(legacy.read_bytes(), expected)
+            self.assertTrue(legacy.stat().st_mode & 0o111)
 
     def test_installed_wrapper_loads_spellcheck_helper_and_core(self):
         import importlib.util

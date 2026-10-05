@@ -25,15 +25,53 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
 };
 vm.runInNewContext(fs.readFileSync(require.resolve('../efs/branch_actions'), 'utf8'), sandbox);
 const context = { subscriptions: [] };
-const vscode = { commands: { registerCommand() { return { dispose() {} }; } }, extensions: {
-  getExtension() { return { async activate() { return { getAPI() { return { repositories: [main, topic] }; } }; } }; }
-} };
+const handlers = {};
+const vscode = {
+  Uri: { from(value) { return value; } },
+  commands: {
+    registerCommand(name, callback) {
+      handlers[name] = callback;
+      return { dispose() { delete handlers[name]; } };
+    }
+  },
+  extensions: {
+    getExtension() {
+      return {
+        async activate() {
+          return {
+            getAPI() {
+              return {
+                repositories: [main, topic],
+                getRepository(uri) {
+                  return uri?.fsPath === main.rootUri.fsPath ? main
+                    : uri?.fsPath === topic.rootUri.fsPath ? topic
+                    : undefined;
+                }
+              };
+            }
+          };
+        }
+      };
+    }
+  }
+};
 (async () => {
   sandbox.module.exports.registerBranchCommands(vscode, context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'Main fetches without any renderer or commit input widget');
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
-  tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2); assert.equal(merges, 1);
+
+  main.state.HEAD.behind = 1;
+  await handlers['scmToolkit.beginCommit'](main.rootUri);
+  tick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 1, 'Auto-pull does not fetch while a commit is active');
+  assert.equal(merges, 1, 'Auto-pull cannot move HEAD while a commit is active');
+  await handlers['scmToolkit.endCommit'](main.rootUri);
+
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 2, 'Auto-pull resumes after the commit releases its lease');
+  assert.equal(merges, 2, 'The pending fast-forward can run after the commit finishes');
   enabled = false; tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
   context.subscriptions.at(-1).dispose(); assert(cleared);
   enabled = true; tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
