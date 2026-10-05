@@ -7,6 +7,7 @@ import os
 import re
 import workspace_search
 import codex_colors
+import codex_composer
 import codex_usage
 import codex_context
 import codex_keep_awake
@@ -790,6 +791,17 @@ def main():
         paths.append(usage_path)
         old.append(usage_old)
         new.append(usage_new)
+
+    for composer_path, composer_old, composer_new in codex_composer.patch_files(
+        args.codex_extension, placeholder=settings.get("codexPlaceholder", ""), remove=args.uninstall,
+    ):
+        if composer_path in paths:
+            index = paths.index(composer_path)
+            new[index] = codex_composer.transform(new[index], settings.get("codexPlaceholder", ""), args.uninstall)
+        else:
+            paths.append(composer_path)
+            old.append(composer_old)
+            new.append(composer_new)
 
     should_find_codex = (
         settings["codexUsageResetCountdown"]
