@@ -33,7 +33,7 @@ async function run() {
   assert.equal(provider.lastResults.length, 0);
 
   const elements = new Map();
-  for (const id of ['search', 'query', 'mode', 'status', 'answer', 'results']) {
+  for (const id of ['search', 'query', 'mode', 'status', 'answer', 'results', 'idle']) {
     elements.set(id, {value: id === 'mode' ? 'hybrid' : '', listeners: {},
       addEventListener(event, listener) { this.listeners[event] = listener; },
       replaceChildren() {}, focus() {}});
@@ -41,13 +41,19 @@ async function run() {
   const timers = new Map(); let nextTimer = 0; const sent = [];
   const html = provider.html({cspSource: 'test'});
   assert.match(html, /class="search-input".*class="search-button"/);
+  assert.match(html, /id="idle" class="idle-mark"/);
+  assert.match(html, /align-items:center;justify-content:center/);
+  assert.match(html, /opacity:\.13;filter:blur\(\.65px\)/);
+  assert.match(html, /function updateIdleState\(\)/);
   const page = {document: {getElementById: id => elements.get(id)},
     acquireVsCodeApi: () => ({postMessage: message => sent.push(message)}),
     setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
     clearTimeout: id => timers.delete(id), window: {addEventListener() {}}};
   vm.runInNewContext(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1], page);
-  const query = elements.get('query'); const form = elements.get('search');
+  const query = elements.get('query'); const form = elements.get('search'); const idle = elements.get('idle');
+  assert.equal(idle.hidden, false, 'logo is visible when the search term is empty');
   query.value = 'app'; query.listeners.input();
+  assert.equal(idle.hidden, true, 'logo hides as soon as a search term is entered');
   query.value = 'apple'; query.listeners.input();
   assert.equal(timers.size, 1);
   assert.equal(sent.length, 0);
@@ -61,6 +67,7 @@ async function run() {
   assert.equal(timers.size, 0);
   query.listeners.compositionend(); assert.equal(timers.size, 1);
   query.value = ''; query.listeners.input();
+  assert.equal(idle.hidden, false, 'logo returns after the search term is cleared');
   assert.equal(timers.size, 0); assert.equal(sent.at(-1).query, '');
   elements.get('mode').value = 'exact'; query.value = 'apples';
   elements.get('mode').listeners.change(); assert.equal(sent.at(-1).mode, 'exact');
