@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location(
-    "scm_toolkit_model_picker", Path(__file__).parents[1] / "model_picker.py"
+    "scm_toolkit_model_picker", Path(__file__).parents[1] / "scripts/model_picker.py"
 )
 model_picker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(model_picker)

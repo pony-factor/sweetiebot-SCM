@@ -36,6 +36,103 @@ class BranchNamePackTests(unittest.TestCase):
                 )
                 seen[name] = pack["id"]
 
+    def test_tamers_and_chrysalis_full_names(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        all_names = {
+            name
+            for pack in catalog["packs"]
+            for name in pack["names"]
+        }
+
+        self.assertIn("queen-chrysalis", packs["g4-creatures"]["names"])
+        self.assertNotIn("chrysalis", packs["g4-creatures"]["names"])
+        for name in ("fractured", "dazzle-feather", "starsong"):
+            self.assertIn(name, packs["tamers12345"]["names"])
+        self.assertNotIn("lauren-faust", all_names)
+
+    def test_g4_stallions_use_full_wacky_hair_day_and_spray_name(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        names = packs["g4-stallions"]["names"]
+
+        self.assertIn("wacky-hair-day-and-spray", names)
+        self.assertNotIn("day-and-spray", names)
+
+    def test_pony_life_names_are_separate_from_g4_packs(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        pony_life_names = {
+            "april-shower",
+            "bone-pony",
+            "butterscotch",
+            "buttershy",
+            "cha-cha",
+            "chamomilia",
+            "cotton-candy",
+            "cottony-sweet",
+            "curtain-call",
+            "derek",
+            "dishwater-slog",
+            "fizzleshake",
+            "gardenia-glow",
+            "grey-skies",
+            "gusty",
+            "hothoof",
+            "jupiter",
+            "karen-caring",
+            "lilith",
+            "lime-time",
+            "matt",
+            "natalie",
+            "noctula",
+            "octavio-pie",
+            "pineapple-salsa",
+            "potion-nova",
+            "pulverizer",
+            "rainbow-hip",
+            "rainstorm",
+            "saddle-bags",
+            "saguaro",
+            "skull-pony",
+            "smallfry",
+            "spring-parade",
+            "surfs-up",
+            "taffy",
+            "teacup",
+            "tiptop",
+            "zesty",
+        }
+
+        self.assertTrue(pony_life_names.issubset(packs["pony-life"]["names"]))
+
+        g4_names = {
+            name
+            for pack in catalog["packs"]
+            if pack["id"].startswith("g4-")
+            for name in pack["names"]
+        }
+        self.assertTrue(pony_life_names.isdisjoint(g4_names))
+
+    def test_idw_comics_pack_covers_named_comic_roster(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        names = packs["idw-comics"]["names"]
+
+        self.assertEqual(len(names), 301)
+        for name in (
+            "acacia-pie",
+            "captain-hoofbeard",
+            "emperor-incitatus",
+            "humdrum",
+            "radiant-hope",
+            "shadow-lock",
+            "sweet-cream-scoops",
+            "winter-comet",
+        ):
+            self.assertIn(name, names)
+        self.assertFalse(any("unnamed" in name for name in names))
+
     def test_imports_accept_single_pack_array_or_catalog_object(self):
         pack = {"id": "friends", "label": "Friends", "names": ["one", "two"]}
         self.assertEqual(
