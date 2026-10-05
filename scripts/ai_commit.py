@@ -717,7 +717,6 @@ def commit_split_groups(argv: list[str], groups: list[list[str]]) -> int:
 
 
 def path_kind(path: str) -> str | None:
-def path_kind(path: str) -> str | None:
     extension = os.path.splitext(path.lower())[1]
     if extension in IMAGE_EXTENSIONS:
         return "image"
