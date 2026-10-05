@@ -225,7 +225,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;", page)
         self.assertIn('<option value="local:model">', page)
         self.assertIn("/save?token=test-token", page)
-        self.assertIn("'/autosave' + location.search", page)
+        self.assertIn("importKey ? '/save' : '/autosave'", page)
         self.assertIn('id="save-status"', page)
         self.assertNotIn('value="cancel"', page)
         self.assertIn("G4 ponies", page)
@@ -441,7 +441,7 @@ class ServerTests(unittest.TestCase):
             result["saved"] = configurator.run_configurator(install.DEFAULT_SETTINGS)
 
         with patch("configurator.webbrowser.open", side_effect=open_browser), \
-             patch("configurator.validate_models"), \
+             patch("configurator.validate_models") as validate, \
              patch("configurator.save_settings") as save, \
              patch("configurator.sync_codex_instructions"), \
              patch("configurator.import_pgp_secret_key"), \
@@ -467,6 +467,7 @@ class ServerTests(unittest.TestCase):
                 self.assertTrue(json.load(response)["saved"])
             self.assertTrue(thread.is_alive())
             self.assertFalse(save.call_args.args[0]["branchPicker"])
+            validate.assert_not_called()
 
             finish_values = form_values()
             finish_values["action"] = ["save"]
@@ -498,7 +499,12 @@ class ServerTests(unittest.TestCase):
                 install.DEFAULT_SETTINGS, open_browser=False
             )
 
-        with patch("configurator.print", side_effect=capture_output), patch("configurator.webbrowser.open") as browser:
+        with patch("configurator.print", side_effect=capture_output), \
+             patch("configurator.webbrowser.open") as browser, \
+             patch("configurator.save_settings") as save, \
+             patch("configurator.sync_codex_instructions"), \
+             patch("configurator.import_pgp_secret_key"), \
+             patch("configurator.validate_models", side_effect=ValueError("Ollama offline")) as validate:
             thread = threading.Thread(target=run_server)
             thread.start()
             self.assertTrue(ready.wait(5))
