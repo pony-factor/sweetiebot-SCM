@@ -222,7 +222,7 @@ async function run() {
     scmToolkitChatgptConversationSource() { return pickerSource; },
     recorded: [],
     async scmToolkitRecordPullRequestSource(_doc, _mcpService, _settings, launch, branch, base, source) {
-      this.recorded.push({ launch, branch, base, source });
+      recorded.push({ launch, branch, base, source });
     },
     mcpService: {},
     refreshBranchControls() {},
