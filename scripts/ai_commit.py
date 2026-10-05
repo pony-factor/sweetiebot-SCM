@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 REAL_GIT = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
 GIT_GLOBAL_ARGS: list[str] = []
@@ -742,7 +743,15 @@ def commit_title_preference() -> str:
 
 
 def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> dict:
-    url = f"{OLLAMA_BASE}{path}"
+    base = os.environ.get("SCM_TOOLKIT_AI_OLLAMA_URL") or git_config_string(
+        "scm-toolkit.ai-ollama-url", OLLAMA_BASE
+    )
+    parsed = urlsplit(base)
+    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.path not in {"", "/"}):
+        raise ValueError("The commit Ollama endpoint must be a local HTTP address.")
+    url = f"{base.rstrip('/')}{path}"
     data = None
     headers = {}
     method = "GET"

@@ -150,7 +150,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
-		Et2QQ+L3ABuBVmTgG77ZdlXUW7Y=
+		qAspKlbqCE1MoakW2zEba3ox2uU=
 		</data>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<data>
@@ -219,6 +219,10 @@
 		<key>Resources/toolkit/scripts/model_picker.py</key>
 		<data>
 		/b8f/VSn6gPHl31mDBaRFL49vlE=
+		</data>
+		<key>Resources/toolkit/scripts/ollama_concurrency.py</key>
+		<data>
+		maTPMLKpPro0HYLPqrDj/runcmU=
 		</data>
 		<key>Resources/toolkit/scripts/post_commit_spellcheck.py</key>
 		<data>
@@ -639,11 +643,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Et2QQ+L3ABuBVmTgG77ZdlXUW7Y=
+			qAspKlbqCE1MoakW2zEba3ox2uU=
 			</data>
 			<key>hash2</key>
 			<data>
-			pNf4mqt+XQvtTY0K4T04Z6w+rVPL170XYHHdDZnxFRk=
+			6QYRRt0D5avkfMbGYsPtxXBrV1FeJ0fYQmKROAMrRns=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
@@ -831,6 +835,17 @@
 			<key>hash2</key>
 			<data>
 			gzbvS2EAxHKHVh2CapKT96Z0EFIlpsujB5Djk2oLZMw=
+			</data>
+		</dict>
+		<key>Resources/toolkit/scripts/ollama_concurrency.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			maTPMLKpPro0HYLPqrDj/runcmU=
+			</data>
+			<key>hash2</key>
+			<data>
+			hWe0Q2Jn/qjnUrWk0DR58FQG3s761BoqTiLl3zCNVLg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/post_commit_spellcheck.py</key>

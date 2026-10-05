@@ -306,6 +306,18 @@ When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blan
 
 Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other agent instructions are excluded from the generation prompt. Without that preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
+### Concurrent PDF OCR and commit generation
+
+On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 11434 do not occupy the commit worker's queue:
+
+```sh
+python3 scripts/ollama_concurrency.py
+```
+
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. Each worker processes one request at a time; different workers can run concurrently when both models fit in memory. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+
+Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
+
 The wrapper supports two independently configurable models:
 
 - `ai-commit-model` is the normal/default model
