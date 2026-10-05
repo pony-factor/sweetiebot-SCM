@@ -8,6 +8,21 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 
 const repositoryOperations = new WeakMap();
+const activeCommits = new WeakMap();
+
+function commitInProgress(repository) {
+  return (activeCommits.get(repository) ?? 0) > 0;
+}
+
+function beginRepositoryCommit(repository) {
+  activeCommits.set(repository, (activeCommits.get(repository) ?? 0) + 1);
+}
+
+function endRepositoryCommit(repository) {
+  const remaining = (activeCommits.get(repository) ?? 0) - 1;
+  if (remaining > 0) activeCommits.set(repository, remaining);
+  else activeCommits.delete(repository);
+}
 
 function queueRepositoryOperation(repository, operation) {
   const previous = repositoryOperations.get(repository) ?? Promise.resolve();
@@ -19,13 +34,17 @@ function queueRepositoryOperation(repository, operation) {
 }
 
 async function autoPullClean(repository, { fetch = false } = {}) {
-  // Read fresh extension-host state after earlier branch operations finish.
+  // A commit and a fast-forward both update HEAD. Never let Sweetiebot move the
+  // branch ref while VS Code/Git is building or finalizing a commit.
+  if (commitInProgress(repository)) return false;
   await repository.status();
+  if (commitInProgress(repository)) return false;
   const previous = { ...repository.state.HEAD, upstream: { ...repository.state.HEAD?.upstream } };
   if (fetch) {
     if (!previous.upstream.remote || !previous.upstream.name || repository.state.mergeChanges?.length) return false;
     await repository.fetch({ remote: previous.upstream.remote, ref: previous.upstream.name });
     await repository.status();
+    if (commitInProgress(repository)) return false;
     const current = repository.state.HEAD;
     if (current?.name !== previous.name || current?.commit !== previous.commit
         || current?.upstream?.remote !== previous.upstream.remote
@@ -33,7 +52,7 @@ async function autoPullClean(repository, { fetch = false } = {}) {
   }
   const { HEAD: head, mergeChanges = [] } = repository.state;
   if (!head?.upstream || !head.behind || head.ahead !== 0
-      || mergeChanges.length) return false;
+      || mergeChanges.length || commitInProgress(repository)) return false;
   if (repository.rootUri?.fsPath) {
     // Let Git carry nonconflicting local edits; never create a merge commit or
     // overwrite a changed path. A failed fast-forward preserves the worktree.
@@ -283,6 +302,16 @@ async function syncBranch(repository, { branch, defaultBranch, remote }) {
 }
 
 function registerBranchCommands(vscode, context) {
+  const resolveRepository = async uri => {
+    const extension = vscode.extensions.getExtension('vscode.git');
+    if (!extension) throw new Error('The VS Code Git extension is unavailable.');
+    const git = await extension.activate();
+    const repositoryUri = vscode.Uri.from(uri?.rootUri ?? uri);
+    const repository = git.getAPI(1).getRepository(repositoryUri);
+    if (!repository) throw new Error('The selected Git repository is unavailable.');
+    return repository;
+  };
+
   for (const [command, action] of [
     ['scmToolkit.returnHome', returnHome],
     ['scmToolkit.autoPullClean', autoPullClean],
@@ -292,19 +321,22 @@ function registerBranchCommands(vscode, context) {
     ['scmToolkit.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
-      const extension = vscode.extensions.getExtension('vscode.git');
-      if (!extension) throw new Error('The VS Code Git extension is unavailable.');
-      const git = await extension.activate();
-      // Built-in Git status-bar commands pass a SourceControl, not a Uri.
-      // Resolve its root before calling the public Git API.
-      // Workbench command arguments cross the extension-host boundary as data.
-      // The Git API requires a real extension-host Uri instance.
-      const repositoryUri = vscode.Uri.from(uri?.rootUri ?? uri);
-      const repository = git.getAPI(1).getRepository(repositoryUri);
-      if (!repository) throw new Error('The selected Git repository is unavailable.');
+      const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, () => action(repository, options));
     }));
   }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('scmToolkit.beginCommit', async uri => {
+      const repository = await resolveRepository(uri);
+      return queueRepositoryOperation(repository, () => beginRepositoryCommit(repository));
+    }),
+    vscode.commands.registerCommand('scmToolkit.endCommit', async uri => {
+      const repository = await resolveRepository(uri);
+      return queueRepositoryOperation(repository, () => endRepositoryCommit(repository));
+    })
+  );
+
   let scanning = false, disposed = false;
   const scan = async () => {
     if (scanning || disposed) return;
@@ -340,4 +372,15 @@ function registerBranchCommands(vscode, context) {
   run();
 }
 
-module.exports = { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean };
+module.exports = {
+  returnHome,
+  createBranch,
+  publishBranch,
+  deleteBranch,
+  syncBranch,
+  registerBranchCommands,
+  autoPullClean,
+  beginRepositoryCommit,
+  endRepositoryCommit,
+  commitInProgress
+};

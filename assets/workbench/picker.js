@@ -339,27 +339,45 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 // Keep commits usable if the companion extension is temporarily unavailable.
             }
 
-            const requestedPostCommitCommand = options?.postCommitCommand;
-            const configuredPostCommitCommand =
-                configuration.getValue('git.postCommitCommand');
-            const shouldReleasePush =
-                requestedPostCommitCommand === 'push'
-                || (
-                    requestedPostCommitCommand === undefined
-                    && configuredPostCommitCommand === 'push'
-                );
+            let commitLease = false;
+            try {
+                try {
+                    await commands.executeCommand('scmToolkit.beginCommit', repository.rootUri);
+                    commitLease = true;
+                } catch {
+                    // If the companion extension is unavailable, its auto-pull is unavailable too.
+                }
 
-            if (!shouldReleasePush || typeof originalPush !== 'function') {
-                return originalCommit.call(repository, message, options);
+                const requestedPostCommitCommand = options?.postCommitCommand;
+                const configuredPostCommitCommand =
+                    configuration.getValue('git.postCommitCommand');
+                const shouldReleasePush =
+                    requestedPostCommitCommand === 'push'
+                    || (
+                        requestedPostCommitCommand === undefined
+                        && configuredPostCommitCommand === 'push'
+                    );
+
+                if (!shouldReleasePush || typeof originalPush !== 'function') {
+                    return await originalCommit.call(repository, message, options);
+                }
+
+                await originalCommit.call(repository, message, {
+                    ...(options ?? {}),
+                    postCommitCommand: null,
+                });
+
+                void scmToolkitPushWithPullRetry(repository, originalPush)
+                    .catch(error => notifications.error(error));
+            } finally {
+                if (commitLease) {
+                    try {
+                        await commands.executeCommand('scmToolkit.endCommit', repository.rootUri);
+                    } catch {
+                        // The extension may be reloading; do not turn a successful commit into an error.
+                    }
+                }
             }
-
-            await originalCommit.call(repository, message, {
-                ...(options ?? {}),
-                postCommitCommand: null,
-            });
-
-            void scmToolkitPushWithPullRetry(repository, originalPush)
-                .catch(error => notifications.error(error));
         };
 
         state = {
