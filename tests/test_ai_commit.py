@@ -31,82 +31,55 @@ class GitOutputTests(unittest.TestCase):
 
 
 class GithubSplitTests(unittest.TestCase):
-    def test_packs_file_count_to_github_limit(self):
-        metrics = [
-            (f"file-{index}.txt", 1, 10, False)
-            for index in range(ai_commit.GITHUB_DIFF_MAX_FILES + 1)
-        ]
-        groups = ai_commit._pack_github_diff_groups(metrics)
-        self.assertEqual([len(group) for group in groups], [300, 1])
-
-    def test_packs_line_and_raw_diff_limits(self):
-        line_groups = ai_commit._pack_github_diff_groups([
-            ("a.txt", 10_000, 100, False),
-            ("b.txt", 10_000, 100, False),
-            ("c.txt", 1, 100, False),
+    def test_packs_staged_payload_at_100_mib(self):
+        mib = 1024**2
+        groups = ai_commit._pack_large_commit_groups([
+            ("a.bin", 60 * mib), ("b.bin", 40 * mib), ("c.bin", 1 * mib)
         ])
-        self.assertEqual(line_groups, [["a.txt", "b.txt"], ["c.txt"]])
+        self.assertEqual(groups, [["a.bin", "b.bin"], ["c.bin"]])
 
-        byte_groups = ai_commit._pack_github_diff_groups([
-            ("a.txt", 10, 400_000, False),
-            ("b.txt", 10, 400_000, False),
-            ("c.txt", 10, 400_000, False),
-        ])
-        self.assertEqual(byte_groups, [["a.txt", "b.txt"], ["c.txt"]])
+    def test_rejects_single_staged_blob_over_github_limit(self):
+        with patch.object(ai_commit, "staged_blob_sizes", return_value=[
+            ("huge.bin", ai_commit.GITHUB_FILE_MAX_BYTES + 1)
+        ]):
+            with self.assertRaisesRegex(RuntimeError, "larger than 100 MiB"):
+                ai_commit.github_split_groups(["huge.bin"])
 
-    def test_packs_renderable_files_to_github_limit(self):
-        metrics = [
-            (f"image-{index}.png", 1, 10, True)
-            for index in range(ai_commit.GITHUB_DIFF_MAX_RENDERABLE_FILES + 1)
-        ]
-        groups = ai_commit._pack_github_diff_groups(metrics)
-        self.assertEqual([len(group) for group in groups], [25, 1])
+    def test_splits_aggregate_payload_over_target(self):
+        mib = 1024**2
+        with patch.object(ai_commit, "staged_blob_sizes", return_value=[
+            ("a.bin", 60 * mib), ("b.bin", 60 * mib)
+        ]):
+            self.assertEqual(ai_commit.github_split_groups(["a.bin", "b.bin"]), [["a.bin"], ["b.bin"]])
 
     def test_split_commits_use_temporary_indexes_and_leave_stage_clean(self):
         git = shutil.which("git")
         if not git:
             self.skipTest("git is unavailable")
-
         with tempfile.TemporaryDirectory() as tmp:
             def run(*args):
-                return subprocess.run(
-                    [git, "-C", tmp, *args],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-
+                return subprocess.run([git, "-C", tmp, *args], check=True, capture_output=True, text=True)
             run("init", "--quiet")
             run("config", "user.name", "Sweetiebot Test")
             run("config", "user.email", "sweetiebot@example.test")
             Path(tmp, "base.txt").write_text("base\n", encoding="utf-8")
             run("add", "base.txt")
             run("commit", "--quiet", "-m", "base")
-
             Path(tmp, "a.txt").write_text("a\n", encoding="utf-8")
             Path(tmp, "b.txt").write_text("b\n", encoding="utf-8")
             run("add", "a.txt", "b.txt")
-
             with patch.object(ai_commit, "REAL_GIT", git), patch.object(
                 ai_commit, "GIT_GLOBAL_ARGS", ["-C", tmp]
             ), patch.object(
-                ai_commit,
-                "generate_message",
-                side_effect=[("🐞 Add a", ""), ("🐞 Add b", "")],
-            ), patch.object(
-                ai_commit, "should_add_default_branch_description", return_value=False
-            ):
-                result = ai_commit.commit_split_groups(
-                    ["-C", tmp, "commit", "--quiet"],
-                    [["a.txt"], ["b.txt"]],
-                )
-
+                ai_commit, "generate_message", side_effect=[("🐞 Add a", ""), ("🐞 Add b", "")]
+            ), patch.object(ai_commit, "should_add_default_branch_description", return_value=False):
+                result = ai_commit.commit_split_groups(["-C", tmp, "commit", "--quiet"], [["a.txt"], ["b.txt"]])
             self.assertEqual(result, 0)
-            subjects = run("log", "-2", "--pretty=%s").stdout.splitlines()
-            self.assertEqual(subjects, ["🐞 Add b", "🐞 Add a"])
+            self.assertEqual(run("log", "-2", "--pretty=%s").stdout.splitlines(), ["🐞 Add b", "🐞 Add a"])
             self.assertEqual(run("status", "--porcelain").stdout, "")
 
 
+class RoutingTests(unittest.TestCase):
 class RoutingTests(unittest.TestCase):
     def test_finds_commit_after_global_option(self):
         self.assertEqual(ai_commit.commit_index(["-C", "/tmp/repo", "commit"]), 2)

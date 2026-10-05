@@ -317,17 +317,11 @@ async function scmToolkitPushWithPullRetry(repository, originalPush) {
     }
 }
 
-function scmToolkitReleaseCommitBeforePush(repository, configuration, notifications) {
-    if (
-        !repository
-        || typeof repository.commit !== 'function'
-        || typeof repository.push !== 'function'
-    ) {
-        return;
-    }
+function scmToolkitGuardCommit(repository, commands, configuration, notifications) {
+    if (!repository || typeof repository.commit !== 'function') return;
 
     const wrappedRepositories =
-        globalThis.__scmToolkitAsyncPushRepositories ??= new WeakMap();
+        globalThis.__scmToolkitCommitGuardRepositories ??= new WeakMap();
     let state = wrappedRepositories.get(repository);
 
     if (!state) {
@@ -335,6 +329,16 @@ function scmToolkitReleaseCommitBeforePush(repository, configuration, notificati
         const originalPush = repository.push;
 
         const wrappedCommit = async function(message, options) {
+            try {
+                const allowed = await commands.executeCommand(
+                    'scmToolkit.checkCommitLimits',
+                    repository.rootUri
+                );
+                if (allowed === false) return;
+            } catch {
+                // Keep commits usable if the companion extension is temporarily unavailable.
+            }
+
             const requestedPostCommitCommand = options?.postCommitCommand;
             const configuredPostCommitCommand =
                 configuration.getValue('git.postCommitCommand');
@@ -345,7 +349,7 @@ function scmToolkitReleaseCommitBeforePush(repository, configuration, notificati
                     && configuredPostCommitCommand === 'push'
                 );
 
-            if (!shouldReleasePush) {
+            if (!shouldReleasePush || typeof originalPush !== 'function') {
                 return originalCommit.call(repository, message, options);
             }
 
@@ -1217,17 +1221,17 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 currentRepositoryArgument = command?.arguments?.[0];
 
                 if (
-                    settings.commitAndPush
-                    && currentRepositoryArgument
-                    && !widget.repositoryDisposables.__scmToolkitAsyncPushBound
+                    currentRepositoryArgument
+                    && !widget.repositoryDisposables.__scmToolkitCommitGuardBound
                 ) {
-                    const asyncPushDisposable = scmToolkitReleaseCommitBeforePush(
+                    const asyncPushDisposable = scmToolkitGuardCommit(
                         currentRepositoryArgument,
+                        commands,
                         configuration,
                         notifications
                     );
                     if (asyncPushDisposable) {
-                        widget.repositoryDisposables.__scmToolkitAsyncPushBound = true;
+                        widget.repositoryDisposables.__scmToolkitCommitGuardBound = true;
                         widget.repositoryDisposables.add(asyncPushDisposable);
                     }
                 }
