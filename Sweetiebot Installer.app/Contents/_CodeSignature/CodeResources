@@ -22,7 +22,7 @@
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-composer-controls.js</key>
 		<data>
-		RT4Dh4VL0BADYYMfdTKXURDWeVI=
+		T3lH9S6LMYifuQdoJ98KBc5bFSE=
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-context-host.js</key>
 		<data>
@@ -78,7 +78,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		kzE9LOWolmxrRMaS10RGyZQCXng=
+		pLjL+amBAid834LSYTZjMPQCyW8=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -86,7 +86,7 @@
 		</data>
 		<key>Resources/toolkit/efs/branch_actions.js</key>
 		<data>
-		4R/A//y7SkO1P7f/WJNTC8+0LLk=
+		Jh4oOhkYAmhaOHNtBnA5AUJaYTA=
 		</data>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
 		<data>
@@ -100,13 +100,17 @@
 		<data>
 		hvwW6uhwlKNx1ljcH+depjzW9Qo=
 		</data>
+		<key>Resources/toolkit/efs/commit_limits.js</key>
+		<data>
+		iiFgDfYft42KQPihXBSzabr29hE=
+		</data>
 		<key>Resources/toolkit/efs/core.js</key>
 		<data>
 		MPJuzziyQbqC9JSZmuZPyS6ru9s=
 		</data>
 		<key>Resources/toolkit/efs/extension.js</key>
 		<data>
-		jat3zMZW7ZnzjfgghCPh0DvIgwg=
+		OtaFDLTd/0qA59ye7A0eXZ5hr0s=
 		</data>
 		<key>Resources/toolkit/efs/extract.js</key>
 		<data>
@@ -146,11 +150,11 @@
 		</data>
 		<key>Resources/toolkit/efs/view.js</key>
 		<data>
-		alUnRvRqnFwP+VYGL74lw1+6to0=
+		3zpzHH4IXfUMC9QnRpFFqw9RyDM=
 		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
-		qAspKlbqCE1MoakW2zEba3ox2uU=
+		brqhWSPCuGyX5pWJpzNKHCzrHAI=
 		</data>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<data>
@@ -194,7 +198,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/codex_usage.py</key>
 		<data>
-		0UK/aK4UqGOh1lECO6hoQFpubFw=
+		T4jyTjm6kPAHhZw4YaqsZmjJJzw=
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
@@ -210,7 +214,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		1NIFTT4TxrI7VzJKGik4EpfRPdI=
+		GV4tSPrplYzn4oauepj2riMFjF4=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -291,11 +295,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			RT4Dh4VL0BADYYMfdTKXURDWeVI=
+			T3lH9S6LMYifuQdoJ98KBc5bFSE=
 			</data>
 			<key>hash2</key>
 			<data>
-			FCQ/xGAY0jhGiJZrN2O6sZ8w4e9oBPCFJqEtxXfHo1k=
+			UobDHhrAXad5IxgXAVBzmUa0OMUD4Ge5/xcil8p4JfM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-context-host.js</key>
@@ -445,11 +449,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			kzE9LOWolmxrRMaS10RGyZQCXng=
+			pLjL+amBAid834LSYTZjMPQCyW8=
 			</data>
 			<key>hash2</key>
 			<data>
-			7g9gllGuRYrTungxsMDGVQ5aGBes+dMPoJkajF1Mpxg=
+			xvrQdaU7gx5Mk6c6v30dle9MnLv5DzthHOQ9QXmxa6M=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -467,11 +471,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			4R/A//y7SkO1P7f/WJNTC8+0LLk=
+			Jh4oOhkYAmhaOHNtBnA5AUJaYTA=
 			</data>
 			<key>hash2</key>
 			<data>
-			8UQrPqqBH/uUXT8KXS+B6uEfT4n4l/FGhrMKz35GdPw=
+			ZfVZSnBaqJSCbHLHXuL+WRrDr9Fx30gUYQzWBiTKUdQ=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
@@ -507,6 +511,17 @@
 			veu7nZfEZH4JoJooTwh0SYViXXz1UuZF/7E85U9YrkE=
 			</data>
 		</dict>
+		<key>Resources/toolkit/efs/commit_limits.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			iiFgDfYft42KQPihXBSzabr29hE=
+			</data>
+			<key>hash2</key>
+			<data>
+			qkna8R8ZTMJ1Vl3xaFtFt3D/I1Q0nzMVm48IJR5PLqU=
+			</data>
+		</dict>
 		<key>Resources/toolkit/efs/core.js</key>
 		<dict>
 			<key>hash</key>
@@ -522,11 +537,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			jat3zMZW7ZnzjfgghCPh0DvIgwg=
+			OtaFDLTd/0qA59ye7A0eXZ5hr0s=
 			</data>
 			<key>hash2</key>
 			<data>
-			1NaS+LjP5ukJSbg0lg+3mTSznyRSkK7KDodzMHoTYI4=
+			54Kvm2siW4qWraI4yxZpfNqIDS6ZsigvW4LI2XgDiq0=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/extract.js</key>
@@ -632,22 +647,22 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			alUnRvRqnFwP+VYGL74lw1+6to0=
+			3zpzHH4IXfUMC9QnRpFFqw9RyDM=
 			</data>
 			<key>hash2</key>
 			<data>
-			6aXbv6Ha62BZeJrKzXbpAJybBxiqLW/GxceflHRMwAU=
+			VNsFLjVbo8oQx2PTG1GBsj3UhKi4Nv8vqZGjI5SwJ7c=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			qAspKlbqCE1MoakW2zEba3ox2uU=
+			brqhWSPCuGyX5pWJpzNKHCzrHAI=
 			</data>
 			<key>hash2</key>
 			<data>
-			6QYRRt0D5avkfMbGYsPtxXBrV1FeJ0fYQmKROAMrRns=
+			UPjpjxuCXms/QJbNrbRzvLHhkO4KdJCSoXFtPu9cl2s=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
@@ -764,11 +779,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			0UK/aK4UqGOh1lECO6hoQFpubFw=
+			T4jyTjm6kPAHhZw4YaqsZmjJJzw=
 			</data>
 			<key>hash2</key>
 			<data>
-			AO9ngregH1LH/dS4yhtqIIDqegOQyQOx6WRwbCWzfXY=
+			naCd/uVFg+28cw6FkqU/fHEegNi3zn0ABtyWLnuNFUQ=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configurator.py</key>
@@ -808,11 +823,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			1NIFTT4TxrI7VzJKGik4EpfRPdI=
+			GV4tSPrplYzn4oauepj2riMFjF4=
 			</data>
 			<key>hash2</key>
 			<data>
-			YXuK9o7f3OSU6cdAaa+5KCQv7erYmBbeuYFVDL+YN98=
+			IJzyYfTMCIY9j5WUE1e/GtXLUcTErptYenjHatvQyLg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
