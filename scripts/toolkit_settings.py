@@ -14,6 +14,7 @@ DEFAULT_SETTINGS = {
     "shortPlaceholder": True,
     "commitButtonLabel": "Send",
     "sourceControlLabel": "Sweetie Bot",
+    "automaticAppRepair": True,
     "openPanelOnStartup": True,
     "workspaceSearchActivityBar": False,
     "workspaceSearchLabel": "EFS",
@@ -136,6 +137,7 @@ SETTING_KEYS = {
     "shortPlaceholder": "scm-toolkit.short-placeholder",
     "commitButtonLabel": "scm-toolkit.commit-button-label",
     "sourceControlLabel": "scm-toolkit.source-control-label",
+    "automaticAppRepair": "scm-toolkit.automatic-app-repair",
     "openPanelOnStartup": "scm-toolkit.open-panel-on-startup",
     "workspaceSearchActivityBar": "scm-toolkit.workspace-search-activity-bar",
     "workspaceSearchLabel": "scm-toolkit.workspace-search-label",
@@ -214,6 +216,7 @@ VSCODE_SETTINGS = {
         "autoReindex": "workspaceSearchAutoReindex",
     },
     "vscodeSettings": {
+        "automaticAppRepair": "automaticAppRepair",
         "openPanelOnStartup": "openPanelOnStartup",
         "autoPublishNewBranches": "autoPublishNewBranches",
         "automaticBranchCleanup": "automaticBranchCleanup",
