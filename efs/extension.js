@@ -49,6 +49,7 @@ async function openSettings(context) {
     workspaceSearch: settings(),
     vscodeSettings: {
       openPanelOnStartup,
+      automaticAppRepair: scm.get('automaticAppRepair', true),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       codexKeepAwake: scm.get('codexKeepAwake', true),
