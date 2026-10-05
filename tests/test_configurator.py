@@ -397,7 +397,7 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(opened.wait(5))
             with urllib.request.urlopen(captured["url"], timeout=5) as response:
                 page = response.read().decode()
-            self.assertIn("SCM Toolkit Setup", page)
+            self.assertIn("Sweetiebot SCM Setup", page)
             setup_url = urllib.parse.urlsplit(captured["url"])
             def endpoint(path):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
@@ -506,7 +506,7 @@ class ServerTests(unittest.TestCase):
             try:
                 self.assertTrue(captured["flushed"])
                 with urllib.request.urlopen(captured["url"], timeout=5) as response:
-                    self.assertIn("SCM Toolkit Setup", response.read().decode())
+                    self.assertIn("Sweetiebot SCM Setup", response.read().decode())
                 unauthorized = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
                 with self.assertRaises(urllib.error.HTTPError) as denied:
                     urllib.request.urlopen(unauthorized, timeout=5)

@@ -21,7 +21,7 @@ let configuratorURL;
 
 async function openSettings(context) {
   if (!(await vscode.commands.getCommands(true)).includes(SETTINGS_BROWSER_COMMAND)) {
-    vscode.window.showErrorMessage('Update VS Code to a version with the Integrated Browser to open SCM Toolkit settings.');
+    vscode.window.showErrorMessage('Update VS Code to a version with the Integrated Browser to open Sweetiebot SCM settings.');
     return;
   }
 
@@ -32,7 +32,7 @@ async function openSettings(context) {
       });
     } catch {
       session?.kill();
-      vscode.window.showErrorMessage('Unable to open SCM Toolkit settings in the Integrated Browser. Try again.');
+      vscode.window.showErrorMessage('Unable to open Sweetiebot SCM settings in the Integrated Browser. Try again.');
     }
   };
   if (configuratorProcess && configuratorProcess.exitCode === null) {
@@ -124,13 +124,13 @@ async function openSettings(context) {
   };
   child.on('error', error => {
     clear();
-    vscode.window.showErrorMessage(`Unable to open SCM Toolkit settings: ${error.message}`);
+    vscode.window.showErrorMessage(`Unable to open Sweetiebot SCM settings: ${error.message}`);
   });
   child.on('exit', code => {
     clear();
     if (code && code !== 0) {
       vscode.window.showErrorMessage(
-        `SCM Toolkit settings exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : '.'}`
+        `Sweetiebot SCM settings exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : '.'}`
       );
     }
   });

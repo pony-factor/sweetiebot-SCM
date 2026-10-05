@@ -1,6 +1,6 @@
 {
   "name": "scm-toolkit-workspace-search",
-  "displayName": "SCM Toolkit Workspace Search",
+  "displayName": "Sweetiebot SCM",
   "description": "Local semantic and hybrid workspace search in the Source Control sidebar using Ollama.",
   "version": "0.3.1",
   "publisher": "jfwooten4",
@@ -44,7 +44,7 @@
     "commands": [
       {
         "command": "scmToolkit.openSettings",
-        "title": "Open SCM Toolkit Settings",
+        "title": "Open Sweetiebot SCM Settings",
         "icon": "$(gear)"
       },
       {
@@ -80,7 +80,7 @@
       ]
     },
     "configuration": {
-      "title": "Sweetie Bot",
+      "title": "Sweetiebot SCM",
       "properties": {
         "scmToolkit.automaticBranchCleanup": {
           "type": "boolean",
