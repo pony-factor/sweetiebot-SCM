@@ -93,8 +93,12 @@ class TransformTests(unittest.TestCase):
     def test_controls_use_the_vscode_input_background(self):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
 
-        self.assertEqual(css.count("background: var(--vscode-input-background);"), 6)
-        self.assertEqual(css.count("background: transparent;"), 4)
+        for control in ("delete-branch", "autocomplete", "codex-coauthor", "pull-request", "auto-publish"):
+            rule = css.split(f".scm-view .scm-editor > .scm-toolkit-{control} {{", 1)[1].split("}", 1)[0]
+            self.assertIn("background: var(--vscode-input-background);", rule)
+        for control in ("home", "push"):
+            rule = css.split(f".scm-view .scm-editor > .scm-toolkit-{control} {{", 1)[1].split("}", 1)[0]
+            self.assertIn("background: transparent;", rule)
 
     def test_branch_selector_uses_the_vscode_button_colors(self):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
