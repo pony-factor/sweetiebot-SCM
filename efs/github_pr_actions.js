@@ -47,9 +47,12 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
   try {
     await execute(['api', '--method', 'DELETE', ref]);
   } catch (error) {
-    // GitHub's automatic deletion can race with the checks above. A 404 is
-    // successful cleanup only when a fresh lookup confirms the exact ref is gone.
-    if (/\bHTTP 404\b/.test(`${error.stderr || ''}\n${error.message || ''}`)) {
+    // GitHub's automatic deletion can race with the checks above. Missing refs
+    // can return 404 or "Reference does not exist" (422); confirm the exact ref
+    // is gone before treating either response as successful cleanup.
+    const detail = `${error.stderr || ''}\n${error.message || ''}`;
+    if (/\bHTTP 404\b/.test(detail) ||
+        (/\bHTTP 422\b/.test(detail) && /\bReference does not exist\b/i.test(detail))) {
       const remaining = await readRefs();
       if (!remaining.some(candidate => candidate.ref === `refs/heads/${pr.headRefName}`)) return;
     }
