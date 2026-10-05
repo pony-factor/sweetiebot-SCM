@@ -406,6 +406,19 @@ These overrides apply only to the Codex composer controls, independently of
 VS Code's general foreground color. Codex extension updates can replace the
 stylesheet, so rerun the installer after updating the extension.
 
+If Codex stopped loading after the retired inline composer patch from PR #93,
+repair the installed OpenAI extension directly from a current checkout:
+
+```sh
+python3 scripts/codex_composer.py
+```
+
+The recovery command scans installed `openai.chatgpt-*` extensions, validates the
+old Sweetie Bot restoration metadata, removes only that retired payload, and
+restores any source text it replaced. Reload Visual Studio Code after it reports
+the restored bundle. Use `--extension "/path/to/openai.chatgpt-version"` to target
+one extension directory explicitly.
+
 ### Codex usage-reset countdown
 
 When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
