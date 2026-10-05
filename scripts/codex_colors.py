@@ -71,7 +71,7 @@ def transform(css, settings, remove=False):
     if label:
         selectors = [
             f'{scope} button[data-composer-navigation-target="{target}"]{descendant}'
-            for target in ('permissions', 'run-location') for descendant in ('', ' *')
+            for target in ('permissions', 'run-location', 'add-context') for descendant in ('', ' *')
         ]
         rules.append(',\n'.join(selectors) + f' {{ color: {label} !important; }}')
     return css + START + '\n'.join(rules) + '\n' + END if rules else css

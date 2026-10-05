@@ -24,17 +24,14 @@ class BranchNamePackTests(unittest.TestCase):
         ):
             self.assertNotIn(noisy, names)
 
-    def test_builtin_catalog_has_unique_names_across_packs(self):
+    def test_builtin_catalog_has_unique_names_within_each_pack(self):
         catalog = branch_names.load_catalog()
-        seen = {}
         for pack in catalog["packs"]:
-            for name in pack["names"]:
-                self.assertNotIn(
-                    name,
-                    seen,
-                    f"{name} appears in both {seen.get(name)} and {pack['id']}",
-                )
-                seen[name] = pack["id"]
+            self.assertEqual(
+                len(pack["names"]),
+                len(set(pack["names"])),
+                f"{pack['id']} contains duplicate branch-name slugs",
+            )
 
     def test_tamers_and_chrysalis_full_names(self):
         catalog = branch_names.load_catalog()
@@ -50,6 +47,76 @@ class BranchNamePackTests(unittest.TestCase):
         for name in ("fractured", "dazzle-feather", "starsong"):
             self.assertIn(name, packs["tamers12345"]["names"])
         self.assertNotIn("lauren-faust", all_names)
+
+    def test_g5_remaining_is_comprehensive_without_changing_tamers(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        remaining = set(packs["g5-remaining"]["names"])
+
+        self.assertEqual(len(packs["g5-remaining"]["names"]), 193)
+        for name in (
+            "arpeggia",
+            "fretlock",
+            "jam-donut",
+            "sparky-sparkeroni",
+            "opaline-arcana",
+            "queen-haven",
+            "alphabittle-blossomforth",
+            "comet",
+            "comet-tail",
+            "leaf-dragon",
+            "violette-rainbow",
+            "tracy-tailspin",
+            "princess-anemone",
+            "sky-scoop",
+            "goldie-fortune",
+            "scout-kindheart",
+        ):
+            self.assertIn(name, remaining)
+
+        self.assertEqual(
+            packs["tamers12345"]["names"],
+            [
+                "flawless-sparklemoon",
+                "fractured",
+                "care-package",
+                "future-soarin",
+                "friendship",
+                "arinos",
+                "dazzle-feather",
+                "skye-silver",
+                "starsong",
+                "parcelcore",
+                "professor-kirin",
+                "bobby-moonbeam",
+                "professor-majorchord",
+                "astro-novalite",
+            ],
+        )
+        self.assertNotIn("dazzle-feather", remaining)
+        self.assertNotIn("skye-silver", remaining)
+        self.assertTrue(
+            remaining.isdisjoint(packs["tamers12345"]["names"]),
+            "G5 remaining must not duplicate Tamers12345 branch-name slugs",
+        )
+
+        g4_names = {
+            name
+            for pack_id in ("g4-mares", "g4-stallions", "g4-fillies", "g4-colts", "g4-creatures")
+            for name in packs[pack_id]["names"]
+        }
+        for name in (
+            "alphabittle-blossomforth",
+            "argyle-starshine",
+            "jazz-hooves",
+            "phyllis-cloverleaf",
+            "posey-bloom",
+            "queen-haven",
+            "sprout-cloverleaf",
+            "thunder-flap",
+            "zoom-zephyrwing",
+        ):
+            self.assertNotIn(name, g4_names)
 
     def test_g4_stallions_use_full_wacky_hair_day_and_spray_name(self):
         catalog = branch_names.load_catalog()

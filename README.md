@@ -409,8 +409,8 @@ setting is `scm-toolkit.codex-hide-access-label`.
 The send button and composer labels have separate color controls in the local
 configurator's **Codex** section. Set `scm-toolkit.codex-send-background` for the
 button background, `scm-toolkit.codex-send-foreground` for its icon, and
-`scm-toolkit.codex-composer-label-color` for the **Full access** and **Work locally**
-controls. Use a hexadecimal color such as Studio green `#43AF49`; blank values
+`scm-toolkit.codex-composer-label-color` for the **Full access**, **Work locally**,
+and **+** add-context controls. Use a hexadecimal color such as Studio green `#43AF49`; blank values
 restore the theme. All three settings default to blank.
 
 Run `python3 scripts/install.py` after changing them and reopen the VS Code window.
