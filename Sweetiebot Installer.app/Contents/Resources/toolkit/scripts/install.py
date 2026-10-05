@@ -11,6 +11,7 @@ import codex_usage
 import codex_context
 import codex_keep_awake
 import codex_image_drop
+import codex_recent_chats
 import github_pr
 from pathlib import Path
 from toolkit_settings import DEFAULT_SETTINGS, load_settings, read_git_bool, read_git_string
@@ -476,6 +477,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         _, after = rest.split(CODEX_LABELS_END, 1)
         js = before + after
     js = codex_image_drop.transform(js, remove=remove)
+    js = codex_recent_chats.transform(js, remove=remove)
     if CODEX_DICTATION_START in js:
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
@@ -604,6 +606,8 @@ def application_paths(app_path):
 
 
 def codex_bundle_matches(text):
+    if codex_recent_chats.START in text or (codex_recent_chats.ANCHOR in text and 'defaultMessage:' in text):
+        return True
     if CODEX_START in text or CODEX_PROMOTIONS_START in text or CODEX_TIMESTAMPS_START in text or CODEX_DICTATION_START in text:
         return True
 

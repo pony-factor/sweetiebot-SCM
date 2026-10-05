@@ -46,7 +46,7 @@
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-image-drop.js</key>
 		<data>
-		ycCUmgyBIPDF3tlYXfvhqG/yJpA=
+		Q3C4dq1ESA/c93XvVSVS7FtAoho=
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-keep-awake.js</key>
 		<data>
@@ -180,6 +180,10 @@
 		<data>
 		9FxYh2WzPZgkEF2+ImwmsquEpTU=
 		</data>
+		<key>Resources/toolkit/scripts/codex_recent_chats.py</key>
+		<data>
+		fmq4UiCdbJx4hMl3Cr38Wa6DN7k=
+		</data>
 		<key>Resources/toolkit/scripts/codex_usage.py</key>
 		<data>
 		0UK/aK4UqGOh1lECO6hoQFpubFw=
@@ -198,7 +202,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		TJdP9HUpVrsO+Vgk3HWT9eUgMYQ=
+		Qqk6HZEAuZLI/NQOgIh2GPBa9G8=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -341,11 +345,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			ycCUmgyBIPDF3tlYXfvhqG/yJpA=
+			Q3C4dq1ESA/c93XvVSVS7FtAoho=
 			</data>
 			<key>hash2</key>
 			<data>
-			MGGErlWFcAPHCSuO58dTB5em5f0cm+bfFFKBszUXzOE=
+			avt+wDwzgaSSlXhZTlIWk7yiS0gTYGtJSAFgIFHDWe4=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-keep-awake.js</key>
@@ -711,6 +715,17 @@
 			J3nlSSagLz/k01m3LSAXmLtJpbqqmyXKLIf2TIEF07w=
 			</data>
 		</dict>
+		<key>Resources/toolkit/scripts/codex_recent_chats.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			fmq4UiCdbJx4hMl3Cr38Wa6DN7k=
+			</data>
+			<key>hash2</key>
+			<data>
+			GNrjm3+wfFWe1aE6GFseFGkUWyyK7zrekLlfcawpdvE=
+			</data>
+		</dict>
 		<key>Resources/toolkit/scripts/codex_usage.py</key>
 		<dict>
 			<key>hash</key>
@@ -759,11 +774,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			TJdP9HUpVrsO+Vgk3HWT9eUgMYQ=
+			Qqk6HZEAuZLI/NQOgIh2GPBa9G8=
 			</data>
 			<key>hash2</key>
 			<data>
-			hcOMS8OUnCS2NGQ0tQmNUIIcrJMafqSB3tSWgIqkI2U=
+			t0F5uyhpmjEqK4Jrr3oy1DOOxgPUP2V9x+XWUk0jgZM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
