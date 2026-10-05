@@ -792,13 +792,12 @@ def main():
         old.append(usage_old)
         new.append(usage_new)
 
-    # PR #93 injected layout code directly into Codex's app-initial webview bundle.
-    # Retire that customization and clean it from already-patched extensions while
-    # leaving the other reversible Codex customizations intact.
-    for composer_path, composer_old, composer_new in codex_composer.patch_files(args.codex_extension):
+    # Clean the legacy source edits while retaining the requested native-control placement.
+    inline_location = settings["codexInlineLocation"] and not args.uninstall
+    for composer_path, composer_old, composer_new in codex_composer.patch_files(args.codex_extension, inline=inline_location):
         if composer_path in paths:
             index = paths.index(composer_path)
-            new[index] = codex_composer.transform(new[index])
+            new[index] = codex_composer.transform_layout(new[index], inline_location)
         else:
             paths.append(composer_path)
             old.append(composer_old)

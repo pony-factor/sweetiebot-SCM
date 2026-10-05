@@ -10,6 +10,9 @@ from pathlib import Path
 
 START = '\n/* scm-toolkit-codex-composer:start */\n'
 END = '\n/* scm-toolkit-codex-composer:end */\n'
+LAYOUT_START = '\n/* scm-toolkit-codex-inline-location:start */\n'
+LAYOUT_END = '\n/* scm-toolkit-codex-inline-location:end */\n'
+ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-composer-controls.js'
 
 
 def transform(source: str) -> str:
@@ -33,7 +36,21 @@ def transform(source: str) -> str:
     return source
 
 
-def patch_files(extension_path: Path | None = None):
+def transform_layout(source: str, inline: bool = True) -> str:
+    """Place the native computer/usage control beside access without changing React source."""
+    source = transform(source)
+    if source.count(LAYOUT_START) != source.count(LAYOUT_END) or source.count(LAYOUT_START) > 1:
+        raise ValueError("Incomplete Codex inline-location patch.")
+    if LAYOUT_START in source:
+        before, rest = source.split(LAYOUT_START, 1)
+        _, after = rest.split(LAYOUT_END, 1)
+        source = before + after
+    if inline and 'composer.placeholder.localFollowUp.locally' in source:
+        source += LAYOUT_START + ';\n' + ASSET.read_text() + LAYOUT_END
+    return source
+
+
+def patch_files(extension_path: Path | None = None, inline: bool | None = None):
     """Yield only Codex webview bundles that still contain the retired patch."""
     candidates = (
         [Path(extension_path)]
@@ -43,8 +60,11 @@ def patch_files(extension_path: Path | None = None):
     for candidate in candidates:
         for path in (candidate / "webview/assets").glob("app-initial-*.js"):
             original = path.read_text()
-            if START in original:
-                yield path, original, transform(original)
+            if inline is None:
+                if START in original:
+                    yield path, original, transform(original)
+            elif START in original or LAYOUT_START in original or 'composer.placeholder.localFollowUp.locally' in original:
+                yield path, original, transform_layout(original, inline)
 
 
 def repair(extension_path: Path | None = None) -> list[Path]:

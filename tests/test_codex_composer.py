@@ -8,6 +8,15 @@ import codex_composer
 
 
 class RetiredComposerPatchTests(unittest.TestCase):
+    def test_inline_location_is_reversible_and_preserves_native_source(self):
+        source = '/* composer.placeholder.localFollowUp.locally */\nbase;'
+        patched = codex_composer.transform_layout(source)
+        self.assertTrue(patched.startswith(source))
+        self.assertIn(codex_composer.LAYOUT_START + ';\n', patched)
+        self.assertEqual(codex_composer.transform_layout(patched), patched)
+        self.assertEqual(codex_composer.transform_layout(patched, False), source)
+        self.assertEqual(codex_composer.transform(patched), patched)
+
     def test_transform_removes_injected_payload(self):
         patched = (
             "base"

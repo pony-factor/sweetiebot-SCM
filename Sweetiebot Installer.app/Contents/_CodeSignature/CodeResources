@@ -174,7 +174,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/codex_composer.py</key>
 		<data>
-		ABPMBAAxlm+HxbNyxvj7Mf16yAg=
+		wrAmivByDLQKZ2QhZ3PibmH9P8Y=
 		</data>
 		<key>Resources/toolkit/scripts/codex_context.py</key>
 		<data>
@@ -198,7 +198,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
-		Lmp+o4glijM12Udi3z1l5aSmUKY=
+		UqDE+uTZaR080fdhKYG+0uGSS9s=
 		</data>
 		<key>Resources/toolkit/scripts/configure.py</key>
 		<data>
@@ -210,7 +210,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		2YgK90TNW7pyTQJcpxnIOioG3ok=
+		1NIFTT4TxrI7VzJKGik4EpfRPdI=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -234,7 +234,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/toolkit_settings.py</key>
 		<data>
-		TlKcFLn4fUF8i3vN8D7ps04wkP0=
+		b8+NAG/7ocif5qBq0gm1XGKPUzE=
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
@@ -709,11 +709,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			ABPMBAAxlm+HxbNyxvj7Mf16yAg=
+			wrAmivByDLQKZ2QhZ3PibmH9P8Y=
 			</data>
 			<key>hash2</key>
 			<data>
-			ZbKvseeo0pYkHzRmE7ZuIrlS4G3Yl2ueQU3rqKcrQFE=
+			9zXuOa4jUFlj8D7T7iWeaidea2CtitnGteyt5yNklDE=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/codex_context.py</key>
@@ -775,11 +775,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Lmp+o4glijM12Udi3z1l5aSmUKY=
+			UqDE+uTZaR080fdhKYG+0uGSS9s=
 			</data>
 			<key>hash2</key>
 			<data>
-			a9spNg1cYAkyND8JasgwPPDAYb0zzVT2GmDWxZrE4m4=
+			453L/LuV8uTXlgRw7qvopz2erc/P9GwugBh15YjPE0o=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configure.py</key>
@@ -808,11 +808,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			2YgK90TNW7pyTQJcpxnIOioG3ok=
+			1NIFTT4TxrI7VzJKGik4EpfRPdI=
 			</data>
 			<key>hash2</key>
 			<data>
-			XvlB8KR98VDJhxffDJy73WlGzlM3aQ8GhAfbR4LdkGU=
+			YXuK9o7f3OSU6cdAaa+5KCQv7erYmBbeuYFVDL+YN98=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
@@ -874,11 +874,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			TlKcFLn4fUF8i3vN8D7ps04wkP0=
+			b8+NAG/7ocif5qBq0gm1XGKPUzE=
 			</data>
 			<key>hash2</key>
 			<data>
-			3QTTzE9rd3IZT0a+TeAI1Wsno7R9/eBmRXmxODMwZT8=
+			8bwTqbJ8z4+aoQn1gb0dYuAgdc7no6a0Dwhku+d1ICk=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
