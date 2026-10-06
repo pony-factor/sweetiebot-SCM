@@ -65,24 +65,30 @@ async function run() {
   assert.equal(messages.at(-1).index, 0);
 
   const elements = new Map();
-  for (const id of ['search', 'query', 'mode', 'status', 'answer', 'results', 'idle']) {
+  for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle']) {
     elements.set(id, {value: id === 'mode' ? 'hybrid' : '', listeners: {},
       addEventListener(event, listener) { this.listeners[event] = listener; },
       replaceChildren() {}, focus() {}});
   }
   const timers = new Map(); let nextTimer = 0; const sent = [];
   const html = provider.html({cspSource: 'test'});
-  assert.match(html, /class="search-input".*class="search-button"/);
+  assert.match(html, /class="search-input".*id="clear-query".*class="search-button"/);
   assert.match(html, /copy-status\.copied/);
   assert.match(html, /contrastCheckColor/);
   assert.match(html, /message\.type==='copied'/);
   assert.match(html, /id="idle" class="idle-mark"/);
   assert.match(html, /align-items:center;justify-content:center/);
   assert.match(html, /opacity:\.13;filter:blur\(\.65px\)/);
+  assert.match(html, /min-width:112px/);
   assert.match(html, /function updateIdleState\(\)/);
+  assert.match(html, /function updateQueryControls\(\)/);
   assert.match(html, /MAX_RESULTS_PER_FILE=7/);
+  assert.match(html, /className='folder-tree'/);
   assert.match(html, /className='folder-route'/);
   assert.match(html, /className='file-name'/);
+  assert.match(html, /id="summary" class="result-summary"/);
+  assert.match(html, /' across '\+groups\.length\+' file'/);
+  assert.doesNotMatch(html, /' · '\+message\.mode/);
   assert.match(html, /className='line-number'/);
   assert.match(html, /meta\.append\(line,score,copied\)/);
   assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
@@ -94,10 +100,12 @@ async function run() {
   vm.runInNewContext(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1], page);
   assert.equal(page.contrastCheckColor('rgb(255, 255, 255)'), '#000');
   assert.equal(page.contrastCheckColor('rgba(0, 0, 0, 0.5)'), '#fff');
-  const query = elements.get('query'); const form = elements.get('search'); const idle = elements.get('idle');
+  const query = elements.get('query'); const clearQuery = elements.get('clear-query'); const form = elements.get('search'); const idle = elements.get('idle');
   assert.equal(idle.hidden, false, 'logo is visible when the search term is empty');
+  assert.equal(clearQuery.hidden, true, 'clear control starts hidden');
   query.value = 'app'; query.listeners.input();
   assert.equal(idle.hidden, true, 'logo hides as soon as a search term is entered');
+  assert.equal(clearQuery.hidden, false, 'clear control appears when the query has text');
   query.value = 'apple'; query.listeners.input();
   assert.equal(timers.size, 1);
   assert.equal(sent.length, 0);
@@ -110,7 +118,9 @@ async function run() {
   query.listeners.compositionstart(); query.value = 'composing'; query.listeners.input();
   assert.equal(timers.size, 0);
   query.listeners.compositionend(); assert.equal(timers.size, 1);
-  query.value = ''; query.listeners.input();
+  clearQuery.listeners.click();
+  assert.equal(query.value, '');
+  assert.equal(clearQuery.hidden, true, 'clear control hides after clearing');
   assert.equal(idle.hidden, false, 'logo returns after the search term is cleared');
   assert.equal(timers.size, 0); assert.equal(sent.at(-1).query, '');
   elements.get('mode').value = 'exact'; query.value = 'apples';
