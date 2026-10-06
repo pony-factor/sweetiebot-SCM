@@ -16,7 +16,7 @@ SETTINGS = {
     "branchNameDisabledPacks": "",
     "branchCustomNames": "",
     "branchNameImports": "[]",
-    "shortPlaceholder": True,
+    "messagePlaceholder": "Message",
     "commitButtonLabel": "Send",
     "commitAndSendButtonLabel": "Send and Push",
     "sourceControlLabel": "Sweetie Bot",
@@ -195,7 +195,14 @@ class TransformTests(unittest.TestCase):
         self.assertIn("scm-toolkit-auto-publish", css)
         self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
+        self.assertIn("scmToolkitCustomizeMessagePlaceholder", js)
         self.assertIn("settings.commitAndSendButtonLabel", js)
+        self.assertIn("configuration.getValue('scmToolkit.messagePlaceholder')", js)
+        self.assertIn("configuredLabel('commitButtonLabel'", js)
+        self.assertIn("configuredLabel(", js)
+        self.assertIn("'commitAndSendButtonLabel'", js)
+        self.assertIn("event.affectsConfiguration('scmToolkit.messagePlaceholder')", js)
+        self.assertIn("event.affectsConfiguration('scmToolkit.commitButtonLabel')", js)
         self.assertIn("configuration.getValue('git.postCommitCommand') === 'push'", js)
         self.assertIn("'.button-container > .monaco-button:first-child'", js)
         self.assertIn("'scmToolkit.publishBranch'", js)
@@ -225,6 +232,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("scmToolkitBranchNamePool", js)
         runtime_json = js.split("const scmToolkitSettings = ", 1)[1].split(";\n/* edits:", 1)[0]
         runtime = json.loads(runtime_json)
+        self.assertEqual(runtime["messagePlaceholder"], "Message")
         self.assertEqual(
             runtime["branchNamePacks"],
             branch_names.load_catalog()["packs"],
@@ -252,6 +260,7 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(install.DEFAULT_SETTINGS["sourceControlLabel"], "Sweetie Bot")
 
     def test_commit_button_label_defaults_to_send(self):
+        self.assertEqual(install.DEFAULT_SETTINGS["messagePlaceholder"], "Message")
         self.assertEqual(install.DEFAULT_SETTINGS["commitButtonLabel"], "Send")
         self.assertEqual(install.DEFAULT_SETTINGS["commitAndSendButtonLabel"], "Send")
         self.assertTrue(install.DEFAULT_SETTINGS["autoPublishToggle"])

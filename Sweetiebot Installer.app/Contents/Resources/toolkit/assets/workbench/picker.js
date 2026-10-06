@@ -40,11 +40,17 @@ function scmToolkitCustomizeCommitButtonLabel(
     commitLabel,
     commitAndSendLabel
 ) {
-    const commitValue = String(commitLabel ?? '').trim();
-    const commitAndSendValue = String(commitAndSendLabel ?? '').trim();
+    const fallbackCommitValue = String(commitLabel ?? '').trim();
+    const fallbackCommitAndSendValue = String(commitAndSendLabel ?? '').trim();
     const doc = widget.element.ownerDocument;
     const Observer = doc.defaultView?.MutationObserver;
-    if ((!commitValue && !commitAndSendValue) || !Observer) return;
+    if (!Observer) return;
+
+    const configuredLabel = (key, fallback) => {
+        const configured = configuration.getValue(`scmToolkit.${key}`);
+        const value = typeof configured === 'string' ? configured.trim() : '';
+        return value || fallback;
+    };
 
     let observedRoot;
     const selector = [
@@ -76,6 +82,11 @@ function scmToolkitCustomizeCommitButtonLabel(
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
         const button = actionRow?.querySelector(selector) ?? root.querySelector(selector);
+        const commitValue = configuredLabel('commitButtonLabel', fallbackCommitValue);
+        const commitAndSendValue = configuredLabel(
+            'commitAndSendButtonLabel',
+            fallbackCommitAndSendValue
+        );
         const current = configuration.getValue('git.postCommitCommand') === 'push'
             ? (commitAndSendValue || commitValue)
             : commitValue;
@@ -99,7 +110,13 @@ function scmToolkitCustomizeCommitButtonLabel(
     update();
 
     const configurationDisposable = configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('git.postCommitCommand')) update();
+        if (
+            event.affectsConfiguration('git.postCommitCommand')
+            || event.affectsConfiguration('scmToolkit.commitButtonLabel')
+            || event.affectsConfiguration('scmToolkit.commitAndSendButtonLabel')
+        ) {
+            update();
+        }
     });
     widget.disposables.add({
         dispose() {
@@ -107,6 +124,65 @@ function scmToolkitCustomizeCommitButtonLabel(
             configurationDisposable.dispose();
         }
     });
+}
+
+function scmToolkitCustomizeMessagePlaceholder(
+    widget,
+    input,
+    configuration,
+    fallbackPlaceholder
+) {
+    let nativePlaceholder = input.placeholder;
+    let activeOverride;
+
+    const configuredPlaceholder = () => {
+        const configured = configuration.getValue('scmToolkit.messagePlaceholder');
+        return typeof configured === 'string'
+            ? configured
+            : String(fallbackPlaceholder ?? '');
+    };
+
+    const update = () => {
+        const value = configuredPlaceholder();
+        if (value) {
+            if (input.placeholder !== value) {
+                if (!activeOverride || input.placeholder !== activeOverride) {
+                    nativePlaceholder = input.placeholder;
+                }
+                input.placeholder = value;
+            }
+            activeOverride = value;
+            return;
+        }
+
+        const previousOverride = activeOverride;
+        activeOverride = undefined;
+        if (previousOverride && input.placeholder === previousOverride) {
+            input.placeholder = nativePlaceholder;
+        }
+    };
+
+    update();
+    widget.repositoryDisposables.add(input.onDidChangePlaceholder(() => {
+        const value = configuredPlaceholder();
+        if (!value) {
+            nativePlaceholder = input.placeholder;
+            activeOverride = undefined;
+            return;
+        }
+        if (input.placeholder === value) {
+            activeOverride = value;
+            return;
+        }
+        if (!activeOverride || input.placeholder !== activeOverride) {
+            nativePlaceholder = input.placeholder;
+        }
+        activeOverride = value;
+        input.placeholder = value;
+    }));
+    widget.repositoryDisposables.add(configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.messagePlaceholder')) update();
+    }));
 }
 
 function scmToolkitAttachCommitSettings(widget, button) {
@@ -1401,15 +1477,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 !ponyBranchButton.hidden
             );
 
-            if (settings.shortPlaceholder) {
-                const keepMessagePlaceholderShort = () => {
-                    if (input.placeholder !== 'Message') input.placeholder = 'Message';
-                };
-                keepMessagePlaceholderShort();
-                widget.repositoryDisposables.add(
-                    input.onDidChangePlaceholder(keepMessagePlaceholderShort)
-                );
-            }
+            scmToolkitCustomizeMessagePlaceholder(
+                widget,
+                input,
+                configuration,
+                settings.messagePlaceholder
+            );
 
             let blankStateRefreshDisposable;
             widget.repositoryDisposables.add(observe(reader => {
