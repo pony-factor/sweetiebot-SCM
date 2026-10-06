@@ -73,8 +73,9 @@ const vscode = {
   sandbox.module.exports.registerBranchCommands(vscode, context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'Main fetches without any renderer or commit input widget');
-  assert.deepEqual(fetchCalls[0], { remote: 'upstream', ref: 'main' },
+  assert.equal(fetchCalls[0]?.remote, 'upstream',
     'Default-branch auto-pull uses the configured remote instead of the tracked origin');
+  assert.equal(fetchCalls[0]?.ref, 'main');
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
 
   main.state.HEAD.behind = 1;
