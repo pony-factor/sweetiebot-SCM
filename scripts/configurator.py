@@ -459,6 +459,7 @@ def render_form(
     error: str = "",
     *,
     finish_on_save: bool = True,
+    server_instance: str = "",
 ) -> str:
     sections = []
     for section in dict.fromkeys(setting.section for setting in SETTINGS):
@@ -489,6 +490,7 @@ def render_form(
     error_html = f'<div class="error" role="alert">{html.escape(error)}</div>' if error else ""
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
+    instance_json = json.dumps(server_instance).replace("<", "\\u003c")
     submit_label = action_label if finish_on_save else "Import signing key"
     submit_hidden = "" if finish_on_save else " hidden"
     return f"""<!doctype html>
@@ -873,6 +875,19 @@ if (syncButton) {{
     }}
   }});
 }}
+const settingsServerInstance = {instance_json};
+if (settingsServerInstance) {{
+  setInterval(async () => {{
+    try {{
+      const response = await fetch('/health' + location.search, {{cache: 'no-store'}});
+      if (!response.ok) return;
+      const status = await response.json();
+      if (status.instance && status.instance !== settingsServerInstance) location.reload();
+    }} catch {{
+      // The extension may be reloading. Keep the page and retry the same stable URL.
+    }}
+  }}, 1500);
+}}
 </script>
 </main></body></html>"""
 
@@ -902,9 +917,15 @@ def _result_page(saved: bool) -> str:
 
 
 def run_configurator(
-    current: dict[str, object], action_label: str = "Done", *, open_browser: bool = True
+    current: dict[str, object],
+    action_label: str = "Done",
+    *,
+    open_browser: bool = True,
+    port: int = 0,
+    token: str | None = None,
 ) -> bool:
-    token = secrets.token_urlsafe(24)
+    token = token or secrets.token_urlsafe(24)
+    server_instance = secrets.token_urlsafe(12)
     outcome: dict[str, bool | None] = {"saved": None}
     session_settings = dict(current)
 
@@ -936,12 +957,24 @@ def run_configurator(
             if not self._authorized():
                 self._send("<h1>Not found</h1>", 404)
                 return
-            if urllib.parse.urlsplit(self.path).path == "/models":
+            path = urllib.parse.urlsplit(self.path).path
+            if path == "/health":
+                self._send_json({"instance": server_instance})
+                return
+            if path == "/models":
                 names, status = fetch_ollama_models()
                 self._send_json({"models": names, "status": status})
                 return
             names, status = fetch_ollama_models()
-            self._send(render_form(session_settings, names, status, token, action_label, finish_on_save=open_browser))
+            self._send(render_form(
+                session_settings,
+                names,
+                status,
+                token,
+                action_label,
+                finish_on_save=open_browser,
+                server_instance=server_instance,
+            ))
 
         def do_POST(self) -> None:
             if not self._authorized():
@@ -1019,7 +1052,15 @@ def run_configurator(
                 names, status = fetch_ollama_models()
                 submitted = dict(session_settings)
                 submitted.update(parsed)
-                self._send(render_form(submitted, names, status, token, action_label, str(error)), 400)
+                self._send(render_form(
+                    submitted,
+                    names,
+                    status,
+                    token,
+                    action_label,
+                    str(error),
+                    server_instance=server_instance,
+                ), 400)
                 return
             session_settings.update(parsed)
             outcome["saved"] = True
@@ -1034,7 +1075,10 @@ def run_configurator(
         def log_message(self, _format: str, *_args: object) -> None:
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class SettingsHTTPServer(ThreadingHTTPServer):
+        allow_reuse_address = True
+
+    server = SettingsHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{server.server_port}/?token={urllib.parse.quote(token)}"
     if open_browser:
         print(f"Sweetiebot SCM configurator: {url}")
@@ -1057,6 +1101,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-browser", action="store_true", help="Send the URL to the calling extension.")
     parser.add_argument("--vscode-settings", help="Current feature preferences supplied by the companion extension.")
+    parser.add_argument("--port", type=int, default=0, help="Reuse a stable localhost port for the settings page.")
+    parser.add_argument("--token", help="Reuse the settings page authentication token.")
     parser.add_argument(
         "--open-panel-on-startup",
         choices=("true", "false"),
@@ -1068,4 +1114,11 @@ if __name__ == "__main__":
         apply_vscode_settings(current, json.loads(args.vscode_settings))
     if args.open_panel_on_startup is not None:
         current["openPanelOnStartup"] = args.open_panel_on_startup == "true"
-    run_configurator(current, open_browser=not args.no_browser)
+    if args.port < 0 or args.port > 65535:
+        parser.error("--port must be between 0 and 65535")
+    run_configurator(
+        current,
+        open_browser=not args.no_browser,
+        port=args.port,
+        token=args.token,
+    )

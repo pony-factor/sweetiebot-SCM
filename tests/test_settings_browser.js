@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 
 async function run() {
   const children = [], calls = [], errors = [], updates = [];
+  const state = new Map();
   let available = true, failOpen = false;
   const vscode = {
     ConfigurationTarget: { Global: 1 },
@@ -49,6 +50,7 @@ async function run() {
         assert.equal(options.cwd, '/extension');
         assert.equal(options.stdio[1], 'pipe');
         const child = new EventEmitter();
+        child.spawnArgs = Array.from(args);
         child.exitCode = null;
         child.stdout = new EventEmitter();
         child.stderr = new EventEmitter();
@@ -58,7 +60,14 @@ async function run() {
         return child;
       } };
     },
-    context: { extensionUri: {}, extensionPath: '/extension' }
+    context: {
+      extensionUri: {},
+      extensionPath: '/extension',
+      globalState: {
+        get(key, fallback) { return state.has(key) ? state.get(key) : fallback; },
+        async update(key, value) { state.set(key, value); }
+      }
+    }
   });
   vm.runInContext(fs.readFileSync(require.resolve('../efs/extension.js'), 'utf8'), sandbox);
   const open = () => vm.runInContext('openSettings(context)', sandbox);
@@ -83,6 +92,8 @@ async function run() {
   assert.equal(calls[0].options.url, url);
   assert.equal(calls[0].options.openToSide, false);
   assert.equal(calls[0].options.reuseUrlFilter, url);
+  assert.equal(state.get('scmToolkit.settingsSessionUrl'), url);
+  assert.equal(state.get('scmToolkit.settingsPageOpened'), true);
   await open();
   assert.equal(calls.length, 2, 'Repeated click must refocus the native browser');
   assert.equal(children.length, 1);
@@ -108,6 +119,7 @@ async function run() {
   children[0].emit('exit', 0);
   await open();
   assert.equal(children.length, 2, 'A finished settings session must be restartable');
+  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-4), ['--port', '49152', '--token', 'test']);
   failOpen = true;
   children[1].stdout.emit('data', line + '\n');
   await tick();

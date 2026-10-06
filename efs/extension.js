@@ -17,28 +17,47 @@ const { registerCommitLimitCommand } = require('./commit_limits');
 const VIEW_ID = 'scmToolkit.workspaceSearch';
 const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
 const SETTINGS_BROWSER_COMMAND = 'workbench.action.browser.open';
+const SETTINGS_SESSION_URL_KEY = 'scmToolkit.settingsSessionUrl';
+const SETTINGS_PAGE_OPENED_KEY = 'scmToolkit.settingsPageOpened';
 const INDEX_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 let configuratorProcess;
 let configuratorURL;
 
-async function openSettings(context) {
-  if (!(await vscode.commands.getCommands(true)).includes(SETTINGS_BROWSER_COMMAND)) {
-    vscode.window.showErrorMessage('Update VS Code to a version with the Integrated Browser to open Sweetiebot SCM settings.');
-    return;
+function persistedSettingsSessionArgs(context) {
+  const saved = context.globalState.get(SETTINGS_SESSION_URL_KEY, '');
+  if (!saved) return [];
+  try {
+    const parsed = new URL(saved);
+    const token = parsed.searchParams.get('token');
+    const port = Number(parsed.port);
+    if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !token ||
+        !Number.isInteger(port) || port < 1 || port > 65535) return [];
+    return ['--port', String(port), '--token', token];
+  } catch {
+    return [];
   }
+}
 
-  const openBrowser = async (url, session = configuratorProcess) => {
-    try {
-      await vscode.commands.executeCommand(SETTINGS_BROWSER_COMMAND, {
-        url, openToSide: false, reuseUrlFilter: url
-      });
-    } catch {
-      session?.kill();
-      vscode.window.showErrorMessage('Unable to open Sweetiebot SCM settings in the Integrated Browser. Try again.');
-    }
-  };
+async function openSettingsBrowser(url, session = configuratorProcess) {
+  try {
+    await vscode.commands.executeCommand(SETTINGS_BROWSER_COMMAND, {
+      url, openToSide: false, reuseUrlFilter: url
+    });
+    return true;
+  } catch {
+    session?.kill();
+    vscode.window.showErrorMessage('Unable to open Sweetiebot SCM settings in the Integrated Browser. Try again.');
+    return false;
+  }
+}
+
+async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   if (configuratorProcess && configuratorProcess.exitCode === null) {
-    if (configuratorURL) await openBrowser(configuratorURL);
+    if (openBrowserWhenReady && configuratorURL) {
+      if (await openSettingsBrowser(configuratorURL)) {
+        await context.globalState.update(SETTINGS_PAGE_OPENED_KEY, true);
+      }
+    }
     return;
   }
 
@@ -65,7 +84,8 @@ async function openSettings(context) {
     }
   };
   const child = spawn(python, [
-    script, '--no-browser', '--vscode-settings', JSON.stringify(currentSettings)
+    script, '--no-browser', '--vscode-settings', JSON.stringify(currentSettings),
+    ...persistedSettingsSessionArgs(context)
   ], {
     cwd: context.extensionPath,
     stdio: ['ignore', 'pipe', 'pipe']
@@ -114,7 +134,12 @@ async function openSettings(context) {
         const parsed = new URL(url);
         if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port) continue;
         configuratorURL = url;
-        void openBrowser(url);
+        void context.globalState.update(SETTINGS_SESSION_URL_KEY, url);
+        if (openBrowserWhenReady) {
+          void openSettingsBrowser(url, child).then(opened => {
+            if (opened) void context.globalState.update(SETTINGS_PAGE_OPENED_KEY, true);
+          });
+        }
       } catch { /* Ignore non-protocol output without displaying the private URL. */ }
     }
   });
@@ -137,6 +162,14 @@ async function openSettings(context) {
       );
     }
   });
+}
+
+async function openSettings(context) {
+  if (!(await vscode.commands.getCommands(true)).includes(SETTINGS_BROWSER_COMMAND)) {
+    vscode.window.showErrorMessage('Update VS Code to a version with the Integrated Browser to open Sweetiebot SCM settings.');
+    return;
+  }
+  return ensureSettingsServer(context, true);
 }
 
 async function linkedGithubRepositories(query = '') {
@@ -247,6 +280,9 @@ async function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.openSettings', () => {
     return openSettings(context);
   }));
+  if (context.globalState.get(SETTINGS_PAGE_OPENED_KEY, false)) {
+    void ensureSettingsServer(context, false);
+  }
   context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.chatgpt.searchRepositories', query => {
     return searchLinkedGithubRepositories(query);
   }));
