@@ -11,14 +11,19 @@ function git(cwd, ...args) {
     env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
 }
 async function run() {
-  const remote = path.join(directory, 'remote.git'), local = path.join(directory, 'local'), other = path.join(directory, 'other');
-  git(directory, 'init', '--bare', '--initial-branch=main', remote);
-  git(directory, 'clone', remote, local);
+  const origin = path.join(directory, 'origin.git'), upstream = path.join(directory, 'upstream.git');
+  const local = path.join(directory, 'local'), other = path.join(directory, 'other');
+  git(directory, 'init', '--bare', '--initial-branch=main', origin);
+  git(directory, 'init', '--bare', '--initial-branch=main', upstream);
+  git(directory, 'clone', origin, local);
   git(local, 'config', 'user.name', 'Test'); git(local, 'config', 'user.email', 'test@example.invalid');
   git(local, 'config', 'core.hooksPath', '/dev/null');
   for (const name of ['note.txt', 'staged.txt', 'incoming.txt']) fs.writeFileSync(path.join(local, name), 'base\n');
   git(local, 'add', '.'); git(local, 'commit', '-m', 'Base'); git(local, 'push', '-u', 'origin', 'main');
-  git(directory, 'clone', remote, other);
+  git(local, 'remote', 'add', 'upstream', upstream);
+  git(local, 'push', 'upstream', 'main');
+  git(local, 'config', 'scm-toolkit.remote', 'upstream');
+  git(directory, 'clone', upstream, other);
   git(other, 'config', 'user.name', 'Test'); git(other, 'config', 'user.email', 'test@example.invalid');
   git(other, 'config', 'core.hooksPath', '/dev/null');
   fs.writeFileSync(path.join(local, 'note.txt'), 'Keep my unstaged note\n');
@@ -38,6 +43,8 @@ async function run() {
   };
   assert.equal(await autoPullClean(repository, { fetch: true }), true);
   assert.equal(git(local, 'rev-parse', 'HEAD'), git(other, 'rev-parse', 'HEAD'));
+  assert.notEqual(git(local, 'rev-parse', 'HEAD'), git(local, 'rev-parse', 'origin/main'),
+    'Configured upstream advances main even when the tracked origin has not moved');
   assert.equal(fs.readFileSync(path.join(local, 'note.txt'), 'utf8'), 'Keep my unstaged note\n');
   assert.equal(git(local, 'show', ':staged.txt'), 'Keep my staged note');
   assert.equal(git(local, 'diff', '--name-only'), 'note.txt');
