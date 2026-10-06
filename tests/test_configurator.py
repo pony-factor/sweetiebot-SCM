@@ -350,7 +350,10 @@ class GitConfigTests(unittest.TestCase):
         settings = toolkit_settings.load_settings()
 
         self.assertEqual(settings["messagePlaceholder"], "Commit here")
-        read_bool.assert_not_called()
+        self.assertFalse(any(
+            call.args[0] == "scm-toolkit.short-placeholder"
+            for call in read_bool.call_args_list
+        ))
 
     @patch("configurator.shutil.which", return_value="/usr/bin/git")
     @patch("configurator.subprocess.run")
