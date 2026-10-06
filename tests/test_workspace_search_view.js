@@ -22,6 +22,21 @@ async function run() {
     return require(name);
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/view'), 'utf8'), sandbox);
+  const {groupSearchResults, splitResultPath, formatResultScore} = sandbox.module.exports;
+  const grouped = groupSearchResults([
+    {uri: 'file:///top/a.md', relative: 'top/a.md', score: .99},
+    {uri: 'file:///other/b.md', relative: 'other/b.md', score: .91},
+    {uri: 'file:///top/a.md', relative: 'top/a.md', score: .80}
+  ]);
+  assert.equal(grouped.length, 2);
+  assert.equal(grouped[0].relative, 'top/a.md', 'the file containing the highest-ranked result stays first');
+  assert.equal(grouped[0].entries.length, 2);
+  assert.equal(grouped[0].entries[0].index, 0);
+  assert.equal(grouped[0].entries[1].index, 2, 'grouped entries keep their original score order and open index');
+  assert.equal(splitResultPath('src/search/view.js').folders.join('/'), 'src/search');
+  assert.equal(splitResultPath('src/search/view.js').filename, 'view.js');
+  assert.equal(formatResultScore(.87), '.87');
+  assert.equal(formatResultScore(1), '1.00');
   const pending = [];
   const provider = new sandbox.module.exports.WorkspaceSearchViewProvider({
     search: () => new Promise((resolve, reject) => pending.push({resolve, reject}))
@@ -65,6 +80,13 @@ async function run() {
   assert.match(html, /align-items:center;justify-content:center/);
   assert.match(html, /opacity:\.13;filter:blur\(\.65px\)/);
   assert.match(html, /function updateIdleState\(\)/);
+  assert.match(html, /MAX_RESULTS_PER_FILE=7/);
+  assert.match(html, /className='folder-route'/);
+  assert.match(html, /className='file-name'/);
+  assert.match(html, /className='line-number'/);
+  assert.match(html, /meta\.append\(line,score,copied\)/);
+  assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
+  assert.match(html, /more\.textContent='…'/);
   const page = {document: {getElementById: id => elements.get(id)},
     acquireVsCodeApi: () => ({postMessage: message => sent.push(message)}),
     setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
