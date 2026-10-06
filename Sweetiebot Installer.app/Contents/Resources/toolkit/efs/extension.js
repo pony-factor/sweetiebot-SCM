@@ -7,6 +7,7 @@ const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
+const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerPushRecovery } = require('./push_recovery');
@@ -49,6 +50,7 @@ async function openSettings(context) {
     workspaceSearch: settings(),
     vscodeSettings: {
       openPanelOnStartup,
+      automaticAppRepair: scm.get('automaticAppRepair', true),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       codexKeepAwake: scm.get('codexKeepAwake', true),
@@ -234,6 +236,7 @@ async function activate(context) {
   registerBranchCommands(vscode, context);
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
+  registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);

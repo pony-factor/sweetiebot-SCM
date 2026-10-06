@@ -78,6 +78,21 @@ function keywordScore(query, text, { fuzzy = false } = {}) {
   return Math.min(1, coverage * 0.75 + (haystack.includes(q) ? 0.35 : 0));
 }
 
+function bestMatchingLine(query, text, baseLine = 0, { fuzzy = false } = {}) {
+  const firstLine = Number.isFinite(Number(baseLine)) ? Math.max(0, Math.trunc(Number(baseLine))) : 0;
+  const lines = String(text || '').split('\n');
+  let bestOffset = 0;
+  let bestScore = 0;
+  for (let offset = 0; offset < lines.length; offset += 1) {
+    const score = keywordScore(query, lines[offset], { fuzzy });
+    if (score > bestScore) {
+      bestScore = score;
+      bestOffset = offset;
+    }
+  }
+  return bestScore > 0 ? firstLine + bestOffset : firstLine;
+}
+
 function normalizeVector(vector) {
   if (!Array.isArray(vector) || !vector.length) return null;
   let sum = 0;
@@ -121,4 +136,4 @@ function chunkText(text) {
   return chunks;
 }
 
-module.exports = { tokenize, keywordScore, normalizeVector, cosine, chunkText };
+module.exports = { tokenize, keywordScore, bestMatchingLine, normalizeVector, cosine, chunkText };

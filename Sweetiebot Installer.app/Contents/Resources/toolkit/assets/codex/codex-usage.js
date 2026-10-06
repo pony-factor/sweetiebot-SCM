@@ -6,6 +6,34 @@ function scmToolkitRemainingUsage(usage) {
     return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
 }
 
+let scmToolkitUsageRefetch = null;
+let scmToolkitUsageRefreshTimer = null;
+
+function scmToolkitKeepUsageFresh(refetch) {
+    if (typeof refetch !== 'function') return;
+    scmToolkitUsageRefetch = refetch;
+    if (scmToolkitUsageRefreshTimer !== null) return;
+
+    const refresh = () => {
+        const current = scmToolkitUsageRefetch;
+        if (typeof current !== 'function') return;
+        try {
+            const result = current();
+            if (result && typeof result.catch === 'function') result.catch(() => {});
+        } catch {}
+    };
+
+    scmToolkitUsageRefreshTimer = setInterval(refresh, 15000);
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('focus', refresh);
+    }
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refresh();
+        });
+    }
+}
+
 (() => {
     const tag = 'scm-toolkit-menu-reset';
     if (customElements.get(tag)) return;

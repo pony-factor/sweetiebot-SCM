@@ -45,6 +45,9 @@ class RepairTests(unittest.TestCase):
         for name in ('picker.js', 'picker.css', 'hide_progress.css', 'outlined_buttons.css'):
             self.assertIn(Path('codex-customizations/assets/workbench') / name, sources)
         self.assertIn(Path('codex-customizations/scripts/repair.py'), sources)
+        self.assertIn(Path('codex-customizations/scripts/update.py'), sources)
+        for name in ('github_pr_refresh.js', 'github_pr_actions.js', 'package.json'):
+            self.assertIn(Path('codex-customizations/efs') / name, sources)
 
     def test_busy_lock_skips_repair(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
@@ -55,7 +58,26 @@ class RepairTests(unittest.TestCase):
     def test_exec_keeps_lock_and_passes_custom_app_path(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
                 patch.object(repair.os, 'set_inheritable') as inherit, patch.object(repair.os, 'execv') as execute:
-            repair.repair(['--app', '/Custom/Code.app'])
+            with patch.object(repair, 'prepare_update', return_value=None):
+                repair.repair(['--app', '/Custom/Code.app'])
             inherit.assert_called_once()
             self.assertTrue(inherit.call_args.args[1])
             self.assertEqual(execute.call_args.args[1][-3:], ['--repair', '--app', '/Custom/Code.app'])
+
+    def test_update_installs_companion_and_records_only_success(self):
+        for code in (0, 1):
+            with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                    patch.object(repair, 'prepare_update', return_value=(Path('/candidate/scripts/install.py'), 'abc')), \
+                    patch.object(repair.subprocess, 'run') as run, patch.object(repair.os, 'execv') as execute:
+                run.return_value.returncode = code
+                repair.repair(['--app', '/Custom/Code.app'])
+                self.assertNotIn('--repair', run.call_args.args[0])
+                marker = Path(directory) / 'Library/Caches/dev.ponyfactor.sweetiebot/installed-revision'
+                self.assertEqual(marker.exists(), code == 0)
+                self.assertEqual(execute.called, code != 0)
+
+    def test_offline_update_still_repairs(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', side_effect=OSError), patch.object(repair.os, 'execv') as execute:
+            repair.repair([])
+            execute.assert_called_once()

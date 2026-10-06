@@ -37,7 +37,7 @@ function registerCodexRefresh(vscode, context) {
       if (!disposed && !timedOut && code === 0 && /^Installed SCM toolkit /m.test(stdout) && !reloadOffered) {
         reloadOffered = true;
         void vscode.window.showInformationMessage(
-          'Sweetie Bot restored your app customizations. Reload this window to apply them.',
+          'Sweetie Bot updated or restored your app customizations. Reload this window to apply them.',
           'Reload Window'
         ).then(choice => {
           if (!disposed && choice === 'Reload Window') return vscode.commands.executeCommand('workbench.action.reloadWindow');

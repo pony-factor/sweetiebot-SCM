@@ -34,27 +34,79 @@ function scmToolkitHideOutgoingSyncCount(widget) {
     observer.observe(root, { subtree: true, childList: true, characterData: true });
 }
 
-function scmToolkitCustomizeCommitButtonLabel(widget, label) {
-    const value = String(label ?? '').trim();
-    const root = widget.element.closest('.scm-view');
-    const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
-    if (!value || !root || !Observer) return;
+function scmToolkitCustomizeCommitButtonLabel(
+    widget,
+    configuration,
+    commitLabel,
+    commitAndSendLabel
+) {
+    const commitValue = String(commitLabel ?? '').trim();
+    const commitAndSendValue = String(commitAndSendLabel ?? '').trim();
+    const doc = widget.element.ownerDocument;
+    const Observer = doc.defaultView?.MutationObserver;
+    if ((!commitValue && !commitAndSendValue) || !Observer) return;
 
-    globalThis.__scmToolkitCommitButtonLabel = value;
-    const observedRoots = globalThis.__scmToolkitCommitLabelRoots ??= new WeakSet();
-    const update = () => {
-        const button = root.querySelector(
-            '.button-container > .monaco-button-dropdown > .monaco-button:first-child'
-        );
-        const current = globalThis.__scmToolkitCommitButtonLabel;
-        if (button && current && button.textContent !== current) button.textContent = current;
+    let observedRoot;
+    const selector = [
+        '.button-container > .monaco-button-dropdown > .monaco-button:first-child',
+        '.button-container > .monaco-button:first-child',
+    ].join(', ');
+
+    const observeRoot = root => {
+        if (observedRoot === root) return;
+        observer.disconnect();
+        observer.observe(root, {
+            subtree: true,
+            childList: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['data-index'],
+        });
+        observedRoot = root;
     };
 
-    update();
-    if (observedRoots.has(root)) return;
-    observedRoots.add(root);
+    const update = () => {
+        const root = widget.element.closest('.scm-view');
+        if (!root) return;
+        observeRoot(root);
+
+        const inputRow = widget.element.closest('.monaco-list-row');
+        const index = inputRow?.getAttribute('data-index');
+        const rows = inputRow?.parentElement;
+        const actionRow = index === null || index === undefined ? undefined
+            : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
+        const button = actionRow?.querySelector(selector) ?? root.querySelector(selector);
+        const current = configuration.getValue('git.postCommitCommand') === 'push'
+            ? (commitAndSendValue || commitValue)
+            : commitValue;
+        if (!button || !current) return;
+
+        const labelNode = button.querySelector(
+            '.monaco-button-label, .monaco-button-label-short'
+        );
+        const target = labelNode ?? button;
+        if (target.textContent !== current) target.textContent = current;
+    };
+
     const observer = new Observer(update);
-    observer.observe(root, { subtree: true, childList: true, characterData: true });
+    observer.observe(doc.documentElement, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['data-index'],
+    });
+    update();
+
+    const configurationDisposable = configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('git.postCommitCommand')) update();
+    });
+    widget.disposables.add({
+        dispose() {
+            observer.disconnect();
+            configurationDisposable.dispose();
+        }
+    });
 }
 
 function scmToolkitAttachCommitSettings(widget, button) {
@@ -407,11 +459,129 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
     };
 }
 
+function scmToolkitChatgptConversationSource(doc) {
+    const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+    const pattern = new RegExp('^https://chatgpt\\.com/c/(' + uuid + ')(?:[/?#]|$)', 'i');
+    for (const input of doc.querySelectorAll('input')) {
+        if (typeof input.getClientRects === 'function' && !input.getClientRects().length) continue;
+        const match = String(input.value ?? '').trim().match(pattern);
+        if (!match) continue;
+        return {
+            kind: 'chatgpt',
+            uuid: match[1],
+            url: `https://chatgpt.com/c/${match[1]}`,
+        };
+    }
+    return undefined;
+}
+
+function scmToolkitGithubCoordinates(repositoryUrl) {
+    const match = String(repositoryUrl ?? '').trim().match(
+        /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/?$/i
+    );
+    return match ? { owner: match[1], repo: match[2] } : undefined;
+}
+
+function scmToolkitMcpError(result) {
+    return result?.content?.find(
+        item => item?.type === 'text' && typeof item.text === 'string'
+    )?.text || 'The Kafania MCP tool returned an error.';
+}
+
+async function scmToolkitWaitForMcpTool(doc, server, toolName) {
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        const tool = server.tools?.get?.().find(
+            candidate => candidate.definition?.name === toolName
+        );
+        if (tool) return tool;
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 100) : setTimeout(resolve, 100)));
+    }
+    return undefined;
+}
+
+async function scmToolkitKafaniaTool(doc, mcpService, serverName, toolName) {
+    if (!mcpService?.activateCollections || !mcpService?.servers?.get) return undefined;
+    await mcpService.activateCollections();
+    const wantedServer = String(serverName ?? '').toLowerCase();
+    const server = mcpService.servers.get().find(candidate => {
+        const metadata = candidate.serverMetadata?.get?.();
+        return [
+            candidate.definition?.id,
+            candidate.definition?.label,
+            metadata?.serverName,
+        ].some(name => String(name ?? '').toLowerCase() === wantedServer);
+    });
+    if (!server) return undefined;
+    await server.start({ promptType: 'all-untrusted' });
+    return scmToolkitWaitForMcpTool(doc, server, toolName);
+}
+
+async function scmToolkitWaitForChatgptConversationSource(doc, initialUuid) {
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+        const source = scmToolkitChatgptConversationSource(doc);
+        if (source && source.uuid !== initialUuid) return source;
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 250) : setTimeout(resolve, 250)));
+    }
+    return undefined;
+}
+
+async function scmToolkitRecordPullRequestSource(
+    doc,
+    mcpService,
+    settings,
+    launch,
+    branch,
+    base,
+    initialSource
+) {
+    const github = scmToolkitGithubCoordinates(launch?.repositoryUrl);
+    if (!github) return false;
+
+    let source = launch?.source || initialSource;
+    if (!source) {
+        source = await scmToolkitWaitForChatgptConversationSource(doc);
+    }
+    if (!source) return false;
+
+    const tool = await scmToolkitKafaniaTool(
+        doc,
+        mcpService,
+        settings.mcpPrServer,
+        'github_comment_pull_request_source'
+    );
+    if (!tool) return false;
+
+    const win = doc.defaultView;
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+        const result = await tool.call({
+            owner: github.owner,
+            repo: github.repo,
+            head: branch,
+            base,
+            source,
+        });
+        if (!result?.isError) return true;
+        const error = scmToolkitMcpError(result);
+        if (!/No open pull request found/i.test(error)) {
+            throw new Error(error);
+        }
+        await new Promise(resolve => (win ? win.setTimeout(resolve, 2000) : setTimeout(resolve, 2000)));
+    }
+    return false;
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);
-    if (settings.commitButtonLabel) {
-        scmToolkitCustomizeCommitButtonLabel(widget, settings.commitButtonLabel);
+    if (settings.commitButtonLabel || settings.commitAndSendButtonLabel) {
+        scmToolkitCustomizeCommitButtonLabel(
+            widget,
+            configuration,
+            settings.commitButtonLabel,
+            settings.commitAndSendButtonLabel
+        );
     }
     const homeButton = doc.createElement('button');
     homeButton.type = 'button';
@@ -769,7 +939,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
         pullRequestTooltip.textContent = branch === settings.defaultBranch
             ? `${settings.defaultBranch} is the pull-request base branch`
-            : `Draft a pull request for ${branch ?? 'the current branch'} in ChatGPT`;
+            : `Draft a pull request for ${branch ?? 'the current branch'} with Kafania in ChatGPT`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -791,11 +961,24 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         creatingPullRequest = true;
         refreshBranchControls();
         try {
-            await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
+            const source = scmToolkitChatgptConversationSource(doc);
+            const launch = await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
                 branch,
                 base: settings.defaultBranch,
                 remote: settings.remote,
+                mcpServer: settings.mcpPrServer,
+                mcpTool: settings.mcpPrTool,
+                source,
             });
+            void scmToolkitRecordPullRequestSource(
+                doc,
+                mcpService,
+                settings,
+                launch,
+                branch,
+                settings.defaultBranch,
+                source
+            ).catch(error => notifications.error(error));
         } catch (error) {
             notifications.error(error);
         } finally {
