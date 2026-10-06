@@ -115,8 +115,8 @@ async function run() {
   assert.equal(await hiddenPending, 'Retained conversation', 'Source Control can hide Codex without losing context');
 
   provider.sidebarViews.clear();
-  await assert.rejects(
-    registered.get('scmToolkit.readCodexConversation')(),
+  assert.throws(
+    () => registered.get('scmToolkit.readCodexConversation')(),
     /Open a Codex conversation/
   );
   disposable.dispose();

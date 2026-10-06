@@ -92,6 +92,8 @@ async function run() {
     setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
     clearTimeout: id => timers.delete(id), window: {addEventListener() {}}};
   vm.runInNewContext(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1], page);
+  assert.equal(page.contrastCheckColor('rgb(255, 255, 255)'), '#000');
+  assert.equal(page.contrastCheckColor('rgba(0, 0, 0, 0.5)'), '#fff');
   const query = elements.get('query'); const form = elements.get('search'); const idle = elements.get('idle');
   assert.equal(idle.hidden, false, 'logo is visible when the search term is empty');
   query.value = 'app'; query.listeners.input();

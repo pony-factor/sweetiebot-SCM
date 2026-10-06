@@ -206,6 +206,7 @@ async function run() {
     uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
     url: 'https://chatgpt.com/c/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
   };
+  const recorded = [];
   const sandbox = vm.createContext({
     doc: {},
     currentBranch: 'draft',
@@ -222,7 +223,7 @@ async function run() {
     creatingPullRequest: false,
     creatingPonyBranch: false,
     scmToolkitChatgptConversationSource() { return pickerSource; },
-    recorded: [],
+    recorded,
     async scmToolkitRecordPullRequestSource(_doc, _mcpService, _settings, launch, branch, base, source) {
       recorded.push({ launch, branch, base, source });
     },

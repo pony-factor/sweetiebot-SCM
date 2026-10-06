@@ -244,7 +244,7 @@ class SubmissionTests(unittest.TestCase):
 
         self.assertNotIn('<script>alert("x")</script>', page)
         self.assertIn("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;", page)
-        self.assertIn('<option value="local:model">', page)
+        self.assertIn('let installedModels = ["local:model"];', page)
         self.assertIn("/save?token=test-token", page)
         self.assertIn("importKey ? '/save' : '/autosave'", page)
         self.assertIn('id="save-status"', page)
