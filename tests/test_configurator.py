@@ -248,6 +248,22 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("/save?token=test-token", page)
         self.assertIn("importKey ? '/save' : '/autosave'", page)
         self.assertIn('id="save-status"', page)
+        self.assertIn('class="settings-layout"', page)
+        self.assertIn('class="settings-tabs" role="tablist" aria-orientation="vertical"', page)
+        self.assertIn("function activateSettingsCategory", page)
+        tab_markup = page.split('<button class="settings-tab"')[1:]
+        panel_markup = page.split('<section class="settings-panel"')[1:]
+        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS))
+        self.assertEqual(len(tab_markup), expected_sections)
+        self.assertEqual(len(panel_markup), expected_sections)
+        self.assertEqual(
+            sum('aria-selected="true"' in item.split('>', 1)[0] for item in tab_markup),
+            1,
+        )
+        self.assertEqual(
+            sum(' hidden' not in item.split('>', 1)[0] for item in panel_markup),
+            1,
+        )
         self.assertNotIn('value="cancel"', page)
         self.assertIn("G4 ponies", page)
         self.assertIn('name="branchNamePack"', page)
