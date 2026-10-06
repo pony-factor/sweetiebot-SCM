@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import subprocess
 
+from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON
+
 
 DEFAULT_SETTINGS = {
     "branchPicker": True,
+    "messageBarLayout": DEFAULT_MESSAGE_BAR_LAYOUT_JSON,
     "ponyBranch": True,
     "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining",
     "branchCustomNames": "",
@@ -131,6 +134,7 @@ def load_settings():
 
 SETTING_KEYS = {
     "branchPicker": "scm-toolkit.branch-picker",
+    "messageBarLayout": "scm-toolkit.message-bar-layout",
     "ponyBranch": "scm-toolkit.pony-branch",
     "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",
     "branchCustomNames": "scm-toolkit.branch-custom-names",
