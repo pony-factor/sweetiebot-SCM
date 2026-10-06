@@ -48,7 +48,7 @@ SETTINGS = (
     Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
     Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
-    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically restore app customizations", "Restore Sweetie Bot patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
+    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
     Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Source control"),

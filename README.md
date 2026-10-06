@@ -44,7 +44,7 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 - GnuPG, only if you want the configurator to import a PGP signing key
 - Ollama is required for local AI commit-title generation and semantic Workspace Search; exact Workspace Search still works if embeddings are unavailable
 
-The installer modifies the installed VS Code workbench files. VS Code updates can replace those files. After installing this version once, the companion extension automatically restores supported patches at startup, after extension changes, and every five minutes. VS Code may also show an installation-integrity warning after its application files are modified.
+The installer modifies the installed VS Code workbench files. VS Code updates can replace those files. After installing this version once, the companion extension automatically restores supported patches at startup, after extension changes, and every hour. VS Code may also show an installation-integrity warning after its application files are modified.
 
 ## Repository layout
 
@@ -77,11 +77,11 @@ git clone https://github.com/JFWooten4/custom-vscode-scm-toolkit.git
 cd custom-vscode-scm-toolkit
 ```
 
-Automatic repair uses the bundled patch definitions and your saved settings; it does not download new Sweetie Bot releases. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful repair offers **Reload Window**; it never reloads your work automatically. Turn it off with **Automatically restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
+Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour. It downloads source files into an isolated cache, updates the companion extension and tools, and restores customizations using your saved settings. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair offers **Reload Window**; it never reloads your work automatically. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
 
-Repair is serialized across windows and skips companion-extension installation. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require an updated Sweetie Bot release.
+Updates and repairs are serialized across windows. Routine repair skips companion-extension installation; a new toolkit revision updates it too. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require a compatible Sweetie Bot release, which is fetched automatically once published to `main`.
 
-The checked-in signed installer app must be rebuilt on macOS with the existing signing identity to distribute this change; editing its bundled files directly invalidates the signature. Existing users need one installation of the rebuilt app (or `python3 scripts/install.py` from this checkout) to enable automatic repair.
+The signed installer app includes the update bootstrap for first-time installation. Existing installations with this bootstrap update themselves; you do not need to retain or rerun the installer. Older installations need the bootstrap installed once.
 
 Validate that the currently installed VS Code build matches the guarded patch anchors without changing anything:
 

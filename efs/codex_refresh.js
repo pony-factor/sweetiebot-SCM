@@ -37,7 +37,7 @@ function registerCodexRefresh(vscode, context) {
       if (!disposed && !timedOut && code === 0 && /^Installed SCM toolkit /m.test(stdout) && !reloadOffered) {
         reloadOffered = true;
         void vscode.window.showInformationMessage(
-          'Sweetie Bot restored your app customizations. Reload this window to apply them.',
+          'Sweetie Bot updated or restored your app customizations. Reload this window to apply them.',
           'Reload Window'
         ).then(choice => {
           if (!disposed && choice === 'Reload Window') return vscode.commands.executeCommand('workbench.action.reloadWindow');
@@ -57,7 +57,7 @@ function registerCodexRefresh(vscode, context) {
     if (!disposed) timer = setTimeout(refresh, 2000);
   };
   // Periodic checks also catch updates missed while this extension was inactive.
-  const interval = setInterval(schedule, 5 * 60 * 1000);
+  const interval = setInterval(schedule, 60 * 60 * 1000);
   context.subscriptions.push(output, vscode.extensions.onDidChange(schedule),
     vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('scmToolkit.automaticAppRepair')) schedule();

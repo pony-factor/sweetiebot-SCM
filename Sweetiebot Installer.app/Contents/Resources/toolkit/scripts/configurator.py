@@ -45,8 +45,10 @@ SETTINGS = (
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Source control"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Source control"),
     Setting("shortPlaceholder", "scm-toolkit.short-placeholder", "Short message placeholder", "Use Message instead of the longer built-in placeholder.", "Source control"),
-    Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action. Leave blank to keep VS Code's label.", "Source control", "text"),
+    Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
+    Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
+    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
     Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Source control"),
@@ -92,7 +94,7 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT in the Integrated Browser with a prompt explaining the current branch's intent and effects.", "Pull requests"),
+    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT with the sibling Kafania drafting rules and publish through the configured Kafania MCP tool.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "Configured MCP server name for pull-request integrations.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
@@ -102,7 +104,7 @@ SETTINGS = (
     Setting("codexInlineLocation", "scm-toolkit.codex-inline-location", "Computer and usage beside access", "Move the native computer and usage control beside the access icon.", "Codex"),
     Setting("codexSendBackground", "scm-toolkit.codex-send-background", "Send button background", "Hex color for the Codex send button. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon. Leave blank to use the theme.", "Codex", "color"),
-    Setting("codexComposerLabelColor", "scm-toolkit.codex-composer-label-color", "Composer label text", "Hex color for Full access and Work locally controls. Leave blank to use the theme.", "Codex", "color"),
+    Setting("codexComposerLabelColor", "scm-toolkit.codex-composer-label-color", "Composer control color", "Hex color for Full access, Work locally, and the + add-context control. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),
     Setting("chatgptCustomInstructions", "scm-toolkit.chatgpt-custom-instructions", "Codex personalization", "Keep a local copy of your ChatGPT web instructions and mirror them into the global personalization used by the Codex VS Code extension.", "Codex", "textarea"),
     Setting("codexHideDictation", "scm-toolkit.codex-hide-dictation", "Hide dictation button", "Hide the microphone dictation control in Codex chat.", "Codex"),
@@ -298,29 +300,58 @@ def _pack_controls(current: dict[str, object]) -> str:
     except ValueError:
         catalog = load_catalog()
 
-    controls = []
-    for pack in catalog["packs"]:
+    hidden_inputs = []
+    tabs = []
+    panels = []
+    for index, pack in enumerate(catalog["packs"]):
         pack_id = str(pack["id"])
+        label = str(pack["label"])
+        description = str(pack.get("description", "")).strip()
+        names = [str(name) for name in pack["names"]]
+        count = len(names)
         checked = "" if pack_id in disabled else " checked"
-        description = str(pack.get("description", ""))
-        count = len(pack["names"])
-        detail = f"{description} {count} name{'s' if count != 1 else ''}.".strip()
         escaped_id = html.escape(pack_id, quote=True)
-        controls.append(
+        selected = "true" if index == 0 else "false"
+        tab_index = "0" if index == 0 else "-1"
+        hidden = "" if index == 0 else " hidden"
+        description_html = html.escape(description or "No description provided.")
+        names_html = "".join(
+            f'<code class="pack-name">{html.escape(name)}</code>'
+            for name in names
+        )
+        hidden_inputs.append(
             f'<input type="hidden" name="branchNameKnownPack" value="{escaped_id}">'
-            f'<label class="pack-card" title="{html.escape(detail, quote=True)}">'
+        )
+        tabs.append(
+            f'<button type="button" class="pack-tab" role="tab" '
+            f'id="pack-tab-{escaped_id}" data-pack-id="{escaped_id}" '
+            f'aria-controls="pack-panel-{escaped_id}" aria-selected="{selected}" '
+            f'tabindex="{tab_index}"><strong>{html.escape(label)}</strong>'
+            f'<small>{count}</small></button>'
+        )
+        panels.append(
+            f'<section class="pack-panel" role="tabpanel" id="pack-panel-{escaped_id}" '
+            f'data-pack-id="{escaped_id}" aria-labelledby="pack-tab-{escaped_id}"{hidden}>'
+            '<div class="pack-panel-head"><span>'
+            f'<strong>{html.escape(label)}</strong><small>{description_html}</small></span>'
+            '<label class="pack-enable">'
             f'<input type="checkbox" name="branchNamePack" value="{escaped_id}"{checked}>'
-            f'<span><strong>{html.escape(str(pack["label"]))}</strong>'
-            f'<small>{count} names</small></span></label>'
+            '<span>Use this bundle</span></label></div>'
+            f'<div class="pack-name-heading"><span>{count} name{"s" if count != 1 else ""}</span>'
+            '<small>These are the branch names this bundle can generate.</small></div>'
+            f'<div class="pack-names">{names_html}</div></section>'
         )
     return (
         '<fieldset class="pack-picker"><legend>Name bundles</legend>'
-        '<p>Choose the bundles to draw branch names from.</p>'
+        '<p>Browse each bundle before deciding whether it belongs in the random branch-name pool.</p>'
         '<div class="pack-toolbar"><input type="search" id="pack-search" '
-        'aria-label="Find name bundles" placeholder="Find a bundle…">'
+        'aria-label="Find name bundles or names" placeholder="Find a bundle or name…">'
         '<output id="pack-count" aria-live="polite"></output></div>'
-        '<div class="pack-grid">' + "".join(controls) + '</div>'
-        '<p id="pack-empty" hidden>No matching bundles.</p></fieldset>'
+        + "".join(hidden_inputs)
+        + '<div class="pack-tabs" role="tablist" aria-label="Branch name bundles">'
+        + "".join(tabs) + '</div>'
+        + '<div class="pack-panels">' + "".join(panels) + '</div>'
+        + '<p id="pack-empty" hidden>No bundles or names match that search.</p></fieldset>'
     )
 
 
@@ -403,7 +434,13 @@ def _setting_control(setting: Setting, current: object) -> str:
             '<div class="setting field-row model-row">'
             f'<span><label for="{name}"><strong>{label}</strong></label><small>{description}</small>'
             f'<small class="model-status" data-model="{name}" role="status"></small></span>'
-            f'<input id="{name}"{attrs} name="{name}" value="{value}"{list_attr}{required}>'
+            f'<div class="model-picker" data-model-picker="{name}">'
+            f'<input id="{name}"{attrs} name="{name}" value="{value}"{required} autocomplete="off" '
+            f'role="combobox" aria-autocomplete="list" aria-expanded="false" '
+            f'aria-controls="{name}-options">'
+            f'<button type="button" class="model-picker-toggle" data-model="{name}" '
+            f'aria-label="Choose {label}" aria-expanded="false">▾</button>'
+            f'<div id="{name}-options" class="model-options" role="listbox" hidden></div></div>'
             f'<button type="button" class="download-model" data-model="{name}">Download</button></div>'
         )
     return (
@@ -449,7 +486,6 @@ def render_form(
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
         sections.append(f'<section><h2>{html.escape(section)}</h2>{status}{controls}</section>')
 
-    options = "".join(f'<option value="{html.escape(model, quote=True)}"></option>' for model in models)
     error_html = f'<div class="error" role="alert">{html.escape(error)}</div>' if error else ""
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
@@ -462,14 +498,14 @@ def render_form(
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 main{{width:min(880px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 section{{margin:16px 0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}h2{{font-size:16px;margin:10px 0}}
-.setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px}}.model-row input{{width:min(280px,38%)}}.model-row button{{flex:none}}button:disabled{{opacity:.6;cursor:default}}
+.setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
 .field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
-.pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;max-height:320px;overflow:auto;padding:3px}}.pack-card{{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg);transition:border-color .15s,background .15s}}.pack-card:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg))}}.pack-card:has(input:focus-visible){{outline:2px solid var(--accent);outline-offset:1px}}.pack-card input{{accent-color:var(--accent);width:16px;height:16px;flex:none}}.pack-card[hidden]{{display:none}}.pack-card strong{{font-size:13px}}.pack-card small{{font-size:12px}}
-@media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
+.pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
+@media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
 </style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
-{error_html}<form method="post" action="{action}">{''.join(sections)}<datalist id="ollama-models">{options}</datalist>
+{error_html}<form method="post" action="{action}">{''.join(sections)}
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 const settingsForm = document.querySelector('form');
@@ -549,27 +585,213 @@ if (settingsForm) {{
 }}
 
 const packSearch = document.getElementById('pack-search');
-const packCards = [...document.querySelectorAll('.pack-card')];
+const packTabs = [...document.querySelectorAll('.pack-tab')];
+const packPanels = [...document.querySelectorAll('.pack-panel')];
+let activePackId = packTabs.find(tab => tab.getAttribute('aria-selected') === 'true')?.dataset.packId || '';
+
+function packPanel(id) {{
+  return packPanels.find(panel => panel.dataset.packId === id);
+}}
+
+function activatePack(id, focus = false) {{
+  const nextTab = packTabs.find(tab => tab.dataset.packId === id && !tab.hidden);
+  if (!nextTab) return;
+  activePackId = id;
+  for (const tab of packTabs) {{
+    const active = tab === nextTab;
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
+  }}
+  for (const panel of packPanels) panel.hidden = panel.dataset.packId !== id;
+  if (focus) nextTab.focus();
+}}
+
 function updatePacks() {{
   const query = packSearch.value.trim().toLocaleLowerCase();
   let visible = 0;
   let selected = 0;
-  for (const card of packCards) {{
-    card.hidden = !card.textContent.toLocaleLowerCase().includes(query);
-    if (!card.hidden) visible++;
-    if (card.querySelector('input').checked) selected++;
+  for (const tab of packTabs) {{
+    const panel = packPanel(tab.dataset.packId);
+    const searchable = (tab.textContent + ' ' + (panel?.textContent || '')).toLocaleLowerCase();
+    tab.hidden = !!query && !searchable.includes(query);
+    if (!tab.hidden) visible++;
+    const checkbox = panel?.querySelector('input[name="branchNamePack"]');
+    const enabled = !!checkbox?.checked;
+    tab.classList.toggle('is-enabled', enabled);
+    if (enabled) selected++;
   }}
-  document.getElementById('pack-count').textContent = `${{selected}} / ${{packCards.length}} selected`;
+  const activeTab = packTabs.find(tab => tab.dataset.packId === activePackId);
+  if (!activeTab || activeTab.hidden) {{
+    const firstVisible = packTabs.find(tab => !tab.hidden);
+    if (firstVisible) activatePack(firstVisible.dataset.packId);
+    else for (const panel of packPanels) panel.hidden = true;
+  }}
+  document.getElementById('pack-count').textContent = `${{selected}} / ${{packTabs.length}} selected`;
   document.getElementById('pack-empty').hidden = visible > 0;
 }}
+
 if (packSearch) {{
   packSearch.addEventListener('input', updatePacks);
-  for (const card of packCards) card.addEventListener('change', updatePacks);
+  for (const tab of packTabs) {{
+    tab.addEventListener('click', () => activatePack(tab.dataset.packId));
+    tab.addEventListener('keydown', event => {{
+      const visibleTabs = packTabs.filter(item => !item.hidden);
+      const index = visibleTabs.indexOf(tab);
+      let nextIndex = index;
+      if (event.key === 'ArrowRight') nextIndex = (index + 1) % visibleTabs.length;
+      else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + visibleTabs.length) % visibleTabs.length;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = visibleTabs.length - 1;
+      else return;
+      event.preventDefault();
+      activatePack(visibleTabs[nextIndex].dataset.packId, true);
+    }});
+  }}
+  for (const panel of packPanels) {{
+    panel.querySelector('input[name="branchNamePack"]')?.addEventListener('change', updatePacks);
+  }}
   updatePacks();
 }}
 
 let installedModels = {models_json};
 const normalizeModel = name => name.split('/').pop().includes(':') ? name : name + ':latest';
+const modelPickers = [...document.querySelectorAll('.model-picker')];
+
+function modelInput(picker) {{
+  return picker.querySelector('input[role="combobox"]');
+}}
+
+function closeModelPicker(picker) {{
+  const input = modelInput(picker);
+  const toggle = picker.querySelector('.model-picker-toggle');
+  const options = picker.querySelector('.model-options');
+  options.hidden = true;
+  input.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-expanded', 'false');
+}}
+
+function focusModelInput(picker) {{
+  const input = modelInput(picker);
+  if (document.activeElement === input) return;
+  picker.dataset.suppressOpen = 'true';
+  input.focus();
+}}
+
+function renderModelOptions(picker, filter = '') {{
+  const input = modelInput(picker);
+  const options = picker.querySelector('.model-options');
+  const needle = filter.trim().toLocaleLowerCase();
+  const matches = installedModels.filter(name => !needle || name.toLocaleLowerCase().includes(needle));
+  options.replaceChildren();
+  if (!matches.length) {{
+    const empty = document.createElement('div');
+    empty.className = 'model-option-empty';
+    empty.textContent = installedModels.length
+      ? 'No installed models match. You can still enter a model tag manually.'
+      : 'No installed models. You can still enter a model tag manually.';
+    options.append(empty);
+  }} else {{
+    for (const name of matches) {{
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'model-option';
+      option.setAttribute('role', 'option');
+      option.dataset.value = name;
+      option.textContent = name;
+      option.setAttribute(
+        'aria-selected',
+        normalizeModel(name) === normalizeModel(input.value.trim()) ? 'true' : 'false'
+      );
+      options.append(option);
+    }}
+  }}
+}}
+
+function openModelPicker(picker, filter = '') {{
+  const input = modelInput(picker);
+  const toggle = picker.querySelector('.model-picker-toggle');
+  const options = picker.querySelector('.model-options');
+  renderModelOptions(picker, filter);
+  options.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+  toggle.setAttribute('aria-expanded', 'true');
+}}
+
+function chooseModel(picker, value) {{
+  const input = modelInput(picker);
+  input.value = value;
+  input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  closeModelPicker(picker);
+  focusModelInput(picker);
+}}
+
+for (const picker of modelPickers) {{
+  const input = modelInput(picker);
+  const toggle = picker.querySelector('.model-picker-toggle');
+  const options = picker.querySelector('.model-options');
+
+  input.addEventListener('focus', () => {{
+    if (picker.dataset.suppressOpen) {{
+      delete picker.dataset.suppressOpen;
+      return;
+    }}
+    openModelPicker(picker);
+  }});
+  input.addEventListener('input', () => openModelPicker(picker, input.value));
+  input.addEventListener('keydown', event => {{
+    if (event.key === 'Escape') {{
+      closeModelPicker(picker);
+      return;
+    }}
+    if (event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    openModelPicker(picker);
+    options.querySelector('.model-option')?.focus();
+  }});
+
+  toggle.addEventListener('mousedown', event => event.preventDefault());
+  toggle.addEventListener('click', () => {{
+    if (options.hidden) {{
+      openModelPicker(picker);
+      input.focus();
+    }} else {{
+      closeModelPicker(picker);
+      focusModelInput(picker);
+    }}
+  }});
+
+  options.addEventListener('mousedown', event => event.preventDefault());
+  options.addEventListener('click', event => {{
+    const option = event.target.closest('.model-option');
+    if (option) chooseModel(picker, option.dataset.value);
+  }});
+  options.addEventListener('keydown', event => {{
+    const option = event.target.closest('.model-option');
+    if (!option) return;
+    const choices = [...options.querySelectorAll('.model-option')];
+    const index = choices.indexOf(option);
+    if (event.key === 'Enter' || event.key === ' ') {{
+      event.preventDefault();
+      chooseModel(picker, option.dataset.value);
+    }} else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {{
+      event.preventDefault();
+      const offset = event.key === 'ArrowDown' ? 1 : -1;
+      choices[(index + offset + choices.length) % choices.length]?.focus();
+    }} else if (event.key === 'Escape') {{
+      event.preventDefault();
+      closeModelPicker(picker);
+      focusModelInput(picker);
+    }}
+  }});
+}}
+
+document.addEventListener('pointerdown', event => {{
+  for (const picker of modelPickers) {{
+    if (!picker.contains(event.target)) closeModelPicker(picker);
+  }}
+}});
+
 function updateModelRows() {{
   for (const button of document.querySelectorAll('.download-model')) {{
     const input = document.getElementById(button.dataset.model);
@@ -610,8 +832,9 @@ for (const button of document.querySelectorAll('.download-model')) {{
       if (!success) throw new Error('Download interrupted. Retry to resume.');
       const list = await fetch('/models' + location.search).then(r => r.json());
       installedModels = list.models;
-      const choices = document.getElementById('ollama-models'); choices.replaceChildren();
-      for (const name of installedModels) {{ const option = document.createElement('option'); option.value = name; choices.append(option); }}
+      for (const picker of modelPickers) {{
+        if (!picker.querySelector('.model-options').hidden) renderModelOptions(picker);
+      }}
       delete button.dataset.busy;
       updateModelRows();
     }} catch (error) {{ status.textContent = 'Could not download: ' + error.message; button.disabled = false; }}

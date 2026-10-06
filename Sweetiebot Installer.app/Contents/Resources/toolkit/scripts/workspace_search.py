@@ -95,7 +95,7 @@ def source_files() -> dict[Path, Path]:
     files[Path("branch_name_packs.json")] = HERE / "branch_name_packs.json"
     files[Path("chatgpt_integration.py")] = HERE / "chatgpt_integration.py"
     # Preserve the installer's relative asset layout for update-time repair.
-    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"})):
+    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md"})):
         for source in (HERE.parent / directory).rglob("*"):
             if source.is_file() and source.suffix in suffixes:
                 files[Path("codex-customizations") / source.relative_to(HERE.parent)] = source

@@ -15,6 +15,7 @@
   "activationEvents": [
     "onCommand:scmToolkit.returnHome",
     "onCommand:scmToolkit.openPullRequestChat",
+    "onCommand:scmToolkit.openPullRequestBatchChat",
     "onCommand:scmToolkit.prepareCodexCommit",
     "onCommand:scmToolkit.generateCodexCommitMessage",
     "onCommand:scmToolkit.createBranch",
@@ -27,7 +28,8 @@
     "onStartupFinished",
     "onCommand:scmToolkit.workspaceSearch.clearIndex",
     "onCommand:scmToolkit.chatgpt.searchRepositories",
-    "onCommand:scmToolkit.squashMergePullRequest"
+    "onCommand:scmToolkit.squashMergePullRequest",
+    "onUri"
   ],
   "contributes": {
     "views": {
@@ -61,6 +63,11 @@
         "command": "scmToolkit.squashMergeSelectedPullRequest",
         "title": "Squash and Merge into main",
         "icon": "$(git-merge)"
+      },
+      {
+        "command": "scmToolkit.openPullRequestBatchChat",
+        "title": "Squash Selected Pull Requests with ChatGPT",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
@@ -69,6 +76,11 @@
           "command": "scmToolkit.workspaceSearch.clearIndex",
           "when": "view == scmToolkit.workspaceSearch",
           "group": "navigation@1"
+        },
+        {
+          "command": "scmToolkit.openPullRequestBatchChat",
+          "when": "view == pr:github && !isWeb",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -174,6 +186,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show an inline button to squash and merge a GitHub pull request into main without opening it."
+        },
+        "scmToolkit.automaticAppRepair": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "description": "Automatically install Sweetie Bot updates from main and restore customizations after VS Code and extension updates. Reload when prompted to apply changes."
         }
       }
     }

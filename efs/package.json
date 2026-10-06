@@ -191,7 +191,7 @@
           "type": "boolean",
           "default": true,
           "scope": "machine",
-          "description": "Automatically restore installed Sweetie Bot customizations after VS Code and extension updates. Reload when prompted to use restored patches."
+          "description": "Automatically install Sweetie Bot updates from main and restore customizations after VS Code and extension updates. Reload when prompted to apply changes."
         }
       }
     }
