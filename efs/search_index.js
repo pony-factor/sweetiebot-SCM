@@ -6,7 +6,7 @@ const { chunkText, keywordScore, bestMatchingLine, cosine } = require('./core');
 const { extractText } = require('./extract');
 const { embedTexts } = require('./ollama');
 
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;
 
 function workspaceKey() {
   const folders = (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.toString()).sort().join('\n');
