@@ -52,6 +52,20 @@ function matchSweetiebotPonyCatalog(branch, catalog) {
     };
     const source = typeof pack?.sources?.[slug] === 'string' ? pack.sources[slug].trim() : '';
     if (source) match.source = source;
+    const images = Array.isArray(pack?.images?.[slug])
+      ? pack.images[slug].flatMap(item => {
+          const candidate = typeof item === 'string' ? { url: item } : item;
+          const url = String(candidate?.url || '').trim();
+          if (!/^https:\/\//i.test(url)) return [];
+          const image = { url };
+          const label = String(candidate?.label || '').trim();
+          const kind = String(candidate?.kind || '').trim();
+          if (label) image.label = label;
+          if (kind) image.kind = kind;
+          return [image];
+        })
+      : [];
+    if (images.length) match.images = images;
     return match;
   }
   return undefined;

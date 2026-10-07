@@ -6,6 +6,7 @@ const {
   PonyProfileViewProvider,
   STATE_KEY,
   displayName,
+  normalizeImageIndex,
   normalizePonyProfile,
 } = require('../efs/pony_profile');
 
@@ -14,6 +15,13 @@ async function run() {
   assert.equal(displayName('moon-dancer'), 'Moon Dancer');
   assert.equal(normalizePonyProfile(undefined), undefined);
   assert.equal(normalizePonyProfile({}), undefined);
+  assert.deepEqual(
+    normalizeImageIndex([
+      { url: 'https://www.twibooru.org/107469', label: 'Twibooru #107469', kind: 'show screenshot' },
+      { url: 'javascript:alert(1)', label: 'Unsafe' }
+    ]),
+    [{ url: 'https://www.twibooru.org/107469', label: 'Twibooru #107469', kind: 'show screenshot' }]
+  );
 
   assert.deepEqual(
     normalizePonyProfile({
@@ -74,7 +82,8 @@ async function run() {
     slug: 'berry-punch',
     packId: 'g4-mares',
     packLabel: 'G4 mares',
-    source: 'https://example.com/berry'
+    source: 'https://example.com/berry',
+    images: [{ url: 'https://www.twibooru.org/107469', label: 'Twibooru #107469', kind: 'show screenshot' }]
   });
   assert.equal(profile.name, 'Berry Punch');
   assert.equal(updates.at(-1).key, STATE_KEY);
@@ -82,7 +91,9 @@ async function run() {
   assert.equal(posted.at(-1).profile.slug, 'berry-punch');
 
   await listeners[0]({ type: 'openSource' });
-  assert.deepEqual(external, ['https://example.com/berry']);
+  await listeners[0]({ type: 'openImage', index: 0 });
+  await listeners[0]({ type: 'openImage', index: 99 });
+  assert.deepEqual(external, ['https://example.com/berry', 'https://www.twibooru.org/107469']);
 
   await listeners[0]({ type: 'clear' });
   assert.equal(updates.at(-1).value, undefined);

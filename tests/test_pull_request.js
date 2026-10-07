@@ -35,6 +35,14 @@ async function run() {
   assert.equal(berryPunch.packLabel, 'G4 mares');
   assert.equal(matchSweetiebotPonyCatalog('not-a-sweetiebot-pony', ponyCatalog), undefined);
   assert.equal((await readSweetiebotPony('berry-punch')).packId, 'g4-mares');
+  const honeyDrop = matchSweetiebotPonyCatalog('honey-drop', ponyCatalog);
+  assert.equal(honeyDrop.packId, 'g4-fillies');
+  assert.deepEqual(honeyDrop.images, [{
+    url: 'https://www.twibooru.org/107469',
+    label: 'Twibooru #107469',
+    kind: 'show screenshot'
+  }]);
+  assert.equal((await readSweetiebotPony('honey-drop')).images[0].url, 'https://www.twibooru.org/107469');
 
   const chatSource = {
     kind: 'chatgpt',
