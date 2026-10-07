@@ -165,6 +165,7 @@ git config --global scm-toolkit.cmd-click-close-others false
 git config --global scm-toolkit.browser-chatgpt-home true
 git config --global scm-toolkit.graph-open-working-file true
 git config --global scm-toolkit.ai-commit true
+git config --global scm-toolkit.ai-commit-custom-instructions false
 git config --global scm-toolkit.spellcheck-manual-commit true
 git config --global scm-toolkit.ai-default-branch-description true
 git config --global scm-toolkit.ai-commit-model qwen2.5-coder:7b
@@ -213,6 +214,7 @@ The equivalent `~/.gitconfig` block is:
     browser-chatgpt-home = true
     graph-open-working-file = true
     ai-commit = true
+    ai-commit-custom-instructions = false
     spellcheck-manual-commit = true
     ai-default-branch-description = true
     ai-commit-model = qwen2.5-coder:7b
@@ -316,7 +318,9 @@ Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-
 
 **Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject.
 
-Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other agent instructions are excluded from the generation prompt. Without that preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
+Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other global instructions stay excluded by default. Enable **Sync AI commits with Codex instructions** on the Sweetiebot settings page, or set `scm-toolkit.ai-commit-custom-instructions = true`, to reread the rest of that global custom-instructions file for every generated commit. Synced instructions may shape commit wording and style, but staged changes remain authoritative and the generator still refuses instruction-driven trailers, metadata, or output-format changes.
+
+Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
 ### Concurrent PDF OCR and commit generation
 
