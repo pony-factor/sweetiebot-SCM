@@ -14,6 +14,11 @@ function scmToolkitStripUsageResetTime(value) {
     return result;
 }
 
+// Also catch reset values rendered in child spans without their "Resets" prefix.
+function scmToolkitIsStandaloneTime(value) {
+    return /^(?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m)(?:\s+\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m))*(?:\s+left)?|\d{1,2}:\d{2}\s*(?:AM|PM)?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?|today|tomorrow)$/i.test(String(value || '').trim());
+}
+
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
     let pending = false;
@@ -32,7 +37,12 @@ function scmToolkitStripUsageResetTime(value) {
             }
             const original = String(element.textContent || '');
             if (!original.trim()) continue;
-            const cleaned = scmToolkitStripUsageResetTime(original);
+            const parentText = String(element.parentElement?.textContent || '');
+            const nestedTime = !element.children?.length
+                && scmToolkitIsStandaloneTime(original)
+                && /(?:resets?|renews?|usage limit|rate limit|try again|wait until)/i.test(parentText)
+                && scmToolkitStripUsageResetTime(parentText) !== parentText;
+            const cleaned = nestedTime ? '' : scmToolkitStripUsageResetTime(original);
             if (cleaned === original) continue;
             if (element.children?.length) {
                 // Never erase a parent containing other usage information.
