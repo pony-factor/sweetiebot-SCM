@@ -11,7 +11,7 @@ MESSAGE_BAR_ITEMS = (
     ("sync", "Sync branch"),
     ("delete", "Delete branch"),
     ("separator-1", "Separator 1"),
-    ("autocomplete", "Autocomplete"),
+    ("autocomplete", "Inline code completion"),
     ("codex", "Codex co-author"),
     ("auto-publish", "Auto-publish"),
     ("separator-2", "Separator 2"),

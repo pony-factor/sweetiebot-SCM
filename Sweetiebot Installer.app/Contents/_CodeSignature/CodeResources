@@ -82,7 +82,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		+ONfgnsdpKnWrlbSwC5/JF7ZyC8=
+		siDGj9oWDEgN38inerCU/rkO9k0=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -222,7 +222,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
-		CNGZc4zVoeAEt/vAji22bnUieaQ=
+		gxmESHQzzGcrwI8zXGYgxEgDgMc=
 		</data>
 		<key>Resources/toolkit/scripts/configure.py</key>
 		<data>
@@ -242,11 +242,11 @@
 		</data>
 		<key>Resources/toolkit/scripts/message_bar.py</key>
 		<data>
-		1iR/fyyezOToPGfiIcUC1DO//lE=
+		TdgaDqgykyVF7ybWuSOyfDBNwVQ=
 		</data>
 		<key>Resources/toolkit/scripts/message_bar_configurator.py</key>
 		<data>
-		XMrUTfP1TRNT1fD0zfa9rBxQjLo=
+		MS+bmbDTgXDS16Gf/ckhEi/1k8I=
 		</data>
 		<key>Resources/toolkit/scripts/model_picker.py</key>
 		<data>
@@ -496,11 +496,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			+ONfgnsdpKnWrlbSwC5/JF7ZyC8=
+			siDGj9oWDEgN38inerCU/rkO9k0=
 			</data>
 			<key>hash2</key>
 			<data>
-			CzMqOl3/BC/X8rZUbAOaordrbyU5v8IS62kaRDdNkDM=
+			j+wBOKroB8dvyZH+CK1bk/gDTFUSgelXhDvVOcbpmug=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -881,11 +881,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			CNGZc4zVoeAEt/vAji22bnUieaQ=
+			gxmESHQzzGcrwI8zXGYgxEgDgMc=
 			</data>
 			<key>hash2</key>
 			<data>
-			6eO1IniSqigwdqJmsBNDeeeEZbK7yC9SrywUDZY0zc0=
+			hqlZVzA1hzwXTkOAgVqlv7+PMr0zMl/V3OO7VQiMSA4=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configure.py</key>
@@ -936,22 +936,22 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			1iR/fyyezOToPGfiIcUC1DO//lE=
+			TdgaDqgykyVF7ybWuSOyfDBNwVQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			e+uAGMPO3WwF2BJI2anS1kzLDoqGwecUeSzjB8GkwM4=
+			AMpGAt0DVryxT6BRcBj+cnioJvoKpekOAo2GHVavB6I=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/message_bar_configurator.py</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			XMrUTfP1TRNT1fD0zfa9rBxQjLo=
+			MS+bmbDTgXDS16Gf/ckhEi/1k8I=
 			</data>
 			<key>hash2</key>
 			<data>
-			9ApWKoRcRSLaH2tBl2DNj3vO1jmUelDg0dd5/jZbnhQ=
+			Ib5YzeTyeyxmp3aQaGzd/IdnHm/C/ZWB/M89R/WC3Is=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/model_picker.py</key>

@@ -842,8 +842,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         autocompleteButton.classList.toggle('scm-toolkit-autocomplete-off', !enabled);
         autocompleteButton.setAttribute('aria-pressed', String(!enabled));
         const description = enabled
-            ? 'Turn off inline autocomplete'
-            : 'Turn on inline autocomplete';
+            ? 'Turn off inline code completion'
+            : 'Turn on inline code completion';
         autocompleteButton.setAttribute('aria-label', description);
         autocompleteTooltip.textContent = description;
     };

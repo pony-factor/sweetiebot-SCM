@@ -76,6 +76,14 @@ class MessageBarLayoutTests(unittest.TestCase):
         self.assertIn('id="message-bar-reset"', control)
         self.assertIn('name="messageBarLayout"', control)
 
+    def test_placeholder_is_editable_in_the_preview_and_escaped(self):
+        control = render_message_bar_control(json.dumps(DEFAULT_MESSAGE_BAR_LAYOUT), 'Say "hello" <here>')
+        self.assertIn('name="messagePlaceholder"', control)
+        self.assertIn('value="Say &quot;hello&quot; &lt;here&gt;"', control)
+        self.assertIn('title="Click to edit the message placeholder"', control)
+        empty = render_message_bar_control(json.dumps(DEFAULT_MESSAGE_BAR_LAYOUT), "")
+        self.assertIn('value="" aria-label="Message placeholder"', empty)
+
 
 if __name__ == "__main__":
     unittest.main()

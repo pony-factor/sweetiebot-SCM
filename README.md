@@ -14,7 +14,7 @@ Current features:
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
 - optionally create a branch from `main` using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
-- optionally show a quick toggle for VS Code inline autocomplete
+- optionally show a quick toggle for VS Code inline code completion
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
 - optionally hide the outgoing commit count from the built-in Sync action
@@ -525,11 +525,11 @@ For push mode, the toolkit suppresses VS Code's awaited post-commit push, comple
 
 Disabling the toolkit feature hides the checkbox. It does not silently rewrite an existing `git.postCommitCommand` value.
 
-### Autocomplete toggle
+### Inline code completion
 
 When `autocomplete-toggle` is enabled, the sparkle button appears after the other
 SCM controls. It toggles VS Code's `editor.inlineSuggest.enabled` setting. A slash
-through the sparkle means inline autocomplete is off.
+through the sparkle means inline code completion is off.
 
 ### Source Control label
 

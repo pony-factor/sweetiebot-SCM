@@ -33,7 +33,7 @@ def _item_html(item_id: str, label: str) -> str:
     )
 
 
-def render_message_bar_control(current: object) -> str:
+def render_message_bar_control(current: object, placeholder: object = "Message") -> str:
     try:
         layout = parse_message_bar_layout(current)
     except ValueError:
@@ -59,8 +59,12 @@ def render_message_bar_control(current: object) -> str:
         '<section class="message-bar-tray"><span>Before message</span>'
         f'<div class="message-bar-zone" data-message-bar-zone="before">{render(layout["before"])}</div>'
         '</section>'
-        '<div class="message-bar-fixed"><strong>Message</strong>'
-        '<small>Message field + push checkbox · Commit + settings button stay fixed</small></div>'
+        '<div class="message-bar-fixed"><label for="message-bar-placeholder">Message</label>'
+        f'<input id="message-bar-placeholder" name="messagePlaceholder" '
+        f'value="{html.escape(str(placeholder), quote=True)}" '
+        'aria-label="Message placeholder" title="Click to edit the message placeholder" '
+        'placeholder="VS Code default" autocomplete="off" spellcheck="false">'
+        '</div>'
         '<section class="message-bar-tray"><span>After message</span>'
         f'<div class="message-bar-zone" data-message-bar-zone="after">{render(layout["after"])}</div>'
         '</section></div>'
@@ -91,17 +95,21 @@ MESSAGE_BAR_STYLE = r"""
 .message-bar-separator{border-style:dashed}
 .message-bar-separator::after{content:"";display:block;width:1px;height:18px;margin-left:2px;background:var(--muted)}
 .message-bar-fixed{display:flex;justify-content:flex-start;align-items:center;gap:10px;min-height:48px;padding:10px;border:1px solid var(--accent);border-radius:9px;background:color-mix(in srgb,var(--accent) 8%,var(--panel));text-align:center}
-.message-bar-fixed strong{width:125px;flex:none;text-align:left}.message-bar-fixed small{margin:0;font-size:11px}
+.message-bar-fixed>label{width:125px;flex:none;text-align:left;font-weight:600}
+.message-bar-fixed>input{min-width:0;width:100%;padding:7px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font:inherit;cursor:text}
+.message-bar-fixed:hover>input{border-color:var(--line);background:var(--bg)}
+.message-bar-fixed>input:focus{border-color:var(--accent);background:var(--bg);outline:2px solid var(--accent);outline-offset:1px}
 .message-bar-hidden{margin-top:10px}
 .message-bar-hidden-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .message-bar-hidden-head>span{min-width:0}.message-bar-hidden-head small{margin:2px 0 0}
 .message-bar-hidden-zone{min-height:46px}
-@media(max-width:460px){.message-bar-tray{grid-template-columns:1fr}.message-bar-fixed{flex-wrap:wrap}.message-bar-fixed strong{width:auto}}
+@media(max-width:460px){.message-bar-tray{grid-template-columns:1fr}.message-bar-fixed{flex-wrap:wrap}.message-bar-fixed>label{width:auto}}
 """
 
 
 MESSAGE_BAR_SCRIPT = r"""
 const messageBarLayoutInput = document.getElementById('message-bar-layout');
+document.getElementById('message-bar-placeholder')?.addEventListener('focus', event => event.target.select());
 const messageBarZones = [...document.querySelectorAll('[data-message-bar-zone]')];
 let messageBarItems = [...document.querySelectorAll('[data-message-bar-id]')];
 let draggedMessageBarItem = null;

@@ -47,7 +47,7 @@ SETTINGS = (
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
-    Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Source control", "optional_text"),
+    Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Message bar", "optional_text"),
     Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
     Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
@@ -56,7 +56,7 @@ SETTINGS = (
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Message bar"),
     Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Message bar"),
-    Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Autocomplete toggle", "Show the inline-suggestion switch in the SCM message row.", "Message bar"),
+    Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Inline code completion", "Show the inline code completion switch in the SCM message row.", "Message bar"),
     Setting("autoPublishToggle", "scm-toolkit.auto-publish-toggle", "Auto-publish toggle", "Show the cloud control that publishes newly selected local branches to the configured remote.", "Message bar"),
     Setting("autoPublishNewBranches", "scm-toolkit.auto-publish-new-branches", "Automatically publish new branches", "Publish newly selected local branches to the configured remote. Saved as your VS Code user preference; the cloud control reflects this setting.", "Source control"),
     Setting("automaticBranchCleanup", "scm-toolkit.automatic-branch-cleanup", "Automatically clean merged branches", "Check for merged branches on startup and every ten minutes, and remove eligible local branches.", "Source control"),
@@ -365,6 +365,8 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
+    if setting.name == "messagePlaceholder":
+        return ""
     if setting.kind == "message_bar":
         return render_message_bar_control(current)
 
@@ -485,7 +487,9 @@ def render_form(
         )
         if section == "Message bar":
             layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
-            controls = _setting_control(layout_setting, current.get(layout_setting.name, ""))
+            controls = render_message_bar_control(
+                current.get(layout_setting.name, ""), current.get("messagePlaceholder", "")
+            )
             controls += '<h3>Button options</h3><p class="status">All available buttons appear above, including hidden controls. Sync branch and Home follow the Branch picker setting. Your layout and button preferences are saved on this computer and retained across updates.</p>'
             controls += "".join(
                 _setting_control(setting, current.get(setting.name, ""))
