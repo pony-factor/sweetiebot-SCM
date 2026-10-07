@@ -27,10 +27,9 @@ function pullRequestFromTreeNode(node) {
 }
 
 function installPullRequestRefresh(vscode, view, owner) {
-  owner._register(vscode.commands.registerCommand('scmToolkit.squashMergeSelectedPullRequest', (...args) =>
-    vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', ...args)));
-  // Resolve tree nodes in the extension host that owns the GitHub PR tree.
-  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', async node => {
+  // Sweetiebot owns the public merge commands and their legacy aliases.
+  // Only resolve nodes here, in the extension that owns the GitHub PR tree.
+  owner._register(vscode.commands.registerCommand('sweetiebot.resolveSelectedPullRequest', async node => {
     const selected = node ?? (view.selection?.length === 1 ? view.selection[0] : undefined);
     let model = pullRequestFromTreeNode(selected);
     // Some GitHub nodes expose the PR URI only on their rendered TreeItem.
@@ -41,10 +40,7 @@ function installPullRequestRefresh(vscode, view, owner) {
         // Leave unresolved nodes to the existing actionable error.
       }
     }
-    return vscode.commands.executeCommand(
-      'sweetiebot.squashMergePullRequest',
-      model
-    );
+    return model;
   }));
   let timer;
   let running = false;

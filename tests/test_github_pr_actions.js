@@ -107,14 +107,14 @@ async function main() {
   const errors = [];
   const refreshes = [];
   registerGitHubPullRequestActions({
-    commands: { registerCommand: (id, fn) => { registeredIds.push(id); handler = fn; return { dispose() {} }; },
+    commands: { getCommands: async () => [], registerCommand: (id, fn) => { registeredIds.push(id); handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
     ProgressLocation: { Notification: 15 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message) }
   }, { subscriptions: [] });
   assert.deepEqual(registeredIds, [
-    'sweetiebot.squashMergeSelectedPullRequest',
-    'sweetiebot.squashMergePullRequest'
+    'sweetiebot.squashMergePullRequest',
+    'sweetiebot.squashMergeSelectedPullRequest'
   ]);
   await handler({});
   assert.equal(errors.length, 1);
@@ -122,7 +122,7 @@ async function main() {
   const conflictErrors = [];
   const conflictRefreshes = [];
   registerGitHubPullRequestActions({
-    commands: { registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
+    commands: { getCommands: async () => [], registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async id => conflictRefreshes.push(id) },
     ProgressLocation: { Notification: 15 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => conflictErrors.push(message) }
@@ -137,7 +137,7 @@ async function main() {
   const selected = [];
   const notices = [];
   registerGitHubPullRequestActions({
-    commands: { registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
+    commands: { getCommands: async () => [], registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
     ProgressLocation: { Notification: 15 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message),

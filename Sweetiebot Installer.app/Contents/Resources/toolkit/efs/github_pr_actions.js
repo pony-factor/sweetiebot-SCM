@@ -122,12 +122,19 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
     }
   };
-  for (const command of [
-    'sweetiebot.squashMergeSelectedPullRequest',
-    'sweetiebot.squashMergePullRequest'
-  ]) {
-    context.subscriptions.push(vscode.commands.registerCommand(command, handler));
-  }
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
+    vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', async node => {
+      // The optional GitHub tree patch can resolve selection and rendered items.
+      // Keep direct PR arguments working when that extension is unavailable.
+      const resolver = 'sweetiebot.resolveSelectedPullRequest';
+      const commands = await vscode.commands.getCommands(true);
+      const model = commands.includes(resolver)
+        ? await vscode.commands.executeCommand(resolver, node)
+        : node;
+      return handler(model);
+    })
+  );
 }
 
 module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, registerGitHubPullRequestActions };

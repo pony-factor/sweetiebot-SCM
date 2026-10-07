@@ -21,9 +21,12 @@ async function main() {
       workspace: { getConfiguration: () => ({ get: () => enabled }),
         onDidChangeConfiguration: fn => { configChanged = fn; return { dispose() {} }; } },
       commands: { registerCommand: (id, handler) => {
+        assert(!commands.has(id), `Command ${id} already exists`);
         commands.set(id, handler);
-        if (id === 'sweetiebot.squashMergeSelectedPullRequest') mergeSelected = handler;
-        return { dispose() {} };
+        if (id === 'sweetiebot.resolveSelectedPullRequest') {
+          mergeSelected = async node => merges.push(await handler(node));
+        }
+        return { dispose() { commands.delete(id); } };
       }, executeCommand: (id, arg) => {
         if (commands.has(id)) return commands.get(id)(arg);
         if (id === 'sweetiebot.squashMergePullRequest') { merges.push(arg); return Promise.resolve(); }
@@ -33,7 +36,9 @@ async function main() {
     };
     assert.equal(installPullRequestRefresh(vscode, view, { _register: item => subscriptions.push(item) }), view);
     const url = 'https://github.com/owner/repo/pull/12';
-    await commands.get('scmToolkit.squashMergeSelectedPullRequest')({ url, number: 12 });
+    await mergeSelected({ url, number: 12 });
+    assert(!commands.has('scmToolkit.squashMergeSelectedPullRequest'));
+    assert(!commands.has('sweetiebot.squashMergeSelectedPullRequest'));
     await mergeSelected({ pullRequestModel: { html_url: url, number: 12 } });
     await mergeSelected({ url, number: 12 });
     await mergeSelected({
@@ -53,6 +58,7 @@ async function main() {
     assert.equal(pullRequestFromTreeNode({ remote: { url: 'git@other.example:owner/repo.git' }, number: 12 }).url, undefined);
     assert.deepEqual(pullRequestFromTreeNode({ html_url: '', url, number: 99 }), { url, number: 12 },
       'Ignore unusable URL aliases and derive the number from the actual PR URL');
+    for (const subscription of subscriptions) subscription.dispose();
     const renderedNode = {};
     const renderedOwner = {
       _register: item => subscriptions.push(item),
@@ -65,7 +71,7 @@ async function main() {
     await mergeSelected(renderedNode);
     assert.deepEqual(merges.at(-1), { url: 'https://github.com/owner/repo/pull/13', number: 13 });
     // Dispose this additional view before checking the original refresh lifecycle.
-    subscriptions.at(-1).dispose();
+    for (const subscription of subscriptions) subscription.dispose();
     installPullRequestRefresh(vscode, view, { _register: item => subscriptions.push(item) });
     view.selection = [{ pullRequestModel: { html_url: url, number: 12 } }];
     await mergeSelected();
