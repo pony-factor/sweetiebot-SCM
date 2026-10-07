@@ -50,18 +50,19 @@ async function run() {
   assert.match(requested[0].url, /state=open&base=main/);
   assert.equal(requested[0].options.headers.Authorization, 'Bearer token');
 
-  const selectAllResult = await pickPullRequests({
+  const allResult = await pickPullRequests({
     window: { async showQuickPick(items, options) {
       assert.equal(options.canPickMany, true);
-      assert.match(options.placeHolder, /Select all/);
-      assert.equal(items[0].selectAll, true);
-      return [items[0]];
+      assert.equal(options.placeHolder, 'Select one or more pull requests, then press OK.');
+      assert.equal(items.length, pulls.length);
+      assert.equal(items.some(item => item.selectAll), false);
+      return items;
     } }
   }, pulls);
-  assert.deepEqual(selectAllResult, pulls);
+  assert.deepEqual(allResult, pulls);
 
   const oneResult = await pickPullRequests({
-    window: { async showQuickPick(items) { return [items[2]]; } }
+    window: { async showQuickPick(items) { return [items[1]]; } }
   }, pulls);
   assert.deepEqual(oneResult.map(pr => pr.number), [10]);
 
