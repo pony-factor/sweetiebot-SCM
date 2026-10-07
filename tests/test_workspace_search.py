@@ -43,6 +43,18 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             (workspace_search.SOURCE / "extension.js").read_text(),
         )
 
+    def test_extension_uses_sweetiebot_identity(self):
+        package = json.loads((workspace_search.SOURCE / "package.json").read_text())
+
+        self.assertEqual(package["publisher"], "pony-factor")
+        self.assertEqual(package["name"], "sweetiebot-scm")
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = workspace_search.extension_destination(Path(tmp))
+        self.assertEqual(
+            destination.name,
+            f"pony-factor.sweetiebot-scm-{package['version']}",
+        )
+
     def test_workspace_search_reindexes_automatically(self):
         package = json.loads((workspace_search.SOURCE / "package.json").read_text())
         command_ids = {command["command"] for command in package["contributes"]["commands"]}
