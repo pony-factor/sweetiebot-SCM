@@ -15,6 +15,8 @@ const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
 const { registerCommitLimitCommand } = require('./commit_limits');
+const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
+const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
 
 const VIEW_ID = 'scmToolkit.workspaceSearch';
@@ -65,7 +67,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   }
 
   const script = vscode.Uri.joinPath(context.extensionUri, 'configurator.py').fsPath;
-  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const python = resolvePythonExecutable();
   const openPanelOnStartup = vscode.workspace.getConfiguration('scmToolkit').get('openPanelOnStartup', true);
   const scm = vscode.workspace.getConfiguration('scmToolkit');
   const currentSettings = {
@@ -158,7 +160,8 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   };
   child.on('error', error => {
     clear();
-    vscode.window.showErrorMessage(`Unable to open Sweetiebot SCM settings: ${error.message}`);
+    const launchError = pythonLaunchError(error);
+    vscode.window.showErrorMessage(`Unable to open Sweetiebot SCM settings: ${launchError.message}`);
   });
   child.on('exit', code => {
     clear();
@@ -265,6 +268,7 @@ function settings() {
 async function activate(context) {
   registerLegacyCommandAliases(vscode, context);
   registerCommitLimitCommand(vscode, context);
+  registerSpellcheckPreviewCommand(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context);
   // Hidden panel tabs can still be restored as the active container.

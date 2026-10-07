@@ -112,6 +112,18 @@ class RoutingTests(unittest.TestCase):
         self.assertTrue(ai_commit.uses_staged_index([]))
         self.assertTrue(ai_commit.uses_staged_index(["--quiet"]))
 
+    def test_manual_message_is_never_silently_spellchecked(self):
+        with patch.object(sys, "argv", ["wrapper", "commit", "-m", "Fxi title"]), patch.object(
+            ai_commit, "feature_enabled", return_value=True
+        ), patch.object(
+            ai_commit, "spellcheck_manual_message_args"
+        ) as spellcheck, patch.object(
+            ai_commit.os, "execv", side_effect=RuntimeError("exec")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "exec"):
+                ai_commit.main()
+        spellcheck.assert_not_called()
+
 
 class NewlineRoutingTests(unittest.TestCase):
     def test_manual_disabled_and_non_index_commits_skip_normalization(self):
@@ -309,42 +321,48 @@ class ManualSpellcheckTests(unittest.TestCase):
     @patch.object(
         ai_commit,
         "ollama_json",
-        return_value={"response": "Fix spelling"},
+        return_value={"response": '{"subject":"Fix spelling"}'},
     )
     def test_local_model_correction_is_used(
         self, _request, _configured, _selected, _models
     ):
         self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
 
-    def test_rejects_format_label_instead_of_spelling_correction(self):
-        subject = "🦅 Add GNU AGPL v3 license"
+    def test_rejects_malformed_or_unrelated_spellcheck_output(self):
+        subject = "🐜 Fxi commit titel"
+        for response in [
+            "json",
+            '{"subject":"🐜 Change random words"}',
+            '{"subject":"🐜 Fix commit title","extra":true}',
+            '["🐜 Fix commit title"]',
+            '{"subject":"🐜 Fix commit title\nmore"}',
+        ]:
+            with self.subTest(response=response):
+                self.assertEqual(
+                    ai_commit.safe_spellcheck_correction(subject, response),
+                    subject,
+                )
+
+    def test_accepts_close_structured_spelling_correction(self):
         self.assertEqual(
-            ai_commit.safe_spellcheck_correction(subject, "json"),
-            subject,
+            ai_commit.safe_spellcheck_correction(
+                "🐜 Fxi commit titel",
+                '{"subject":"🐜 Fix commit title"}',
+            ),
+            "🐜 Fix commit title",
         )
 
-    def test_rejects_fenced_structured_spellcheck_output(self):
-        subject = "🦅 Add GNU AGPL v3 license"
-        response = """```json
-{"subject":"🦅 Add GNU AGPL v3 license"}
-```"""
-        self.assertEqual(
-            ai_commit.safe_spellcheck_correction(subject, response),
-            subject,
-        )
-
-    def test_rejects_semantic_rewrite_from_spellcheck_model(self):
-        subject = "🐞 Fix commit title"
-        self.assertEqual(
-            ai_commit.safe_spellcheck_correction(subject, "🐞 Change random words"),
-            subject,
-        )
-
-    def test_accepts_close_spelling_only_correction(self):
-        self.assertEqual(
-            ai_commit.safe_spellcheck_correction("🐞 Fxi commit titel", "🐞 Fix commit title"),
-            "🐞 Fix commit title",
-        )
+    def test_spellcheck_request_uses_json_schema(self):
+        response = {"response": '{"subject":"Fix spelling"}'}
+        with patch.object(ai_commit, "installed_local_model_names", return_value={"primary:test"}), patch.object(
+            ai_commit, "selected_model", return_value=("primary:test", False)
+        ), patch.object(
+            ai_commit, "configured_models", return_value=("primary:test", "fallback:test")
+        ), patch.object(ai_commit, "ollama_json", return_value=response) as request:
+            self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
+        payload = request.call_args.args[1]
+        self.assertEqual(payload["format"]["required"], ["subject"])
+        self.assertFalse(payload["format"]["additionalProperties"])
 
 
 class TitleTests(unittest.TestCase):

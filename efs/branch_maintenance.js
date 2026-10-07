@@ -1,5 +1,6 @@
 'use strict';
 const { spawn } = require('child_process');
+const { resolvePythonExecutable } = require('./python_runtime');
 
 function registerBranchMaintenance(vscode, context) {
   let running, disposed = false;
@@ -13,7 +14,7 @@ function registerBranchMaintenance(vscode, context) {
     if (!repositories.length) return;
     const script = vscode.Uri.joinPath(context.extensionUri, 'prune_merged_branches.py').fsPath;
     const args = [script, '--force', ...repositories.flatMap(repo => ['--repo', repo.rootUri.fsPath])];
-    const child = spawn(process.platform === 'win32' ? 'python' : 'python3', args, { stdio: 'ignore' });
+    const child = spawn(resolvePythonExecutable(), args, { stdio: 'ignore' });
     running = child;
     const clear = () => { if (running === child) running = undefined; };
     child.once('error', clear);

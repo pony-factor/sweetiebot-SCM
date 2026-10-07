@@ -325,29 +325,23 @@ def manual_message_location(args: list[str]) -> tuple[int, str] | None:
 
 def safe_spellcheck_correction(subject: str, response_text: str) -> str:
     """Accept only a close, structurally identical spelling correction."""
-    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
-    if len(lines) != 1:
+    try:
+        payload = json.loads(response_text)
+    except (TypeError, json.JSONDecodeError):
         return subject
-
-    corrected = lines[0]
-    if (
-        len(corrected) >= 2
-        and corrected[0] == corrected[-1]
-        and corrected[0] in {'"', "'"}
-    ):
-        corrected = corrected[1:-1].strip()
-    if not corrected:
+    if not isinstance(payload, dict) or set(payload) != {"subject"}:
         return subject
+    corrected = payload.get("subject")
+    if not isinstance(corrected, str) or not corrected.strip() or "\n" in corrected or "\r" in corrected:
+        return subject
+    corrected = corrected.strip()
 
     def spelling_shape(value: str) -> str:
         return re.sub(r"\w+", "<word>", value, flags=re.UNICODE)
 
     if spelling_shape(corrected) != spelling_shape(subject):
         return subject
-    if (
-        SequenceMatcher(None, subject.casefold(), corrected.casefold()).ratio()
-        < 0.65
-    ):
+    if SequenceMatcher(None, subject.casefold(), corrected.casefold()).ratio() < 0.65:
         return subject
     return corrected
 
@@ -377,7 +371,8 @@ Rules:
 - preserve the wording, meaning, punctuation, capitalization, emoji, identifiers, filenames, acronyms, and code
 - do not rewrite for style or grammar
 - do not add or remove words except when correcting a misspelling
-- output exactly one corrected subject line with no quotes or markdown
+- return exactly one JSON object matching {{"subject":"corrected subject"}}
+- do not include markdown, prose, labels, or extra keys
 
 Subject:
 {subject}
@@ -389,6 +384,12 @@ Subject:
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
+                "format": {
+                    "type": "object",
+                    "properties": {"subject": {"type": "string"}},
+                    "required": ["subject"],
+                    "additionalProperties": False,
+                },
                 "options": {
                     "num_ctx": min(NUM_CTX, 2048),
                     "temperature": 0,
@@ -1313,17 +1314,17 @@ def main() -> None:
     global GIT_GLOBAL_ARGS
 
     argv = sys.argv[1:]
+    if argv == ["--spellcheck-subject"]:
+        subject = sys.stdin.read()
+        print(json.dumps({"subject": spellcheck_subject(subject)}, ensure_ascii=False))
+        return
+
     index = commit_index(argv)
     if index is None:
         os.execv(REAL_GIT, [REAL_GIT, *argv])
 
     GIT_GLOBAL_ARGS = argv[:index]
     commit_args = argv[index + 1 :]
-
-    if manual_spellcheck_enabled():
-        rewritten_args, found_manual_message = spellcheck_manual_message_args(commit_args)
-        if found_manual_message:
-            os.execv(REAL_GIT, [REAL_GIT, *argv[: index + 1], *rewritten_args])
 
     if (
         not feature_enabled()

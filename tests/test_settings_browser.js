@@ -38,9 +38,15 @@ async function run() {
     module: { exports: {} }, process, URL,
     require(name) {
       if (name === 'vscode') return vscode;
+      if (name === './python_runtime') {
+        return {
+          resolvePythonExecutable: () => '/resolved/python3',
+          pythonLaunchError: error => error
+        };
+      }
       if (name !== 'child_process') return {};
       return { spawn(executable, args, options) {
-        assert.equal(executable, process.platform === 'win32' ? 'python' : 'python3');
+        assert.equal(executable, '/resolved/python3');
         assert.deepEqual(Array.from(args).slice(0, 3), [
           '/extension/configurator.py', '--no-browser', '--vscode-settings'
         ]);

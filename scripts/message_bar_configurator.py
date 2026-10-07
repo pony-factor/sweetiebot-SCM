@@ -47,7 +47,7 @@ def render_message_bar_control(current: object) -> str:
         '<div class="message-bar-setting">'
         f'<input type="hidden" id="message-bar-layout" name="messageBarLayout" value="{serialized}" '
         f'data-message-bar-default="{default_serialized}">'
-        '<p class="message-bar-help">Drag the nine buttons and two separators into the order you want. '
+        '<p class="message-bar-help">Drag the ten buttons and two separators into the order you want. '
         'The message field and commit-and-push checkbox stay fixed.</p>'
         '<div class="message-bar-preview">'
         '<section class="message-bar-tray"><span>Before message</span>'
