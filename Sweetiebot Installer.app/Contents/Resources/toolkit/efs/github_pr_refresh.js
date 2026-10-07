@@ -1,11 +1,35 @@
+function pullRequestFromTreeNode(node) {
+  const model = node?.pullRequestModel ?? node;
+  const direct = model?.html_url ?? model?.htmlUrl ?? model?.url;
+  const directMatch = String(direct || '').match(
+    /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)\/?$/
+  );
+  if (directMatch) {
+    return { url: directMatch[0].replace(/\/$/, ''), number: Number(model?.number ?? directMatch[3]) };
+  }
+
+  const resourceUri = node?.resourceUri ?? model?.resourceUri;
+  let identifier;
+  try {
+    identifier = JSON.parse(String(resourceUri?.query || '')).prIdentifier;
+  } catch {
+    identifier = undefined;
+  }
+  const uriMatch = String(identifier || '').match(
+    /^(https:\/\/github\.com\/[\w.-]+\/[\w.-]+):([1-9]\d*)$/
+  );
+  return uriMatch
+    ? { url: `${uriMatch[1]}/pull/${uriMatch[2]}`, number: Number(uriMatch[2]) }
+    : { url: undefined, number: model?.number };
+}
+
 function installPullRequestRefresh(vscode, view, owner) {
   // Resolve tree nodes in the extension host that owns the GitHub PR tree.
   owner._register(vscode.commands.registerCommand('scmToolkit.squashMergeSelectedPullRequest', node => {
-    const model = node?.pullRequestModel ?? node;
-    return vscode.commands.executeCommand('scmToolkit.squashMergePullRequest', {
-      url: model?.html_url ?? model?.url,
-      number: model?.number
-    });
+    return vscode.commands.executeCommand(
+      'scmToolkit.squashMergePullRequest',
+      pullRequestFromTreeNode(node)
+    );
   }));
   let timer;
   let running = false;

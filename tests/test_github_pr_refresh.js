@@ -33,7 +33,14 @@ async function main() {
     const url = 'https://github.com/owner/repo/pull/12';
     await mergeSelected({ pullRequestModel: { html_url: url, number: 12 } });
     await mergeSelected({ url, number: 12 });
-    assert.deepEqual(merges, [{ url, number: 12 }, { url, number: 12 }]);
+    await mergeSelected({
+      resourceUri: { query: JSON.stringify({ prIdentifier: 'https://github.com/owner/repo:12' }) }
+    });
+    assert.deepEqual(merges, [
+      { url, number: 12 },
+      { url, number: 12 },
+      { url, number: 12 }
+    ]);
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
       'scmToolkit.squashMergeSelectedPullRequest');
