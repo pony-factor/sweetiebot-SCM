@@ -583,21 +583,33 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertTrue(install.codex_bundle_matches(original))
         self.assertEqual(install.transform_codex(patched, enabled=True), patched)
 
-    def test_transcript_reset_uses_live_countdown_and_restores_original(self):
+    def test_transcript_reset_time_is_not_duplicated_and_restores_original(self):
         transcript = (
             'u=e==null?null:format(r,e);'
             '(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`});'
         )
-        for variant in ('upgrade', 'upgradeOrAddCredits', 'addCredits', 'retry'):
+        messages = {
+            'upgrade': 'You\'ve hit your usage limit. Upgrade your plan to continue, or try again at {resetDate}.',
+            'upgradeOrAddCredits': 'You\'ve hit your usage limit. Upgrade your plan or add credits to continue, or try again at {resetDate}.',
+            'addCredits': 'You\'ve hit your usage limit. Add credits to continue, or try again at {resetDate}.',
+            'retry': 'Try again at {resetDate}.',
+        }
+        for variant, message in messages.items():
             transcript += (
-                '(0,J.jsx)(Message,{id:`localConversation.usageLimit.' + variant + '`, '
-                'defaultMessage:`Try again at {resetDate}.`,values:{resetDate:r}});'
-            ).replace('`, defaultMessage:', '`,defaultMessage:')
+                '(0,J.jsx)(Message,{id:`localConversation.usageLimit.' + variant + '`,'
+                'defaultMessage:`' + message + '`,values:{resetDate:r}});'
+            )
         original = self.modern_fixture() + transcript
         patched = install.transform_codex(original, enabled=True)
-        self.assertIn('u=e==null?null:(0,J.jsx)(`scm-toolkit-usage-reset-countdown`,{"reset-at":e})', patched)
-        self.assertIn('usageLimit.upgradeOrAddCredits.countdown', patched)
-        self.assertIn('defaultMessage:`Try again in {resetDate}.`', patched)
+        self.assertIn('u=e==null?null:format(r,e);', patched)
+        self.assertNotIn('u=e==null?null:(0,J.jsx)(`scm-toolkit-usage-reset-countdown`,{"reset-at":e})', patched)
+        self.assertIn('scmToolkitUsageResetMessage(n.description,n.reset_at,J.jsx)', patched)
+        self.assertIn('usageLimit.upgradeOrAddCredits.noResetTime', patched)
+        self.assertIn(
+            'defaultMessage:`You\'ve hit your usage limit. Upgrade your plan or add credits to continue, or try again later.`',
+            patched,
+        )
+        self.assertNotIn('try again at {resetDate}', patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
         self.assertEqual(install.transform_codex(patched, enabled=True), patched)
 
