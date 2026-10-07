@@ -118,6 +118,38 @@ class BranchNamePackTests(unittest.TestCase):
         ):
             self.assertNotIn(name, g4_names)
 
+    def test_g4_founders_and_power_ponies_are_in_default_on_pack(self):
+        import toolkit_settings
+
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        expected = [
+            "chancellor-puddinghead",
+            "clover-the-clever",
+            "commander-hurricane",
+            "princess-platinum",
+            "private-pansy",
+            "smart-cookie",
+            "fili-second",
+            "humdrum",
+            "masked-matter-horn",
+            "mistress-mare-velous",
+            "radiance",
+            "saddle-rager",
+            "zapp",
+        ]
+        self.assertEqual(packs["g4-founders-power-ponies"]["names"], expected)
+        for pack_id, pack in packs.items():
+            if pack_id != "g4-founders-power-ponies":
+                self.assertTrue(set(expected).isdisjoint(pack["names"]), pack_id)
+        default_disabled = toolkit_settings.DEFAULT_SETTINGS["branchNameDisabledPacks"]
+        settings = branch_names.resolve_runtime_settings(
+            {"branchNameDisabledPacks": default_disabled}
+        )
+        self.assertNotIn(
+            "g4-founders-power-ponies", settings["branchNameDisabledPacks"]
+        )
+
     def test_g4_stallions_use_full_wacky_hair_day_and_spray_name(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
@@ -186,18 +218,18 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 301)
+        self.assertEqual(len(names), 300)
         for name in (
             "acacia-pie",
             "captain-hoofbeard",
             "emperor-incitatus",
-            "humdrum",
             "radiant-hope",
             "shadow-lock",
             "sweet-cream-scoops",
             "winter-comet",
         ):
             self.assertIn(name, names)
+        self.assertNotIn("humdrum", names)
         self.assertFalse(any("unnamed" in name for name in names))
 
     def test_convention_mascots_include_historic_bronycon_trio(self):
