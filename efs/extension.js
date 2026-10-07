@@ -29,8 +29,19 @@ const INDEX_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 let configuratorProcess;
 let configuratorURL;
 
+async function stopSettingsServer() {
+  const child = configuratorProcess;
+  if (!child || child.exitCode !== null) return;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('The settings server did not stop; try Reload Window again.')), 5000);
+    child.once('exit', () => { clearTimeout(timeout); resolve(); });
+    child.kill();
+  });
+}
+
 function persistedSettingsSessionArgs(context) {
-  const saved = context.globalState.get(SETTINGS_SESSION_URL_KEY, '');
+  const saved = (context.workspaceState || context.globalState).get(SETTINGS_SESSION_URL_KEY,
+    context.globalState.get(SETTINGS_SESSION_URL_KEY, ''));
   if (!saved) return [];
   try {
     const parsed = new URL(saved);
@@ -88,12 +99,16 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
     editorSettings: {
       'inlineSuggest.enabled': vscode.workspace.getConfiguration('editor').get('inlineSuggest.enabled', true)
     },
+    workbenchNotificationSettings: {
+      position: vscode.workspace.getConfiguration('workbench.notifications').get('position', 'bottom-left')
+    },
     gitSettings: {
       postCommitCommand: vscode.workspace.getConfiguration('git').get('postCommitCommand', 'none')
     }
   };
   const child = spawn(python, [
     script, '--no-browser', '--vscode-settings', JSON.stringify(currentSettings),
+    '--parent-pid', String(process.pid),
     ...persistedSettingsSessionArgs(context)
   ], {
     cwd: context.extensionPath,
@@ -125,7 +140,11 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
             cfg.update(key, value, vscode.ConfigurationTarget.Global)
           ));
         }
-        for (const [group, root] of [['editorSettings', 'editor'], ['gitSettings', 'git']]) {
+        for (const [group, root] of [
+          ['workbenchNotificationSettings', 'workbench.notifications'],
+          ['editorSettings', 'editor'],
+          ['gitSettings', 'git']
+        ]) {
           if (!message[group]) continue;
           const cfg = vscode.workspace.getConfiguration(root);
           settingUpdates.push(...Object.entries(message[group]).map(([key, value]) =>
@@ -143,7 +162,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
         const parsed = new URL(url);
         if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port) continue;
         configuratorURL = url;
-        void context.globalState.update(SETTINGS_SESSION_URL_KEY, url);
+        void (context.workspaceState || context.globalState).update(SETTINGS_SESSION_URL_KEY, url);
         if (openBrowserWhenReady) {
           void openSettingsBrowser(url, child).then(opened => {
             if (opened) void context.globalState.update(SETTINGS_PAGE_OPENED_KEY, true);
@@ -271,7 +290,7 @@ async function activate(context) {
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
   await registerPushRecovery(vscode, context);
-  registerCodexRefresh(vscode, context);
+  registerCodexRefresh(vscode, context, stopSettingsServer);
   // Hidden panel tabs can still be restored as the active container.
   // Select the user's SCM container explicitly once the workbench has started.
   if (vscode.workspace.getConfiguration('scmToolkit').get('openPanelOnStartup', true)) {
@@ -337,10 +356,8 @@ async function activate(context) {
   }));
 }
 
-function deactivate() {
-  configuratorProcess?.kill();
-  configuratorProcess = undefined;
-  configuratorURL = undefined;
+async function deactivate() {
+  await stopSettingsServer();
 }
 
 module.exports = { activate, deactivate };

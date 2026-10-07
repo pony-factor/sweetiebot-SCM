@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { remoteWebBase, githubFileUrl, openFileOnGitHub, registerOpenFileOnGitHub } = require('./github_file');
+const { remoteWebBase, githubFileUrl, openFileOnGitHub, registerOpenFileOnGitHub } = require('../efs/github_file');
 
 async function main() {
   assert.equal(remoteWebBase('git@github.com:owner/repo.git'), 'https://github.com/owner/repo');

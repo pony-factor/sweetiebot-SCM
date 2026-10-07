@@ -42,6 +42,7 @@ SETTINGS = {
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
+    "codexUsagePieIndicator": False,
     "codexHidePromotions": False,
     "chatgptCustomInstructions": "",
     "chatgptWebCodexCoauthor": True,
@@ -389,7 +390,7 @@ class TransformTests(unittest.TestCase):
 
         self.assertNotIn('"https://chatgpt.com/"', js)
 
-    def test_chatgpt_browser_home_patches_blank_browser_tabs(self):
+    def test_chatgpt_browser_home_patches_repeated_blank_browser_tabs(self):
         original_js = workbench_fixture() + browser_resolver_fixture()
         enabled = dict(SETTINGS, browserChatgptHome=True)
 
@@ -399,13 +400,23 @@ class TransformTests(unittest.TestCase):
 
         self.assertIn(
             'browserViews.getOrCreateLazy({id:parsed.id,...options?.viewState,'
-            'url:options?.viewState?.url??"https://chatgpt.com/"})',
+            'url:options?.viewState?.url||"https://chatgpt.com/"})',
             patched_js,
         )
         restored = install.transform(
             patched_js, patched_css, remove=True, settings=enabled
         )
         self.assertEqual(restored, (original_js, "base-css"))
+
+    def test_blank_browser_custom_url_round_trip_and_reconfiguration(self):
+        original = workbench_fixture() + browser_resolver_fixture()
+        enabled = dict(SETTINGS, browserChatgptHome=True, browserHomeUrl="https://example.com/?q=hello")
+        patched = install.transform(original, "base-css", settings=enabled)
+        self.assertIn('url:options?.viewState?.url||"https://example.com/?q=hello"', patched[0])
+        enabled["browserHomeUrl"] = "https://chatgpt.com/"
+        updated = install.transform(*patched, settings=enabled)
+        self.assertNotIn('url:options?.viewState?.url||"https://example.com/?q=hello"', updated[0])
+        self.assertEqual(install.transform(*updated, remove=True, settings=enabled), (original, "base-css"))
 
     def test_install_and_remove_round_trip(self):
         original_js = workbench_fixture()
@@ -610,6 +621,7 @@ class CodexCountdownTests(unittest.TestCase):
 
     def test_countdown_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsageResetCountdown"])
+        self.assertFalse(install.DEFAULT_SETTINGS["codexUsagePieIndicator"])
 
     def test_codex_countdown_install_and_remove_round_trip(self):
         original = self.fixture()

@@ -1626,8 +1626,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const selector = '.notification-list-item';
     const update = row => {
         const message = row.querySelector('.notification-list-item-message');
+        const text = message?.textContent.trim() ?? '';
         row.classList.toggle('scm-toolkit-generating-commit',
-            /^Generating commit message(?: ✨)?$/.test(message?.textContent.trim() ?? ''));
+            /^Generating commit message(?: ✨)?$/.test(text));
+        row.classList.toggle('scm-toolkit-operation-failed',
+            /^(?:Git could not complete the operation:|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
     };
     const observer = new MutationObserver(records => {
         const rows = new Set();

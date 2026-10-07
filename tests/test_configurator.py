@@ -100,6 +100,25 @@ class SubmissionTests(unittest.TestCase):
             if name != "branchNameDisabledPacks":
                 self.assertIn(f'name="{name}"', page)
 
+    def test_notification_position_round_trips_into_vscode(self):
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {
+            "workbenchNotificationSettings": {"position": "top-right"},
+        })
+        self.assertEqual(current["notificationPosition"], "top-right")
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="notificationPosition"', page)
+        self.assertIn('<option value="top-right" selected>Top-right</option>', page)
+
+        values = form_values()
+        values["notificationPosition"] = ["bottom-right"]
+        payload = configurator.extension_settings_payload(configurator.parse_submission(values))
+        self.assertEqual(payload["workbenchNotificationSettings"]["position"], "bottom-right")
+
+        values["notificationPosition"] = ["center"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_cloud_preference_round_trips_into_vscode(self):
         current = dict(install.DEFAULT_SETTINGS)
         configurator.apply_vscode_settings(current, {
@@ -136,13 +155,6 @@ class SubmissionTests(unittest.TestCase):
         values["postCommitSpellcheck"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["postCommitSpellcheck"])
 
-    def test_ai_commit_instruction_sync_defaults_off_and_saves_on(self):
-        values = form_values()
-        self.assertFalse(install.DEFAULT_SETTINGS["aiCommitCustomInstructions"])
-        self.assertFalse(configurator.parse_submission(values)["aiCommitCustomInstructions"])
-        values["aiCommitCustomInstructions"] = ["true"]
-        self.assertTrue(configurator.parse_submission(values)["aiCommitCustomInstructions"])
-
     def test_browser_toggles_default_off_and_save_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["cmdClickCloseOthers"])
@@ -155,6 +167,18 @@ class SubmissionTests(unittest.TestCase):
         parsed = configurator.parse_submission(values)
         self.assertTrue(parsed["cmdClickCloseOthers"])
         self.assertTrue(parsed["browserChatgptHome"])
+
+    def test_blank_browser_url_saves_custom_destination_and_defaults_to_chatgpt(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], "https://chatgpt.com/")
+        for url in ("https://example.com/path?q=hello#section", "http://localhost:3000/", "about:blank"):
+            values["browserHomeUrl"] = [url]
+            self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], url)
+        values["browserHomeUrl"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], "https://chatgpt.com/")
+        values["browserHomeUrl"] = ["not a URL"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
 
     def test_optional_name_packs_default_off(self):
         self.assertEqual(
@@ -241,9 +265,6 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(parsed["branchNameDisabledPacks"], "")
         self.assertEqual(parsed["branchCustomNames"], "")
         self.assertEqual(parsed["branchNameImports"], "[]")
-        self.assertEqual(parsed["chatgptCustomInstructions"], "")
-        self.assertFalse(parsed["aiCommitCustomInstructions"])
-        self.assertTrue(parsed["chatgptWebCodexCoauthor"])
 
     def test_parses_disabled_custom_and_imported_branch_names(self):
         values = form_values()
@@ -322,7 +343,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;", page)
         self.assertIn('let installedModels = ["local:model"];', page)
         self.assertIn("/save?token=test-token", page)
-        self.assertIn("importKey ? '/save' : '/autosave'", page)
+        self.assertIn("fetch('/autosave' + location.search", page)
         self.assertIn('id="save-status"', page)
         self.assertIn('class="settings-layout"', page)
         self.assertIn('class="settings-tabs" role="tablist" aria-orientation="vertical"', page)
@@ -354,6 +375,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="autoPublishToggle"', page)
         self.assertIn('name="cmdClickCloseOthers"', page)
         self.assertIn('name="browserChatgptHome"', page)
+        self.assertIn('name="codexUsagePieIndicator"', page)
         self.assertIn('name="codexHideChatTimestamps"', page)
         self.assertIn('name="codexHideDictation"', page)
         self.assertIn('name="codexShortModelLabels"', page)
@@ -361,13 +383,16 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="workspaceSearchLabel"', page)
         self.assertIn('name="workspaceSearchAskOllama"', page)
         self.assertIn('name="workspaceSearchChatModel"', page)
-        self.assertIn('name="aiCommitCustomInstructions"', page)
-        self.assertIn("Sync AI commits with Codex instructions", page)
+        self.assertNotIn('name="aiCommitCustomInstructions"', page)
+        self.assertNotIn("Sync AI commits with Codex instructions", page)
         self.assertIn("updateAskOllamaRequirement", page)
-        self.assertIn('name="chatgptCustomInstructions"', page)
-        self.assertIn('id="sync-chatgpt-instructions"', page)
-        self.assertIn('name="pgpSecretKey"', page)
-        self.assertNotIn("PGP PRIVATE KEY BLOCK-----\nsecret", page)
+        self.assertIn('name="commitInstructions"', page)
+        self.assertIn('id="generate-signing-key"', page)
+        self.assertIn('id="open-signing-key-manager"', page)
+        self.assertNotIn('name="chatgptCustomInstructions"', page)
+        self.assertNotIn('id="sync-chatgpt-instructions"', page)
+        self.assertNotIn('name="pgpSecretKey"', page)
+        self.assertNotIn("Import ChatGPT personalization", page)
 
 
     def test_extension_payload_exposes_startup_user_setting(self):
@@ -387,18 +412,6 @@ class SubmissionTests(unittest.TestCase):
             payload["workspaceSearch"]["embeddingModel"],
             install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],
         )
-
-    def test_custom_instructions_allow_multiline_text(self):
-        values = form_values()
-        values["chatgptCustomInstructions"] = ["Use ASCII quotes.\nKeep replies compact."]
-
-        parsed = configurator.parse_submission(values)
-
-        self.assertEqual(
-            parsed["chatgptCustomInstructions"],
-            "Use ASCII quotes.\nKeep replies compact.",
-        )
-
 
 class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_bool")
@@ -550,6 +563,15 @@ class ModelSetupTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
+    def test_settings_server_exits_when_extension_host_disappears(self):
+        with patch('configurator.os.kill', side_effect=ProcessLookupError), patch('builtins.print'):
+            thread = threading.Thread(target=lambda: configurator.run_configurator(
+                install.DEFAULT_SETTINGS, open_browser=False, parent_pid=12345,
+            ), daemon=True)
+            thread.start()
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive(), 'An orphaned settings server must release its port')
+
     @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
     def test_local_server_serves_form_and_can_cancel(self, _models):
         opened = threading.Event()
@@ -616,8 +638,7 @@ class ServerTests(unittest.TestCase):
         with patch("configurator.webbrowser.open", side_effect=open_browser), \
              patch("configurator.validate_models") as validate, \
              patch("configurator.save_settings") as save, \
-             patch("configurator.sync_codex_instructions"), \
-             patch("configurator.import_pgp_secret_key"), \
+             patch("configurator.save_commit_instructions"), \
              patch("configurator.print"):
             thread = threading.Thread(target=run_server)
             thread.start()
@@ -680,8 +701,7 @@ class ServerTests(unittest.TestCase):
         with patch("configurator.print", side_effect=capture_output), \
              patch("configurator.webbrowser.open") as browser, \
              patch("configurator.save_settings") as save, \
-             patch("configurator.sync_codex_instructions"), \
-             patch("configurator.import_pgp_secret_key"), \
+             patch("configurator.save_commit_instructions"), \
              patch("configurator.validate_models", side_effect=ValueError("Ollama offline")) as validate:
             thread = threading.Thread(target=run_server)
             thread.start()
@@ -692,7 +712,8 @@ class ServerTests(unittest.TestCase):
                 with urllib.request.urlopen(captured["url"], timeout=5) as response:
                     page = response.read().decode()
                     self.assertIn("Sweetiebot SCM Setup", page)
-                    self.assertIn('value="save" hidden>Import signing key', page)
+                    self.assertIn('value="save" hidden>Done', page)
+                    self.assertNotIn("Import signing key", page)
                 for path in ("/autosave", "/save", "/autosave"):
                     values = form_values()
                     values.pop("branchPicker")

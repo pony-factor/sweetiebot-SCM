@@ -15,7 +15,7 @@ import codex_image_drop
 import codex_recent_chats
 import github_pr
 from pathlib import Path
-from toolkit_settings import DEFAULT_SETTINGS, load_settings, read_git_bool, read_git_string
+from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string
 from branch_names import resolve_runtime_settings
 
 HERE = Path(__file__).resolve().parent
@@ -45,34 +45,6 @@ def ai_wrapper_path():
 
 def legacy_ai_wrapper_path():
     return Path("~/.local/bin/git-auto-title").expanduser()
-
-
-def commit_instructions_path():
-    configured = os.environ.get(
-        "SCM_TOOLKIT_COMMIT_INSTRUCTIONS",
-        "~/.config/sweetiebot/commit-instructions.md",
-    )
-    return Path(configured).expanduser()
-
-
-def sync_commit_instructions(check=False, destination=None):
-    target = (
-        Path(destination).expanduser()
-        if destination is not None
-        else commit_instructions_path()
-    )
-    if target.is_symlink():
-        raise RuntimeError(
-            f"Refusing to replace symlinked commit instructions: {target}"
-        )
-    if target.exists():
-        return False
-
-    if not check:
-        source = HERE.parent / "assets" / "commit-instructions.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(source.read_bytes())
-    return True
 
 
 def sync_ai_wrapper(remove=False, check=False, destination=None):
@@ -247,7 +219,7 @@ def source_control_label_edits(js, label):
     return edits
 
 
-def browser_chatgpt_home_edits(js):
+def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     anchor = "Invalid browser view resource:"
     anchor_index = js.find(anchor)
     if anchor_index < 0:
@@ -271,7 +243,7 @@ def browser_chatgpt_home_edits(js):
     original = match.group(0)
     replacement = (
         f'{match.group("prefix")},url:{match.group("options")}?.viewState?.url'
-        f'??"https://chatgpt.com/"{match.group("suffix")}'
+        f'??{json.dumps(home_url or "https://chatgpt.com/")}{match.group("suffix")}'
     )
     return [(original, replacement)]
 
@@ -334,7 +306,7 @@ def edits(js=None, settings=None):
         changes.extend(graph_open_working_file_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
-        changes.extend(browser_chatgpt_home_edits(js))
+        changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))
 
     if js is not None and settings and settings.get("cmdClickCloseOthers"):
         modifier_pattern = re.compile(
@@ -633,6 +605,8 @@ def transform(js, css, remove=False, settings=None):
         + json.dumps(changes)
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
+        + "\n"
+        + (WORKBENCH_ASSETS / "message_bar.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
@@ -756,6 +730,7 @@ def main():
             return
         settings = load_settings()
     version, workbench_paths = application_paths(args.app)
+    legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
     paths = [] if args.codex_only else workbench_paths
     old = [path.read_text() for path in paths]
     new = (
@@ -770,11 +745,6 @@ def main():
         else sync_ai_wrapper(
             remove=args.uninstall, check=True, destination=wrapper_path
         )
-    )
-    commit_instructions_changed = (
-        False
-        if args.codex_only or args.repair or args.uninstall
-        else sync_commit_instructions(check=True)
     )
     model_picker_path = ai_model_picker_path()
     model_picker_changed = (
@@ -841,9 +811,12 @@ def main():
             paths.append(awake_path)
             old.append(awake_old)
             new.append(awake_new)
+    usage_pie = settings.get("codexUsagePieIndicator", False)
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=settings["codexUsageResetCountdown"] and not args.uninstall,
+        enabled=(settings["codexUsageResetCountdown"] or usage_pie) and not args.uninstall,
+        pie_indicator=usage_pie,
+        reset_countdown=settings["codexUsageResetCountdown"],
     ):
         paths.append(usage_path)
         old.append(usage_old)
@@ -911,23 +884,23 @@ def main():
     if (
         old == list(new)
         and not wrapper_changed
-        and not commit_instructions_changed
         and not model_picker_changed
         and not workspace_search_changed
+        and not legacy_changed
     ):
         action = "not installed" if args.uninstall else "already up to date"
         print(f"SCM toolkit is {action} for VS Code {version}.")
         return
 
     if not args.check:
+        if not args.codex_only:
+            workspace_search.remove_legacy_extensions()
         if old != list(new):
             if old != [path.read_text() for path in paths]:
                 raise RuntimeError("VS Code changed during validation; retry the command.")
             write_pair(paths, new, old)
         if not args.codex_only and not args.repair:
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
-            if not args.uninstall:
-                sync_commit_instructions()
             sync_model_picker(
                 enabled=settings["aiModelPicker"],
                 remove=args.uninstall,
@@ -938,6 +911,8 @@ def main():
                 settings=settings,
             )
 
+    if not args.check and not args.uninstall and not args.codex_only:
+        persist_message_bar_layout(settings)
     action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
     target = "Codex customizations" if args.codex_only else "SCM toolkit"
     print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
@@ -946,7 +921,6 @@ def main():
             print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")
         else:
             print(f"AI commit wrapper: {wrapper_path}")
-            print(f"Commit instructions: {commit_instructions_path()}")
             if settings["aiModelPicker"]:
                 print(f"AI model picker: {model_picker_path}")
             else:

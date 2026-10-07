@@ -102,6 +102,7 @@ async function run() {
   let browserAvailable = true;
   let codexSnapshot;
   const calls = [];
+  const shownPonies = [];
   const uri = { scheme: 'file', fsPath: '/workspace/project' };
   const repository = {
     rootUri: uri,
@@ -238,7 +239,6 @@ async function run() {
     url: 'https://chatgpt.com/c/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
   };
   const recorded = [];
-  const shownPonies = [];
   const sandbox = vm.createContext({
     doc: {},
     currentBranch: 'draft',

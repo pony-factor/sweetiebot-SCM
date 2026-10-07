@@ -131,7 +131,6 @@ function errorText(error) {
   return [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
 }
 
-const BROKEN_LINK_EMOJI = '⛓️‍💥';
 
 function gitErrorLines(error) {
   const seen = new Set();
@@ -177,7 +176,7 @@ function formatGitError(error) {
       : `Git reported ${error?.gitErrorCode || 'an error'} without a specific reason. Open Git Output for the command details.`;
   }
 
-  return `Git could not complete the operation: ${reason} ${BROKEN_LINK_EMOJI}`;
+  return `Git could not complete the operation: ${reason}`;
 }
 
 function explainGitError(error) {
@@ -188,7 +187,7 @@ function explainGitError(error) {
     || error?.stdout
     || /^(?:Git error|Failed to execute git)$/i.test(message)
   );
-  if (!isGitFailure || message.endsWith(BROKEN_LINK_EMOJI)) return error;
+  if (!isGitFailure || message.startsWith('Git could not complete the operation:')) return error;
   return new Error(formatGitError(error), { cause: error });
 }
 

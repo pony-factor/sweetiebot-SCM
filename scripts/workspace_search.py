@@ -99,7 +99,7 @@ def source_files() -> dict[Path, Path]:
     files[Path("local_codex_commit.py")] = HERE / "local_codex_commit.py"
     files[Path("branch_names.py")] = HERE / "branch_names.py"
     files[Path("branch_name_packs.json")] = HERE / "branch_name_packs.json"
-    files[Path("chatgpt_integration.py")] = HERE / "chatgpt_integration.py"
+    files[Path("local_setup.py")] = HERE / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
     for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md"})):
         for source in (HERE.parent / directory).rglob("*"):
@@ -143,6 +143,27 @@ def installed_versions(extensions_dir: Path) -> list[Path]:
     return sorted({path for pattern in patterns for path in extensions_dir.glob(pattern)})
 
 
+def remove_legacy_extensions(extensions_dir: Path | None = None, *, check=False) -> bool:
+    root = Path(extensions_dir) if extensions_dir is not None else default_extensions_dir()
+    stale = sorted({path for pattern in LEGACY_EXTENSION_PATTERNS for path in root.glob(pattern)})
+    registry = root / "extensions.json"
+    entries = json.loads(registry.read_text()) if registry.exists() else []
+    kept = [entry for entry in entries if entry.get("identifier", {}).get("id", "").lower()
+            != "jfwooten4.scm-toolkit-workspace-search"]
+    changed = bool(stale) or kept != entries
+    if check:
+        return changed
+    if kept != entries:
+        # Keep the current extension and all unrelated registrations intact.
+        registry.write_text(json.dumps(kept) + "\n")
+    for old in stale:
+        if old.is_symlink():
+            old.unlink()
+        elif old.exists():
+            shutil.rmtree(old)
+    return changed
+
+
 def sync_extension(
     *,
     remove: bool = False,
@@ -153,20 +174,21 @@ def sync_extension(
     root = Path(extensions_dir) if extensions_dir is not None else default_extensions_dir()
     destination = extension_destination(root)
     stale = [path for path in installed_versions(root) if path != destination]
+    legacy_changed = remove_legacy_extensions(root, check=check)
 
     if remove:
         targets = [path for path in installed_versions(root) if path.exists()]
         if check:
-            return bool(targets)
+            return legacy_changed or bool(targets)
         for target in targets:
             if target.is_symlink():
                 target.unlink()
             else:
                 shutil.rmtree(target)
-        return bool(targets)
+        return legacy_changed or bool(targets)
 
     settings = load_settings() if settings is None else settings
-    changed = bool(stale) or not destination_matches(destination, settings=settings)
+    changed = legacy_changed or bool(stale) or not destination_matches(destination, settings=settings)
     if check or not changed:
         return changed
 

@@ -160,6 +160,8 @@ def graph_open_working_file_edits(js):
 
     match = matches[0]
     original = match.group(0)
+    # VS Code keeps an untouched browser tab URL as an empty string. Treat that
+    # as blank too so native New Tab actions keep receiving the configured home.
     replacement = (
         f'{match.group("prefix")}{match.group("change")}.modifiedUri'
         '.with({scheme:"file",query:""})'
@@ -219,7 +221,7 @@ def source_control_label_edits(js, label):
     return edits
 
 
-def browser_chatgpt_home_edits(js):
+def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     anchor = "Invalid browser view resource:"
     anchor_index = js.find(anchor)
     if anchor_index < 0:
@@ -243,7 +245,7 @@ def browser_chatgpt_home_edits(js):
     original = match.group(0)
     replacement = (
         f'{match.group("prefix")},url:{match.group("options")}?.viewState?.url'
-        f'??"https://chatgpt.com/"{match.group("suffix")}'
+        f'||{json.dumps(home_url or "https://chatgpt.com/")}{match.group("suffix")}'
     )
     return [(original, replacement)]
 
@@ -306,7 +308,7 @@ def edits(js=None, settings=None):
         changes.extend(graph_open_working_file_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
-        changes.extend(browser_chatgpt_home_edits(js))
+        changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))
 
     if js is not None and settings and settings.get("cmdClickCloseOthers"):
         modifier_pattern = re.compile(
@@ -730,6 +732,7 @@ def main():
             return
         settings = load_settings()
     version, workbench_paths = application_paths(args.app)
+    legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
     paths = [] if args.codex_only else workbench_paths
     old = [path.read_text() for path in paths]
     new = (
@@ -810,9 +813,12 @@ def main():
             paths.append(awake_path)
             old.append(awake_old)
             new.append(awake_new)
+    usage_pie = settings.get("codexUsagePieIndicator", False)
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=settings["codexUsageResetCountdown"] and not args.uninstall,
+        enabled=(settings["codexUsageResetCountdown"] or usage_pie) and not args.uninstall,
+        pie_indicator=usage_pie,
+        reset_countdown=settings["codexUsageResetCountdown"],
     ):
         paths.append(usage_path)
         old.append(usage_old)
@@ -882,12 +888,15 @@ def main():
         and not wrapper_changed
         and not model_picker_changed
         and not workspace_search_changed
+        and not legacy_changed
     ):
         action = "not installed" if args.uninstall else "already up to date"
         print(f"SCM toolkit is {action} for VS Code {version}.")
         return
 
     if not args.check:
+        if not args.codex_only:
+            workspace_search.remove_legacy_extensions()
         if old != list(new):
             if old != [path.read_text() for path in paths]:
                 raise RuntimeError("VS Code changed during validation; retry the command.")
