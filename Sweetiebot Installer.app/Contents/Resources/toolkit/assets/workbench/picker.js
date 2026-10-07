@@ -1549,3 +1549,30 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 }
+
+// Notification rows are reused, so update the marker whenever their message changes.
+(() => {
+    const selector = '.notification-list-item';
+    const update = row => {
+        const message = row.querySelector('.notification-list-item-message');
+        row.classList.toggle('scm-toolkit-generating-commit',
+            message?.textContent.trim() === 'Generating commit message ✨');
+    };
+    const observer = new MutationObserver(records => {
+        const rows = new Set();
+        for (const record of records) {
+            const target = record.target.nodeType === Node.ELEMENT_NODE
+                ? record.target : record.target.parentElement;
+            const row = target?.closest(selector);
+            if (row) rows.add(row);
+            for (const node of record.addedNodes) {
+                if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                if (node.matches(selector)) rows.add(node);
+                node.querySelectorAll(selector).forEach(row => rows.add(row));
+            }
+        }
+        rows.forEach(update);
+    });
+    observer.observe(document, { childList: true, characterData: true, subtree: true });
+    document.querySelectorAll(selector).forEach(update);
+})();
