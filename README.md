@@ -18,6 +18,7 @@ Current features:
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
 - recognize built-in pony branch names during PR creation and pass local-only character context to Kafania for a post-publish pony profile
+- show the matched pony as a small local-only **Pony Info** view in Source Control, beside whatever editor or Integrated Browser content is open
 - optionally hide the outgoing commit count from the built-in Sync action
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly
 - search the active workspace semantically from a `Workspace Search` view inside Source Control by default, or optionally move it to its own Activity Bar container, backed only by local Ollama

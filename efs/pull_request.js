@@ -52,6 +52,20 @@ function matchSweetiebotPonyCatalog(branch, catalog) {
     };
     const source = typeof pack?.sources?.[slug] === 'string' ? pack.sources[slug].trim() : '';
     if (source) match.source = source;
+    const images = Array.isArray(pack?.images?.[slug])
+      ? pack.images[slug].flatMap(item => {
+          const candidate = typeof item === 'string' ? { url: item } : item;
+          const url = String(candidate?.url || '').trim();
+          if (!/^https:\/\//i.test(url)) return [];
+          const image = { url };
+          const label = String(candidate?.label || '').trim();
+          const kind = String(candidate?.kind || '').trim();
+          if (label) image.label = label;
+          if (kind) image.kind = kind;
+          return [image];
+        })
+      : [];
+    if (images.length) match.images = images;
     return match;
   }
   return undefined;
@@ -155,6 +169,7 @@ function pullRequestPrompt({
 function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
+  const showPony = dependencies.showPony || (pony => vscode.commands.executeCommand('sweetiebot.setPonyProfile', pony).catch(() => undefined));
 
   if (typeof vscode.window.registerUriHandler === 'function') {
     context.subscriptions.push(vscode.window.registerUriHandler({
@@ -191,6 +206,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     const instructions = await readInstructions(repository.rootUri.fsPath);
     const pony = await readPony(branch);
+    await showPony(pony);
 
     let source = normalizeConversationSource(options.source);
     let conversationContext = '';

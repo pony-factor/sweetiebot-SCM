@@ -35,6 +35,14 @@ async function run() {
   assert.equal(berryPunch.packLabel, 'G4 mares');
   assert.equal(matchSweetiebotPonyCatalog('not-a-sweetiebot-pony', ponyCatalog), undefined);
   assert.equal((await readSweetiebotPony('berry-punch')).packId, 'g4-mares');
+  const honeyDrop = matchSweetiebotPonyCatalog('honey-drop', ponyCatalog);
+  assert.equal(honeyDrop.packId, 'g4-fillies');
+  assert.deepEqual(honeyDrop.images, [{
+    url: 'https://www.twibooru.org/107469',
+    label: 'Twibooru #107469',
+    kind: 'show screenshot'
+  }]);
+  assert.equal((await readSweetiebotPony('honey-drop')).images[0].url, 'https://www.twibooru.org/107469');
 
   const chatSource = {
     kind: 'chatgpt',
@@ -94,6 +102,7 @@ async function run() {
   let browserAvailable = true;
   let codexSnapshot;
   const calls = [];
+  const shownPonies = [];
   const uri = { scheme: 'file', fsPath: '/workspace/project' };
   const repository = {
     rootUri: uri,
@@ -143,7 +152,8 @@ async function run() {
     },
     readPony: async branch => branch === 'draft'
       ? { slug: 'draft', packId: 'test-pack', packLabel: 'Test ponies', packDescription: 'Test only.' }
-      : undefined
+      : undefined,
+    showPony: async pony => { shownPonies.push(pony); }
   });
 
   await callback({ rootUri: uri }, {
@@ -154,6 +164,8 @@ async function run() {
     mcpTool: 'github_create_pull_request',
     source: chatSource
   });
+  assert.equal(shownPonies.length, 1);
+  assert.equal(shownPonies[0].packId, 'test-pack');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
   const browserOptions = calls[0].args[0];
