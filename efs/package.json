@@ -224,6 +224,21 @@
           "default": true,
           "scope": "machine",
           "description": "Automatically install Sweetie Bot updates from main and restore customizations after VS Code and extension updates. Reload when prompted to apply changes."
+        },
+        "scmToolkit.messagePlaceholder": {
+          "type": "string",
+          "default": "Message",
+          "description": "Text shown in the Source Control commit-message box. Leave blank to use VS Code's default."
+        },
+        "scmToolkit.commitButtonLabel": {
+          "type": "string",
+          "default": "Send",
+          "description": "Text shown on the primary Source Control commit action."
+        },
+        "scmToolkit.commitAndSendButtonLabel": {
+          "type": "string",
+          "default": "Send",
+          "description": "Text shown on the primary commit action when git.postCommitCommand is push."
         }
       }
     }

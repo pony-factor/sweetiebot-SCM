@@ -52,6 +52,9 @@ async function openSettings(context) {
     vscodeSettings: {
       openPanelOnStartup,
       automaticAppRepair: scm.get('automaticAppRepair', true),
+      messagePlaceholder: scm.get('messagePlaceholder', 'Message'),
+      commitButtonLabel: scm.get('commitButtonLabel', 'Send'),
+      commitAndSendButtonLabel: scm.get('commitAndSendButtonLabel', 'Send'),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       codexKeepAwake: scm.get('codexKeepAwake', true),

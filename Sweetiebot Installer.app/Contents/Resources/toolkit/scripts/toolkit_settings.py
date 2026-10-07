@@ -11,7 +11,7 @@ DEFAULT_SETTINGS = {
     "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining",
     "branchCustomNames": "",
     "branchNameImports": "[]",
-    "shortPlaceholder": True,
+    "messagePlaceholder": "Message",
     "commitButtonLabel": "Send",
     "commitAndSendButtonLabel": "Send",
     "sourceControlLabel": "Sweetie Bot",
@@ -119,7 +119,12 @@ def load_settings():
     settings = {}
     for name, default in DEFAULT_SETTINGS.items():
         git_key = SETTING_KEYS[name]
-        if isinstance(default, bool):
+        if name == "messagePlaceholder":
+            value = read_git_string(git_key, None, preserve_empty=True)
+            if value is None:
+                value = "Message" if read_git_bool("scm-toolkit.short-placeholder", True) else ""
+            settings[name] = value
+        elif isinstance(default, bool):
             settings[name] = read_git_bool(git_key, default)
         else:
             settings[name] = read_git_string(
@@ -136,7 +141,7 @@ SETTING_KEYS = {
     "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",
     "branchCustomNames": "scm-toolkit.branch-custom-names",
     "branchNameImports": "scm-toolkit.branch-name-imports",
-    "shortPlaceholder": "scm-toolkit.short-placeholder",
+    "messagePlaceholder": "scm-toolkit.message-placeholder",
     "commitButtonLabel": "scm-toolkit.commit-button-label",
     "commitAndSendButtonLabel": "scm-toolkit.commit-and-send-button-label",
     "sourceControlLabel": "scm-toolkit.source-control-label",
@@ -222,6 +227,9 @@ VSCODE_SETTINGS = {
     "vscodeSettings": {
         "automaticAppRepair": "automaticAppRepair",
         "openPanelOnStartup": "openPanelOnStartup",
+        "messagePlaceholder": "messagePlaceholder",
+        "commitButtonLabel": "commitButtonLabel",
+        "commitAndSendButtonLabel": "commitAndSendButtonLabel",
         "autoPublishNewBranches": "autoPublishNewBranches",
         "automaticBranchCleanup": "automaticBranchCleanup",
         "pullRequestAutoRefresh": "pullRequestAutoRefresh",

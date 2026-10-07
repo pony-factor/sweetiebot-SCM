@@ -174,6 +174,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(parsed["commitAndPush"])
         self.assertEqual(parsed["aiCommitModel"], "qwen2.5-coder:7b")
         self.assertEqual(parsed["sourceControlLabel"], "Sweetie Bot")
+        self.assertEqual(parsed["messagePlaceholder"], "Message")
         self.assertTrue(parsed["openPanelOnStartup"])
         self.assertEqual(parsed["commitButtonLabel"], "Send")
         self.assertEqual(parsed["commitAndSendButtonLabel"], "Send")
@@ -262,6 +263,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="branchCustomNames"', page)
         self.assertIn('name="branchNameImports"', page)
         self.assertIn('name="sourceControlLabel"', page)
+        self.assertIn('name="messagePlaceholder"', page)
         self.assertIn('name="openPanelOnStartup"', page)
         self.assertIn("Open Sweetie Bot on startup", page)
         self.assertIn('name="commitButtonLabel"', page)
@@ -288,10 +290,16 @@ class SubmissionTests(unittest.TestCase):
     def test_extension_payload_exposes_startup_user_setting(self):
         parsed = configurator.parse_submission(form_values())
         parsed["openPanelOnStartup"] = False
+        parsed["messagePlaceholder"] = "Commit here"
+        parsed["commitButtonLabel"] = "Commit"
+        parsed["commitAndSendButtonLabel"] = "Commit + Push"
 
         payload = configurator.extension_settings_payload(parsed)
 
         self.assertFalse(payload["vscodeSettings"]["openPanelOnStartup"])
+        self.assertEqual(payload["vscodeSettings"]["messagePlaceholder"], "Commit here")
+        self.assertEqual(payload["vscodeSettings"]["commitButtonLabel"], "Commit")
+        self.assertEqual(payload["vscodeSettings"]["commitAndSendButtonLabel"], "Commit + Push")
         self.assertEqual(
             payload["workspaceSearch"]["embeddingModel"],
             install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],
@@ -326,6 +334,36 @@ class GitConfigTests(unittest.TestCase):
         settings = toolkit_settings.load_settings()
 
         self.assertEqual(settings["branchNameDisabledPacks"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_legacy_short_placeholder_false_restores_native_placeholder(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            None if key == "scm-toolkit.message-placeholder" else default
+        )
+        read_bool.side_effect = lambda key, default: (
+            False if key == "scm-toolkit.short-placeholder" else default
+        )
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["messagePlaceholder"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_new_message_placeholder_overrides_legacy_toggle(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            "Commit here" if key == "scm-toolkit.message-placeholder" else default
+        )
+        read_bool.return_value = False
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["messagePlaceholder"], "Commit here")
+        self.assertFalse(any(
+            call.args[0] == "scm-toolkit.short-placeholder"
+            for call in read_bool.call_args_list
+        ))
 
     @patch("configurator.shutil.which", return_value="/usr/bin/git")
     @patch("configurator.subprocess.run")

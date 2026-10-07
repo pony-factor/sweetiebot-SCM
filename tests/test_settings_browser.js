@@ -14,6 +14,9 @@ async function run() {
         get(key, fallback) {
           if (root === 'scmToolkit' && key === 'openPanelOnStartup') return false;
           if (root === 'scmToolkit' && key === 'autoPublishNewBranches') return true;
+          if (root === 'scmToolkit' && key === 'messagePlaceholder') return 'Commit here';
+          if (root === 'scmToolkit' && key === 'commitButtonLabel') return 'Commit';
+          if (root === 'scmToolkit' && key === 'commitAndSendButtonLabel') return 'Commit + Push';
           if (root === 'scmToolkit.workspaceSearch' && key === 'resultLimit') return 35;
           return fallback;
         },
@@ -43,6 +46,9 @@ async function run() {
         const current = JSON.parse(args[3]);
         assert.equal(current.vscodeSettings.openPanelOnStartup, false);
         assert.equal(current.vscodeSettings.autoPublishNewBranches, true);
+        assert.equal(current.vscodeSettings.messagePlaceholder, 'Commit here');
+        assert.equal(current.vscodeSettings.commitButtonLabel, 'Commit');
+        assert.equal(current.vscodeSettings.commitAndSendButtonLabel, 'Commit + Push');
         assert.equal(current.workspaceSearch.resultLimit, 35);
         assert.equal(current.editorSettings['inlineSuggest.enabled'], true);
         assert.equal(current.gitSettings.postCommitCommand, 'none');
@@ -89,7 +95,13 @@ async function run() {
   const saved = {embeddingModel: 'custom:embed', chatModel: 'custom:chat', askOllama: true};
   children[0].stdout.emit('data', JSON.stringify({
     workspaceSearch: saved,
-    vscodeSettings: {openPanelOnStartup: true, autoPublishNewBranches: true},
+    vscodeSettings: {
+      openPanelOnStartup: true,
+      autoPublishNewBranches: true,
+      messagePlaceholder: 'Type a commit message',
+      commitButtonLabel: 'Save',
+      commitAndSendButtonLabel: 'Save + Push'
+    },
     editorSettings: {'inlineSuggest.enabled': false},
     gitSettings: {postCommitCommand: 'push'}
   }) + '\n');
@@ -100,6 +112,9 @@ async function run() {
     })),
     {root: 'scmToolkit', key: 'openPanelOnStartup', value: true, target: 1},
     {root: 'scmToolkit', key: 'autoPublishNewBranches', value: true, target: 1},
+    {root: 'scmToolkit', key: 'messagePlaceholder', value: 'Type a commit message', target: 1},
+    {root: 'scmToolkit', key: 'commitButtonLabel', value: 'Save', target: 1},
+    {root: 'scmToolkit', key: 'commitAndSendButtonLabel', value: 'Save + Push', target: 1},
     {root: 'editor', key: 'inlineSuggest.enabled', value: false, target: 1},
     {root: 'git', key: 'postCommitCommand', value: 'push', target: 1}
   ]);

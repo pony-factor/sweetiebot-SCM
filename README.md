@@ -7,7 +7,7 @@ Current features:
 - show the current branch inside the SCM message box and open VS Code's normal branch picker from it
 - switch the branch selector and native Commit button between outlined and accent-filled styles
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
-- shorten the commit-message placeholder to `Message`
+- customize the commit-message placeholder (defaults to `Message`)
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
 - clean up unchanged local branches after their same-repository PR merges into the default branch
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
@@ -146,7 +146,7 @@ Set options with `git config --global`:
 ```sh
 git config --global scm-toolkit.branch-picker true
 git config --global scm-toolkit.pony-branch true
-git config --global scm-toolkit.short-placeholder true
+git config --global scm-toolkit.message-placeholder "Message"
 git config --global scm-toolkit.commit-button-label "Send"
 git config --global scm-toolkit.commit-and-send-button-label "Send"
 git config --global scm-toolkit.source-control-label "Sweetie Bot"
@@ -195,7 +195,7 @@ The equivalent `~/.gitconfig` block is:
 [scm-toolkit]
     branch-picker = true
     pony-branch = true
-    short-placeholder = true
+    message-placeholder = Message
     commit-button-label = Send
     commit-and-send-button-label = Send
     source-control-label = Sweetie Bot
@@ -517,7 +517,7 @@ customizations.
 
 ### Commit and push
 
-The normal commit action and the commit-and-send state have independent text overrides. Set `scm-toolkit.commit-button-label` for ordinary commits and `scm-toolkit.commit-and-send-button-label` for the primary action while `git.postCommitCommand` is `push`. Both default to **Send**.
+The Source Control message placeholder and commit actions have independent text overrides. Set `scm-toolkit.message-placeholder` to replace the commit-message placeholder (default **Message**); leave it blank to restore VS Code's native placeholder. Set `scm-toolkit.commit-button-label` for ordinary commits and `scm-toolkit.commit-and-send-button-label` for the primary action while `git.postCommitCommand` is `push`. Both action labels default to **Send**. Changes made through the Sweetiebot settings page are mirrored into VS Code configuration and update the running Source Control UI without a window reload.
 
 When `commit-and-push` is enabled, the checkbox mirrors VS Code's `git.postCommitCommand` setting. Checking it sets the value to `push`; unchecking it sets the value to `none`.
 
