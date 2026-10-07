@@ -376,7 +376,7 @@ def strip_codex_timestamps_payload(text):
     return before + after
 
 
-def codex_countdown_edits(js):
+def codex_countdown_edits(js, hide_reset_times=False):
     identifier = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
         rf"(?<![\w$])(?P<title>{identifier})=(?P<date>{identifier})==null\?"
@@ -386,7 +386,7 @@ def codex_countdown_edits(js):
     )
     matches = list(pattern.finditer(js))
     if not matches:
-        return [codex_countdown_edit(js)]
+        return [codex_countdown_edit(js, hide_reset_times=hide_reset_times)]
     if len(matches) != 1:
         raise ValueError("Unsupported Codex extension build: usage-banner anchor is ambiguous.")
     match = matches[0]
@@ -395,9 +395,14 @@ def codex_countdown_edits(js):
     if jsx is None or "codex.rateLimitUpsellBanner.dismiss" not in segment:
         raise ValueError("Unsupported Codex extension build: usage-banner JSX anchor does not match.")
     banner = match.group("banner")
-    edits = [(match.group(0),
-        f'{match.group("title")}=scmToolkitUsageResetMessage({banner}.title,{banner}.reset_at,{jsx.group(1)}.jsx),'
-        f'{match.group("description")}=scmToolkitUsageResetMessage({banner}.description,{banner}.reset_at,{jsx.group(1)}.jsx),')]
+    if hide_reset_times:
+        edits = [(match.group(0),
+            f'{match.group("title")}=`You’re out of Codex messages`,'
+            f'{match.group("description")}=``,')]
+    else:
+        edits = [(match.group(0),
+            f'{match.group("title")}=scmToolkitUsageResetMessage({banner}.title,{banner}.reset_at,{jsx.group(1)}.jsx),'
+            f'{match.group("description")}=scmToolkitUsageResetMessage({banner}.description,{banner}.reset_at,{jsx.group(1)}.jsx),')]
     weekly = re.compile(
         rf"(?<![\w$])(?P<display>{identifier})=(?P<date>{identifier})==null\?"
         rf"(?P<banner>{identifier})\.description:(?P=banner)\.description\.replace\(`\{{time\}}`,(?P=date)\),"
@@ -408,29 +413,52 @@ def codex_countdown_edits(js):
         jsx = re.search(rf"\(0,({identifier})\.jsx\)", before)
         if reset is None or jsx is None:
             raise ValueError("Unsupported Codex extension build: weekly-reset anchor does not match.")
-        edits.append((match.group(0),
-            f'{match.group("display")}=scmToolkitUsageResetMessage({match.group("banner")}.description,{reset.group(1)},{jsx.group(1)}.jsx),'))
-    edits.extend(codex_transcript_countdown_edits(js))
+        if hide_reset_times:
+            edits.append((match.group(0), f'{match.group("display")}=``,'))
+        else:
+            edits.append((match.group(0),
+                f'{match.group("display")}=scmToolkitUsageResetMessage({match.group("banner")}.description,{reset.group(1)},{jsx.group(1)}.jsx),'))
+    edits.extend(codex_transcript_countdown_edits(js, hide_reset_times=hide_reset_times))
     return edits
 
 
-def codex_transcript_countdown_edits(js):
+def codex_transcript_countdown_edits(js, hide_reset_times=False):
     anchor = 'localConversation.usageLimit.upgrade.noReset'
     if anchor not in js:
         return []  # Older builds have no separate transcript usage-limit message.
+
+    edits = []
+    if hide_reset_times:
+        identifier = r"[A-Za-z_$][\\w$]*"
+        formatter = list(re.finditer(
+            rf"(?<![\\w$])(?P<display>{identifier})=(?P<reset>{identifier})==null\\?null:"
+            rf"(?P<formatter>{identifier})\\((?P<intl>{identifier}),(?P=reset)\\);",
+            js,
+        ))
+        if len(formatter) != 1:
+            raise ValueError("Unsupported Codex extension build: transcript reset-time anchor does not match.")
+        match = formatter[0]
+        edits.append((match.group(0), f'{match.group("display")}=null'))
+
     messages = list(re.finditer(
-        r"id:`localConversation\.usageLimit\.(?:upgrade|upgradeOrAddCredits|addCredits|retry)`,"
-        r"defaultMessage:`[^`]*\bat \{resetDate\}[^`]*`", js))
+        r"id:`localConversation\\.usageLimit\\.(?:upgrade|upgradeOrAddCredits|addCredits|retry)`,"
+        r"defaultMessage:`[^`]*\\bat \\{resetDate\\}[^`]*`", js))
     if not messages:
         raise ValueError("Unsupported Codex extension build: transcript usage-limit messages do not match.")
-    edits = []
     for match in messages:
         original = match.group(0)
         replacement = original.replace('`,defaultMessage:', '.noResetTime`,defaultMessage:')
-        replacement = replacement.replace('at {resetDate}', 'later')
+        if hide_reset_times:
+            replacement = re.sub(
+                r'defaultMessage:`[^`]*`',
+                'defaultMessage:`You’re out of Codex messages`',
+                replacement,
+                count=1,
+            )
+        else:
+            replacement = replacement.replace('at {resetDate}', 'later')
         edits.append((original, replacement))
     return edits
-
 
 def strip_codex_dictation_payload(text):
     if CODEX_DICTATION_START not in text:
@@ -442,7 +470,7 @@ def strip_codex_dictation_payload(text):
     return before + after
 
 
-def codex_countdown_edit(js):
+def codex_countdown_edit(js, hide_reset_times=False):
     matches = []
     pattern = re.compile(
         r"(?P<display>[A-Za-z_$][\w$]*)=(?P<reset>[A-Za-z_$][\w$]*)==null\?null:"
@@ -469,16 +497,19 @@ def codex_countdown_edit(js):
 
     jsx = jsx_match.group(1)
     original = match.group(0)
-    replacement = (
-        f'{match.group("display")}={match.group("reset")}==null?null:'
-        f'(0,{jsx}.jsx)(`scm-toolkit-usage-reset-countdown`,{{'
-        f'"reset-at":{match.group("reset")}'
-        '}),'
-    )
+    if hide_reset_times:
+        replacement = f'{match.group("display")}=null,'
+    else:
+        replacement = (
+            f'{match.group("display")}={match.group("reset")}==null?null:'
+            f'(0,{jsx}.jsx)(`scm-toolkit-usage-reset-countdown`,{{'
+            f'"reset-at":{match.group("reset")}'
+            '}),'
+        )
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False):
+def transform_codex(js, enabled=False, hide_usage_reset_times=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -510,8 +541,8 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 )
             js = js.replace(replacement, original, 1)
 
-    if not remove and enabled:
-        edits = codex_countdown_edits(js)
+    if not remove and (enabled or hide_usage_reset_times):
+        edits = codex_countdown_edits(js, hide_reset_times=hide_usage_reset_times)
         for original, replacement in edits:
             if js.count(original) != 1:
                 raise ValueError("Unsupported Codex extension build: reset-time anchor is ambiguous.")
@@ -522,7 +553,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + "/* edit:"
             + json.dumps({"edits": edits})
             + " */\n"
-            + (CODEX_ASSETS / "codex-countdown.js").read_text()
+            + ("" if hide_usage_reset_times else (CODEX_ASSETS / "codex-countdown.js").read_text())
             + CODEX_END
         )
 
@@ -795,9 +826,13 @@ def main():
             paths.append(awake_path)
             old.append(awake_old)
             new.append(awake_new)
+    usage_patch_enabled = (
+        settings["codexUsageResetCountdown"] or settings["codexHideUsageResetTimes"]
+    ) and not args.uninstall
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=settings["codexUsageResetCountdown"] and not args.uninstall,
+        enabled=usage_patch_enabled,
+        hide_reset_times=settings["codexHideUsageResetTimes"] and not args.uninstall,
     ):
         paths.append(usage_path)
         old.append(usage_old)
@@ -816,6 +851,7 @@ def main():
 
     should_find_codex = (
         settings["codexUsageResetCountdown"]
+        or settings["codexHideUsageResetTimes"]
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
         or settings["codexHideDictation"]
@@ -837,6 +873,7 @@ def main():
                     CODEX_START in codex_old or 'codex.rateLimitUpsellBanner.dismiss' in codex_old
                     or 'You’re out of Codex messages' in codex_old
                 ),
+                hide_usage_reset_times=settings["codexHideUsageResetTimes"],
                 hide_promotions=settings["codexHidePromotions"],
                 hide_timestamps=settings["codexHideChatTimestamps"],
                 hide_dictation=settings["codexHideDictation"],

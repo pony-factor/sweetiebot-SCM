@@ -43,6 +43,7 @@ SETTINGS = {
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
+    "codexHideUsageResetTimes": False,
     "codexHidePromotions": False,
     "chatgptCustomInstructions": "",
     "chatgptWebCodexCoauthor": True,
@@ -631,6 +632,42 @@ class CodexCountdownTests(unittest.TestCase):
 
     def test_countdown_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsageResetCountdown"])
+        self.assertFalse(install.DEFAULT_SETTINGS["codexHideUsageResetTimes"])
+
+    def test_reset_time_hiding_strips_banner_and_weekly_dates(self):
+        original = self.modern_fixture()
+        patched = install.transform_codex(original, hide_usage_reset_times=True)
+
+        self.assertIn('x=`You’re out of Codex messages`,b=``,', patched)
+        self.assertIn('pe=``,', patched)
+        self.assertNotIn('scmToolkitUsageResetMessage(', patched)
+        self.assertNotIn('scm-toolkit-usage-reset-countdown', patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_reset_time_hiding_strips_transcript_dates(self):
+        transcript = (
+            'u=e==null?null:format(r,e);'
+            '(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`});'
+            '(0,J.jsx)(Message,{id:`localConversation.usageLimit.retry`,'
+            'defaultMessage:`Try again at {resetDate}.`,values:{resetDate:r}});'
+        )
+        original = self.modern_fixture() + transcript
+        patched = install.transform_codex(original, hide_usage_reset_times=True)
+
+        self.assertIn('u=null', patched)
+        self.assertIn('usageLimit.retry.noResetTime', patched)
+        self.assertIn('defaultMessage:`You’re out of Codex messages`', patched)
+        self.assertNotIn('at {resetDate}', patched)
+        self.assertNotIn('scm-toolkit-usage-reset-countdown', patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_reset_time_hiding_strips_legacy_reset_date(self):
+        original = self.fixture()
+        patched = install.transform_codex(original, hide_usage_reset_times=True)
+
+        self.assertIn('Ge=null,', patched)
+        self.assertNotIn('scm-toolkit-usage-reset-countdown', patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
 
     def test_codex_countdown_install_and_remove_round_trip(self):
         original = self.fixture()
