@@ -509,6 +509,15 @@ class ModelSetupTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
+    def test_settings_server_exits_when_extension_host_disappears(self):
+        with patch('configurator.os.kill', side_effect=ProcessLookupError), patch('builtins.print'):
+            thread = threading.Thread(target=lambda: configurator.run_configurator(
+                install.DEFAULT_SETTINGS, open_browser=False, parent_pid=12345,
+            ), daemon=True)
+            thread.start()
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive(), 'An orphaned settings server must release its port')
+
     @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
     def test_local_server_serves_form_and_can_cancel(self, _models):
         opened = threading.Event()

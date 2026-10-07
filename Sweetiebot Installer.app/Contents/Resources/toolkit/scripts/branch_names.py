@@ -164,18 +164,25 @@ def resolve_runtime_settings(settings: dict[str, object]) -> dict[str, object]:
         load_catalog(),
         parse_imported_packs(settings.get("branchNameImports", "[]")),
     )
-    known_ids = {str(pack["id"]) for pack in catalog["packs"]}
-    disabled = [
-        pack_id
-        for pack_id in parse_pack_id_list(
-            settings.get("branchNameDisabledPacks", "")
-        )
-        if pack_id in known_ids
-    ]
+    pack_ids = [str(pack["id"]) for pack in catalog["packs"]]
+    known_ids = set(pack_ids)
+    enabled_raw = settings.get("branchNameEnabledPacks")
+    if enabled_raw is None:
+        disabled = [
+            pack_id
+            for pack_id in parse_pack_id_list(
+                settings.get("branchNameDisabledPacks", "")
+            )
+            if pack_id in known_ids
+        ]
+    else:
+        enabled = set(parse_pack_id_list(enabled_raw)) & known_ids
+        disabled = [pack_id for pack_id in pack_ids if pack_id not in enabled]
     runtime["branchNamePacks"] = catalog["packs"]
     runtime["branchNameDisabledPacks"] = disabled
     runtime["branchCustomNames"] = parse_name_list(
         settings.get("branchCustomNames", "")
     )
     runtime.pop("branchNameImports", None)
+    runtime.pop("branchNameEnabledPacks", None)
     return runtime

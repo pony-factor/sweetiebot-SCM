@@ -7,6 +7,7 @@ const { EventEmitter } = require('node:events');
 async function run() {
   const children = [], calls = [], errors = [], updates = [];
   const state = new Map();
+  const workspaceState = new Map();
   let available = true, failOpen = false;
   const vscode = {
     ConfigurationTarget: { Global: 1 },
@@ -35,7 +36,7 @@ async function run() {
     }
   };
   const sandbox = vm.createContext({
-    module: { exports: {} }, process, URL,
+    module: { exports: {} }, process, URL, setTimeout, clearTimeout,
     require(name) {
       if (name === 'vscode') return vscode;
       if (name === './python_runtime') {
@@ -78,6 +79,10 @@ async function run() {
       globalState: {
         get(key, fallback) { return state.has(key) ? state.get(key) : fallback; },
         async update(key, value) { state.set(key, value); }
+      },
+      workspaceState: {
+        get(key, fallback) { return workspaceState.has(key) ? workspaceState.get(key) : fallback; },
+        async update(key, value) { workspaceState.set(key, value); }
       }
     }
   });
@@ -104,7 +109,8 @@ async function run() {
   assert.equal(calls[0].options.url, url);
   assert.equal(calls[0].options.openToSide, false);
   assert.equal(calls[0].options.reuseUrlFilter, url);
-  assert.equal(state.get('scmToolkit.settingsSessionUrl'), url);
+  assert.equal(workspaceState.get('scmToolkit.settingsSessionUrl'), url);
+  assert.equal(state.has('scmToolkit.settingsSessionUrl'), false, 'New sessions must not overwrite another workspace URL');
   assert.equal(state.get('scmToolkit.settingsPageOpened'), true);
   await open();
   assert.equal(calls.length, 2, 'Repeated click must refocus the native browser');
@@ -140,7 +146,7 @@ async function run() {
   children[0].emit('exit', 0);
   await open();
   assert.equal(children.length, 2, 'A finished settings session must be restartable');
-  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-4), ['--port', '49152', '--token', 'test']);
+  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-6), ['--parent-pid', String(process.pid), '--port', '49152', '--token', 'test']);
   failOpen = true;
   children[1].stdout.emit('data', line + '\n');
   await tick();
@@ -150,8 +156,10 @@ async function run() {
   children[1].exitCode = 0;
   children[1].emit('exit', 0);
   await open();
-  sandbox.module.exports.deactivate();
+  const shutdown = sandbox.module.exports.deactivate();
   assert.equal(children[2].killed, true, 'Closing the extension must stop its server');
+  children[2].emit('exit', 0);
+  await shutdown;
   assert.equal(errors.length, 0);
   console.log('Settings native browser checks passed.');
 }
