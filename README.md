@@ -450,10 +450,16 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
 Codex extension show the time remaining as a live countdown such as `4h 23m`. The
 display rounds to the nearest minute and refreshes as the countdown changes.
-The local composer label beside the location icon shows the smaller remaining
-percentage of the five-hour and weekly usage limits. Until usage data is available,
-it shows **Work locally**. The usage submenu shows centered reset countdowns;
-weekly resets display the number of days left instead of a calendar date.
+The local composer label beside the location icon shows the remaining percentage
+of the five-hour usage limit and shows an ellipsis until usage data is available.
+The usage submenu shows centered reset countdowns. The dedicated **Usage** dialog
+also rewrites its **Resets** clock times and calendar dates as relative time, while
+weekly resets use whole calendar days.
+
+Enable `codex-hide-usage-reset-times` to suppress reset dates and countdowns instead.
+Exhausted notices reduce to **You’re out of Codex messages**, while the local usage
+menu and dedicated **Usage** dialog keep usage information without showing future
+reset times. Hiding reset times takes precedence if the countdown option is also enabled.
 
 To install or refresh only this optional Codex patch without touching the SCM
 workbench patch, run:

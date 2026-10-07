@@ -1578,6 +1578,40 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     document.querySelectorAll(selector).forEach(update);
 })();
 
+// Render Sweetiebot's inline GitHub PR squash action as a labeled button instead of a glyph.
+(() => {
+    const selector =
+        '.monaco-workbench .monaco-list-row .monaco-action-bar .action-item > .action-label';
+    const isMergeAction = action => {
+        const item = action.closest('.action-item');
+        const label = [
+            action.getAttribute('aria-label'),
+            action.getAttribute('title'),
+            item?.getAttribute('aria-label'),
+            item?.getAttribute('title')
+        ].filter(Boolean).join(' ');
+        return /Squash and Merge into main/i.test(label);
+    };
+    const update = () => {
+        for (const action of document.querySelectorAll(selector)) {
+            if (!isMergeAction(action)) continue;
+            action.classList.add('sweetiebot-pr-squash-merge');
+            if (action.textContent !== 'Squash and merge') {
+                action.textContent = 'Squash and merge';
+            }
+        }
+    };
+
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['aria-label', 'title']
+    });
+})();
+
 // Toggle the native VS Code window between its current bounds and a centered compact layout.
 (() => {
     const actionId = 'sweetiebot-compact-window-action';

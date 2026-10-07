@@ -61,4 +61,40 @@ context.document.hidden = false;
 listeners['document:visibilitychange']();
 assert.equal(latestRefreshes, 3);
 
+const relativeReset = context.scmToolkitRelativeUsageReset;
+assert.equal(relativeReset((1_800_000_000_000 + 105 * 60_000) / 1000, 300, 1_800_000_000_000), '1h 45m');
+assert.equal(relativeReset((1_800_000_000_000 + 2 * 86400000) / 1000, 10080, 1_800_000_000_000), '2 days');
+
+const relativeLabel = context.scmToolkitRelativeUsageResetLabel;
+const lateEvening = new Date(2026, 9, 3, 23, 39).getTime();
+assert.equal(relativeLabel('Resets 1:24 AM', lateEvening), 'Resets in 1h 45m');
+const octoberSeventh = new Date(2026, 9, 7, 3, 30).getTime();
+assert.equal(relativeLabel('Resets Oct 9', octoberSeventh), 'Resets in 2 days');
+assert.equal(relativeLabel('Resets Oct 7', octoberSeventh), 'Resets today');
+assert.equal(relativeLabel('Not a reset', octoberSeventh), null);
+
+const resetRows = [
+    { textContent: 'Resets 1:24 AM', children: [] },
+    { textContent: 'Resets Oct 9', children: [] },
+];
+const usageDialog = {
+    textContent: 'Usage 5 hour usage limit Resets 1:24 AM Weekly usage limit Resets Oct 9',
+    querySelectorAll() { return resetRows; },
+};
+context.scmToolkitApplyUsageDialogRelativeTimes({
+    querySelectorAll() { return [usageDialog]; },
+}, lateEvening);
+assert.equal(resetRows[0].textContent, 'Resets in 1h 45m');
+// The weekly row is also rewritten from its absolute calendar date.
+assert.match(resetRows[1].textContent, /^Resets in \d+ days?$/);
+
+context.scmToolkitHideUsageResetTimes = true;
+resetRows[0].textContent = 'Resets 1:24 AM';
+resetRows[1].textContent = 'Resets Oct 9';
+context.scmToolkitApplyUsageDialogRelativeTimes({
+    querySelectorAll() { return [usageDialog]; },
+}, lateEvening);
+assert.equal(resetRows[0].textContent, '');
+assert.equal(resetRows[1].textContent, '');
+
 console.log('Codex five-hour usage and reset regression checks passed.');
