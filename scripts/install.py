@@ -560,7 +560,19 @@ def transform_codex(js, enabled=False, hide_usage_reset_times=False, hide_promot
         if saved is None:
             raise ValueError("Installed Codex countdown patch is missing its edit metadata.")
         metadata = json.loads(saved.group(1))
-        edits = metadata["edits"] if isinstance(metadata, dict) else [metadata]
+        if isinstance(metadata, dict) and "edits_hex" in metadata:
+            try:
+                edits = [
+                    [
+                        bytes.fromhex(original).decode("utf-8"),
+                        bytes.fromhex(replacement).decode("utf-8"),
+                    ]
+                    for original, replacement in metadata["edits_hex"]
+                ]
+            except (TypeError, ValueError, UnicodeDecodeError) as error:
+                raise ValueError("Installed Codex countdown patch has invalid edit metadata.") from error
+        else:
+            edits = metadata["edits"] if isinstance(metadata, dict) else [metadata]
         js = strip_codex_payload(js)
         for original, replacement in reversed(edits):
             if js.count(replacement) != 1:
@@ -579,7 +591,12 @@ def transform_codex(js, enabled=False, hide_usage_reset_times=False, hide_promot
             js
             + CODEX_START
             + "/* edit:"
-            + json.dumps({"edits": edits})
+            + json.dumps({
+                "edits_hex": [
+                    [original.encode("utf-8").hex(), replacement.encode("utf-8").hex()]
+                    for original, replacement in edits
+                ]
+            })
             + " */\n"
             + ("" if hide_usage_reset_times else (CODEX_ASSETS / "codex-countdown.js").read_text())
             + CODEX_END
