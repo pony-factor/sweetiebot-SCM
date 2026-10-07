@@ -15,7 +15,7 @@ import codex_image_drop
 import codex_recent_chats
 import github_pr
 from pathlib import Path
-from toolkit_settings import DEFAULT_SETTINGS, load_settings, read_git_bool, read_git_string
+from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string
 from branch_names import resolve_runtime_settings
 
 HERE = Path(__file__).resolve().parent
@@ -45,34 +45,6 @@ def ai_wrapper_path():
 
 def legacy_ai_wrapper_path():
     return Path("~/.local/bin/git-auto-title").expanduser()
-
-
-def commit_instructions_path():
-    configured = os.environ.get(
-        "SCM_TOOLKIT_COMMIT_INSTRUCTIONS",
-        "~/.config/sweetiebot/commit-instructions.md",
-    )
-    return Path(configured).expanduser()
-
-
-def sync_commit_instructions(check=False, destination=None):
-    target = (
-        Path(destination).expanduser()
-        if destination is not None
-        else commit_instructions_path()
-    )
-    if target.is_symlink():
-        raise RuntimeError(
-            f"Refusing to replace symlinked commit instructions: {target}"
-        )
-    if target.exists():
-        return False
-
-    if not check:
-        source = HERE.parent / "assets" / "commit-instructions.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(source.read_bytes())
-    return True
 
 
 def sync_ai_wrapper(remove=False, check=False, destination=None):
@@ -404,7 +376,7 @@ def strip_codex_timestamps_payload(text):
     return before + after
 
 
-def codex_countdown_edits(js, hide_reset_times=False):
+def codex_countdown_edits(js):
     identifier = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
         rf"(?<![\w$])(?P<title>{identifier})=(?P<date>{identifier})==null\?"
@@ -414,7 +386,7 @@ def codex_countdown_edits(js, hide_reset_times=False):
     )
     matches = list(pattern.finditer(js))
     if not matches:
-        return [codex_countdown_edit(js, hide_reset_times=hide_reset_times)]
+        return [codex_countdown_edit(js)]
     if len(matches) != 1:
         raise ValueError("Unsupported Codex extension build: usage-banner anchor is ambiguous.")
     match = matches[0]
@@ -423,14 +395,9 @@ def codex_countdown_edits(js, hide_reset_times=False):
     if jsx is None or "codex.rateLimitUpsellBanner.dismiss" not in segment:
         raise ValueError("Unsupported Codex extension build: usage-banner JSX anchor does not match.")
     banner = match.group("banner")
-    if hide_reset_times:
-        edits = [(match.group(0),
-            f'{match.group("title")}=`You’re out of Codex messages`,'
-            f'{match.group("description")}=``,')]
-    else:
-        edits = [(match.group(0),
-            f'{match.group("title")}=scmToolkitUsageResetMessage({banner}.title,{banner}.reset_at,{jsx.group(1)}.jsx),'
-            f'{match.group("description")}=scmToolkitUsageResetMessage({banner}.description,{banner}.reset_at,{jsx.group(1)}.jsx),')]
+    edits = [(match.group(0),
+        f'{match.group("title")}=scmToolkitUsageResetMessage({banner}.title,{banner}.reset_at,{jsx.group(1)}.jsx),'
+        f'{match.group("description")}=scmToolkitUsageResetMessage({banner}.description,{banner}.reset_at,{jsx.group(1)}.jsx),')]
     weekly = re.compile(
         rf"(?<![\w$])(?P<display>{identifier})=(?P<date>{identifier})==null\?"
         rf"(?P<banner>{identifier})\.description:(?P=banner)\.description\.replace\(`\{{time\}}`,(?P=date)\),"
@@ -441,52 +408,42 @@ def codex_countdown_edits(js, hide_reset_times=False):
         jsx = re.search(rf"\(0,({identifier})\.jsx\)", before)
         if reset is None or jsx is None:
             raise ValueError("Unsupported Codex extension build: weekly-reset anchor does not match.")
-        if hide_reset_times:
-            edits.append((match.group(0), f'{match.group("display")}=``,'))
-        else:
-            edits.append((match.group(0),
-                f'{match.group("display")}=scmToolkitUsageResetMessage({match.group("banner")}.description,{reset.group(1)},{jsx.group(1)}.jsx),'))
-    edits.extend(codex_transcript_countdown_edits(js, hide_reset_times=hide_reset_times))
+        edits.append((match.group(0),
+            f'{match.group("display")}=scmToolkitUsageResetMessage({match.group("banner")}.description,{reset.group(1)},{jsx.group(1)}.jsx),'))
+    edits.extend(codex_transcript_countdown_edits(js))
     return edits
 
 
-def codex_transcript_countdown_edits(js, hide_reset_times=False):
+def codex_transcript_countdown_edits(js):
     anchor = 'localConversation.usageLimit.upgrade.noReset'
     if anchor not in js:
         return []  # Older builds have no separate transcript usage-limit message.
-
-    edits = []
-    if hide_reset_times:
-        identifier = r"[A-Za-z_$][\\w$]*"
-        formatter = list(re.finditer(
-            rf"(?<![\\w$])(?P<display>{identifier})=(?P<reset>{identifier})==null\\?null:"
-            rf"(?P<formatter>{identifier})\\((?P<intl>{identifier}),(?P=reset)\\);",
-            js,
-        ))
-        if len(formatter) != 1:
-            raise ValueError("Unsupported Codex extension build: transcript reset-time anchor does not match.")
-        match = formatter[0]
-        edits.append((match.group(0), f'{match.group("display")}=null'))
-
+    identifier = r"[A-Za-z_$][\w$]*"
+    start = js.index(anchor)
+    before = js[max(0, start - 3000):start]
+    formatter = list(re.finditer(
+        rf"(?P<display>{identifier})=(?P<reset>{identifier})==null\?null:"
+        rf"{identifier}\({identifier},(?P=reset)\)", before))
+    jsx = re.search(rf"\(0,({identifier})\.jsx\)", js[start:start + 5000])
+    if len(formatter) != 1 or jsx is None:
+        raise ValueError("Unsupported Codex extension build: transcript reset-time anchor does not match.")
+    match = formatter[0]
+    edits = [(match.group(0),
+        f'{match.group("display")}={match.group("reset")}==null?null:'
+        f'(0,{jsx.group(1)}.jsx)(`scm-toolkit-usage-reset-countdown`,'
+        f'{{"reset-at":{match.group("reset")}}})')]
     messages = list(re.finditer(
-        r"id:`localConversation\\.usageLimit\\.(?:upgrade|upgradeOrAddCredits|addCredits|retry)`,"
-        r"defaultMessage:`[^`]*\\bat \\{resetDate\\}[^`]*`", js))
+        r"id:`localConversation\.usageLimit\.(?:upgrade|upgradeOrAddCredits|addCredits|retry)`,"
+        r"defaultMessage:`[^`]*\bat \{resetDate\}[^`]*`", js))
     if not messages:
         raise ValueError("Unsupported Codex extension build: transcript usage-limit messages do not match.")
     for match in messages:
         original = match.group(0)
-        replacement = original.replace('`,defaultMessage:', '.noResetTime`,defaultMessage:')
-        if hide_reset_times:
-            replacement = re.sub(
-                r'defaultMessage:`[^`]*`',
-                'defaultMessage:`You’re out of Codex messages`',
-                replacement,
-                count=1,
-            )
-        else:
-            replacement = replacement.replace('at {resetDate}', 'later')
+        replacement = original.replace('`,defaultMessage:', '.countdown`,defaultMessage:')
+        replacement = replacement.replace('at {resetDate}', 'in {resetDate}')
         edits.append((original, replacement))
     return edits
+
 
 def strip_codex_dictation_payload(text):
     if CODEX_DICTATION_START not in text:
@@ -498,7 +455,7 @@ def strip_codex_dictation_payload(text):
     return before + after
 
 
-def codex_countdown_edit(js, hide_reset_times=False):
+def codex_countdown_edit(js):
     matches = []
     pattern = re.compile(
         r"(?P<display>[A-Za-z_$][\w$]*)=(?P<reset>[A-Za-z_$][\w$]*)==null\?null:"
@@ -525,19 +482,16 @@ def codex_countdown_edit(js, hide_reset_times=False):
 
     jsx = jsx_match.group(1)
     original = match.group(0)
-    if hide_reset_times:
-        replacement = f'{match.group("display")}=null,'
-    else:
-        replacement = (
-            f'{match.group("display")}={match.group("reset")}==null?null:'
-            f'(0,{jsx}.jsx)(`scm-toolkit-usage-reset-countdown`,{{'
-            f'"reset-at":{match.group("reset")}'
-            '}),'
-        )
+    replacement = (
+        f'{match.group("display")}={match.group("reset")}==null?null:'
+        f'(0,{jsx}.jsx)(`scm-toolkit-usage-reset-countdown`,{{'
+        f'"reset-at":{match.group("reset")}'
+        '}),'
+    )
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_usage_reset_times=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -569,8 +523,8 @@ def transform_codex(js, enabled=False, hide_usage_reset_times=False, hide_promot
                 )
             js = js.replace(replacement, original, 1)
 
-    if not remove and (enabled or hide_usage_reset_times):
-        edits = codex_countdown_edits(js, hide_reset_times=hide_usage_reset_times)
+    if not remove and enabled:
+        edits = codex_countdown_edits(js)
         for original, replacement in edits:
             if js.count(original) != 1:
                 raise ValueError("Unsupported Codex extension build: reset-time anchor is ambiguous.")
@@ -581,7 +535,7 @@ def transform_codex(js, enabled=False, hide_usage_reset_times=False, hide_promot
             + "/* edit:"
             + json.dumps({"edits": edits})
             + " */\n"
-            + ("" if hide_usage_reset_times else (CODEX_ASSETS / "codex-countdown.js").read_text())
+            + (CODEX_ASSETS / "codex-countdown.js").read_text()
             + CODEX_END
         )
 
@@ -791,11 +745,6 @@ def main():
             remove=args.uninstall, check=True, destination=wrapper_path
         )
     )
-    commit_instructions_changed = (
-        False
-        if args.codex_only or args.repair or args.uninstall
-        else sync_commit_instructions(check=True)
-    )
     model_picker_path = ai_model_picker_path()
     model_picker_changed = (
         False
@@ -861,13 +810,9 @@ def main():
             paths.append(awake_path)
             old.append(awake_old)
             new.append(awake_new)
-    usage_patch_enabled = (
-        settings["codexUsageResetCountdown"] or settings["codexHideUsageResetTimes"]
-    ) and not args.uninstall
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=usage_patch_enabled,
-        hide_reset_times=settings["codexHideUsageResetTimes"] and not args.uninstall,
+        enabled=settings["codexUsageResetCountdown"] and not args.uninstall,
     ):
         paths.append(usage_path)
         old.append(usage_old)
@@ -886,7 +831,6 @@ def main():
 
     should_find_codex = (
         settings["codexUsageResetCountdown"]
-        or settings["codexHideUsageResetTimes"]
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
         or settings["codexHideDictation"]
@@ -908,7 +852,6 @@ def main():
                     CODEX_START in codex_old or 'codex.rateLimitUpsellBanner.dismiss' in codex_old
                     or 'You’re out of Codex messages' in codex_old
                 ),
-                hide_usage_reset_times=settings["codexHideUsageResetTimes"],
                 hide_promotions=settings["codexHidePromotions"],
                 hide_timestamps=settings["codexHideChatTimestamps"],
                 hide_dictation=settings["codexHideDictation"],
@@ -937,7 +880,6 @@ def main():
     if (
         old == list(new)
         and not wrapper_changed
-        and not commit_instructions_changed
         and not model_picker_changed
         and not workspace_search_changed
     ):
@@ -952,8 +894,6 @@ def main():
             write_pair(paths, new, old)
         if not args.codex_only and not args.repair:
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
-            if not args.uninstall:
-                sync_commit_instructions()
             sync_model_picker(
                 enabled=settings["aiModelPicker"],
                 remove=args.uninstall,
@@ -964,6 +904,8 @@ def main():
                 settings=settings,
             )
 
+    if not args.check and not args.uninstall and not args.codex_only:
+        persist_message_bar_layout(settings)
     action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
     target = "Codex customizations" if args.codex_only else "SCM toolkit"
     print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
@@ -972,7 +914,6 @@ def main():
             print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")
         else:
             print(f"AI commit wrapper: {wrapper_path}")
-            print(f"Commit instructions: {commit_instructions_path()}")
             if settings["aiModelPicker"]:
                 print(f"AI model picker: {model_picker_path}")
             else:

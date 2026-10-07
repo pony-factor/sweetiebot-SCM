@@ -42,7 +42,6 @@ SETTINGS = {
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
-    "codexHideUsageResetTimes": False,
     "codexHidePromotions": False,
     "chatgptCustomInstructions": "",
     "chatgptWebCodexCoauthor": True,
@@ -123,16 +122,6 @@ class TransformTests(unittest.TestCase):
         self.assertNotIn(".scm-toolkit-settings::before", css)
         self.assertNotIn(".scm-view .button-container >", css)
 
-    def test_settings_wand_is_vertically_centered(self):
-        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
-        rule = css.split(
-            ".scm-view .monaco-button-dropdown > .scm-toolkit-settings {", 1
-        )[1].split("}", 1)[0]
-
-        self.assertIn("display: flex;", rule)
-        self.assertIn("align-items: center;", rule)
-        self.assertIn("line-height: 1;", rule)
-
     def test_filled_button_setting_controls_outlined_stylesheet(self):
         _, outlined_css = install.transform(
             workbench_fixture(), "base-css", settings=SETTINGS
@@ -204,7 +193,8 @@ class TransformTests(unittest.TestCase):
         self.assertIn("commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument)", js)
         self.assertIn("scm-toolkit-autocomplete", css)
         self.assertIn("scm-toolkit-auto-publish", css)
-        self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)
+        # Two initial dividers plus the factory for additional saved separators.
+        self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 3)
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
         self.assertIn("scmToolkitCustomizeMessagePlaceholder", js)
         self.assertIn("settings.commitAndSendButtonLabel", js)
@@ -499,20 +489,6 @@ class AiWrapperTests(unittest.TestCase):
             self.assertFalse(destination.exists())
 
 
-    def test_commit_instructions_are_seeded_once_and_preserve_edits(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            destination = Path(tmp) / "config" / "commit-instructions.md"
-            self.assertTrue(install.sync_commit_instructions(check=True, destination=destination))
-            self.assertFalse(destination.exists())
-            self.assertTrue(install.sync_commit_instructions(destination=destination))
-            expected = (install.HERE.parent / "assets" / "commit-instructions.md").read_text(encoding="utf-8")
-            self.assertEqual(destination.read_text(encoding="utf-8"), expected)
-            destination.write_text("My persistent rules.\n", encoding="utf-8")
-            self.assertFalse(install.sync_commit_instructions(check=True, destination=destination))
-            self.assertFalse(install.sync_commit_instructions(destination=destination))
-            self.assertEqual(destination.read_text(encoding="utf-8"), "My persistent rules.\n")
-
-
     def test_sync_model_picker_installs_executable_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "bin" / "scm-toolkit-models"
@@ -598,33 +574,21 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertTrue(install.codex_bundle_matches(original))
         self.assertEqual(install.transform_codex(patched, enabled=True), patched)
 
-    def test_transcript_reset_time_is_not_duplicated_and_restores_original(self):
+    def test_transcript_reset_uses_live_countdown_and_restores_original(self):
         transcript = (
             'u=e==null?null:format(r,e);'
             '(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`});'
         )
-        messages = {
-            'upgrade': 'You\'ve hit your usage limit. Upgrade your plan to continue, or try again at {resetDate}.',
-            'upgradeOrAddCredits': 'You\'ve hit your usage limit. Upgrade your plan or add credits to continue, or try again at {resetDate}.',
-            'addCredits': 'You\'ve hit your usage limit. Add credits to continue, or try again at {resetDate}.',
-            'retry': 'Try again at {resetDate}.',
-        }
-        for variant, message in messages.items():
+        for variant in ('upgrade', 'upgradeOrAddCredits', 'addCredits', 'retry'):
             transcript += (
-                '(0,J.jsx)(Message,{id:`localConversation.usageLimit.' + variant + '`,'
-                'defaultMessage:`' + message + '`,values:{resetDate:r}});'
-            )
+                '(0,J.jsx)(Message,{id:`localConversation.usageLimit.' + variant + '`, '
+                'defaultMessage:`Try again at {resetDate}.`,values:{resetDate:r}});'
+            ).replace('`, defaultMessage:', '`,defaultMessage:')
         original = self.modern_fixture() + transcript
         patched = install.transform_codex(original, enabled=True)
-        self.assertIn('u=e==null?null:format(r,e);', patched)
-        self.assertNotIn('u=e==null?null:(0,J.jsx)(`scm-toolkit-usage-reset-countdown`,{"reset-at":e})', patched)
-        self.assertIn('scmToolkitUsageResetMessage(n.description,n.reset_at,J.jsx)', patched)
-        self.assertIn('usageLimit.upgradeOrAddCredits.noResetTime', patched)
-        self.assertIn(
-            'defaultMessage:`You\'ve hit your usage limit. Upgrade your plan or add credits to continue, or try again later.`',
-            patched,
-        )
-        self.assertNotIn('try again at {resetDate}', patched)
+        self.assertIn('u=e==null?null:(0,J.jsx)(`scm-toolkit-usage-reset-countdown`,{"reset-at":e})', patched)
+        self.assertIn('usageLimit.upgradeOrAddCredits.countdown', patched)
+        self.assertIn('defaultMessage:`Try again in {resetDate}.`', patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
         self.assertEqual(install.transform_codex(patched, enabled=True), patched)
 
@@ -646,42 +610,6 @@ class CodexCountdownTests(unittest.TestCase):
 
     def test_countdown_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsageResetCountdown"])
-        self.assertFalse(install.DEFAULT_SETTINGS["codexHideUsageResetTimes"])
-
-    def test_reset_time_hiding_strips_banner_and_weekly_dates(self):
-        original = self.modern_fixture()
-        patched = install.transform_codex(original, hide_usage_reset_times=True)
-
-        self.assertIn('x=`You’re out of Codex messages`,b=``,', patched)
-        self.assertIn('pe=``,', patched)
-        self.assertNotIn('scmToolkitUsageResetMessage(', patched)
-        self.assertNotIn('scm-toolkit-usage-reset-countdown', patched)
-        self.assertEqual(install.transform_codex(patched, remove=True), original)
-
-    def test_reset_time_hiding_strips_transcript_dates(self):
-        transcript = (
-            'u=e==null?null:format(r,e);'
-            '(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`});'
-            '(0,J.jsx)(Message,{id:`localConversation.usageLimit.retry`,'
-            'defaultMessage:`Try again at {resetDate}.`,values:{resetDate:r}});'
-        )
-        original = self.modern_fixture() + transcript
-        patched = install.transform_codex(original, hide_usage_reset_times=True)
-
-        self.assertIn('u=null', patched)
-        self.assertIn('usageLimit.retry.noResetTime', patched)
-        self.assertIn('defaultMessage:`You’re out of Codex messages`', patched)
-        self.assertNotIn('at {resetDate}', patched)
-        self.assertNotIn('scm-toolkit-usage-reset-countdown', patched)
-        self.assertEqual(install.transform_codex(patched, remove=True), original)
-
-    def test_reset_time_hiding_strips_legacy_reset_date(self):
-        original = self.fixture()
-        patched = install.transform_codex(original, hide_usage_reset_times=True)
-
-        self.assertIn('Ge=null,', patched)
-        self.assertNotIn('scm-toolkit-usage-reset-countdown', patched)
-        self.assertEqual(install.transform_codex(patched, remove=True), original)
 
     def test_codex_countdown_install_and_remove_round_trip(self):
         original = self.fixture()

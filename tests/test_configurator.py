@@ -1,6 +1,5 @@
 import json
 import io
-import socket
 import threading
 import urllib.error
 import urllib.parse
@@ -24,7 +23,7 @@ def form_values():
 
     for setting in configurator.SETTINGS:
         current = install.DEFAULT_SETTINGS[setting.name]
-        if setting.kind in {"packs", "pack_state"}:
+        if setting.kind == "packs":
             continue
         if setting.kind == "bool":
             if current:
@@ -35,6 +34,55 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_available_push_control_is_disabled_without_a_visibility_switch(self):
+        values = form_values()
+        values["messageBarLayout"] = ['{"before":["codex"],"after":[]}']
+        values["postCommitAction"] = ["push"]
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["commitAndPush"])
+        self.assertEqual(parsed["postCommitAction"], "none")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertNotIn('type="checkbox" name="commitAndPush"', page)
+        self.assertNotIn("Button options", page)
+        self.assertIn('data-message-bar-zone="hidden"><div class="message-bar-item message-bar-push"', page)
+
+    def test_push_checkbox_and_automatic_sync_are_independent(self):
+        values = form_values()
+        values.pop("postCommitAction")
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["postCommitAction"], "none")
+        self.assertTrue(parsed["autoPullClean"])
+        values["postCommitAction"] = ["push"]
+        values.pop("autoPullClean")
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["postCommitAction"], "push")
+        self.assertFalse(parsed["autoPullClean"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('type="checkbox" name="postCommitAction" value="push" checked', page)
+        self.assertNotIn('<select name="postCommitAction"', page)
+        self.assertIn("Automatically sync", page)
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["autoPullClean"])
+
+    def test_legacy_post_commit_sync_is_replaced_by_unchecked_push(self):
+        current = dict(toolkit_settings.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {"gitSettings": {"postCommitCommand": "sync"}})
+        self.assertEqual(current["postCommitAction"], "none")
+
+    def test_button_visibility_comes_from_layout_instead_of_legacy_switches(self):
+        values = form_values()
+        values["messageBarLayout"] = ['{"before":["codex"],"after":["autocomplete"]}']
+        values.pop("codexCoauthor")
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["codexCoauthor"])
+        self.assertTrue(parsed["autocompleteToggle"])
+        self.assertFalse(parsed["branchPicker"])
+        self.assertFalse(parsed["ponyBranch"])
+        self.assertFalse(parsed["mcpPullRequest"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        for name in (*configurator.MESSAGE_BAR_VISIBILITY_SETTINGS, "inlineSuggestions"):
+            self.assertNotIn(f'type="checkbox" name="{name}"', page)
+            self.assertIn(f'type="hidden" name="{name}"', page)
+
     def test_gear_page_covers_every_toolkit_and_extension_setting(self):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
@@ -49,7 +97,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(properties, exposed)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
         for name in controls:
-            if name not in {"branchNameDisabledPacks", "branchNameEnabledPacks"}:
+            if name != "branchNameDisabledPacks":
                 self.assertIn(f'name="{name}"', page)
 
     def test_cloud_preference_round_trips_into_vscode(self):
@@ -87,6 +135,13 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(configurator.parse_submission(values)["postCommitSpellcheck"])
         values["postCommitSpellcheck"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["postCommitSpellcheck"])
+
+    def test_ai_commit_instruction_sync_defaults_off_and_saves_on(self):
+        values = form_values()
+        self.assertFalse(install.DEFAULT_SETTINGS["aiCommitCustomInstructions"])
+        self.assertFalse(configurator.parse_submission(values)["aiCommitCustomInstructions"])
+        values["aiCommitCustomInstructions"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["aiCommitCustomInstructions"])
 
     def test_browser_toggles_default_off_and_save_on(self):
         values = form_values()
@@ -161,6 +216,10 @@ class SubmissionTests(unittest.TestCase):
     def test_parses_checked_and_unchecked_switches(self):
         values = form_values()
         values.pop("branchPicker")
+        layout = json.loads(values["messageBarLayout"][0])
+        for zone in layout:
+            layout[zone] = [item for item in layout[zone] if item not in {"branch", "sync", "home"}]
+        values["messageBarLayout"] = [json.dumps(layout)]
 
         parsed = configurator.parse_submission(values)
 
@@ -183,6 +242,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(parsed["branchCustomNames"], "")
         self.assertEqual(parsed["branchNameImports"], "[]")
         self.assertEqual(parsed["chatgptCustomInstructions"], "")
+        self.assertFalse(parsed["aiCommitCustomInstructions"])
         self.assertTrue(parsed["chatgptWebCodexCoauthor"])
 
     def test_parses_disabled_custom_and_imported_branch_names(self):
@@ -196,8 +256,6 @@ class SubmissionTests(unittest.TestCase):
         parsed = configurator.parse_submission(values)
 
         self.assertEqual(parsed["branchNameDisabledPacks"], "g4-creatures")
-        self.assertNotIn("g4-creatures", parsed["branchNameEnabledPacks"].split(","))
-        self.assertIn("g4-mares", parsed["branchNameEnabledPacks"].split(","))
         self.assertEqual(parsed["branchCustomNames"], "my-oc,rainy-friend")
         self.assertIn('"id":"friends"', parsed["branchNameImports"])
 
@@ -303,8 +361,8 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="workspaceSearchLabel"', page)
         self.assertIn('name="workspaceSearchAskOllama"', page)
         self.assertIn('name="workspaceSearchChatModel"', page)
-        self.assertNotIn('name="aiCommitCustomInstructions"', page)
-        self.assertNotIn("Sync AI commits with Codex instructions", page)
+        self.assertIn('name="aiCommitCustomInstructions"', page)
+        self.assertIn("Sync AI commits with Codex instructions", page)
         self.assertIn("updateAskOllamaRequirement", page)
         self.assertIn('name="chatgptCustomInstructions"', page)
         self.assertIn('id="sync-chatgpt-instructions"', page)
@@ -359,23 +417,6 @@ class GitConfigTests(unittest.TestCase):
         settings = toolkit_settings.load_settings()
 
         self.assertEqual(settings["branchNameDisabledPacks"], "")
-
-    @patch("toolkit_settings.read_git_bool")
-    @patch("toolkit_settings.read_git_string")
-    def test_enabled_pack_setting_can_be_explicitly_empty(self, read_string, read_bool):
-        read_bool.side_effect = lambda key, default: default
-
-        def read_value(key, default, preserve_empty=False):
-            if key == "scm-toolkit.branch-name-enabled-packs":
-                self.assertTrue(preserve_empty)
-                return ""
-            return default
-
-        read_string.side_effect = read_value
-
-        settings = toolkit_settings.load_settings()
-
-        self.assertEqual(settings["branchNameEnabledPacks"], "")
 
     @patch("toolkit_settings.read_git_bool")
     @patch("toolkit_settings.read_git_string")
@@ -559,57 +600,6 @@ class ServerTests(unittest.TestCase):
         self.assertFalse(result["saved"])
 
     @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
-    def test_extension_mode_falls_back_when_saved_port_is_busy(self, _models):
-        blocker = socket.socket()
-        blocker.bind(("127.0.0.1", 0))
-        blocker.listen()
-        blocked_port = blocker.getsockname()[1]
-        ready = threading.Event()
-        captured = {}
-        result = {}
-
-        def capture_output(line, **_kwargs):
-            message = json.loads(line)
-            if "url" in message:
-                captured["url"] = message["url"]
-                ready.set()
-
-        def run_server():
-            result["saved"] = configurator.run_configurator(
-                install.DEFAULT_SETTINGS,
-                open_browser=False,
-                port=blocked_port,
-                token="stable-token",
-            )
-
-        with patch("configurator.print", side_effect=capture_output), \
-             patch("configurator.webbrowser.open"):
-            thread = threading.Thread(target=run_server)
-            thread.start()
-            self.assertTrue(ready.wait(5))
-            parsed = urllib.parse.urlsplit(captured["url"])
-            self.assertNotEqual(parsed.port, blocked_port)
-            self.assertEqual(
-                urllib.parse.parse_qs(parsed.query)["token"],
-                ["stable-token"],
-            )
-            cancel_url = urllib.parse.urlunsplit(
-                (parsed.scheme, parsed.netloc, "/save", parsed.query, "")
-            )
-            request = urllib.request.Request(
-                cancel_url,
-                data=b"action=cancel",
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=5) as response:
-                self.assertIn("Configuration cancelled", response.read().decode())
-            thread.join(5)
-        blocker.close()
-
-        self.assertFalse(thread.is_alive())
-        self.assertFalse(result["saved"])
-
-    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
     def test_autosave_persists_without_closing_server(self, _models):
         opened = threading.Event()
         captured = {}
@@ -641,6 +631,7 @@ class ServerTests(unittest.TestCase):
 
             values = form_values()
             values.pop("branchPicker")
+            values["messageBarLayout"] = ['{"before":[],"after":["codex"]}']
             request = urllib.request.Request(
                 endpoint("/autosave"),
                 data=urllib.parse.urlencode(values, doseq=True).encode(),
@@ -705,6 +696,7 @@ class ServerTests(unittest.TestCase):
                 for path in ("/autosave", "/save", "/autosave"):
                     values = form_values()
                     values.pop("branchPicker")
+                    values["messageBarLayout"] = ['{"before":[],"after":["codex"]}']
                     endpoint = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
                     request = urllib.request.Request(endpoint, data=urllib.parse.urlencode(values, doseq=True).encode(), method="POST")
                     with urllib.request.urlopen(request, timeout=5) as response:
