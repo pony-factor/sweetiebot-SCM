@@ -24,7 +24,7 @@ def form_values():
 
     for setting in configurator.SETTINGS:
         current = install.DEFAULT_SETTINGS[setting.name]
-        if setting.kind == "packs":
+        if setting.kind in {"packs", "pack_state"}:
             continue
         if setting.kind == "bool":
             if current:
@@ -49,7 +49,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(properties, exposed)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
         for name in controls:
-            if name != "branchNameDisabledPacks":
+            if name not in {"branchNameDisabledPacks", "branchNameEnabledPacks"}:
                 self.assertIn(f'name="{name}"', page)
 
     def test_cloud_preference_round_trips_into_vscode(self):
@@ -204,6 +204,8 @@ class SubmissionTests(unittest.TestCase):
         parsed = configurator.parse_submission(values)
 
         self.assertEqual(parsed["branchNameDisabledPacks"], "g4-creatures")
+        self.assertNotIn("g4-creatures", parsed["branchNameEnabledPacks"].split(","))
+        self.assertIn("g4-mares", parsed["branchNameEnabledPacks"].split(","))
         self.assertEqual(parsed["branchCustomNames"], "my-oc,rainy-friend")
         self.assertIn('"id":"friends"', parsed["branchNameImports"])
 
@@ -365,6 +367,23 @@ class GitConfigTests(unittest.TestCase):
         settings = toolkit_settings.load_settings()
 
         self.assertEqual(settings["branchNameDisabledPacks"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_enabled_pack_setting_can_be_explicitly_empty(self, read_string, read_bool):
+        read_bool.side_effect = lambda key, default: default
+
+        def read_value(key, default, preserve_empty=False):
+            if key == "scm-toolkit.branch-name-enabled-packs":
+                self.assertTrue(preserve_empty)
+                return ""
+            return default
+
+        read_string.side_effect = read_value
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["branchNameEnabledPacks"], "")
 
     @patch("toolkit_settings.read_git_bool")
     @patch("toolkit_settings.read_git_string")
