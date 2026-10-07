@@ -491,6 +491,8 @@ def render_form(
     sections = []
     tabs = []
     section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))
+    section_names.remove("GitHub")
+    section_names.insert(section_names.index("Codex"), "GitHub")
     for index, section in enumerate(section_names):
         controls = "".join(
             _setting_control(setting, current.get(setting.name, ""))
