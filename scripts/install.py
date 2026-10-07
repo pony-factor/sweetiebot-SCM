@@ -222,6 +222,30 @@ def source_control_label_edits(js, label):
     return edits
 
 
+def browser_globe_new_tab_edits(js):
+    ident = r"[A-Za-z_$][\w$]*"
+    pattern = re.compile(
+        rf"id:(?P<commands>{ident})\.OpenOrList,.*?"
+        rf"async run\((?P<accessor>{ident})\)\{{"
+        rf"let {ident}=(?P=accessor)\.get\({ident}\),"
+        rf"{ident}=(?P=accessor)\.get\((?P<service>{ident})\);"
+        rf"if\({ident}\.getContextualBrowserViews\(\)\.size>0\)"
+    )
+    matches = list(pattern.finditer(js))
+    if len(matches) != 1:
+        raise ValueError("Unsupported VS Code build: browser globe action does not match.")
+    match = matches[0]
+    original = match.group(0)
+    start = f'async run({match.group("accessor")}){{'
+    replacement = original.replace(
+        start,
+        start + f'return {match.group("accessor")}.get({match.group("service")})'
+        f'.executeCommand({match.group("commands")}.NewTab);',
+        1,
+    )
+    return [(original, replacement)]
+
+
 def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     anchor = "Invalid browser view resource:"
     anchor_index = js.find(anchor)
@@ -307,6 +331,9 @@ def edits(js=None, settings=None):
 
     if js is not None and settings and settings.get("graphOpenWorkingFile"):
         changes.extend(graph_open_working_file_edits(js))
+
+    if js is not None and settings and settings.get("browserGlobeNewTab"):
+        changes.extend(browser_globe_new_tab_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))

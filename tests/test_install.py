@@ -381,6 +381,24 @@ class TransformTests(unittest.TestCase):
 
         self.assertEqual(restored, (original_js, original_css))
 
+    def test_browser_globe_new_tab_toggle_round_trip(self):
+        action = ('id:Fc.OpenOrList,title:O(1,"Browser"),icon:L.globe}'
+                  'async run(o){let e=o.get(cd),t=o.get(be);'
+                  'if(e.getContextualBrowserViews().size>0){'
+                  'await t.executeCommand(Fc.QuickOpen);return}'
+                  'await t.executeCommand(Fc.Open)}')
+        original = workbench_fixture() + action
+        enabled = dict(SETTINGS, browserGlobeNewTab=True)
+        patched = install.transform(original, "base-css", settings=enabled)
+        self.assertIn('async run(o){return o.get(be).executeCommand(Fc.NewTab);', patched[0])
+        self.assertEqual(install.transform(*patched, remove=True, settings=enabled), (original, "base-css"))
+        disabled = install.transform(*patched, settings=dict(enabled, browserGlobeNewTab=False))
+        self.assertIn(action, disabled[0])
+        with self.assertRaisesRegex(ValueError, "browser globe action"):
+            install.browser_globe_new_tab_edits("unsupported")
+        with self.assertRaisesRegex(ValueError, "browser globe action"):
+            install.browser_globe_new_tab_edits(action + action)
+
     def test_chatgpt_browser_home_is_opt_in(self):
         self.assertFalse(install.DEFAULT_SETTINGS["browserChatgptHome"])
 
