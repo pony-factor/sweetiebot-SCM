@@ -457,10 +457,10 @@ def codex_transcript_countdown_edits(js, hide_reset_times=False):
 
     edits = []
     if hide_reset_times:
-        identifier = r"[A-Za-z_$][\\w$]*"
+        identifier = r"[A-Za-z_$][\w$]*"
         formatter = list(re.finditer(
-            rf"(?<![\\w$])(?P<display>{identifier})=(?P<reset>{identifier})==null\\?null:"
-            rf"(?P<formatter>{identifier})\\((?P<intl>{identifier}),(?P=reset)\\);",
+            rf"(?<![\w$])(?P<display>{identifier})=(?P<reset>{identifier})==null\?null:"
+            rf"(?P<formatter>{identifier})\((?P<intl>{identifier}),(?P=reset)\);",
             js,
         ))
         if len(formatter) != 1:
@@ -469,8 +469,8 @@ def codex_transcript_countdown_edits(js, hide_reset_times=False):
         edits.append((match.group(0), f'{match.group("display")}=null'))
 
     messages = list(re.finditer(
-        r"id:`localConversation\\.usageLimit\\.(?:upgrade|upgradeOrAddCredits|addCredits|retry)`,"
-        r"defaultMessage:`[^`]*\\bat \\{resetDate\\}[^`]*`", js))
+        r"id:`localConversation\.usageLimit\.(?:upgrade|upgradeOrAddCredits|addCredits|retry)`,"
+        r"defaultMessage:`[^`]*\bat \{resetDate\}[^`]*`", js))
     if not messages:
         raise ValueError("Unsupported Codex extension build: transcript usage-limit messages do not match.")
     for match in messages:
