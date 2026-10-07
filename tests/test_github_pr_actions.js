@@ -33,13 +33,13 @@ async function main() {
   await assert.rejects(squashMergePullRequest(url, async () => {
     conflictCalls++;
     return { stdout: JSON.stringify({ ...open, mergeable: 'CONFLICTING' }) };
-  }), /PR #12 has merge conflicts with main/);
+  }), /Unable to merge #12: conflicts with `main`/);
   assert.equal(conflictCalls, 1, 'Do not attempt to merge known conflicts');
   let racedReads = 0;
   await assert.rejects(squashMergePullRequest(url, async args => {
     if (args[1] === 'merge') throw Object.assign(new Error('gh failed'), { stderr: 'not mergeable' });
     return { stdout: JSON.stringify({ ...open, mergeable: ++racedReads === 1 ? 'UNKNOWN' : 'CONFLICTING' }) };
-  }), /Resolve the conflicts on topic/);
+  }), /Unable to merge #12: conflicts with `main`/);
   const originalFailure = Object.assign(new Error('gh failed'), { stderr: 'Required checks have not passed' });
   let failedReads = 0;
   await assert.rejects(squashMergePullRequest(url, async args => {
@@ -114,6 +114,21 @@ async function main() {
   await handler({});
   assert.equal(errors.length, 1);
   assert.deepEqual(refreshes, ['pr.refreshList']);
+  const conflictErrors = [];
+  const conflictRefreshes = [];
+  registerGitHubPullRequestActions({
+    commands: { registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
+      executeCommand: async id => conflictRefreshes.push(id) },
+    ProgressLocation: { Notification: 15 },
+    window: { withProgress: (_, fn) => fn(), showErrorMessage: message => conflictErrors.push(message) }
+  }, { subscriptions: [] }, async () => {
+    throw Object.assign(new Error("Unable to merge #12: conflicts with `main`"), {
+      code: 'SWEETIEBOT_MERGE_CONFLICT'
+    });
+  });
+  await handler({ pullRequestModel: { url, number: 12 } });
+  assert.deepEqual(conflictErrors, ["Unable to merge #12: conflicts with `main`"]);
+  assert.deepEqual(conflictRefreshes, ['pr.refreshList']);
   const selected = [];
   const notices = [];
   registerGitHubPullRequestActions({

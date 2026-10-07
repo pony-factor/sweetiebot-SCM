@@ -6,6 +6,102 @@ function scmToolkitRemainingUsage(usage) {
     return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
 }
 
+function scmToolkitRelativeUsageReset(resetAt, windowMinutes, now = Date.now()) {
+    const reset = Number(resetAt);
+    const current = Number(now);
+    if (!Number.isFinite(reset) || !Number.isFinite(current)) return '';
+
+    const remaining = Math.max(0, reset * 1000 - current);
+    if (Number(windowMinutes) >= 10080) {
+        const days = Math.ceil(remaining / 86400000);
+        return `${days} ${days === 1 ? 'day' : 'days'}`;
+    }
+
+    const minutes = Math.ceil(remaining / 60000);
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function scmToolkitRelativeUsageResetLabel(text, now = Date.now()) {
+    const match = String(text || '').trim().match(/^Resets\s+(.+)$/i);
+    if (!match || /^in\b/i.test(match[1])) return null;
+
+    const current = new Date(now);
+    if (!Number.isFinite(current.getTime())) return null;
+
+    const time = match[1].match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
+    if (time) {
+        const clockHour = Number(time[1]);
+        const minute = Number(time[2]);
+        if (clockHour < 1 || clockHour > 12 || minute < 0 || minute > 59) return null;
+
+        let hour = clockHour % 12;
+        if (time[3].toUpperCase() === 'PM') hour += 12;
+        const reset = new Date(current);
+        reset.setHours(hour, minute, 0, 0);
+        if (reset.getTime() <= current.getTime()) reset.setDate(reset.getDate() + 1);
+        return `Resets in ${scmToolkitRelativeUsageReset(reset.getTime() / 1000, 300, now)}`;
+    }
+
+    const date = match[1].match(/^([A-Za-z]{3,9})\s+(\d{1,2})(?:,\s*(\d{4}))?$/);
+    if (!date) return null;
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+        'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const month = months.indexOf(date[1].slice(0, 3).toLowerCase());
+    const day = Number(date[2]);
+    if (month < 0 || day < 1 || day > 31) return null;
+
+    let year = date[3] ? Number(date[3]) : current.getFullYear();
+    let target = new Date(year, month, day);
+    if (target.getMonth() !== month || target.getDate() !== day) return null;
+
+    const todayUtc = Date.UTC(current.getFullYear(), current.getMonth(), current.getDate());
+    let targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
+    if (!date[3] && targetUtc < todayUtc) {
+        year += 1;
+        target = new Date(year, month, day);
+        targetUtc = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
+    }
+    const days = Math.max(0, Math.round((targetUtc - todayUtc) / 86400000));
+    if (days === 0) return 'Resets today';
+    return `Resets in ${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
+function scmToolkitApplyUsageDialogRelativeTimes(root, now = Date.now()) {
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+    const hideResetTimes =
+        typeof scmToolkitHideUsageResetTimes !== 'undefined'
+        && scmToolkitHideUsageResetTimes;
+    for (const dialog of root.querySelectorAll('[role="dialog"]')) {
+        const dialogText = String(dialog.textContent || '');
+        if (!/5 hour usage limit/i.test(dialogText) || !/Weekly usage limit/i.test(dialogText)) continue;
+
+        const elements = Array.from(dialog.querySelectorAll('*'));
+        for (const element of elements) {
+            const current = String(element.textContent || '').trim();
+            const absolute = /^Resets\s+(?!in\b|today\b)/i.test(current) ? current : null;
+            if (absolute) element.scmToolkitUsageResetSource = absolute;
+
+            const source = element.scmToolkitUsageResetSource;
+            if (!source) continue;
+
+            if (hideResetTimes) {
+                if (current !== '') element.textContent = '';
+                continue;
+            }
+
+            const childOwnsReset = Array.from(element.children || []).some(child => {
+                const childText = String(child.textContent || '').trim();
+                return child.scmToolkitUsageResetSource
+                    || /^Resets\s+(?!in\b|today\b)/i.test(childText);
+            });
+            if (childOwnsReset) continue;
+
+            const relative = scmToolkitRelativeUsageResetLabel(source, now);
+            if (relative && current !== relative) element.textContent = relative;
+        }
+    }
+}
+
 let scmToolkitUsageRefetch = null;
 let scmToolkitUsageRefreshTimer = null;
 
@@ -55,14 +151,19 @@ function scmToolkitKeepUsageFresh(refetch) {
                 this.textContent = '';
                 return;
             }
-            const remaining = Math.max(0, reset * 1000 - Date.now());
-            if (Number(this.getAttribute('window-minutes')) >= 10080) {
-                const days = Math.ceil(remaining / 86400000);
-                this.textContent = `${days} ${days === 1 ? 'day' : 'days'} left`;
-            } else {
-                const minutes = Math.ceil(remaining / 60000);
-                this.textContent = `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-            }
+            const windowMinutes = Number(this.getAttribute('window-minutes'));
+            const relative = scmToolkitRelativeUsageReset(reset, windowMinutes);
+            this.textContent = windowMinutes >= 10080 && relative ? `${relative} left` : relative;
         }
     });
+})();
+
+(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+
+    const refresh = () => scmToolkitApplyUsageDialogRelativeTimes(document);
+    const observer = new MutationObserver(refresh);
+    observer.observe(document, { childList: true, characterData: true, subtree: true });
+    refresh();
+    setInterval(refresh, 30000);
 })();

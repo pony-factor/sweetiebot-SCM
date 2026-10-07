@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import json
 import os
 import re
@@ -322,6 +323,29 @@ def manual_message_location(args: list[str]) -> tuple[int, str] | None:
     return None
 
 
+def safe_spellcheck_correction(subject: str, response_text: str) -> str:
+    """Accept only a close, structurally identical spelling correction."""
+    try:
+        payload = json.loads(response_text)
+    except (TypeError, json.JSONDecodeError):
+        return subject
+    if not isinstance(payload, dict) or set(payload) != {"subject"}:
+        return subject
+    corrected = payload.get("subject")
+    if not isinstance(corrected, str) or not corrected.strip() or "\n" in corrected or "\r" in corrected:
+        return subject
+    corrected = corrected.strip()
+
+    def spelling_shape(value: str) -> str:
+        return re.sub(r"\w+", "<word>", value, flags=re.UNICODE)
+
+    if spelling_shape(corrected) != spelling_shape(subject):
+        return subject
+    if SequenceMatcher(None, subject.casefold(), corrected.casefold()).ratio() < 0.65:
+        return subject
+    return corrected
+
+
 def spellcheck_subject(subject: str) -> str:
     if not subject.strip():
         return subject
@@ -347,7 +371,8 @@ Rules:
 - preserve the wording, meaning, punctuation, capitalization, emoji, identifiers, filenames, acronyms, and code
 - do not rewrite for style or grammar
 - do not add or remove words except when correcting a misspelling
-- output exactly one corrected subject line with no quotes or markdown
+- return exactly one JSON object matching {{"subject":"corrected subject"}}
+- do not include markdown, prose, labels, or extra keys
 
 Subject:
 {subject}
@@ -359,6 +384,12 @@ Subject:
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
+                "format": {
+                    "type": "object",
+                    "properties": {"subject": {"type": "string"}},
+                    "required": ["subject"],
+                    "additionalProperties": False,
+                },
                 "options": {
                     "num_ctx": min(NUM_CTX, 2048),
                     "temperature": 0,
@@ -374,11 +405,10 @@ Subject:
         )
         return subject
 
-    corrected = str(response.get("response", "")).strip()
-    corrected = next((line.strip() for line in corrected.splitlines() if line.strip()), "")
-    if len(corrected) >= 2 and corrected[0] == corrected[-1] and corrected[0] in {'"', "'"}:
-        corrected = corrected[1:-1].strip()
-    return corrected or subject
+    return safe_spellcheck_correction(
+        subject,
+        str(response.get("response", "")),
+    )
 
 
 def spellcheck_manual_message(message: str) -> str:
@@ -866,41 +896,40 @@ def recent_subjects() -> str:
     ).strip()
 
 
-def codex_agents_path() -> Path:
-    return Path(os.environ.get("SCM_TOOLKIT_CODEX_HOME", "~/.codex")).expanduser() / "AGENTS.md"
+DEFAULT_COMMIT_TITLE_PREFERENCE = (
+    "Commit titles should start with one professional emoji that matches the change type, "
+    "followed by a space and a concise imperative title."
+)
+
+
+def commit_instructions_path() -> Path:
+    configured = os.environ.get(
+        "SCM_TOOLKIT_COMMIT_INSTRUCTIONS",
+        "~/.config/sweetiebot/commit-instructions.md",
+    )
+    return Path(configured).expanduser()
+
+
+def commit_instructions() -> str:
+    try:
+        return commit_instructions_path().read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
 
 
 def commit_title_preference() -> str:
-    try:
-        for line in codex_agents_path().read_text(encoding="utf-8").splitlines():
-            if line.strip().startswith("Commit titles should "):
-                return line.strip()
-    except (OSError, UnicodeError):
-        pass
-    return "Commit titles should start with one professional emoji that matches the change type, followed by a space and a concise imperative title."
+    for line in commit_instructions().splitlines():
+        if line.strip().startswith("Commit titles should "):
+            return line.strip()
+    return DEFAULT_COMMIT_TITLE_PREFERENCE
 
 
 def commit_custom_instructions() -> str:
-    if not git_config_bool("scm-toolkit.ai-commit-custom-instructions", False):
-        return ""
-    try:
-        text = codex_agents_path().read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return ""
-
-    excluded = {
-        "<!-- scm-toolkit-chatgpt-instructions:start -->",
-        "<!-- scm-toolkit-chatgpt-instructions:end -->",
-        "When creating Git commits through web or GitHub tools, append this trailer after a blank line:",
-        "Co-authored-by: Codex Web <noreply@openai.com>",
-    }
-    lines = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped in excluded or stripped.startswith("Commit titles should "):
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip()
+    return "\n".join(
+        line
+        for line in commit_instructions().splitlines()
+        if not line.strip().startswith("Commit titles should ")
+    ).strip()
 
 
 def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> dict:
@@ -954,13 +983,9 @@ def prompt_for_diff(
     custom_instructions = commit_custom_instructions()
     custom_section = ""
     if custom_instructions:
-        custom_limit = min(1800, max(600, budget // 4))
-        clipped = custom_instructions[:custom_limit].rstrip()
-        if len(custom_instructions) > custom_limit:
-            clipped += "\n[custom instructions truncated]"
         custom_section = (
-            "\nUser commit-writing preferences from the global Codex instructions:\n"
-            + clipped
+            "\nSweetiebot commit-writing instructions:\n"
+            + custom_instructions
             + "\nApply only wording and style preferences relevant to this commit. "
               "Do not add trailers or metadata, and do not override the JSON/output rules.\n"
         )
@@ -1289,17 +1314,17 @@ def main() -> None:
     global GIT_GLOBAL_ARGS
 
     argv = sys.argv[1:]
+    if argv == ["--spellcheck-subject"]:
+        subject = sys.stdin.read()
+        print(json.dumps({"subject": spellcheck_subject(subject)}, ensure_ascii=False))
+        return
+
     index = commit_index(argv)
     if index is None:
         os.execv(REAL_GIT, [REAL_GIT, *argv])
 
     GIT_GLOBAL_ARGS = argv[:index]
     commit_args = argv[index + 1 :]
-
-    if manual_spellcheck_enabled():
-        rewritten_args, found_manual_message = spellcheck_manual_message_args(commit_args)
-        if found_manual_message:
-            os.execv(REAL_GIT, [REAL_GIT, *argv[: index + 1], *rewritten_args])
 
     if (
         not feature_enabled()

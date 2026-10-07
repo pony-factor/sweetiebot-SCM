@@ -24,7 +24,7 @@ Current features:
 - optionally use ChatGPT as the home page for blank Integrated Browser tabs
 - optionally make Source Control Graph **Open File** open the checked-out working-tree file instead of the selected commit snapshot
 - optionally generate a commit subject locally when the normal Commit button is used with a blank message
-- optionally spellcheck manually entered commit subjects with the configured local model
+- preview spelling corrections for manually entered commit subjects before applying them
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
 - optionally hide Codex promotional cards such as the Fast mode upsell
 - optionally hide the Codex dictation microphone button
@@ -39,7 +39,7 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 
 - macOS
 - Visual Studio Code using the standard application-bundle layout
-- Python 3
+- Python 3 (Sweetiebot resolves system, Xcode, Homebrew, or `SWEETIEBOT_PYTHON` interpreters on macOS)
 - Git, if you want to configure feature flags through global Git config
 - GnuPG, only if you want the configurator to import a PGP signing key
 - Ollama is required for local AI commit-title generation and semantic Workspace Search; exact Workspace Search still works if embeddings are unavailable
@@ -165,8 +165,6 @@ git config --global scm-toolkit.cmd-click-close-others false
 git config --global scm-toolkit.browser-chatgpt-home true
 git config --global scm-toolkit.graph-open-working-file true
 git config --global scm-toolkit.ai-commit true
-git config --global scm-toolkit.ai-commit-custom-instructions false
-git config --global scm-toolkit.spellcheck-manual-commit true
 git config --global scm-toolkit.ai-default-branch-description true
 git config --global scm-toolkit.ai-commit-model qwen2.5-coder:7b
 git config --global scm-toolkit.ai-commit-low-memory-model qwen2.5-coder:3b
@@ -215,7 +213,6 @@ The equivalent `~/.gitconfig` block is:
     graph-open-working-file = true
     ai-commit = true
     ai-commit-custom-instructions = false
-    spellcheck-manual-commit = true
     ai-default-branch-description = true
     ai-commit-model = qwen2.5-coder:7b
     ai-commit-low-memory-model = qwen2.5-coder:3b
@@ -312,7 +309,7 @@ The installer places a Git wrapper at `~/.local/bin/scm-toolkit-git`. To make VS
 
 Use the absolute path shown by `python3 scripts/install.py`; do not rely on `~` expansion in the setting.
 
-When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blank message summarizes the staged diff through the configured local Ollama model. On the configured `default-branch` (normally `main`), `ai-default-branch-description = true` asks the model for a subject plus one or two substantive sentences describing what changed and, when clear from the diff, its purpose or effect. Other branches keep the subject-only format. A manually entered message is never replaced by generated commit content; when manual spellcheck is enabled, only its subject line may receive spelling corrections. Amend/fixup/squash/reuse-message mode, path-limited blank commits, or `--all` keep their existing behavior.
+When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blank message summarizes the staged diff through the configured local Ollama model. On the configured `default-branch` (normally `main`), `ai-default-branch-description = true` asks the model for a subject plus one or two substantive sentences describing what changed and, when clear from the diff, its purpose or effect. Other branches keep the subject-only format. A manually entered message is never replaced by generated commit content or silently spellchecked. Use the explicit spelling-preview control when you want a correction reviewed first. Amend/fixup/squash/reuse-message mode, path-limited blank commits, or `--all` keep their existing behavior.
 
 Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-commit split target. When a blank automatic commit contains multiple staged files whose final Git blobs total more than 100 MiB, Sweetiebot splits them at file boundaries into smaller commits through temporary indexes, leaving the real staged index intact while the split runs. If one staged file itself exceeds 100 MiB, Sweetiebot does **not** change it automatically: VS Code shows a modal confirmation with **Split file**, **Git LFS docs**, and **Cancel**. Only after **Split file** is chosen does Sweetiebot replace the oversized working-tree file with numbered `.part001`, `.part002`, … files of at most 95 MiB and stage that replacement. It refuses the automatic file split when the file has unstaged changes or when a target part already exists, and restores the original if splitting or staging fails. GitHub's softer diff-view ceilings (20,000 lines or 1 MB total raw diff, 20,000 lines or 500 KB for one file, 300 files, and 25 renderable files) produce a VS Code warning with a clickable **Commit anyway** bypass instead of forcing a split. Files over 50 MiB also receive GitHub's large-file warning with the same bypass. Existing legacy `~/.local/bin/git-auto-title` installations are refreshed alongside `scm-toolkit-git`, so older VS Code configurations receive the current binary-safe Git output handling.
 
@@ -341,25 +338,20 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
-### Manual commit spellcheck
+### Manual commit spellcheck preview
 
-When `spellcheck-manual-commit` is enabled, ordinary manually supplied `-m` or
-`--message` commit subjects are sent through the same configured local Ollama model
-for spelling correction before Git receives the commit. The prompt is deliberately
-narrow: it asks the model to preserve wording, punctuation, capitalization, emoji,
-identifiers, filenames, acronyms, code, and meaning rather than rewriting for style
-or grammar.
+The Source Control message controls include a checkmark action for **Preview spelling correction**.
+It sends only the current subject line to the configured local Ollama model and never changes the
+message until you approve the suggestion. If the suggestion differs, Sweetiebot shows the original
+and corrected subjects in a modal with **Apply correction** and **Keep original**.
 
-Only the first subject line is corrected. Any body text remains byte-for-byte in
-place, and amend, fixup, squash, reuse-message, reedit-message, and file-message
-modes bypass spellcheck. If Ollama or the selected model is unavailable, the
-original manual message is passed through unchanged.
+The model must return a structured `{"subject":"..."}` response. Sweetiebot rejects malformed
+output, added or removed words, changed punctuation/emoji structure, and unrelated rewrites before
+the preview is shown. Commit bodies are left byte-for-byte in place. Codex-attributed messages are
+excluded from the manual spellcheck path, and blank-message AI generation never enters it.
 
-Disable the pass without disabling blank-message AI generation:
-
-```sh
-git config --global scm-toolkit.spellcheck-manual-commit false
-```
+The former `scm-toolkit.spellcheck-manual-commit` automatic rewrite setting is no longer used, so
+an older global Git value cannot silently mutate a manually entered commit subject.
 
 ### AI model picker
 

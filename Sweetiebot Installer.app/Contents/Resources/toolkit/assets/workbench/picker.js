@@ -683,7 +683,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const pushControl = doc.createElement('label');
     pushControl.className = 'scm-toolkit-push';
     pushControl.hidden = true;
-    pushControl.title = 'Checked: push after committing. Unchecked: do nothing after committing.';
+    pushControl.title = 'Commit and push after a successful commit';
 
     const pushCheckbox = doc.createElement('input');
     pushCheckbox.type = 'checkbox';
@@ -725,6 +725,13 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     autocompleteTooltip.className = 'scm-toolkit-tooltip';
     autocompleteTooltip.setAttribute('aria-hidden', 'true');
     autocompleteButton.append(autocompleteTooltip);
+
+    const spellcheckButton = doc.createElement('button');
+    spellcheckButton.type = 'button';
+    spellcheckButton.className = 'scm-toolkit-spellcheck codicon codicon-check';
+    spellcheckButton.hidden = true;
+    spellcheckButton.title = 'Preview spelling correction';
+    spellcheckButton.setAttribute('aria-label', 'Preview spelling correction');
 
     const codexButton = doc.createElement('button');
     codexButton.type = 'button';
@@ -784,6 +791,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         deleteButton,
         firstDivider,
         autocompleteButton,
+        spellcheckButton,
         codexButton,
         autoPublishButton,
         secondDivider,
@@ -803,15 +811,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let creatingPonyBranch = false;
     let updatingPush = false;
     let updatingAutocomplete = false;
+    let spellchecking = false;
     let updatingAutoPublish = false;
     let publishingBranch;
     let committingWithCodex = false;
 
     const refreshPush = () => {
-        if (configuration.getValue('git.postCommitCommand') === 'sync') {
-            void configuration.updateValue('git.postCommitCommand', 'none')
-                .catch(error => notifications.error(error));
-        }
         pushCheckbox.checked = configuration.getValue('git.postCommitCommand') === 'push';
     };
 
@@ -846,8 +851,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         autocompleteButton.classList.toggle('scm-toolkit-autocomplete-off', !enabled);
         autocompleteButton.setAttribute('aria-pressed', String(!enabled));
         const description = enabled
-            ? 'Turn off inline code completion'
-            : 'Turn on inline code completion';
+            ? 'Turn off inline autocomplete'
+            : 'Turn on inline autocomplete';
         autocompleteButton.setAttribute('aria-label', description);
         autocompleteTooltip.textContent = description;
     };
@@ -876,6 +881,44 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             refreshAutocomplete();
         }
     }));
+
+    const refreshSpellcheck = () => {
+        spellcheckButton.disabled =
+            spellchecking || pending || deletingBranch || !currentInput || !currentRepositoryUri;
+    };
+
+    const previewSpellcheck = async event => {
+        event.stopPropagation();
+        if (spellchecking || pending || deletingBranch || !currentInput || !currentRepositoryUri) return;
+
+        const input = currentInput;
+        const originalMessage = input.value ?? '';
+        if (!originalMessage.trim()) {
+            notifications.error('Enter a commit message before previewing spelling corrections.');
+            return;
+        }
+
+        spellchecking = true;
+        refreshSpellcheck();
+        try {
+            const corrected = await commands.executeCommand(
+                'sweetiebot.previewCommitSpellcheck',
+                currentRepositoryUri,
+                originalMessage
+            );
+            if (currentInput !== input || input.value !== originalMessage) {
+                throw new Error('The selected repository or commit message changed during spellcheck. Try again.');
+            }
+            if (typeof corrected === 'string' && corrected !== originalMessage) {
+                input.setValue(corrected, false);
+            }
+        } catch (error) {
+            notifications.error(error);
+        } finally {
+            spellchecking = false;
+            refreshSpellcheck();
+        }
+    };
 
     const refreshAutoPublish = () => {
         const enabled = configuration.getValue('scmToolkit.autoPublishNewBranches') === true;
@@ -1213,6 +1256,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         refreshSyncBranch();
         refreshAutoPublish();
+        refreshSpellcheck();
         refreshCodexCommit();
         refreshPullRequest();
         refreshPonyBranch();
@@ -1310,6 +1354,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     branchButton.addEventListener('click', openBranchPicker);
     syncButton.addEventListener('click', syncBranch);
     deleteButton.addEventListener('click', deleteBranch);
+    spellcheckButton.addEventListener('click', previewSpellcheck);
     codexButton.addEventListener('click', commitWithCodex);
     pullRequestButton.addEventListener('click', createPullRequest);
     ponyBranchButton.addEventListener('click', createPonyBranch);
@@ -1322,6 +1367,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             deleteButton.removeEventListener('click', deleteBranch);
             pushCheckbox.removeEventListener('change', changePush);
             autocompleteButton.removeEventListener('click', toggleAutocomplete);
+            spellcheckButton.removeEventListener('click', previewSpellcheck);
             autoPublishButton.removeEventListener('click', toggleAutoPublish);
             codexButton.removeEventListener('click', commitWithCodex);
             pullRequestButton.removeEventListener('click', createPullRequest);
@@ -1334,6 +1380,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             deleteButton.remove();
             firstDivider.remove();
             autocompleteButton.remove();
+            spellcheckButton.remove();
             codexButton.remove();
             autoPublishButton.remove();
             secondDivider.remove();
@@ -1366,6 +1413,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const autocompleteWidth = autocompleteButton.hidden
                 ? 0
                 : autocompleteButton.getBoundingClientRect().width;
+            const spellcheckWidth = spellcheckButton.hidden
+                ? 0
+                : spellcheckButton.getBoundingClientRect().width;
             const codexWidth = codexButton.hidden
                 ? 0
                 : codexButton.getBoundingClientRect().width;
@@ -1382,7 +1432,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 ? 0
                 : ponyBranchButton.getBoundingClientRect().width;
             return homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
-                + autocompleteWidth + codexWidth + autoPublishWidth + secondDividerWidth
+                + autocompleteWidth + spellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
                 + pullRequestWidth + ponyBranchWidth;
         },
 
@@ -1404,6 +1454,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             firstDivider.hidden = true;
             autocompleteButton.hidden = true;
             autocompleteButton.disabled = false;
+            spellcheckButton.hidden = true;
+            spellcheckButton.disabled = true;
             codexButton.hidden = true;
             autoPublishButton.hidden = true;
             autoPublishButton.disabled = true;
@@ -1431,6 +1483,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 refreshAutocomplete();
             }
 
+            spellcheckButton.hidden = false;
+            refreshSpellcheck();
+
             if (settings.codexCoauthor) {
                 codexButton.hidden = false;
                 refreshCodexCommit();
@@ -1442,7 +1497,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             }
 
             const groupedControlsVisible =
-                !autocompleteButton.hidden || !codexButton.hidden || !autoPublishButton.hidden;
+                !autocompleteButton.hidden || !spellcheckButton.hidden
+                    || !codexButton.hidden || !autoPublishButton.hidden;
             firstDivider.hidden = !groupedControlsVisible;
             secondDivider.hidden = !groupedControlsVisible;
 
@@ -1458,16 +1514,22 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
             syncButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !deleteButton.hidden || !autocompleteButton.hidden || !codexButton.hidden
-                    || !autoPublishButton.hidden || !pullRequestButton.hidden
+                !deleteButton.hidden || !autocompleteButton.hidden || !spellcheckButton.hidden
+                    || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             deleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !autocompleteButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
-                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
+                !autocompleteButton.hidden || !spellcheckButton.hidden || !codexButton.hidden
+                    || !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             autocompleteButton.classList.toggle(
+                'scm-toolkit-has-following-control',
+                !spellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
+                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
+            );
+            spellcheckButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
@@ -1581,3 +1643,168 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     observer.observe(document, { childList: true, characterData: true, subtree: true });
     document.querySelectorAll(selector).forEach(update);
 })();
+
+// Render Sweetiebot's inline GitHub PR squash action as a labeled button instead of a glyph.
+(() => {
+    const selector =
+        '.monaco-workbench .monaco-list-row .monaco-action-bar .action-item > .action-label';
+    const isMergeAction = action => {
+        const item = action.closest('.action-item');
+        const label = [
+            action.getAttribute('aria-label'),
+            action.getAttribute('title'),
+            item?.getAttribute('aria-label'),
+            item?.getAttribute('title')
+        ].filter(Boolean).join(' ');
+        return /Squash and Merge into main/i.test(label);
+    };
+    const update = () => {
+        for (const action of document.querySelectorAll(selector)) {
+            if (!isMergeAction(action)) continue;
+            action.classList.add('sweetiebot-pr-squash-merge');
+            if (action.textContent !== 'Squash and merge') {
+                action.textContent = 'Squash and merge';
+            }
+        }
+    };
+
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['aria-label', 'title']
+    });
+})();
+
+// Toggle the native VS Code window between its current bounds and a centered compact layout.
+(() => {
+    const actionId = 'sweetiebot-compact-window-action';
+    const restoreBoundsKey = 'sweetiebot.compactWindow.restoreBounds';
+    const compactWidth = 560;
+    const compactMaxHeight = 920;
+    const edgeGutter = 32;
+
+    const readRestoreBounds = () => {
+        try {
+            const value = window.localStorage.getItem(restoreBoundsKey);
+            return value ? JSON.parse(value) : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const writeRestoreBounds = bounds => {
+        try {
+            window.localStorage.setItem(restoreBoundsKey, JSON.stringify(bounds));
+        } catch {
+            // Keep the toggle usable even if workbench storage is unavailable.
+        }
+    };
+
+    const clearRestoreBounds = () => {
+        try {
+            window.localStorage.removeItem(restoreBoundsKey);
+        } catch {
+            // Keep the toggle usable even if workbench storage is unavailable.
+        }
+    };
+
+    const updateAction = action => {
+        const compact = Boolean(readRestoreBounds());
+        action.classList.toggle('sweetiebot-compact-window-active', compact);
+        action.classList.toggle('codicon-screen-normal', !compact);
+        action.classList.toggle('codicon-screen-full', compact);
+        action.setAttribute('aria-pressed', compact ? 'true' : 'false');
+
+        const label = compact ? 'Restore window size' : 'Compact window';
+        action.setAttribute('aria-label', label);
+        action.title = label;
+    };
+
+    const compactWindow = () => {
+        writeRestoreBounds({
+            x: window.screenX,
+            y: window.screenY,
+            width: window.outerWidth,
+            height: window.outerHeight
+        });
+
+        const availableWidth = window.screen.availWidth;
+        const availableHeight = window.screen.availHeight;
+        const availableLeft = window.screen.availLeft ?? 0;
+        const availableTop = window.screen.availTop ?? 0;
+        const targetWidth = Math.min(
+            compactWidth,
+            Math.max(420, availableWidth - edgeGutter * 2)
+        );
+        const targetHeight = Math.min(
+            compactMaxHeight,
+            Math.max(360, availableHeight - edgeGutter * 2)
+        );
+        const targetX = availableLeft + Math.round((availableWidth - targetWidth) / 2);
+        const targetY = availableTop + Math.round((availableHeight - targetHeight) / 2);
+
+        window.resizeTo(targetWidth, targetHeight);
+        window.moveTo(targetX, targetY);
+    };
+
+    const restoreWindow = () => {
+        const bounds = readRestoreBounds();
+        if (!bounds) return;
+
+        window.resizeTo(bounds.width, bounds.height);
+        window.moveTo(bounds.x, bounds.y);
+        clearRestoreBounds();
+    };
+
+    const toggleCompactWindow = () => {
+        if (readRestoreBounds()) restoreWindow();
+        else compactWindow();
+
+        const action = document.getElementById(actionId)?.querySelector('.action-label');
+        if (action) updateAction(action);
+    };
+
+    const mountAction = () => {
+        if (document.getElementById(actionId)) return;
+
+        const actions = document.querySelector(
+            '.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .actions-container'
+        );
+        if (!actions) return;
+
+        const item = document.createElement('li');
+        item.id = actionId;
+        item.className = 'action-item sweetiebot-compact-window-action';
+        item.setAttribute('role', 'presentation');
+
+        const action = document.createElement('a');
+        action.className = 'action-label codicon';
+        action.setAttribute('role', 'button');
+        action.setAttribute('tabindex', '0');
+        updateAction(action);
+
+        action.addEventListener('pointerdown', event => event.stopPropagation());
+        action.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleCompactWindow();
+        });
+        action.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleCompactWindow();
+            }
+        });
+
+        item.appendChild(action);
+        actions.prepend(item);
+    };
+
+    mountAction();
+    const observer = new MutationObserver(mountAction);
+    observer.observe(document.body, { childList: true, subtree: true });
+})();
+

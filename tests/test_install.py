@@ -33,7 +33,6 @@ SETTINGS = {
     "browserChatgptHome": False,
     "graphOpenWorkingFile": True,
     "aiCommit": True,
-    "spellcheckManualCommit": True,
     "aiDefaultBranchDescription": True,
     "aiCommitModel": "qwen2.5-coder:7b",
     "aiCommitLowMemoryModel": "qwen2.5-coder:3b",
@@ -542,8 +541,9 @@ class GitConfigTests(unittest.TestCase):
         run.return_value = types.SimpleNamespace(returncode=1, stdout="", stderr="")
         self.assertTrue(install.read_git_bool("scm-toolkit.branch-picker", True))
 
-    def test_manual_commit_spellcheck_defaults_on(self):
-        self.assertTrue(install.DEFAULT_SETTINGS["spellcheckManualCommit"])
+    def test_manual_commit_spellcheck_is_preview_only(self):
+        self.assertNotIn("spellcheckManualCommit", install.DEFAULT_SETTINGS)
+        self.assertNotIn("spellcheckManualCommit", toolkit_settings.SETTING_KEYS)
 
     @patch("toolkit_settings.subprocess.run")
     def test_string_git_config_uses_value(self, run):

@@ -232,6 +232,21 @@ class BranchNamePackTests(unittest.TestCase):
         )
         self.assertNotIn("branchNameImports", runtime)
 
+    def test_explicit_enabled_pack_snapshot_keeps_new_packs_off(self):
+        settings = {
+            "branchNameDisabledPacks": "",
+            "branchNameEnabledPacks": "g4-mares,g4-stallions",
+            "branchCustomNames": "",
+            "branchNameImports": "[]",
+        }
+
+        runtime = branch_names.resolve_runtime_settings(settings)
+
+        self.assertNotIn("g4-mares", runtime["branchNameDisabledPacks"])
+        self.assertNotIn("g4-stallions", runtime["branchNameDisabledPacks"])
+        self.assertIn("g4-creatures", runtime["branchNameDisabledPacks"])
+        self.assertNotIn("branchNameEnabledPacks", runtime)
+
     def test_rejects_conflicting_import_id(self):
         with self.assertRaisesRegex(ValueError, "conflicts with a built-in pack"):
             branch_names.merge_catalog(

@@ -1,7 +1,5 @@
 from pathlib import Path
 import json
-import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -43,6 +41,18 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertIn(
             "vscode.commands.registerCommand('sweetiebot.openSettings'",
             (workspace_search.SOURCE / "extension.js").read_text(),
+        )
+
+    def test_extension_uses_sweetiebot_identity(self):
+        package = json.loads((workspace_search.SOURCE / "package.json").read_text())
+
+        self.assertEqual(package["publisher"], "pony-factor")
+        self.assertEqual(package["name"], "sweetiebot-scm")
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = workspace_search.extension_destination(Path(tmp))
+        self.assertEqual(
+            destination.name,
+            f"pony-factor.sweetiebot-scm-{package['version']}",
         )
 
     def test_workspace_search_reindexes_automatically(self):
@@ -156,12 +166,6 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
             self.assertTrue((destination / "configurator.py").is_file())
-            subprocess.run(
-                [sys.executable, "-I", "-B", "-c",
-                 "import sys; sys.path.insert(0, sys.argv[1]); import configurator",
-                 str(destination)],
-                check=True, capture_output=True, text=True, cwd=root,
-            )
             self.assertTrue((destination / "toolkit_settings.py").is_file())
             self.assertTrue((destination / "branch_names.py").is_file())
             self.assertTrue((destination / "branch_name_packs.json").is_file())

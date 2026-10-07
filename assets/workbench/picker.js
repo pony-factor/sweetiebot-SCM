@@ -726,6 +726,13 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     autocompleteTooltip.setAttribute('aria-hidden', 'true');
     autocompleteButton.append(autocompleteTooltip);
 
+    const spellcheckButton = doc.createElement('button');
+    spellcheckButton.type = 'button';
+    spellcheckButton.className = 'scm-toolkit-spellcheck codicon codicon-check';
+    spellcheckButton.hidden = true;
+    spellcheckButton.title = 'Preview spelling correction';
+    spellcheckButton.setAttribute('aria-label', 'Preview spelling correction');
+
     const codexButton = doc.createElement('button');
     codexButton.type = 'button';
     codexButton.className = 'scm-toolkit-codex-coauthor codicon codicon-account';
@@ -784,6 +791,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         deleteButton,
         firstDivider,
         autocompleteButton,
+        spellcheckButton,
         codexButton,
         autoPublishButton,
         secondDivider,
@@ -803,6 +811,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let creatingPonyBranch = false;
     let updatingPush = false;
     let updatingAutocomplete = false;
+    let spellchecking = false;
     let updatingAutoPublish = false;
     let publishingBranch;
     let committingWithCodex = false;
@@ -876,6 +885,44 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             refreshAutocomplete();
         }
     }));
+
+    const refreshSpellcheck = () => {
+        spellcheckButton.disabled =
+            spellchecking || pending || deletingBranch || !currentInput || !currentRepositoryUri;
+    };
+
+    const previewSpellcheck = async event => {
+        event.stopPropagation();
+        if (spellchecking || pending || deletingBranch || !currentInput || !currentRepositoryUri) return;
+
+        const input = currentInput;
+        const originalMessage = input.value ?? '';
+        if (!originalMessage.trim()) {
+            notifications.error('Enter a commit message before previewing spelling corrections.');
+            return;
+        }
+
+        spellchecking = true;
+        refreshSpellcheck();
+        try {
+            const corrected = await commands.executeCommand(
+                'sweetiebot.previewCommitSpellcheck',
+                currentRepositoryUri,
+                originalMessage
+            );
+            if (currentInput !== input || input.value !== originalMessage) {
+                throw new Error('The selected repository or commit message changed during spellcheck. Try again.');
+            }
+            if (typeof corrected === 'string' && corrected !== originalMessage) {
+                input.setValue(corrected, false);
+            }
+        } catch (error) {
+            notifications.error(error);
+        } finally {
+            spellchecking = false;
+            refreshSpellcheck();
+        }
+    };
 
     const refreshAutoPublish = () => {
         const enabled = configuration.getValue('scmToolkit.autoPublishNewBranches') === true;
@@ -1213,6 +1260,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         refreshSyncBranch();
         refreshAutoPublish();
+        refreshSpellcheck();
         refreshCodexCommit();
         refreshPullRequest();
         refreshPonyBranch();
@@ -1310,6 +1358,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     branchButton.addEventListener('click', openBranchPicker);
     syncButton.addEventListener('click', syncBranch);
     deleteButton.addEventListener('click', deleteBranch);
+    spellcheckButton.addEventListener('click', previewSpellcheck);
     codexButton.addEventListener('click', commitWithCodex);
     pullRequestButton.addEventListener('click', createPullRequest);
     ponyBranchButton.addEventListener('click', createPonyBranch);
@@ -1322,6 +1371,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             deleteButton.removeEventListener('click', deleteBranch);
             pushCheckbox.removeEventListener('change', changePush);
             autocompleteButton.removeEventListener('click', toggleAutocomplete);
+            spellcheckButton.removeEventListener('click', previewSpellcheck);
             autoPublishButton.removeEventListener('click', toggleAutoPublish);
             codexButton.removeEventListener('click', commitWithCodex);
             pullRequestButton.removeEventListener('click', createPullRequest);
@@ -1334,6 +1384,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             deleteButton.remove();
             firstDivider.remove();
             autocompleteButton.remove();
+            spellcheckButton.remove();
             codexButton.remove();
             autoPublishButton.remove();
             secondDivider.remove();
@@ -1366,6 +1417,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const autocompleteWidth = autocompleteButton.hidden
                 ? 0
                 : autocompleteButton.getBoundingClientRect().width;
+            const spellcheckWidth = spellcheckButton.hidden
+                ? 0
+                : spellcheckButton.getBoundingClientRect().width;
             const codexWidth = codexButton.hidden
                 ? 0
                 : codexButton.getBoundingClientRect().width;
@@ -1382,7 +1436,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 ? 0
                 : ponyBranchButton.getBoundingClientRect().width;
             return homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
-                + autocompleteWidth + codexWidth + autoPublishWidth + secondDividerWidth
+                + autocompleteWidth + spellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
                 + pullRequestWidth + ponyBranchWidth;
         },
 
@@ -1404,6 +1458,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             firstDivider.hidden = true;
             autocompleteButton.hidden = true;
             autocompleteButton.disabled = false;
+            spellcheckButton.hidden = true;
+            spellcheckButton.disabled = true;
             codexButton.hidden = true;
             autoPublishButton.hidden = true;
             autoPublishButton.disabled = true;
@@ -1431,6 +1487,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 refreshAutocomplete();
             }
 
+            spellcheckButton.hidden = false;
+            refreshSpellcheck();
+
             if (settings.codexCoauthor) {
                 codexButton.hidden = false;
                 refreshCodexCommit();
@@ -1442,7 +1501,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             }
 
             const groupedControlsVisible =
-                !autocompleteButton.hidden || !codexButton.hidden || !autoPublishButton.hidden;
+                !autocompleteButton.hidden || !spellcheckButton.hidden
+                    || !codexButton.hidden || !autoPublishButton.hidden;
             firstDivider.hidden = !groupedControlsVisible;
             secondDivider.hidden = !groupedControlsVisible;
 
@@ -1458,16 +1518,22 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
             syncButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !deleteButton.hidden || !autocompleteButton.hidden || !codexButton.hidden
-                    || !autoPublishButton.hidden || !pullRequestButton.hidden
+                !deleteButton.hidden || !autocompleteButton.hidden || !spellcheckButton.hidden
+                    || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             deleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !autocompleteButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
-                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
+                !autocompleteButton.hidden || !spellcheckButton.hidden || !codexButton.hidden
+                    || !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
             );
             autocompleteButton.classList.toggle(
+                'scm-toolkit-has-following-control',
+                !spellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
+                    || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
+            );
+            spellcheckButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden

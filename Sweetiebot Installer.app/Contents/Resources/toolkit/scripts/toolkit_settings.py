@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import subprocess
 
-from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
-
 
 DEFAULT_SETTINGS = {
     "branchPicker": True,
-    "messageBarLayout": DEFAULT_MESSAGE_BAR_LAYOUT_JSON,
     "ponyBranch": True,
     "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining",
+    "branchNameEnabledPacks": None,
     "branchCustomNames": "",
     "branchNameImports": "[]",
     "messagePlaceholder": "Message",
@@ -54,8 +52,6 @@ DEFAULT_SETTINGS = {
     "browserChatgptHome": False,
     "graphOpenWorkingFile": True,
     "aiCommit": True,
-    "aiCommitCustomInstructions": False,
-    "spellcheckManualCommit": True,
     "postCommitSpellcheck": False,
     "aiDefaultBranchDescription": True,
     "aiCommitModel": "qwen2.5-coder:7b",
@@ -133,50 +129,16 @@ def load_settings():
             settings[name] = read_git_string(
                 git_key,
                 default,
-                preserve_empty=name == "branchNameDisabledPacks",
+                preserve_empty=name in {"branchNameDisabledPacks", "branchNameEnabledPacks"},
             )
-    if settings["postCommitAction"] not in {"none", "push"}:
-        settings["postCommitAction"] = "none"
-    # Represent legacy disabled buttons in the layout so the editor reflects
-    # existing preferences before its first save.
-    try:
-        layout = parse_message_bar_layout(settings["messageBarLayout"])
-    except ValueError:
-        return settings
-    changed = False
-    if settings["commitAndPush"] and not any("push" in items for items in layout.values()):
-        layout["after"].insert(0, "push")
-        changed = True
-    disabled = {item for name, item in MESSAGE_BAR_VISIBILITY_SETTINGS.items() if not settings[name]}
-    if not settings["branchPicker"]:
-        disabled.update(("sync", "home"))
-    if changed or any(item in disabled for items in layout.values() for item in items):
-        import json
-        settings["messageBarLayout"] = json.dumps({
-            zone: [item for item in items if item not in disabled]
-            for zone, items in layout.items()
-        }, separators=(",", ":"))
     return settings
-
-
-def persist_message_bar_layout(settings):
-    """Pin the initial layout so future default changes do not reorder it."""
-    key = SETTING_KEYS["messageBarLayout"]
-    if read_git_string(key, None, preserve_empty=True) is not None:
-        return
-    result = subprocess.run(
-        ["git", "config", "--global", key, str(settings["messageBarLayout"])],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError("Unable to save the message bar layout: " + result.stderr.strip())
 
 
 SETTING_KEYS = {
     "branchPicker": "scm-toolkit.branch-picker",
-    "messageBarLayout": "scm-toolkit.message-bar-layout",
     "ponyBranch": "scm-toolkit.pony-branch",
     "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",
+    "branchNameEnabledPacks": "scm-toolkit.branch-name-enabled-packs",
     "branchCustomNames": "scm-toolkit.branch-custom-names",
     "branchNameImports": "scm-toolkit.branch-name-imports",
     "messagePlaceholder": "scm-toolkit.message-placeholder",
@@ -219,8 +181,6 @@ SETTING_KEYS = {
     "browserChatgptHome": "scm-toolkit.browser-chatgpt-home",
     "graphOpenWorkingFile": "scm-toolkit.graph-open-working-file",
     "aiCommit": "scm-toolkit.ai-commit",
-    "aiCommitCustomInstructions": "scm-toolkit.ai-commit-custom-instructions",
-    "spellcheckManualCommit": "scm-toolkit.spellcheck-manual-commit",
     "postCommitSpellcheck": "scm-toolkit.post-commit-spellcheck",
     "aiDefaultBranchDescription": "scm-toolkit.ai-default-branch-description",
     "aiCommitModel": "scm-toolkit.ai-commit-model",

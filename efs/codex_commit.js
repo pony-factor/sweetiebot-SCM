@@ -1,10 +1,11 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 
 function generateMessage(script, cwd, context) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.platform === 'win32' ? 'python' : 'python3', [script], {
+    const child = spawn(resolvePythonExecutable(), [script], {
       cwd, stdio: ['pipe', 'pipe', 'pipe']
     });
     let stdout = '';
@@ -16,7 +17,7 @@ function generateMessage(script, cwd, context) {
     child.stdout.on('data', data => { stdout += data; });
     child.stderr.on('data', data => { stderr += data; });
     child.stdin.on('error', error => { clearTimeout(timeout); reject(error); });
-    child.on('error', error => { clearTimeout(timeout); reject(error); });
+    child.on('error', error => { clearTimeout(timeout); reject(pythonLaunchError(error)); });
     child.on('close', code => {
       clearTimeout(timeout);
       if (code !== 0) return reject(new Error(stderr.trim() || 'Local commit-message generation failed.'));
