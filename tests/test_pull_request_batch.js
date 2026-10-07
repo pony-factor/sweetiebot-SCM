@@ -113,7 +113,7 @@ async function run() {
     window: {
       async showQuickPick(items, options) {
         assert.equal(options.canPickMany, true);
-        return [items[1]];
+        return [items[0]];
       },
       showErrorMessage(message) { errors.push(message); },
       showInformationMessage(message) { infos.push(message); }
