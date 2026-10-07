@@ -88,4 +88,13 @@ assert.equal(resetRows[0].textContent, 'Resets in 1h 45m');
 // The weekly row is also rewritten from its absolute calendar date.
 assert.match(resetRows[1].textContent, /^Resets in \d+ days?$/);
 
+context.scmToolkitHideUsageResetTimes = true;
+resetRows[0].textContent = 'Resets 1:24 AM';
+resetRows[1].textContent = 'Resets Oct 9';
+context.scmToolkitApplyUsageDialogRelativeTimes({
+    querySelectorAll() { return [usageDialog]; },
+}, lateEvening);
+assert.equal(resetRows[0].textContent, '');
+assert.equal(resetRows[1].textContent, '');
+
 console.log('Codex five-hour usage and reset regression checks passed.');

@@ -68,6 +68,9 @@ function scmToolkitRelativeUsageResetLabel(text, now = Date.now()) {
 
 function scmToolkitApplyUsageDialogRelativeTimes(root, now = Date.now()) {
     if (!root || typeof root.querySelectorAll !== 'function') return;
+    const hideResetTimes =
+        typeof scmToolkitHideUsageResetTimes !== 'undefined'
+        && scmToolkitHideUsageResetTimes;
     for (const dialog of root.querySelectorAll('[role="dialog"]')) {
         const dialogText = String(dialog.textContent || '');
         if (!/5 hour usage limit/i.test(dialogText) || !/Weekly usage limit/i.test(dialogText)) continue;
@@ -80,6 +83,11 @@ function scmToolkitApplyUsageDialogRelativeTimes(root, now = Date.now()) {
 
             const source = element.scmToolkitUsageResetSource;
             if (!source) continue;
+
+            if (hideResetTimes) {
+                if (current !== '') element.textContent = '';
+                continue;
+            }
 
             const childOwnsReset = Array.from(element.children || []).some(child => {
                 const childText = String(child.textContent || '').trim();
