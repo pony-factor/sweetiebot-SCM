@@ -42,6 +42,7 @@ SETTINGS = {
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
+    "codexUsagePieIndicator": False,
     "codexHidePromotions": False,
     "chatgptCustomInstructions": "",
     "chatgptWebCodexCoauthor": True,
@@ -620,6 +621,7 @@ class CodexCountdownTests(unittest.TestCase):
 
     def test_countdown_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsageResetCountdown"])
+        self.assertFalse(install.DEFAULT_SETTINGS["codexUsagePieIndicator"])
 
     def test_codex_countdown_install_and_remove_round_trip(self):
         original = self.fixture()

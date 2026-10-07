@@ -813,9 +813,12 @@ def main():
             paths.append(awake_path)
             old.append(awake_old)
             new.append(awake_new)
+    usage_pie = settings.get("codexUsagePieIndicator", False)
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=settings["codexUsageResetCountdown"] and not args.uninstall,
+        enabled=(settings["codexUsageResetCountdown"] or usage_pie) and not args.uninstall,
+        pie_indicator=usage_pie,
+        reset_countdown=settings["codexUsageResetCountdown"],
     ):
         paths.append(usage_path)
         old.append(usage_old)

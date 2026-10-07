@@ -6,6 +6,12 @@ function scmToolkitRemainingUsage(usage) {
     return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
 }
 
+function scmToolkitUsagePiePercent(value) {
+    const percent = Number(value);
+    if (!Number.isFinite(percent)) return null;
+    return Math.round(Math.max(0, Math.min(100, percent)));
+}
+
 function scmToolkitRelativeUsageReset(resetAt, windowMinutes, now = Date.now()) {
     const reset = Number(resetAt);
     const current = Number(now);
@@ -71,6 +77,10 @@ function scmToolkitApplyUsageDialogRelativeTimes(root, now = Date.now()) {
     const hideResetTimes =
         typeof scmToolkitHideUsageResetTimes !== 'undefined'
         && scmToolkitHideUsageResetTimes;
+    const countdownEnabled =
+        typeof scmToolkitUsageResetCountdown === 'undefined'
+        || scmToolkitUsageResetCountdown;
+    if (!countdownEnabled && !hideResetTimes) return;
     for (const dialog of root.querySelectorAll('[role="dialog"]')) {
         const dialogText = String(dialog.textContent || '');
         if (!/5 hour usage limit/i.test(dialogText) || !/Weekly usage limit/i.test(dialogText)) continue;
@@ -129,6 +139,41 @@ function scmToolkitKeepUsageFresh(refetch) {
         });
     }
 }
+
+(() => {
+    const tag = 'scm-toolkit-usage-pie';
+    if (customElements.get(tag)) return;
+    customElements.define(tag, class extends HTMLElement {
+        static get observedAttributes() { return ['percent']; }
+        connectedCallback() {
+            this.style.display = 'inline-block';
+            this.style.width = '12px';
+            this.style.height = '12px';
+            this.style.flex = 'none';
+            this.style.borderRadius = '50%';
+            this.style.verticalAlign = '-1px';
+            this.update();
+        }
+        attributeChangedCallback() { this.update(); }
+        update() {
+            const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
+            if (percent == null) {
+                this.style.background = 'transparent';
+                this.removeAttribute('role');
+                this.removeAttribute('aria-label');
+                this.removeAttribute('title');
+                return;
+            }
+            const degrees = percent * 3.6;
+            this.style.background =
+                `conic-gradient(from -90deg, currentColor 0 ${degrees}deg, color-mix(in srgb, currentColor 20%, transparent) ${degrees}deg 360deg)`;
+            const label = `${percent}% Codex usage remaining`;
+            this.setAttribute('role', 'img');
+            this.setAttribute('aria-label', label);
+            this.setAttribute('title', label);
+        }
+    });
+})();
 
 (() => {
     const tag = 'scm-toolkit-menu-reset';

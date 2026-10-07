@@ -38,6 +38,14 @@ assert.equal(remaining(usage(null, bucket(10080, 60))), null);
 assert.equal(remaining(usage(bucket(300, NaN), bucket(10080, 60))), null);
 assert.equal(remaining(usage(bucket(300, '12'), null)), null);
 assert.equal(remaining(undefined), null);
+
+const piePercent = context.scmToolkitUsagePiePercent;
+assert.equal(piePercent(100), 100);
+assert.equal(piePercent(42.4), 42);
+assert.equal(piePercent(-5), 0);
+assert.equal(piePercent(105), 100);
+assert.equal(piePercent('not-a-number'), null);
+
 const keepFresh = context.scmToolkitKeepUsageFresh;
 let firstRefreshes = 0;
 let latestRefreshes = 0;

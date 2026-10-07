@@ -375,6 +375,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="autoPublishToggle"', page)
         self.assertIn('name="cmdClickCloseOthers"', page)
         self.assertIn('name="browserChatgptHome"', page)
+        self.assertIn('name="codexUsagePieIndicator"', page)
         self.assertIn('name="codexHideChatTimestamps"', page)
         self.assertIn('name="codexHideDictation"', page)
         self.assertIn('name="codexShortModelLabels"', page)
