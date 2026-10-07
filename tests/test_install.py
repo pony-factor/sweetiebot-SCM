@@ -247,7 +247,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("const repositoryArgument = currentRepositoryUri;", js)
         self.assertIn("commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {", js)
         self.assertIn("scm-toolkit-sync-branch", css)
-        self.assertIn("settingsButton.textContent = '🪄'", js)
+        self.assertIn("settingsIcon.textContent = '🪄'", js)
         self.assertIn("commands.executeCommand('sweetiebot.openSettings')", js)
         self.assertIn("scm-toolkit-settings", css)
         self.assertIn("commands.executeCommand('sweetiebot.syncBranch', repository, {", js)
