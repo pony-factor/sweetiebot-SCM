@@ -128,10 +128,19 @@ function batchMergePrompt({ repositoryUrl, pullRequests, base = 'main' }) {
   ].join('\n\n');
 }
 
+function classifyChatSubmitError(error, stderr = '') {
+  const detail = String(stderr || error?.message || '').trim();
+  let reason = 'script';
+  if (/VS Code is not frontmost/i.test(detail)) reason = 'focus';
+  else if (/assistive access|accessibility|not allowed to send keystrokes|-25211/i.test(detail)) reason = 'accessibility';
+  else if (/not authorized to send Apple events|-1743/i.test(detail)) reason = 'automation';
+  return { submitted: false, reason, detail };
+}
+
 function submitChatPromptWithEnter(execFileImpl = execFile, options = {}) {
   const platform = options.platform ?? process.platform;
   const delayMs = options.delayMs ?? CHAT_SUBMIT_DELAY_MS;
-  if (platform !== 'darwin') return Promise.resolve(false);
+  if (platform !== 'darwin') return Promise.resolve({ submitted: false, reason: 'unsupported' });
   return new Promise(resolve => {
     setTimeout(() => {
       const script = [
@@ -140,16 +149,18 @@ function submitChatPromptWithEnter(execFileImpl = execFile, options = {}) {
         'if frontApp contains "Code" then',
         'key code 36',
         'else',
-        'error "VS Code is not frontmost"',
+        'error ("VS Code is not frontmost: " & frontApp) number 1001',
         'end if',
         'end tell'
-      ].join('\\n');
-      execFileImpl('/usr/bin/osascript', ['-e', script], error => resolve(!error));
+      ].join('\n');
+      execFileImpl('/usr/bin/osascript', ['-e', script], (error, _stdout, stderr) => {
+        resolve(error ? classifyChatSubmitError(error, stderr) : { submitted: true });
+      });
     }, delayMs);
   });
 }
 
-function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch, submitPrompt = submitChatPromptWithEnter) {
+function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch, submitPrompt = submitChatPromptWithEnter, platform = process.platform) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', async () => {
     try {
       if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
@@ -183,11 +194,16 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         openToSide: false,
         reuseUrlFilter: url
       });
-      const submitted = await submitPrompt();
-      if (process.platform === 'darwin' && !submitted) {
-        vscode.window.showWarningMessage(
-          'ChatGPT opened, but macOS blocked automatic Return. Allow Accessibility access for Visual Studio Code.'
-        );
+      const submission = await submitPrompt();
+      if (platform === 'darwin' && submission !== true && !submission?.submitted) {
+        const message = submission?.reason === 'focus'
+          ? 'ChatGPT opened, but VS Code was not frontmost when Sweetiebot tried to press Return. Focus VS Code and retry, or submit the prompt manually.'
+          : submission?.reason === 'accessibility'
+            ? 'ChatGPT opened, but macOS denied the Return key event. Check which VS Code process has Accessibility access and restart VS Code after any permission change.'
+            : submission?.reason === 'automation'
+              ? 'ChatGPT opened, but macOS denied automation of System Events. Check System Settings > Privacy & Security > Automation.'
+              : 'ChatGPT opened, but automatic Return failed for a reason other than confirmed Accessibility denial. Submit the prompt manually. ' + String(submission?.detail || '').slice(0, 200);
+        vscode.window.showWarningMessage(message.trim());
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Unable to prepare pull-request merge chat: ${error.message}`);
@@ -203,5 +219,6 @@ module.exports = {
   pickPullRequests,
   batchMergePrompt,
   submitChatPromptWithEnter,
+  classifyChatSubmitError,
   registerPullRequestBatchCommand
 };
