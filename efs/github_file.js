@@ -2,7 +2,7 @@
 
 const path = require('path');
 
-const COMMAND_ID = 'scmToolkit.openFileOnGitHub';
+const COMMAND_ID = 'sweetiebot.openFileOnGitHub';
 
 function remoteWebBase(remoteUrl) {
   const value = String(remoteUrl || '').trim();

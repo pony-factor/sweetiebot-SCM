@@ -8,12 +8,14 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
+const { registerEditorActions } = require('./editor_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
 const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
 const { registerCommitLimitCommand } = require('./commit_limits');
+const { registerLegacyCommandAliases } = require('./command_aliases');
 
 const VIEW_ID = 'scmToolkit.workspaceSearch';
 const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
@@ -261,6 +263,7 @@ function settings() {
 }
 
 async function activate(context) {
+  registerLegacyCommandAliases(vscode, context);
   registerCommitLimitCommand(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context);
@@ -274,6 +277,7 @@ async function activate(context) {
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
   registerPullRequestBatchCommand(vscode, context);
+  registerEditorActions(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);
@@ -282,13 +286,13 @@ async function activate(context) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
-  context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.openSettings', () => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openSettings', () => {
     return openSettings(context);
   }));
   if (context.globalState.get(SETTINGS_PAGE_OPENED_KEY, false)) {
     void ensureSettingsServer(context, false);
   }
-  context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.chatgpt.searchRepositories', query => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.chatgpt.searchRepositories', query => {
     return searchLinkedGithubRepositories(query);
   }));
 
@@ -316,7 +320,7 @@ async function activate(context) {
   }, INDEX_SYNC_INTERVAL_MS);
   context.subscriptions.push({ dispose: () => clearInterval(indexSyncTimer) });
 
-  context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.workspaceSearch.clearIndex', async () => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.workspaceSearch.clearIndex', async () => {
     await index.clear();
     provider.lastResults = [];
     provider.post({ type: 'results', results: [], warning: '', mode: settings().mode });

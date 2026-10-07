@@ -68,15 +68,15 @@ async function run() {
       }
     }
   });
-  assert(registered.has('scmToolkit.readCodexContext'));
-  assert(registered.has('scmToolkit.readCodexConversation'));
+  assert(registered.has('sweetiebot.readCodexContext'));
+  assert(registered.has('sweetiebot.readCodexConversation'));
 
   provider.initializeWebview(webview, 'sidebar', () => {});
   const closedPanel = { get active() { throw new Error('Webview is disposed'); } };
   provider.editorPanels.set(closedPanel, {});
   provider.getWebviewForPanel = () => undefined;
 
-  const textPending = registered.get('scmToolkit.readCodexContext')();
+  const textPending = registered.get('sweetiebot.readCodexContext')();
   assert.equal(messages[0].type, 'scm-toolkit-context-request');
   listener({
     type: 'scm-toolkit-context-response',
@@ -86,7 +86,7 @@ async function run() {
   });
   assert.equal(await textPending, 'Window-local text');
 
-  const sourcePending = registered.get('scmToolkit.readCodexConversation')();
+  const sourcePending = registered.get('sweetiebot.readCodexConversation')();
   listener({
     type: 'scm-toolkit-context-response',
     id: messages[1].id,
@@ -105,7 +105,7 @@ async function run() {
 
   const sidebar = [...provider.sidebarViews][0];
   sidebar.visible = false;
-  const hiddenPending = registered.get('scmToolkit.readCodexContext')();
+  const hiddenPending = registered.get('sweetiebot.readCodexContext')();
   listener({
     type: 'scm-toolkit-context-response',
     id: messages[2].id,
@@ -116,7 +116,7 @@ async function run() {
 
   provider.sidebarViews.clear();
   assert.throws(
-    () => registered.get('scmToolkit.readCodexConversation')(),
+    () => registered.get('sweetiebot.readCodexConversation')(),
     /Open a Codex conversation/
   );
   disposable.dispose();

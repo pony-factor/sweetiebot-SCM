@@ -24,10 +24,12 @@ function pullRequestFromTreeNode(node) {
 }
 
 function installPullRequestRefresh(vscode, view, owner) {
+  owner._register(vscode.commands.registerCommand('scmToolkit.squashMergeSelectedPullRequest', (...args) =>
+    vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', ...args)));
   // Resolve tree nodes in the extension host that owns the GitHub PR tree.
-  owner._register(vscode.commands.registerCommand('scmToolkit.squashMergeSelectedPullRequest', node => {
+  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', node => {
     return vscode.commands.executeCommand(
-      'scmToolkit.squashMergePullRequest',
+      'sweetiebot.squashMergePullRequest',
       pullRequestFromTreeNode(node)
     );
   }));

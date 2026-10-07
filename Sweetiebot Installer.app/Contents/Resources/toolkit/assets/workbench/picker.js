@@ -266,7 +266,7 @@ async function scmToolkitPullCleanRepository(provider, commands, repositoryArgum
         return false;
     }
 
-    await commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument);
+    await commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument);
     return true;
 }
 
@@ -303,7 +303,7 @@ function scmToolkitEnableBlankStateRefresh(
         const now = Date.now();
         if (lastAutoFetch === undefined || now - lastAutoFetch >= 60000) {
             lastAutoFetch = now;
-            await commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument, { fetch: true });
+            await commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument, { fetch: true });
         }
 
         const historyProvider = provider.historyProvider.get();
@@ -459,7 +459,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
         const wrappedCommit = async function(message, options) {
             try {
                 const allowed = await commands.executeCommand(
-                    'scmToolkit.checkCommitLimits',
+                    'sweetiebot.checkCommitLimits',
                     repository.rootUri
                 );
                 if (allowed === false) return;
@@ -470,7 +470,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
             let commitLease = false;
             try {
                 try {
-                    await commands.executeCommand('scmToolkit.beginCommit', repository.rootUri);
+                    await commands.executeCommand('sweetiebot.beginCommit', repository.rootUri);
                     commitLease = true;
                 } catch {
                     // If the companion extension is unavailable, its auto-pull is unavailable too.
@@ -500,7 +500,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
             } finally {
                 if (commitLease) {
                     try {
-                        await commands.executeCommand('scmToolkit.endCommit', repository.rootUri);
+                        await commands.executeCommand('sweetiebot.endCommit', repository.rootUri);
                     } catch {
                         // The extension may be reloading; do not turn a successful commit into an error.
                     }
@@ -917,7 +917,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshAutoPublish();
         try {
             const published = await commands.executeCommand(
-                'scmToolkit.publishBranch',
+                'sweetiebot.publishBranch',
                 currentRepositoryUri,
                 { branch, remote: settings.remote }
             );
@@ -975,9 +975,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
 
         try {
-            await commands.executeCommand('scmToolkit.prepareCodexCommit', repositoryUri);
+            await commands.executeCommand('sweetiebot.prepareCodexCommit', repositoryUri);
             const message = originalMessage.trim() ? originalMessage : await commands.executeCommand(
-                'scmToolkit.generateCodexCommitMessage', repositoryUri
+                'sweetiebot.generateCodexCommitMessage', repositoryUri
             );
             if (currentInput !== input || input.value !== originalMessage) {
                 throw new Error('The selected repository or commit message changed during local generation. Try again.');
@@ -1038,7 +1038,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
         try {
             const source = scmToolkitChatgptConversationSource(doc);
-            const launch = await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
+            const launch = await commands.executeCommand('sweetiebot.openPullRequestChat', repository, {
                 branch,
                 base: settings.defaultBranch,
                 remote: settings.remote,
@@ -1099,7 +1099,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            const branch = await commands.executeCommand('scmToolkit.createBranch', repository, {
+            const branch = await commands.executeCommand('sweetiebot.createBranch', repository, {
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
                 names: scmToolkitBranchNamePool(),
@@ -1155,7 +1155,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('scmToolkit.syncBranch', repository, {
+            await commands.executeCommand('sweetiebot.syncBranch', repository, {
                 branch,
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
@@ -1223,7 +1223,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         pushCheckbox.disabled = true;
         refreshBranchControls();
         try {
-            await commands.executeCommand('scmToolkit.returnHome', repository);
+            await commands.executeCommand('sweetiebot.returnHome', repository);
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1278,7 +1278,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('scmToolkit.deleteBranch', repositoryArgument, {
+            await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
                 branch,
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
@@ -1295,7 +1295,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const openSettings = async event => {
         event.stopPropagation();
         try {
-            await commands.executeCommand('scmToolkit.openSettings');
+            await commands.executeCommand('sweetiebot.openSettings');
         } catch (error) {
             notifications.error(error);
         }

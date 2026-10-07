@@ -24,7 +24,7 @@ async function run() {
   vm.runInContext(source.slice(start, end) + '\nthis.publish = maybePublishBranch;', context);
   assert.equal(await context.publish('new-branch'), true, 'Publishing works with the cloud icon hidden');
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], 'scmToolkit.publishBranch');
+  assert.equal(calls[0][0], 'sweetiebot.publishBranch');
   assert.equal(calls[0][2].remote, 'origin');
   assert.equal(await context.publish('main'), false, 'The protected default branch is skipped');
   enabled = false;

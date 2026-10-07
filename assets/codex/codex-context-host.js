@@ -89,17 +89,25 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     const textCommand = vscode.commands.registerCommand(
-        'scmToolkit.readCodexContext',
+        'sweetiebot.readCodexContext',
         () => capture(false)
     );
     const sourceCommand = vscode.commands.registerCommand(
-        'scmToolkit.readCodexConversation',
+        'sweetiebot.readCodexConversation',
         () => capture(true)
+    );
+    const legacyTextCommand = vscode.commands.registerCommand(
+        'scmToolkit.readCodexContext', () => capture(false)
+    );
+    const legacySourceCommand = vscode.commands.registerCommand(
+        'scmToolkit.readCodexConversation', () => capture(true)
     );
 
     return { dispose() {
         textCommand.dispose();
         sourceCommand.dispose();
+        legacyTextCommand.dispose();
+        legacySourceCommand.dispose();
         provider.initializeWebview = originalInitialize;
         provider.handleMessage = originalHandleMessage;
         for (const listener of listeners) listener.dispose();

@@ -6,7 +6,7 @@ const path = require('node:path');
 
 async function run() {
   const manifest = require('../efs/package.json');
-  assert(manifest.activationEvents.includes('onCommand:scmToolkit.prepareCodexCommit'),
+  assert(manifest.activationEvents.includes('onCommand:sweetiebot.prepareCodexCommit'),
     'The first Codex commit command must activate the extension in a fresh window');
   let command, active = false, bridgeInstalled = false, progress = 0;
   let snapshot = 'Same-window conversation', captureError, activationError, discoveryError;
@@ -60,10 +60,10 @@ async function run() {
     commands: { registerCommand(id, callback) { commands.set(id, callback); command = callback; return {}; },
       async getCommands() {
         if (discoveryError) throw discoveryError;
-        return bridgeInstalled ? ['scmToolkit.readCodexContext'] : [];
+        return bridgeInstalled ? ['sweetiebot.readCodexContext'] : [];
       },
       async executeCommand(id) {
-        assert.equal(id, 'scmToolkit.readCodexContext');
+        assert.equal(id, 'sweetiebot.readCodexContext');
         if (captureError) throw captureError;
         return snapshot;
       } },
@@ -71,7 +71,7 @@ async function run() {
     window: { async withProgress(options, callback) { progress++; assert.equal(options.title, 'Generating commit message ✨'); return callback(); } }
   };
   sandbox.module.exports.registerCodexCommitCommand(vscode, { subscriptions: [], extensionUri: { fsPath: '/extension' } });
-  const prepare = commands.get('scmToolkit.prepareCodexCommit');
+  const prepare = commands.get('sweetiebot.prepareCodexCommit');
   const uri = { scheme: 'file', fsPath: '/selected' };
   await prepare(uri);
   assert.equal(additions, 0, 'existing staged changes leave unstaged changes alone');

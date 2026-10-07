@@ -13,6 +13,7 @@ async function main() {
   try {
     let visibility, focus, configChanged, enabled = true, calls = 0, resolve, mergeSelected;
     const merges = [];
+    const commands = new Map();
     const subscriptions = [];
     const view = { visible: false, onDidChangeVisibility: fn => { visibility = fn; return { dispose() {} }; } };
     const vscode = {
@@ -20,17 +21,19 @@ async function main() {
       workspace: { getConfiguration: () => ({ get: () => enabled }),
         onDidChangeConfiguration: fn => { configChanged = fn; return { dispose() {} }; } },
       commands: { registerCommand: (id, handler) => {
-        assert.equal(id, 'scmToolkit.squashMergeSelectedPullRequest');
-        mergeSelected = handler;
+        commands.set(id, handler);
+        if (id === 'sweetiebot.squashMergeSelectedPullRequest') mergeSelected = handler;
         return { dispose() {} };
       }, executeCommand: (id, arg) => {
-        if (id === 'scmToolkit.squashMergePullRequest') { merges.push(arg); return Promise.resolve(); }
+        if (commands.has(id)) return commands.get(id)(arg);
+        if (id === 'sweetiebot.squashMergePullRequest') { merges.push(arg); return Promise.resolve(); }
         assert.equal(id, 'pr.refreshList'); calls++;
         return new Promise(done => { resolve = done; });
       } }
     };
     assert.equal(installPullRequestRefresh(vscode, view, { _register: item => subscriptions.push(item) }), view);
     const url = 'https://github.com/owner/repo/pull/12';
+    await commands.get('scmToolkit.squashMergeSelectedPullRequest')({ url, number: 12 });
     await mergeSelected({ pullRequestModel: { html_url: url, number: 12 } });
     await mergeSelected({ url, number: 12 });
     await mergeSelected({
@@ -39,11 +42,12 @@ async function main() {
     assert.deepEqual(merges, [
       { url, number: 12 },
       { url, number: 12 },
+      { url, number: 12 },
       { url, number: 12 }
     ]);
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
-      'scmToolkit.squashMergeSelectedPullRequest');
+      'sweetiebot.squashMergeSelectedPullRequest');
     await Promise.resolve();
     assert.equal(calls, 0);
     assert.equal(timers.size, 0);

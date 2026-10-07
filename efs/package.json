@@ -13,6 +13,25 @@
   ],
   "main": "./extension.js",
   "activationEvents": [
+    "onCommand:sweetiebot.returnHome",
+    "onCommand:sweetiebot.openPullRequestChat",
+    "onCommand:sweetiebot.openPullRequestBatchChat",
+    "onCommand:sweetiebot.closeAllEditors",
+    "onCommand:sweetiebot.prepareCodexCommit",
+    "onCommand:sweetiebot.generateCodexCommitMessage",
+    "onCommand:sweetiebot.createBranch",
+    "onCommand:sweetiebot.publishBranch",
+    "onCommand:sweetiebot.deleteBranch",
+    "onCommand:sweetiebot.autoPullClean",
+    "onCommand:sweetiebot.syncBranch",
+    "onView:scmToolkit.workspaceSearch",
+    "onCommand:sweetiebot.openSettings",
+    "onStartupFinished",
+    "onCommand:sweetiebot.workspaceSearch.clearIndex",
+    "onCommand:sweetiebot.chatgpt.searchRepositories",
+    "onCommand:sweetiebot.squashMergePullRequest",
+    "onUri",
+    "onCommand:sweetiebot.openFileOnGitHub",
     "onCommand:scmToolkit.returnHome",
     "onCommand:scmToolkit.openPullRequestChat",
     "onCommand:scmToolkit.openPullRequestBatchChat",
@@ -24,14 +43,17 @@
     "onCommand:scmToolkit.deleteBranch",
     "onCommand:scmToolkit.autoPullClean",
     "onCommand:scmToolkit.syncBranch",
-    "onView:scmToolkit.workspaceSearch",
     "onCommand:scmToolkit.openSettings",
-    "onStartupFinished",
     "onCommand:scmToolkit.workspaceSearch.clearIndex",
     "onCommand:scmToolkit.chatgpt.searchRepositories",
     "onCommand:scmToolkit.squashMergePullRequest",
-    "onUri",
-    "onCommand:scmToolkit.openFileOnGitHub"
+    "onCommand:scmToolkit.openFileOnGitHub",
+    "onCommand:sweetiebot.beginCommit",
+    "onCommand:scmToolkit.beginCommit",
+    "onCommand:sweetiebot.checkCommitLimits",
+    "onCommand:scmToolkit.checkCommitLimits",
+    "onCommand:sweetiebot.endCommit",
+    "onCommand:scmToolkit.endCommit"
   ],
   "contributes": {
     "views": {
@@ -47,37 +69,37 @@
     },
     "commands": [
       {
-        "command": "scmToolkit.openSettings",
+        "command": "sweetiebot.openSettings",
         "title": "Open Sweetiebot SCM Settings",
         "icon": "$(gear)"
       },
       {
-        "command": "scmToolkit.workspaceSearch.clearIndex",
+        "command": "sweetiebot.workspaceSearch.clearIndex",
         "title": "Clear Workspace Search Index",
         "icon": "$(trash)"
       },
       {
-        "command": "scmToolkit.chatgpt.searchRepositories",
+        "command": "sweetiebot.chatgpt.searchRepositories",
         "title": "Search Linked GitHub Repositories",
         "icon": "$(github)"
       },
       {
-        "command": "scmToolkit.squashMergeSelectedPullRequest",
+        "command": "sweetiebot.squashMergeSelectedPullRequest",
         "title": "Squash and Merge into main",
         "icon": "$(git-merge)"
       },
       {
-        "command": "scmToolkit.openPullRequestBatchChat",
+        "command": "sweetiebot.openPullRequestBatchChat",
         "title": "Squash Selected Pull Requests with ChatGPT",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "scmToolkit.closeAllEditors",
+        "command": "sweetiebot.closeAllEditors",
         "title": "Close All Editors",
         "icon": "$(close-all)"
       },
       {
-        "command": "scmToolkit.openFileOnGitHub",
+        "command": "sweetiebot.openFileOnGitHub",
         "title": "Open File on GitHub",
         "icon": "$(github)"
       }
@@ -85,39 +107,39 @@
     "menus": {
       "view/title": [
         {
-          "command": "scmToolkit.workspaceSearch.clearIndex",
+          "command": "sweetiebot.workspaceSearch.clearIndex",
           "when": "view == scmToolkit.workspaceSearch",
           "group": "navigation@1"
         },
         {
-          "command": "scmToolkit.openPullRequestBatchChat",
+          "command": "sweetiebot.openPullRequestBatchChat",
           "when": "view == pr:github && !isWeb",
           "group": "navigation@2"
         }
       ],
       "view/item/context": [
         {
-          "command": "scmToolkit.squashMergeSelectedPullRequest",
+          "command": "sweetiebot.squashMergeSelectedPullRequest",
           "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
         }
       ],
       "editor/title": [
         {
-          "command": "scmToolkit.closeAllEditors",
+          "command": "sweetiebot.closeAllEditors",
           "group": "navigation@100"
         }
       ],
       "explorer/context": [
         {
-          "command": "scmToolkit.openFileOnGitHub",
+          "command": "sweetiebot.openFileOnGitHub",
           "when": "resourceScheme == file",
           "group": "navigation@50"
         }
       ],
       "scm/resourceState/context": [
         {
-          "command": "scmToolkit.openFileOnGitHub",
+          "command": "sweetiebot.openFileOnGitHub",
           "when": "resourceScheme == file",
           "group": "navigation@50"
         }

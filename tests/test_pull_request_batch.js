@@ -102,7 +102,7 @@ async function run() {
     },
     commands: {
       registerCommand(id, callback) {
-        assert.equal(id, 'scmToolkit.openPullRequestBatchChat');
+        assert.equal(id, 'sweetiebot.openPullRequestBatchChat');
         handler = callback;
         return { dispose() {} };
       },
@@ -148,10 +148,10 @@ async function run() {
   assert.equal(browserCalls[0].options.openToSide, false);
 
   const pkg = require('../efs/package.json');
-  assert(pkg.activationEvents.includes('onCommand:scmToolkit.openPullRequestBatchChat'));
-  assert(pkg.contributes.commands.some(command => command.command === 'scmToolkit.openPullRequestBatchChat'));
+  assert(pkg.activationEvents.includes('onCommand:sweetiebot.openPullRequestBatchChat'));
+  assert(pkg.contributes.commands.some(command => command.command === 'sweetiebot.openPullRequestBatchChat'));
   assert(pkg.contributes.menus['view/title'].some(item =>
-    item.command === 'scmToolkit.openPullRequestBatchChat' && item.when.includes('view == pr:github')
+    item.command === 'sweetiebot.openPullRequestBatchChat' && item.when.includes('view == pr:github')
   ));
 
   console.log('Batch pull-request merge chat checks passed.');

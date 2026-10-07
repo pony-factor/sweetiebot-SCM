@@ -445,12 +445,12 @@ function registerBranchCommands(vscode, context) {
   };
 
   for (const [command, action] of [
-    ['scmToolkit.returnHome', returnHome],
-    ['scmToolkit.autoPullClean', autoPullClean],
-    ['scmToolkit.createBranch', createBranch],
-    ['scmToolkit.publishBranch', publishBranch],
-    ['scmToolkit.deleteBranch', deleteBranch],
-    ['scmToolkit.syncBranch', syncBranch]
+    ['sweetiebot.returnHome', returnHome],
+    ['sweetiebot.autoPullClean', autoPullClean],
+    ['sweetiebot.createBranch', createBranch],
+    ['sweetiebot.publishBranch', publishBranch],
+    ['sweetiebot.deleteBranch', deleteBranch],
+    ['sweetiebot.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
       try {
@@ -463,11 +463,11 @@ function registerBranchCommands(vscode, context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('scmToolkit.beginCommit', async uri => {
+    vscode.commands.registerCommand('sweetiebot.beginCommit', async uri => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, () => beginRepositoryCommit(repository));
     }),
-    vscode.commands.registerCommand('scmToolkit.endCommit', async uri => {
+    vscode.commands.registerCommand('sweetiebot.endCommit', async uri => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, () => endRepositoryCommit(repository));
     })

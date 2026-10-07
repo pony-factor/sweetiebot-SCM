@@ -31,15 +31,15 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         package = json.loads((workspace_search.SOURCE / "package.json").read_text())
         command_ids = {command["command"] for command in package["contributes"]["commands"]}
 
-        self.assertIn("onCommand:scmToolkit.openSettings", package["activationEvents"])
-        self.assertIn("scmToolkit.openSettings", command_ids)
-        self.assertIn("scmToolkit.chatgpt.searchRepositories", command_ids)
+        self.assertIn("onCommand:sweetiebot.openSettings", package["activationEvents"])
+        self.assertIn("sweetiebot.openSettings", command_ids)
+        self.assertIn("sweetiebot.chatgpt.searchRepositories", command_ids)
         self.assertIn(
-            "onCommand:scmToolkit.chatgpt.searchRepositories",
+            "onCommand:sweetiebot.chatgpt.searchRepositories",
             package["activationEvents"],
         )
         self.assertIn(
-            "vscode.commands.registerCommand('scmToolkit.openSettings'",
+            "vscode.commands.registerCommand('sweetiebot.openSettings'",
             (workspace_search.SOURCE / "extension.js").read_text(),
         )
 

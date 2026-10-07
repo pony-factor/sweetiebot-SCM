@@ -79,12 +79,12 @@ const vscode = {
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
 
   main.state.HEAD.behind = 1;
-  await handlers['scmToolkit.beginCommit'](main.rootUri);
+  await handlers['sweetiebot.beginCommit'](main.rootUri);
   tick();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'Auto-pull does not fetch while a commit is active');
   assert.equal(merges, 1, 'Auto-pull cannot move HEAD while a commit is active');
-  await handlers['scmToolkit.endCommit'](main.rootUri);
+  await handlers['sweetiebot.endCommit'](main.rootUri);
 
   tick(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 2, 'Auto-pull resumes after the commit releases its lease');

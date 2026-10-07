@@ -26,7 +26,7 @@
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-context-host.js</key>
 		<data>
-		7lnLI5qeL3Sqc+T8ktYxrSllIL8=
+		JhvrXZ+clxEg3vn57iOoLnoyOTo=
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-context-webview.js</key>
 		<data>
@@ -78,7 +78,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		WU6ut6cg727yffwFQN/Em9aGeGg=
+		r1Y3Xz/IXEZWNiB1fUZNLO2QRuM=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -86,7 +86,7 @@
 		</data>
 		<key>Resources/toolkit/efs/branch_actions.js</key>
 		<data>
-		l2e//THx2vKOnJp+AIbWKISIVAo=
+		hejP8PWGFcNOYa0ds6UhGIuxESY=
 		</data>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
 		<data>
@@ -94,23 +94,31 @@
 		</data>
 		<key>Resources/toolkit/efs/codex_commit.js</key>
 		<data>
-		/GsQa4PmQJq2oTZTF6/ZuRS7l6w=
+		vmhi6LmrcvN+bldNgWCocoU1TbY=
 		</data>
 		<key>Resources/toolkit/efs/codex_refresh.js</key>
 		<data>
 		xYAdEqPQe64tksauh1duz2P1bgc=
 		</data>
+		<key>Resources/toolkit/efs/command_aliases.js</key>
+		<data>
+		Ztu9ebLVM5RezW9wU92e3IP8kGE=
+		</data>
 		<key>Resources/toolkit/efs/commit_limits.js</key>
 		<data>
-		iiFgDfYft42KQPihXBSzabr29hE=
+		nE3DAZ+JZxtCxK+L31fVDza9/PU=
 		</data>
 		<key>Resources/toolkit/efs/core.js</key>
 		<data>
 		+bXGYhjhvGfGbEytR9k5b9fw0UE=
 		</data>
+		<key>Resources/toolkit/efs/editor_actions.js</key>
+		<data>
+		q4a8iTY1Lh34qldNqCGTQiJNDeA=
+		</data>
 		<key>Resources/toolkit/efs/extension.js</key>
 		<data>
-		YbpGbsnyCdK2oej0Dqo4cpp2a8E=
+		ei7eZVk8ITOmd5bNQOADEepMamU=
 		</data>
 		<key>Resources/toolkit/efs/extract.js</key>
 		<data>
@@ -118,15 +126,15 @@
 		</data>
 		<key>Resources/toolkit/efs/github_file.js</key>
 		<data>
-		fnPhntb7zr6rgqAnVdABCarqV0I=
+		6hTrA/46ogThF13PtfJv1rC/Bj4=
 		</data>
 		<key>Resources/toolkit/efs/github_pr_actions.js</key>
 		<data>
-		Lmm8nkwL2flmn8tTIXZCGZNnnKU=
+		dO3AYQ9WYV9vsyXDTyZY2tiyOes=
 		</data>
 		<key>Resources/toolkit/efs/github_pr_refresh.js</key>
 		<data>
-		p3UAbpwbQVXb2PY8ju4dJe/Abys=
+		HkcLcxPZKhVfxsdgBAdF5HyvwAo=
 		</data>
 		<key>Resources/toolkit/efs/media/efs.svg</key>
 		<data>
@@ -138,15 +146,15 @@
 		</data>
 		<key>Resources/toolkit/efs/package.json</key>
 		<data>
-		EWWk+fAHntRNk9LnaVxZy7SjRl4=
+		TrTlzRhH3SXKp1liDaxhLfNpc6w=
 		</data>
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<data>
-		LWXflHYjcw8XDuUDf9etzRiUA1k=
+		gfZ+wJ/0LNnAq/KjHm9Rk/uEgGo=
 		</data>
 		<key>Resources/toolkit/efs/pull_request_batch.js</key>
 		<data>
-		hTJlc+4gCMkOGkhyETya92LAubw=
+		NUCcKgw6GqXiOY+hU7ulRb3SzWY=
 		</data>
 		<key>Resources/toolkit/efs/push_recovery.js</key>
 		<data>
@@ -322,11 +330,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			7lnLI5qeL3Sqc+T8ktYxrSllIL8=
+			JhvrXZ+clxEg3vn57iOoLnoyOTo=
 			</data>
 			<key>hash2</key>
 			<data>
-			Gxqxq7pyHpJGSfmxIwGcGu8gikVSURZc6Ia6lKHRtgs=
+			+CS9p1WMZq07ABXrXd0EXqAmQgAKgjvTIlKg165kZ0E=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-context-webview.js</key>
@@ -465,11 +473,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			WU6ut6cg727yffwFQN/Em9aGeGg=
+			r1Y3Xz/IXEZWNiB1fUZNLO2QRuM=
 			</data>
 			<key>hash2</key>
 			<data>
-			y21dsGWfsepRu/pNba/Yd3wNbwkQvHZYRnWNVWRSPKM=
+			8XmHn0mU6cxOql81l9rypP3y6U2bmNOCerA7IuetaS8=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -487,11 +495,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			l2e//THx2vKOnJp+AIbWKISIVAo=
+			hejP8PWGFcNOYa0ds6UhGIuxESY=
 			</data>
 			<key>hash2</key>
 			<data>
-			GgPAlqkVOaJbnU488cfl2TxeLVwh/+4wK+AJ2BtA+i8=
+			hs9J05M17hAdlu0UCGC36cqAoVYq2t7ZQckwHYWKpiY=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
@@ -509,11 +517,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			/GsQa4PmQJq2oTZTF6/ZuRS7l6w=
+			vmhi6LmrcvN+bldNgWCocoU1TbY=
 			</data>
 			<key>hash2</key>
 			<data>
-			v/BliRPTiDbliaKp6AIs8qwZ1ZVGhERTWtK9K/Cqcao=
+			bNVg3lj9JukbRV7cIG+uFhZ4pCkFLfz8Iiq7B2Q7Kec=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/codex_refresh.js</key>
@@ -527,15 +535,26 @@
 			f7plMPM1iDtP8kOpbiTpYmySlndavFg5lH0AzN+XV/I=
 			</data>
 		</dict>
+		<key>Resources/toolkit/efs/command_aliases.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			Ztu9ebLVM5RezW9wU92e3IP8kGE=
+			</data>
+			<key>hash2</key>
+			<data>
+			Nn5BeVb3T/mTNLO1BqokHSvNplz6iwA4WY2S1PFN+54=
+			</data>
+		</dict>
 		<key>Resources/toolkit/efs/commit_limits.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			iiFgDfYft42KQPihXBSzabr29hE=
+			nE3DAZ+JZxtCxK+L31fVDza9/PU=
 			</data>
 			<key>hash2</key>
 			<data>
-			qkna8R8ZTMJ1Vl3xaFtFt3D/I1Q0nzMVm48IJR5PLqU=
+			JhKneeM4JV/hWnUygTTI56tTmsm/8CJsSDNVESYcAUw=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/core.js</key>
@@ -549,15 +568,26 @@
 			S+s9+IqlOQa2s1FyTJDzbBBelXKj/q6wmP4J8pRlzO4=
 			</data>
 		</dict>
+		<key>Resources/toolkit/efs/editor_actions.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			q4a8iTY1Lh34qldNqCGTQiJNDeA=
+			</data>
+			<key>hash2</key>
+			<data>
+			SOFbMTrwwlfuvyHUae/T/499Y1+Wpqek8LlCrHibi4A=
+			</data>
+		</dict>
 		<key>Resources/toolkit/efs/extension.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			YbpGbsnyCdK2oej0Dqo4cpp2a8E=
+			ei7eZVk8ITOmd5bNQOADEepMamU=
 			</data>
 			<key>hash2</key>
 			<data>
-			si/8/G3EBfiGsM3nbrwVlKTFrVEi6uRtJinDiU+FyfM=
+			CjNK+wgSXjsXWBtCyskR3tCBOPr+znkPY1rgyLRNrI0=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/extract.js</key>
@@ -575,33 +605,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			fnPhntb7zr6rgqAnVdABCarqV0I=
+			6hTrA/46ogThF13PtfJv1rC/Bj4=
 			</data>
 			<key>hash2</key>
 			<data>
-			ai3bsBuMAaCKU1O5U0EzWYqzUaN5KV5xqCCu8e89sIc=
+			IE+P90qygguImMmUZdxd0B88G71lBRSe6u4Y9iyFf70=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/github_pr_actions.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			Lmm8nkwL2flmn8tTIXZCGZNnnKU=
+			dO3AYQ9WYV9vsyXDTyZY2tiyOes=
 			</data>
 			<key>hash2</key>
 			<data>
-			8suzrzgaN2LH3Pq5sV1xQrI6k5YvKIKYDZLwtnQ8pjw=
+			AiZSbIiIr1jG/RTxewPeDzczQYdek5NlB+ATDEexWAE=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/github_pr_refresh.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			p3UAbpwbQVXb2PY8ju4dJe/Abys=
+			HkcLcxPZKhVfxsdgBAdF5HyvwAo=
 			</data>
 			<key>hash2</key>
 			<data>
-			PMNk7iwUWa34cdpm7PZ+W/iXl8I4HfGS0uxtyzxqdy8=
+			5qhK+7rtmfAyGCzbnssOPlB736qNlJ8VHaQcbq/S55s=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/media/efs.svg</key>
@@ -630,33 +660,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			EWWk+fAHntRNk9LnaVxZy7SjRl4=
+			TrTlzRhH3SXKp1liDaxhLfNpc6w=
 			</data>
 			<key>hash2</key>
 			<data>
-			t6fP5NllaSun1dxZAlJm/mgy7jbLZbBVvLKpAVbGPI4=
+			m+7w0rQnvw8mFMAdmHkXEY6jbmeughQ1S4UVwj/04VU=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			LWXflHYjcw8XDuUDf9etzRiUA1k=
+			gfZ+wJ/0LNnAq/KjHm9Rk/uEgGo=
 			</data>
 			<key>hash2</key>
 			<data>
-			HcRo7ZKB4KkyesPeK1fhRe8zB9223SVZubOPtBRrz08=
+			HvIeGU/nMfWBrmMtW0IN/peNqTUpHgrU0ErNNvl7Oh0=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/pull_request_batch.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			hTJlc+4gCMkOGkhyETya92LAubw=
+			NUCcKgw6GqXiOY+hU7ulRb3SzWY=
 			</data>
 			<key>hash2</key>
 			<data>
-			qubJEgE7F+v4lUkbwcx6oG79sGNHpD+XyTPWSRoDatk=
+			WxP0Wa+xuexM2VTKvj681ghssANioGXVVoJuS5j0YyI=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/push_recovery.js</key>
