@@ -34,6 +34,21 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_button_visibility_comes_from_layout_instead_of_legacy_switches(self):
+        values = form_values()
+        values["messageBarLayout"] = ['{"before":["codex"],"after":["autocomplete"]}']
+        values.pop("codexCoauthor")
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["codexCoauthor"])
+        self.assertTrue(parsed["autocompleteToggle"])
+        self.assertFalse(parsed["branchPicker"])
+        self.assertFalse(parsed["ponyBranch"])
+        self.assertFalse(parsed["mcpPullRequest"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        for name in (*configurator.MESSAGE_BAR_VISIBILITY_SETTINGS, "inlineSuggestions"):
+            self.assertNotIn(f'type="checkbox" name="{name}"', page)
+            self.assertIn(f'type="hidden" name="{name}"', page)
+
     def test_gear_page_covers_every_toolkit_and_extension_setting(self):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
@@ -167,6 +182,10 @@ class SubmissionTests(unittest.TestCase):
     def test_parses_checked_and_unchecked_switches(self):
         values = form_values()
         values.pop("branchPicker")
+        layout = json.loads(values["messageBarLayout"][0])
+        for zone in layout:
+            layout[zone] = [item for item in layout[zone] if item not in {"branch", "sync", "home"}]
+        values["messageBarLayout"] = [json.dumps(layout)]
 
         parsed = configurator.parse_submission(values)
 

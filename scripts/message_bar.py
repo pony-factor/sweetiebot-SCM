@@ -21,6 +21,15 @@ MESSAGE_BAR_ITEMS = (
 )
 MESSAGE_BAR_ITEM_IDS = tuple(item_id for item_id, _label in MESSAGE_BAR_ITEMS)
 MESSAGE_BAR_ITEM_LABELS = dict(MESSAGE_BAR_ITEMS)
+MESSAGE_BAR_VISIBILITY_SETTINGS = {
+    "branchPicker": "branch",
+    "ponyBranch": "pony-branch",
+    "branchCleanup": "delete",
+    "autocompleteToggle": "autocomplete",
+    "codexCoauthor": "codex",
+    "autoPublishToggle": "auto-publish",
+    "mcpPullRequest": "pull-request",
+}
 
 DEFAULT_MESSAGE_BAR_LAYOUT = {
     "before": ["branch", "codex"],

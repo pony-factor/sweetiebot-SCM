@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
-from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON
+from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
 
 
 DEFAULT_SETTINGS = {
@@ -135,6 +135,21 @@ def load_settings():
                 default,
                 preserve_empty=name == "branchNameDisabledPacks",
             )
+    # Represent legacy disabled buttons in the layout so the editor reflects
+    # existing preferences before its first save.
+    try:
+        layout = parse_message_bar_layout(settings["messageBarLayout"])
+    except ValueError:
+        return settings
+    disabled = {item for name, item in MESSAGE_BAR_VISIBILITY_SETTINGS.items() if not settings[name]}
+    if not settings["branchPicker"]:
+        disabled.update(("sync", "home"))
+    if any(item in disabled for items in layout.values() for item in items):
+        import json
+        settings["messageBarLayout"] = json.dumps({
+            zone: [item for item in items if item not in disabled]
+            for zone, items in layout.items()
+        }, separators=(",", ":"))
     return settings
 
 

@@ -20,7 +20,7 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from chatgpt_integration import import_pgp_secret_key, sync_codex_instructions
-from message_bar import serialize_message_bar_layout
+from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
 
 
@@ -254,6 +254,12 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             if url.scheme not in {"http", "https"} or url.hostname not in {"localhost", "127.0.0.1", "::1"} or url.username or url.password:
                 raise ValueError(f"{setting.label} must be a loopback HTTP URL.")
         parsed[setting.name] = value
+    layout = parse_message_bar_layout(parsed["messageBarLayout"])
+    active = set(layout["before"] + layout["after"])
+    for name, item in MESSAGE_BAR_VISIBILITY_SETTINGS.items():
+        parsed[name] = item in active
+    # The branch machinery also supplies Sync and Home when the picker is hidden.
+    parsed["branchPicker"] = bool(active & {"branch", "sync", "home"})
     if parsed.get("workspaceSearchAskOllama") and not parsed.get("workspaceSearchChatModel"):
         raise ValueError("Ask Ollama requires a chat model.")
     return parsed
@@ -365,6 +371,9 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
+    if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
+        disabled = "" if current is True else " disabled"
+        return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
     if setting.name == "messagePlaceholder":
         return ""
     if setting.kind == "message_bar":
@@ -490,7 +499,7 @@ def render_form(
             controls = render_message_bar_control(
                 current.get(layout_setting.name, ""), current.get("messagePlaceholder", "")
             )
-            controls += '<h3>Button options</h3><p class="status">All available buttons appear above, including hidden controls. Sync branch and Home follow the Branch picker setting. Your layout and button preferences are saved on this computer and retained across updates.</p>'
+            controls += '<p class="status">Drag buttons into a row to show them, or into Available buttons to hide them. Changes save automatically and remain across updates.</p>' 
             controls += "".join(
                 _setting_control(setting, current.get(setting.name, ""))
                 for setting in SETTINGS

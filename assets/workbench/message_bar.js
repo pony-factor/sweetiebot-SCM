@@ -134,6 +134,19 @@ function scmToolkitApplyMessageBarLayout(widget, settings) {
 const scmToolkitCreateControlsWithoutMessageBarLayout = scmToolkitCreateControls;
 scmToolkitCreateControls = function(...args) {
     const [widget, _observe, _commands, _notifications, _configuration, _mcpService, settings] = args;
+    const layout = scmToolkitMessageBarLayout(settings.messageBarLayout);
+    const active = new Set([...layout.before, ...layout.after]);
+    const layoutSettings = {
+        ...settings,
+        branchPicker: ['branch', 'sync', 'home'].some(id => active.has(id)),
+        ponyBranch: active.has('pony-branch'),
+        branchCleanup: active.has('delete'),
+        autocompleteToggle: active.has('autocomplete'),
+        codexCoauthor: active.has('codex'),
+        autoPublishToggle: active.has('auto-publish'),
+        mcpPullRequest: active.has('pull-request'),
+    };
+    args[6] = layoutSettings;
     const controls = scmToolkitCreateControlsWithoutMessageBarLayout(...args);
     const refreshSeparators = scmToolkitApplyMessageBarLayout(widget, settings) ?? (() => {});
     const bindWithoutMessageBarLayout = controls.bind.bind(controls);

@@ -33,7 +33,9 @@ class MessageBarLayoutTests(unittest.TestCase):
             subprocess.run(["git", "config", "--global", "scm-toolkit.codex-coauthor", "false"], check=True)
             toolkit_settings.persist_message_bar_layout(toolkit_settings.DEFAULT_SETTINGS)
             current = toolkit_settings.load_settings()
-            self.assertEqual(current["messageBarLayout"], saved)
+            self.assertEqual(json.loads(current["messageBarLayout"]), {
+                "before": ["home", "separator-37", "branch"], "after": [],
+            })
             self.assertFalse(current["codexCoauthor"])
             control = render_message_bar_control(current["messageBarLayout"])
             self.assertIn('data-message-bar-id="separator-37"', control)
