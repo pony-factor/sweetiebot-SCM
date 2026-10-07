@@ -316,6 +316,36 @@ class ManualSpellcheckTests(unittest.TestCase):
     ):
         self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
 
+    def test_rejects_format_label_instead_of_spelling_correction(self):
+        subject = "🦅 Add GNU AGPL v3 license"
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(subject, "json"),
+            subject,
+        )
+
+    def test_rejects_fenced_structured_spellcheck_output(self):
+        subject = "🦅 Add GNU AGPL v3 license"
+        response = """```json
+{"subject":"🦅 Add GNU AGPL v3 license"}
+```"""
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(subject, response),
+            subject,
+        )
+
+    def test_rejects_semantic_rewrite_from_spellcheck_model(self):
+        subject = "🐞 Fix commit title"
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(subject, "🐞 Change random words"),
+            subject,
+        )
+
+    def test_accepts_close_spelling_only_correction(self):
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction("🐞 Fxi commit titel", "🐞 Fix commit title"),
+            "🐞 Fix commit title",
+        )
+
 
 class TitleTests(unittest.TestCase):
     def test_required_model_reports_timeout_connection_and_http_failures(self):
