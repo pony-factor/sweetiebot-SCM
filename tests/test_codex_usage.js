@@ -71,6 +71,7 @@ assert.equal(latestRefreshes, 3);
 
 const relativeReset = context.scmToolkitRelativeUsageReset;
 assert.equal(relativeReset((1_800_000_000_000 + 105 * 60_000) / 1000, 300, 1_800_000_000_000), '1h 45m');
+assert.equal(relativeReset((1_800_000_000_000 + 1) / 1000, 300, 1_800_000_000_000), '1m');
 assert.equal(relativeReset((1_800_000_000_000 + 2 * 86400000) / 1000, 10080, 1_800_000_000_000), '2 days');
 
 const relativeLabel = context.scmToolkitRelativeUsageResetLabel;
@@ -80,6 +81,18 @@ const octoberSeventh = new Date(2026, 9, 7, 3, 30).getTime();
 assert.equal(relativeLabel('Resets Oct 9', octoberSeventh), 'Resets in 2 days');
 assert.equal(relativeLabel('Resets Oct 7', octoberSeventh), 'Resets today');
 assert.equal(relativeLabel('Not a reset', octoberSeventh), null);
+
+const nativeLimitLabels = [
+    { textContent: 'Your rate limit resets in 0m.', children: [] },
+    { textContent: "You've hit your usage limit. Try again in 0m.", children: [] },
+    { textContent: 'Rendered in 0m', children: [] },
+];
+context.scmToolkitCorrectLastMinuteUsageLabels({
+    querySelectorAll() { return nativeLimitLabels; },
+});
+assert.equal(nativeLimitLabels[0].textContent, 'Your rate limit resets in 1m.');
+assert.equal(nativeLimitLabels[1].textContent, "You've hit your usage limit. Try again in 1m.");
+assert.equal(nativeLimitLabels[2].textContent, 'Rendered in 0m');
 
 const resetRows = [
     { textContent: 'Resets 1:24 AM', children: [] },
