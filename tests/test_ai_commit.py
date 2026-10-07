@@ -446,9 +446,20 @@ class TitleTests(unittest.TestCase):
             self.assertEqual(generate.call_count, 2)
             self.assertEqual(generate.call_args.args[1]["format"]["type"], "object")
 
-    def test_title_preference_references_global_agents(self):
-        with patch.object(ai_commit.Path, "read_text", return_value="Never stage changes.\nCommit titles should use my current title style.\n"):
-            self.assertEqual(ai_commit.commit_title_preference(), "Commit titles should use my current title style.")
+    def test_title_preference_references_standalone_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instructions = Path(tmp) / "commit-instructions.md"
+            instructions.write_text(
+                "Never stage changes.\nCommit titles should use my current title style.\n",
+                encoding="utf-8",
+            )
+            with patch.object(
+                ai_commit, "commit_instructions_path", return_value=instructions
+            ):
+                self.assertEqual(
+                    ai_commit.commit_title_preference(),
+                    "Commit titles should use my current title style.",
+                )
 
     @patch.object(ai_commit, "git_output", return_value="🔄 Sync branch to main\nSync branch with main\n📝 Reorganize research notes\nFix parser\n")
     def test_history_excludes_sync_titles(self, _git):
@@ -539,37 +550,43 @@ class TitleTests(unittest.TestCase):
         )
 
 
-class InstructionSyncTests(unittest.TestCase):
-    def test_global_codex_instructions_are_opt_in(self):
+class InstructionFileTests(unittest.TestCase):
+    def test_standalone_commit_instructions_are_read_directly(self):
         with tempfile.TemporaryDirectory() as tmp:
-            agents = Path(tmp) / "AGENTS.md"
-            agents.write_text(
+            instructions = Path(tmp) / "commit-instructions.md"
+            instructions.write_text(
                 "Prefer compact wording.\n"
                 "Commit titles should use one emoji and an imperative verb.\n"
-                "<!-- scm-toolkit-chatgpt-instructions:start -->\n"
-                "Use plain language.\n"
-                "When creating Git commits through web or GitHub tools, append this trailer after a blank line:\n"
-                "Co-authored-by: Codex Web <noreply@openai.com>\n"
-                "<!-- scm-toolkit-chatgpt-instructions:end -->\n",
+                "Use plain language.\n",
                 encoding="utf-8",
             )
-            with patch.object(ai_commit, "codex_agents_path", return_value=agents), patch.object(
-                ai_commit, "git_config_bool", return_value=False
+            with patch.object(
+                ai_commit, "commit_instructions_path", return_value=instructions
+            ):
+                self.assertEqual(
+                    ai_commit.commit_title_preference(),
+                    "Commit titles should use one emoji and an imperative verb.",
+                )
+                custom = ai_commit.commit_custom_instructions()
+
+        self.assertIn("Prefer compact wording.", custom)
+        self.assertIn("Use plain language.", custom)
+        self.assertNotIn("Commit titles should", custom)
+
+    def test_missing_standalone_file_uses_default_title_rule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.md"
+            with patch.object(
+                ai_commit, "commit_instructions_path", return_value=missing
             ):
                 self.assertEqual(ai_commit.commit_custom_instructions(), "")
-            with patch.object(ai_commit, "codex_agents_path", return_value=agents), patch.object(
-                ai_commit, "git_config_bool", return_value=True
-            ):
-                instructions = ai_commit.commit_custom_instructions()
-
-        self.assertIn("Prefer compact wording.", instructions)
-        self.assertIn("Use plain language.", instructions)
-        self.assertNotIn("Commit titles should", instructions)
-        self.assertNotIn("Co-authored-by:", instructions)
-        self.assertNotIn("scm-toolkit-chatgpt-instructions", instructions)
+                self.assertEqual(
+                    ai_commit.commit_title_preference(),
+                    ai_commit.DEFAULT_COMMIT_TITLE_PREFERENCE,
+                )
 
     @patch.object(ai_commit, "recent_subjects", return_value="🖌️ Refine controls")
-    def test_prompt_includes_synced_custom_instructions(self, _subjects):
+    def test_prompt_includes_standalone_custom_instructions(self, _subjects):
         with patch.object(
             ai_commit,
             "commit_custom_instructions",
@@ -580,8 +597,9 @@ class InstructionSyncTests(unittest.TestCase):
                 "diff --git a/README.md b/README.md\n+text",
             )
 
-        self.assertIn("User commit-writing preferences from the global Codex instructions:", prompt)
+        self.assertIn("Sweetiebot commit-writing instructions:", prompt)
         self.assertIn("Prefer compact wording and sentence case.", prompt)
+        self.assertNotIn("User commit-writing preferences from the global Codex instructions:", prompt)
         self.assertIn("Do not add trailers or metadata", prompt)
 
 

@@ -499,6 +499,35 @@ class AiWrapperTests(unittest.TestCase):
             self.assertFalse(destination.exists())
 
 
+    def test_commit_instructions_are_seeded_once_and_preserve_edits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "config" / "commit-instructions.md"
+            self.assertTrue(
+                install.sync_commit_instructions(check=True, destination=destination)
+            )
+            self.assertFalse(destination.exists())
+
+            self.assertTrue(
+                install.sync_commit_instructions(destination=destination)
+            )
+            expected = (
+                install.HERE.parent / "assets" / "commit-instructions.md"
+            ).read_text(encoding="utf-8")
+            self.assertEqual(destination.read_text(encoding="utf-8"), expected)
+
+            destination.write_text("My persistent rules.\n", encoding="utf-8")
+            self.assertFalse(
+                install.sync_commit_instructions(check=True, destination=destination)
+            )
+            self.assertFalse(
+                install.sync_commit_instructions(destination=destination)
+            )
+            self.assertEqual(
+                destination.read_text(encoding="utf-8"),
+                "My persistent rules.\n",
+            )
+
+
     def test_sync_model_picker_installs_executable_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "bin" / "scm-toolkit-models"
