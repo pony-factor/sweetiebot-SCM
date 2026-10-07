@@ -88,13 +88,6 @@ class SubmissionTests(unittest.TestCase):
         values["postCommitSpellcheck"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["postCommitSpellcheck"])
 
-    def test_ai_commit_instruction_sync_defaults_off_and_saves_on(self):
-        values = form_values()
-        self.assertFalse(install.DEFAULT_SETTINGS["aiCommitCustomInstructions"])
-        self.assertFalse(configurator.parse_submission(values)["aiCommitCustomInstructions"])
-        values["aiCommitCustomInstructions"] = ["true"]
-        self.assertTrue(configurator.parse_submission(values)["aiCommitCustomInstructions"])
-
     def test_browser_toggles_default_off_and_save_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["cmdClickCloseOthers"])
@@ -190,7 +183,6 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(parsed["branchCustomNames"], "")
         self.assertEqual(parsed["branchNameImports"], "[]")
         self.assertEqual(parsed["chatgptCustomInstructions"], "")
-        self.assertFalse(parsed["aiCommitCustomInstructions"])
         self.assertTrue(parsed["chatgptWebCodexCoauthor"])
 
     def test_parses_disabled_custom_and_imported_branch_names(self):
@@ -311,8 +303,8 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="workspaceSearchLabel"', page)
         self.assertIn('name="workspaceSearchAskOllama"', page)
         self.assertIn('name="workspaceSearchChatModel"', page)
-        self.assertIn('name="aiCommitCustomInstructions"', page)
-        self.assertIn("Sync AI commits with Codex instructions", page)
+        self.assertNotIn('name="aiCommitCustomInstructions"', page)
+        self.assertNotIn("Sync AI commits with Codex instructions", page)
         self.assertIn("updateAskOllamaRequirement", page)
         self.assertIn('name="chatgptCustomInstructions"', page)
         self.assertIn('id="sync-chatgpt-instructions"', page)

@@ -47,6 +47,34 @@ def legacy_ai_wrapper_path():
     return Path("~/.local/bin/git-auto-title").expanduser()
 
 
+def commit_instructions_path():
+    configured = os.environ.get(
+        "SCM_TOOLKIT_COMMIT_INSTRUCTIONS",
+        "~/.config/sweetiebot/commit-instructions.md",
+    )
+    return Path(configured).expanduser()
+
+
+def sync_commit_instructions(check=False, destination=None):
+    target = (
+        Path(destination).expanduser()
+        if destination is not None
+        else commit_instructions_path()
+    )
+    if target.is_symlink():
+        raise RuntimeError(
+            f"Refusing to replace symlinked commit instructions: {target}"
+        )
+    if target.exists():
+        return False
+
+    if not check:
+        source = HERE.parent / "assets" / "commit-instructions.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
+    return True
+
+
 def sync_ai_wrapper(remove=False, check=False, destination=None):
     explicit_destination = destination is not None
     primary = Path(destination) if explicit_destination else ai_wrapper_path()
@@ -743,6 +771,11 @@ def main():
             remove=args.uninstall, check=True, destination=wrapper_path
         )
     )
+    commit_instructions_changed = (
+        False
+        if args.codex_only or args.repair or args.uninstall
+        else sync_commit_instructions(check=True)
+    )
     model_picker_path = ai_model_picker_path()
     model_picker_changed = (
         False
@@ -878,6 +911,7 @@ def main():
     if (
         old == list(new)
         and not wrapper_changed
+        and not commit_instructions_changed
         and not model_picker_changed
         and not workspace_search_changed
     ):
@@ -892,6 +926,8 @@ def main():
             write_pair(paths, new, old)
         if not args.codex_only and not args.repair:
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
+            if not args.uninstall:
+                sync_commit_instructions()
             sync_model_picker(
                 enabled=settings["aiModelPicker"],
                 remove=args.uninstall,
@@ -910,6 +946,7 @@ def main():
             print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")
         else:
             print(f"AI commit wrapper: {wrapper_path}")
+            print(f"Commit instructions: {commit_instructions_path()}")
             if settings["aiModelPicker"]:
                 print(f"AI model picker: {model_picker_path}")
             else:
