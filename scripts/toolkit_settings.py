@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
     "sourceControlLabel": "Sweetie Bot",
     "automaticAppRepair": True,
     "openPanelOnStartup": True,
+    "notificationPosition": "bottom-left",
     "workspaceSearchActivityBar": False,
     "workspaceSearchLabel": "EFS",
     "workspaceSearchAskOllama": False,
@@ -184,6 +185,7 @@ SETTING_KEYS = {
     "sourceControlLabel": "scm-toolkit.source-control-label",
     "automaticAppRepair": "scm-toolkit.automatic-app-repair",
     "openPanelOnStartup": "scm-toolkit.open-panel-on-startup",
+    "notificationPosition": "scm-toolkit.notification-position",
     "workspaceSearchActivityBar": "scm-toolkit.workspace-search-activity-bar",
     "workspaceSearchLabel": "scm-toolkit.workspace-search-label",
     "workspaceSearchAskOllama": "scm-toolkit.workspace-search-ask-ollama",
@@ -272,6 +274,7 @@ VSCODE_SETTINGS = {
         "pullRequestQuickMerge": "pullRequestQuickMerge",
         "codexKeepAwake": "codexKeepAwake",
     },
+    "workbenchNotificationSettings": {"position": "notificationPosition"},
     "editorSettings": {"inlineSuggest.enabled": "inlineSuggestions"},
     "gitSettings": {"postCommitCommand": "postCommitAction"},
 }

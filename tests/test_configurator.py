@@ -100,6 +100,25 @@ class SubmissionTests(unittest.TestCase):
             if name != "branchNameDisabledPacks":
                 self.assertIn(f'name="{name}"', page)
 
+    def test_notification_position_round_trips_into_vscode(self):
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {
+            "workbenchNotificationSettings": {"position": "top-right"},
+        })
+        self.assertEqual(current["notificationPosition"], "top-right")
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="notificationPosition"', page)
+        self.assertIn('<option value="top-right" selected>Top-right</option>', page)
+
+        values = form_values()
+        values["notificationPosition"] = ["bottom-right"]
+        payload = configurator.extension_settings_payload(configurator.parse_submission(values))
+        self.assertEqual(payload["workbenchNotificationSettings"]["position"], "bottom-right")
+
+        values["notificationPosition"] = ["center"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_cloud_preference_round_trips_into_vscode(self):
         current = dict(install.DEFAULT_SETTINGS)
         configurator.apply_vscode_settings(current, {

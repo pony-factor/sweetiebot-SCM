@@ -98,6 +98,9 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
     editorSettings: {
       'inlineSuggest.enabled': vscode.workspace.getConfiguration('editor').get('inlineSuggest.enabled', true)
     },
+    workbenchNotificationSettings: {
+      position: vscode.workspace.getConfiguration('workbench.notifications').get('position', 'bottom-left')
+    },
     gitSettings: {
       postCommitCommand: vscode.workspace.getConfiguration('git').get('postCommitCommand', 'none')
     }
@@ -136,7 +139,11 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
             cfg.update(key, value, vscode.ConfigurationTarget.Global)
           ));
         }
-        for (const [group, root] of [['editorSettings', 'editor'], ['gitSettings', 'git']]) {
+        for (const [group, root] of [
+          ['workbenchNotificationSettings', 'workbench.notifications'],
+          ['editorSettings', 'editor'],
+          ['gitSettings', 'git']
+        ]) {
           if (!message[group]) continue;
           const cfg = vscode.workspace.getConfiguration(root);
           settingUpdates.push(...Object.entries(message[group]).map(([key, value]) =>
