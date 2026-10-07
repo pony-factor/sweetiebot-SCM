@@ -219,7 +219,7 @@ def source_control_label_edits(js, label):
     return edits
 
 
-def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/")
+def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     anchor = "Invalid browser view resource:"
     anchor_index = js.find(anchor)
     if anchor_index < 0:
