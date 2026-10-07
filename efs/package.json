@@ -2,7 +2,7 @@
   "name": "scm-toolkit-workspace-search",
   "displayName": "Sweetiebot SCM",
   "description": "Local semantic and hybrid workspace search in the Source Control sidebar using Ollama.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "jfwooten4",
   "engines": {
     "vscode": "^1.106.0"
