@@ -9,6 +9,7 @@ DEFAULT_SETTINGS = {
     "branchPicker": True,
     "ponyBranch": True,
     "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining",
+    "branchNameEnabledPacks": None,
     "branchCustomNames": "",
     "branchNameImports": "[]",
     "messagePlaceholder": "Message",
@@ -130,7 +131,7 @@ def load_settings():
             settings[name] = read_git_string(
                 git_key,
                 default,
-                preserve_empty=name == "branchNameDisabledPacks",
+                preserve_empty=name in {"branchNameDisabledPacks", "branchNameEnabledPacks"},
             )
     return settings
 
@@ -139,6 +140,7 @@ SETTING_KEYS = {
     "branchPicker": "scm-toolkit.branch-picker",
     "ponyBranch": "scm-toolkit.pony-branch",
     "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",
+    "branchNameEnabledPacks": "scm-toolkit.branch-name-enabled-packs",
     "branchCustomNames": "scm-toolkit.branch-custom-names",
     "branchNameImports": "scm-toolkit.branch-name-imports",
     "messagePlaceholder": "scm-toolkit.message-placeholder",

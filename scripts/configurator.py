@@ -85,6 +85,7 @@ SETTINGS = (
     Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Repository", "text"),
     Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Repository", "text"),
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
+    Setting("branchNameEnabledPacks", "scm-toolkit.branch-name-enabled-packs", "Saved pack selection", "Internal exact snapshot of enabled branch-name packs.", "Branch names", "pack_state"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use ASCII punctuation. Off by default.", "Ollama"),
@@ -188,13 +189,14 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
 
     disabled = sorted((rendered_ids - enabled_ids) & known_ids)
     parsed["branchNameDisabledPacks"] = ",".join(disabled)
+    parsed["branchNameEnabledPacks"] = ",".join(sorted(enabled_ids & known_ids))
     parsed["branchCustomNames"] = ",".join(
         parse_name_list(values.get("branchCustomNames", [""])[0])
     )
     parsed["branchNameImports"] = json.dumps(imports, separators=(",", ":"))
 
     for setting in SETTINGS:
-        if setting.kind in {"packs", "names", "imports"}:
+        if setting.kind in {"packs", "pack_state", "names", "imports"}:
             continue
         if setting.kind == "bool":
             parsed[setting.name] = setting.name in values
@@ -295,6 +297,8 @@ def save_settings(settings: dict[str, bool | str]) -> None:
 
 def _pack_controls(current: dict[str, object]) -> str:
     disabled = set(parse_pack_id_list(current.get("branchNameDisabledPacks", "")))
+    enabled_raw = current.get("branchNameEnabledPacks")
+    enabled = None if enabled_raw is None else set(parse_pack_id_list(enabled_raw))
     raw_imports = current.get("branchNameImports", "[]")
     try:
         imports = parse_imported_packs(raw_imports)
@@ -311,7 +315,8 @@ def _pack_controls(current: dict[str, object]) -> str:
         description = str(pack.get("description", "")).strip()
         names = [str(name) for name in pack["names"]]
         count = len(names)
-        checked = "" if pack_id in disabled else " checked"
+        is_enabled = pack_id in enabled if enabled is not None else pack_id not in disabled
+        checked = " checked" if is_enabled else ""
         escaped_id = html.escape(pack_id, quote=True)
         selected = "true" if index == 0 else "false"
         tab_index = "0" if index == 0 else "-1"
@@ -370,7 +375,7 @@ def _setting_control(setting: Setting, current: object) -> str:
             '<span class="toggle" aria-hidden="true"></span></label>'
         )
 
-    if setting.kind == "packs":
+    if setting.kind in {"packs", "pack_state"}:
         return ""
 
     if setting.kind == "names":
