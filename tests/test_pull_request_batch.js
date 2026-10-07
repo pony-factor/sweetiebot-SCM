@@ -7,6 +7,7 @@ const {
   fetchOpenPullRequests,
   pickPullRequests,
   batchMergePrompt,
+  submitChatPromptWithEnter,
   registerPullRequestBatchCommand
 } = require('../efs/pull_request_batch');
 
@@ -78,6 +79,21 @@ async function run() {
   assert.match(prompt, /force-with-lease/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
 
+  let osascriptCall;
+  const submittedWithEnter = await submitChatPromptWithEnter(
+    (file, args, callback) => {
+      osascriptCall = { file, args };
+      callback(null);
+    },
+    { platform: 'darwin', delayMs: 0 }
+  );
+  assert.equal(submittedWithEnter, true);
+  assert.equal(osascriptCall.file, '/usr/bin/osascript');
+  assert.equal(osascriptCall.args[0], '-e');
+  assert.match(osascriptCall.args[1], /frontApp contains "Code"/);
+  assert.match(osascriptCall.args[1], /key code 36/);
+  assert.equal(await submitChatPromptWithEnter(() => {}, { platform: 'linux', delayMs: 0 }), false);
+
   let handler;
   const browserCalls = [];
   const errors = [];
@@ -135,7 +151,11 @@ async function run() {
       ];
     }
   });
-  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl);
+  let submitCalls = 0;
+  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => {
+    submitCalls += 1;
+    return true;
+  });
   await handler();
   assert.equal(errors.length, 0);
   assert.equal(infos.length, 0);
@@ -147,6 +167,7 @@ async function run() {
   assert.match(sentPrompt, /pull\/41/);
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
+  assert.equal(submitCalls, 1);
 
   const pkg = require('../efs/package.json');
   assert(pkg.activationEvents.includes('onCommand:sweetiebot.openPullRequestBatchChat'));
