@@ -1577,3 +1577,134 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     observer.observe(document, { childList: true, characterData: true, subtree: true });
     document.querySelectorAll(selector).forEach(update);
 })();
+
+// Toggle the native VS Code window between its current bounds and a centered compact layout.
+(() => {
+    const actionId = 'sweetiebot-compact-window-action';
+    const restoreBoundsKey = 'sweetiebot.compactWindow.restoreBounds';
+    const compactWidth = 560;
+    const compactMaxHeight = 920;
+    const edgeGutter = 32;
+
+    const readRestoreBounds = () => {
+        try {
+            const value = window.localStorage.getItem(restoreBoundsKey);
+            return value ? JSON.parse(value) : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const writeRestoreBounds = bounds => {
+        try {
+            window.localStorage.setItem(restoreBoundsKey, JSON.stringify(bounds));
+        } catch {
+            // Keep the toggle usable even if workbench storage is unavailable.
+        }
+    };
+
+    const clearRestoreBounds = () => {
+        try {
+            window.localStorage.removeItem(restoreBoundsKey);
+        } catch {
+            // Keep the toggle usable even if workbench storage is unavailable.
+        }
+    };
+
+    const updateAction = action => {
+        const compact = Boolean(readRestoreBounds());
+        action.classList.toggle('sweetiebot-compact-window-active', compact);
+        action.classList.toggle('codicon-screen-normal', !compact);
+        action.classList.toggle('codicon-screen-full', compact);
+        action.setAttribute('aria-pressed', compact ? 'true' : 'false');
+
+        const label = compact ? 'Restore window size' : 'Compact window';
+        action.setAttribute('aria-label', label);
+        action.title = label;
+    };
+
+    const compactWindow = () => {
+        writeRestoreBounds({
+            x: window.screenX,
+            y: window.screenY,
+            width: window.outerWidth,
+            height: window.outerHeight
+        });
+
+        const availableWidth = window.screen.availWidth;
+        const availableHeight = window.screen.availHeight;
+        const availableLeft = window.screen.availLeft ?? 0;
+        const availableTop = window.screen.availTop ?? 0;
+        const targetWidth = Math.min(
+            compactWidth,
+            Math.max(420, availableWidth - edgeGutter * 2)
+        );
+        const targetHeight = Math.min(
+            compactMaxHeight,
+            Math.max(360, availableHeight - edgeGutter * 2)
+        );
+        const targetX = availableLeft + Math.round((availableWidth - targetWidth) / 2);
+        const targetY = availableTop + Math.round((availableHeight - targetHeight) / 2);
+
+        window.resizeTo(targetWidth, targetHeight);
+        window.moveTo(targetX, targetY);
+    };
+
+    const restoreWindow = () => {
+        const bounds = readRestoreBounds();
+        if (!bounds) return;
+
+        window.resizeTo(bounds.width, bounds.height);
+        window.moveTo(bounds.x, bounds.y);
+        clearRestoreBounds();
+    };
+
+    const toggleCompactWindow = () => {
+        if (readRestoreBounds()) restoreWindow();
+        else compactWindow();
+
+        const action = document.getElementById(actionId)?.querySelector('.action-label');
+        if (action) updateAction(action);
+    };
+
+    const mountAction = () => {
+        if (document.getElementById(actionId)) return;
+
+        const actions = document.querySelector(
+            '.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .actions-container'
+        );
+        if (!actions) return;
+
+        const item = document.createElement('li');
+        item.id = actionId;
+        item.className = 'action-item sweetiebot-compact-window-action';
+        item.setAttribute('role', 'presentation');
+
+        const action = document.createElement('a');
+        action.className = 'action-label codicon';
+        action.setAttribute('role', 'button');
+        action.setAttribute('tabindex', '0');
+        updateAction(action);
+
+        action.addEventListener('pointerdown', event => event.stopPropagation());
+        action.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleCompactWindow();
+        });
+        action.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleCompactWindow();
+            }
+        });
+
+        item.appendChild(action);
+        actions.prepend(item);
+    };
+
+    mountAction();
+    const observer = new MutationObserver(mountAction);
+    observer.observe(document.body, { childList: true, subtree: true });
+})();
+
