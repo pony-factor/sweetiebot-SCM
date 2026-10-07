@@ -169,7 +169,8 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             self.assertTrue((destination / "toolkit_settings.py").is_file())
             self.assertTrue((destination / "branch_names.py").is_file())
             self.assertTrue((destination / "branch_name_packs.json").is_file())
-            self.assertTrue((destination / "chatgpt_integration.py").is_file())
+            self.assertTrue((destination / "local_setup.py").is_file())
+            self.assertFalse((destination / "chatgpt_integration.py").exists())
             self.assertTrue((destination / "media" / "efs.svg").is_file())
             self.assertTrue((destination / "THIRD_PARTY_NOTICES.md").is_file())
             self.assertFalse(
