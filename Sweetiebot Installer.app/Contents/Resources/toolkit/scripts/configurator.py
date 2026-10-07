@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-import errno
 import html
 import json
 import math
+import os
 import re
 import secrets
 import shutil
@@ -21,7 +21,7 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from chatgpt_integration import import_pgp_secret_key, sync_codex_instructions
-from message_bar import serialize_message_bar_layout
+from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
 
 
@@ -45,31 +45,31 @@ class Setting:
 SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-    Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Source control"),
-    Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Drag the ten message-bar buttons and two separators into the arrangement you want.", "Message bar", "message_bar"),
-    Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Source control"),
-    Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Source control", "optional_text"),
-    Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
-    Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
+    Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
+    Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
+    Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
+    Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Message bar", "optional_text"),
+    Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Message bar", "text"),
+    Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Message bar", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
     Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
     Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
-    Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Source control"),
-    Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Source control"),
-    Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Autocomplete toggle", "Show the inline-suggestion switch in the SCM message row.", "Source control"),
-    Setting("autoPublishToggle", "scm-toolkit.auto-publish-toggle", "Auto-publish toggle", "Show the cloud control that publishes newly selected local branches to the configured remote.", "Source control"),
+    Setting("commitAndPush", "scm-toolkit.commit-and-push", "Show push checkbox", "Show the push-after-committing checkbox beside the message field.", "Message bar"),
+    Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Message bar"),
+    Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Inline code completion", "Show the inline code completion switch in the SCM message row.", "Message bar"),
+    Setting("autoPublishToggle", "scm-toolkit.auto-publish-toggle", "Auto-publish toggle", "Show the cloud control that publishes newly selected local branches to the configured remote.", "Message bar"),
     Setting("autoPublishNewBranches", "scm-toolkit.auto-publish-new-branches", "Automatically publish new branches", "Publish newly selected local branches to the configured remote. Saved as your VS Code user preference; the cloud control reflects this setting.", "Source control"),
     Setting("automaticBranchCleanup", "scm-toolkit.automatic-branch-cleanup", "Automatically clean merged branches", "Check for merged branches on startup and every ten minutes, and remove eligible local branches.", "Source control"),
     Setting("hideSCMProgress", "scm-toolkit.hide-scm-progress", "Hide Source Control progress bar", "Hide the progress animation during Git operations and background refreshes.", "Source control"),
     Setting("inlineSuggestions", "scm-toolkit.inline-suggestions", "Inline suggestions", "Enable inline suggestions, including in the commit-message editor.", "Source control"),
-    Setting("postCommitAction", "scm-toolkit.post-commit-action", "After committing", "Choose whether commits automatically push or sync with the remote.", "Source control", "select", ("none", "push", "sync")),
-    Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Source control"),
+    Setting("postCommitAction", "scm-toolkit.post-commit-action", "Push after committing", "Checked pushes after committing; unchecked does nothing.", "Message bar", "push_checkbox"),
+    Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Message bar"),
     Setting("codexCommitContext", "scm-toolkit.codex-commit-context", "Local commit messages from Codex text", "When the co-author commit message is blank, use this window's current conversation and staged changes with local Ollama. Codex keeps running.", "Source control"),
     Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Prevent idle sleep on macOS while Codex tasks are running. The display can still turn off. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
     Setting("hideOutgoingSyncCount", "scm-toolkit.hide-outgoing-sync-count", "Hide outgoing count", "Remove the outgoing commit count from Sync.", "Source control"),
     Setting("blankStateRefresh", "scm-toolkit.blank-state-refresh", "Refresh blank repositories", "Refresh clean repositories so their first new change appears quickly.", "Source control"),
-    Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically pull clean branches", "Fast-forward clean branches when their upstream is ahead, independently of blank-state refresh.", "Source control"),
+    Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically sync", "Fetch remote updates and fast-forward branches when possible. Runs independently of the push-after-committing checkbox.", "Source control"),
     Setting("graphOpenWorkingFile", "scm-toolkit.graph-open-working-file", "Open graph files from working tree", "Make Source Control Graph Open File target the checked-out working-tree file instead of the selected commit snapshot.", "Source control"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
@@ -89,7 +89,6 @@ SETTINGS = (
     Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Repository", "text"),
     Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Repository", "text"),
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
-    Setting("branchNameEnabledPacks", "scm-toolkit.branch-name-enabled-packs", "Saved pack selection", "Internal exact snapshot of enabled branch-name packs.", "Branch names", "pack_state"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use ASCII punctuation. Off by default.", "Ollama"),
@@ -99,11 +98,10 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT with the sibling Kafania drafting rules and publish through the configured Kafania MCP tool.", "Pull requests"),
+    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT with the sibling Kafania drafting rules and publish through the configured Kafania MCP tool.", "Message bar"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "Configured MCP server name for pull-request integrations.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
-    Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Remove reset dates and countdowns from Codex usage-limit notices and the local usage menu; exhausted notices only say you are out.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
@@ -192,19 +190,21 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
 
     disabled = sorted((rendered_ids - enabled_ids) & known_ids)
     parsed["branchNameDisabledPacks"] = ",".join(disabled)
-    parsed["branchNameEnabledPacks"] = ",".join(sorted(enabled_ids & known_ids))
     parsed["branchCustomNames"] = ",".join(
         parse_name_list(values.get("branchCustomNames", [""])[0])
     )
     parsed["branchNameImports"] = json.dumps(imports, separators=(",", ":"))
 
     for setting in SETTINGS:
-        if setting.kind in {"packs", "pack_state", "names", "imports"}:
+        if setting.kind in {"packs", "names", "imports"}:
             continue
         if setting.kind == "message_bar":
             parsed[setting.name] = serialize_message_bar_layout(
                 values.get(setting.name, [""])[0]
             )
+            continue
+        if setting.kind == "push_checkbox":
+            parsed[setting.name] = "push" if values.get(setting.name, ["none"])[0] == "push" else "none"
             continue
         if setting.kind == "bool":
             parsed[setting.name] = setting.name in values
@@ -263,6 +263,14 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             if url.scheme not in {"http", "https"} or url.hostname not in {"localhost", "127.0.0.1", "::1"} or url.username or url.password:
                 raise ValueError(f"{setting.label} must be a loopback HTTP URL.")
         parsed[setting.name] = value
+    layout = parse_message_bar_layout(parsed["messageBarLayout"])
+    active = set(layout["before"] + layout["after"])
+    for name, item in MESSAGE_BAR_VISIBILITY_SETTINGS.items():
+        parsed[name] = item in active
+    if not parsed["commitAndPush"]:
+        parsed["postCommitAction"] = "none"
+    # The branch machinery also supplies Sync and Home when the picker is hidden.
+    parsed["branchPicker"] = bool(active & {"branch", "sync", "home"})
     if parsed.get("workspaceSearchAskOllama") and not parsed.get("workspaceSearchChatModel"):
         raise ValueError("Ask Ollama requires a chat model.")
     return parsed
@@ -311,8 +319,6 @@ def save_settings(settings: dict[str, bool | str]) -> None:
 
 def _pack_controls(current: dict[str, object]) -> str:
     disabled = set(parse_pack_id_list(current.get("branchNameDisabledPacks", "")))
-    enabled_raw = current.get("branchNameEnabledPacks")
-    enabled = None if enabled_raw is None else set(parse_pack_id_list(enabled_raw))
     raw_imports = current.get("branchNameImports", "[]")
     try:
         imports = parse_imported_packs(raw_imports)
@@ -329,8 +335,7 @@ def _pack_controls(current: dict[str, object]) -> str:
         description = str(pack.get("description", "")).strip()
         names = [str(name) for name in pack["names"]]
         count = len(names)
-        is_enabled = pack_id in enabled if enabled is not None else pack_id not in disabled
-        checked = " checked" if is_enabled else ""
+        checked = "" if pack_id in disabled else " checked"
         escaped_id = html.escape(pack_id, quote=True)
         selected = "true" if index == 0 else "false"
         tab_index = "0" if index == 0 else "-1"
@@ -377,6 +382,11 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
+    if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
+        disabled = "" if current is True else " disabled"
+        return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
+    if setting.name in {"messagePlaceholder", "postCommitAction", "commitButtonLabel", "commitAndSendButtonLabel"}:
+        return ""
     if setting.kind == "message_bar":
         return render_message_bar_control(current)
 
@@ -392,7 +402,7 @@ def _setting_control(setting: Setting, current: object) -> str:
             '<span class="toggle" aria-hidden="true"></span></label>'
         )
 
-    if setting.kind in {"packs", "pack_state"}:
+    if setting.kind == "packs":
         return ""
 
     if setting.kind == "names":
@@ -447,10 +457,10 @@ def _setting_control(setting: Setting, current: object) -> str:
     list_attr = ' list="ollama-models"' if setting.kind in {"model", "optional_model"} else ""
     if setting.kind == "color":
         required = ' placeholder="#43AF49"'
-    elif setting.kind == "browser_url":
-        required = ' placeholder="https://chatgpt.com/"'
     elif setting.kind == "optional_text":
         required = ""
+    elif setting.kind == "browser_url":
+        required = ' placeholder="https://chatgpt.com/"'
     elif setting.kind == "optional_model":
         required = ' placeholder="Choose a chat model"'
     else:
@@ -499,6 +509,18 @@ def render_form(
             for setting in SETTINGS
             if setting.section == section
         )
+        if section == "Message bar":
+            layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
+            controls = render_message_bar_control(
+                current.get(layout_setting.name, ""), current.get("messagePlaceholder", ""),
+                current.get("postCommitAction", "none"),
+                current.get("commitButtonLabel", "Commit"), current.get("commitAndSendButtonLabel", "Commit and push"),
+            )
+            controls += "".join(
+                _setting_control(setting, current.get(setting.name, ""))
+                for setting in SETTINGS
+                if setting.section == section and setting.kind != "message_bar"
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Codex":
@@ -989,6 +1011,8 @@ def apply_vscode_settings(current, payload):
         for key, name in names.items():
             if key in payload.get(group, {}):
                 current[name] = payload[group][key]
+    if current.get("postCommitAction") not in {"none", "push"}:
+        current["postCommitAction"] = "none"
 
 
 def _result_page(saved: bool) -> str:
@@ -1004,6 +1028,7 @@ def run_configurator(
     open_browser: bool = True,
     port: int = 0,
     token: str | None = None,
+    parent_pid: int | None = None,
 ) -> bool:
     token = token or secrets.token_urlsafe(24)
     server_instance = secrets.token_urlsafe(12)
@@ -1159,12 +1184,7 @@ def run_configurator(
     class SettingsHTTPServer(ThreadingHTTPServer):
         allow_reuse_address = True
 
-    try:
-        server = SettingsHTTPServer(("127.0.0.1", port), Handler)
-    except OSError as error:
-        if not port or error.errno != errno.EADDRINUSE:
-            raise
-        server = SettingsHTTPServer(("127.0.0.1", 0), Handler)
+    server = SettingsHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{server.server_port}/?token={urllib.parse.quote(token)}"
     if open_browser:
         print(f"Sweetiebot SCM configurator: {url}")
@@ -1172,11 +1192,24 @@ def run_configurator(
             print("Open the URL above in a browser.")
     else:
         print(json.dumps({"url": url}), flush=True)
+    stopped = threading.Event()
+    if parent_pid:
+        def watch_parent():
+            while not stopped.wait(1):
+                try:
+                    os.kill(parent_pid, 0)
+                except ProcessLookupError:
+                    server.shutdown()
+                    return
+                except PermissionError:
+                    pass
+        threading.Thread(target=watch_parent, daemon=True).start()
     try:
         server.serve_forever(poll_interval=0.1)
     except KeyboardInterrupt:
         print("\nConfiguration cancelled.")
     finally:
+        stopped.set()
         server.server_close()
     return outcome["saved"] is True
 
@@ -1189,6 +1222,7 @@ if __name__ == "__main__":
     parser.add_argument("--vscode-settings", help="Current feature preferences supplied by the companion extension.")
     parser.add_argument("--port", type=int, default=0, help="Reuse a stable localhost port for the settings page.")
     parser.add_argument("--token", help="Reuse the settings page authentication token.")
+    parser.add_argument("--parent-pid", type=int, help="Stop when the owning extension host exits.")
     parser.add_argument(
         "--open-panel-on-startup",
         choices=("true", "false"),
@@ -1202,9 +1236,12 @@ if __name__ == "__main__":
         current["openPanelOnStartup"] = args.open_panel_on_startup == "true"
     if args.port < 0 or args.port > 65535:
         parser.error("--port must be between 0 and 65535")
+    if args.parent_pid is not None and args.parent_pid <= 0:
+        parser.error("--parent-pid must be positive")
     run_configurator(
         current,
         open_browser=not args.no_browser,
         port=args.port,
         token=args.token,
+        parent_pid=args.parent_pid,
     )

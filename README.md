@@ -14,13 +14,12 @@ Current features:
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
 - optionally create a branch from `main` using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
-- optionally show a quick toggle for VS Code inline autocomplete
+- optionally show a quick toggle for VS Code inline code completion
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
 - optionally hide the outgoing commit count from the built-in Sync action
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly
 - search the active workspace semantically from a `Workspace Search` view inside Source Control by default, or optionally move it to its own Activity Bar container, backed only by local Ollama
-- toggle the current VS Code window into a centered compact layout from the native titlebar and restore its previous bounds
 - optionally use ⌘-click on an editor tab's close button to keep that tab and close the others in its group
 - optionally use ChatGPT as the home page for blank Integrated Browser tabs
 - optionally make Source Control Graph **Open File** open the checked-out working-tree file instead of the selected commit snapshot
@@ -74,8 +73,8 @@ The builder reuses the **Sweetiebot Installer Local Signing** certificate in you
 Clone the repository and enter it:
 
 ```sh
-git clone https://github.com/pony-factor/sweetiebot-SCM.git
-cd sweetiebot-SCM
+git clone https://github.com/JFWooten4/custom-vscode-scm-toolkit.git
+cd custom-vscode-scm-toolkit
 ```
 
 Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour. It downloads source files into an isolated cache, updates the companion extension and tools, and restores customizations using your saved settings. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair offers **Reload Window**; it never reloads your work automatically. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
@@ -264,7 +263,7 @@ Random branch names are data-driven. Built-in packs live in `scripts/branch_name
 
 Pack IDs and names are lowercase branch-safe slugs containing letters, numbers, and hyphens. Built-in packs keep each branch-name slug unique across packs; shared characters use one canonical slug rather than duplicate entries. The G4 catalog also strips import-only role and episode descriptors (for example, `Knowledgeable ShopperRainbowshine` becomes `rainbowshine`) while retaining genuine multiword names such as `fleur-de-lis`. A pack may also include a `sources` object keyed by a name when a naming choice needs provenance. This keeps contributed lists as data instead of picker logic.
 
-Built-in community packs also include a dedicated **Convention mascots** set and a **4chan /mlp/** set; the latter intentionally includes Anonfilly but excludes generic `anon`, `anonpony`, and Aryanne. Most packs are enabled by default; **Pony Life** and **IDW comics** are opt-in and start disabled. Disabling a pack stores its ID in `scm-toolkit.branch-name-disabled-packs`. After the picker is saved, Sweetiebot also records the exact enabled set in `scm-toolkit.branch-name-enabled-packs`, so later catalog additions stay off until you choose them instead of silently changing an existing selection. Older disabled-pack-only settings remain supported until the picker is next saved. Custom names are stored in `scm-toolkit.branch-custom-names`. Third-party packs can be pasted into **Imported packs** as one pack object, an array of packs, or a `{"packs":[...]}` object and are stored in `scm-toolkit.branch-name-imports`.
+Built-in community packs also include a dedicated **Convention mascots** set and a **4chan /mlp/** set; the latter intentionally includes Anonfilly but excludes generic `anon`, `anonpony`, and Aryanne. Most packs are enabled by default; **Pony Life** and **IDW comics** are opt-in and start disabled. Disabling a pack stores its ID in `scm-toolkit.branch-name-disabled-packs`. Custom names are stored in `scm-toolkit.branch-custom-names`. Third-party packs can be pasted into **Imported packs** as one pack object, an array of packs, or a `{"packs":[...]}` object and are stored in `scm-toolkit.branch-name-imports`.
 
 ### Workspace Search
 
@@ -316,9 +315,9 @@ Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-
 
 **Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject.
 
-Both normal and Codex-context generation read commit-writing preferences from `~/.config/sweetiebot/commit-instructions.md` on every request. Set `SCM_TOOLKIT_COMMIT_INSTRUCTIONS` to use another path. The installer seeds this standalone Sweetiebot file from `assets/commit-instructions.md` only when the file does not already exist; updates and reinstalls never overwrite it, so local edits persist independently of Codex and `~/.codex/AGENTS.md`.
+Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other global instructions stay excluded by default. Enable **Sync AI commits with Codex instructions** on the Sweetiebot settings page, or set `scm-toolkit.ai-commit-custom-instructions = true`, to reread the rest of that global custom-instructions file for every generated commit. Synced instructions may shape commit wording and style, but staged changes remain authoritative and the generator still refuses instruction-driven trailers, metadata, or output-format changes.
 
-The default standalone file contains the detailed emoji-selection rules and title style. Sweetiebot includes the complete instruction file in the commit prompt rather than applying the old 1,800-character custom-instruction cap. If the file does not contain a dedicated `Commit titles should …` line, titles fall back to one professional emoji followed by a concise imperative title. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
+Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
 ### Concurrent PDF OCR and commit generation
 
@@ -443,16 +442,10 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
 Codex extension show the time remaining as a live countdown such as `4h 23m`. The
 display rounds to the nearest minute and refreshes as the countdown changes.
-The local composer label beside the location icon shows the remaining percentage
-of the five-hour usage limit and shows an ellipsis until usage data is available.
-The usage submenu shows centered reset countdowns. The dedicated **Usage** dialog
-also rewrites its **Resets** clock times and calendar dates as relative time, while
-weekly resets use whole calendar days.
-
-Enable `codex-hide-usage-reset-times` to suppress reset dates and countdowns instead.
-Exhausted notices reduce to **You’re out of Codex messages**, while the local usage
-menu and dedicated **Usage** dialog keep usage information without showing future
-reset times. Hiding reset times takes precedence if the countdown option is also enabled.
+The local composer label beside the location icon shows the smaller remaining
+percentage of the five-hour and weekly usage limits. Until usage data is available,
+it shows **Work locally**. The usage submenu shows centered reset countdowns;
+weekly resets display the number of days left instead of a calendar date.
 
 To install or refresh only this optional Codex patch without touching the SCM
 workbench patch, run:
@@ -524,11 +517,11 @@ For push mode, the toolkit suppresses VS Code's awaited post-commit push, comple
 
 Disabling the toolkit feature hides the checkbox. It does not silently rewrite an existing `git.postCommitCommand` value.
 
-### Autocomplete toggle
+### Inline code completion
 
 When `autocomplete-toggle` is enabled, the sparkle button appears after the other
 SCM controls. It toggles VS Code's `editor.inlineSuggest.enabled` setting. A slash
-through the sparkle means inline autocomplete is off.
+through the sparkle means inline code completion is off.
 
 ### Source Control label
 
