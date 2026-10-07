@@ -24,6 +24,7 @@ function scmToolkitRelativeUsageReset(resetAt, windowMinutes, now = Date.now()) 
     }
 
     const minutes = Math.ceil(remaining / 60000);
+    if (minutes === 1) return '1m';
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
@@ -70,6 +71,18 @@ function scmToolkitRelativeUsageResetLabel(text, now = Date.now()) {
     const days = Math.max(0, Math.round((targetUtc - todayUtc) / 86400000));
     if (days === 0) return 'Resets today';
     return `Resets in ${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
+function scmToolkitCorrectLastMinuteUsageLabels(root) {
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+    for (const element of root.querySelectorAll('*')) {
+        if (Array.from(element.children || []).length) continue;
+        const current = String(element.textContent || '');
+        if (!/\bin 0m\b/i.test(current)) continue;
+        if (!/(?:rate limit|usage limit|try again)/i.test(current)) continue;
+        const corrected = current.replace(/\bin 0m\b/gi, 'in 1m');
+        if (corrected !== current) element.textContent = corrected;
+    }
 }
 
 function scmToolkitApplyUsageDialogRelativeTimes(root, now = Date.now()) {
@@ -206,7 +219,10 @@ function scmToolkitKeepUsageFresh(refetch) {
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
 
-    const refresh = () => scmToolkitApplyUsageDialogRelativeTimes(document);
+    const refresh = () => {
+        scmToolkitApplyUsageDialogRelativeTimes(document);
+        scmToolkitCorrectLastMinuteUsageLabels(document);
+    };
     const observer = new MutationObserver(refresh);
     observer.observe(document, { childList: true, characterData: true, subtree: true });
     refresh();
