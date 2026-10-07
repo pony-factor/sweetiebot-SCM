@@ -90,10 +90,6 @@ class SearchIndex {
   async indexUri(uri, stat) {
     const settings = this.getSettings();
     const text = await extractText(uri, stat.size, settings.maxFileSizeMB);
-    if (!text.trim()) {
-      this.files.delete(uri.toString());
-      return;
-    }
     const chunks = chunkText(text);
     const indexed = chunks.map(chunk => ({ ...chunk, vector: null }));
     if (this.embeddingAvailable) {
@@ -179,8 +175,23 @@ class SearchIndex {
     for (const file of this.files.values()) {
       const uri = vscode.Uri.parse(file.uri);
       const relative = vscode.workspace.asRelativePath(uri, false);
+      const fuzzy = selectedMode === 'hybrid';
+      const filename = relative.split(/[\\/]/).pop() || relative;
+      const filenameScore = keywordScore(query, filename, { fuzzy });
+      const pathScore = keywordScore(query, relative, { fuzzy });
+      const fileScore = Math.max(filenameScore, pathScore * 0.95);
+      if (fileScore > 0) {
+        scored.push({
+          uri: file.uri,
+          relative,
+          line: 0,
+          text: filenameScore >= pathScore * 0.95 ? 'File name match' : 'Path match',
+          score: fileScore,
+          kind: 'filename'
+        });
+      }
       for (const chunk of file.chunks || []) {
-        const exact = keywordScore(query, `${relative}\n${chunk.text}`, { fuzzy: selectedMode === 'hybrid' });
+        const exact = keywordScore(query, chunk.text, { fuzzy });
         const semantic = queryVector && chunk.vector ? Math.max(0, cosine(queryVector, chunk.vector)) : 0;
         const score = selectedMode === 'exact'
             ? exact
@@ -190,7 +201,7 @@ class SearchIndex {
                     ? exact
                     : semantic * 0.78 + exact * 0.22;
         if (score > 0) {
-          const line = bestMatchingLine(query, chunk.text, chunk.line, { fuzzy: selectedMode === 'hybrid' });
+          const line = bestMatchingLine(query, chunk.text, chunk.line, { fuzzy });
           scored.push({ uri: file.uri, relative, line, text: chunk.text, score });
         }
       }
