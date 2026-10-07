@@ -123,6 +123,16 @@ class TransformTests(unittest.TestCase):
         self.assertNotIn(".scm-toolkit-settings::before", css)
         self.assertNotIn(".scm-view .button-container >", css)
 
+    def test_settings_wand_is_vertically_centered(self):
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
+        rule = css.split(
+            ".scm-view .monaco-button-dropdown > .scm-toolkit-settings {", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("display: flex;", rule)
+        self.assertIn("align-items: center;", rule)
+        self.assertIn("line-height: 1;", rule)
+
     def test_filled_button_setting_controls_outlined_stylesheet(self):
         _, outlined_css = install.transform(
             workbench_fixture(), "base-css", settings=SETTINGS
