@@ -22,7 +22,7 @@ async function squashMergePullRequest(url, execute = executeGh) {
     throw new Error('Only open, ready-for-review pull requests targeting main can be squash-merged.');
   }
   const conflict = () => Object.assign(
-    new Error(`Unable to merge #${number}: conflicts with '${pr.baseRefName}'.`),
+    new Error(`Unable to merge #${number}: conflicts with \`${pr.baseRefName}\``),
     { code: 'SWEETIEBOT_MERGE_CONFLICT' }
   );
   if (pr.mergeable === 'CONFLICTING') throw conflict();
