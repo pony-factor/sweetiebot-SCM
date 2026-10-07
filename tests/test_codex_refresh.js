@@ -11,7 +11,7 @@ let enabled = true, installed = true;
 let revision = 'initial';
 let choice, releaseServer, stopping = false, reloads = 0;
 const notices = [];
-let timerId = 0, changed, extensionPath = '/extensions/codex-old', launches = 0;
+let timerId = 0, changed, focusChanged, extensionPath = '/extensions/codex-old', launches = 0;
 const children = [];
 const sandbox = vm.createContext({
   module: { exports: {} }, process: { platform: 'darwin', env: {} },
@@ -45,7 +45,7 @@ const vscode = {
     onDidChangeConfiguration() { return { dispose() {} }; } },
   commands: { executeCommand(command) { assert.equal(command, 'workbench.action.reloadWindow'); reloads++; } },
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },
-  window: { showInformationMessage(message) { notices.push(message); return Promise.resolve(choice); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
+  window: { onDidChangeWindowState(fn) { focusChanged = fn; return { dispose() {} }; }, showInformationMessage(message) { notices.push(message); return Promise.resolve(choice); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
   extensions: {
     getExtension() { return installed ? { extensionPath } : undefined; },
     onDidChange(fn) { changed = fn; return { dispose() {} }; }
@@ -80,6 +80,15 @@ assert.equal(reloads, 0, 'reload waits for the old settings server to exit');
 releaseServer();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 1);
+focusChanged({ focused: false });
+assert.equal(timers.size, 0, 'unfocused windows do not repair');
+choice = undefined;
+revision = 'changed-by-another-window';
+focusChanged({ focused: true });
+tick();
+assert.equal(launches, 3, 'returning to a stale window checks installed updates immediately');
+children.at(-1).callbacks.get('close')(0);
+assert.equal(notices.length, 2);
 // A newly loaded window already has those bytes, even if the installer reports work again.
 const reloaded = { ...context, subscriptions: [] };
 const originalChanged = changed;
@@ -87,14 +96,16 @@ sandbox.module.exports.registerCodexRefresh(vscode, reloaded);
 tick();
 children.at(-1).callbacks.get('stdout')('Installed SCM toolkit for VS Code 1.0. Reload VS Code.');
 children.at(-1).callbacks.get('close')(0);
-assert.equal(notices.length, 1, 'reloading does not offer the same update again');
+assert.equal(notices.length, 2, 'reloading does not offer the same update again');
+focusChanged({ focused: true });
+assert.equal(timers.size, 0, 'an unchanged focused window does not repair');
 reloaded.subscriptions.at(-1).dispose();
 changed = originalChanged;
 enabled = false; changed(); tick();
-assert.equal(launches, 3, 'disabled repair cannot launch');
+assert.equal(launches, 4, 'disabled repair cannot launch');
 enabled = true; installed = false;
 [...intervals.values()][0](); tick();
-assert.equal(launches, 4, 'workbench repair works without Codex installed');
+assert.equal(launches, 5, 'workbench repair works without Codex installed');
 context.subscriptions.at(-1).dispose();
 assert.equal(children.at(-1).killed, true);
 children.at(-1).callbacks.get('close')(0);

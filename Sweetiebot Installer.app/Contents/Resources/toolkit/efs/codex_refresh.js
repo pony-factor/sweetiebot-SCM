@@ -65,6 +65,9 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   // Periodic checks also catch updates missed while this extension was inactive.
   const interval = setInterval(schedule, 60 * 60 * 1000);
   context.subscriptions.push(output, vscode.extensions.onDidChange(schedule),
+    vscode.window.onDidChangeWindowState(event => {
+      if (event.focused && enabled() && runtimeRevision(vscode, context) !== loadedRevision) schedule();
+    }),
     vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('scmToolkit.automaticAppRepair')) schedule();
     }), {

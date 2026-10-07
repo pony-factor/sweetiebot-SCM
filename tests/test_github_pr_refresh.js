@@ -51,6 +51,22 @@ async function main() {
     }
     assert.equal(pullRequestFromTreeNode({ resourceUri: { query: '{invalid' } }).url, undefined);
     assert.equal(pullRequestFromTreeNode({ remote: { url: 'git@other.example:owner/repo.git' }, number: 12 }).url, undefined);
+    assert.deepEqual(pullRequestFromTreeNode({ html_url: '', url, number: 99 }), { url, number: 12 },
+      'Ignore unusable URL aliases and derive the number from the actual PR URL');
+    const renderedNode = {};
+    const renderedOwner = {
+      _register: item => subscriptions.push(item),
+      getTreeItem: async node => {
+        assert.equal(node, renderedNode, 'Resolve the clicked node, not a different selection');
+        return { resourceUri: { query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:13' }) } };
+      }
+    };
+    installPullRequestRefresh(vscode, { ...view, selection: [{ url, number: 12 }] }, renderedOwner);
+    await mergeSelected(renderedNode);
+    assert.deepEqual(merges.at(-1), { url: 'https://github.com/owner/repo/pull/13', number: 13 });
+    // Dispose this additional view before checking the original refresh lifecycle.
+    subscriptions.at(-1).dispose();
+    installPullRequestRefresh(vscode, view, { _register: item => subscriptions.push(item) });
     view.selection = [{ pullRequestModel: { html_url: url, number: 12 } }];
     await mergeSelected();
     assert.deepEqual(merges.at(-1), { url, number: 12 });

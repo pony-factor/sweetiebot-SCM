@@ -13,6 +13,7 @@ import codex_context
 import codex_keep_awake
 import codex_image_drop
 import codex_recent_chats
+import codex_startup
 import github_pr
 from pathlib import Path
 from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string
@@ -791,6 +792,17 @@ def main():
         paths.append(path)
         old.append(context_old)
         new.append(context_new)
+
+    startup_patch = codex_startup.patch_file(args.codex_extension, remove=args.uninstall)
+    if startup_patch is not None:
+        startup_path, startup_old, startup_new = startup_patch
+        if startup_path in paths:
+            index = paths.index(startup_path)
+            new[index] = codex_startup.transform(new[index], remove=args.uninstall)
+        else:
+            paths.append(startup_path)
+            old.append(startup_old)
+            new.append(startup_new)
 
     codex_paths = codex_bundle_paths(args.codex_extension)
     try:

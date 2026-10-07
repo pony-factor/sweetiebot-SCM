@@ -78,11 +78,11 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.css</key>
 		<data>
-		n8sl3CVjA62nxSENTD+bsEGzkAE=
+		XDVY1Fy14ar3RyqBI0PjaGgqfno=
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		BVhrWlj2PkECXYkZIA0q2prJv50=
+		u3YjGIDKKk8WCb8dVo47uOI7ivg=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -90,7 +90,7 @@
 		</data>
 		<key>Resources/toolkit/efs/branch_actions.js</key>
 		<data>
-		hejP8PWGFcNOYa0ds6UhGIuxESY=
+		0a1Far1mDWK9fNX6WuBLL1sZ2Po=
 		</data>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
 		<data>
@@ -102,7 +102,7 @@
 		</data>
 		<key>Resources/toolkit/efs/codex_refresh.js</key>
 		<data>
-		PP94uxil/w4HFN3Xhv0t+kwfEbI=
+		4f07RzWEGTz7EKaYPzxwKJfx+xA=
 		</data>
 		<key>Resources/toolkit/efs/command_aliases.js</key>
 		<data>
@@ -138,7 +138,7 @@
 		</data>
 		<key>Resources/toolkit/efs/github_pr_refresh.js</key>
 		<data>
-		m0IY+oPVCms3SHrPafIvuotzPmQ=
+		WRWQTJVFCwe4ahIAvHvqGU7IORM=
 		</data>
 		<key>Resources/toolkit/efs/media/efs.svg</key>
 		<data>
@@ -236,6 +236,10 @@
 		<data>
 		nCtg78loNaNUKMhb+Wlzs8+H83I=
 		</data>
+		<key>Resources/toolkit/scripts/codex_startup.py</key>
+		<data>
+		Ep1zoOyZ+8hEM8zTK2Ya6jnyNtE=
+		</data>
 		<key>Resources/toolkit/scripts/codex_usage.py</key>
 		<data>
 		QaeQUvj7CPZgb0TNTdM9w1t3lbI=
@@ -254,7 +258,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		x417ax/80YqeDRK4SN7nkIPse58=
+		K/vqbx/DtIVebM16xy5yJo+/TwU=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -505,22 +509,22 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			n8sl3CVjA62nxSENTD+bsEGzkAE=
+			XDVY1Fy14ar3RyqBI0PjaGgqfno=
 			</data>
 			<key>hash2</key>
 			<data>
-			ayH0N7dIivHzZ3TpyBxTMNzmx6AoRbbB9MkVOcrfiAE=
+			0H8gGvfdNElml1Vsrm6qHeN42BLJHVle0cl2bcTT+wo=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			BVhrWlj2PkECXYkZIA0q2prJv50=
+			u3YjGIDKKk8WCb8dVo47uOI7ivg=
 			</data>
 			<key>hash2</key>
 			<data>
-			hxMUk9MfW7HDeATm6sdhqFr2pkPpnITfH+bL8AwYoic=
+			hSOV7X6zN0yvRQypNY3Lb70HchrH5Uoy8lTULUlW0to=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -538,11 +542,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			hejP8PWGFcNOYa0ds6UhGIuxESY=
+			0a1Far1mDWK9fNX6WuBLL1sZ2Po=
 			</data>
 			<key>hash2</key>
 			<data>
-			hs9J05M17hAdlu0UCGC36cqAoVYq2t7ZQckwHYWKpiY=
+			gqjkLe0+TiQ9IJ7TGCzmHYwQW8sUN/5tdNmWxEJ2z88=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
@@ -571,11 +575,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			PP94uxil/w4HFN3Xhv0t+kwfEbI=
+			4f07RzWEGTz7EKaYPzxwKJfx+xA=
 			</data>
 			<key>hash2</key>
 			<data>
-			iRf8sDp9IBOGFyNomEysZQ+FihgLc+oCmIcYmmLGklg=
+			aOHED6JyBCpJR2HgRHL/D5UHfF5EDZJgev5gVHqvMP0=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/command_aliases.js</key>
@@ -670,11 +674,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			m0IY+oPVCms3SHrPafIvuotzPmQ=
+			WRWQTJVFCwe4ahIAvHvqGU7IORM=
 			</data>
 			<key>hash2</key>
 			<data>
-			2QFwJiYvI1ekbi/ySa5rUlov/NRRoIUL7fByx1swD5U=
+			pHxbeb0YerzQSGt6JLL7Z4boYuYeQ1G7vLJOgqvioHU=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/media/efs.svg</key>
@@ -941,6 +945,17 @@
 			69H1H1HfHVz12UEJu3JrIvxAt8Y9mtRC+M1I6s9Idlw=
 			</data>
 		</dict>
+		<key>Resources/toolkit/scripts/codex_startup.py</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			Ep1zoOyZ+8hEM8zTK2Ya6jnyNtE=
+			</data>
+			<key>hash2</key>
+			<data>
+			Ool1bGE08zW4mEAQgsUy2GwfGcU+ravz5fnfo3L+CZM=
+			</data>
+		</dict>
 		<key>Resources/toolkit/scripts/codex_usage.py</key>
 		<dict>
 			<key>hash</key>
@@ -989,11 +1004,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			x417ax/80YqeDRK4SN7nkIPse58=
+			K/vqbx/DtIVebM16xy5yJo+/TwU=
 			</data>
 			<key>hash2</key>
 			<data>
-			bD6rzMfKgh9yut3mkHqoDy534ZI86AVtCyQzEd29lic=
+			n5g+iSs83rgMbZdDeWuPYkeCYN3Rh3nJyHEtsqVc2pc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>

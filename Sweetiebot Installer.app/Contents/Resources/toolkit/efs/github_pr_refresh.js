@@ -1,11 +1,10 @@
 function pullRequestFromTreeNode(node) {
   const model = node?.pullRequestModel ?? node;
-  const direct = model?.html_url ?? model?.htmlUrl ?? model?.url;
-  const directMatch = String(direct || '').match(
+  const directMatch = [model?.html_url, model?.htmlUrl, model?.url].map(value => String(value || '').match(
     /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)\/?$/
-  );
+  )).find(Boolean);
   if (directMatch) {
-    return { url: directMatch[0].replace(/\/$/, ''), number: Number(model?.number ?? directMatch[3]) };
+    return { url: directMatch[0].replace(/\/$/, ''), number: Number(directMatch[3]) };
   }
 
   const resourceUri = node?.resourceUri ?? model?.resourceUri;
@@ -31,10 +30,20 @@ function installPullRequestRefresh(vscode, view, owner) {
   owner._register(vscode.commands.registerCommand('scmToolkit.squashMergeSelectedPullRequest', (...args) =>
     vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', ...args)));
   // Resolve tree nodes in the extension host that owns the GitHub PR tree.
-  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', node => {
+  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', async node => {
+    const selected = node ?? (view.selection?.length === 1 ? view.selection[0] : undefined);
+    let model = pullRequestFromTreeNode(selected);
+    // Some GitHub nodes expose the PR URI only on their rendered TreeItem.
+    // Resolve that exact node, never substitute another selected PR.
+    if (!model.url && selected && typeof owner.getTreeItem === 'function') {
+      try { model = pullRequestFromTreeNode(await owner.getTreeItem(selected)); }
+      catch {
+        // Leave unresolved nodes to the existing actionable error.
+      }
+    }
     return vscode.commands.executeCommand(
       'sweetiebot.squashMergePullRequest',
-      pullRequestFromTreeNode(node ?? (view.selection?.length === 1 ? view.selection[0] : undefined))
+      model
     );
   }));
   let timer;

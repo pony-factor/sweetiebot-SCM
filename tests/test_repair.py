@@ -27,6 +27,7 @@ class RepairTests(unittest.TestCase):
             for module in (install.codex_context, install.codex_usage, install.codex_composer):
                 stack.enter_context(patch.object(module, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.codex_keep_awake, 'patch_file', return_value=None))
+            stack.enter_context(patch.object(install.codex_startup, 'patch_file', return_value=None))
             extension = stack.enter_context(patch.object(workspace_search, 'sync_extension'))
             stack.enter_context(patch.object(workspace_search, 'remove_legacy_extensions', return_value=False))
             wrapper = stack.enter_context(patch.object(install, 'sync_ai_wrapper'))
