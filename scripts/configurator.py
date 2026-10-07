@@ -72,7 +72,8 @@ SETTINGS = (
     Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically pull clean branches", "Fast-forward clean branches when their upstream is ahead, independently of blank-state refresh.", "Source control"),
     Setting("graphOpenWorkingFile", "scm-toolkit.graph-open-working-file", "Open graph files from working tree", "Make Source Control Graph Open File target the checked-out working-tree file instead of the selected commit snapshot.", "Source control"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
-    Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "ChatGPT for blank browser tabs", "Open blank Integrated Browser tabs at https://chatgpt.com/ while preserving explicit URLs.", "Browser"),
+    Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
+    Setting("browserHomeUrl", "scm-toolkit.browser-home-url", "Blank browser tab URL", "Destination for new blank browser tabs. Leave blank to use ChatGPT.", "Browser", "browser_url"),
     Setting("workspaceSearchActivityBar", "scm-toolkit.workspace-search-activity-bar", "Standalone Activity Bar", "Move Workspace Search into its own Activity Bar container instead of the Source Control view.", "Workspace Search"),
     Setting("workspaceSearchLabel", "scm-toolkit.workspace-search-label", "Search label", "Label for the Workspace Search panel and its standalone Activity Bar container.", "Workspace Search", "text"),
     Setting("workspaceSearchEmbeddingModel", "scm-toolkit.workspace-search-embedding-model", "Search embedding model", "Turns workspace passages into searchable meaning. Choose an embedding model, separate from chat models.", "Workspace Search", "model"),
@@ -220,6 +221,12 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             continue
 
         value = raw_value.strip()
+        if setting.kind == "browser_url":
+            value = value or "https://chatgpt.com/"
+            if any(char in value for char in ("\x00", "\n", "\r")) or not urllib.parse.urlparse(value).scheme:
+                raise ValueError(f"{setting.label} must be a complete URL, such as https://chatgpt.com/.")
+            parsed[setting.name] = value
+            continue
         if setting.kind == "optional_model":
             if "\x00" in value or "\n" in value or "\r" in value:
                 raise ValueError(f"{setting.label} must fit on one line.")
@@ -440,6 +447,8 @@ def _setting_control(setting: Setting, current: object) -> str:
     list_attr = ' list="ollama-models"' if setting.kind in {"model", "optional_model"} else ""
     if setting.kind == "color":
         required = ' placeholder="#43AF49"'
+    elif setting.kind == "browser_url":
+        required = ' placeholder="https://chatgpt.com/"'
     elif setting.kind == "optional_text":
         required = ""
     elif setting.kind == "optional_model":

@@ -417,6 +417,16 @@ class TransformTests(unittest.TestCase):
         )
         self.assertEqual(restored, (original_js, "base-css"))
 
+    def test_blank_browser_custom_url_round_trip_and_reconfiguration(self):
+        original = workbench_fixture() + browser_resolver_fixture()
+        enabled = dict(SETTINGS, browserChatgptHome=True, browserHomeUrl="https://example.com/?q=hello")
+        patched = install.transform(original, "base-css", settings=enabled)
+        self.assertIn('url:options?.viewState?.url??"https://example.com/?q=hello"', patched[0])
+        enabled["browserHomeUrl"] = "https://chatgpt.com/"
+        updated = install.transform(*patched, settings=enabled)
+        self.assertNotIn('url:options?.viewState?.url??"https://example.com/?q=hello"', updated[0])
+        self.assertEqual(install.transform(*updated, remove=True, settings=enabled), (original, "base-css"))
+
     def test_install_and_remove_round_trip(self):
         original_js = workbench_fixture()
         original_css = "base-css"

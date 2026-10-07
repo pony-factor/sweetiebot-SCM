@@ -247,7 +247,7 @@ def source_control_label_edits(js, label):
     return edits
 
 
-def browser_chatgpt_home_edits(js):
+def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     anchor = "Invalid browser view resource:"
     anchor_index = js.find(anchor)
     if anchor_index < 0:
@@ -271,7 +271,7 @@ def browser_chatgpt_home_edits(js):
     original = match.group(0)
     replacement = (
         f'{match.group("prefix")},url:{match.group("options")}?.viewState?.url'
-        f'??"https://chatgpt.com/"{match.group("suffix")}'
+        f'??{json.dumps(home_url or "https://chatgpt.com/")}{match.group("suffix")}'
     )
     return [(original, replacement)]
 
@@ -334,7 +334,7 @@ def edits(js=None, settings=None):
         changes.extend(graph_open_working_file_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
-        changes.extend(browser_chatgpt_home_edits(js))
+        changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))
 
     if js is not None and settings and settings.get("cmdClickCloseOthers"):
         modifier_pattern = re.compile(

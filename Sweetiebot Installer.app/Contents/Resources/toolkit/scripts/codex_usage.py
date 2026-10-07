@@ -10,7 +10,7 @@ ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-usage.js'
 IDENTIFIER = r'[A-Za-z_$][\w$]*'
 
 
-def transform(js, enabled=True):
+def transform(js, enabled=True, hide_reset_times=False):
     if js.count(START) != js.count(END) or js.count(START) > 1:
         raise ValueError('Incomplete Codex usage patch; refusing to overwrite it.')
     if START in js:
@@ -60,36 +60,44 @@ def transform(js, enabled=True):
                       rf'({IDENTIFIER})\[0\]=({IDENTIFIER})\.resetsAt', js)
     if reset is None:
         raise ValueError('Unsupported Codex build: composer reset anchor does not match.')
-    # Find the JSX runtime in the bucket component, independently of the label.
     segment = js[reset.start():reset.start() + 4500]
-    bucket_jsx = re.search(rf'\(0,({IDENTIFIER})\.jsx\)', segment)
-    if bucket_jsx is None:
-        raise ValueError('Unsupported Codex build: composer reset JSX anchor does not match.')
     original = reset[0]
-    replacement = (
-        f'{reset[1]}={reset[2]}==null?null:(0,{bucket_jsx[1]}.jsx)('
-        '`scm-toolkit-menu-reset`,{'
-        f'"reset-at":{reset[5]}.resetsAt,"window-minutes":{reset[5]}.windowDurationMins'
-        f'}}),{reset[4]}[0]={reset[5]}.resetsAt'
-    )
-    edits.append((original, replacement))
-    # Reset content is now a React element, so it cannot serve as a title string.
-    title = re.search(rf'title:({IDENTIFIER}),className:[^;]{{0,250}}children:\1', segment)
-    if title is None:
-        raise ValueError('Unsupported Codex build: composer reset title anchor does not match.')
-    edits.append((title[0], title[0].replace(f'title:{title[1]},', '')))
+    if hide_reset_times:
+        # Keep the bucket and percentage intact, but render no future reset label.
+        replacement = f'{reset[1]}=null,{reset[4]}[0]={reset[5]}.resetsAt'
+        edits.append((original, replacement))
+    else:
+        # Find the JSX runtime in the bucket component, independently of the label.
+        bucket_jsx = re.search(rf'\(0,({IDENTIFIER})\.jsx\)', segment)
+        if bucket_jsx is None:
+            raise ValueError('Unsupported Codex build: composer reset JSX anchor does not match.')
+        replacement = (
+            f'{reset[1]}={reset[2]}==null?null:(0,{bucket_jsx[1]}.jsx)('
+            '`scm-toolkit-menu-reset`,{'
+            f'"reset-at":{reset[5]}.resetsAt,"window-minutes":{reset[5]}.windowDurationMins'
+            f'}}),{reset[4]}[0]={reset[5]}.resetsAt'
+        )
+        edits.append((original, replacement))
+        # Reset content is now a React element, so it cannot serve as a title string.
+        title = re.search(rf'title:({IDENTIFIER}),className:[^;]{{0,250}}children:\1', segment)
+        if title is None:
+            raise ValueError('Unsupported Codex build: composer reset title anchor does not match.')
+        edits.append((title[0], title[0].replace(f'title:{title[1]},', '')))
     for original, replacement in edits:
         if js.count(original) != 1:
             raise ValueError('Unsupported Codex build: composer usage anchor is ambiguous.')
         js = js.replace(original, replacement, 1)
-    return js + START + '/* edits:' + json.dumps(edits) + ' */\n' + ASSET.read_text() + END
+    asset = ASSET.read_text()
+    if hide_reset_times:
+        asset = 'const scmToolkitHideUsageResetTimes = true;\n' + asset
+    return js + START + '/* edits:' + json.dumps(edits) + ' */\n' + asset + END
 
 
-def patch_files(extension_path=None, enabled=True):
+def patch_files(extension_path=None, enabled=True, hide_reset_times=False):
     candidates = ([Path(extension_path)] if extension_path else
                   sorted((Path.home() / '.vscode/extensions').glob('openai.chatgpt-*'), reverse=True))
     for candidate in candidates:
         for path in (candidate / 'webview/assets').glob('composer-utility-bar-*.js'):
             original = path.read_text()
             if START in original or 'id:`composer.mode.local`' in original:
-                yield path, original, transform(original, enabled)
+                yield path, original, transform(original, enabled, hide_reset_times)

@@ -101,6 +101,18 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(parsed["cmdClickCloseOthers"])
         self.assertTrue(parsed["browserChatgptHome"])
 
+    def test_blank_browser_url_saves_custom_destination_and_defaults_to_chatgpt(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], "https://chatgpt.com/")
+        for url in ("https://example.com/path?q=hello#section", "http://localhost:3000/", "about:blank"):
+            values["browserHomeUrl"] = [url]
+            self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], url)
+        values["browserHomeUrl"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], "https://chatgpt.com/")
+        values["browserHomeUrl"] = ["not a URL"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_optional_name_packs_default_off(self):
         self.assertEqual(
             set(install.DEFAULT_SETTINGS["branchNameDisabledPacks"].split(",")),
