@@ -87,6 +87,67 @@ function errorText(error) {
   return [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
 }
 
+const BROKEN_LINK_EMOJI = '⛓️‍💥';
+
+function gitErrorLines(error) {
+  const seen = new Set();
+  const lines = [];
+  for (const value of [error?.stderr, error?.stdout, error?.message]) {
+    for (const raw of String(value || '').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line
+          || /^(?:Git error|Failed to execute git)$/i.test(line)
+          || /^Command failed: git\b/i.test(line)
+          || seen.has(line)) continue;
+      seen.add(line);
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+
+function formatGitError(error) {
+  const details = errorText(error);
+  let reason;
+
+  if (/index\.lock|unable to create .*\.lock|another git process/i.test(details)) {
+    reason = 'Git is locked by another Git process. Let that operation finish, or remove the stale lock file if no Git process is running.';
+  } else if (/CONFLICT|unmerged files|unmerged changes|resolve your current index first|fix conflicts/i.test(details)) {
+    reason = 'Git stopped because there are unresolved merge conflicts. Resolve the conflicted files, then try again.';
+  } else if (/local changes.*would be overwritten|would be overwritten by (?:checkout|merge)/i.test(details)) {
+    reason = 'Git refused because local changes would be overwritten. Commit or move those changes, then try again.';
+  } else if (/authentication failed|could not read username|permission denied \(publickey\)|repository not found/i.test(details)) {
+    reason = 'Git could not authenticate with the remote. Check the GitHub sign-in and remote access, then try again.';
+  } else if (/non-fast-forward|fetch first|tip of your current branch is behind/i.test(details)) {
+    reason = 'Git rejected the update because the remote branch has newer commits. Sync the branch, then try again.';
+  } else if (/not a git repository/i.test(details)) {
+    reason = 'This folder is not a Git repository.';
+  } else if (/pathspec .* did not match|unknown revision|bad revision|couldn['’]t find remote ref/i.test(details)) {
+    reason = 'Git could not find the requested branch, ref, or path.';
+  } else if (/detached HEAD|not currently on a branch/i.test(details)) {
+    reason = 'Git cannot complete this operation while HEAD is detached. Check out a branch, then try again.';
+  } else {
+    const line = gitErrorLines(error)[0];
+    reason = line
+      ? line.replace(/^(?:fatal|error):\s*/i, '').slice(0, 320)
+      : `Git reported ${error?.gitErrorCode || 'an error'} without a specific reason. Open Git Output for the command details.`;
+  }
+
+  return `Git could not complete the operation: ${reason} ${BROKEN_LINK_EMOJI}`;
+}
+
+function explainGitError(error) {
+  const message = String(error?.message || '').trim();
+  const isGitFailure = Boolean(
+    error?.gitErrorCode
+    || error?.stderr
+    || error?.stdout
+    || /^(?:Git error|Failed to execute git)$/i.test(message)
+  );
+  if (!isGitFailure || message.endsWith(BROKEN_LINK_EMOJI)) return error;
+  return new Error(formatGitError(error), { cause: error });
+}
+
 async function retryConnection(operation) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -348,8 +409,12 @@ function registerBranchCommands(vscode, context) {
     ['scmToolkit.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
-      const repository = await resolveRepository(uri);
-      return queueRepositoryOperation(repository, () => action(repository, options));
+      try {
+        const repository = await resolveRepository(uri);
+        return await queueRepositoryOperation(repository, () => action(repository, options));
+      } catch (error) {
+        throw explainGitError(error);
+      }
     }));
   }
 
@@ -409,5 +474,7 @@ module.exports = {
   autoPullClean,
   beginRepositoryCommit,
   endRepositoryCommit,
-  commitInProgress
+  commitInProgress,
+  formatGitError,
+  explainGitError
 };
