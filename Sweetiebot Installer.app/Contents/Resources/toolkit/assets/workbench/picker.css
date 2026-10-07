@@ -543,7 +543,7 @@
 
 /* Replace the info glyph only for commit-message generation. */
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before {
-    content: '🪄';
+    content: '✨';
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
     font-size: 14px;
 }

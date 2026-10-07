@@ -1556,7 +1556,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const update = row => {
         const message = row.querySelector('.notification-list-item-message');
         row.classList.toggle('scm-toolkit-generating-commit',
-            message?.textContent.trim() === 'Generating commit message ✨');
+            /^Generating commit message(?: ✨)?$/.test(message?.textContent.trim() ?? ''));
     };
     const observer = new MutationObserver(records => {
         const rows = new Set();
