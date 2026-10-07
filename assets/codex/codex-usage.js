@@ -179,7 +179,7 @@ function scmToolkitKeepUsageFresh(refetch) {
             }
             const degrees = percent * 3.6;
             this.style.background =
-                `conic-gradient(from -90deg, currentColor 0 ${degrees}deg, color-mix(in srgb, currentColor 20%, transparent) ${degrees}deg 360deg)`;
+                `conic-gradient(from 0deg, currentColor 0 ${degrees}deg, color-mix(in srgb, currentColor 20%, transparent) ${degrees}deg 360deg)`;
             const label = `${percent}% Codex usage remaining`;
             this.setAttribute('role', 'img');
             this.setAttribute('aria-label', label);
