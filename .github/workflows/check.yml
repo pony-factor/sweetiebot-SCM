@@ -22,7 +22,7 @@ jobs:
           python-version: "3.x"
 
       - name: Compile Python
-        run: python3 -m py_compile scripts/install.py scripts/configurator.py scripts/branch_names.py scripts/ai_commit.py scripts/model_picker.py scripts/workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_branch_names.py tests/test_ai_commit.py tests/test_model_picker.py tests/test_workspace_search.py
+        run: python3 -m py_compile scripts/install.py scripts/configurator.py scripts/message_bar.py scripts/message_bar_configurator.py scripts/branch_names.py scripts/ai_commit.py scripts/model_picker.py scripts/workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_branch_names.py tests/test_ai_commit.py tests/test_model_picker.py tests/test_workspace_search.py
 
       - name: Run installer tests
         run: python3 -m unittest discover -s tests -v
@@ -30,6 +30,7 @@ jobs:
       - name: Check injected JavaScript syntax
         run: |
           node --check assets/workbench/picker.js
+          node --check assets/workbench/message_bar.js
           node --check efs/core.js
           node --check efs/ollama.js
           node --check efs/extract.js

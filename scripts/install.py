@@ -651,6 +651,8 @@ def transform(js, css, remove=False, settings=None):
         + json.dumps(changes)
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
+        + "\n"
+        + (WORKBENCH_ASSETS / "message_bar.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
