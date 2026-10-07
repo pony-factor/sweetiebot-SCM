@@ -75,7 +75,7 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
 
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
-  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', async node => {
+  const handler = async node => {
     const model = pullRequestFromTreeNode(node);
     const url = model.url;
     if (busy.has(url)) return;
@@ -121,7 +121,13 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       busy.delete(url);
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
     }
-  }));
+  };
+  for (const command of [
+    'sweetiebot.squashMergeSelectedPullRequest',
+    'sweetiebot.squashMergePullRequest'
+  ]) {
+    context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+  }
 }
 
 module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, registerGitHubPullRequestActions };

@@ -103,14 +103,19 @@ async function main() {
     { ref: 'refs/heads/topic', object: { sha: 'b'.repeat(40) } }
   ]) })), /new commits/);
   let handler;
+  const registeredIds = [];
   const errors = [];
   const refreshes = [];
   registerGitHubPullRequestActions({
-    commands: { registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
+    commands: { registerCommand: (id, fn) => { registeredIds.push(id); handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
     ProgressLocation: { Notification: 15 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message) }
   }, { subscriptions: [] });
+  assert.deepEqual(registeredIds, [
+    'sweetiebot.squashMergeSelectedPullRequest',
+    'sweetiebot.squashMergePullRequest'
+  ]);
   await handler({});
   assert.equal(errors.length, 1);
   assert.deepEqual(refreshes, ['pr.refreshList']);

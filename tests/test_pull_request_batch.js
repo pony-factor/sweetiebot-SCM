@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 const {
   repositoryName,
   repositoryUrlForGitRepository,
@@ -12,6 +14,17 @@ const {
 } = require('../efs/pull_request_batch');
 
 async function run() {
+  const extensionSource = readFileSync(path.join(__dirname, '../efs/extension.js'), 'utf8');
+  const recoveryAwait = extensionSource.indexOf('await registerPushRecovery(vscode, context);');
+  assert(recoveryAwait > -1);
+  for (const registration of [
+    'registerPullRequestBatchCommand(vscode, context);',
+    'registerGitHubPullRequestActions(vscode, context);'
+  ]) {
+    const index = extensionSource.indexOf(registration);
+    assert(index > -1 && index < recoveryAwait, `${registration} must be registered before awaited startup recovery`);
+  }
+
   assert.equal(repositoryName('git@github.com:owner/repo.git'), 'owner/repo');
   assert.equal(repositoryName('https://github.com/owner/repo'), 'owner/repo');
   assert.equal(repositoryName('https://gitlab.com/owner/repo'), undefined);
