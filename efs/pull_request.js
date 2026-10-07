@@ -155,6 +155,7 @@ function pullRequestPrompt({
 function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
+  const showPony = dependencies.showPony || (pony => vscode.commands.executeCommand('sweetiebot.setPonyProfile', pony).catch(() => undefined));
 
   if (typeof vscode.window.registerUriHandler === 'function') {
     context.subscriptions.push(vscode.window.registerUriHandler({
@@ -191,6 +192,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     const instructions = await readInstructions(repository.rootUri.fsPath);
     const pony = await readPony(branch);
+    await showPony(pony);
 
     let source = normalizeConversationSource(options.source);
     let conversationContext = '';

@@ -143,7 +143,8 @@ async function run() {
     },
     readPony: async branch => branch === 'draft'
       ? { slug: 'draft', packId: 'test-pack', packLabel: 'Test ponies', packDescription: 'Test only.' }
-      : undefined
+      : undefined,
+    showPony: async pony => { shownPonies.push(pony); }
   });
 
   await callback({ rootUri: uri }, {
@@ -154,6 +155,8 @@ async function run() {
     mcpTool: 'github_create_pull_request',
     source: chatSource
   });
+  assert.equal(shownPonies.length, 1);
+  assert.equal(shownPonies[0].packId, 'test-pack');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
   const browserOptions = calls[0].args[0];
@@ -227,6 +230,7 @@ async function run() {
     url: 'https://chatgpt.com/c/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
   };
   const recorded = [];
+  const shownPonies = [];
   const sandbox = vm.createContext({
     doc: {},
     currentBranch: 'draft',
