@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { installPullRequestRefresh } = require('../efs/github_pr_refresh');
+const { installPullRequestRefresh, pullRequestFromTreeNode } = require('../efs/github_pr_refresh');
 
 async function main() {
   const originalSetInterval = global.setInterval;
@@ -45,6 +45,18 @@ async function main() {
       { url, number: 12 },
       { url, number: 12 }
     ]);
+    for (const remote of ['https://github.com/owner/repo.git', 'git@github.com:owner/repo.git', 'ssh://git@github.com/owner/repo.git']) {
+      assert.deepEqual(pullRequestFromTreeNode({ resourceUri: { query: JSON.stringify({ prIdentifier: `${remote}:12` }) } }), { url, number: 12 });
+      assert.deepEqual(pullRequestFromTreeNode({ pullRequestModel: { remote: { url: remote }, number: 12 } }), { url, number: 12 });
+    }
+    assert.equal(pullRequestFromTreeNode({ resourceUri: { query: '{invalid' } }).url, undefined);
+    assert.equal(pullRequestFromTreeNode({ remote: { url: 'git@other.example:owner/repo.git' }, number: 12 }).url, undefined);
+    view.selection = [{ pullRequestModel: { html_url: url, number: 12 } }];
+    await mergeSelected();
+    assert.deepEqual(merges.at(-1), { url, number: 12 });
+    view.selection = [{ url }, { url: 'https://github.com/owner/repo/pull/13' }];
+    await mergeSelected();
+    assert.equal(merges.at(-1).url, undefined, 'Never guess among multiple selected PRs');
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
       'sweetiebot.squashMergeSelectedPullRequest');

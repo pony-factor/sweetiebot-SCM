@@ -15,11 +15,15 @@ function pullRequestFromTreeNode(node) {
   } catch {
     identifier = undefined;
   }
-  const uriMatch = String(identifier || '').match(
-    /^(https:\/\/github\.com\/[\w.-]+\/[\w.-]+):([1-9]\d*)$/
+  // PRNode identifiers contain the Git remote URL, which can be SSH or end in .git.
+  const uriMatch = String(identifier || '').match(/^(.*):([1-9]\d*)$/);
+  const remote = uriMatch?.[1] ?? model?.remote?.url;
+  const repoMatch = String(remote || '').match(
+    /^(?:https?:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i
   );
-  return uriMatch
-    ? { url: `${uriMatch[1]}/pull/${uriMatch[2]}`, number: Number(uriMatch[2]) }
+  const number = uriMatch?.[2] ?? model?.number;
+  return repoMatch && /^[1-9]\d*$/.test(String(number))
+    ? { url: `https://github.com/${repoMatch[1]}/${repoMatch[2]}/pull/${number}`, number: Number(number) }
     : { url: undefined, number: model?.number };
 }
 
@@ -30,7 +34,7 @@ function installPullRequestRefresh(vscode, view, owner) {
   owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', node => {
     return vscode.commands.executeCommand(
       'sweetiebot.squashMergePullRequest',
-      pullRequestFromTreeNode(node)
+      pullRequestFromTreeNode(node ?? (view.selection?.length === 1 ? view.selection[0] : undefined))
     );
   }));
   let timer;
@@ -67,4 +71,4 @@ function installPullRequestRefresh(vscode, view, owner) {
   return view;
 }
 
-module.exports = { installPullRequestRefresh };
+module.exports = { installPullRequestRefresh, pullRequestFromTreeNode };
