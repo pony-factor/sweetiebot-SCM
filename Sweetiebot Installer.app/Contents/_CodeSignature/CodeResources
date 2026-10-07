@@ -78,11 +78,11 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.css</key>
 		<data>
-		7CmaW5ieYynRswMVXKvnlc7kPgU=
+		n8sl3CVjA62nxSENTD+bsEGzkAE=
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		bWhS7VSK2ZF3jE+1cFZHOB2NTGw=
+		BVhrWlj2PkECXYkZIA0q2prJv50=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -102,7 +102,7 @@
 		</data>
 		<key>Resources/toolkit/efs/codex_refresh.js</key>
 		<data>
-		xYAdEqPQe64tksauh1duz2P1bgc=
+		PP94uxil/w4HFN3Xhv0t+kwfEbI=
 		</data>
 		<key>Resources/toolkit/efs/command_aliases.js</key>
 		<data>
@@ -122,7 +122,7 @@
 		</data>
 		<key>Resources/toolkit/efs/extension.js</key>
 		<data>
-		7FVY40Mnfmjy81i4Cz4QULdHPRc=
+		/vUE4BrkccNQvhBn3GhJ9TuWv9E=
 		</data>
 		<key>Resources/toolkit/efs/extract.js</key>
 		<data>
@@ -144,13 +144,21 @@
 		<data>
 		vry1V95wL/GUULFkpbyOyRATIYU=
 		</data>
+		<key>Resources/toolkit/efs/media/merge-prs-dark.svg</key>
+		<data>
+		kLBP5yMytZ023/ax4EfCk3ohpd8=
+		</data>
+		<key>Resources/toolkit/efs/media/merge-prs-light.svg</key>
+		<data>
+		4VBm9o3HmxU1zbx6EGX+9aeCLOU=
+		</data>
 		<key>Resources/toolkit/efs/ollama.js</key>
 		<data>
 		U5VhDWjoERhYJGW8DVPbZFRwq4M=
 		</data>
 		<key>Resources/toolkit/efs/package.json</key>
 		<data>
-		25ZgZZB+xKLFH/1ea8WYuwCgAA4=
+		sW4Dpmca5K/FuRDWSGrPdQUFSP0=
 		</data>
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<data>
@@ -167,6 +175,10 @@
 		<key>Resources/toolkit/efs/python_runtime.js</key>
 		<data>
 		KS+W/ryZUVCUOIm3LM+qjaOWE8E=
+		</data>
+		<key>Resources/toolkit/efs/runtime_revision.js</key>
+		<data>
+		vJ5FLxNBgdcwYMWo85n/FiuydwU=
 		</data>
 		<key>Resources/toolkit/efs/search_index.js</key>
 		<data>
@@ -194,7 +206,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/build_installer_app.py</key>
 		<data>
-		7aepemDPiZZSg0KMOp/uomjuyD0=
+		WGlR3gngVmikoplk6XUQiqhq+gE=
 		</data>
 		<key>Resources/toolkit/scripts/chatgpt_integration.py</key>
 		<data>
@@ -286,7 +298,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
-		6+o2Wc6neYGFhzd5YsxO3PqKtZA=
+		29Kfr7I85s+Nke4D/BBysAsoY0A=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -493,22 +505,22 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			7CmaW5ieYynRswMVXKvnlc7kPgU=
+			n8sl3CVjA62nxSENTD+bsEGzkAE=
 			</data>
 			<key>hash2</key>
 			<data>
-			d7zqPknWXCLn6SI72ZylzFa8hL/v2xDj2lG9h9VNamk=
+			ayH0N7dIivHzZ3TpyBxTMNzmx6AoRbbB9MkVOcrfiAE=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			bWhS7VSK2ZF3jE+1cFZHOB2NTGw=
+			BVhrWlj2PkECXYkZIA0q2prJv50=
 			</data>
 			<key>hash2</key>
 			<data>
-			N7SGTg4qXF3qhSZ5FF3S89rGwieFAarQg9Z5VFIztFU=
+			hxMUk9MfW7HDeATm6sdhqFr2pkPpnITfH+bL8AwYoic=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -559,11 +571,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			xYAdEqPQe64tksauh1duz2P1bgc=
+			PP94uxil/w4HFN3Xhv0t+kwfEbI=
 			</data>
 			<key>hash2</key>
 			<data>
-			f7plMPM1iDtP8kOpbiTpYmySlndavFg5lH0AzN+XV/I=
+			iRf8sDp9IBOGFyNomEysZQ+FihgLc+oCmIcYmmLGklg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/command_aliases.js</key>
@@ -614,11 +626,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			7FVY40Mnfmjy81i4Cz4QULdHPRc=
+			/vUE4BrkccNQvhBn3GhJ9TuWv9E=
 			</data>
 			<key>hash2</key>
 			<data>
-			2j4gzfo/G7NqCj56+4ENXCUaCgVgF2OM8i9nqxpRzSo=
+			1jEIavp26oNHQg9j4CwGMAQmw/kYKudgNtlNka3CA2A=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/extract.js</key>
@@ -676,6 +688,28 @@
 			Tl9tjyk/Pp1A1d3LsYLnD8UNDIxJUlGTd5oAQWO8QYc=
 			</data>
 		</dict>
+		<key>Resources/toolkit/efs/media/merge-prs-dark.svg</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			kLBP5yMytZ023/ax4EfCk3ohpd8=
+			</data>
+			<key>hash2</key>
+			<data>
+			tu5Kmid5qJcwhBGenHyF376Lc5nw+3mQrxk5Un+B9Dk=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/media/merge-prs-light.svg</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			4VBm9o3HmxU1zbx6EGX+9aeCLOU=
+			</data>
+			<key>hash2</key>
+			<data>
+			vjYRho8Spfz4d4eTmCKvriHSACkT2nhYh+jShP3tcIU=
+			</data>
+		</dict>
 		<key>Resources/toolkit/efs/ollama.js</key>
 		<dict>
 			<key>hash</key>
@@ -691,11 +725,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			25ZgZZB+xKLFH/1ea8WYuwCgAA4=
+			sW4Dpmca5K/FuRDWSGrPdQUFSP0=
 			</data>
 			<key>hash2</key>
 			<data>
-			fbcjpzFbo1lvCgVhUBZSdery2UdKNqDiR91AsL+CLVQ=
+			UHrKswF5K0CAE2OoSbisfYQv9/OI0wlAN6f0NMpUN/Q=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/pull_request.js</key>
@@ -740,6 +774,17 @@
 			<key>hash2</key>
 			<data>
 			12MF6OcLGy21ZnZ6ZYSOKZp+t64gAhi/4ogtKK3hTfM=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/runtime_revision.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			vJ5FLxNBgdcwYMWo85n/FiuydwU=
+			</data>
+			<key>hash2</key>
+			<data>
+			Ph6tEN21IOdyHRLqblJMfgbEkVhCp89x4uTM51dD2/Q=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/search_index.js</key>
@@ -794,7 +839,7 @@
 			</data>
 			<key>hash2</key>
 			<data>
-			Mhr7mdcK6mneApKYEP4bLNAiMpffY9Gi5ZbOyywxUjY=
+			rvOR/bCrj6gSXaLMz/as/rE0oswtIhclaMy1wK6NIA4=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_names.py</key>
@@ -812,11 +857,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			7aepemDPiZZSg0KMOp/uomjuyD0=
+			WGlR3gngVmikoplk6XUQiqhq+gE=
 			</data>
 			<key>hash2</key>
 			<data>
-			/bFXCfUCQ3yoC7OrxXfvIsBnZPxCxaiZ7e4VKLKAdB0=
+			aGwh5uATUnOi2bjVZtLRy+2f2T4nxKxXZP5vf31ihXg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/chatgpt_integration.py</key>
@@ -1065,11 +1110,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			6+o2Wc6neYGFhzd5YsxO3PqKtZA=
+			29Kfr7I85s+Nke4D/BBysAsoY0A=
 			</data>
 			<key>hash2</key>
 			<data>
-			Pq459l0+uh3C4FHwosrb6zb8JE4ltyVFbyHxaJYg/34=
+			jkRaP/FOmjq/RukU6FL86yFVx1/teyrEOEaRAwNjOwU=
 			</data>
 		</dict>
 	</dict>

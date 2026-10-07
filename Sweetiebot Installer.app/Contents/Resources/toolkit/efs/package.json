@@ -92,7 +92,10 @@
       {
         "command": "sweetiebot.openPullRequestBatchChat",
         "title": "Squash Selected Pull Requests with ChatGPT",
-        "icon": "$(comment-discussion)"
+        "icon": {
+          "light": "media/merge-prs-light.svg",
+          "dark": "media/merge-prs-dark.svg"
+        }
       },
       {
         "command": "sweetiebot.closeAllEditors",
