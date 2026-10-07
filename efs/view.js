@@ -164,7 +164,7 @@ ${actions}
 </div>
 <script nonce="${nonce}">
 const vscode=acquireVsCodeApi();const form=document.getElementById('search');const query=document.getElementById('query');const clearQuery=document.getElementById('clear-query');const mode=document.getElementById('mode');const status=document.getElementById('status');const answer=document.getElementById('answer');const results=document.getElementById('results');const summary=document.getElementById('summary');const idle=document.getElementById('idle');const ask=document.getElementById('ask');
-let searchTimer;let requestId=0;let submittedQuery='';let submittedMode='';let composing=false;let copiedIndicator;let searching=false;
+let searchTimer;let requestId=0;let submittedQuery='';let submittedMode='';let composing=false;let copiedIndicator;let searching=false;let queryEditing=false;
 const MAX_RESULTS_PER_FILE=7;
 ${groupSearchResults.toString()}
 ${splitResultPath.toString()}
@@ -181,6 +181,10 @@ clearQuery.addEventListener('click',()=>{query.value='';updateQueryControls();qu
 query.addEventListener('input',scheduleSearch);
 query.addEventListener('compositionstart',()=>{composing=true;clearTimeout(searchTimer)});
 query.addEventListener('compositionend',()=>{composing=false;scheduleSearch()});
+query.addEventListener('pointerdown',()=>{queryEditing=true});
+query.addEventListener('keydown',event=>{const key=String(event.key||'');const pasteShortcut=(event.metaKey||event.ctrlKey)&&key.toLowerCase()==='v';if(!pasteShortcut&&!['Meta','Control','Shift','Alt'].includes(key))queryEditing=true});
+query.addEventListener('blur',()=>{queryEditing=false});
+window.addEventListener('paste',event=>{if(queryEditing&&event.target===query)return;const text=event.clipboardData?.getData('text');if(typeof text!=='string')return;event.preventDefault();query.value=text;query.focus();query.setSelectionRange?.(query.value.length,query.value.length);scheduleSearch()});
 mode.addEventListener('change',search);
 ask?.addEventListener('click',()=>vscode.postMessage({type:'ask'}));
 results.addEventListener('click',event=>{const button=event.target.closest('[data-index]');if(button)vscode.postMessage({type:'open',index:Number(button.dataset.index)})});

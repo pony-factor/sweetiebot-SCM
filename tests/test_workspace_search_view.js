@@ -70,6 +70,7 @@ async function run() {
       addEventListener(event, listener) { this.listeners[event] = listener; },
       replaceChildren() {}, focus() {}});
   }
+  const windowListeners = {};
   const timers = new Map(); let nextTimer = 0; const sent = [];
   const html = provider.html({cspSource: 'test'});
   assert.match(html, /class="search-input".*id="clear-query".*class="search-button"/);
@@ -99,7 +100,7 @@ async function run() {
   const page = {document: {getElementById: id => elements.get(id)},
     acquireVsCodeApi: () => ({postMessage: message => sent.push(message)}),
     setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
-    clearTimeout: id => timers.delete(id), window: {addEventListener() {}}};
+    clearTimeout: id => timers.delete(id), window: {addEventListener(event, listener) { windowListeners[event] = listener; }}};
   vm.runInNewContext(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1], page);
   assert.equal(page.contrastCheckColor('rgb(255, 255, 255)'), '#000');
   assert.equal(page.contrastCheckColor('rgba(0, 0, 0, 0.5)'), '#fff');
@@ -128,6 +129,16 @@ async function run() {
   assert.equal(timers.size, 0); assert.equal(sent.at(-1).query, '');
   elements.get('mode').value = 'exact'; query.value = 'apples';
   elements.get('mode').listeners.change(); assert.equal(sent.at(-1).mode, 'exact');
+  let pastePrevented = false;
+  query.value = 'stale';
+  windowListeners.paste({target: query, clipboardData: {getData: () => 'fresh'}, preventDefault() { pastePrevented = true; }});
+  assert.equal(pastePrevented, true, 'panel-level paste overrides the existing query even though the field was auto-focused');
+  assert.equal(query.value, 'fresh');
+  query.listeners.pointerdown();
+  pastePrevented = false;
+  windowListeners.paste({target: query, clipboardData: {getData: () => ' additive'}, preventDefault() { pastePrevented = true; }});
+  assert.equal(pastePrevented, false, 'paste stays native while the user is actively editing the query field');
+  query.listeners.blur();
   console.log('Workspace search debounce, submit, composition, clear, and stale-response checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
