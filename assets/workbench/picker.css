@@ -559,6 +559,39 @@
     opacity: 1 !important;
 }
 
+/* Give the inline GitHub PR squash action a first-class labeled button treatment. */
+.monaco-workbench .monaco-list-row .monaco-action-bar
+    .sweetiebot-pr-squash-merge.action-label {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: auto !important;
+    min-width: max-content;
+    height: 22px;
+    margin: 1px 2px;
+    padding: 0 8px !important;
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border)) !important;
+    border-radius: var(--vscode-cornerRadius-small, 4px) !important;
+    background: var(--vscode-button-secondaryBackground, var(--vscode-button-background)) !important;
+    color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground)) !important;
+    font-family: var(--vscode-font-family) !important;
+    font-size: 11px !important;
+    font-weight: 600;
+    line-height: 20px;
+    text-decoration: none !important;
+}
+
+.monaco-workbench .monaco-list-row .monaco-action-bar
+    .sweetiebot-pr-squash-merge.action-label::before {
+    display: none !important;
+    content: none !important;
+}
+
+.monaco-workbench .monaco-list-row .monaco-action-bar
+    .sweetiebot-pr-squash-merge.action-label:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground)) !important;
+}
+
 .sweetiebot-compact-window-action {
     -webkit-app-region: no-drag;
 }
