@@ -20,6 +20,7 @@ Current features:
 - optionally hide the outgoing commit count from the built-in Sync action
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly
 - search the active workspace semantically from a `Workspace Search` view inside Source Control by default, or optionally move it to its own Activity Bar container, backed only by local Ollama
+- toggle the current VS Code window into a centered compact layout from the native titlebar and restore its previous bounds
 - optionally use ⌘-click on an editor tab's close button to keep that tab and close the others in its group
 - optionally use ChatGPT as the home page for blank Integrated Browser tabs
 - optionally make Source Control Graph **Open File** open the checked-out working-tree file instead of the selected commit snapshot

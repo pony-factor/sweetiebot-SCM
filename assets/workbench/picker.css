@@ -558,3 +558,12 @@
 .scm-view .scm-toolkit-commit-settings.disabled > .monaco-button-dropdown-separator {
     opacity: 1 !important;
 }
+
+.sweetiebot-compact-window-action {
+    -webkit-app-region: no-drag;
+}
+
+.sweetiebot-compact-window-action > .action-label {
+    cursor: pointer;
+}
+
