@@ -127,6 +127,10 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', async node => {
       // The optional GitHub tree patch can resolve selection and rendered items.
       // Keep direct PR arguments working when that extension is unavailable.
+      // A self-contained argument identifies the clicked PR even if the optional
+      // tree resolver is stale or cannot interpret this argument shape.
+      const direct = pullRequestFromTreeNode(node);
+      if (direct.url) return handler(direct);
       const resolver = 'sweetiebot.resolveSelectedPullRequest';
       const commands = await vscode.commands.getCommands(true);
       const model = commands.includes(resolver)

@@ -59,6 +59,14 @@ async function main() {
     await vscode.commands.executeCommand('scmToolkit.squashMergeSelectedPullRequest');
     await vscode.commands.executeCommand('scmToolkit.squashMergePullRequest', { url });
     assert.deepEqual(merged, [url, url, url]);
+    // An optional resolver must never discard or substitute a supplied identity.
+    handlers.set('sweetiebot.resolveSelectedPullRequest', async () => ({ url: undefined }));
+    await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', { url });
+    await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', url);
+    await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', {
+      scheme: 'prnode', query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:13' })
+    });
+    assert.deepEqual(merged, Array(6).fill(url));
     for (const subscription of subscriptions) subscription.dispose();
     assert.equal(handlers.size, 0);
     // Direct arguments still work without the optional GitHub tree patch.

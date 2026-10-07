@@ -1,13 +1,16 @@
 function pullRequestFromTreeNode(node) {
+  if (Array.isArray(node)) node = node.length === 1 ? node[0] : undefined;
   const model = node?.pullRequestModel ?? node;
-  const directMatch = [model?.html_url, model?.htmlUrl, model?.url].map(value => String(value || '').match(
+  const directMatch = [typeof model === 'string' ? model : undefined,
+    model?.html_url, model?.htmlUrl, model?.url].map(value => String(value || '').match(
     /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)\/?$/
   )).find(Boolean);
   if (directMatch) {
     return { url: directMatch[0].replace(/\/$/, ''), number: Number(directMatch[3]) };
   }
 
-  const resourceUri = node?.resourceUri ?? model?.resourceUri;
+  const resourceUri = node?.resourceUri ?? model?.resourceUri ??
+    (node?.scheme === 'prnode' ? node : undefined);
   let identifier;
   try {
     identifier = JSON.parse(String(resourceUri?.query || '')).prIdentifier;

@@ -36,6 +36,12 @@ async function main() {
     };
     assert.equal(installPullRequestRefresh(vscode, view, { _register: item => subscriptions.push(item) }), view);
     const url = 'https://github.com/owner/repo/pull/12';
+    assert.deepEqual(pullRequestFromTreeNode(url), { url, number: 12 });
+    assert.deepEqual(pullRequestFromTreeNode([{ url }]), { url, number: 12 });
+    assert.equal(pullRequestFromTreeNode([{ url }, { url }]).url, undefined);
+    assert.deepEqual(pullRequestFromTreeNode({ scheme: 'prnode',
+      query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:12' }) }),
+    { url, number: 12 });
     await mergeSelected({ url, number: 12 });
     assert(!commands.has('scmToolkit.squashMergeSelectedPullRequest'));
     assert(!commands.has('sweetiebot.squashMergeSelectedPullRequest'));
