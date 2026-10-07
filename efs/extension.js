@@ -8,6 +8,7 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
+const { registerEditorActions } = require('./editor_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerPushRecovery } = require('./push_recovery');
@@ -237,6 +238,7 @@ async function activate(context) {
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
   registerPullRequestBatchCommand(vscode, context);
+  registerEditorActions(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);

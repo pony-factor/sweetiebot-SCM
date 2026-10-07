@@ -16,6 +16,7 @@
     "onCommand:scmToolkit.returnHome",
     "onCommand:scmToolkit.openPullRequestChat",
     "onCommand:scmToolkit.openPullRequestBatchChat",
+    "onCommand:scmToolkit.closeAllEditors",
     "onCommand:scmToolkit.prepareCodexCommit",
     "onCommand:scmToolkit.generateCodexCommitMessage",
     "onCommand:scmToolkit.createBranch",
@@ -68,6 +69,11 @@
         "command": "scmToolkit.openPullRequestBatchChat",
         "title": "Squash Selected Pull Requests with ChatGPT",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "scmToolkit.closeAllEditors",
+        "title": "Close All Editors",
+        "icon": "$(close-all)"
       }
     ],
     "menus": {
@@ -88,6 +94,12 @@
           "command": "scmToolkit.squashMergeSelectedPullRequest",
           "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "scmToolkit.closeAllEditors",
+          "group": "navigation@100"
         }
       ]
     },
