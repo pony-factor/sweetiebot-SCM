@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -167,6 +169,13 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             )
             self.assertTrue((destination / "configurator.py").is_file())
             self.assertTrue((destination / "toolkit_settings.py").is_file())
+            # Run outside the source tree so missing packaged imports cannot
+            # resolve through the test runner's scripts path.
+            result = subprocess.run(
+                [sys.executable, "-E", "-s", "-B", str(destination / "configurator.py"), "--help"],
+                cwd=tmp, capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((destination / "branch_names.py").is_file())
             self.assertTrue((destination / "branch_name_packs.json").is_file())
             self.assertTrue((destination / "local_setup.py").is_file())

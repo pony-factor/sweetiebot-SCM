@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
+const PONY_CATALOG_FILE = 'branch_name_packs.json';
 const DEFAULT_MCP_SERVER = 'codex-drafter';
 const DEFAULT_MCP_TOOL = 'github_create_pull_request';
 const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
@@ -35,6 +36,56 @@ async function readKefaniaInstructions(repositoryPath, readFile = fs.readFile) {
     throw new Error(`Kafania pull-request instructions are empty at ${rulesPath}.`);
   }
   return String(text).trim();
+}
+
+function matchSweetiebotPonyCatalog(branch, catalog) {
+  const slug = String(branch || '').trim();
+  if (!slug || !catalog || !Array.isArray(catalog.packs)) return undefined;
+
+  for (const pack of catalog.packs) {
+    if (!Array.isArray(pack?.names) || !pack.names.includes(slug)) continue;
+    const match = {
+      slug,
+      packId: String(pack.id || ''),
+      packLabel: String(pack.label || ''),
+      packDescription: String(pack.description || ''),
+    };
+    const source = typeof pack?.sources?.[slug] === 'string' ? pack.sources[slug].trim() : '';
+    if (source) match.source = source;
+    const images = Array.isArray(pack?.images?.[slug])
+      ? pack.images[slug].flatMap(item => {
+          const candidate = typeof item === 'string' ? { url: item } : item;
+          const url = String(candidate?.url || '').trim();
+          if (!/^https:\/\//i.test(url)) return [];
+          const image = { url };
+          const label = String(candidate?.label || '').trim();
+          const kind = String(candidate?.kind || '').trim();
+          if (label) image.label = label;
+          if (kind) image.kind = kind;
+          return [image];
+        })
+      : [];
+    if (images.length) match.images = images;
+    return match;
+  }
+  return undefined;
+}
+
+async function readSweetiebotPony(branch, readFile = fs.readFile) {
+  const candidates = [
+    path.join(__dirname, PONY_CATALOG_FILE),
+    path.join(__dirname, '..', 'scripts', PONY_CATALOG_FILE),
+  ];
+  for (const catalogPath of candidates) {
+    try {
+      const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+      const match = matchSweetiebotPonyCatalog(branch, catalog);
+      if (match) return match;
+    } catch {
+      // Pony enrichment is optional and must never block pull-request creation.
+    }
+  }
+  return undefined;
 }
 
 function codexConversationUrl(uuid) {
@@ -78,6 +129,7 @@ function pullRequestPrompt({
   instructions,
   source,
   conversationContext = '',
+  pony,
   mcpServer = DEFAULT_MCP_SERVER,
   mcpTool = DEFAULT_MCP_TOOL,
 }) {
@@ -87,6 +139,13 @@ function pullRequestPrompt({
     `Use Kafania's configured MCP server ${JSON.stringify(mcpServer)} and its ${JSON.stringify(mcpTool)} tool for the GitHub write. If that Kafania tool is unavailable, report that instead of substituting a different GitHub writer.`,
     `The canonical pull-request drafting rules below were loaded from the sibling ${KEFANIA_DIRECTORY}/${KEFANIA_RULES_FILE}. Follow them as the source of truth:\n\n${instructions}`,
   ];
+
+  if (pony) {
+    sections.push(
+      'Sweetiebot recognized the active branch as a name from its built-in pony catalog. Apply Kafania\'s Local Sweetiebot pony profile rule only after the pull request is successfully published. This metadata is local chat context only: do not copy it into the PR title, description, comments, provenance metadata, or GitHub tool arguments.\n\n'
+        + JSON.stringify(pony, null, 2)
+    );
+  }
 
   if (source) {
     sections.push(
@@ -109,6 +168,8 @@ function pullRequestPrompt({
 
 function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
+  const readPony = dependencies.readPony || readSweetiebotPony;
+  const showPony = dependencies.showPony || (pony => vscode.commands.executeCommand('sweetiebot.setPonyProfile', pony).catch(() => undefined));
 
   if (typeof vscode.window.registerUriHandler === 'function') {
     context.subscriptions.push(vscode.window.registerUriHandler({
@@ -144,6 +205,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     const instructions = await readInstructions(repository.rootUri.fsPath);
+    const pony = await readPony(branch);
+    await showPony(pony);
 
     let source = normalizeConversationSource(options.source);
     let conversationContext = '';
@@ -161,6 +224,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       instructions,
       source,
       conversationContext,
+      pony,
       mcpServer: options.mcpServer || DEFAULT_MCP_SERVER,
       mcpTool: options.mcpTool || DEFAULT_MCP_TOOL,
     });
@@ -168,7 +232,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     await vscode.commands.executeCommand('workbench.action.browser.open', {
       url, openToSide: false, reuseUrlFilter: url
     });
-    return { source, conversationContext, repositoryUrl };
+    return { source, conversationContext, repositoryUrl, pony };
   }));
 }
 
@@ -176,8 +240,10 @@ module.exports = {
   codexConversationUrl,
   githubRepository,
   kefaniaRulesPath,
+  matchSweetiebotPonyCatalog,
   normalizeConversationSource,
   pullRequestPrompt,
   readKefaniaInstructions,
+  readSweetiebotPony,
   registerPullRequestCommand,
 };

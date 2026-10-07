@@ -18,6 +18,7 @@ const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
+const { PonyProfileViewProvider, VIEW_ID: PONY_VIEW_ID } = require('./pony_profile');
 
 const VIEW_ID = 'scmToolkit.workspaceSearch';
 const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
@@ -98,6 +99,9 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
     editorSettings: {
       'inlineSuggest.enabled': vscode.workspace.getConfiguration('editor').get('inlineSuggest.enabled', true)
     },
+    workbenchNotificationSettings: {
+      position: vscode.workspace.getConfiguration('workbench.notifications').get('position', 'bottom-left')
+    },
     gitSettings: {
       postCommitCommand: vscode.workspace.getConfiguration('git').get('postCommitCommand', 'none')
     }
@@ -136,7 +140,11 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
             cfg.update(key, value, vscode.ConfigurationTarget.Global)
           ));
         }
-        for (const [group, root] of [['editorSettings', 'editor'], ['gitSettings', 'git']]) {
+        for (const [group, root] of [
+          ['workbenchNotificationSettings', 'workbench.notifications'],
+          ['editorSettings', 'editor'],
+          ['gitSettings', 'git']
+        ]) {
           if (!message[group]) continue;
           const cfg = vscode.workspace.getConfiguration(root);
           settingUpdates.push(...Object.entries(message[group]).map(([key, value]) =>
@@ -299,8 +307,12 @@ async function activate(context) {
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);
   const provider = new WorkspaceSearchViewProvider(index, settings);
+  const ponyProfile = new PonyProfileViewProvider(vscode, context);
+  await ponyProfile.initialize();
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
+    vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.window.registerWebviewViewProvider(PONY_VIEW_ID, ponyProfile, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.commands.registerCommand('sweetiebot.setPonyProfile', profile => ponyProfile.setProfile(profile))
   );
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openSettings', () => {
     return openSettings(context);

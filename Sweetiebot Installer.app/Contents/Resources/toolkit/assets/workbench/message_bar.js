@@ -1,5 +1,6 @@
 // Reorders the existing SCM message-bar controls without changing their behavior.
 const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
+    'push',
     'branch',
     'sync',
     'delete',
@@ -15,14 +16,14 @@ const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
 ];
 
 const SCM_TOOLKIT_DEFAULT_MESSAGE_BAR_LAYOUT = {
-    before: ['branch'],
+    before: ['branch', 'codex'],
     after: [
+        'push',
         'sync',
         'delete',
         'separator-1',
         'autocomplete',
         'spellcheck',
-        'codex',
         'auto-publish',
         'separator-2',
         'home',
@@ -46,7 +47,7 @@ function scmToolkitMessageBarLayout(raw) {
     for (const zone of ['before', 'after']) {
         if (!Array.isArray(value[zone])) return SCM_TOOLKIT_DEFAULT_MESSAGE_BAR_LAYOUT;
         for (const id of value[zone]) {
-            if (typeof id !== 'string' || !known.has(id) || seen.has(id)) {
+            if (typeof id !== 'string' || (!known.has(id) && !/^separator-[1-9][0-9]*$/.test(id)) || seen.has(id)) {
                 return SCM_TOOLKIT_DEFAULT_MESSAGE_BAR_LAYOUT;
             }
             seen.add(id);
@@ -59,6 +60,7 @@ function scmToolkitMessageBarLayout(raw) {
 function scmToolkitMessageBarElements(widget) {
     const root = widget.element;
     return {
+        push: root.querySelector(':scope > .scm-toolkit-push'),
         branch: root.querySelector(':scope > .scm-toolkit-branch'),
         sync: root.querySelector(':scope > .scm-toolkit-sync-branch'),
         delete: root.querySelector(':scope > .scm-toolkit-delete-branch'),
@@ -102,13 +104,22 @@ function scmToolkitApplyMessageBarLayout(widget, settings) {
     const push = widget.element.querySelector(':scope > .scm-toolkit-push');
     if (!editor || !push || Object.values(elements).some(element => !element)) return;
 
+    for (const id of [...layout.before, ...layout.after]) {
+        if (id.startsWith('separator-') && !elements[id]) {
+            const divider = widget.element.ownerDocument.createElement('span');
+            divider.className = 'scm-toolkit-divider';
+            divider.setAttribute('aria-hidden', 'true');
+            elements[id] = divider;
+        }
+    }
+
     const visible = new Set([...layout.before, ...layout.after]);
     for (const [id, element] of Object.entries(elements)) {
         if (!visible.has(id)) element.remove();
     }
 
     for (const id of layout.before) editor.before(elements[id]);
-    editor.after(push, ...layout.after.map(id => elements[id]));
+    editor.after(...layout.after.map(id => elements[id]));
 
     const refreshSeparators = () => scmToolkitRefreshMessageBarSeparators(layout, elements);
     const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
@@ -129,6 +140,20 @@ function scmToolkitApplyMessageBarLayout(widget, settings) {
 const scmToolkitCreateControlsWithoutMessageBarLayout = scmToolkitCreateControls;
 scmToolkitCreateControls = function(...args) {
     const [widget, _observe, _commands, _notifications, _configuration, _mcpService, settings] = args;
+    const layout = scmToolkitMessageBarLayout(settings.messageBarLayout);
+    const active = new Set([...layout.before, ...layout.after]);
+    const layoutSettings = {
+        ...settings,
+        commitAndPush: active.has('push'),
+        branchPicker: ['branch', 'sync', 'home'].some(id => active.has(id)),
+        ponyBranch: active.has('pony-branch'),
+        branchCleanup: active.has('delete'),
+        autocompleteToggle: active.has('autocomplete'),
+        codexCoauthor: active.has('codex'),
+        autoPublishToggle: active.has('auto-publish'),
+        mcpPullRequest: active.has('pull-request'),
+    };
+    args[6] = layoutSettings;
     const controls = scmToolkitCreateControlsWithoutMessageBarLayout(...args);
     const refreshSeparators = scmToolkitApplyMessageBarLayout(widget, settings) ?? (() => {});
     const bindWithoutMessageBarLayout = controls.bind.bind(controls);

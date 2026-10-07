@@ -20,7 +20,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from toolkit_settings import load_settings, VSCODE_SETTINGS
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
-from chatgpt_integration import import_pgp_secret_key, sync_codex_instructions
+from local_setup import (
+    configure_signing_key,
+    generate_signing_key,
+    load_commit_instructions,
+    open_signing_key_manager,
+    save_commit_instructions,
+    signing_status,
+)
 from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
 
@@ -54,6 +61,7 @@ SETTINGS = (
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
     Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
     Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
+    Setting("notificationPosition", "scm-toolkit.notification-position", "Notification position", "Choose where VS Code notification toasts and the Notification Center appear.", "Source control", "select", ("bottom-left", "bottom-right", "top-right")),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Show push checkbox", "Show the push-after-committing checkbox beside the message field.", "Message bar"),
     Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Message bar"),
@@ -98,7 +106,7 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT with the sibling Kafania drafting rules and publish through the configured Kafania MCP tool.", "Message bar"),
+    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open the configured pull-request drafting chat and publish through the configured Kafania MCP tool.", "Message bar"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "Configured MCP server name for pull-request integrations.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
@@ -111,9 +119,7 @@ SETTINGS = (
     Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexComposerLabelColor", "scm-toolkit.codex-composer-label-color", "Composer control color", "Hex color for Full access, Work locally, and the + add-context control. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),
-    Setting("chatgptCustomInstructions", "scm-toolkit.chatgpt-custom-instructions", "Codex personalization", "Keep a local copy of your ChatGPT web instructions and mirror them into the global personalization used by the Codex VS Code extension.", "Codex", "textarea"),
     Setting("codexHideDictation", "scm-toolkit.codex-hide-dictation", "Hide dictation button", "Hide the microphone dictation control in Codex chat.", "Codex"),
-    Setting("chatgptWebCodexCoauthor", "scm-toolkit.chatgpt-web-codex-coauthor", "Codex Web co-author", "Require the Codex Web co-author trailer on Git commits made through web or GitHub tools.", "Codex"),
     Setting("codexHideChatTimestamps", "scm-toolkit.codex-hide-chat-timestamps", "Hide chat timestamps", "Hide standalone date/time separators inside Codex conversations.", "Codex"),
 )
 
@@ -488,6 +494,57 @@ def _setting_control(setting: Setting, current: object) -> str:
     )
 
 
+
+def _local_setup_controls() -> str:
+    instructions = html.escape(load_commit_instructions())
+    status = signing_status()
+    configured = str(status.get("configured") or "").upper()
+    keys = list(status.get("keys") or [])
+    options = []
+    for key in keys:
+        fingerprint = str(key.get("fingerprint") or "").upper()
+        if not fingerprint:
+            continue
+        uid = str(key.get("uid") or "").strip()
+        label = uid or fingerprint
+        if uid:
+            label += f" · {fingerprint[-16:]}"
+        selected = " selected" if fingerprint == configured else ""
+        options.append(
+            f'<option value="{html.escape(fingerprint, quote=True)}"{selected}>'
+            f'{html.escape(label)}</option>'
+        )
+    if not options:
+        options.append('<option value="">No local OpenPGP signing keys found</option>')
+
+    configured_label = (
+        f"Git is configured to sign with {configured[-16:]}."
+        if configured
+        else "Git commit signing is not configured."
+    )
+    if not status.get("gpgAvailable"):
+        configured_label += " GnuPG was not found on PATH."
+
+    key_disabled = "" if keys else " disabled"
+    generate_disabled = "" if status.get("gpgAvailable") else " disabled"
+    instructions_path = html.escape(str(status.get("instructionsPath") or ""), quote=True)
+    return (
+        '<label class="setting textarea-row"><span><strong>Sweetiebot commit instructions</strong>'
+        f'<small>Edit the standalone local instruction file at <code>{instructions_path}</code>. '
+        'Sweetiebot reads this file directly; it is not synchronized with ChatGPT or another agent.</small></span>'
+        f'<textarea name="commitInstructions" rows="8" spellcheck="false">{instructions}</textarea></label>'
+        '<div class="setting field-row"><span><strong>Git signing key</strong>'
+        '<small>Private key material stays in your local OpenPGP key store and secure pinentry/key manager. '
+        'Sweetiebot only reads public fingerprints and tells Git which local key to use.</small>'
+        f'<small id="signing-key-status">{html.escape(configured_label)}</small></span>'
+        '<div class="signing-actions">'
+        f'<select id="signing-key" aria-label="Local OpenPGP signing key"{key_disabled}>{"".join(options)}</select>'
+        f'<button type="button" id="use-signing-key"{key_disabled}>Use key</button>'
+        f'<button type="button" id="generate-signing-key"{generate_disabled}>Create key</button>'
+        '<button type="button" id="open-signing-key-manager">Open key manager</button>'
+        '</div></div>'
+    )
+
 def render_form(
     current: dict[str, object],
     models: list[str],
@@ -524,18 +581,8 @@ def render_form(
             )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
-        if section == "Codex":
-            controls += (
-                '<div class="setting textarea-row"><span><strong>Import ChatGPT personalization</strong>'
-                '<small>Copy Custom Instructions from ChatGPT Personalization, then import them here. Saving mirrors '
-                'the text into the global personalization used by the Codex VS Code extension.</small></span>'
-                '<button type="button" id="sync-chatgpt-instructions">Import from ChatGPT</button></div>'
-                '<label class="setting textarea-row"><span><strong>PGP secret key</strong>'
-                '<small>Optional signing key for Codex and VS Code Git commits. Imported directly into GnuPG through stdin. '
-                'The private key is never saved to Git config, rendered back into this page, or written to command output.</small></span>'
-                '<textarea name="pgpSecretKey" rows="6" spellcheck="false" autocomplete="off" '
-                'placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"></textarea></label>'
-            )
+        if section == "Source control":
+            controls += _local_setup_controls()
         status = ""
         if section in {"Ollama", "Workspace Search"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
@@ -558,7 +605,7 @@ def render_form(
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
     instance_json = json.dumps(server_instance).replace("<", "\\u003c")
-    submit_label = action_label if finish_on_save else "Import signing key"
+    submit_label = action_label
     submit_hidden = "" if finish_on_save else " hidden"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -568,15 +615,15 @@ def render_form(
 main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
-.field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.field-row input.compact-number{{width:76px;min-width:76px;flex:none;text-align:right;font-variant-numeric:tabular-nums}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+.field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.signing-actions{{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;width:min(520px,56%)}}.signing-actions select{{flex:1 1 240px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.field-row input.compact-number{{width:76px;min-width:76px;flex:none;text-align:right;font-variant-numeric:tabular-nums}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
-@media(max-width:760px){{main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
+@media(max-width:760px){{main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
-</style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
+</style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></header>
 {error_html}<form method="post" action="{action}"><div class="settings-layout">
 <nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings categories">{''.join(tabs)}</nav>
 <div class="settings-panels">{''.join(sections)}</div>
@@ -590,24 +637,19 @@ let saveChain = Promise.resolve();
 let editVersion = 0;
 const finishOnSave = {json.dumps(finish_on_save)};
 
-async function persistSettings(importKey = false) {{
+async function persistSettings() {{
   const version = editVersion;
   saveStatus.textContent = 'Saving…';
   saveStatus.classList.remove('error-state');
   const data = new FormData(settingsForm);
-  if (!importKey) data.delete('pgpSecretKey');
   data.delete('action');
   try {{
-    const response = await fetch((importKey ? '/save' : '/autosave') + location.search, {{
+    const response = await fetch('/autosave' + location.search, {{
       method: 'POST',
       body: new URLSearchParams(data)
     }});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Unable to save settings.');
-    if (importKey) {{
-      settingsForm.elements.pgpSecretKey.value = '';
-      settingsForm.querySelector('button[type="submit"]').hidden = true;
-    }}
     if (version === editVersion) saveStatus.textContent = 'Saved';
     return true;
   }} catch (error) {{
@@ -624,7 +666,7 @@ function queueAutosave() {{
 
 function scheduleAutosave(event) {{
   const target = event.target;
-  if (!target?.name || target.name === 'pgpSecretKey' || target.name === 'action') return;
+  if (!target?.name || target.name === 'action') return;
   editVersion++;
   clearTimeout(autosaveTimer);
   saveStatus.textContent = 'Unsaved changes';
@@ -636,11 +678,6 @@ function scheduleAutosave(event) {{
 }}
 
 if (settingsForm) {{
-  if (!finishOnSave) {{
-    settingsForm.elements.pgpSecretKey.addEventListener('input', event => {{
-      settingsForm.querySelector('button[type="submit"]').hidden = !event.target.value.trim();
-    }});
-  }}
   settingsForm.addEventListener('input', scheduleAutosave);
   settingsForm.addEventListener('change', scheduleAutosave);
   settingsForm.addEventListener('submit', async event => {{
@@ -652,12 +689,40 @@ if (settingsForm) {{
     }}
     if (await saveChain === false) return;
     if (finishOnSave) HTMLFormElement.prototype.submit.call(settingsForm);
-    else {{
-      saveChain = saveChain.then(() => persistSettings(true));
-      await saveChain;
-    }}
   }});
 }}
+
+async function runLocalSetupAction(path, values = {{}}) {{
+  saveStatus.textContent = 'Working…';
+  saveStatus.classList.remove('error-state');
+  try {{
+    const response = await fetch(path + location.search, {{
+      method: 'POST',
+      body: new URLSearchParams(values)
+    }});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to complete local setup.');
+    saveStatus.textContent = result.message || 'Done';
+    if (result.reload) location.reload();
+  }} catch (error) {{
+    saveStatus.textContent = 'Setup failed: ' + error.message;
+    saveStatus.classList.add('error-state');
+  }}
+}}
+
+const useSigningKey = document.getElementById('use-signing-key');
+const signingKey = document.getElementById('signing-key');
+if (useSigningKey && signingKey) {{
+  useSigningKey.addEventListener('click', () => {{
+    if (signingKey.value) void runLocalSetupAction('/configure-signing-key', {{ fingerprint: signingKey.value }});
+  }});
+}}
+document.getElementById('generate-signing-key')?.addEventListener('click', () => {{
+  void runLocalSetupAction('/generate-signing-key');
+}});
+document.getElementById('open-signing-key-manager')?.addEventListener('click', () => {{
+  void runLocalSetupAction('/open-signing-key-manager');
+}});
 
 const settingsTabs = [...document.querySelectorAll('.settings-tab')];
 const settingsPanels = [...document.querySelectorAll('.settings-panel')];
@@ -962,23 +1027,6 @@ if (askOllamaToggle && askOllamaModel) {{
   askOllamaToggle.addEventListener('change', updateAskOllamaRequirement);
   updateAskOllamaRequirement();
 }}
-const syncButton = document.getElementById('sync-chatgpt-instructions');
-if (syncButton) {{
-  syncButton.addEventListener('click', async () => {{
-    const target = document.querySelector('textarea[name="chatgptCustomInstructions"]');
-    if (!target) return;
-    try {{
-      const value = await navigator.clipboard.readText();
-      if (!value.trim()) throw new Error('Clipboard is empty.');
-      target.value = value.trim();
-      target.dispatchEvent(new Event('input', {{ bubbles: true }}));
-      syncButton.textContent = 'Imported';
-    }} catch (error) {{
-      syncButton.textContent = 'Copy instructions, then retry';
-      syncButton.title = String(error);
-    }}
-  }});
-}}
 const settingsServerInstance = {instance_json};
 if (settingsServerInstance) {{
   setInterval(async () => {{
@@ -1119,15 +1167,35 @@ def run_configurator(
                 except Exception:
                     self.wfile.write(b'{"error":"Download interrupted. Retry the download."}\n')
                 return
-            if urllib.parse.urlsplit(self.path).path == "/autosave":
+            path = urllib.parse.urlsplit(self.path).path
+            if path == "/configure-signing-key":
+                try:
+                    fingerprint = values.get("fingerprint", [""])[0]
+                    configured = configure_signing_key(fingerprint)
+                    self._send_json({"message": f"Git signing key set to {configured[-16:]}.", "reload": True})
+                except (RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path == "/generate-signing-key":
+                try:
+                    fingerprint = generate_signing_key()
+                    self._send_json({"message": f"Created and selected signing key {fingerprint[-16:]}.", "reload": True})
+                except (RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path == "/open-signing-key-manager":
+                try:
+                    manager = open_signing_key_manager()
+                    self._send_json({"message": f"Opened {manager}.", "reload": False})
+                except (RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path == "/autosave":
                 parsed = {}
                 try:
                     parsed = parse_submission(values)
                     save_settings(parsed)
-                    sync_codex_instructions(
-                        str(parsed["chatgptCustomInstructions"]),
-                        bool(parsed["chatgptWebCodexCoauthor"]),
-                    )
+                    save_commit_instructions(values.get("commitInstructions", [""])[0])
                 except (RuntimeError, ValueError) as error:
                     self._send_json({"saved": False, "error": str(error)}, 400)
                     return
@@ -1147,11 +1215,7 @@ def run_configurator(
                 if open_browser:
                     validate_models(parsed)
                 save_settings(parsed)
-                sync_codex_instructions(
-                    str(parsed["chatgptCustomInstructions"]),
-                    bool(parsed["chatgptWebCodexCoauthor"]),
-                )
-                import_pgp_secret_key(values.get("pgpSecretKey", [""])[0])
+                save_commit_instructions(values.get("commitInstructions", [""])[0])
             except (RuntimeError, ValueError) as error:
                 if not open_browser:
                     self._send_json({"saved": False, "error": str(error)}, 400)

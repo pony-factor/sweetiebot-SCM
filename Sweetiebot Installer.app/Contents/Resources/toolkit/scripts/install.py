@@ -161,6 +161,8 @@ def graph_open_working_file_edits(js):
 
     match = matches[0]
     original = match.group(0)
+    # VS Code keeps an untouched browser tab URL as an empty string. Treat that
+    # as blank too so native New Tab actions keep receiving the configured home.
     replacement = (
         f'{match.group("prefix")}{match.group("change")}.modifiedUri'
         '.with({scheme:"file",query:""})'
@@ -244,7 +246,7 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     original = match.group(0)
     replacement = (
         f'{match.group("prefix")},url:{match.group("options")}?.viewState?.url'
-        f'??{json.dumps(home_url or "https://chatgpt.com/")}{match.group("suffix")}'
+        f'||{json.dumps(home_url or "https://chatgpt.com/")}{match.group("suffix")}'
     )
     return [(original, replacement)]
 

@@ -1,6 +1,9 @@
 'use strict';
 
+const { execFile } = require('child_process');
 const { githubRepository } = require('./pull_request');
+
+const CHAT_SUBMIT_DELAY_MS = 1500;
 
 function repositoryName(repositoryUrl) {
   const normalized = githubRepository(repositoryUrl);
@@ -125,7 +128,28 @@ function batchMergePrompt({ repositoryUrl, pullRequests, base = 'main' }) {
   ].join('\n\n');
 }
 
-function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch) {
+function submitChatPromptWithEnter(execFileImpl = execFile, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const delayMs = options.delayMs ?? CHAT_SUBMIT_DELAY_MS;
+  if (platform !== 'darwin') return Promise.resolve(false);
+  return new Promise(resolve => {
+    setTimeout(() => {
+      const script = [
+        'tell application "System Events"',
+        'set frontApp to name of first application process whose frontmost is true',
+        'if frontApp contains "Code" then',
+        'key code 36',
+        'else',
+        'error "VS Code is not frontmost"',
+        'end if',
+        'end tell'
+      ].join('\\n');
+      execFileImpl('/usr/bin/osascript', ['-e', script], error => resolve(!error));
+    }, delayMs);
+  });
+}
+
+function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch, submitPrompt = submitChatPromptWithEnter) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', async () => {
     try {
       if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
@@ -159,6 +183,12 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         openToSide: false,
         reuseUrlFilter: url
       });
+      const submitted = await submitPrompt();
+      if (process.platform === 'darwin' && !submitted) {
+        vscode.window.showWarningMessage(
+          'ChatGPT opened, but macOS blocked automatic Return. Allow Accessibility access for Visual Studio Code.'
+        );
+      }
     } catch (error) {
       vscode.window.showErrorMessage(`Unable to prepare pull-request merge chat: ${error.message}`);
     }
@@ -172,5 +202,6 @@ module.exports = {
   fetchOpenPullRequests,
   pickPullRequests,
   batchMergePrompt,
+  submitChatPromptWithEnter,
   registerPullRequestBatchCommand
 };
