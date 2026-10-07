@@ -73,8 +73,8 @@ The builder reuses the **Sweetiebot Installer Local Signing** certificate in you
 Clone the repository and enter it:
 
 ```sh
-git clone https://github.com/JFWooten4/custom-vscode-scm-toolkit.git
-cd custom-vscode-scm-toolkit
+git clone https://github.com/pony-factor/sweetiebot-SCM.git
+cd sweetiebot-SCM
 ```
 
 Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour. It downloads source files into an isolated cache, updates the companion extension and tools, and restores customizations using your saved settings. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair offers **Reload Window**; it never reloads your work automatically. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.

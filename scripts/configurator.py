@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import errno
 import html
 import json
 import math
@@ -1129,7 +1130,12 @@ def run_configurator(
     class SettingsHTTPServer(ThreadingHTTPServer):
         allow_reuse_address = True
 
-    server = SettingsHTTPServer(("127.0.0.1", port), Handler)
+    try:
+        server = SettingsHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as error:
+        if not port or error.errno != errno.EADDRINUSE:
+            raise
+        server = SettingsHTTPServer(("127.0.0.1", 0), Handler)
     url = f"http://127.0.0.1:{server.server_port}/?token={urllib.parse.quote(token)}"
     if open_browser:
         print(f"Sweetiebot SCM configurator: {url}")

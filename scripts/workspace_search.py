@@ -14,20 +14,26 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent / "efs"
 STANDALONE_CONTAINER_ID = "scmToolkit.workspaceSearchContainer"
+LEGACY_EXTENSION_PATTERNS = ("jfwooten4.scm-toolkit-workspace-search-*",)
 
 
 def extension_version() -> str:
     return json.loads((SOURCE / "package.json").read_text())["version"]
 
 
+def extension_identity() -> str:
+    package = json.loads((SOURCE / "package.json").read_text())
+    return f'{package["publisher"]}.{package["name"]}'
+
+
 def default_extensions_dir() -> Path:
-    configured = os.environ.get("SCM_TOOLKIT_VSCODE_EXTENSIONS_DIR")
+    configured = os.environ.get("SWEETIEBOT_VSCODE_EXTENSIONS_DIR")
     return Path(configured).expanduser() if configured else Path.home() / ".vscode/extensions"
 
 
 def extension_destination(extensions_dir: Path | None = None) -> Path:
     root = Path(extensions_dir) if extensions_dir is not None else default_extensions_dir()
-    return root / f"jfwooten4.scm-toolkit-workspace-search-{extension_version()}"
+    return root / f"{extension_identity()}-{extension_version()}"
 
 
 def render_package(settings: dict[str, object] | None = None) -> dict[str, object]:
@@ -133,7 +139,8 @@ def destination_matches(
 def installed_versions(extensions_dir: Path) -> list[Path]:
     if not extensions_dir.is_dir():
         return []
-    return sorted(extensions_dir.glob("jfwooten4.scm-toolkit-workspace-search-*"))
+    patterns = (f"{extension_identity()}-*", *LEGACY_EXTENSION_PATTERNS)
+    return sorted({path for pattern in patterns for path in extensions_dir.glob(pattern)})
 
 
 def sync_extension(

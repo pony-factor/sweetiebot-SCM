@@ -1,5 +1,6 @@
 import json
 import io
+import socket
 import threading
 import urllib.error
 import urllib.parse
@@ -542,6 +543,57 @@ class ServerTests(unittest.TestCase):
             with urllib.request.urlopen(request, timeout=5) as response:
                 self.assertIn("Configuration cancelled", response.read().decode())
             thread.join(5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(result["saved"])
+
+    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
+    def test_extension_mode_falls_back_when_saved_port_is_busy(self, _models):
+        blocker = socket.socket()
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen()
+        blocked_port = blocker.getsockname()[1]
+        ready = threading.Event()
+        captured = {}
+        result = {}
+
+        def capture_output(line, **_kwargs):
+            message = json.loads(line)
+            if "url" in message:
+                captured["url"] = message["url"]
+                ready.set()
+
+        def run_server():
+            result["saved"] = configurator.run_configurator(
+                install.DEFAULT_SETTINGS,
+                open_browser=False,
+                port=blocked_port,
+                token="stable-token",
+            )
+
+        with patch("configurator.print", side_effect=capture_output), \
+             patch("configurator.webbrowser.open"):
+            thread = threading.Thread(target=run_server)
+            thread.start()
+            self.assertTrue(ready.wait(5))
+            parsed = urllib.parse.urlsplit(captured["url"])
+            self.assertNotEqual(parsed.port, blocked_port)
+            self.assertEqual(
+                urllib.parse.parse_qs(parsed.query)["token"],
+                ["stable-token"],
+            )
+            cancel_url = urllib.parse.urlunsplit(
+                (parsed.scheme, parsed.netloc, "/save", parsed.query, "")
+            )
+            request = urllib.request.Request(
+                cancel_url,
+                data=b"action=cancel",
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertIn("Configuration cancelled", response.read().decode())
+            thread.join(5)
+        blocker.close()
 
         self.assertFalse(thread.is_alive())
         self.assertFalse(result["saved"])
