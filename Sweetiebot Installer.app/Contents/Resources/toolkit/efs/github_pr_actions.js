@@ -21,7 +21,10 @@ async function squashMergePullRequest(url, execute = executeGh) {
   if (pr.state !== 'OPEN' || pr.isDraft || pr.baseRefName !== 'main' || !/^[0-9a-f]{40}$/i.test(pr.headRefOid)) {
     throw new Error('Only open, ready-for-review pull requests targeting main can be squash-merged.');
   }
-  const conflict = () => new Error(`PR #${number} has merge conflicts with main. Resolve the conflicts on ${pr.headRefName}, push the resolution, then try squash-merge again.`);
+  const conflict = () => Object.assign(
+    new Error(`Unable to merge #${number}: conflicts with '${pr.baseRefName}'.`),
+    { code: 'SWEETIEBOT_MERGE_CONFLICT' }
+  );
   if (pr.mergeable === 'CONFLICTING') throw conflict();
   try {
     await execute(['pr', 'merge', number, '--repo', repo, '--squash', '--match-head-commit', pr.headRefOid]);
@@ -108,7 +111,12 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         vscode.window.showWarningMessage(`PR #${result.number} merged, but local branch cleanup failed: ${error.message}`);
       }
     } catch (error) {
-      vscode.window.showErrorMessage(`Unable to squash-merge pull request: ${error.stderr?.trim() || error.message}`);
+      const detail = error.stderr?.trim() || error.message;
+      vscode.window.showErrorMessage(
+        error.code === 'SWEETIEBOT_MERGE_CONFLICT'
+          ? error.message
+          : `Unable to squash-merge pull request: ${detail}`
+      );
     } finally {
       busy.delete(url);
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
