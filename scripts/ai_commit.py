@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import json
 import os
 import re
@@ -322,6 +323,35 @@ def manual_message_location(args: list[str]) -> tuple[int, str] | None:
     return None
 
 
+def safe_spellcheck_correction(subject: str, response_text: str) -> str:
+    """Accept only a close, structurally identical spelling correction."""
+    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+    if len(lines) != 1:
+        return subject
+
+    corrected = lines[0]
+    if (
+        len(corrected) >= 2
+        and corrected[0] == corrected[-1]
+        and corrected[0] in {'"', "'"}
+    ):
+        corrected = corrected[1:-1].strip()
+    if not corrected:
+        return subject
+
+    def spelling_shape(value: str) -> str:
+        return re.sub(r"\w+", "<word>", value, flags=re.UNICODE)
+
+    if spelling_shape(corrected) != spelling_shape(subject):
+        return subject
+    if (
+        SequenceMatcher(None, subject.casefold(), corrected.casefold()).ratio()
+        < 0.65
+    ):
+        return subject
+    return corrected
+
+
 def spellcheck_subject(subject: str) -> str:
     if not subject.strip():
         return subject
@@ -374,11 +404,10 @@ Subject:
         )
         return subject
 
-    corrected = str(response.get("response", "")).strip()
-    corrected = next((line.strip() for line in corrected.splitlines() if line.strip()), "")
-    if len(corrected) >= 2 and corrected[0] == corrected[-1] and corrected[0] in {'"', "'"}:
-        corrected = corrected[1:-1].strip()
-    return corrected or subject
+    return safe_spellcheck_correction(
+        subject,
+        str(response.get("response", "")),
+    )
 
 
 def spellcheck_manual_message(message: str) -> str:
