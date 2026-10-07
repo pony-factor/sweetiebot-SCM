@@ -7,8 +7,10 @@ const {
   codexConversationUrl,
   githubRepository,
   kefaniaRulesPath,
+  matchSweetiebotPonyCatalog,
   normalizeConversationSource,
   pullRequestPrompt,
+  readSweetiebotPony,
   registerPullRequestCommand,
 } = require('../efs/pull_request');
 
@@ -24,6 +26,15 @@ async function run() {
     kefaniaRulesPath('/workspace/project'),
     path.join('/workspace', 'kefania', 'PULL_REQUEST.md')
   );
+
+  const ponyCatalog = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../scripts/branch_name_packs.json'), 'utf8')
+  );
+  const berryPunch = matchSweetiebotPonyCatalog('berry-punch', ponyCatalog);
+  assert.equal(berryPunch.packId, 'g4-mares');
+  assert.equal(berryPunch.packLabel, 'G4 mares');
+  assert.equal(matchSweetiebotPonyCatalog('not-a-sweetiebot-pony', ponyCatalog), undefined);
+  assert.equal((await readSweetiebotPony('berry-punch')).packId, 'g4-mares');
 
   const chatSource = {
     kind: 'chatgpt',
@@ -47,6 +58,7 @@ async function run() {
     instructions: rules,
     source: chatSource,
     conversationContext: 'The conversation wanted to preserve provenance.',
+    pony: berryPunch,
     mcpServer: 'codex-drafter',
     mcpTool: 'github_create_pull_request'
   });
@@ -60,6 +72,9 @@ async function run() {
   assert.match(prompt, /intentSummary/);
   assert.match(prompt, /provenance summary may differ from the final diff/);
   assert.match(prompt, /Conversation context for the optional intent summary only/);
+  assert.match(prompt, /Local Sweetiebot pony profile/);
+  assert(prompt.includes('berry-punch'));
+  assert.match(prompt, /local chat context only/);
   assert(!prompt.includes('2d5481b8-54dc-48c6-87e5-b67927d630bd'));
 
   for (const repositoryUrl of [undefined, null, '', '   ', 'invalid', 'https://gitlab.com/owner/repo']) {
@@ -125,7 +140,10 @@ async function run() {
     readInstructions: async repositoryPath => {
       assert.equal(repositoryPath, uri.fsPath);
       return rules;
-    }
+    },
+    readPony: async branch => branch === 'draft'
+      ? { slug: 'draft', packId: 'test-pack', packLabel: 'Test ponies', packDescription: 'Test only.' }
+      : undefined
   });
 
   await callback({ rootUri: uri }, {
@@ -145,6 +163,8 @@ async function run() {
   assert.match(openedPrompt, /"draft"/);
   assert(openedPrompt.includes(rules));
   assert(openedPrompt.includes(chatSource.uuid));
+  assert(openedPrompt.includes('test-pack'));
+  assert.match(openedPrompt, /local chat context only/);
   assert.equal(browserOptions.openToSide, false);
 
   calls.length = 0;
