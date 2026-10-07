@@ -453,8 +453,9 @@ Codex extension show the time remaining as a live countdown such as `4h 23m`. Th
 display rounds to the nearest minute and refreshes as the countdown changes.
 The local composer label beside the location icon shows the smaller remaining
 percentage of the five-hour and weekly usage limits. Until usage data is available,
-it shows **Work locally**. The usage submenu shows centered reset countdowns;
-weekly resets display the number of days left instead of a calendar date.
+it shows **Work locally**. The usage submenu shows centered reset countdowns.
+The dedicated **Usage** dialog also rewrites its **Resets** clock times and calendar
+dates as relative time, while weekly resets use whole calendar days.
 
 To install or refresh only this optional Codex patch without touching the SCM
 workbench patch, run:
