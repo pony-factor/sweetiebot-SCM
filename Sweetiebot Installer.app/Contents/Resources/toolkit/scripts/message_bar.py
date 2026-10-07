@@ -23,13 +23,12 @@ MESSAGE_BAR_ITEM_IDS = tuple(item_id for item_id, _label in MESSAGE_BAR_ITEMS)
 MESSAGE_BAR_ITEM_LABELS = dict(MESSAGE_BAR_ITEMS)
 
 DEFAULT_MESSAGE_BAR_LAYOUT = {
-    "before": ["branch"],
+    "before": ["branch", "codex"],
     "after": [
         "sync",
         "delete",
         "separator-1",
         "autocomplete",
-        "codex",
         "auto-publish",
         "separator-2",
         "home",

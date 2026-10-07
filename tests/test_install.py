@@ -194,7 +194,8 @@ class TransformTests(unittest.TestCase):
         self.assertIn("commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument)", js)
         self.assertIn("scm-toolkit-autocomplete", css)
         self.assertIn("scm-toolkit-auto-publish", css)
-        self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)
+        # Two initial dividers plus the factory for additional saved separators.
+        self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 3)
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
         self.assertIn("scmToolkitCustomizeMessagePlaceholder", js)
         self.assertIn("settings.commitAndSendButtonLabel", js)

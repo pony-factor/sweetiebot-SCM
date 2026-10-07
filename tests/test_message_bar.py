@@ -1,5 +1,11 @@
 import json
+import os
+import subprocess
+import tempfile
 import unittest
+from unittest.mock import patch
+
+import toolkit_settings
 
 from message_bar import (
     DEFAULT_MESSAGE_BAR_LAYOUT,
@@ -16,6 +22,31 @@ class MessageBarLayoutTests(unittest.TestCase):
         self.assertEqual(len(items), 11)
         self.assertEqual(set(items), set(MESSAGE_BAR_ITEM_IDS))
         self.assertEqual(len(items), len(set(items)))
+        self.assertEqual(DEFAULT_MESSAGE_BAR_LAYOUT["before"], ["branch", "codex"])
+
+    def test_saved_order_and_button_preferences_survive_default_changes(self):
+        saved = json.dumps({"before": ["home", "separator-37", "branch"], "after": ["codex"]})
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {
+            "GIT_CONFIG_GLOBAL": root + "/preferences", "GIT_CONFIG_NOSYSTEM": "1",
+        }):
+            subprocess.run(["git", "config", "--global", "scm-toolkit.message-bar-layout", saved], check=True)
+            subprocess.run(["git", "config", "--global", "scm-toolkit.codex-coauthor", "false"], check=True)
+            toolkit_settings.persist_message_bar_layout(toolkit_settings.DEFAULT_SETTINGS)
+            current = toolkit_settings.load_settings()
+            self.assertEqual(current["messageBarLayout"], saved)
+            self.assertFalse(current["codexCoauthor"])
+            control = render_message_bar_control(current["messageBarLayout"])
+            self.assertIn('data-message-bar-id="separator-37"', control)
+            self.assertEqual(control.count('data-message-bar-id="codex"'), 1)
+
+    def test_initial_layout_is_pinned_for_later_updates(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {
+            "GIT_CONFIG_GLOBAL": root + "/preferences", "GIT_CONFIG_NOSYSTEM": "1",
+        }):
+            initial = toolkit_settings.load_settings()
+            toolkit_settings.persist_message_bar_layout(initial)
+            with patch.dict(toolkit_settings.DEFAULT_SETTINGS, {"messageBarLayout": '{"before":[],"after":[]}'}):
+                self.assertEqual(toolkit_settings.load_settings()["messageBarLayout"], initial["messageBarLayout"])
 
     def test_layout_can_reorder_and_hide_controls(self):
         raw = json.dumps({

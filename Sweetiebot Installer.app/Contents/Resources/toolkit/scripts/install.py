@@ -15,7 +15,7 @@ import codex_image_drop
 import codex_recent_chats
 import github_pr
 from pathlib import Path
-from toolkit_settings import DEFAULT_SETTINGS, load_settings, read_git_bool, read_git_string
+from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string
 from branch_names import resolve_runtime_settings
 
 HERE = Path(__file__).resolve().parent
@@ -904,6 +904,8 @@ def main():
                 settings=settings,
             )
 
+    if not args.check and not args.uninstall and not args.codex_only:
+        persist_message_bar_layout(settings)
     action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
     target = "Codex customizations" if args.codex_only else "SCM toolkit"
     print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")

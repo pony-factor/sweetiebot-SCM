@@ -44,9 +44,9 @@ class Setting:
 SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-    Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Source control"),
+    Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
-    Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Source control"),
+    Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
     Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Source control", "optional_text"),
     Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
     Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
@@ -54,16 +54,16 @@ SETTINGS = (
     Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
     Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
-    Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Source control"),
-    Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Source control"),
-    Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Autocomplete toggle", "Show the inline-suggestion switch in the SCM message row.", "Source control"),
-    Setting("autoPublishToggle", "scm-toolkit.auto-publish-toggle", "Auto-publish toggle", "Show the cloud control that publishes newly selected local branches to the configured remote.", "Source control"),
+    Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Message bar"),
+    Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Message bar"),
+    Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Autocomplete toggle", "Show the inline-suggestion switch in the SCM message row.", "Message bar"),
+    Setting("autoPublishToggle", "scm-toolkit.auto-publish-toggle", "Auto-publish toggle", "Show the cloud control that publishes newly selected local branches to the configured remote.", "Message bar"),
     Setting("autoPublishNewBranches", "scm-toolkit.auto-publish-new-branches", "Automatically publish new branches", "Publish newly selected local branches to the configured remote. Saved as your VS Code user preference; the cloud control reflects this setting.", "Source control"),
     Setting("automaticBranchCleanup", "scm-toolkit.automatic-branch-cleanup", "Automatically clean merged branches", "Check for merged branches on startup and every ten minutes, and remove eligible local branches.", "Source control"),
     Setting("hideSCMProgress", "scm-toolkit.hide-scm-progress", "Hide Source Control progress bar", "Hide the progress animation during Git operations and background refreshes.", "Source control"),
     Setting("inlineSuggestions", "scm-toolkit.inline-suggestions", "Inline suggestions", "Enable inline suggestions, including in the commit-message editor.", "Source control"),
     Setting("postCommitAction", "scm-toolkit.post-commit-action", "After committing", "Choose whether commits automatically push or sync with the remote.", "Source control", "select", ("none", "push", "sync")),
-    Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Source control"),
+    Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Message bar"),
     Setting("codexCommitContext", "scm-toolkit.codex-commit-context", "Local commit messages from Codex text", "When the co-author commit message is blank, use this window's current conversation and staged changes with local Ollama. Codex keeps running.", "Source control"),
     Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Prevent idle sleep on macOS while Codex tasks are running. The display can still turn off. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
     Setting("hideOutgoingSyncCount", "scm-toolkit.hide-outgoing-sync-count", "Hide outgoing count", "Remove the outgoing commit count from Sync.", "Source control"),
@@ -98,7 +98,7 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT with the sibling Kafania drafting rules and publish through the configured Kafania MCP tool.", "Pull requests"),
+    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open ChatGPT with the sibling Kafania drafting rules and publish through the configured Kafania MCP tool.", "Message bar"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "Configured MCP server name for pull-request integrations.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
@@ -483,6 +483,15 @@ def render_form(
             for setting in SETTINGS
             if setting.section == section
         )
+        if section == "Message bar":
+            layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
+            controls = _setting_control(layout_setting, current.get(layout_setting.name, ""))
+            controls += '<h3>Button options</h3><p class="status">All available buttons appear above, including hidden controls. Sync branch and Home follow the Branch picker setting. Your layout and button preferences are saved on this computer and retained across updates.</p>'
+            controls += "".join(
+                _setting_control(setting, current.get(setting.name, ""))
+                for setting in SETTINGS
+                if setting.section == section and setting.kind != "message_bar"
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Codex":

@@ -138,6 +138,19 @@ def load_settings():
     return settings
 
 
+def persist_message_bar_layout(settings):
+    """Pin the initial layout so future default changes do not reorder it."""
+    key = SETTING_KEYS["messageBarLayout"]
+    if read_git_string(key, None, preserve_empty=True) is not None:
+        return
+    result = subprocess.run(
+        ["git", "config", "--global", key, str(settings["messageBarLayout"])],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Unable to save the message bar layout: " + result.stderr.strip())
+
+
 SETTING_KEYS = {
     "branchPicker": "scm-toolkit.branch-picker",
     "messageBarLayout": "scm-toolkit.message-bar-layout",
