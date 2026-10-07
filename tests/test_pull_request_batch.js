@@ -108,6 +108,10 @@ async function run() {
   assert.equal(osascriptCall.args[0], '-e');
   assert.match(osascriptCall.args[1], /frontApp contains "Code"/);
   assert.match(osascriptCall.args[1], /key code 36/);
+  assert.match(osascriptCall.args[1], /tell application "System Events"\nset frontApp/);
+  assert.match(osascriptCall.args[1], /\nkey code 36\n/);
+  assert.equal(osascriptCall.args[1].includes('\\n'), false);
+
   assert.equal(await submitChatPromptWithEnter(() => {}, { platform: 'linux', delayMs: 0 }), false);
 
   let handler;

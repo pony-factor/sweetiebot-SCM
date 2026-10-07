@@ -3,7 +3,7 @@
 const { execFile } = require('child_process');
 const { githubRepository } = require('./pull_request');
 
-const CHAT_SUBMIT_DELAY_MS = 1500;
+const CHAT_SUBMIT_DELAY_MS = 3000;
 
 function repositoryName(repositoryUrl) {
   const normalized = githubRepository(repositoryUrl);
@@ -143,7 +143,7 @@ function submitChatPromptWithEnter(execFileImpl = execFile, options = {}) {
         'error "VS Code is not frontmost"',
         'end if',
         'end tell'
-      ].join('\\n');
+      ].join('\n');
       execFileImpl('/usr/bin/osascript', ['-e', script], error => resolve(!error));
     }, delayMs);
   });
@@ -186,7 +186,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const submitted = await submitPrompt();
       if (process.platform === 'darwin' && !submitted) {
         vscode.window.showWarningMessage(
-          'ChatGPT opened, but macOS blocked automatic Return. Allow Accessibility access for Visual Studio Code.'
+          'ChatGPT opened, but automatic Return failed. Check that VS Code is frontmost and has Accessibility access, or press Return manually.'
         );
       }
     } catch (error) {
