@@ -18,6 +18,7 @@ const LEGACY_COMMANDS = [
   "prepareCodexCommit",
   "publishBranch",
   "returnHome",
+  "squashMergeSelectedPullRequest",
   "squashMergePullRequest",
   "syncBranch",
   "workspaceSearch.clearIndex"

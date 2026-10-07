@@ -289,6 +289,10 @@ async function activate(context) {
   registerLegacyCommandAliases(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
+  // Register PR merge commands before awaited startup work so their contributed
+  // UI actions cannot be left pointing at missing handlers if startup recovery fails.
+  registerPullRequestBatchCommand(vscode, context);
+  registerGitHubPullRequestActions(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
   // Hidden panel tabs can still be restored as the active container.
@@ -300,9 +304,7 @@ async function activate(context) {
   registerBranchCommands(vscode, context);
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
-  registerPullRequestBatchCommand(vscode, context);
   registerEditorActions(vscode, context);
-  registerGitHubPullRequestActions(vscode, context);
   registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);
