@@ -6,6 +6,7 @@
 
     const timePattern = /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\s?(?:AM|PM))?$/i;
     const relativePattern = /^(?:Today|Yesterday)(?:\s+at)?\s+(?:1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)$/i;
+    const weekdayPattern = /^(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)(?:\s+at)?\s+(?:1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)$/i;
     const monthPattern = /^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,\s*\d{4})?(?:\s+at)?(?:,)?\s+(?:1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)$/i;
     const numericPattern = /^\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?(?:,)?\s+(?:1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)$/i;
 
@@ -16,6 +17,7 @@
             && text.length <= 64
             && (
                 relativePattern.test(text)
+                || weekdayPattern.test(text)
                 || monthPattern.test(text)
                 || numericPattern.test(text)
                 || timePattern.test(text)
