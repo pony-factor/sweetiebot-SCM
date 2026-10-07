@@ -29,6 +29,24 @@ async function main() {
     if (args[1] === 'merge') throw new Error('Required checks have not passed');
     return { stdout: JSON.stringify(open) };
   }), /Required checks/);
+  let conflictCalls = 0;
+  await assert.rejects(squashMergePullRequest(url, async () => {
+    conflictCalls++;
+    return { stdout: JSON.stringify({ ...open, mergeable: 'CONFLICTING' }) };
+  }), /PR #12 has merge conflicts with main/);
+  assert.equal(conflictCalls, 1, 'Do not attempt to merge known conflicts');
+  let racedReads = 0;
+  await assert.rejects(squashMergePullRequest(url, async args => {
+    if (args[1] === 'merge') throw Object.assign(new Error('gh failed'), { stderr: 'not mergeable' });
+    return { stdout: JSON.stringify({ ...open, mergeable: ++racedReads === 1 ? 'UNKNOWN' : 'CONFLICTING' }) };
+  }), /Resolve the conflicts on topic/);
+  const originalFailure = Object.assign(new Error('gh failed'), { stderr: 'Required checks have not passed' });
+  let failedReads = 0;
+  await assert.rejects(squashMergePullRequest(url, async args => {
+    if (args[1] === 'merge') throw originalFailure;
+    if (++failedReads > 1) throw new Error('Offline');
+    return { stdout: JSON.stringify(open) };
+  }), error => error === originalFailure);
   const cleanup = [];
   await deleteMergedRemoteBranch(result, async args => {
     cleanup.push(args);
@@ -112,9 +130,11 @@ async function main() {
   await handler({ pullRequestModel: { url, number: 12 } });
   await handler({ url, number: 12 });
   await handler({ pullRequestModel: { html_url: url, number: 12 } });
-  assert.deepEqual(selected, [url, url, url]);
+  await handler({ htmlUrl: `${url}/`, number: 12 });
+  await handler({ resourceUri: { query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:12' }) } });
+  assert.deepEqual(selected, [url, url, url, url, url]);
   assert.equal(errors.length, 1);
-  assert.equal(notices.length, 3);
-  assert.deepEqual(refreshes, Array(4).fill('pr.refreshList'));
+  assert.equal(notices.length, 5);
+  assert.deepEqual(refreshes, Array(6).fill('pr.refreshList'));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

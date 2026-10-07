@@ -69,7 +69,8 @@ def transform_refresh(source, remove=False):
         raise ValueError('Unsupported GitHub PR tree build: expected one matching anchor.')
     helper = (Path(__file__).resolve().parent.parent / 'efs/github_pr_refresh.js').read_text().split('\nmodule.exports')[0]
     original = tree[0].group()
-    edits = [(original, f'({helper})({tree[0].group(1)},{original},this)'),
+    factory = f'(()=>{{{helper}\nreturn installPullRequestRefresh;}})()'
+    edits = [(original, f'({factory})({tree[0].group(1)},{original},this)'),
              (commands[0].group(), commands[0].group().replace('{this.', '{return this.', 1))]
     for original, replacement in edits:
         source = source.replace(original, replacement, 1)

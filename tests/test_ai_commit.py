@@ -539,6 +539,52 @@ class TitleTests(unittest.TestCase):
         )
 
 
+class InstructionSyncTests(unittest.TestCase):
+    def test_global_codex_instructions_are_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            agents = Path(tmp) / "AGENTS.md"
+            agents.write_text(
+                "Prefer compact wording.\n"
+                "Commit titles should use one emoji and an imperative verb.\n"
+                "<!-- scm-toolkit-chatgpt-instructions:start -->\n"
+                "Use plain language.\n"
+                "When creating Git commits through web or GitHub tools, append this trailer after a blank line:\n"
+                "Co-authored-by: Codex Web <noreply@openai.com>\n"
+                "<!-- scm-toolkit-chatgpt-instructions:end -->\n",
+                encoding="utf-8",
+            )
+            with patch.object(ai_commit, "codex_agents_path", return_value=agents), patch.object(
+                ai_commit, "git_config_bool", return_value=False
+            ):
+                self.assertEqual(ai_commit.commit_custom_instructions(), "")
+            with patch.object(ai_commit, "codex_agents_path", return_value=agents), patch.object(
+                ai_commit, "git_config_bool", return_value=True
+            ):
+                instructions = ai_commit.commit_custom_instructions()
+
+        self.assertIn("Prefer compact wording.", instructions)
+        self.assertIn("Use plain language.", instructions)
+        self.assertNotIn("Commit titles should", instructions)
+        self.assertNotIn("Co-authored-by:", instructions)
+        self.assertNotIn("scm-toolkit-chatgpt-instructions", instructions)
+
+    @patch.object(ai_commit, "recent_subjects", return_value="🖌️ Refine controls")
+    def test_prompt_includes_synced_custom_instructions(self, _subjects):
+        with patch.object(
+            ai_commit,
+            "commit_custom_instructions",
+            return_value="Prefer compact wording and sentence case.",
+        ):
+            prompt = ai_commit.prompt_for_diff(
+                "1 file changed",
+                "diff --git a/README.md b/README.md\n+text",
+            )
+
+        self.assertIn("User commit-writing preferences from the global Codex instructions:", prompt)
+        self.assertIn("Prefer compact wording and sentence case.", prompt)
+        self.assertIn("Do not add trailers or metadata", prompt)
+
+
 class ArtifactContextTests(unittest.TestCase):
     def test_artifact_fallbacks(self):
         self.assertEqual(ai_commit.fallback_title(["assets/DASH.PNG"]), "🖼️ Update DASH.PNG")

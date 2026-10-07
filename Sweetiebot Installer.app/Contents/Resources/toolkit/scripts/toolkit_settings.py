@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import subprocess
 
+from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON
+
 
 DEFAULT_SETTINGS = {
     "branchPicker": True,
+    "messageBarLayout": DEFAULT_MESSAGE_BAR_LAYOUT_JSON,
     "ponyBranch": True,
     "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining",
     "branchCustomNames": "",
     "branchNameImports": "[]",
-    "shortPlaceholder": True,
+    "messagePlaceholder": "Message",
     "commitButtonLabel": "Send",
     "commitAndSendButtonLabel": "Send",
     "sourceControlLabel": "Sweetie Bot",
@@ -51,6 +54,7 @@ DEFAULT_SETTINGS = {
     "browserChatgptHome": False,
     "graphOpenWorkingFile": True,
     "aiCommit": True,
+    "aiCommitCustomInstructions": False,
     "spellcheckManualCommit": True,
     "postCommitSpellcheck": False,
     "aiDefaultBranchDescription": True,
@@ -118,7 +122,12 @@ def load_settings():
     settings = {}
     for name, default in DEFAULT_SETTINGS.items():
         git_key = SETTING_KEYS[name]
-        if isinstance(default, bool):
+        if name == "messagePlaceholder":
+            value = read_git_string(git_key, None, preserve_empty=True)
+            if value is None:
+                value = "Message" if read_git_bool("scm-toolkit.short-placeholder", True) else ""
+            settings[name] = value
+        elif isinstance(default, bool):
             settings[name] = read_git_bool(git_key, default)
         else:
             settings[name] = read_git_string(
@@ -131,11 +140,12 @@ def load_settings():
 
 SETTING_KEYS = {
     "branchPicker": "scm-toolkit.branch-picker",
+    "messageBarLayout": "scm-toolkit.message-bar-layout",
     "ponyBranch": "scm-toolkit.pony-branch",
     "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",
     "branchCustomNames": "scm-toolkit.branch-custom-names",
     "branchNameImports": "scm-toolkit.branch-name-imports",
-    "shortPlaceholder": "scm-toolkit.short-placeholder",
+    "messagePlaceholder": "scm-toolkit.message-placeholder",
     "commitButtonLabel": "scm-toolkit.commit-button-label",
     "commitAndSendButtonLabel": "scm-toolkit.commit-and-send-button-label",
     "sourceControlLabel": "scm-toolkit.source-control-label",
@@ -175,6 +185,7 @@ SETTING_KEYS = {
     "browserChatgptHome": "scm-toolkit.browser-chatgpt-home",
     "graphOpenWorkingFile": "scm-toolkit.graph-open-working-file",
     "aiCommit": "scm-toolkit.ai-commit",
+    "aiCommitCustomInstructions": "scm-toolkit.ai-commit-custom-instructions",
     "spellcheckManualCommit": "scm-toolkit.spellcheck-manual-commit",
     "postCommitSpellcheck": "scm-toolkit.post-commit-spellcheck",
     "aiDefaultBranchDescription": "scm-toolkit.ai-default-branch-description",
@@ -220,6 +231,9 @@ VSCODE_SETTINGS = {
     "vscodeSettings": {
         "automaticAppRepair": "automaticAppRepair",
         "openPanelOnStartup": "openPanelOnStartup",
+        "messagePlaceholder": "messagePlaceholder",
+        "commitButtonLabel": "commitButtonLabel",
+        "commitAndSendButtonLabel": "commitAndSendButtonLabel",
         "autoPublishNewBranches": "autoPublishNewBranches",
         "automaticBranchCleanup": "automaticBranchCleanup",
         "pullRequestAutoRefresh": "pullRequestAutoRefresh",

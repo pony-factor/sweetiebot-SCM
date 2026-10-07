@@ -57,10 +57,10 @@ async function readCodexConversation(vscode) {
   try {
     const codex = vscode.extensions.getExtension('openai.chatgpt');
     if (codex && !codex.isActive) await codex.activate();
-    if (!(await vscode.commands.getCommands(true)).includes('scmToolkit.readCodexConversation')) {
+    if (!(await vscode.commands.getCommands(true)).includes('sweetiebot.readCodexConversation')) {
       return undefined;
     }
-    const snapshot = await vscode.commands.executeCommand('scmToolkit.readCodexConversation');
+    const snapshot = await vscode.commands.executeCommand('sweetiebot.readCodexConversation');
     if (!snapshot || typeof snapshot !== 'object') return undefined;
     const source = normalizeConversationSource(snapshot.source);
     const text = typeof snapshot.text === 'string' ? snapshot.text.trim().slice(-6000) : '';
@@ -125,7 +125,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }));
   }
 
-  context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.openPullRequestChat', async (uri, options) => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestChat', async (uri, options) => {
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
       throw new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
     }

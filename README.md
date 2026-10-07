@@ -7,7 +7,7 @@ Current features:
 - show the current branch inside the SCM message box and open VS Code's normal branch picker from it
 - switch the branch selector and native Commit button between outlined and accent-filled styles
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
-- shorten the commit-message placeholder to `Message`
+- customize the commit-message placeholder (defaults to `Message`)
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
 - clean up unchanged local branches after their same-repository PR merges into the default branch
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
@@ -146,7 +146,7 @@ Set options with `git config --global`:
 ```sh
 git config --global scm-toolkit.branch-picker true
 git config --global scm-toolkit.pony-branch true
-git config --global scm-toolkit.short-placeholder true
+git config --global scm-toolkit.message-placeholder "Message"
 git config --global scm-toolkit.commit-button-label "Send"
 git config --global scm-toolkit.commit-and-send-button-label "Send"
 git config --global scm-toolkit.source-control-label "Sweetie Bot"
@@ -165,6 +165,7 @@ git config --global scm-toolkit.cmd-click-close-others false
 git config --global scm-toolkit.browser-chatgpt-home true
 git config --global scm-toolkit.graph-open-working-file true
 git config --global scm-toolkit.ai-commit true
+git config --global scm-toolkit.ai-commit-custom-instructions false
 git config --global scm-toolkit.spellcheck-manual-commit true
 git config --global scm-toolkit.ai-default-branch-description true
 git config --global scm-toolkit.ai-commit-model qwen2.5-coder:7b
@@ -194,7 +195,7 @@ The equivalent `~/.gitconfig` block is:
 [scm-toolkit]
     branch-picker = true
     pony-branch = true
-    short-placeholder = true
+    message-placeholder = Message
     commit-button-label = Send
     commit-and-send-button-label = Send
     source-control-label = Sweetie Bot
@@ -213,6 +214,7 @@ The equivalent `~/.gitconfig` block is:
     browser-chatgpt-home = true
     graph-open-working-file = true
     ai-commit = true
+    ai-commit-custom-instructions = false
     spellcheck-manual-commit = true
     ai-default-branch-description = true
     ai-commit-model = qwen2.5-coder:7b
@@ -316,7 +318,9 @@ Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-
 
 **Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject.
 
-Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other agent instructions are excluded from the generation prompt. Without that preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
+Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other global instructions stay excluded by default. Enable **Sync AI commits with Codex instructions** on the Sweetiebot settings page, or set `scm-toolkit.ai-commit-custom-instructions = true`, to reread the rest of that global custom-instructions file for every generated commit. Synced instructions may shape commit wording and style, but staged changes remain authoritative and the generator still refuses instruction-driven trailers, metadata, or output-format changes.
+
+Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
 ### Concurrent PDF OCR and commit generation
 
@@ -513,7 +517,7 @@ customizations.
 
 ### Commit and push
 
-The normal commit action and the commit-and-send state have independent text overrides. Set `scm-toolkit.commit-button-label` for ordinary commits and `scm-toolkit.commit-and-send-button-label` for the primary action while `git.postCommitCommand` is `push`. Both default to **Send**.
+The Source Control message placeholder and commit actions have independent text overrides. Set `scm-toolkit.message-placeholder` to replace the commit-message placeholder (default **Message**); leave it blank to restore VS Code's native placeholder. Set `scm-toolkit.commit-button-label` for ordinary commits and `scm-toolkit.commit-and-send-button-label` for the primary action while `git.postCommitCommand` is `push`. Both action labels default to **Send**. Changes made through the Sweetiebot settings page are mirrored into VS Code configuration and update the running Source Control UI without a window reload.
 
 When `commit-and-push` is enabled, the checkbox mirrors VS Code's `git.postCommitCommand` setting. Checking it sets the value to `push`; unchecking it sets the value to `none`.
 

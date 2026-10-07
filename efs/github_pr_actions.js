@@ -3,6 +3,7 @@
 const { execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
+const { pullRequestFromTreeNode } = require('./github_pr_refresh');
 const { promisify } = require('node:util');
 
 const run = promisify(execFile);
@@ -11,16 +12,25 @@ const executeGh = args => run(gh, args, { timeout: 120000 });
 
 async function squashMergePullRequest(url, execute = executeGh) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
-  if (!match) throw new Error('Select a GitHub pull request.');
+  if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
   const number = match[3];
-  const fields = 'state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository';
+  const fields = 'state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository,mergeable';
   const read = async () => JSON.parse((await execute(['pr', 'view', number, '--repo', repo, '--json', fields])).stdout);
   const pr = await read();
   if (pr.state !== 'OPEN' || pr.isDraft || pr.baseRefName !== 'main' || !/^[0-9a-f]{40}$/i.test(pr.headRefOid)) {
     throw new Error('Only open, ready-for-review pull requests targeting main can be squash-merged.');
   }
-  await execute(['pr', 'merge', number, '--repo', repo, '--squash', '--match-head-commit', pr.headRefOid]);
+  const conflict = () => new Error(`PR #${number} has merge conflicts with main. Resolve the conflicts on ${pr.headRefName}, push the resolution, then try squash-merge again.`);
+  if (pr.mergeable === 'CONFLICTING') throw conflict();
+  try {
+    await execute(['pr', 'merge', number, '--repo', repo, '--squash', '--match-head-commit', pr.headRefOid]);
+  } catch (error) {
+    // Mergeability can change after the first read, or initially be UNKNOWN.
+    const latest = await read().catch(() => undefined);
+    if (latest?.mergeable === 'CONFLICTING') throw conflict();
+    throw error;
+  }
   const merged = await read();
   // Merge queues can accept the request without having merged it yet.
   if (merged.state !== 'MERGED') return { merged: false, repo, number };
@@ -62,9 +72,9 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
 
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
-  context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.squashMergePullRequest', async node => {
-    const model = node?.pullRequestModel ?? node;
-    const url = model?.url ?? model?.html_url;
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', async node => {
+    const model = pullRequestFromTreeNode(node);
+    const url = model.url;
     if (busy.has(url)) return;
     busy.add(url);
     try {

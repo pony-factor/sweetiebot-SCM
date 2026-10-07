@@ -136,7 +136,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests, base = 'main' }) {
 }
 
 function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch) {
-  context.subscriptions.push(vscode.commands.registerCommand('scmToolkit.openPullRequestBatchChat', async () => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', async () => {
     try {
       if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
         throw new Error('Update VS Code to open ChatGPT in the Integrated Browser.');

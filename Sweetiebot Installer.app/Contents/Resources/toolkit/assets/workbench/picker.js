@@ -40,11 +40,17 @@ function scmToolkitCustomizeCommitButtonLabel(
     commitLabel,
     commitAndSendLabel
 ) {
-    const commitValue = String(commitLabel ?? '').trim();
-    const commitAndSendValue = String(commitAndSendLabel ?? '').trim();
+    const fallbackCommitValue = String(commitLabel ?? '').trim();
+    const fallbackCommitAndSendValue = String(commitAndSendLabel ?? '').trim();
     const doc = widget.element.ownerDocument;
     const Observer = doc.defaultView?.MutationObserver;
-    if ((!commitValue && !commitAndSendValue) || !Observer) return;
+    if (!Observer) return;
+
+    const configuredLabel = (key, fallback) => {
+        const configured = configuration.getValue(`scmToolkit.${key}`);
+        const value = typeof configured === 'string' ? configured.trim() : '';
+        return value || fallback;
+    };
 
     let observedRoot;
     const selector = [
@@ -76,6 +82,11 @@ function scmToolkitCustomizeCommitButtonLabel(
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
         const button = actionRow?.querySelector(selector) ?? root.querySelector(selector);
+        const commitValue = configuredLabel('commitButtonLabel', fallbackCommitValue);
+        const commitAndSendValue = configuredLabel(
+            'commitAndSendButtonLabel',
+            fallbackCommitAndSendValue
+        );
         const current = configuration.getValue('git.postCommitCommand') === 'push'
             ? (commitAndSendValue || commitValue)
             : commitValue;
@@ -99,7 +110,13 @@ function scmToolkitCustomizeCommitButtonLabel(
     update();
 
     const configurationDisposable = configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('git.postCommitCommand')) update();
+        if (
+            event.affectsConfiguration('git.postCommitCommand')
+            || event.affectsConfiguration('scmToolkit.commitButtonLabel')
+            || event.affectsConfiguration('scmToolkit.commitAndSendButtonLabel')
+        ) {
+            update();
+        }
     });
     widget.disposables.add({
         dispose() {
@@ -107,6 +124,65 @@ function scmToolkitCustomizeCommitButtonLabel(
             configurationDisposable.dispose();
         }
     });
+}
+
+function scmToolkitCustomizeMessagePlaceholder(
+    widget,
+    input,
+    configuration,
+    fallbackPlaceholder
+) {
+    let nativePlaceholder = input.placeholder;
+    let activeOverride;
+
+    const configuredPlaceholder = () => {
+        const configured = configuration.getValue('scmToolkit.messagePlaceholder');
+        return typeof configured === 'string'
+            ? configured
+            : String(fallbackPlaceholder ?? '');
+    };
+
+    const update = () => {
+        const value = configuredPlaceholder();
+        if (value) {
+            if (input.placeholder !== value) {
+                if (!activeOverride || input.placeholder !== activeOverride) {
+                    nativePlaceholder = input.placeholder;
+                }
+                input.placeholder = value;
+            }
+            activeOverride = value;
+            return;
+        }
+
+        const previousOverride = activeOverride;
+        activeOverride = undefined;
+        if (previousOverride && input.placeholder === previousOverride) {
+            input.placeholder = nativePlaceholder;
+        }
+    };
+
+    update();
+    widget.repositoryDisposables.add(input.onDidChangePlaceholder(() => {
+        const value = configuredPlaceholder();
+        if (!value) {
+            nativePlaceholder = input.placeholder;
+            activeOverride = undefined;
+            return;
+        }
+        if (input.placeholder === value) {
+            activeOverride = value;
+            return;
+        }
+        if (!activeOverride || input.placeholder !== activeOverride) {
+            nativePlaceholder = input.placeholder;
+        }
+        activeOverride = value;
+        input.placeholder = value;
+    }));
+    widget.repositoryDisposables.add(configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.messagePlaceholder')) update();
+    }));
 }
 
 function scmToolkitAttachCommitSettings(widget, button) {
@@ -190,7 +266,7 @@ async function scmToolkitPullCleanRepository(provider, commands, repositoryArgum
         return false;
     }
 
-    await commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument);
+    await commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument);
     return true;
 }
 
@@ -227,7 +303,7 @@ function scmToolkitEnableBlankStateRefresh(
         const now = Date.now();
         if (lastAutoFetch === undefined || now - lastAutoFetch >= 60000) {
             lastAutoFetch = now;
-            await commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument, { fetch: true });
+            await commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument, { fetch: true });
         }
 
         const historyProvider = provider.historyProvider.get();
@@ -383,7 +459,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
         const wrappedCommit = async function(message, options) {
             try {
                 const allowed = await commands.executeCommand(
-                    'scmToolkit.checkCommitLimits',
+                    'sweetiebot.checkCommitLimits',
                     repository.rootUri
                 );
                 if (allowed === false) return;
@@ -394,7 +470,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
             let commitLease = false;
             try {
                 try {
-                    await commands.executeCommand('scmToolkit.beginCommit', repository.rootUri);
+                    await commands.executeCommand('sweetiebot.beginCommit', repository.rootUri);
                     commitLease = true;
                 } catch {
                     // If the companion extension is unavailable, its auto-pull is unavailable too.
@@ -424,7 +500,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
             } finally {
                 if (commitLease) {
                     try {
-                        await commands.executeCommand('scmToolkit.endCommit', repository.rootUri);
+                        await commands.executeCommand('sweetiebot.endCommit', repository.rootUri);
                     } catch {
                         // The extension may be reloading; do not turn a successful commit into an error.
                     }
@@ -694,7 +770,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const settingsButton = doc.createElement('button');
     settingsButton.type = 'button';
-    settingsButton.className = 'scm-toolkit-settings codicon codicon-gear';
+    settingsButton.className = 'scm-toolkit-settings';
+    settingsButton.textContent = '🪄';
     settingsButton.hidden = true;
     settingsButton.title = 'Open Sweetiebot SCM settings';
     settingsButton.setAttribute('aria-label', 'Open Sweetiebot SCM settings');
@@ -841,7 +918,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshAutoPublish();
         try {
             const published = await commands.executeCommand(
-                'scmToolkit.publishBranch',
+                'sweetiebot.publishBranch',
                 currentRepositoryUri,
                 { branch, remote: settings.remote }
             );
@@ -899,9 +976,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
 
         try {
-            await commands.executeCommand('scmToolkit.prepareCodexCommit', repositoryUri);
+            await commands.executeCommand('sweetiebot.prepareCodexCommit', repositoryUri);
             const message = originalMessage.trim() ? originalMessage : await commands.executeCommand(
-                'scmToolkit.generateCodexCommitMessage', repositoryUri
+                'sweetiebot.generateCodexCommitMessage', repositoryUri
             );
             if (currentInput !== input || input.value !== originalMessage) {
                 throw new Error('The selected repository or commit message changed during local generation. Try again.');
@@ -962,7 +1039,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
         try {
             const source = scmToolkitChatgptConversationSource(doc);
-            const launch = await commands.executeCommand('scmToolkit.openPullRequestChat', repository, {
+            const launch = await commands.executeCommand('sweetiebot.openPullRequestChat', repository, {
                 branch,
                 base: settings.defaultBranch,
                 remote: settings.remote,
@@ -1023,7 +1100,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            const branch = await commands.executeCommand('scmToolkit.createBranch', repository, {
+            const branch = await commands.executeCommand('sweetiebot.createBranch', repository, {
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
                 names: scmToolkitBranchNamePool(),
@@ -1079,7 +1156,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('scmToolkit.syncBranch', repository, {
+            await commands.executeCommand('sweetiebot.syncBranch', repository, {
                 branch,
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
@@ -1147,7 +1224,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         pushCheckbox.disabled = true;
         refreshBranchControls();
         try {
-            await commands.executeCommand('scmToolkit.returnHome', repository);
+            await commands.executeCommand('sweetiebot.returnHome', repository);
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1202,7 +1279,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('scmToolkit.deleteBranch', repositoryArgument, {
+            await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
                 branch,
                 defaultBranch: settings.defaultBranch,
                 remote: settings.remote,
@@ -1219,7 +1296,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const openSettings = async event => {
         event.stopPropagation();
         try {
-            await commands.executeCommand('scmToolkit.openSettings');
+            await commands.executeCommand('sweetiebot.openSettings');
         } catch (error) {
             notifications.error(error);
         }
@@ -1401,15 +1478,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 !ponyBranchButton.hidden
             );
 
-            if (settings.shortPlaceholder) {
-                const keepMessagePlaceholderShort = () => {
-                    if (input.placeholder !== 'Message') input.placeholder = 'Message';
-                };
-                keepMessagePlaceholderShort();
-                widget.repositoryDisposables.add(
-                    input.onDidChangePlaceholder(keepMessagePlaceholderShort)
-                );
-            }
+            scmToolkitCustomizeMessagePlaceholder(
+                widget,
+                input,
+                configuration,
+                settings.messagePlaceholder
+            );
 
             let blankStateRefreshDisposable;
             widget.repositoryDisposables.add(observe(reader => {
@@ -1476,3 +1550,30 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 }
+
+// Notification rows are reused, so update the marker whenever their message changes.
+(() => {
+    const selector = '.notification-list-item';
+    const update = row => {
+        const message = row.querySelector('.notification-list-item-message');
+        row.classList.toggle('scm-toolkit-generating-commit',
+            /^Generating commit message(?: ✨)?$/.test(message?.textContent.trim() ?? ''));
+    };
+    const observer = new MutationObserver(records => {
+        const rows = new Set();
+        for (const record of records) {
+            const target = record.target.nodeType === Node.ELEMENT_NODE
+                ? record.target : record.target.parentElement;
+            const row = target?.closest(selector);
+            if (row) rows.add(row);
+            for (const node of record.addedNodes) {
+                if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                if (node.matches(selector)) rows.add(node);
+                node.querySelectorAll(selector).forEach(row => rows.add(row));
+            }
+        }
+        rows.forEach(update);
+    });
+    observer.observe(document, { childList: true, characterData: true, subtree: true });
+    document.querySelectorAll(selector).forEach(update);
+})();

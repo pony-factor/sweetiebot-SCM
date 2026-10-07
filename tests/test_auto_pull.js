@@ -58,7 +58,7 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
       assert.equal(argument, 'selected-repository');
       calls.push(command);
       if (options) assert.equal(options.fetch, true);
-      if (command === 'scmToolkit.autoPullClean' && upstream && ancestor === 'local') localRef.revision = remoteRef.revision;
+      if (command === 'sweetiebot.autoPullClean' && upstream && ancestor === 'local') localRef.revision = remoteRef.revision;
     } },
     currentRepositoryArgument: 'selected-repository',
     blankStateRefreshDisposable: undefined
@@ -77,17 +77,17 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
     await tick();
     const expected = hidden ? [] : [
       ...(settings.blankStateRefresh ? ['git.refresh'] : []),
-      ...(settings.autoPullClean ? ['scmToolkit.autoPullClean'] : [])
+      ...(settings.autoPullClean ? ['sweetiebot.autoPullClean'] : [])
     ];
     assert.deepEqual(calls, expected);
     assert.equal([...timers.values()][0].delay, hidden ? 5000 : 1500);
     await tick();
-    assert.equal(calls.filter(command => command === 'scmToolkit.autoPullClean').length,
-      expected.includes('scmToolkit.autoPullClean') ? 1 : 0, 'Do not pull again after catching up');
+    assert.equal(calls.filter(command => command === 'sweetiebot.autoPullClean').length,
+      expected.includes('sweetiebot.autoPullClean') ? 1 : 0, 'Do not pull again after catching up');
     if (settings.autoPullClean && !hidden) {
       clock += 60000;
       await tick();
-      assert.equal(calls.filter(command => command === 'scmToolkit.autoPullClean').length, 2,
+      assert.equal(calls.filter(command => command === 'sweetiebot.autoPullClean').length, 2,
         'Fetch again after one minute even when local and remote refs already match');
     }
     provider.groups[0].resources = [{}];

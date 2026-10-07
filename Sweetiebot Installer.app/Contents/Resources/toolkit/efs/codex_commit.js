@@ -31,7 +31,7 @@ function generateMessage(script, cwd, context) {
 }
 
 function registerCodexCommitCommand(vscode, extensionContext) {
-  extensionContext.subscriptions.push(vscode.commands.registerCommand('scmToolkit.prepareCodexCommit', async uri => {
+  extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.prepareCodexCommit', async uri => {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
@@ -51,19 +51,19 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     await repository.status();
     if (!repository.state.indexChanges.length) throw new Error('No changes were staged.');
   }));
-  extensionContext.subscriptions.push(vscode.commands.registerCommand('scmToolkit.generateCodexCommitMessage', async uri => {
+  extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.generateCodexCommitMessage', async uri => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') throw new Error('Local commit generation requires a local repository.');
     return vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: 'Generating commit message ✨', cancellable: false
+      title: 'Generating commit message', cancellable: false
     }, async () => {
       let context = '';
       try {
         const codex = vscode.extensions.getExtension('openai.chatgpt');
         if (codex && !codex.isActive) await codex.activate();
-        if ((await vscode.commands.getCommands(true)).includes('scmToolkit.readCodexContext')) {
-          const snapshot = await vscode.commands.executeCommand('scmToolkit.readCodexContext');
+        if ((await vscode.commands.getCommands(true)).includes('sweetiebot.readCodexContext')) {
+          const snapshot = await vscode.commands.executeCommand('sweetiebot.readCodexContext');
           if (typeof snapshot === 'string') context = snapshot;
         }
       } catch {

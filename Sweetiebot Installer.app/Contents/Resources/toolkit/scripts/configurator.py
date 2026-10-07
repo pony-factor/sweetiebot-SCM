@@ -20,6 +20,8 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from chatgpt_integration import import_pgp_secret_key, sync_codex_instructions
+from message_bar import serialize_message_bar_layout
+from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
 
 
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -40,11 +42,12 @@ class Setting:
 
 
 SETTINGS = (
-    Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "Source control"),
-    Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "Source control"),
+    Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
+    Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Source control"),
+    Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Source control"),
-    Setting("shortPlaceholder", "scm-toolkit.short-placeholder", "Short message placeholder", "Use Message instead of the longer built-in placeholder.", "Source control"),
+    Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Source control", "optional_text"),
     Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
     Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
@@ -88,6 +91,7 @@ SETTINGS = (
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use ASCII punctuation. Off by default.", "Ollama"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
+    Setting("aiCommitCustomInstructions", "scm-toolkit.ai-commit-custom-instructions", "Sync AI commits with Codex instructions", "Read the global Codex custom-instructions file for each generated commit and apply its user preferences alongside the dedicated commit-title rule. Off by default.", "Ollama"),
     Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-manual-commit", "Spellcheck manual commit messages", "Use local Ollama to correct manually entered commit messages.", "Ollama"),
     Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
     Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
@@ -193,6 +197,11 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
 
     for setting in SETTINGS:
         if setting.kind in {"packs", "names", "imports"}:
+            continue
+        if setting.kind == "message_bar":
+            parsed[setting.name] = serialize_message_bar_layout(
+                values.get(setting.name, [""])[0]
+            )
             continue
         if setting.kind == "bool":
             parsed[setting.name] = setting.name in values
@@ -356,6 +365,9 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
+    if setting.kind == "message_bar":
+        return render_message_bar_control(current)
+
     label = html.escape(setting.label)
     description = html.escape(setting.description)
     name = html.escape(setting.name, quote=True)
@@ -443,10 +455,11 @@ def _setting_control(setting: Setting, current: object) -> str:
             f'<div id="{name}-options" class="model-options" role="listbox" hidden></div></div>'
             f'<button type="button" class="download-model" data-model="{name}">Download</button></div>'
         )
+    input_class = ' class="compact-number"' if setting.name == "aiLowMemoryGiB" else ""
     return (
         '<label class="setting field-row">'
         f'<span><strong>{label}</strong><small>{description}</small></span>'
-        f'<input{attrs} name="{name}" value="{value}"{list_attr}{required}></label>'
+        f'<input{attrs}{input_class} name="{name}" value="{value}"{list_attr}{required}></label>'
     )
 
 
@@ -459,9 +472,12 @@ def render_form(
     error: str = "",
     *,
     finish_on_save: bool = True,
+    server_instance: str = "",
 ) -> str:
     sections = []
-    for section in dict.fromkeys(setting.section for setting in SETTINGS):
+    tabs = []
+    section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))
+    for index, section in enumerate(section_names):
         controls = "".join(
             _setting_control(setting, current.get(setting.name, ""))
             for setting in SETTINGS
@@ -484,11 +500,25 @@ def render_form(
         status = ""
         if section in {"Ollama", "Workspace Search"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
-        sections.append(f'<section><h2>{html.escape(section)}</h2>{status}{controls}</section>')
+        tab_id = f"settings-tab-{index}"
+        panel_id = f"settings-panel-{index}"
+        selected = "true" if index == 0 else "false"
+        tabindex = "0" if index == 0 else "-1"
+        hidden = "" if index == 0 else " hidden"
+        tabs.append(
+            f'<button class="settings-tab" type="button" role="tab" id="{tab_id}" '
+            f'aria-controls="{panel_id}" aria-selected="{selected}" tabindex="{tabindex}">'
+            f'{html.escape(section)}</button>'
+        )
+        sections.append(
+            f'<section class="settings-panel" id="{panel_id}" role="tabpanel" '
+            f'aria-labelledby="{tab_id}"{hidden}><h2>{html.escape(section)}</h2>{status}{controls}</section>'
+        )
 
     error_html = f'<div class="error" role="alert">{html.escape(error)}</div>' if error else ""
     action = "/save?token=" + urllib.parse.quote(token)
     models_json = json.dumps(models).replace("<", "\\u003c")
+    instance_json = json.dumps(server_instance).replace("<", "\\u003c")
     submit_label = action_label if finish_on_save else "Import signing key"
     submit_hidden = "" if finish_on_save else " hidden"
     return f"""<!doctype html>
@@ -496,16 +526,22 @@ def render_form(
 <title>Sweetiebot SCM Setup</title><style>
 :root{{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--danger:#f85149}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
-main{{width:min(880px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
-section{{margin:16px 0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}h2{{font-size:16px;margin:10px 0}}
+main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
+.settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
-.field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+.field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.field-row input.compact-number{{width:76px;min-width:76px;flex:none;text-align:right;font-variant-numeric:tabular-nums}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
+.settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
+{MESSAGE_BAR_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
-@media(max-width:620px){{main{{width:min(100% - 20px,880px);margin-top:20px}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
+@media(max-width:760px){{main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea{{width:100%}}}}
+@media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
 </style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Changes save automatically to global Git config. No data leaves this computer.</p></header>
-{error_html}<form method="post" action="{action}">{''.join(sections)}
+{error_html}<form method="post" action="{action}"><div class="settings-layout">
+<nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings categories">{''.join(tabs)}</nav>
+<div class="settings-panels">{''.join(sections)}</div>
+</div>
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 const settingsForm = document.querySelector('form');
@@ -583,6 +619,37 @@ if (settingsForm) {{
     }}
   }});
 }}
+
+const settingsTabs = [...document.querySelectorAll('.settings-tab')];
+const settingsPanels = [...document.querySelectorAll('.settings-panel')];
+
+function activateSettingsCategory(tab, focus = false) {{
+  if (!tab) return;
+  for (const item of settingsTabs) {{
+    const active = item === tab;
+    item.setAttribute('aria-selected', active ? 'true' : 'false');
+    item.tabIndex = active ? 0 : -1;
+  }}
+  for (const panel of settingsPanels) panel.hidden = panel.id !== tab.getAttribute('aria-controls');
+  if (focus) tab.focus();
+}}
+
+for (const tab of settingsTabs) {{
+  tab.addEventListener('click', () => activateSettingsCategory(tab));
+  tab.addEventListener('keydown', event => {{
+    const index = settingsTabs.indexOf(tab);
+    let nextIndex = index;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (index + 1) % settingsTabs.length;
+    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = (index - 1 + settingsTabs.length) % settingsTabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = settingsTabs.length - 1;
+    else return;
+    event.preventDefault();
+    activateSettingsCategory(settingsTabs[nextIndex], true);
+  }});
+}}
+
+{MESSAGE_BAR_SCRIPT}
 
 const packSearch = document.getElementById('pack-search');
 const packTabs = [...document.querySelectorAll('.pack-tab')];
@@ -873,6 +940,19 @@ if (syncButton) {{
     }}
   }});
 }}
+const settingsServerInstance = {instance_json};
+if (settingsServerInstance) {{
+  setInterval(async () => {{
+    try {{
+      const response = await fetch('/health' + location.search, {{cache: 'no-store'}});
+      if (!response.ok) return;
+      const status = await response.json();
+      if (status.instance && status.instance !== settingsServerInstance) location.reload();
+    }} catch {{
+      // The extension may be reloading. Keep the page and retry the same stable URL.
+    }}
+  }}, 1500);
+}}
 </script>
 </main></body></html>"""
 
@@ -902,9 +982,15 @@ def _result_page(saved: bool) -> str:
 
 
 def run_configurator(
-    current: dict[str, object], action_label: str = "Done", *, open_browser: bool = True
+    current: dict[str, object],
+    action_label: str = "Done",
+    *,
+    open_browser: bool = True,
+    port: int = 0,
+    token: str | None = None,
 ) -> bool:
-    token = secrets.token_urlsafe(24)
+    token = token or secrets.token_urlsafe(24)
+    server_instance = secrets.token_urlsafe(12)
     outcome: dict[str, bool | None] = {"saved": None}
     session_settings = dict(current)
 
@@ -936,12 +1022,24 @@ def run_configurator(
             if not self._authorized():
                 self._send("<h1>Not found</h1>", 404)
                 return
-            if urllib.parse.urlsplit(self.path).path == "/models":
+            path = urllib.parse.urlsplit(self.path).path
+            if path == "/health":
+                self._send_json({"instance": server_instance})
+                return
+            if path == "/models":
                 names, status = fetch_ollama_models()
                 self._send_json({"models": names, "status": status})
                 return
             names, status = fetch_ollama_models()
-            self._send(render_form(session_settings, names, status, token, action_label, finish_on_save=open_browser))
+            self._send(render_form(
+                session_settings,
+                names,
+                status,
+                token,
+                action_label,
+                finish_on_save=open_browser,
+                server_instance=server_instance,
+            ))
 
         def do_POST(self) -> None:
             if not self._authorized():
@@ -1019,7 +1117,15 @@ def run_configurator(
                 names, status = fetch_ollama_models()
                 submitted = dict(session_settings)
                 submitted.update(parsed)
-                self._send(render_form(submitted, names, status, token, action_label, str(error)), 400)
+                self._send(render_form(
+                    submitted,
+                    names,
+                    status,
+                    token,
+                    action_label,
+                    str(error),
+                    server_instance=server_instance,
+                ), 400)
                 return
             session_settings.update(parsed)
             outcome["saved"] = True
@@ -1034,7 +1140,10 @@ def run_configurator(
         def log_message(self, _format: str, *_args: object) -> None:
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class SettingsHTTPServer(ThreadingHTTPServer):
+        allow_reuse_address = True
+
+    server = SettingsHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{server.server_port}/?token={urllib.parse.quote(token)}"
     if open_browser:
         print(f"Sweetiebot SCM configurator: {url}")
@@ -1057,6 +1166,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-browser", action="store_true", help="Send the URL to the calling extension.")
     parser.add_argument("--vscode-settings", help="Current feature preferences supplied by the companion extension.")
+    parser.add_argument("--port", type=int, default=0, help="Reuse a stable localhost port for the settings page.")
+    parser.add_argument("--token", help="Reuse the settings page authentication token.")
     parser.add_argument(
         "--open-panel-on-startup",
         choices=("true", "false"),
@@ -1068,4 +1179,11 @@ if __name__ == "__main__":
         apply_vscode_settings(current, json.loads(args.vscode_settings))
     if args.open_panel_on_startup is not None:
         current["openPanelOnStartup"] = args.open_panel_on_startup == "true"
-    run_configurator(current, open_browser=not args.no_browser)
+    if args.port < 0 or args.port > 65535:
+        parser.error("--port must be between 0 and 65535")
+    run_configurator(
+        current,
+        open_browser=not args.no_browser,
+        port=args.port,
+        token=args.token,
+    )

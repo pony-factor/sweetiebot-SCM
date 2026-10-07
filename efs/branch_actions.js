@@ -33,16 +33,59 @@ function queueRepositoryOperation(repository, operation) {
   });
 }
 
-async function autoPullClean(repository, { fetch = false } = {}) {
+async function gitConfig(repository, key, fallback) {
+  if (!repository.rootUri?.fsPath) return fallback;
+  try {
+    const { stdout } = await promisify(execFile)('git', ['config', '--get', key], {
+      cwd: repository.rootUri.fsPath, timeout: 10000
+    });
+    return stdout.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function automaticPullTarget(repository, head, remote) {
+  const defaultBranch = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+  if (head?.name === defaultBranch) {
+    return {
+      remote: remote || await gitConfig(repository, 'scm-toolkit.remote', head.upstream?.remote),
+      name: defaultBranch
+    };
+  }
+  return { remote: head?.upstream?.remote, name: head?.upstream?.name };
+}
+
+async function automaticPullDivergence(repository, head, target) {
+  if (target.remote === head?.upstream?.remote && target.name === head?.upstream?.name) {
+    return { ahead: head.ahead ?? 0, behind: head.behind ?? 0 };
+  }
+  if (!repository.rootUri?.fsPath || !target.remote || !target.name) return undefined;
+  try {
+    const { stdout } = await promisify(execFile)('git', [
+      'rev-list', '--left-right', '--count',
+      `HEAD...refs/remotes/${target.remote}/${target.name}`
+    ], { cwd: repository.rootUri.fsPath, timeout: 10000 });
+    const [ahead, behind] = stdout.trim().split(/\s+/).map(Number);
+    if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return undefined;
+    return { ahead, behind };
+  } catch {
+    return undefined;
+  }
+}
+
+async function autoPullClean(repository, { fetch = false, remote } = {}) {
   // A commit and a fast-forward both update HEAD. Never let Sweetiebot move the
   // branch ref while VS Code/Git is building or finalizing a commit.
   if (commitInProgress(repository)) return false;
   await repository.status();
   if (commitInProgress(repository)) return false;
   const previous = { ...repository.state.HEAD, upstream: { ...repository.state.HEAD?.upstream } };
+  const target = await automaticPullTarget(repository, previous, remote);
+  if (!target.remote || !target.name) return false;
   if (fetch) {
-    if (!previous.upstream.remote || !previous.upstream.name || repository.state.mergeChanges?.length) return false;
-    await repository.fetch({ remote: previous.upstream.remote, ref: previous.upstream.name });
+    if (repository.state.mergeChanges?.length) return false;
+    await repository.fetch({ remote: target.remote, ref: target.name });
     await repository.status();
     if (commitInProgress(repository)) return false;
     const current = repository.state.HEAD;
@@ -51,16 +94,17 @@ async function autoPullClean(repository, { fetch = false } = {}) {
         || current?.upstream?.name !== previous.upstream.name) return false;
   }
   const { HEAD: head, mergeChanges = [] } = repository.state;
-  if (!head?.upstream || !head.behind || head.ahead !== 0
+  const divergence = await automaticPullDivergence(repository, head, target);
+  if (!divergence?.behind || divergence.ahead !== 0
       || mergeChanges.length || commitInProgress(repository)) return false;
   if (repository.rootUri?.fsPath) {
     // Let Git carry nonconflicting local edits; never create a merge commit or
     // overwrite a changed path. A failed fast-forward preserves the worktree.
-    await promisify(execFile)('git', ['merge', '--ff-only', `refs/remotes/${head.upstream.remote}/${head.upstream.name}`], {
+    await promisify(execFile)('git', ['merge', '--ff-only', `refs/remotes/${target.remote}/${target.name}`], {
       cwd: repository.rootUri.fsPath, timeout: 120000
     });
   } else {
-    await repository.merge(`${head.upstream.remote}/${head.upstream.name}`);
+    await repository.merge(`${target.remote}/${target.name}`);
   }
   await repository.status();
   return true;
@@ -85,6 +129,67 @@ async function returnHome(repository) {
 
 function errorText(error) {
   return [error?.message, error?.stderr, error?.stdout].filter(Boolean).join('\n');
+}
+
+const BROKEN_LINK_EMOJI = '⛓️‍💥';
+
+function gitErrorLines(error) {
+  const seen = new Set();
+  const lines = [];
+  for (const value of [error?.stderr, error?.stdout, error?.message]) {
+    for (const raw of String(value || '').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line
+          || /^(?:Git error|Failed to execute git)$/i.test(line)
+          || /^Command failed: git\b/i.test(line)
+          || seen.has(line)) continue;
+      seen.add(line);
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+
+function formatGitError(error) {
+  const details = errorText(error);
+  let reason;
+
+  if (/index\.lock|unable to create .*\.lock|another git process/i.test(details)) {
+    reason = 'Git is locked by another Git process. Let that operation finish, or remove the stale lock file if no Git process is running.';
+  } else if (/CONFLICT|unmerged files|unmerged changes|resolve your current index first|fix conflicts/i.test(details)) {
+    reason = 'Git stopped because there are unresolved merge conflicts. Resolve the conflicted files, then try again.';
+  } else if (/local changes.*would be overwritten|would be overwritten by (?:checkout|merge)/i.test(details)) {
+    reason = 'Git refused because local changes would be overwritten. Commit or move those changes, then try again.';
+  } else if (/authentication failed|could not read username|permission denied \(publickey\)|repository not found/i.test(details)) {
+    reason = 'Git could not authenticate with the remote. Check the GitHub sign-in and remote access, then try again.';
+  } else if (/non-fast-forward|fetch first|tip of your current branch is behind/i.test(details)) {
+    reason = 'Git rejected the update because the remote branch has newer commits. Sync the branch, then try again.';
+  } else if (/not a git repository/i.test(details)) {
+    reason = 'This folder is not a Git repository.';
+  } else if (/pathspec .* did not match|unknown revision|bad revision|couldn['’]t find remote ref/i.test(details)) {
+    reason = 'Git could not find the requested branch, ref, or path.';
+  } else if (/detached HEAD|not currently on a branch/i.test(details)) {
+    reason = 'Git cannot complete this operation while HEAD is detached. Check out a branch, then try again.';
+  } else {
+    const line = gitErrorLines(error)[0];
+    reason = line
+      ? line.replace(/^(?:fatal|error):\s*/i, '').slice(0, 320)
+      : `Git reported ${error?.gitErrorCode || 'an error'} without a specific reason. Open Git Output for the command details.`;
+  }
+
+  return `Git could not complete the operation: ${reason} ${BROKEN_LINK_EMOJI}`;
+}
+
+function explainGitError(error) {
+  const message = String(error?.message || '').trim();
+  const isGitFailure = Boolean(
+    error?.gitErrorCode
+    || error?.stderr
+    || error?.stdout
+    || /^(?:Git error|Failed to execute git)$/i.test(message)
+  );
+  if (!isGitFailure || message.endsWith(BROKEN_LINK_EMOJI)) return error;
+  return new Error(formatGitError(error), { cause: error });
 }
 
 async function retryConnection(operation) {
@@ -340,25 +445,29 @@ function registerBranchCommands(vscode, context) {
   };
 
   for (const [command, action] of [
-    ['scmToolkit.returnHome', returnHome],
-    ['scmToolkit.autoPullClean', autoPullClean],
-    ['scmToolkit.createBranch', createBranch],
-    ['scmToolkit.publishBranch', publishBranch],
-    ['scmToolkit.deleteBranch', deleteBranch],
-    ['scmToolkit.syncBranch', syncBranch]
+    ['sweetiebot.returnHome', returnHome],
+    ['sweetiebot.autoPullClean', autoPullClean],
+    ['sweetiebot.createBranch', createBranch],
+    ['sweetiebot.publishBranch', publishBranch],
+    ['sweetiebot.deleteBranch', deleteBranch],
+    ['sweetiebot.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
-      const repository = await resolveRepository(uri);
-      return queueRepositoryOperation(repository, () => action(repository, options));
+      try {
+        const repository = await resolveRepository(uri);
+        return await queueRepositoryOperation(repository, () => action(repository, options));
+      } catch (error) {
+        throw explainGitError(error);
+      }
     }));
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('scmToolkit.beginCommit', async uri => {
+    vscode.commands.registerCommand('sweetiebot.beginCommit', async uri => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, () => beginRepositoryCommit(repository));
     }),
-    vscode.commands.registerCommand('scmToolkit.endCommit', async uri => {
+    vscode.commands.registerCommand('sweetiebot.endCommit', async uri => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, () => endRepositoryCommit(repository));
     })
@@ -409,5 +518,7 @@ module.exports = {
   autoPullClean,
   beginRepositoryCommit,
   endRepositoryCommit,
-  commitInProgress
+  commitInProgress,
+  formatGitError,
+  explainGitError
 };

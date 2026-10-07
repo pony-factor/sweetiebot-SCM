@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -31,15 +33,15 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         package = json.loads((workspace_search.SOURCE / "package.json").read_text())
         command_ids = {command["command"] for command in package["contributes"]["commands"]}
 
-        self.assertIn("onCommand:scmToolkit.openSettings", package["activationEvents"])
-        self.assertIn("scmToolkit.openSettings", command_ids)
-        self.assertIn("scmToolkit.chatgpt.searchRepositories", command_ids)
+        self.assertIn("onCommand:sweetiebot.openSettings", package["activationEvents"])
+        self.assertIn("sweetiebot.openSettings", command_ids)
+        self.assertIn("sweetiebot.chatgpt.searchRepositories", command_ids)
         self.assertIn(
-            "onCommand:scmToolkit.chatgpt.searchRepositories",
+            "onCommand:sweetiebot.chatgpt.searchRepositories",
             package["activationEvents"],
         )
         self.assertIn(
-            "vscode.commands.registerCommand('scmToolkit.openSettings'",
+            "vscode.commands.registerCommand('sweetiebot.openSettings'",
             (workspace_search.SOURCE / "extension.js").read_text(),
         )
 
@@ -154,6 +156,12 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
             self.assertTrue((destination / "configurator.py").is_file())
+            subprocess.run(
+                [sys.executable, "-I", "-B", "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); import configurator",
+                 str(destination)],
+                check=True, capture_output=True, text=True, cwd=root,
+            )
             self.assertTrue((destination / "toolkit_settings.py").is_file())
             self.assertTrue((destination / "branch_names.py").is_file())
             self.assertTrue((destination / "branch_name_packs.json").is_file())

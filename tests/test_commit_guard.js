@@ -25,8 +25,8 @@ async function run(allowed, failCommit = false) {
   const commands = {
     async executeCommand(command) {
       calls.push(command);
-      if (command === 'scmToolkit.checkCommitLimits') return allowed;
-      if (command === 'scmToolkit.beginCommit' || command === 'scmToolkit.endCommit') return undefined;
+      if (command === 'sweetiebot.checkCommitLimits') return allowed;
+      if (command === 'sweetiebot.beginCommit' || command === 'sweetiebot.endCommit') return undefined;
       throw new Error(`Unexpected command: ${command}`);
     }
   };
@@ -48,20 +48,20 @@ async function run(allowed, failCommit = false) {
 (async () => {
   const cancelled = await run(false);
   assert.equal(cancelled.commits, 0, 'Closing the warning must cancel the commit');
-  assert.deepEqual(cancelled.calls, ['scmToolkit.checkCommitLimits']);
+  assert.deepEqual(cancelled.calls, ['sweetiebot.checkCommitLimits']);
 
   const allowed = await run(true);
   assert.equal(allowed.commits, 1, 'Commit anyway must allow the commit');
   assert.deepEqual(allowed.calls, [
-    'scmToolkit.checkCommitLimits',
-    'scmToolkit.beginCommit',
+    'sweetiebot.checkCommitLimits',
+    'sweetiebot.beginCommit',
     'commit',
-    'scmToolkit.endCommit'
+    'sweetiebot.endCommit'
   ]);
 
   const failed = await run(true, true);
   assert.equal(failed.commits, 1);
-  assert.equal(failed.calls.at(-1), 'scmToolkit.endCommit',
+  assert.equal(failed.calls.at(-1), 'sweetiebot.endCommit',
     'A failed Git commit must still release the auto-pull pause');
   console.log('Commit guard tests passed');
 })().catch(error => {

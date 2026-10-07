@@ -335,7 +335,7 @@ async function confirmCommitLimits(vscode, cwd, status) {
 
 function registerCommitLimitCommand(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand(
-    'scmToolkit.checkCommitLimits',
+    'sweetiebot.checkCommitLimits',
     async uri => {
       const root = vscode.Uri.from(uri?.rootUri ?? uri);
       if (root.scheme !== 'file') return true;

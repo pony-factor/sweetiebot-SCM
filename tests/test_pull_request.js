@@ -106,17 +106,17 @@ async function run() {
     },
     commands: {
       registerCommand(id, handler) {
-        assert.equal(id, 'scmToolkit.openPullRequestChat');
+        assert.equal(id, 'sweetiebot.openPullRequestChat');
         callback = handler;
         return { dispose() {} };
       },
       async getCommands() {
         return browserAvailable
-          ? ['workbench.action.browser.open', ...(codexSnapshot ? ['scmToolkit.readCodexConversation'] : [])]
+          ? ['workbench.action.browser.open', ...(codexSnapshot ? ['sweetiebot.readCodexConversation'] : [])]
           : [];
       },
       async executeCommand(id, ...args) {
-        if (id === 'scmToolkit.readCodexConversation') return codexSnapshot;
+        if (id === 'sweetiebot.readCodexConversation') return codexSnapshot;
         calls.push({ id, args });
       }
     }
@@ -177,7 +177,7 @@ async function run() {
   repository.state.HEAD.name = 'draft';
 
   const packageJson = require('../efs/package.json');
-  assert(packageJson.activationEvents.includes('onCommand:scmToolkit.openPullRequestChat'));
+  assert(packageJson.activationEvents.includes('onCommand:sweetiebot.openPullRequestChat'));
   assert(packageJson.activationEvents.includes('onUri'));
 
   const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
@@ -231,7 +231,7 @@ async function run() {
     refreshBranchControls() {},
     notifications: { error(error) { throw error; } },
     commands: { async executeCommand(id, root, options) {
-      assert.equal(id, 'scmToolkit.openPullRequestChat');
+      assert.equal(id, 'sweetiebot.openPullRequestChat');
       assert.equal(root, uri);
       assert.equal(options.branch, 'draft');
       assert.equal(options.base, 'main');

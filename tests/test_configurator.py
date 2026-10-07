@@ -87,6 +87,13 @@ class SubmissionTests(unittest.TestCase):
         values["postCommitSpellcheck"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["postCommitSpellcheck"])
 
+    def test_ai_commit_instruction_sync_defaults_off_and_saves_on(self):
+        values = form_values()
+        self.assertFalse(install.DEFAULT_SETTINGS["aiCommitCustomInstructions"])
+        self.assertFalse(configurator.parse_submission(values)["aiCommitCustomInstructions"])
+        values["aiCommitCustomInstructions"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["aiCommitCustomInstructions"])
+
     def test_browser_toggles_default_off_and_save_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["cmdClickCloseOthers"])
@@ -167,6 +174,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(parsed["commitAndPush"])
         self.assertEqual(parsed["aiCommitModel"], "qwen2.5-coder:7b")
         self.assertEqual(parsed["sourceControlLabel"], "Sweetie Bot")
+        self.assertEqual(parsed["messagePlaceholder"], "Message")
         self.assertTrue(parsed["openPanelOnStartup"])
         self.assertEqual(parsed["commitButtonLabel"], "Send")
         self.assertEqual(parsed["commitAndSendButtonLabel"], "Send")
@@ -181,6 +189,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(parsed["branchCustomNames"], "")
         self.assertEqual(parsed["branchNameImports"], "[]")
         self.assertEqual(parsed["chatgptCustomInstructions"], "")
+        self.assertFalse(parsed["aiCommitCustomInstructions"])
         self.assertTrue(parsed["chatgptWebCodexCoauthor"])
 
     def test_parses_disabled_custom_and_imported_branch_names(self):
@@ -231,6 +240,20 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "greater than zero"):
             configurator.parse_submission(values)
 
+    def test_memory_threshold_uses_compact_numeric_control(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save"
+        )
+
+        self.assertIn(
+            'type="number" min="0.1" step="0.1" inputmode="decimal" class="compact-number" name="aiLowMemoryGiB"',
+            page,
+        )
+        self.assertIn(
+            ".field-row input.compact-number{width:76px;min-width:76px",
+            page,
+        )
+
     def test_form_escapes_values_and_lists_local_models(self):
         current = dict(install.DEFAULT_SETTINGS, defaultBranch='<script>alert("x")</script>')
 
@@ -270,6 +293,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="branchCustomNames"', page)
         self.assertIn('name="branchNameImports"', page)
         self.assertIn('name="sourceControlLabel"', page)
+        self.assertIn('name="messagePlaceholder"', page)
         self.assertIn('name="openPanelOnStartup"', page)
         self.assertIn("Open Sweetie Bot on startup", page)
         self.assertIn('name="commitButtonLabel"', page)
@@ -284,6 +308,8 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="workspaceSearchLabel"', page)
         self.assertIn('name="workspaceSearchAskOllama"', page)
         self.assertIn('name="workspaceSearchChatModel"', page)
+        self.assertIn('name="aiCommitCustomInstructions"', page)
+        self.assertIn("Sync AI commits with Codex instructions", page)
         self.assertIn("updateAskOllamaRequirement", page)
         self.assertIn('name="chatgptCustomInstructions"', page)
         self.assertIn('id="sync-chatgpt-instructions"', page)
@@ -294,10 +320,16 @@ class SubmissionTests(unittest.TestCase):
     def test_extension_payload_exposes_startup_user_setting(self):
         parsed = configurator.parse_submission(form_values())
         parsed["openPanelOnStartup"] = False
+        parsed["messagePlaceholder"] = "Commit here"
+        parsed["commitButtonLabel"] = "Commit"
+        parsed["commitAndSendButtonLabel"] = "Commit + Push"
 
         payload = configurator.extension_settings_payload(parsed)
 
         self.assertFalse(payload["vscodeSettings"]["openPanelOnStartup"])
+        self.assertEqual(payload["vscodeSettings"]["messagePlaceholder"], "Commit here")
+        self.assertEqual(payload["vscodeSettings"]["commitButtonLabel"], "Commit")
+        self.assertEqual(payload["vscodeSettings"]["commitAndSendButtonLabel"], "Commit + Push")
         self.assertEqual(
             payload["workspaceSearch"]["embeddingModel"],
             install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],
@@ -332,6 +364,36 @@ class GitConfigTests(unittest.TestCase):
         settings = toolkit_settings.load_settings()
 
         self.assertEqual(settings["branchNameDisabledPacks"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_legacy_short_placeholder_false_restores_native_placeholder(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            None if key == "scm-toolkit.message-placeholder" else default
+        )
+        read_bool.side_effect = lambda key, default: (
+            False if key == "scm-toolkit.short-placeholder" else default
+        )
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["messagePlaceholder"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_new_message_placeholder_overrides_legacy_toggle(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            "Commit here" if key == "scm-toolkit.message-placeholder" else default
+        )
+        read_bool.return_value = False
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["messagePlaceholder"], "Commit here")
+        self.assertFalse(any(
+            call.args[0] == "scm-toolkit.short-placeholder"
+            for call in read_bool.call_args_list
+        ))
 
     @patch("configurator.shutil.which", return_value="/usr/bin/git")
     @patch("configurator.subprocess.run")

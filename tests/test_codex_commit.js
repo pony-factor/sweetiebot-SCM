@@ -40,7 +40,7 @@ async function run() {
   assert.equal(context.codexButton.disabled, false, 'Git registration after bind enables the button');
   provider.acceptInputCommand = { id: 'provider.updatedCommit', arguments: ['updated-repository'] };
   await context.commit({ stopPropagation() {} });
-  assert.equal(calls[0].id, 'scmToolkit.prepareCodexCommit');
+  assert.equal(calls[0].id, 'sweetiebot.prepareCodexCommit');
   assert.equal(calls[1].id, 'provider.updatedCommit', 'click uses the latest provider command');
   assert.deepEqual(calls[1].args, ['updated-repository']);
   assert.match(calls[1].message, /Co-authored-by: Codex <noreply@openai.com>/);
@@ -52,10 +52,10 @@ async function run() {
   context.settings.codexCommitContext = true;
   context.commands.executeCommand = async (id, ...args) => {
     calls.push({ id, args, message: input.value });
-    if (id === 'scmToolkit.generateCodexCommitMessage') return 'Fix local commit generation';
+    if (id === 'sweetiebot.generateCodexCommitMessage') return 'Fix local commit generation';
   };
   await context.commit({ stopPropagation() {} });
-  assert.deepEqual(calls.map(call => call.id), ['scmToolkit.prepareCodexCommit', 'scmToolkit.generateCodexCommitMessage', 'provider.updatedCommit']);
+  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.prepareCodexCommit', 'sweetiebot.generateCodexCommitMessage', 'provider.updatedCommit']);
   assert.match(calls[2].message, /^Fix local commit generation\n\nCo-authored-by: Codex/);
   assert.equal(input.value, '');
   calls.length = 0;
@@ -70,7 +70,7 @@ async function run() {
   calls.length = 0;
   context.commands.executeCommand = async id => {
     calls.push({ id });
-    if (id === 'scmToolkit.prepareCodexCommit') return;
+    if (id === 'sweetiebot.prepareCodexCommit') return;
     input.setValue('A newer manual message');
     return 'Generated message';
   };

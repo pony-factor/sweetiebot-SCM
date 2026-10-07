@@ -40,15 +40,6 @@
     border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
 }
 
-.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
-    box-sizing: border-box;
-    border-left: 1px solid color-mix(
-        in srgb,
-        var(--vscode-descriptionForeground) 35%,
-        transparent
-    );
-}
-
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:hover,
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:hover,
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings:hover {

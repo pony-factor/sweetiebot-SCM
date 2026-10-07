@@ -16,7 +16,7 @@ SETTINGS = {
     "branchNameDisabledPacks": "",
     "branchCustomNames": "",
     "branchNameImports": "[]",
-    "shortPlaceholder": True,
+    "messagePlaceholder": "Message",
     "commitButtonLabel": "Send",
     "commitAndSendButtonLabel": "Send and Push",
     "sourceControlLabel": "Sweetie Bot",
@@ -120,6 +120,7 @@ class TransformTests(unittest.TestCase):
         )
         self.assertEqual(css.count("--vscode-button-background: transparent;"), 2)
         self.assertIn("background: transparent !important;", css)
+        self.assertNotIn(".scm-toolkit-settings::before", css)
         self.assertNotIn(".scm-view .button-container >", css)
 
     def test_filled_button_setting_controls_outlined_stylesheet(self):
@@ -190,15 +191,22 @@ class TransformTests(unittest.TestCase):
         self.assertNotIn("scm-toolkit-refreshing", js)
         self.assertIn("historyItemRemoteRef.get()", js)
         self.assertIn("resolveHistoryItemRefsCommonAncestor", js)
-        self.assertIn("commands.executeCommand('scmToolkit.autoPullClean', repositoryArgument)", js)
+        self.assertIn("commands.executeCommand('sweetiebot.autoPullClean', repositoryArgument)", js)
         self.assertIn("scm-toolkit-autocomplete", css)
         self.assertIn("scm-toolkit-auto-publish", css)
         self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 2)
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
+        self.assertIn("scmToolkitCustomizeMessagePlaceholder", js)
         self.assertIn("settings.commitAndSendButtonLabel", js)
+        self.assertIn("configuration.getValue('scmToolkit.messagePlaceholder')", js)
+        self.assertIn("configuredLabel('commitButtonLabel'", js)
+        self.assertIn("configuredLabel(", js)
+        self.assertIn("'commitAndSendButtonLabel'", js)
+        self.assertIn("event.affectsConfiguration('scmToolkit.messagePlaceholder')", js)
+        self.assertIn("event.affectsConfiguration('scmToolkit.commitButtonLabel')", js)
         self.assertIn("configuration.getValue('git.postCommitCommand') === 'push'", js)
         self.assertIn("'.button-container > .monaco-button:first-child'", js)
-        self.assertIn("'scmToolkit.publishBranch'", js)
+        self.assertIn("'sweetiebot.publishBranch'", js)
         self.assertIn("scmToolkit.autoPublishNewBranches", js)
         self.assertIn('[id="workbench.view.scm"] .monaco-progress-container', css)
         self.assertIn(".pane:has(.scm-view) > .monaco-progress-container", css)
@@ -210,14 +218,14 @@ class TransformTests(unittest.TestCase):
         self.assertIn("...(currentCommitCommand.arguments ?? [])", js)
         self.assertNotIn("commands.executeCommand('git.commit', currentRepositoryArgument)", js)
         self.assertIn("scmToolkitGuardCommit(", js)
-        self.assertIn("'scmToolkit.checkCommitLimits'", js)
+        self.assertIn("'sweetiebot.checkCommitLimits'", js)
         self.assertIn("postCommitCommand: null", js)
         self.assertIn("scmToolkitPushWithPullRetry(repository, originalPush)", js)
         self.assertIn("error?.gitErrorCode !== 'PushRejected'", js)
         self.assertIn("await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name })", js)
         self.assertIn("await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`)", js)
         self.assertIn("await originalPush.call(repository, repository.HEAD)", js)
-        self.assertIn("commands.executeCommand('scmToolkit.openPullRequestChat', repository, {", js)
+        self.assertIn("commands.executeCommand('sweetiebot.openPullRequestChat', repository, {", js)
         self.assertIn("mcpService.activateCollections()", js)
         self.assertIn("'github_comment_pull_request_source'", js)
         self.assertIn("scm-toolkit-pull-request", css)
@@ -225,22 +233,23 @@ class TransformTests(unittest.TestCase):
         self.assertIn("scmToolkitBranchNamePool", js)
         runtime_json = js.split("const scmToolkitSettings = ", 1)[1].split(";\n/* edits:", 1)[0]
         runtime = json.loads(runtime_json)
+        self.assertEqual(runtime["messagePlaceholder"], "Message")
         self.assertEqual(
             runtime["branchNamePacks"],
             branch_names.load_catalog()["packs"],
         )
         self.assertEqual(runtime["branchNameDisabledPacks"], [])
         self.assertEqual(runtime["branchCustomNames"], [])
-        self.assertIn("commands.executeCommand('scmToolkit.createBranch', repository, {", js)
+        self.assertIn("commands.executeCommand('sweetiebot.createBranch', repository, {", js)
         self.assertIn("currentRepositoryUri = provider.rootUri;", js)
         self.assertIn("const repository = currentRepositoryUri;", js)
         self.assertIn("const repositoryArgument = currentRepositoryUri;", js)
-        self.assertIn("commands.executeCommand('scmToolkit.deleteBranch', repositoryArgument, {", js)
+        self.assertIn("commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {", js)
         self.assertIn("scm-toolkit-sync-branch", css)
-        self.assertIn("scm-toolkit-settings codicon codicon-gear", js)
-        self.assertIn("commands.executeCommand('scmToolkit.openSettings')", js)
+        self.assertIn("settingsButton.textContent = '🪄'", js)
+        self.assertIn("commands.executeCommand('sweetiebot.openSettings')", js)
         self.assertIn("scm-toolkit-settings", css)
-        self.assertIn("commands.executeCommand('scmToolkit.syncBranch', repository, {", js)
+        self.assertIn("commands.executeCommand('sweetiebot.syncBranch', repository, {", js)
         self.assertIn("typeof repository.merge !== 'function'", js)
         self.assertNotIn("resolveMergeConflicts", js)
         self.assertEqual(js.count(install.START), 1)
@@ -252,6 +261,7 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(install.DEFAULT_SETTINGS["sourceControlLabel"], "Sweetie Bot")
 
     def test_commit_button_label_defaults_to_send(self):
+        self.assertEqual(install.DEFAULT_SETTINGS["messagePlaceholder"], "Message")
         self.assertEqual(install.DEFAULT_SETTINGS["commitButtonLabel"], "Send")
         self.assertEqual(install.DEFAULT_SETTINGS["commitAndSendButtonLabel"], "Send")
         self.assertTrue(install.DEFAULT_SETTINGS["autoPublishToggle"])

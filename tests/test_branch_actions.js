@@ -356,19 +356,19 @@ async function run() {
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
     assert.equal(context.subscriptions.length, 9);
-    assert.equal(await commands.get('scmToolkit.returnHome')({ rootUri: uri }), 'main');
-    assert.equal(await commands.get('scmToolkit.createBranch')(uri, options), 'fresh');
-    assert.equal(await commands.get('scmToolkit.createBranch')({ ...uri }, options), 'fresh');
-    assert.equal(await commands.get('scmToolkit.createBranch')({ rootUri: uri }, options), 'fresh');
+    assert.equal(await commands.get('sweetiebot.returnHome')({ rootUri: uri }), 'main');
+    assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
+    assert.equal(await commands.get('sweetiebot.createBranch')({ ...uri }, options), 'fresh');
+    assert.equal(await commands.get('sweetiebot.createBranch')({ rootUri: uri }, options), 'fresh');
     repository.state.HEAD = { name: 'topic' };
-    assert.equal(await commands.get('scmToolkit.publishBranch')({ rootUri: uri }, {
+    assert.equal(await commands.get('sweetiebot.publishBranch')({ rootUri: uri }, {
       branch: 'topic', remote: 'origin'
     }), true);
     repository.state.HEAD = { name: 'topic' };
-    assert.equal(await commands.get('scmToolkit.syncBranch')({ rootUri: uri }, {
+    assert.equal(await commands.get('sweetiebot.syncBranch')({ rootUri: uri }, {
       ...options, branch: 'topic'
     }), 'topic');
-    assert.equal(await commands.get('scmToolkit.deleteBranch')({ rootUri: uri }, {
+    assert.equal(await commands.get('sweetiebot.deleteBranch')({ rootUri: uri }, {
       ...options, branch: 'topic'
     }), 'topic');
 
@@ -388,11 +388,11 @@ async function run() {
       await gate;
       repository.state.HEAD.behind = 0;
     };
-    const deletion = commands.get('scmToolkit.deleteBranch')({ rootUri: uri }, {
+    const deletion = commands.get('sweetiebot.deleteBranch')({ rootUri: uri }, {
       ...options, branch: 'topic'
     });
     await started;
-    const background = commands.get('scmToolkit.autoPullClean')({ rootUri: uri });
+    const background = commands.get('sweetiebot.autoPullClean')({ rootUri: uri });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(merges, 1, 'Background updates must not overlap branch cleanup');
     releaseMerge();
@@ -401,8 +401,8 @@ async function run() {
     assert.equal(merges, 1);
 
     repository.checkout = async () => { throw new Error('Checkout blocked'); };
-    await assert.rejects(commands.get('scmToolkit.returnHome')(uri), /Checkout blocked/);
-    assert.equal(await commands.get('scmToolkit.autoPullClean')(uri), false,
+    await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /Checkout blocked/);
+    assert.equal(await commands.get('sweetiebot.autoPullClean')(uri), false,
       'A failed operation must not block subsequent background work');
   }
   console.log('Branch action regression checks passed.');
