@@ -29,7 +29,8 @@
     "onCommand:scmToolkit.workspaceSearch.clearIndex",
     "onCommand:scmToolkit.chatgpt.searchRepositories",
     "onCommand:scmToolkit.squashMergePullRequest",
-    "onUri"
+    "onUri",
+    "onCommand:scmToolkit.openFileOnGitHub"
   ],
   "contributes": {
     "views": {
@@ -68,6 +69,11 @@
         "command": "scmToolkit.openPullRequestBatchChat",
         "title": "Squash Selected Pull Requests with ChatGPT",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "scmToolkit.openFileOnGitHub",
+        "title": "Open File on GitHub",
+        "icon": "$(github)"
       }
     ],
     "menus": {
@@ -88,6 +94,20 @@
           "command": "scmToolkit.squashMergeSelectedPullRequest",
           "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "scmToolkit.openFileOnGitHub",
+          "when": "resourceScheme == file",
+          "group": "navigation@50"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "scmToolkit.openFileOnGitHub",
+          "when": "resourceScheme == file",
+          "group": "navigation@50"
         }
       ]
     },

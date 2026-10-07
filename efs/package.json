@@ -30,7 +30,8 @@
     "onCommand:scmToolkit.workspaceSearch.clearIndex",
     "onCommand:scmToolkit.chatgpt.searchRepositories",
     "onCommand:scmToolkit.squashMergePullRequest",
-    "onUri"
+    "onUri",
+    "onCommand:scmToolkit.openFileOnGitHub"
   ],
   "contributes": {
     "views": {
@@ -74,6 +75,11 @@
         "command": "scmToolkit.closeAllEditors",
         "title": "Close All Editors",
         "icon": "$(close-all)"
+      },
+      {
+        "command": "scmToolkit.openFileOnGitHub",
+        "title": "Open File on GitHub",
+        "icon": "$(github)"
       }
     ],
     "menus": {
@@ -100,6 +106,20 @@
         {
           "command": "scmToolkit.closeAllEditors",
           "group": "navigation@100"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "scmToolkit.openFileOnGitHub",
+          "when": "resourceScheme == file",
+          "group": "navigation@50"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "scmToolkit.openFileOnGitHub",
+          "when": "resourceScheme == file",
+          "group": "navigation@50"
         }
       ]
     },

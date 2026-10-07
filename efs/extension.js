@@ -10,6 +10,7 @@ const { registerPullRequestCommand } = require('./pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
+const { registerOpenFileOnGitHub } = require('./github_file');
 const { registerBranchMaintenance } = require('./branch_maintenance');
 const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
@@ -240,6 +241,7 @@ async function activate(context) {
   registerPullRequestBatchCommand(vscode, context);
   registerEditorActions(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
+  registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);
   const provider = new WorkspaceSearchViewProvider(index, settings);
