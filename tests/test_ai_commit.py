@@ -573,6 +573,22 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("Use plain language.", custom)
         self.assertNotIn("Commit titles should", custom)
 
+    def test_long_standalone_instructions_are_not_truncated(self):
+        long_rule = "Keep this entire preference. " * 120
+        self.assertGreater(len(long_rule), 1800)
+        with patch.object(
+            ai_commit,
+            "commit_custom_instructions",
+            return_value=long_rule,
+        ):
+            prompt = ai_commit.prompt_for_diff(
+                "1 file changed",
+                "diff --git a/README.md b/README.md\n+text",
+            )
+
+        self.assertIn(long_rule, prompt)
+        self.assertNotIn("[custom instructions truncated]", prompt)
+
     def test_missing_standalone_file_uses_default_title_rule(self):
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / "missing.md"

@@ -320,7 +320,7 @@ Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-
 
 Both normal and Codex-context generation read commit-writing preferences from `~/.config/sweetiebot/commit-instructions.md` on every request. Set `SCM_TOOLKIT_COMMIT_INSTRUCTIONS` to use another path. The installer seeds this standalone Sweetiebot file from `assets/commit-instructions.md` only when the file does not already exist; updates and reinstalls never overwrite it, so local edits persist independently of Codex and `~/.codex/AGENTS.md`.
 
-The default standalone file contains the detailed emoji-selection rules and title style. If the file does not contain a dedicated `Commit titles should …` line, titles fall back to one professional emoji followed by a concise imperative title. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
+The default standalone file contains the detailed emoji-selection rules and title style. Sweetiebot includes the complete instruction file in the commit prompt rather than applying the old 1,800-character custom-instruction cap. If the file does not contain a dedicated `Commit titles should …` line, titles fall back to one professional emoji followed by a concise imperative title. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
 ### Concurrent PDF OCR and commit generation
 
