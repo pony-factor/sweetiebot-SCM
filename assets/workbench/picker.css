@@ -582,11 +582,17 @@
     transition-delay: .4s;
 }
 
-/* Replace the info glyph only for commit-message generation. */
-.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before {
-    content: '✨';
+/* Give commit generation and PR merge failures their own notification glyphs. */
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-pr-merge-failed .notification-list-item-icon.codicon-error::before {
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
     font-size: 14px;
+}
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before {
+    content: '✨';
+}
+.notification-list-item.scm-toolkit-pr-merge-failed .notification-list-item-icon.codicon-error::before {
+    content: '⛓️‍💥';
 }
 
 /* Dim the whole action, including its outline and Settings, consistently. */
