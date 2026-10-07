@@ -15,7 +15,7 @@ const TEXT_EXTENSIONS = new Set([
 const TEXTUTIL_EXTENSIONS = new Set(['.doc', '.docx', '.odt', '.rtf']);
 const METADATA_EXTENSIONS = new Set(['.key', '.numbers', '.pages']);
 const PDF_EXTENSION = '.pdf';
-const PDFKIT_JXA = \`
+const PDFKIT_JXA = `
 ObjC.import('Foundation');
 ObjC.import('PDFKit');
 function run(argv) {
@@ -32,7 +32,7 @@ function run(argv) {
   }
   return pages.join('\\f');
 }
-\`.trim();
+`.trim();
 
 function normalizeExtractedText(value) {
   return String(value || '')

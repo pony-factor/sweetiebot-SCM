@@ -38,7 +38,7 @@
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-hide-chat-timestamps.js</key>
 		<data>
-		TBBc8fQQOML1NsDwCqyaAcLHtgw=
+		HDIqejIL2h4ZSEhPoJqc4KCoT40=
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-hide-dictation.js</key>
 		<data>
@@ -78,7 +78,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		6ShzGGGfoxahxBQp67AEl0f0HUc=
+		WU6ut6cg727yffwFQN/Em9aGeGg=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -110,11 +110,15 @@
 		</data>
 		<key>Resources/toolkit/efs/extension.js</key>
 		<data>
-		3Ce672EcTakABOxPgmQSimPU1QA=
+		YbpGbsnyCdK2oej0Dqo4cpp2a8E=
 		</data>
 		<key>Resources/toolkit/efs/extract.js</key>
 		<data>
-		BcbjYKUL9I+sgBlMWmHtaQxEZ+8=
+		xDY7iNKPlMsaSQkTFXKp4zT3Vs4=
+		</data>
+		<key>Resources/toolkit/efs/github_file.js</key>
+		<data>
+		fnPhntb7zr6rgqAnVdABCarqV0I=
 		</data>
 		<key>Resources/toolkit/efs/github_pr_actions.js</key>
 		<data>
@@ -122,7 +126,7 @@
 		</data>
 		<key>Resources/toolkit/efs/github_pr_refresh.js</key>
 		<data>
-		Azprn5IKxiHaD3PjzugW6XUr/Bk=
+		p3UAbpwbQVXb2PY8ju4dJe/Abys=
 		</data>
 		<key>Resources/toolkit/efs/media/efs.svg</key>
 		<data>
@@ -134,7 +138,7 @@
 		</data>
 		<key>Resources/toolkit/efs/package.json</key>
 		<data>
-		fnCjKL7nM/AjEnpEW6mwtmsbIBU=
+		EWWk+fAHntRNk9LnaVxZy7SjRl4=
 		</data>
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<data>
@@ -150,15 +154,15 @@
 		</data>
 		<key>Resources/toolkit/efs/search_index.js</key>
 		<data>
-		yEEim/Xp45KHnlm/ucwmpc893hQ=
+		qwrgAy+aTisJ0/kz62Vt8sh3FEk=
 		</data>
 		<key>Resources/toolkit/efs/view.js</key>
 		<data>
-		64JsE/g456y+twyisxiYcNlrUqg=
+		4BjK6/sUhToxRmYO1IMeiVr01mk=
 		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
-		ZoBPz1ukir9wq0hpjiVPlDSFd0w=
+		buU6DnYbFX2rUZFE7icaIlxe0cs=
 		</data>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<data>
@@ -206,7 +210,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
-		W6SSRZB0h1OJ/52/rwBc6oAPLLE=
+		R5tMoAUGhaKkwt+f1lNRD1UjC60=
 		</data>
 		<key>Resources/toolkit/scripts/configure.py</key>
 		<data>
@@ -246,7 +250,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/toolkit_settings.py</key>
 		<data>
-		0e9qZC5xCNBBWwwdfI1WbcBoaxg=
+		8dYZG1IVhDd2J3iYCuSIPhcNKJU=
 		</data>
 		<key>Resources/toolkit/scripts/update.py</key>
 		<data>
@@ -351,11 +355,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			TBBc8fQQOML1NsDwCqyaAcLHtgw=
+			HDIqejIL2h4ZSEhPoJqc4KCoT40=
 			</data>
 			<key>hash2</key>
 			<data>
-			YLQhDusOWdnMwZVca2gDSI+uzF6fQW9XlmFS00PZh1Q=
+			t0STZ19FxH010pfu7Ibeatb7lt5uNFPk9nWNyjLhwqo=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-hide-dictation.js</key>
@@ -461,11 +465,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			6ShzGGGfoxahxBQp67AEl0f0HUc=
+			WU6ut6cg727yffwFQN/Em9aGeGg=
 			</data>
 			<key>hash2</key>
 			<data>
-			AprxEnhzX4PoFkKwkZIwtlM1xrnGvBnCxvkxSAnyvsM=
+			y21dsGWfsepRu/pNba/Yd3wNbwkQvHZYRnWNVWRSPKM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -549,22 +553,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			3Ce672EcTakABOxPgmQSimPU1QA=
+			YbpGbsnyCdK2oej0Dqo4cpp2a8E=
 			</data>
 			<key>hash2</key>
 			<data>
-			ZSLRgk2ZtD20EpCBR8ugUAPqerGXXn7HmUMmWGT2Xoo=
+			si/8/G3EBfiGsM3nbrwVlKTFrVEi6uRtJinDiU+FyfM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/extract.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			BcbjYKUL9I+sgBlMWmHtaQxEZ+8=
+			xDY7iNKPlMsaSQkTFXKp4zT3Vs4=
 			</data>
 			<key>hash2</key>
 			<data>
-			SesVh53ZKvUvrclT8ZhOeusEa0fDK1dMwC/VSqBTrUs=
+			uAlKO+vI95oJ/FUtdOVi5C4H3RRn+llELFFspRWOYQI=
+			</data>
+		</dict>
+		<key>Resources/toolkit/efs/github_file.js</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			fnPhntb7zr6rgqAnVdABCarqV0I=
+			</data>
+			<key>hash2</key>
+			<data>
+			ai3bsBuMAaCKU1O5U0EzWYqzUaN5KV5xqCCu8e89sIc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/github_pr_actions.js</key>
@@ -582,11 +597,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Azprn5IKxiHaD3PjzugW6XUr/Bk=
+			p3UAbpwbQVXb2PY8ju4dJe/Abys=
 			</data>
 			<key>hash2</key>
 			<data>
-			9adH8CNdlgLM1p1DBg8DI3XpduJEr5uS4krywoT5k6Q=
+			PMNk7iwUWa34cdpm7PZ+W/iXl8I4HfGS0uxtyzxqdy8=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/media/efs.svg</key>
@@ -615,11 +630,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			fnCjKL7nM/AjEnpEW6mwtmsbIBU=
+			EWWk+fAHntRNk9LnaVxZy7SjRl4=
 			</data>
 			<key>hash2</key>
 			<data>
-			dY4/1PFtzqlfw8BWeGYmx1sIOyVwUHA2S/N0vj49cSE=
+			t6fP5NllaSun1dxZAlJm/mgy7jbLZbBVvLKpAVbGPI4=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/pull_request.js</key>
@@ -659,33 +674,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			yEEim/Xp45KHnlm/ucwmpc893hQ=
+			qwrgAy+aTisJ0/kz62Vt8sh3FEk=
 			</data>
 			<key>hash2</key>
 			<data>
-			vjDStRMw6QXQXsHgp4NHrCV5+cZwnnunsST0n+y10oA=
+			mLyOru9kY56FQ9Q4cCA3z0ko1KAZO98Jb1HNRczPOnk=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/view.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			64JsE/g456y+twyisxiYcNlrUqg=
+			4BjK6/sUhToxRmYO1IMeiVr01mk=
 			</data>
 			<key>hash2</key>
 			<data>
-			Cpmy20KH4kjWI18ReiHq2e7wtR1zOG70qI4ApBo9Re4=
+			s/vfTiL8v4plb5lShtZL3SeuSrWWI5ZUcXsxpOplPfs=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			ZoBPz1ukir9wq0hpjiVPlDSFd0w=
+			buU6DnYbFX2rUZFE7icaIlxe0cs=
 			</data>
 			<key>hash2</key>
 			<data>
-			HgfdjNI6vP1MLCAWP6/Ua4+zRo6ESDlvk36ryE2nsZQ=
+			4QQntfZ60Xux5+4uQuG2h2OHTQ6Sf5ZaKG4+D2sAOYw=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
@@ -813,11 +828,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			W6SSRZB0h1OJ/52/rwBc6oAPLLE=
+			R5tMoAUGhaKkwt+f1lNRD1UjC60=
 			</data>
 			<key>hash2</key>
 			<data>
-			jxOQNJrn9rVeols/dlY7xG6BqxomDEIf4+XhhyMgue0=
+			DMWsLXJXitihdqALz1edoDAjoOoFSUR8Xmcj85JKbzM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configure.py</key>
@@ -923,11 +938,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			0e9qZC5xCNBBWwwdfI1WbcBoaxg=
+			8dYZG1IVhDd2J3iYCuSIPhcNKJU=
 			</data>
 			<key>hash2</key>
 			<data>
-			9q9Tv5hI43fLlGRUZKwvWOdHdESfXI5HN2K3Z449eq4=
+			hEb6FXg8+Za0xA4bAP0g+jpVJK8R+t0NqqRMXFThenk=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/update.py</key>
