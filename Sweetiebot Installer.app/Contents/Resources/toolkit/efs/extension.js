@@ -286,13 +286,13 @@ function settings() {
 }
 
 async function activate(context) {
-  registerLegacyCommandAliases(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
-  // Register PR merge commands before awaited startup work so their contributed
-  // UI actions cannot be left pointing at missing handlers if startup recovery fails.
+  // Register PR merge commands before compatibility aliases and awaited startup
+  // work so a stale legacy command cannot leave contributed actions without handlers.
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
+  registerLegacyCommandAliases(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
   // Hidden panel tabs can still be restored as the active container.
