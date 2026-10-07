@@ -234,6 +234,15 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             stale = root / "jfwooten4.scm-toolkit-workspace-search-0.0.1"
             stale.mkdir(parents=True)
             (stale / "old.txt").write_text("old")
+            registry = root / "extensions.json"
+            unrelated = {"identifier": {"id": "other.extension"}, "version": "1.2"}
+            current = {"identifier": {"id": workspace_search.extension_identity()}}
+            registry.write_text(json.dumps([
+                unrelated, current,
+                {"identifier": {"id": "jfwooten4.scm-toolkit-workspace-search"}},
+            ]))
+            self.assertTrue(workspace_search.remove_legacy_extensions(root, check=True))
+            self.assertTrue(stale.exists(), "Check mode must preserve installation")
 
             self.assertTrue(
                 workspace_search.sync_extension(
@@ -242,6 +251,8 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
             self.assertFalse(stale.exists())
+            self.assertEqual(json.loads(registry.read_text()), [unrelated, current])
+            self.assertFalse(workspace_search.remove_legacy_extensions(root, check=True))
             self.assertTrue(
                 workspace_search.destination_matches(
                     workspace_search.extension_destination(root),

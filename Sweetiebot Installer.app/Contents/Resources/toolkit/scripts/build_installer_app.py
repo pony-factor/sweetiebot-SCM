@@ -48,6 +48,8 @@ def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
             check=True,
         )
         payload = app / "Contents/Resources/toolkit"
+        (payload / "assets").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "assets/commit-instructions.md", payload / "assets/commit-instructions.md")
         # Bundle only known installer source formats, never local configuration.
         for directory, suffixes in (
             ("scripts", {".py", ".json"}),

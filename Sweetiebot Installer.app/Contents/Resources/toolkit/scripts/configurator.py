@@ -7,6 +7,7 @@ import errno
 import html
 import json
 import math
+import os
 import re
 import secrets
 import shutil
@@ -995,6 +996,7 @@ def run_configurator(
     open_browser: bool = True,
     port: int = 0,
     token: str | None = None,
+    parent_pid: int | None = None,
 ) -> bool:
     token = token or secrets.token_urlsafe(24)
     server_instance = secrets.token_urlsafe(12)
@@ -1163,11 +1165,24 @@ def run_configurator(
             print("Open the URL above in a browser.")
     else:
         print(json.dumps({"url": url}), flush=True)
+    stopped = threading.Event()
+    if parent_pid:
+        def watch_parent():
+            while not stopped.wait(1):
+                try:
+                    os.kill(parent_pid, 0)
+                except ProcessLookupError:
+                    server.shutdown()
+                    return
+                except PermissionError:
+                    pass
+        threading.Thread(target=watch_parent, daemon=True).start()
     try:
         server.serve_forever(poll_interval=0.1)
     except KeyboardInterrupt:
         print("\nConfiguration cancelled.")
     finally:
+        stopped.set()
         server.server_close()
     return outcome["saved"] is True
 
@@ -1180,6 +1195,7 @@ if __name__ == "__main__":
     parser.add_argument("--vscode-settings", help="Current feature preferences supplied by the companion extension.")
     parser.add_argument("--port", type=int, default=0, help="Reuse a stable localhost port for the settings page.")
     parser.add_argument("--token", help="Reuse the settings page authentication token.")
+    parser.add_argument("--parent-pid", type=int, help="Stop when the owning extension host exits.")
     parser.add_argument(
         "--open-panel-on-startup",
         choices=("true", "false"),
@@ -1193,9 +1209,12 @@ if __name__ == "__main__":
         current["openPanelOnStartup"] = args.open_panel_on_startup == "true"
     if args.port < 0 or args.port > 65535:
         parser.error("--port must be between 0 and 65535")
+    if args.parent_pid is not None and args.parent_pid <= 0:
+        parser.error("--parent-pid must be positive")
     run_configurator(
         current,
         open_browser=not args.no_browser,
         port=args.port,
         token=args.token,
+        parent_pid=args.parent_pid,
     )

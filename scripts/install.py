@@ -730,6 +730,7 @@ def main():
             return
         settings = load_settings()
     version, workbench_paths = application_paths(args.app)
+    legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
     paths = [] if args.codex_only else workbench_paths
     old = [path.read_text() for path in paths]
     new = (
@@ -882,12 +883,15 @@ def main():
         and not wrapper_changed
         and not model_picker_changed
         and not workspace_search_changed
+        and not legacy_changed
     ):
         action = "not installed" if args.uninstall else "already up to date"
         print(f"SCM toolkit is {action} for VS Code {version}.")
         return
 
     if not args.check:
+        if not args.codex_only:
+            workspace_search.remove_legacy_extensions()
         if old != list(new):
             if old != [path.read_text() for path in paths]:
                 raise RuntimeError("VS Code changed during validation; retry the command.")
