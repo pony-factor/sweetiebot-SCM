@@ -33,16 +33,59 @@ function queueRepositoryOperation(repository, operation) {
   });
 }
 
-async function autoPullClean(repository, { fetch = false } = {}) {
+async function gitConfig(repository, key, fallback) {
+  if (!repository.rootUri?.fsPath) return fallback;
+  try {
+    const { stdout } = await promisify(execFile)('git', ['config', '--get', key], {
+      cwd: repository.rootUri.fsPath, timeout: 10000
+    });
+    return stdout.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function automaticPullTarget(repository, head, remote) {
+  const defaultBranch = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+  if (head?.name === defaultBranch) {
+    return {
+      remote: remote || await gitConfig(repository, 'scm-toolkit.remote', head.upstream?.remote),
+      name: defaultBranch
+    };
+  }
+  return { remote: head?.upstream?.remote, name: head?.upstream?.name };
+}
+
+async function automaticPullDivergence(repository, head, target) {
+  if (target.remote === head?.upstream?.remote && target.name === head?.upstream?.name) {
+    return { ahead: head.ahead ?? 0, behind: head.behind ?? 0 };
+  }
+  if (!repository.rootUri?.fsPath || !target.remote || !target.name) return undefined;
+  try {
+    const { stdout } = await promisify(execFile)('git', [
+      'rev-list', '--left-right', '--count',
+      `HEAD...refs/remotes/${target.remote}/${target.name}`
+    ], { cwd: repository.rootUri.fsPath, timeout: 10000 });
+    const [ahead, behind] = stdout.trim().split(/\s+/).map(Number);
+    if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return undefined;
+    return { ahead, behind };
+  } catch {
+    return undefined;
+  }
+}
+
+async function autoPullClean(repository, { fetch = false, remote } = {}) {
   // A commit and a fast-forward both update HEAD. Never let Sweetiebot move the
   // branch ref while VS Code/Git is building or finalizing a commit.
   if (commitInProgress(repository)) return false;
   await repository.status();
   if (commitInProgress(repository)) return false;
   const previous = { ...repository.state.HEAD, upstream: { ...repository.state.HEAD?.upstream } };
+  const target = await automaticPullTarget(repository, previous, remote);
+  if (!target.remote || !target.name) return false;
   if (fetch) {
-    if (!previous.upstream.remote || !previous.upstream.name || repository.state.mergeChanges?.length) return false;
-    await repository.fetch({ remote: previous.upstream.remote, ref: previous.upstream.name });
+    if (repository.state.mergeChanges?.length) return false;
+    await repository.fetch({ remote: target.remote, ref: target.name });
     await repository.status();
     if (commitInProgress(repository)) return false;
     const current = repository.state.HEAD;
@@ -51,16 +94,17 @@ async function autoPullClean(repository, { fetch = false } = {}) {
         || current?.upstream?.name !== previous.upstream.name) return false;
   }
   const { HEAD: head, mergeChanges = [] } = repository.state;
-  if (!head?.upstream || !head.behind || head.ahead !== 0
+  const divergence = await automaticPullDivergence(repository, head, target);
+  if (!divergence?.behind || divergence.ahead !== 0
       || mergeChanges.length || commitInProgress(repository)) return false;
   if (repository.rootUri?.fsPath) {
     // Let Git carry nonconflicting local edits; never create a merge commit or
     // overwrite a changed path. A failed fast-forward preserves the worktree.
-    await promisify(execFile)('git', ['merge', '--ff-only', `refs/remotes/${head.upstream.remote}/${head.upstream.name}`], {
+    await promisify(execFile)('git', ['merge', '--ff-only', `refs/remotes/${target.remote}/${target.name}`], {
       cwd: repository.rootUri.fsPath, timeout: 120000
     });
   } else {
-    await repository.merge(`${head.upstream.remote}/${head.upstream.name}`);
+    await repository.merge(`${target.remote}/${target.name}`);
   }
   await repository.status();
   return true;
