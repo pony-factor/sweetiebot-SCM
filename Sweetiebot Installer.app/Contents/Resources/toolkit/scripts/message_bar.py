@@ -3,46 +3,34 @@
 from __future__ import annotations
 
 import json
-import re
 
 
 MESSAGE_BAR_ITEMS = (
-    ("push", "Push after committing"),
     ("branch", "Branch"),
     ("sync", "Sync branch"),
     ("delete", "Delete branch"),
-    ("separator-1", "Separator"),
-    ("autocomplete", "Inline code completion"),
+    ("separator-1", "Separator 1"),
+    ("autocomplete", "Autocomplete"),
     ("spellcheck", "Spellcheck preview"),
     ("codex", "Codex co-author"),
     ("auto-publish", "Auto-publish"),
-    ("separator-2", "Separator"),
+    ("separator-2", "Separator 2"),
     ("home", "Home"),
     ("pull-request", "Pull request"),
     ("pony-branch", "Random branch"),
 )
 MESSAGE_BAR_ITEM_IDS = tuple(item_id for item_id, _label in MESSAGE_BAR_ITEMS)
 MESSAGE_BAR_ITEM_LABELS = dict(MESSAGE_BAR_ITEMS)
-MESSAGE_BAR_VISIBILITY_SETTINGS = {
-    "commitAndPush": "push",
-    "branchPicker": "branch",
-    "ponyBranch": "pony-branch",
-    "branchCleanup": "delete",
-    "autocompleteToggle": "autocomplete",
-    "codexCoauthor": "codex",
-    "autoPublishToggle": "auto-publish",
-    "mcpPullRequest": "pull-request",
-}
 
 DEFAULT_MESSAGE_BAR_LAYOUT = {
-    "before": ["branch", "codex"],
+    "before": ["branch"],
     "after": [
-        "push",
         "sync",
         "delete",
         "separator-1",
         "autocomplete",
         "spellcheck",
+        "codex",
         "auto-publish",
         "separator-2",
         "home",
@@ -74,7 +62,7 @@ def parse_message_bar_layout(raw: object) -> dict[str, list[str]]:
             raise ValueError(f"Message bar {zone} controls must be a list.")
         items: list[str] = []
         for value in values:
-            if not isinstance(value, str) or (value not in known and not re.fullmatch(r"separator-[1-9][0-9]*", value)):
+            if not isinstance(value, str) or value not in known:
                 raise ValueError(f"Unknown message bar control: {value}")
             if value in seen:
                 raise ValueError(f"Message bar control appears more than once: {value}")
