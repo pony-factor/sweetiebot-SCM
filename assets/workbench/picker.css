@@ -446,10 +446,11 @@
     align-self: stretch;
     padding: 0;
     border: 0;
-    border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
     border-radius: 0 var(--vscode-cornerRadius-small, 4px) var(--vscode-cornerRadius-small, 4px) 0;
     background: var(--vscode-button-background);
     color: var(--vscode-button-foreground);
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+    font-size: 14px;
     cursor: pointer;
 }
 
@@ -546,4 +547,13 @@
     content: '✨';
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
     font-size: 14px;
+}
+
+/* Dim the whole action, including its outline and Settings, consistently. */
+.scm-view .scm-toolkit-commit-settings.disabled {
+    opacity: .4;
+}
+.scm-view .scm-toolkit-commit-settings.disabled > .monaco-button.disabled,
+.scm-view .scm-toolkit-commit-settings.disabled > .monaco-button-dropdown-separator {
+    opacity: 1 !important;
 }

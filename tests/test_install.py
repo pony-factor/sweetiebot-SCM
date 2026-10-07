@@ -120,14 +120,7 @@ class TransformTests(unittest.TestCase):
         )
         self.assertEqual(css.count("--vscode-button-background: transparent;"), 2)
         self.assertIn("background: transparent !important;", css)
-        self.assertIn(
-            "border-top: 1px solid var(--vscode-button-border, var(--vscode-widget-border));",
-            css,
-        )
-        self.assertIn(".scm-toolkit-settings::before", css)
-        self.assertIn("top: 4px;", css)
-        self.assertIn("bottom: 4px;", css)
-        self.assertIn("border-left: 0;", css)
+        self.assertNotIn(".scm-toolkit-settings::before", css)
         self.assertNotIn(".scm-view .button-container >", css)
 
     def test_filled_button_setting_controls_outlined_stylesheet(self):
@@ -253,7 +246,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("const repositoryArgument = currentRepositoryUri;", js)
         self.assertIn("commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {", js)
         self.assertIn("scm-toolkit-sync-branch", css)
-        self.assertIn("scm-toolkit-settings codicon codicon-gear", js)
+        self.assertIn("settingsButton.textContent = '🪄'", js)
         self.assertIn("commands.executeCommand('sweetiebot.openSettings')", js)
         self.assertIn("scm-toolkit-settings", css)
         self.assertIn("commands.executeCommand('sweetiebot.syncBranch', repository, {", js)

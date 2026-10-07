@@ -40,32 +40,6 @@
     border-left: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
 }
 
-.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings {
-    box-sizing: border-box;
-    position: relative;
-    border-top: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
-    border-right: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
-    border-bottom: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
-    border-left: 0;
-    border-radius: 0 var(--vscode-cornerRadius-small, 4px)
-        var(--vscode-cornerRadius-small, 4px) 0;
-}
-
-.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings::before {
-    content: '';
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 0;
-    width: 1px;
-    background: color-mix(
-        in srgb,
-        var(--vscode-descriptionForeground) 35%,
-        transparent
-    );
-    pointer-events: none;
-}
-
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:hover,
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:hover,
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings:hover {

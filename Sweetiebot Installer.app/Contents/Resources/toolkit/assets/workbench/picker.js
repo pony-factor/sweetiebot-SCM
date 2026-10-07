@@ -770,7 +770,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const settingsButton = doc.createElement('button');
     settingsButton.type = 'button';
-    settingsButton.className = 'scm-toolkit-settings codicon codicon-gear';
+    settingsButton.className = 'scm-toolkit-settings';
+    settingsButton.textContent = '🪄';
     settingsButton.hidden = true;
     settingsButton.title = 'Open Sweetiebot SCM settings';
     settingsButton.setAttribute('aria-label', 'Open Sweetiebot SCM settings');
