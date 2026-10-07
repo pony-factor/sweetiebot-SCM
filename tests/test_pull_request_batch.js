@@ -16,13 +16,16 @@ const {
 async function run() {
   const extensionSource = readFileSync(path.join(__dirname, '../efs/extension.js'), 'utf8');
   const recoveryAwait = extensionSource.indexOf('await registerPushRecovery(vscode, context);');
+  const aliases = extensionSource.indexOf('registerLegacyCommandAliases(vscode, context);');
   assert(recoveryAwait > -1);
+  assert(aliases > -1);
   for (const registration of [
     'registerPullRequestBatchCommand(vscode, context);',
     'registerGitHubPullRequestActions(vscode, context);'
   ]) {
     const index = extensionSource.indexOf(registration);
-    assert(index > -1 && index < recoveryAwait, `${registration} must be registered before awaited startup recovery`);
+    assert(index > -1 && index < aliases, `${registration} must be registered before legacy compatibility aliases`);
+    assert(index < recoveryAwait, `${registration} must be registered before awaited startup recovery`);
   }
 
   assert.equal(repositoryName('git@github.com:owner/repo.git'), 'owner/repo');

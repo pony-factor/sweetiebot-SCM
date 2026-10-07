@@ -24,13 +24,24 @@ const LEGACY_COMMANDS = [
   "workspaceSearch.clearIndex"
 ];
 
+function isDuplicateCommandError(error) {
+  return /command ['"].+['"] already exists/i.test(String(error?.message || error || ''));
+}
+
 function registerLegacyCommandAliases(vscode, context) {
   for (const name of LEGACY_COMMANDS) {
-    context.subscriptions.push(vscode.commands.registerCommand(
-      `scmToolkit.${name}`,
-      (...args) => vscode.commands.executeCommand(`sweetiebot.${name}`, ...args)
-    ));
+    try {
+      context.subscriptions.push(vscode.commands.registerCommand(
+        `scmToolkit.${name}`,
+        (...args) => vscode.commands.executeCommand(`sweetiebot.${name}`, ...args)
+      ));
+    } catch (error) {
+      // A still-active legacy extension can own these compatibility aliases until
+      // the next reload. Do not let that prevent canonical sweetiebot.* actions
+      // from activating in the current window.
+      if (!isDuplicateCommandError(error)) throw error;
+    }
   }
 }
 
-module.exports = { registerLegacyCommandAliases };
+module.exports = { registerLegacyCommandAliases, isDuplicateCommandError };
