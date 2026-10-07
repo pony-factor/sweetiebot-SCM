@@ -91,30 +91,20 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
 }
 
 async function pickPullRequests(vscode, pullRequests) {
-  const selectAll = {
-    label: '$(check-all) Select all',
-    description: `Select all ${pullRequests.length} pull requests`,
-    selectAll: true,
-    alwaysShow: true
-  };
   const selected = await vscode.window.showQuickPick(
-    [
-      selectAll,
-      ...pullRequests.map(pullRequest => ({
-        label: `#${pullRequest.number} ${pullRequest.title}`,
-        description: pullRequest.head ? `← ${pullRequest.head}` : '',
-        detail: pullRequest.url,
-        pullRequest
-      }))
-    ],
+    pullRequests.map(pullRequest => ({
+      label: `#${pullRequest.number} ${pullRequest.title}`,
+      description: pullRequest.head ? `← ${pullRequest.head}` : '',
+      detail: pullRequest.url,
+      pullRequest
+    })),
     {
       canPickMany: true,
       title: 'Squash and merge with ChatGPT',
-      placeHolder: 'Select one or more pull requests, or Select all, then press OK.'
+      placeHolder: 'Select one or more pull requests, then press OK.'
     }
   );
   if (selected === undefined) return undefined;
-  if (selected.some(item => item.selectAll)) return pullRequests;
   return selected.flatMap(item => item.pullRequest ? [item.pullRequest] : []);
 }
 
