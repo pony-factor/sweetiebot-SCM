@@ -19,6 +19,7 @@
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.prepareCodexCommit",
     "onCommand:sweetiebot.generateCodexCommitMessage",
+    "onCommand:sweetiebot.previewCommitSpellcheck",
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
     "onCommand:sweetiebot.deleteBranch",

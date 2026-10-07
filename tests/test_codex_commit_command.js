@@ -42,7 +42,15 @@ async function run() {
       assert.equal(delay, 630000, 'The child deadline allows both queued Ollama attempts');
       return setTimeout(callback, delay);
     },
-    require: name => { assert.equal(name, 'child_process'); return { spawn(exe, args, options) {
+    require: name => {
+      if (name === './python_runtime') {
+        return {
+          resolvePythonExecutable: () => '/resolved/python3',
+          pythonLaunchError: error => error
+        };
+      }
+      assert.equal(name, 'child_process'); return { spawn(exe, args, options) {
+      assert.equal(exe, '/resolved/python3');
       assert.equal(options.cwd, '/selected');
       assert.equal(args[0], '/extension/local_codex_commit.py');
       return child;

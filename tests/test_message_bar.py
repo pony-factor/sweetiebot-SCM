@@ -13,7 +13,7 @@ from message_bar_configurator import render_message_bar_control
 class MessageBarLayoutTests(unittest.TestCase):
     def test_default_layout_contains_every_control_once(self):
         items = DEFAULT_MESSAGE_BAR_LAYOUT["before"] + DEFAULT_MESSAGE_BAR_LAYOUT["after"]
-        self.assertEqual(len(items), 11)
+        self.assertEqual(len(items), 12)
         self.assertEqual(set(items), set(MESSAGE_BAR_ITEM_IDS))
         self.assertEqual(len(items), len(set(items)))
 
@@ -40,7 +40,7 @@ class MessageBarLayoutTests(unittest.TestCase):
             '{"before":["home"],"after":["pull-request"]}'
         )
         self.assertEqual(control.count('data-message-bar-zone='), 3)
-        self.assertEqual(control.count('data-message-bar-id='), 11)
+        self.assertEqual(control.count('data-message-bar-id='), 12)
         self.assertIn('data-message-bar-zone="hidden"', control)
         self.assertIn('id="message-bar-reset"', control)
         self.assertIn('name="messageBarLayout"', control)

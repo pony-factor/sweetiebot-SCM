@@ -89,7 +89,6 @@ SETTINGS = (
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use ASCII punctuation. Off by default.", "Ollama"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
-    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-manual-commit", "Spellcheck manual commit messages", "Use local Ollama to correct manually entered commit messages.", "Ollama"),
     Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
     Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
