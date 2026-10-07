@@ -770,7 +770,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const settingsButton = doc.createElement('button');
     settingsButton.type = 'button';
-    settingsButton.className = 'scm-toolkit-settings codicon codicon-gear';
+    settingsButton.className = 'scm-toolkit-settings';
+    settingsButton.textContent = '🪄';
     settingsButton.hidden = true;
     settingsButton.title = 'Open Sweetiebot SCM settings';
     settingsButton.setAttribute('aria-label', 'Open Sweetiebot SCM settings');
@@ -1549,3 +1550,30 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 }
+
+// Notification rows are reused, so update the marker whenever their message changes.
+(() => {
+    const selector = '.notification-list-item';
+    const update = row => {
+        const message = row.querySelector('.notification-list-item-message');
+        row.classList.toggle('scm-toolkit-generating-commit',
+            /^Generating commit message(?: ✨)?$/.test(message?.textContent.trim() ?? ''));
+    };
+    const observer = new MutationObserver(records => {
+        const rows = new Set();
+        for (const record of records) {
+            const target = record.target.nodeType === Node.ELEMENT_NODE
+                ? record.target : record.target.parentElement;
+            const row = target?.closest(selector);
+            if (row) rows.add(row);
+            for (const node of record.addedNodes) {
+                if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                if (node.matches(selector)) rows.add(node);
+                node.querySelectorAll(selector).forEach(row => rows.add(row));
+            }
+        }
+        rows.forEach(update);
+    });
+    observer.observe(document, { childList: true, characterData: true, subtree: true });
+    document.querySelectorAll(selector).forEach(update);
+})();

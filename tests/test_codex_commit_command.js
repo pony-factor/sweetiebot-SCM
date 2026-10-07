@@ -68,7 +68,7 @@ async function run() {
         return snapshot;
       } },
     ProgressLocation: { Notification: 15 },
-    window: { async withProgress(options, callback) { progress++; assert.equal(options.title, 'Generating commit message ✨'); return callback(); } }
+    window: { async withProgress(options, callback) { progress++; assert.equal(options.title, 'Generating commit message'); return callback(); } }
   };
   sandbox.module.exports.registerCodexCommitCommand(vscode, { subscriptions: [], extensionUri: { fsPath: '/extension' } });
   const prepare = commands.get('sweetiebot.prepareCodexCommit');
