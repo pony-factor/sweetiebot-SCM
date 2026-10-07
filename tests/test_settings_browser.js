@@ -39,6 +39,7 @@ async function run() {
     module: { exports: {} }, process, URL, setTimeout, clearTimeout,
     require(name) {
       if (name === 'vscode') return vscode;
+      if (name === 'node:os') return { homedir: () => '/stable-home' };
       if (name === './python_runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
@@ -60,7 +61,7 @@ async function run() {
         assert.equal(current.workspaceSearch.resultLimit, 35);
         assert.equal(current.editorSettings['inlineSuggest.enabled'], true);
         assert.equal(current.gitSettings.postCommitCommand, 'none');
-        assert.equal(options.cwd, '/extension');
+        assert.equal(options.cwd, '/stable-home', 'The settings server must outlive extension directory replacement');
         assert.equal(options.stdio[1], 'pipe');
         const child = new EventEmitter();
         child.spawnArgs = Array.from(args);

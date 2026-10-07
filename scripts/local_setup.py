@@ -63,6 +63,7 @@ def _git_value(key: str) -> str:
         [git, "config", "--global", "--get", key],
         capture_output=True,
         text=True,
+        cwd=Path.home(),
     )
     if result.returncode == 1:
         return ""
@@ -149,6 +150,7 @@ def configure_signing_key(fingerprint: str) -> str:
             [git, "config", "--global", "--replace-all", key, value],
             capture_output=True,
             text=True,
+            cwd=Path.home(),
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"Unable to configure {key}.")
