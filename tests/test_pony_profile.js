@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { Script } = require('node:vm');
 const {
   CONTEXT_KEY,
   PonyProfileViewProvider,
@@ -62,6 +63,9 @@ async function run() {
     Uri: { parse(value) { return { value }; } }
   };
   const provider = new PonyProfileViewProvider(vscode, context);
+  const html = provider.html({ cspSource: 'vscode-webview:' });
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  assert.doesNotThrow(() => new Script(script));
   await provider.initialize();
   assert.deepEqual(commands[0], ['setContext', CONTEXT_KEY, false]);
 
