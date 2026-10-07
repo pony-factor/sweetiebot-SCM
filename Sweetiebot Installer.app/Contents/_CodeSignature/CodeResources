@@ -78,15 +78,15 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/outlined_buttons.css</key>
 		<data>
-		lpndHkZa7vxN45v/rqWfllZjFkA=
+		YIjFhnU9re3RtzPHOVy9Iih/vNE=
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.css</key>
 		<data>
-		XDVY1Fy14ar3RyqBI0PjaGgqfno=
+		VnUjrhBx6HjsBHbU5DMDOzlOJI4=
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		7OZGSRn1pOXrE3R2dNInc4wFwV0=
+		D0xbqtnNC16fqDe8SIkXrzN+yNQ=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -310,7 +310,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/workspace_search.py</key>
 		<data>
-		mFCyqIZh/l19eqlIqY6HFQmFrNo=
+		MmVlDJVv2O2wDxPt2rDhNK4zTAs=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -517,33 +517,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			lpndHkZa7vxN45v/rqWfllZjFkA=
+			YIjFhnU9re3RtzPHOVy9Iih/vNE=
 			</data>
 			<key>hash2</key>
 			<data>
-			DKqUiYE+U7J/0hVgyfe0pTi1OxcG5c0j4JslZntfB0c=
+			MTX0EBygEs+QxEeGFmAwX02sLfXLTEV4FyLniTKwZTY=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/picker.css</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			XDVY1Fy14ar3RyqBI0PjaGgqfno=
+			VnUjrhBx6HjsBHbU5DMDOzlOJI4=
 			</data>
 			<key>hash2</key>
 			<data>
-			0H8gGvfdNElml1Vsrm6qHeN42BLJHVle0cl2bcTT+wo=
+			E9XBF5sSaA1lPnDTmjtjrbrqZlvGSN/4fB+ESxOg95A=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			7OZGSRn1pOXrE3R2dNInc4wFwV0=
+			D0xbqtnNC16fqDe8SIkXrzN+yNQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			3MF7C0sIfPHWWwodn+IAUQ/y0cLSiaG2mQ6/RPslHxQ=
+			ndNss6PkjzNL/Wm27n7SiU8rfjRq+69yB0TERaG91Zg=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -1155,11 +1155,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			mFCyqIZh/l19eqlIqY6HFQmFrNo=
+			MmVlDJVv2O2wDxPt2rDhNK4zTAs=
 			</data>
 			<key>hash2</key>
 			<data>
-			0xs23YQQsLNGO6gN+tGzsyXDlmA/TXv/ScXjGlqo1LM=
+			XpOfOXP0fYEzFzLYPlXPXvs4ghVLbGwCkz71yOmU9J0=
 			</data>
 		</dict>
 	</dict>

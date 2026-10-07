@@ -119,6 +119,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
 
         self.assertEqual(DEFAULTS["workspaceSearchLabel"], "EFS")
         self.assertEqual(container["id"], workspace_search.STANDALONE_CONTAINER_ID)
+        self.assertRegex(container["id"], r"^[A-Za-z0-9_-]+$")
         self.assertEqual(container["title"], "EFS")
         self.assertEqual(container["icon"], "media/efs.svg")
         self.assertEqual(

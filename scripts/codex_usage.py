@@ -61,7 +61,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
                   f'className:`hidden in-data-[composer-placement=home]:inline`,'
                   f'children:(0,{home[1]}.jsx)({label[0]},{{isRemoteHost:!1}})'))
     if reset_countdown or hide_reset_times:
-        reset = re.search(rf'({IDENTIFIER})=({IDENTIFIER})==null\?null:({IDENTIFIER})\(\2\),',
+        reset = re.search(rf'({IDENTIFIER})=({IDENTIFIER})==null\?null:({IDENTIFIER})\(\2\),'
                           rf'({IDENTIFIER})\[0\]=({IDENTIFIER})\.resetsAt', js)
         if reset is None:
             raise ValueError('Unsupported Codex build: composer reset anchor does not match.')

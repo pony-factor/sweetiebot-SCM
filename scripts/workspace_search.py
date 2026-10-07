@@ -13,7 +13,7 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent / "efs"
-STANDALONE_CONTAINER_ID = "scmToolkit.workspaceSearchContainer"
+STANDALONE_CONTAINER_ID = "scmToolkit-workspaceSearchContainer"
 LEGACY_EXTENSION_PATTERNS = ("jfwooten4.scm-toolkit-workspace-search-*",)
 
 

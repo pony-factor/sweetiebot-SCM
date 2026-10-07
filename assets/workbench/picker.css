@@ -477,6 +477,7 @@
 
 .scm-view .monaco-button-dropdown > .scm-toolkit-settings {
     position: relative;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -492,6 +493,17 @@
     font-size: 14px;
     line-height: 1;
     cursor: pointer;
+}
+
+.scm-toolkit-settings-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    /* Apple Color Emoji's visible wand sits below its line-box center. */
+    transform: translateY(-1px);
 }
 
 .scm-view .monaco-button-dropdown > .scm-toolkit-settings[hidden] {
@@ -644,4 +656,3 @@
 .sweetiebot-compact-window-action > .action-label {
     cursor: pointer;
 }
-

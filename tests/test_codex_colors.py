@@ -6,6 +6,19 @@ import codex_colors
 
 
 class CodexColorTests(unittest.TestCase):
+    def test_embedded_font_uses_local_fallback_and_restores_original(self):
+        original = '@font-face{font-family:Math;src:url(data:font/woff2;base64,d09GMg==)format("woff2"),url(./math.woff)format("woff");font-weight:400}'
+        patched = codex_colors.transform(original, {})
+        active = patched.split(' */', 1)[1].split(codex_colors.FONT_END, 1)[0]
+        self.assertNotIn('data:font', active)
+        self.assertIn('src:url(./math.woff)format("woff")', active)
+        self.assertEqual(codex_colors.transform(patched, {}), patched)
+        self.assertEqual(codex_colors.transform(patched, {}, remove=True), original)
+
+    def test_embedded_font_without_local_fallback_is_preserved(self):
+        original = '@font-face{src:url(data:font/woff2;base64,d09GMg==)format("woff2")}'
+        self.assertEqual(codex_colors.transform(original, {}), original)
+
     def test_scoped_colors_are_idempotent_and_removable(self):
         original = 'base stylesheet\n'
         settings = dict(zip(codex_colors.COLOR_SETTINGS, ['#43AF49', '#ffffff', '#43AF49']))

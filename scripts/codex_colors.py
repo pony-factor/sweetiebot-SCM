@@ -1,6 +1,7 @@
 """Scoped appearance overrides for the installed Codex IDE composer."""
 
 from pathlib import Path
+import json
 import re
 
 START = '\n/* scm-toolkit-codex-colors:start */\n'
@@ -12,6 +13,30 @@ COLOR_SETTINGS = (
     "codexDropAccent",
 )
 APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel",)
+FONT_START = '/* scm-toolkit-font-fallback:'
+FONT_END = '/* scm-toolkit-font-fallback:end */'
+
+
+def fallback_fonts(css, remove=False):
+    """Use shipped fallback fonts when the webview CSP blocks embedded fonts."""
+    wrapped = re.compile(re.escape(FONT_START) + r'(.*?) \*/(.*?)' + re.escape(FONT_END), re.S)
+    def restore(match):
+        original, replacement = json.loads(match[1])
+        if match[2] != replacement:
+            raise ValueError('Codex font fallback changed; refusing to overwrite it.')
+        return original
+    css = wrapped.sub(restore, css)
+    if remove:
+        return css
+    def replace(match):
+        original = match[0]
+        # Keep the existing local WOFF/TTF alternatives and their font metrics.
+        replacement = re.sub(r'url\(data:font/woff2;base64,[A-Za-z0-9+/=]+\)format\("woff2"\),'
+                             r'(?=url\(\./)', '', original)
+        if original == replacement:
+            return original
+        return FONT_START + json.dumps([original, replacement]) + ' */' + replacement + FONT_END
+    return re.sub(r'@font-face\{[^}]*\}', replace, css)
 
 
 def validate_color(value):
@@ -38,6 +63,7 @@ def stylesheet_path(extension_path=None):
 
 
 def transform(css, settings, remove=False):
+    css = fallback_fonts(css, remove=remove)
     if css.count(START) != css.count(END) or css.count(START) > 1:
         raise ValueError("Incomplete Codex color patch; refusing to overwrite it.")
     if START in css:
