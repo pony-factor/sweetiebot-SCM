@@ -40,6 +40,7 @@ async function run() {
   assert.equal(result.results.length, 1, 'Installing a model must recover previously unembedded passages');
   assert.equal(result.results[0].line, 1, 'Search results should point at the matching line inside the indexed chunk');
   assert.equal(persisted.embeddingModel, model);
+  assert.equal(persisted.version, 2, 'PDF extraction changes must invalidate older cached passages');
   model = 'second:embed';
   calls.length = 0;
   result = await index.search('example', 'semantic');
