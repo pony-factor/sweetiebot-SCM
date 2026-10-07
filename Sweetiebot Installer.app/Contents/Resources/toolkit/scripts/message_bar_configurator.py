@@ -60,13 +60,14 @@ def render_message_bar_control(current: object, placeholder: object = "Message",
     serialized = html.escape(json.dumps(layout, separators=(",", ":")), quote=True)
     default_serialized = html.escape(DEFAULT_MESSAGE_BAR_LAYOUT_JSON, quote=True)
     commit_inputs = "".join(
+        f'<label class="message-bar-commit-field"><span>{label}</span>'
         f'<input class="message-bar-commit-name" name="{name}" '
         f'value="{html.escape(str(value), quote=True)}" '
-        f'aria-label="{label}" title="Click to edit the button name" '
-        f'autocomplete="off" spellcheck="false" required{" hidden" if hidden else ""}>'
-        for name, value, label, hidden in (
-            ("commitButtonLabel", commit_label, "Commit button name", post_commit == "push"),
-            ("commitAndSendButtonLabel", push_label, "Commit and push button name", post_commit != "push"),
+        f'aria-label="{label} button name" title="Click to edit the button name" '
+        'autocomplete="off" spellcheck="false" required></label>'
+        for name, value, label in (
+            ("commitButtonLabel", commit_label, "Commit"),
+            ("commitAndSendButtonLabel", push_label, "Commit and push"),
         )
     )
     return (
@@ -121,10 +122,11 @@ MESSAGE_BAR_STYLE = r"""
 .message-bar-fixed>input{min-width:0;width:100%;padding:7px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font:inherit;cursor:text}
 .message-bar-fixed:hover>input{border-color:var(--line);background:var(--bg)}
 .message-bar-fixed>input:focus{border-color:var(--accent);background:var(--bg);outline:2px solid var(--accent);outline-offset:1px}
-.message-bar-commit{display:flex;align-items:center;gap:10px;padding:10px}
+.message-bar-commit{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px}
 .message-bar-commit>span{width:125px;flex:none;color:var(--muted);font-size:12px;font-weight:600}
 .message-bar-commit-name{min-width:100px;width:220px;max-width:100%;padding:8px 12px;border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:var(--bg);font:inherit;font-weight:600;text-align:center;cursor:text}
-.message-bar-commit-name[hidden]{display:none}
+.message-bar-commit-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.message-bar-commit-field>span{color:var(--muted);font-size:12px;text-align:left}
 .message-bar-commit-name:focus{outline:2px solid var(--accent);outline-offset:3px}
 .message-bar-push label{display:flex;align-items:center;gap:6px;cursor:pointer}
 .message-bar-push input{accent-color:var(--accent)}
@@ -141,13 +143,6 @@ const messageBarLayoutInput = document.getElementById('message-bar-layout');
 for (const input of document.querySelectorAll('#message-bar-placeholder, .message-bar-commit-name')) {
   input.addEventListener('focus', event => event.target.select());
 }
-function updateCommitNamePreview() {
-  const push = document.querySelector('[name="postCommitAction"]');
-  const pushing = push?.checked && !push.disabled;
-  document.querySelector('[name="commitButtonLabel"]').hidden = !!pushing;
-  document.querySelector('[name="commitAndSendButtonLabel"]').hidden = !pushing;
-}
-document.querySelector('[name="postCommitAction"]')?.addEventListener('change', updateCommitNamePreview);
 const messageBarZones = [...document.querySelectorAll('[data-message-bar-zone]')];
 let messageBarItems = [...document.querySelectorAll('[data-message-bar-id]')];
 let draggedMessageBarItem = null;
@@ -170,7 +165,6 @@ function syncMessageBarLayout() {
     checkbox.disabled = push.parentElement === messageBarZone('hidden');
     if (checkbox.disabled) checkbox.checked = false;
   }
-  updateCommitNamePreview();
   messageBarLayoutInput.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
