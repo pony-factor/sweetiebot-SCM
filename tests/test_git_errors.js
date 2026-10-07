@@ -30,7 +30,7 @@ function run() {
   for (const [error, expected] of cases) {
     const message = formatGitError(error);
     assert.match(message, expected);
-    assert(message.endsWith('⛓️‍💥'));
+    assert(!message.includes('⛓️‍💥'));
   }
 
   const raw = formatGitError({
@@ -48,7 +48,8 @@ function run() {
     stderr: 'fatal: not a git repository'
   });
   assert.match(wrapped.message, /not a Git repository/);
-  assert(wrapped.message.endsWith('⛓️‍💥'));
+  assert(!wrapped.message.includes('⛓️‍💥'));
+  assert.equal(explainGitError(Object.assign(wrapped, { gitErrorCode: 'Conflict' })), wrapped);
 }
 
 run();
