@@ -240,6 +240,20 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "greater than zero"):
             configurator.parse_submission(values)
 
+    def test_memory_threshold_uses_compact_numeric_control(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save"
+        )
+
+        self.assertIn(
+            'type="number" min="0.1" step="0.1" inputmode="decimal" class="compact-number" name="aiLowMemoryGiB"',
+            page,
+        )
+        self.assertIn(
+            ".field-row input.compact-number{width:76px;min-width:76px",
+            page,
+        )
+
     def test_form_escapes_values_and_lists_local_models(self):
         current = dict(install.DEFAULT_SETTINGS, defaultBranch='<script>alert("x")</script>')
 
