@@ -82,6 +82,9 @@ async function run() {
   assert.match(html, /min-width:112px/);
   assert.match(html, /function updateIdleState\(\)/);
   assert.match(html, /function updateQueryControls\(\)/);
+  assert.match(html, /let searching=false/);
+  assert.match(html, /idle\.hidden=Boolean\(query\.value\.trim\(\)\)&&!searching/);
+  assert.match(html, /message\.type==='results'\)\{searching=false;updateIdleState\(\)/);
   assert.match(html, /MAX_RESULTS_PER_FILE=7/);
   assert.match(html, /className='folder-tree'/);
   assert.match(html, /className='folder-route'/);
@@ -104,7 +107,7 @@ async function run() {
   assert.equal(idle.hidden, false, 'logo is visible when the search term is empty');
   assert.equal(clearQuery.hidden, true, 'clear control starts hidden');
   query.value = 'app'; query.listeners.input();
-  assert.equal(idle.hidden, true, 'logo hides as soon as a search term is entered');
+  assert.equal(idle.hidden, false, 'logo stays visible while a search is pending');
   assert.equal(clearQuery.hidden, false, 'clear control appears when the query has text');
   query.value = 'apple'; query.listeners.input();
   assert.equal(timers.size, 1);
