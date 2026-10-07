@@ -28,6 +28,7 @@ Current features:
 - optionally generate a commit subject locally when the normal Commit button is used with a blank message
 - preview spelling corrections for manually entered commit subjects before applying them
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
+- independently hide reset times in Codex menus, dialogs, tooltips, and usage-limit messages
 - optionally hide Codex promotional cards such as the Fast mode upsell
 - optionally hide the Codex dictation microphone button
 - mirror ChatGPT web custom instructions into the global personalization used by the Codex VS Code extension
@@ -438,6 +439,19 @@ The current installer also migrates the recent-chat preview patch's older raw
 JSON restoration metadata into a JavaScript comment. The old metadata could be
 interpreted as a function call when another customization followed it, causing
 the webview to show **ChatGPT hit a snag** even after the composer repair.
+
+### Hide Codex reset times
+
+The independent **Hide Codex reset times** toggle suppresses absolute reset dates,
+clock times, and relative durations (including countdowns) in Codex usage menus,
+dialogs, limit messages, and tooltips without hiding usage indicators.
+It takes precedence over the countdown display without changing that preference.
+It is off by default. Enable it in Sweetie Bot settings or run:
+
+```sh
+git config --global scm-toolkit.codex-hide-usage-reset-times true
+python3 scripts/install.py --codex-only
+```
 
 ### Codex usage-reset countdown
 
