@@ -683,7 +683,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const pushControl = doc.createElement('label');
     pushControl.className = 'scm-toolkit-push';
     pushControl.hidden = true;
-    pushControl.title = 'Commit and push after a successful commit';
+    pushControl.title = 'Checked: push after committing. Unchecked: do nothing after committing.';
 
     const pushCheckbox = doc.createElement('input');
     pushCheckbox.type = 'checkbox';
@@ -808,6 +808,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let committingWithCodex = false;
 
     const refreshPush = () => {
+        if (configuration.getValue('git.postCommitCommand') === 'sync') {
+            void configuration.updateValue('git.postCommitCommand', 'none')
+                .catch(error => notifications.error(error));
+        }
         pushCheckbox.checked = configuration.getValue('git.postCommitCommand') === 'push';
     };
 

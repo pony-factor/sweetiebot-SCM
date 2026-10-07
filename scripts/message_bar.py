@@ -7,14 +7,15 @@ import re
 
 
 MESSAGE_BAR_ITEMS = (
+    ("push", "Push after committing"),
     ("branch", "Branch"),
     ("sync", "Sync branch"),
     ("delete", "Delete branch"),
-    ("separator-1", "Separator 1"),
+    ("separator-1", "Separator"),
     ("autocomplete", "Inline code completion"),
     ("codex", "Codex co-author"),
     ("auto-publish", "Auto-publish"),
-    ("separator-2", "Separator 2"),
+    ("separator-2", "Separator"),
     ("home", "Home"),
     ("pull-request", "Pull request"),
     ("pony-branch", "Random branch"),
@@ -22,6 +23,7 @@ MESSAGE_BAR_ITEMS = (
 MESSAGE_BAR_ITEM_IDS = tuple(item_id for item_id, _label in MESSAGE_BAR_ITEMS)
 MESSAGE_BAR_ITEM_LABELS = dict(MESSAGE_BAR_ITEMS)
 MESSAGE_BAR_VISIBILITY_SETTINGS = {
+    "commitAndPush": "push",
     "branchPicker": "branch",
     "ponyBranch": "pony-branch",
     "branchCleanup": "delete",
@@ -34,6 +36,7 @@ MESSAGE_BAR_VISIBILITY_SETTINGS = {
 DEFAULT_MESSAGE_BAR_LAYOUT = {
     "before": ["branch", "codex"],
     "after": [
+        "push",
         "sync",
         "delete",
         "separator-1",

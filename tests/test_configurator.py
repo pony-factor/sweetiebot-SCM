@@ -34,6 +34,40 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_available_push_control_is_disabled_without_a_visibility_switch(self):
+        values = form_values()
+        values["messageBarLayout"] = ['{"before":["codex"],"after":[]}']
+        values["postCommitAction"] = ["push"]
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["commitAndPush"])
+        self.assertEqual(parsed["postCommitAction"], "none")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertNotIn('type="checkbox" name="commitAndPush"', page)
+        self.assertNotIn("Button options", page)
+        self.assertIn('data-message-bar-zone="hidden"><div class="message-bar-item message-bar-push"', page)
+
+    def test_push_checkbox_and_automatic_sync_are_independent(self):
+        values = form_values()
+        values.pop("postCommitAction")
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["postCommitAction"], "none")
+        self.assertTrue(parsed["autoPullClean"])
+        values["postCommitAction"] = ["push"]
+        values.pop("autoPullClean")
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["postCommitAction"], "push")
+        self.assertFalse(parsed["autoPullClean"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('type="checkbox" name="postCommitAction" value="push" checked', page)
+        self.assertNotIn('<select name="postCommitAction"', page)
+        self.assertIn("Automatically sync", page)
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["autoPullClean"])
+
+    def test_legacy_post_commit_sync_is_replaced_by_unchecked_push(self):
+        current = dict(toolkit_settings.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {"gitSettings": {"postCommitCommand": "sync"}})
+        self.assertEqual(current["postCommitAction"], "none")
+
     def test_button_visibility_comes_from_layout_instead_of_legacy_switches(self):
         values = form_values()
         values["messageBarLayout"] = ['{"before":["codex"],"after":["autocomplete"]}']
@@ -597,6 +631,7 @@ class ServerTests(unittest.TestCase):
 
             values = form_values()
             values.pop("branchPicker")
+            values["messageBarLayout"] = ['{"before":[],"after":["codex"]}']
             request = urllib.request.Request(
                 endpoint("/autosave"),
                 data=urllib.parse.urlencode(values, doseq=True).encode(),
@@ -661,6 +696,7 @@ class ServerTests(unittest.TestCase):
                 for path in ("/autosave", "/save", "/autosave"):
                     values = form_values()
                     values.pop("branchPicker")
+                    values["messageBarLayout"] = ['{"before":[],"after":["codex"]}']
                     endpoint = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
                     request = urllib.request.Request(endpoint, data=urllib.parse.urlencode(values, doseq=True).encode(), method="POST")
                     with urllib.request.urlopen(request, timeout=5) as response:

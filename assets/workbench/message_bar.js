@@ -1,5 +1,6 @@
 // Reorders the existing SCM message-bar controls without changing their behavior.
 const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
+    'push',
     'branch',
     'sync',
     'delete',
@@ -16,6 +17,7 @@ const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
 const SCM_TOOLKIT_DEFAULT_MESSAGE_BAR_LAYOUT = {
     before: ['branch', 'codex'],
     after: [
+        'push',
         'sync',
         'delete',
         'separator-1',
@@ -56,6 +58,7 @@ function scmToolkitMessageBarLayout(raw) {
 function scmToolkitMessageBarElements(widget) {
     const root = widget.element;
     return {
+        push: root.querySelector(':scope > .scm-toolkit-push'),
         branch: root.querySelector(':scope > .scm-toolkit-branch'),
         sync: root.querySelector(':scope > .scm-toolkit-sync-branch'),
         delete: root.querySelector(':scope > .scm-toolkit-delete-branch'),
@@ -113,7 +116,7 @@ function scmToolkitApplyMessageBarLayout(widget, settings) {
     }
 
     for (const id of layout.before) editor.before(elements[id]);
-    editor.after(push, ...layout.after.map(id => elements[id]));
+    editor.after(...layout.after.map(id => elements[id]));
 
     const refreshSeparators = () => scmToolkitRefreshMessageBarSeparators(layout, elements);
     const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
@@ -138,6 +141,7 @@ scmToolkitCreateControls = function(...args) {
     const active = new Set([...layout.before, ...layout.after]);
     const layoutSettings = {
         ...settings,
+        commitAndPush: active.has('push'),
         branchPicker: ['branch', 'sync', 'home'].some(id => active.has(id)),
         ponyBranch: active.has('pony-branch'),
         branchCleanup: active.has('delete'),

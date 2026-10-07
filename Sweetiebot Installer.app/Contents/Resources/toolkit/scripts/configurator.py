@@ -20,7 +20,7 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from chatgpt_integration import import_pgp_secret_key, sync_codex_instructions
-from message_bar import serialize_message_bar_layout
+from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
 
 
@@ -48,13 +48,13 @@ SETTINGS = (
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
     Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Message bar", "optional_text"),
-    Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Source control", "text"),
-    Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Source control", "text"),
+    Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Message bar", "text"),
+    Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Message bar", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
     Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; offer a reload when ready.", "Startup"),
     Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
-    Setting("commitAndPush", "scm-toolkit.commit-and-push", "Commit and push checkbox", "Show the control backed by git.postCommitCommand.", "Message bar"),
+    Setting("commitAndPush", "scm-toolkit.commit-and-push", "Show push checkbox", "Show the push-after-committing checkbox beside the message field.", "Message bar"),
     Setting("branchCleanup", "scm-toolkit.branch-cleanup", "Branch cleanup", "Show guarded local-branch cleanup controls.", "Message bar"),
     Setting("autocompleteToggle", "scm-toolkit.autocomplete-toggle", "Inline code completion", "Show the inline code completion switch in the SCM message row.", "Message bar"),
     Setting("autoPublishToggle", "scm-toolkit.auto-publish-toggle", "Auto-publish toggle", "Show the cloud control that publishes newly selected local branches to the configured remote.", "Message bar"),
@@ -62,13 +62,13 @@ SETTINGS = (
     Setting("automaticBranchCleanup", "scm-toolkit.automatic-branch-cleanup", "Automatically clean merged branches", "Check for merged branches on startup and every ten minutes, and remove eligible local branches.", "Source control"),
     Setting("hideSCMProgress", "scm-toolkit.hide-scm-progress", "Hide Source Control progress bar", "Hide the progress animation during Git operations and background refreshes.", "Source control"),
     Setting("inlineSuggestions", "scm-toolkit.inline-suggestions", "Inline suggestions", "Enable inline suggestions, including in the commit-message editor.", "Source control"),
-    Setting("postCommitAction", "scm-toolkit.post-commit-action", "After committing", "Choose whether commits automatically push or sync with the remote.", "Source control", "select", ("none", "push", "sync")),
+    Setting("postCommitAction", "scm-toolkit.post-commit-action", "Push after committing", "Checked pushes after committing; unchecked does nothing.", "Message bar", "push_checkbox"),
     Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Message bar"),
     Setting("codexCommitContext", "scm-toolkit.codex-commit-context", "Local commit messages from Codex text", "When the co-author commit message is blank, use this window's current conversation and staged changes with local Ollama. Codex keeps running.", "Source control"),
     Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Prevent idle sleep on macOS while Codex tasks are running. The display can still turn off. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
     Setting("hideOutgoingSyncCount", "scm-toolkit.hide-outgoing-sync-count", "Hide outgoing count", "Remove the outgoing commit count from Sync.", "Source control"),
     Setting("blankStateRefresh", "scm-toolkit.blank-state-refresh", "Refresh blank repositories", "Refresh clean repositories so their first new change appears quickly.", "Source control"),
-    Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically pull clean branches", "Fast-forward clean branches when their upstream is ahead, independently of blank-state refresh.", "Source control"),
+    Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically sync", "Fetch remote updates and fast-forward branches when possible. Runs independently of the push-after-committing checkbox.", "Source control"),
     Setting("graphOpenWorkingFile", "scm-toolkit.graph-open-working-file", "Open graph files from working tree", "Make Source Control Graph Open File target the checked-out working-tree file instead of the selected commit snapshot.", "Source control"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "ChatGPT for blank browser tabs", "Open blank Integrated Browser tabs at https://chatgpt.com/ while preserving explicit URLs.", "Browser"),
@@ -203,6 +203,9 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
                 values.get(setting.name, [""])[0]
             )
             continue
+        if setting.kind == "push_checkbox":
+            parsed[setting.name] = "push" if values.get(setting.name, ["none"])[0] == "push" else "none"
+            continue
         if setting.kind == "bool":
             parsed[setting.name] = setting.name in values
             continue
@@ -254,6 +257,14 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             if url.scheme not in {"http", "https"} or url.hostname not in {"localhost", "127.0.0.1", "::1"} or url.username or url.password:
                 raise ValueError(f"{setting.label} must be a loopback HTTP URL.")
         parsed[setting.name] = value
+    layout = parse_message_bar_layout(parsed["messageBarLayout"])
+    active = set(layout["before"] + layout["after"])
+    for name, item in MESSAGE_BAR_VISIBILITY_SETTINGS.items():
+        parsed[name] = item in active
+    if not parsed["commitAndPush"]:
+        parsed["postCommitAction"] = "none"
+    # The branch machinery also supplies Sync and Home when the picker is hidden.
+    parsed["branchPicker"] = bool(active & {"branch", "sync", "home"})
     if parsed.get("workspaceSearchAskOllama") and not parsed.get("workspaceSearchChatModel"):
         raise ValueError("Ask Ollama requires a chat model.")
     return parsed
@@ -365,7 +376,10 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
-    if setting.name == "messagePlaceholder":
+    if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
+        disabled = "" if current is True else " disabled"
+        return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
+    if setting.name in {"messagePlaceholder", "postCommitAction", "commitButtonLabel", "commitAndSendButtonLabel"}:
         return ""
     if setting.kind == "message_bar":
         return render_message_bar_control(current)
@@ -488,9 +502,10 @@ def render_form(
         if section == "Message bar":
             layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
             controls = render_message_bar_control(
-                current.get(layout_setting.name, ""), current.get("messagePlaceholder", "")
+                current.get(layout_setting.name, ""), current.get("messagePlaceholder", ""),
+                current.get("postCommitAction", "none"),
+                current.get("commitButtonLabel", "Commit"), current.get("commitAndSendButtonLabel", "Commit and push"),
             )
-            controls += '<h3>Button options</h3><p class="status">All available buttons appear above, including hidden controls. Sync branch and Home follow the Branch picker setting. Your layout and button preferences are saved on this computer and retained across updates.</p>'
             controls += "".join(
                 _setting_control(setting, current.get(setting.name, ""))
                 for setting in SETTINGS
@@ -986,6 +1001,8 @@ def apply_vscode_settings(current, payload):
         for key, name in names.items():
             if key in payload.get(group, {}):
                 current[name] = payload[group][key]
+    if current.get("postCommitAction") not in {"none", "push"}:
+        current["postCommitAction"] = "none"
 
 
 def _result_page(saved: bool) -> str:

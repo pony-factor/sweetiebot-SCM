@@ -13,10 +13,20 @@ from message_bar import (
 )
 
 
-def _item_html(item_id: str, label: str) -> str:
+def _item_html(item_id: str, label: str, post_commit: object = "none") -> str:
     classes = "message-bar-item"
     if item_id.startswith("separator-"):
         classes += " message-bar-separator"
+    if item_id == "push":
+        return (
+            '<div class="message-bar-item message-bar-push" draggable="true" tabindex="0" '
+            'data-message-bar-id="push" role="group" aria-label="Drag Push after committing" '
+            'title="Drag into a row to show, or into Available buttons to hide">'
+            '<span class="message-bar-grip" aria-hidden="true">⋮⋮</span>'
+            '<label title="Checked: push after committing. Unchecked: do nothing after committing.">'
+            f'<input type="checkbox" name="postCommitAction" value="push"{" checked" if post_commit == "push" else ""}>'
+            'Push after committing</label></div>'
+        )
     escaped_id = html.escape(item_id, quote=True)
     escaped_label = html.escape(label)
     remove = (
@@ -33,7 +43,8 @@ def _item_html(item_id: str, label: str) -> str:
     )
 
 
-def render_message_bar_control(current: object, placeholder: object = "Message") -> str:
+def render_message_bar_control(current: object, placeholder: object = "Message", post_commit: object = "none",
+                               commit_label: object = "Commit", push_label: object = "Commit and push") -> str:
     try:
         layout = parse_message_bar_layout(current)
     except ValueError:
@@ -44,16 +55,26 @@ def render_message_bar_control(current: object, placeholder: object = "Message")
     hidden = [item_id for item_id, _label in MESSAGE_BAR_ITEMS if item_id not in active]
 
     def render(items: list[str]) -> str:
-        return "".join(_item_html(item_id, labels.get(item_id, "Separator " + item_id.removeprefix("separator-"))) for item_id in items)
+        return "".join(_item_html(item_id, labels.get(item_id, "Separator"), post_commit) for item_id in items)
 
     serialized = html.escape(json.dumps(layout, separators=(",", ":")), quote=True)
     default_serialized = html.escape(DEFAULT_MESSAGE_BAR_LAYOUT_JSON, quote=True)
+    commit_inputs = "".join(
+        f'<input class="message-bar-commit-name" name="{name}" '
+        f'value="{html.escape(str(value), quote=True)}" '
+        f'aria-label="{label}" title="Click to edit the button name" '
+        f'autocomplete="off" spellcheck="false" required{" hidden" if hidden else ""}>'
+        for name, value, label, hidden in (
+            ("commitButtonLabel", commit_label, "Commit button name", post_commit == "push"),
+            ("commitAndSendButtonLabel", push_label, "Commit and push button name", post_commit != "push"),
+        )
+    )
     return (
         '<div class="message-bar-setting">'
         f'<input type="hidden" id="message-bar-layout" name="messageBarLayout" value="{serialized}" '
         f'data-message-bar-default="{default_serialized}">'
         '<p class="message-bar-help">Drag the buttons and separators into the order you want. Add as many separators as you need. '
-        'The message field and commit-and-push checkbox stay fixed.</p>'
+        'The message field stays fixed. Controls in Available buttons are disabled.</p>'
         '<button type="button" id="message-bar-add-separator">Add separator</button>'
         '<div class="message-bar-preview">'
         '<section class="message-bar-tray"><span>Before message</span>'
@@ -67,7 +88,9 @@ def render_message_bar_control(current: object, placeholder: object = "Message")
         '</div>'
         '<section class="message-bar-tray"><span>After message</span>'
         f'<div class="message-bar-zone" data-message-bar-zone="after">{render(layout["after"])}</div>'
-        '</section></div>'
+        '</section>'
+        '<div class="message-bar-commit"><span>Commit</span>'
+        f'{commit_inputs}</div></div>'
         '<section class="message-bar-hidden"><div class="message-bar-hidden-head">'
         '<span><strong>Available buttons</strong><small>Hidden from the message bar. Drag any button into a row to show it.</small></span>'
         '<button type="button" id="message-bar-reset">Reset layout</button></div>'
@@ -93,12 +116,18 @@ MESSAGE_BAR_STYLE = r"""
 .message-bar-item.is-dragging{opacity:.45}
 .message-bar-grip{color:var(--muted);letter-spacing:-2px}
 .message-bar-separator{border-style:dashed}
-.message-bar-separator::after{content:"";display:block;width:1px;height:18px;margin-left:2px;background:var(--muted)}
 .message-bar-fixed{display:flex;justify-content:flex-start;align-items:center;gap:10px;min-height:48px;padding:10px;border:1px solid var(--accent);border-radius:9px;background:color-mix(in srgb,var(--accent) 8%,var(--panel));text-align:center}
 .message-bar-fixed>label{width:125px;flex:none;text-align:left;font-weight:600}
 .message-bar-fixed>input{min-width:0;width:100%;padding:7px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font:inherit;cursor:text}
 .message-bar-fixed:hover>input{border-color:var(--line);background:var(--bg)}
 .message-bar-fixed>input:focus{border-color:var(--accent);background:var(--bg);outline:2px solid var(--accent);outline-offset:1px}
+.message-bar-commit{display:flex;align-items:center;gap:10px;padding:10px}
+.message-bar-commit>span{width:125px;flex:none;color:var(--muted);font-size:12px;font-weight:600}
+.message-bar-commit-name{min-width:100px;width:220px;max-width:100%;padding:8px 12px;border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:var(--bg);font:inherit;font-weight:600;text-align:center;cursor:text}
+.message-bar-commit-name[hidden]{display:none}
+.message-bar-commit-name:focus{outline:2px solid var(--accent);outline-offset:3px}
+.message-bar-push label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.message-bar-push input{accent-color:var(--accent)}
 .message-bar-hidden{margin-top:10px}
 .message-bar-hidden-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .message-bar-hidden-head>span{min-width:0}.message-bar-hidden-head small{margin:2px 0 0}
@@ -109,7 +138,16 @@ MESSAGE_BAR_STYLE = r"""
 
 MESSAGE_BAR_SCRIPT = r"""
 const messageBarLayoutInput = document.getElementById('message-bar-layout');
-document.getElementById('message-bar-placeholder')?.addEventListener('focus', event => event.target.select());
+for (const input of document.querySelectorAll('#message-bar-placeholder, .message-bar-commit-name')) {
+  input.addEventListener('focus', event => event.target.select());
+}
+function updateCommitNamePreview() {
+  const push = document.querySelector('[name="postCommitAction"]');
+  const pushing = push?.checked && !push.disabled;
+  document.querySelector('[name="commitButtonLabel"]').hidden = !!pushing;
+  document.querySelector('[name="commitAndSendButtonLabel"]').hidden = !pushing;
+}
+document.querySelector('[name="postCommitAction"]')?.addEventListener('change', updateCommitNamePreview);
 const messageBarZones = [...document.querySelectorAll('[data-message-bar-zone]')];
 let messageBarItems = [...document.querySelectorAll('[data-message-bar-id]')];
 let draggedMessageBarItem = null;
@@ -126,6 +164,13 @@ function syncMessageBarLayout() {
     before: readZone('before'),
     after: readZone('after')
   });
+  const push = messageBarItems.find(item => item.dataset.messageBarId === 'push');
+  const checkbox = push?.querySelector('input');
+  if (checkbox) {
+    checkbox.disabled = push.parentElement === messageBarZone('hidden');
+    if (checkbox.disabled) checkbox.checked = false;
+  }
+  updateCommitNamePreview();
   messageBarLayoutInput.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
@@ -145,7 +190,7 @@ function placeMessageBarItem(zone, item, event) {
 
 function bindMessageBarItem(item) {
     item.addEventListener('dragstart', event => {
-      if (event.target.closest?.('button')) { event.preventDefault(); return; }
+      if (event.target.closest?.('button, input')) { event.preventDefault(); return; }
       draggedMessageBarItem = item;
       item.classList.add('is-dragging');
       event.dataTransfer.effectAllowed = 'move';
@@ -170,9 +215,9 @@ function createMessageBarSeparator(number) {
   item.tabIndex = 0;
   item.dataset.messageBarId = `separator-${number}`;
   item.setAttribute('role', 'button');
-  item.setAttribute('aria-label', `Drag Separator ${number}`);
-  item.title = `Drag Separator ${number}`;
-  item.innerHTML = `<span class="message-bar-grip" aria-hidden="true">⋮⋮</span><span>Separator ${number}</span><button type="button" class="message-bar-remove" aria-label="Remove Separator ${number}" title="Remove Separator ${number}">×</button>`;
+  item.setAttribute('aria-label', `Drag Separator`);
+  item.title = `Drag Separator`;
+  item.innerHTML = `<span class="message-bar-grip" aria-hidden="true">⋮⋮</span><span>Separator</span><button type="button" class="message-bar-remove" aria-label="Remove Separator" title="Remove Separator">×</button>`;
   messageBarItems.push(item);
   bindMessageBarItem(item);
   return item;
