@@ -200,6 +200,14 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertIn(name, names)
         self.assertFalse(any("unnamed" in name for name in names))
 
+    def test_convention_mascots_include_historic_bronycon_trio(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        names = packs["con-mascots"]["names"]
+
+        for name in ("blank-canvas", "hoof-beatz", "mane-event"):
+            self.assertIn(name, names)
+
     def test_imports_accept_single_pack_array_or_catalog_object(self):
         pack = {"id": "friends", "label": "Friends", "names": ["one", "two"]}
         self.assertEqual(

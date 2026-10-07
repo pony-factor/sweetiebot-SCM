@@ -2203,7 +2203,7 @@
     {
       "id": "con-mascots",
       "label": "Convention mascots",
-      "description": "Mascots from major My Little Pony fan conventions.",
+      "description": "Mascots from major My Little Pony fan conventions, including historical conventions.",
       "names": [
         "harmonic-tune",
         "harmony-star",
@@ -2236,7 +2236,10 @@
         "peponi",
         "gibbous-moon",
         "lantern-light",
-        "carry-on"
+        "carry-on",
+        "mane-event",
+        "hoof-beatz",
+        "blank-canvas"
       ],
       "sources": {
         "harmonic-tune": "https://2025.harmonycon.org/",
@@ -2270,7 +2273,10 @@
         "peponi": "https://ponerpics.org/images/7007071",
         "gibbous-moon": "https://nightmarenights.org/",
         "lantern-light": "https://nightmarenights.org/",
-        "carry-on": "https://nightmarenights.org/"
+        "carry-on": "https://nightmarenights.org/",
+        "mane-event": "https://archive.bronycon.org/2015/registration.html",
+        "hoof-beatz": "https://archive.bronycon.org/2015/registration.html",
+        "blank-canvas": "https://archive.bronycon.org/2015/registration.html"
       }
     },
     {
