@@ -265,8 +265,6 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(parsed["branchNameDisabledPacks"], "")
         self.assertEqual(parsed["branchCustomNames"], "")
         self.assertEqual(parsed["branchNameImports"], "[]")
-        self.assertEqual(parsed["chatgptCustomInstructions"], "")
-        self.assertTrue(parsed["chatgptWebCodexCoauthor"])
 
     def test_parses_disabled_custom_and_imported_branch_names(self):
         values = form_values()
@@ -345,7 +343,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;", page)
         self.assertIn('let installedModels = ["local:model"];', page)
         self.assertIn("/save?token=test-token", page)
-        self.assertIn("importKey ? '/save' : '/autosave'", page)
+        self.assertIn("fetch('/autosave' + location.search", page)
         self.assertIn('id="save-status"', page)
         self.assertIn('class="settings-layout"', page)
         self.assertIn('class="settings-tabs" role="tablist" aria-orientation="vertical"', page)
@@ -387,10 +385,13 @@ class SubmissionTests(unittest.TestCase):
         self.assertNotIn('name="aiCommitCustomInstructions"', page)
         self.assertNotIn("Sync AI commits with Codex instructions", page)
         self.assertIn("updateAskOllamaRequirement", page)
-        self.assertIn('name="chatgptCustomInstructions"', page)
-        self.assertIn('id="sync-chatgpt-instructions"', page)
-        self.assertIn('name="pgpSecretKey"', page)
-        self.assertNotIn("PGP PRIVATE KEY BLOCK-----\nsecret", page)
+        self.assertIn('name="commitInstructions"', page)
+        self.assertIn('id="generate-signing-key"', page)
+        self.assertIn('id="open-signing-key-manager"', page)
+        self.assertNotIn('name="chatgptCustomInstructions"', page)
+        self.assertNotIn('id="sync-chatgpt-instructions"', page)
+        self.assertNotIn('name="pgpSecretKey"', page)
+        self.assertNotIn("Import ChatGPT personalization", page)
 
 
     def test_extension_payload_exposes_startup_user_setting(self):
@@ -410,18 +411,6 @@ class SubmissionTests(unittest.TestCase):
             payload["workspaceSearch"]["embeddingModel"],
             install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],
         )
-
-    def test_custom_instructions_allow_multiline_text(self):
-        values = form_values()
-        values["chatgptCustomInstructions"] = ["Use ASCII quotes.\nKeep replies compact."]
-
-        parsed = configurator.parse_submission(values)
-
-        self.assertEqual(
-            parsed["chatgptCustomInstructions"],
-            "Use ASCII quotes.\nKeep replies compact.",
-        )
-
 
 class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_bool")
@@ -648,8 +637,7 @@ class ServerTests(unittest.TestCase):
         with patch("configurator.webbrowser.open", side_effect=open_browser), \
              patch("configurator.validate_models") as validate, \
              patch("configurator.save_settings") as save, \
-             patch("configurator.sync_codex_instructions"), \
-             patch("configurator.import_pgp_secret_key"), \
+             patch("configurator.save_commit_instructions"), \
              patch("configurator.print"):
             thread = threading.Thread(target=run_server)
             thread.start()
@@ -712,8 +700,7 @@ class ServerTests(unittest.TestCase):
         with patch("configurator.print", side_effect=capture_output), \
              patch("configurator.webbrowser.open") as browser, \
              patch("configurator.save_settings") as save, \
-             patch("configurator.sync_codex_instructions"), \
-             patch("configurator.import_pgp_secret_key"), \
+             patch("configurator.save_commit_instructions"), \
              patch("configurator.validate_models", side_effect=ValueError("Ollama offline")) as validate:
             thread = threading.Thread(target=run_server)
             thread.start()
@@ -724,7 +711,8 @@ class ServerTests(unittest.TestCase):
                 with urllib.request.urlopen(captured["url"], timeout=5) as response:
                     page = response.read().decode()
                     self.assertIn("Sweetiebot SCM Setup", page)
-                    self.assertIn('value="save" hidden>Import signing key', page)
+                    self.assertIn('value="save" hidden>Done', page)
+                    self.assertNotIn("Import signing key", page)
                 for path in ("/autosave", "/save", "/autosave"):
                     values = form_values()
                     values.pop("branchPicker")

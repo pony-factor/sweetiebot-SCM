@@ -99,7 +99,7 @@ def source_files() -> dict[Path, Path]:
     files[Path("local_codex_commit.py")] = HERE / "local_codex_commit.py"
     files[Path("branch_names.py")] = HERE / "branch_names.py"
     files[Path("branch_name_packs.json")] = HERE / "branch_name_packs.json"
-    files[Path("chatgpt_integration.py")] = HERE / "chatgpt_integration.py"
+    files[Path("local_setup.py")] = HERE / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
     for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md"})):
         for source in (HERE.parent / directory).rglob("*"):
