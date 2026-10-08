@@ -8,6 +8,32 @@ LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick
 
 
 class GitHubPRTests(unittest.TestCase):
+    def test_timeout_notice_is_short_and_preserves_other_errors(self):
+        notice = 's.l10n.t("Fetching pull requests failed: {0}",Pe(l))'
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)};'
+                  's.window.showErrorMessage(' + notice + ',...u)')
+        patched = github_pr.transform_refresh(source)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        metadata = patched.split(github_pr.REFRESH_START)[1].split(github_pr.REFRESH_END)[0]
+        replacement = json.loads(metadata.removeprefix('/* edits:').removesuffix(' */'))[-1][1]
+        script = '''
+const assert = require('node:assert/strict');
+const s = {l10n:{t:(template, message)=>template.replace('{0}',message)}};
+const Pe = error => error.message;
+function format(l) { return REPLACEMENT; }
+for (const message of ['Connect Timeout Error (attempted address: api.github.com:443, timeout: 10000ms)',
+                       'request timed out', 'UND_ERR_CONNECT_TIMEOUT']) {
+ assert.equal(format({message}), '⏳ GitHub took too long to respond. Try refreshing.');
+}
+for (const message of ['Bad credentials', 'API rate limit exceeded', 'Not Found']) {
+ assert.equal(format({message}), 'Fetching pull requests failed: ' + message);
+}
+'''.replace('REPLACEMENT', replacement)
+        subprocess.run(['node', '-e', script], check=True)
+
     def test_tree_refresh_is_reversible_idempotent_and_guarded(self):
         source = 's.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});' + 'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)}'
         patched = github_pr.transform_refresh(source)

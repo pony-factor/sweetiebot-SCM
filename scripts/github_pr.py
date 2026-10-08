@@ -9,6 +9,9 @@ REFRESH_START = '\n/* sweetiebot-github-pr-refresh:start */\n'
 REFRESH_END = '\n/* sweetiebot-github-pr-refresh:end */\n'
 TREE = re.compile(r'([\w$]+)\.window\.createTreeView\("pr:github",\{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0\}\)')
 REFRESH_COMMAND = re.compile(r'([\w$]+)=>\{this\.prsTreeModel\.forceClearCache\(\),this\.refreshAllQueryResults\(!0\)\}')
+FETCH_NOTICE = re.compile(
+    r'[\w$]+\.l10n\.t\("Fetching pull requests failed: \{0\}",([\w$]+\([\w$]+\))\)'
+)
 CLEANUP = re.compile(
     r'else if\(\(await [\w$]+\.githubRepository\.getMetadata\(\)\)\.delete_branch_on_merge\)'
     r'\{const ([\w$]+)=await [\w$]+\([\w$]+,[\w$]+\);return \1\.isReply\?void 0:\1\.message\}'
@@ -72,6 +75,16 @@ def transform_refresh(source, remove=False):
     factory = f'(()=>{{{helper}\nreturn installPullRequestRefresh;}})()'
     edits = [(original, f'({factory})({tree[0].group(1)},{original},this)'),
              (commands[0].group(), commands[0].group().replace('{this.', '{return this.', 1))]
+    notices = list(FETCH_NOTICE.finditer(source))
+    if len(notices) > 1:
+        raise ValueError('Unsupported GitHub PR notification build: ambiguous fetch notice.')
+    if notices:
+        notice = notices[0]
+        # Keep authentication and other errors intact; shorten only network timeouts.
+        edits.append((notice.group(),
+                      '(/connect timeout|connection timeout|timed?\\s*out|UND_ERR_CONNECT_TIMEOUT/i.test('
+                      + notice.group(1) + ')?"⏳ GitHub took too long to respond. Try refreshing.":'
+                      + notice.group() + ')'))
     for original, replacement in edits:
         source = source.replace(original, replacement, 1)
     return source + REFRESH_START + '/* edits:' + json.dumps(edits) + ' */' + REFRESH_END
