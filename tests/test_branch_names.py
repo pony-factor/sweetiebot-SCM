@@ -139,6 +139,7 @@ class BranchNamePackTests(unittest.TestCase):
             "zapp",
             "smash-fortune",
             "grogar",
+            "plainity",
         ]
         self.assertEqual(packs["g4-caricatures"]["label"], "G4 caricatures")
         self.assertEqual(packs["g4-caricatures"]["names"], expected)
@@ -159,6 +160,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         assignments = {
             "grogar": "g4-caricatures",
+            "plainity": "g4-caricatures",
             "lord-tirek": "g4-creatures",
             "scorpan": "g4-creatures",
             "forward-thinking-friendship-student": "g4-mares",

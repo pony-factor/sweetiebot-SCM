@@ -419,7 +419,8 @@ class TitleTests(unittest.TestCase):
         self.assertIn("dedicated Sync button", prompt)
         self.assertIn("file count, diff size, and file moves", prompt)
 
-    def test_entire_large_prompt_is_bounded_and_keeps_rules_and_totals(self):
+    @patch.object(ai_commit, "commit_custom_instructions", return_value="")
+    def test_entire_large_prompt_is_bounded_and_keeps_rules_and_totals(self, _instructions):
         with patch.object(ai_commit, "recent_subjects", return_value="Update notes\n" * 500):
             prompt = ai_commit.prompt_for_diff(
                 "file | 1000 +++\n" * 1000,

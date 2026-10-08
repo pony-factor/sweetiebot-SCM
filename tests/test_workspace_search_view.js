@@ -105,7 +105,7 @@ async function run() {
   assert.match(html, /' and '\+folderCount\+' folder'/);
   assert.doesNotMatch(html, /' · '\+message\.mode/);
   assert.match(html, /className='line-number'/);
-  assert.match(html, /meta\.append\(line,score,copied\)/);
+  assert.match(html, /meta\.append\(score,copied\)/);
   assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
   assert.match(html, /more\.textContent='…'/);
   const page = {document: {getElementById: id => elements.get(id)},

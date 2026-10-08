@@ -180,7 +180,7 @@ class SearchIndex {
 
   async discoverFilenames(settings) {
     const exclude = settings.exclude || undefined;
-    if (this.filenameCache?.exclude === exclude && Date.now() < this.filenameCache.expires) {
+    if (this.filenameCache && this.filenameCache.exclude === exclude && Date.now() < this.filenameCache.expires) {
       return this.filenameCache.uris;
     }
     if (this.filenameScanPromise) return this.filenameScanPromise;
@@ -199,7 +199,7 @@ class SearchIndex {
 
   async discoverFolders(settings) {
     const exclude = settings.exclude || undefined;
-    if (this.folderCache?.exclude === exclude && Date.now() < this.folderCache.expires) {
+    if (this.folderCache && this.folderCache.exclude === exclude && Date.now() < this.folderCache.expires) {
       return this.folderCache.uris;
     }
     if (this.folderScanPromise) return this.folderScanPromise;

@@ -22,7 +22,8 @@ class CodexContextTests(unittest.TestCase):
             codex_context.transform('unrecognized source', 'host')
 
     @patch('ai_commit.recent_subjects', return_value='')
-    def test_context_is_bounded_and_staged_diff_remains_authoritative(self, _history):
+    @patch('ai_commit.commit_custom_instructions', return_value='')
+    def test_context_is_bounded_and_staged_diff_remains_authoritative(self, _instructions, _history):
         for num_ctx in (2048, 4096):
             with self.subTest(num_ctx=num_ctx), patch.object(ai_commit, 'NUM_CTX', num_ctx):
                 prompt = ai_commit.prompt_for_diff(
