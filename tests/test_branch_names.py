@@ -234,7 +234,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 300)
+        self.assertEqual(len(names), 293)
         for name in (
             "acacia-pie",
             "captain-hoofbeard",
@@ -247,6 +247,35 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertIn(name, names)
         self.assertNotIn("humdrum", names)
         self.assertFalse(any("unnamed" in name for name in names))
+
+    def test_idw_comics_has_no_cross_pack_slug_collisions_or_character_aliases(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        idw_names = set(packs["idw-comics"]["names"])
+        for pack in catalog["packs"]:
+            if pack["id"] == "idw-comics":
+                continue
+            self.assertFalse(
+                idw_names.intersection(pack["names"]),
+                f"IDW comics repeats a branch slug from {pack['id']}",
+            )
+
+        # These refer to characters already listed elsewhere or twice in IDW.
+        for alias in ("kingpin", "dauntless", "cadance"):
+            self.assertNotIn(alias, idw_names)
+        self.assertIn("mr-kingpin", packs["g4-stallions"]["names"])
+        self.assertIn("general-dauntless", idw_names)
+        self.assertIn("princess-cadance", packs["g4-mares"]["names"])
+        # Mirror-Universe Cadance is a distinct IDW counterpart.
+        self.assertIn("mirror-universe-cadance", idw_names)
+        self.assertIn("princess-trixie", idw_names)
+
+    def test_idw_comics_pack_matches_bundled_installer_catalog(self):
+        bundled = (
+            branch_names.HERE.parent / "Sweetiebot Installer.app" / "Contents"
+            / "Resources" / "toolkit" / "scripts" / "branch_name_packs.json"
+        )
+        self.assertEqual(branch_names.CATALOG_PATH.read_bytes(), bundled.read_bytes())
 
     def test_convention_mascots_include_historic_bronycon_trio(self):
         catalog = branch_names.load_catalog()
