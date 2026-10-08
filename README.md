@@ -650,7 +650,7 @@ In Sweetie Bot settings → **GitHub**, set **ChatGPT project for PR actions** t
 Sweetie Bot appends the prepared prompt as the URL's `q` parameter within the chosen project. ChatGPT's project-scoped `q` behavior is not a documented API, so verify the draft appears in the project composer before submitting; if it does not, paste the prepared prompt manually. The project must already be accessible to the signed-in ChatGPT account. Project instructions and files are supplied by ChatGPT, not by Sweetie Bot.
 
 
-### Pull requests through Kafania
+**First-run setup:** With no project configured, the next ChatGPT-backed PR drafting or batch merge action offers to set up a project. Choose **Set up project** to open ChatGPT in your web browser, create (or select) a personal **unshared** project, and paste its project URL into Sweetie Bot. The URL is saved in your VS Code user settings so later actions open inside that project. Choose **Use regular chats** to explicitly retain the original behavior without repeat prompts, or cancel to launch no chat. A project URL configured in Settings takes precedence over that choice. Sweetie Bot cannot create a ChatGPT project through a supported external API, verify its privacy, or move old chats; use ChatGPT's own project controls and do not share the project if it must remain private.\n\n### Pull requests through Kafania
 
 The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser and automatically submits the drafting prompt with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 
