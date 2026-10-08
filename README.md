@@ -518,9 +518,10 @@ access list or a separate personal access token.
 ### Codex chat timestamp hiding
 
 When `codex-hide-chat-timestamps` is enabled, the Codex webview hides standalone
-conversation date/time separators such as `Today 6:44 PM`. The filter only hides
-small separator containers whose entire text looks like a date/time label; message
-content, buttons, links, inputs, and other chat UI remain untouched.
+conversation date/time separators such as `Today 6:44 PM`. It also replaces
+elapsed-time labels like `Worked for 1m 48s` with `Activity` on collapsible Codex
+activity controls, preserving their expand behavior. Message content, unrelated
+buttons, links, and inputs remain untouched.
 
 This option uses the same `--codex-only` install/refresh path as the other Codex
 customizations.

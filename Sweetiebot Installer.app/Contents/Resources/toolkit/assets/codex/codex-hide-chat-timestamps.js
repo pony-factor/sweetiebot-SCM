@@ -10,6 +10,45 @@
     const monthPattern = /^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,\s*\d{4})?(?:\s+at)?(?:,)?\s+(?:1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)$/i;
     const numericPattern = /^\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?(?:,)?\s+(?:1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)$/i;
 
+    // Hide elapsed-work labels without removing the collapsible activity controls.
+    const activityDurationPattern = /^(?:Worked|Thought) for \d+\s*(?:days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|d|h|m|s)(?:\s*\d+\s*(?:days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|d|h|m|s))*$/i;
+    const activityLeadPattern = /^(?:Worked|Thought)(?:\s+for\b|\s*$)/i;
+
+    function looksLikeActivityDuration(value) {
+        return activityDurationPattern.test(normalize(value));
+    }
+
+    function activityControl(node) {
+        let element = node.parentElement;
+        for (let depth = 0; element && depth < 6; depth += 1, element = element.parentElement) {
+            const tag = (element.tagName || '').toUpperCase();
+            if (tag === 'BUTTON' || tag === 'SUMMARY'
+                || element.getAttribute?.('role') === 'button'
+                || element.hasAttribute?.('aria-expanded')) return element;
+        }
+        return null;
+    }
+
+    function relabelActivityDuration(node) {
+        const control = activityControl(node);
+        if (!control) return;
+        // Only touch controls whose complete label is an elapsed duration.
+        const label = normalize(control.textContent).replace(/[›»⌄▾>]$/, '').trim();
+        if (!looksLikeActivityDuration(label)) return;
+
+        const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        const first = nodes.find((part) => activityLeadPattern.test(normalize(part.textContent)));
+        if (!first) return;
+
+        for (const part of nodes) part.textContent = part === first ? 'Activity' : '';
+        for (const name of ['title', 'aria-label']) {
+            const value = control.getAttribute?.(name);
+            if (value != null && looksLikeActivityDuration(value)) control.setAttribute(name, 'Activity');
+        }
+    }
+
     function looksLikeTimestamp(value) {
         const text = normalize(value);
         return Boolean(
@@ -64,11 +103,16 @@
         container.style.setProperty('display', 'none', 'important');
     }
 
+    function processTextNode(node) {
+        if (looksLikeTimestamp(node.textContent)) hideTimestamp(node);
+        else if (activityLeadPattern.test(normalize(node.textContent))) relabelActivityDuration(node);
+    }
+
     function scan(root) {
         if (!root) return;
 
         if (root.nodeType === Node.TEXT_NODE) {
-            if (looksLikeTimestamp(root.textContent)) hideTimestamp(root);
+            processTextNode(root);
             return;
         }
 
@@ -80,6 +124,7 @@
             {
                 acceptNode(node) {
                     return looksLikeTimestamp(node.textContent)
+                        || activityLeadPattern.test(normalize(node.textContent))
                         ? NodeFilter.FILTER_ACCEPT
                         : NodeFilter.FILTER_REJECT;
                 },
@@ -88,7 +133,7 @@
 
         const matches = [];
         while (walker.nextNode()) matches.push(walker.currentNode);
-        matches.forEach(hideTimestamp);
+        matches.forEach(processTextNode);
     }
 
     function start() {
