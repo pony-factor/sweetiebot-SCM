@@ -104,6 +104,18 @@ async function run() {
   assert.equal(spawnCount, beforeCodex);
   assert.match(notices.at(-1)[0], /Codex-attributed/);
 
+  const codexWeb = '🐜 Fxi commit titel\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+  assert.equal(await preview(uri, codexWeb), codexWeb);
+  assert.equal(spawnCount, beforeCodex);
+  assert.match(notices.at(-1)[0], /Codex-attributed/);
+
+  assert.equal(sandbox.module.exports.hasCodexCoauthor(codex), true);
+  assert.equal(sandbox.module.exports.hasCodexCoauthor(codexWeb), true);
+  assert.equal(
+    sandbox.module.exports.hasCodexCoauthor('🐜 Fxi commit titel\n\nCo-authored-by: Person <person@example.com>'),
+    false
+  );
+
   console.log('Commit spellcheck preview checks passed.');
 }
 
