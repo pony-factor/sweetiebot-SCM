@@ -9,13 +9,20 @@ async function run() {
   const calls = [];
   const exampleUri = {toString: () => 'file:///example.txt'};
   const emptyUri = {toString: () => 'file:///notes/empty-notes.md'};
+  const overlookedUri = {toString: () => 'file:///drafts/apa-nondeference.md'};
+  let filenameScans = 0;
   const vscode = {
     Uri: {joinPath: (_root, file) => file, parse: text => ({toString: () => text})},
     FileType: {File: 1},
     workspace: {
       workspaceFolders: [],
-      asRelativePath: uri => uri.toString() === emptyUri.toString() ? 'notes/empty-notes.md' : 'example.txt',
-      findFiles: async () => [exampleUri, emptyUri],
+      asRelativePath: uri => uri.toString() === overlookedUri.toString() ? 'drafts/apa-nondeference.md'
+        : uri.toString() === emptyUri.toString() ? 'notes/empty-notes.md' : 'example.txt',
+      findFiles: async (_glob, _exclude, maxFiles) => {
+        if (maxFiles) return [exampleUri, emptyUri];
+        filenameScans += 1;
+        return [exampleUri, emptyUri, overlookedUri];
+      },
       fs: {readFile: async () => {throw new Error('No cache');}, createDirectory: async () => {},
         writeFile: async (_uri, bytes) => {persisted = JSON.parse(bytes.toString());},
         delete: async () => {}, rename: async () => {}, stat: async () => ({type: 1, size: 20, mtime: 1})}
@@ -34,7 +41,7 @@ async function run() {
     return require(name);
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search_index.js'), 'utf8'), sandbox);
-  const index = new sandbox.module.exports.SearchIndex({globalStorageUri: {}}, () => ({embeddingModel: model, resultLimit: 10, mode: 'semantic'}));
+  const index = new sandbox.module.exports.SearchIndex({globalStorageUri: {}}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
   unavailable = true;
   await index.refresh();
   assert.match(index.embeddingWarning, /Model missing/);
@@ -58,6 +65,16 @@ async function run() {
   assert.ok(filenameResult, 'Semantic search should return files whose names match even without extractable text');
   assert.equal(filenameResult.text, 'File name match');
   assert.ok(persisted.files.some(file => file.uri === emptyUri.toString()), 'Empty files should remain in the index for filename search');
-  console.log('Workspace model recovery, filename search, and index checks passed.');
+  assert.ok(!persisted.files.some(file => file.uri === overlookedUri.toString()), 'The fixture must be outside the capped content index');
+  result = await index.search('apa nondeference', 'hybrid');
+  assert.equal(result.results[0].relative, 'drafts/apa-nondeference.md', 'Hyphenated exact titles must rank first');
+  assert.equal(result.results[0].kind, 'filename');
+  assert.equal(result.results[0].score, 2, 'Direct filename matches must beat passage scores');
+  result = await index.search('APA-NONDEFERENCE.MD', 'exact');
+  assert.equal(result.results[0].relative, 'drafts/apa-nondeference.md', 'Full filenames must match without case sensitivity');
+  result = await index.search('nondeference', 'semantic');
+  assert.ok(result.results.some(item => item.relative === 'drafts/apa-nondeference.md' && item.kind === 'filename'), 'Semantic mode must discover names of unindexed files');
+  assert.equal(filenameScans, 1, 'Repeated queries should reuse the short-lived filename listing');
+  console.log('Workspace model recovery, uncapped filenames, exact-name priority, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
