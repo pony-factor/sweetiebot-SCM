@@ -258,6 +258,7 @@ class SearchIndex {
     const scored = [];
     const fuzzy = selectedMode === 'hybrid';
     const normalizedQuery = normalizedName(query);
+    const literalUrlQuery = /^https?:\/\/\S+$/i.test(String(query || '').trim());
     for (const folderUri of await this.discoverFolders(settings)) {
       const relative = vscode.workspace.asRelativePath(folderUri, false);
       const name = relative.split(/[\\/]/).pop() || relative;
@@ -301,9 +302,11 @@ class SearchIndex {
     }
     for (const file of this.files.values()) {
       for (const chunk of file.chunks || []) {
+        const literalUrlOffset = literalUrlQuery ? chunk.text.indexOf(query) : -1;
         const exact = keywordScore(query, chunk.text, { fuzzy });
         const semantic = queryVector && chunk.vector ? Math.max(0, cosine(queryVector, chunk.vector)) : 0;
-        const score = selectedMode === 'exact'
+        // An identical URL must never be buried by semantically similar passages.
+        const score = literalUrlOffset >= 0 ? 3 : selectedMode === 'exact'
             ? exact
             : selectedMode === 'semantic'
                 ? semantic
@@ -311,7 +314,9 @@ class SearchIndex {
                     ? exact
                     : semantic * 0.78 + exact * 0.22;
         if (score > 0) {
-          const line = bestMatchingLine(query, chunk.text, chunk.line, { fuzzy });
+          const line = literalUrlOffset >= 0
+            ? chunk.line + (chunk.text.slice(0, literalUrlOffset).match(/\n/g) || []).length
+            : bestMatchingLine(query, chunk.text, chunk.line, { fuzzy });
           scored.push({ uri: file.uri, relative: vscode.workspace.asRelativePath(vscode.Uri.parse(file.uri), false), line, text: chunk.text, score });
         }
       }
