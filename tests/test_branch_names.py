@@ -138,6 +138,7 @@ class BranchNamePackTests(unittest.TestCase):
             "saddle-rager",
             "zapp",
             "smash-fortune",
+            "grogar",
         ]
         self.assertEqual(packs["g4-caricatures"]["label"], "G4 caricatures")
         self.assertEqual(packs["g4-caricatures"]["names"], expected)
@@ -152,6 +153,26 @@ class BranchNamePackTests(unittest.TestCase):
             {"branchNameDisabledPacks": default_disabled}
         )
         self.assertNotIn("g4-caricatures", settings["branchNameDisabledPacks"])
+
+    def test_missing_g4_characters_use_canonical_packs(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        assignments = {
+            "grogar": "g4-caricatures",
+            "lord-tirek": "g4-creatures",
+            "scorpan": "g4-creatures",
+            "forward-thinking-friendship-student": "g4-mares",
+            "coiffed-waiter-pony": "g4-stallions",
+        }
+        for slug, pack_id in assignments.items():
+            self.assertIn(slug, packs[pack_id]["names"])
+            self.assertTrue(packs[pack_id]["sources"].get(slug, "").startswith("https://"))
+            self.assertEqual(
+                [pack["id"] for pack in catalog["packs"] if slug in pack["names"]],
+                [pack_id],
+            )
+        self.assertIn("wind-rider", packs["g4-stallions"]["names"])
+        self.assertNotIn("wind-rider", packs["g4-caricatures"]["names"])
 
     def test_legacy_g4_pack_id_keeps_saved_enable_disable_preferences(self):
         self.assertEqual(

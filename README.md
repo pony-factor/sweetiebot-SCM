@@ -253,7 +253,7 @@ Then reload Visual Studio Code. The installer resolves the Git-config values and
 
 ### Branch-name packs
 
-Random branch names are data-driven. Built-in packs live in `scripts/branch_name_packs.json`, and every pack uses the same small schema: The G4 pony roster is split into mares, stallions, fillies, colts, creatures, and a dedicated **G4 caricatures** pack containing the six Equestrian founders, six Power Ponies, Humdrum, and Smash Fortune; Wind Rider remains in G4 stallions alongside other named adult male ponies.
+Random branch names are data-driven. Built-in packs live in `scripts/branch_name_packs.json`, and every pack uses the same small schema: The G4 pony roster is split into mares, stallions, fillies, colts, creatures, and a dedicated **G4 caricatures** pack containing the six Equestrian founders, six Power Ponies, Humdrum, Smash Fortune, and Grogar; Wind Rider and Coiffed Waiter Pony remain in G4 stallions, Forward-Thinking Friendship Student is in G4 mares, and Tirek and Scorpan are in G4 creatures. The two finale-era pony labels come from the Gameloft game rather than dialogue in the show.
 
 ```json
 {
