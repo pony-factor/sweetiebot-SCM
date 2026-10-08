@@ -95,6 +95,28 @@ async function run() {
   result = await index.search('projects finance', 'hybrid');
   assert.ok(result.results.some(item => item.kind === 'folder' && item.relative === 'projects/finance'), 'Folder paths should be searchable');
   assert.equal(filenameScans, 2, 'Repeated queries should reuse independent filename and folder listings');
+
+  // Suppress redundant path matches only when the same file has matching passages.
+  // Keep standalone file-path matches and filename matches visible.
+  const originalRelativePath = vscode.workspace.asRelativePath;
+  vscode.workspace.asRelativePath = uri => {
+    if (uri.toString() === exampleUri.toString()) return 'passage/example.txt';
+    if (uri.toString() === emptyUri.toString()) return 'references/empty-notes.md';
+    return originalRelativePath(uri);
+  };
+  result = await index.search('passage', 'exact');
+  const passageResults = result.results.filter(item => item.uri === exampleUri.toString());
+  assert.ok(passageResults.some(item => !item.kind), 'Matching passages remain visible');
+  assert.ok(!passageResults.some(item => item.text === 'Path match'), 'Do not list a path hit beside passages from the same file');
+  result = await index.search('references', 'exact');
+  const pathOnly = result.results.find(item => item.uri === emptyUri.toString());
+  assert.ok(pathOnly, 'A file without matching passages must still be found by its path');
+  assert.equal(pathOnly.text, 'Path match');
+  result = await index.search('example', 'exact');
+  assert.ok(result.results.some(item => item.uri === exampleUri.toString() && item.text === 'File name match'),
+    'File-name hits remain independent of passage hits');
+  vscode.workspace.asRelativePath = originalRelativePath;
+
   console.log('Workspace model recovery, uncapped filenames, exact-name priority, folder search, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
