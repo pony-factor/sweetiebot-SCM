@@ -206,12 +206,16 @@ class SearchIndex {
         }
       }
     }
-    scored.sort((a, b) => b.score - a.score);
+    // A path hit explains where a file was found; do not show it as a separate
+    // result when the same file already has matching passage content.
+    const filesWithPassages = new Set(scored.filter(item => !item.kind).map(item => item.uri));
+    const visibleResults = scored.filter(item => item.kind !== 'filename' || item.text !== 'Path match' || !filesWithPassages.has(item.uri));
+    visibleResults.sort((a, b) => b.score - a.score);
     if (this.dirty.size) void this.refresh().then(() => {
       if (this.dirty.size) return this.refresh();
       return undefined;
     }).catch(() => {});
-    return { results: scored.slice(0, settings.resultLimit), warning: this.embeddingWarning, mode: selectedMode };
+    return { results: visibleResults.slice(0, settings.resultLimit), warning: this.embeddingWarning, mode: selectedMode };
   }
 }
 

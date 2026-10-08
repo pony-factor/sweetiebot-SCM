@@ -58,6 +58,20 @@ async function run() {
   assert.ok(filenameResult, 'Semantic search should return files whose names match even without extractable text');
   assert.equal(filenameResult.text, 'File name match');
   assert.ok(persisted.files.some(file => file.uri === emptyUri.toString()), 'Empty files should remain in the index for filename search');
+  // A matching directory is already visible in the heading of passage results.
+  vscode.workspace.asRelativePath = uri => uri.toString() === emptyUri.toString()
+    ? 'references/empty-notes.md' : 'passage/example.txt';
+  result = await index.search('passage', 'exact');
+  const passageResults = result.results.filter(item => item.relative === 'passage/example.txt');
+  assert.ok(passageResults.some(item => !item.kind), 'Matching passages remain visible');
+  assert.ok(!passageResults.some(item => item.text === 'Path match'), 'Do not list a path hit beside passages from the same file');
+  result = await index.search('references', 'exact');
+  assert.equal(result.results.length, 1, 'A file with no matching passages still appears for its path');
+  assert.equal(result.results[0].text, 'Path match');
+  assert.equal(result.results[0].relative, 'references/empty-notes.md');
+  result = await index.search('example', 'exact');
+  assert.ok(result.results.some(item => item.text === 'File name match'), 'File-name hits remain independent of passage hits');
+
   console.log('Workspace model recovery, filename search, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
