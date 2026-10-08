@@ -197,6 +197,24 @@ class BranchNamePackTests(unittest.TestCase):
         self.assertIn("wacky-hair-day-and-spray", names)
         self.assertNotIn("day-and-spray", names)
 
+    def test_bowling_pony_walter_uses_clean_branch_name(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        stallions = packs["g4-stallions"]["names"]
+
+        for name in (
+            "jeff-letrotski",
+            "walter",
+            "theodore-donald-donny-kerabatsos",
+            "jesus-pezuna",
+        ):
+            self.assertIn(name, stallions)
+        self.assertNotIn("bowling-ponywalter", stallions)
+        self.assertEqual(
+            sum("walter" in pack["names"] for pack in catalog["packs"]),
+            1,
+        )
+
     def test_pony_life_names_are_separate_from_g4_packs(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
