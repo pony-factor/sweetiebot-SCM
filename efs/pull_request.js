@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { displayName } = require('./pony_profile');
 const { chatgptPromptUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
@@ -42,10 +43,12 @@ async function readKefaniaInstructions(repositoryPath, readFile = fs.readFile) {
 function matchSweetiebotPonyCatalog(branch, catalog) {
   const slug = String(branch || '').trim();
   if (!slug || !catalog || !Array.isArray(catalog.packs)) return undefined;
-  // Recognize legacy branches without offering the malformed scraped name again.
-  const lookupSlug = slug === 'magical-ponycelena' ? 'celena' : slug;
-
   for (const pack of catalog.packs) {
+    // Corrected names remain recognizable for already-created Git branches.
+    const canonical = pack?.aliases && Object.prototype.hasOwnProperty.call(pack.aliases, slug)
+      ? pack.aliases[slug]
+      : undefined;
+    const lookupSlug = typeof canonical === 'string' ? canonical.trim() : slug;
     if (!Array.isArray(pack?.names) || !pack.names.includes(lookupSlug)) continue;
     const match = {
       slug,
@@ -53,7 +56,9 @@ function matchSweetiebotPonyCatalog(branch, catalog) {
       packLabel: String(pack.label || ''),
       packDescription: String(pack.description || ''),
     };
-    if (lookupSlug !== slug) match.name = 'Celena';
+    const label = pack?.displayNames?.[lookupSlug];
+    if (typeof label === 'string' && label.trim()) match.name = label.trim();
+    else if (lookupSlug !== slug) match.name = displayName(lookupSlug);
     const source = typeof pack?.sources?.[lookupSlug] === 'string' ? pack.sources[lookupSlug].trim() : '';
     if (source) match.source = source;
     const images = Array.isArray(pack?.images?.[lookupSlug])

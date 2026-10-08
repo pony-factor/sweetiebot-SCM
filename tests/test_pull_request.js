@@ -41,6 +41,57 @@ async function run() {
   assert.equal(legacyCelena.name, 'Celena');
   assert.equal(legacyCelena.source, celena.source);
   assert.equal((await readSweetiebotPony('magical-ponycelena')).name, 'Celena');
+  // Every corrected branch remains recognizable without appearing as a new branch option.
+  const legacyNames = {
+    'athletic-dancerflashdancer': 'flashdancer',
+    'builder-ponyambrosia': 'ambrosia',
+    'clerkraspberry-vinaigrette': 'raspberry-vinaigrette',
+    'inquisitive-shopperrainbowshine': 'rainbowshine',
+    'librarianamethyst-maresbury': 'amethyst-maresbury',
+    'masseuse-ponyquake': 'quake-masseuse',
+    'nasal-ponypretzel': 'pretzel',
+    'posh-ponycayenne': 'cayenne-canterlot',
+    'pushy-ponyturf': 'turf',
+    'salesponyjasmine-leaf': 'jasmine-leaf',
+    'serene-dignitaryimmemoria': 'immemoria',
+    'announcer-ponymadden': 'madden',
+    'astro-ponyneptunio': 'neptunio',
+    'caballerons-bandolerobiff': 'biff',
+    'caballerons-brigandrogue': 'rogue',
+    'caballerons-thugwithers': 'withers',
+    'clumsy-clownsponypratfall': 'pratfall',
+    'coloraturas-stylistlimelight': 'limelight',
+    'dancing-clownsponycaramel': 'caramel',
+    'elite-ponyponet': 'ponet',
+    'emt-ponyhermes': 'hermes',
+    'eyeshade-ponykarat': 'karat',
+    'henchponypickpocket': 'pickpocket',
+    'horticultural-pegasusevergreen': 'evergreen',
+    'messy-stallionpigpen': 'pigpen',
+    'pegasus-dadnightjar': 'nightjar',
+    'sandbars-dadbeachcomber': 'beachcomber',
+    'security-guardlockdown': 'lockdown',
+    'snide-bullyscore': 'score',
+    'train-conductorsteamer': 'steamer',
+    'clever-schoolponyboysenberry': 'boysenberry',
+    'rookie-archaeologistgentiana': 'gentiana',
+    'the-great-and-powerfultwily': 'twily',
+  };
+  for (const [old, target] of Object.entries(legacyNames)) {
+    const legacy = matchSweetiebotPonyCatalog(old, ponyCatalog);
+    const canonical = matchSweetiebotPonyCatalog(target, ponyCatalog);
+    assert(canonical, `Missing target: ${target}`);
+    assert(legacy, `Missing legacy alias: ${old}`);
+    assert.equal(legacy.slug, old);
+    assert.equal(legacy.packId, canonical.packId);
+    assert.equal(legacy.name, canonical.name || target.split('-').map(part => part[0].toUpperCase() + part.slice(1)).join(' '));
+    assert.equal(legacy.source, canonical.source);
+    assert(!ponyCatalog.packs.some(pack => pack.names.includes(old)));
+  }
+  assert.equal(matchSweetiebotPonyCatalog('quake-masseuse', ponyCatalog).name, 'Quake');
+  assert.equal(matchSweetiebotPonyCatalog('cayenne-canterlot', ponyCatalog).name, 'Cayenne');
+  assert.equal(matchSweetiebotPonyCatalog('quake', ponyCatalog).packId, 'g4-stallions');
+  assert.equal(matchSweetiebotPonyCatalog('cayenne', ponyCatalog).packId, 'fallout-equestria');
   assert.equal(matchSweetiebotPonyCatalog('not-a-sweetiebot-pony', ponyCatalog), undefined);
   assert.equal((await readSweetiebotPony('berry-punch')).packId, 'g4-mares');
   const honeyDrop = matchSweetiebotPonyCatalog('honey-drop', ponyCatalog);
