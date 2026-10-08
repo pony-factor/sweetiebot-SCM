@@ -10,6 +10,7 @@ const {
   pickPullRequests,
   batchMergePrompt,
   submitChatPromptWithEnter,
+  classifyChatSubmitError,
   registerPullRequestBatchCommand
 } = require('../efs/pull_request_batch');
 
@@ -103,17 +104,29 @@ async function run() {
     },
     { platform: 'darwin', delayMs: 0 }
   );
-  assert.equal(submittedWithEnter, true);
+  assert.deepEqual(submittedWithEnter, { submitted: true });
   assert.equal(osascriptCall.file, '/usr/bin/osascript');
   assert.equal(osascriptCall.args[0], '-e');
   assert.match(osascriptCall.args[1], /frontApp contains "Code"/);
   assert.match(osascriptCall.args[1], /key code 36/);
-  assert.equal(await submitChatPromptWithEnter(() => {}, { platform: 'linux', delayMs: 0 }), false);
+  assert.match(osascriptCall.args[1], /\nkey code 36\n/);
+  assert(!osascriptCall.args[1].includes('\\n'), 'AppleScript must contain real newlines, not backslash-n text');
+  assert.deepEqual(await submitChatPromptWithEnter(() => {}, { platform: 'linux', delayMs: 0 }), { submitted: false, reason: 'unsupported' });
+  assert.equal(classifyChatSubmitError(new Error('VS Code is not frontmost: Finder')).reason, 'focus');
+  assert.equal(classifyChatSubmitError(new Error('osascript is not allowed assistive access. (-25211)')).reason, 'accessibility');
+  assert.equal(classifyChatSubmitError(new Error('Not authorized to send Apple events. (-1743)')).reason, 'automation');
+  assert.equal(classifyChatSubmitError(new Error('Expected end of line')).reason, 'script');
+  const failedSubmission = await submitChatPromptWithEnter(
+    (_file, _args, callback) => callback(new Error('Expected end of line')),
+    { platform: 'darwin', delayMs: 0 }
+  );
+  assert.equal(failedSubmission.reason, 'script');
 
   let handler;
   const browserCalls = [];
   const errors = [];
   const infos = [];
+  const warnings = [];
   const localRepository = {
     rootUri: { scheme: 'file', fsPath: '/workspace/repo' },
     state: { remotes: [{ name: 'origin', fetchUrl: 'git@github.com:owner/repo.git' }] }
@@ -148,7 +161,8 @@ async function run() {
         return [items[0]];
       },
       showErrorMessage(message) { errors.push(message); },
-      showInformationMessage(message) { infos.push(message); }
+      showInformationMessage(message) { infos.push(message); },
+      showWarningMessage(message) { warnings.push(message); }
     }
   };
   const fetchImpl = async () => ({
@@ -184,6 +198,13 @@ async function run() {
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
   assert.equal(submitCalls, 1);
+
+  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'focus' }), 'darwin');
+  await handler();
+  assert.match(warnings.pop(), /not frontmost/);
+  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'script', detail: 'Expected end of line' }), 'darwin');
+  await handler();
+  assert.match(warnings.pop(), /Expected end of line/);
 
   const pkg = require('../efs/package.json');
   assert(pkg.activationEvents.includes('onCommand:sweetiebot.openPullRequestBatchChat'));
