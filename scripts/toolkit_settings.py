@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
 
@@ -89,6 +90,7 @@ def read_git_bool(key, default):
             ["git", "config", "--global", "--type=bool", "--get", key],
             capture_output=True,
             text=True,
+            cwd=Path.home(),
         )
     except FileNotFoundError:
         return default
@@ -106,6 +108,7 @@ def read_git_string(key, default, preserve_empty=False):
             ["git", "config", "--global", "--get", key],
             capture_output=True,
             text=True,
+            cwd=Path.home(),
         )
     except FileNotFoundError:
         return default
@@ -166,7 +169,7 @@ def persist_message_bar_layout(settings):
         return
     result = subprocess.run(
         ["git", "config", "--global", key, str(settings["messageBarLayout"])],
-        capture_output=True, text=True,
+        capture_output=True, text=True, cwd=Path.home(),
     )
     if result.returncode != 0:
         raise RuntimeError("Unable to save the message bar layout: " + result.stderr.strip())

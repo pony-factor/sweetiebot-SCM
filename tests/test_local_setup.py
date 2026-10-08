@@ -30,6 +30,12 @@ class InstructionFileTests(unittest.TestCase):
 
 
 class SigningKeyTests(unittest.TestCase):
+    @patch.object(local_setup.shutil, "which", return_value="/usr/bin/git")
+    @patch.object(local_setup.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="Test User", stderr=""))
+    def test_git_identity_lookup_uses_stable_directory(self, run, _which):
+        self.assertEqual(local_setup._git_value("user.name"), "Test User")
+        self.assertEqual(run.call_args.kwargs["cwd"], Path.home())
+
     def test_configures_git_with_fingerprint_only(self):
         fingerprint = "0123456789ABCDEF0123456789ABCDEF01234567"
         with patch.object(local_setup, "list_signing_keys", return_value=[{"fingerprint": fingerprint, "uid": "Test"}]), \
@@ -40,6 +46,7 @@ class SigningKeyTests(unittest.TestCase):
         self.assertEqual(result, fingerprint)
         self.assertEqual(run.call_count, 3)
         for call in run.call_args_list:
+            self.assertEqual(call.kwargs.get("cwd"), Path.home())
             self.assertNotIn("input", call.kwargs)
             self.assertNotIn("PRIVATE KEY", " ".join(call.args[0]))
         self.assertIn(fingerprint, run.call_args_list[0].args[0])
