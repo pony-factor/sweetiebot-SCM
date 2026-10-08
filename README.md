@@ -628,9 +628,9 @@ restores the original message.
 
 ### Pull requests through Kafania
 
-The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
+The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser and automatically submits the drafting prompt with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 
-The request directs ChatGPT to publish through the configured Kafania MCP server and tool (by default `codex-drafter` / `github_create_pull_request`). If that Kafania tool is unavailable, the prompt asks ChatGPT not to substitute another GitHub writer.
+The request directs ChatGPT to publish through the configured Kafania MCP server and tool (by default `codex-drafter` / `github_create_pull_request`). If that Kafania tool is unavailable, the prompt follows Kefania's publishing fallback using an authenticated GitHub tool, retaining the description attribution and recording supplied conversation provenance in a separate comment.
 
 When the Integrated Browser is already showing a private ChatGPT conversation, Sweetiebot records its `/c/<uuid>` URL as the source. Otherwise it asks the patched Codex extension for the active local conversation UUID and a read-only context snapshot. The Codex UUID is linked through a Sweetiebot VS Code deep link so the author can reopen the local session even though it is not public.
 
