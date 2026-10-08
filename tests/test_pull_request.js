@@ -73,9 +73,12 @@ async function run() {
   assert(prompt.includes('in repository https://github.com/owner/repo, against'));
   assert(!prompt.includes('/repo with spaces'));
   assert(prompt.includes(rules));
-  assert.match(prompt, /Kafania's configured MCP server "codex-drafter"/);
+  assert.match(prompt, /Kafania's connected MCP server "codex-drafter"/);
   assert.match(prompt, /"github_create_pull_request"/);
-  assert.match(prompt, /follow the Publishing fallback/);
+  assert.match(prompt, /github_get_pull_request_context/);
+  assert.match(prompt, /expectedHeadSha/);
+  assert.match(prompt, /Secure MCP Tunnel/);
+  assert.match(prompt, /A VS Code stdio registration alone does not expose tools to ChatGPT/);
   assert(!prompt.includes('instead of substituting a different GitHub writer'));
   assert.match(prompt, /Do not claim publication succeeded/);
   assert(prompt.includes(chatSource.uuid));
@@ -232,6 +235,31 @@ async function run() {
   assert(packageJson.activationEvents.includes('onUri'));
 
   const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
+  const preflightSource = source.match(/async function scmToolkitCheckPullRequestMcp\([\s\S]*?\n\}/)[0];
+  let statusResult = { content: [{ type: 'text', text: '{"ready":true}' }] };
+  let missingTool;
+  const preflightCalls = [];
+  const preflightContext = vm.createContext({
+    async scmToolkitKafaniaTool(_doc, _service, server, name) {
+      assert.equal(server, 'codex-drafter');
+      preflightCalls.push(name);
+      return name === missingTool ? undefined : { async call() { return statusResult; } };
+    },
+    scmToolkitMcpError: result => result.content[0].text,
+  });
+  vm.runInContext(`${preflightSource}\nthis.check = scmToolkitCheckPullRequestMcp;`, preflightContext);
+  const preflightSettings = { mcpPrServer: 'codex-drafter', mcpPrTool: 'github_create_pull_request' };
+  await preflightContext.check({}, {}, preflightSettings);
+  assert.deepEqual(preflightCalls, ['kefania_status', 'github_get_pull_request_context', 'github_create_pull_request']);
+  missingTool = 'kefania_status';
+  await assert.rejects(preflightContext.check({}, {}, preflightSettings), /MCP: List Servers/);
+  missingTool = 'github_create_pull_request';
+  await assert.rejects(preflightContext.check({}, {}, preflightSettings), /missing the MCP tool/);
+  missingTool = undefined;
+  statusResult = { isError: true, content: [{ type: 'text', text: 'Login required' }] };
+  await assert.rejects(preflightContext.check({}, {}, preflightSettings), /cannot access GitHub/);
+  statusResult = { content: [{ type: 'text', text: 'not-json' }] };
+  await assert.rejects(preflightContext.check({}, {}, preflightSettings), /invalid connection status/);
   const callbackSource = source.match(/    const createPullRequest = ([\s\S]*?)\n    };/)[1];
   const chatSourceFunction = source.match(/function scmToolkitChatgptConversationSource\(doc\) \{[\s\S]*?\n\}/)[0];
   const coordinatesFunction = source.match(/function scmToolkitGithubCoordinates\(repositoryUrl\) \{[\s\S]*?\n\}/)[0];
@@ -279,6 +307,7 @@ async function run() {
       recorded.push({ launch, branch, base, source });
     },
     mcpService: {},
+    async scmToolkitCheckPullRequestMcp() {},
     refreshBranchControls() {},
     notifications: { error(error) { throw error; } },
     commands: { async executeCommand(id, root, options) {
@@ -301,6 +330,11 @@ async function run() {
   assert.equal(sandbox.recorded[0].base, 'main');
   assert.deepEqual(sandbox.recorded[0].source, pickerSource);
   assert.equal(sandbox.recorded[0].launch.repositoryUrl, 'https://github.com/owner/repo');
+  sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
+  sandbox.commands.executeCommand = async () => assert.fail('Unavailable Kefania must not launch the chat');
+  await assert.rejects(click({ stopPropagation() {} }), /Kefania unavailable/);
+  assert.equal(sandbox.creatingPullRequest, false);
+  assert.equal(sandbox.recorded.length, 1);
 
   console.log('Kafania pull-request bridge checks passed.');
 }

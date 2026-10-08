@@ -603,6 +603,27 @@ async function scmToolkitWaitForChatgptConversationSource(doc, initialUuid) {
     return undefined;
 }
 
+async function scmToolkitCheckPullRequestMcp(doc, mcpService, settings) {
+    const serverName = settings.mcpPrServer;
+    const statusTool = await scmToolkitKafaniaTool(doc, mcpService, serverName, 'kefania_status');
+    if (!statusTool) {
+        throw new Error(`Kefania is not ready in VS Code. Start the MCP server "${serverName}" from MCP: List Servers, then try New PR again. For a local checkout, register kefania/src/index.js as a Node stdio server.`);
+    }
+    const result = await statusTool.call({});
+    if (result?.isError) throw new Error(`Kefania cannot access GitHub: ${scmToolkitMcpError(result)}`);
+    let status = result?.structuredContent;
+    if (!status) {
+        try { status = JSON.parse(result?.content?.find(item => item?.type === 'text')?.text || ''); }
+        catch { throw new Error('Kefania returned an invalid connection status. Update the server before creating a PR.'); }
+    }
+    if (status?.ready !== true) throw new Error('Kefania is not ready. Check the server and its GitHub login before creating a PR.');
+    for (const name of ['github_get_pull_request_context', settings.mcpPrTool]) {
+        if (!(await scmToolkitKafaniaTool(doc, mcpService, serverName, name))) {
+            throw new Error(`Kefania is missing the MCP tool "${name}". Update the server before creating a PR.`);
+        }
+    }
+}
+
 async function scmToolkitRecordPullRequestSource(
     doc,
     mcpService,
@@ -1093,6 +1114,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         creatingPullRequest = true;
         refreshBranchControls();
         try {
+            await scmToolkitCheckPullRequestMcp(doc, mcpService, settings);
             const source = scmToolkitChatgptConversationSource(doc);
             const launch = await commands.executeCommand('sweetiebot.openPullRequestChat', repository, {
                 branch,
