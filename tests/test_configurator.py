@@ -168,6 +168,16 @@ class SubmissionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     configurator.parse_submission(values)
 
+    def test_manual_spellcheck_preview_defaults_off_and_has_own_model(self):
+        values = form_values()
+        self.assertFalse(install.DEFAULT_SETTINGS["spellcheckManualCommit"])
+        self.assertEqual(install.DEFAULT_SETTINGS["spellcheckModel"], "qwen2.5:3b")
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["spellcheckManualCommit"])
+        self.assertEqual(parsed["spellcheckModel"], "qwen2.5:3b")
+        values["spellcheckManualCommit"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
+
     def test_post_commit_spellcheck_toggle_defaults_off_and_saves_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["postCommitSpellcheck"])
@@ -549,6 +559,21 @@ class ModelSetupTests(unittest.TestCase):
         settings = dict(install.DEFAULT_SETTINGS, workspaceSearchEmbeddingModel="qwen2.5-coder:3b")
         with patch("configurator.fetch_ollama_models", return_value=(["qwen2.5-coder:7b", "qwen2.5-coder:3b"], "Ready")), patch("configurator.ollama_request", return_value=io.BytesIO(b'{"capabilities":["completion"]}')):
             with self.assertRaisesRegex(ValueError, "does not support embeddings"):
+                configurator.validate_models(settings)
+
+    def test_spellcheck_model_is_only_required_when_preview_is_enabled(self):
+        settings = dict(
+            install.DEFAULT_SETTINGS,
+            aiCommit=False,
+            workspaceSearchEmbeddingModel="embed",
+            spellcheckModel="missing:spell",
+        )
+        with patch("configurator.fetch_ollama_models", return_value=(["embed:latest"], "Ready")), patch(
+            "configurator.ollama_request", return_value=io.BytesIO(b'{"capabilities":["embedding"]}')
+        ):
+            configurator.validate_models(settings)
+            settings["spellcheckManualCommit"] = True
+            with self.assertRaisesRegex(ValueError, "Spellcheck model.*not installed"):
                 configurator.validate_models(settings)
 
     def test_optional_chat_model_need_not_be_installed_when_disabled(self):

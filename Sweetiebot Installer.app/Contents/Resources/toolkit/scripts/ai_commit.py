@@ -19,6 +19,7 @@ OLLAMA_BASE = "http://127.0.0.1:11434"
 OLLAMA_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 DEFAULT_MODEL = "qwen2.5-coder:7b"
 DEFAULT_LOW_MEMORY_MODEL = "qwen2.5-coder:3b"
+DEFAULT_SPELLCHECK_MODEL = "qwen2.5:3b"
 DEFAULT_LOW_MEMORY_GIB = 4.0
 NUM_CTX = int(os.environ.get("SCM_TOOLKIT_AI_NUM_CTX", "4096"))
 MAX_DIFF_CHARS = int(os.environ.get("SCM_TOOLKIT_AI_MAX_DIFF_CHARS", "14000"))
@@ -142,7 +143,7 @@ def feature_enabled() -> bool:
 
 
 def manual_spellcheck_enabled() -> bool:
-    return git_config_bool("scm-toolkit.spellcheck-manual-commit", True)
+    return git_config_bool("scm-toolkit.spellcheck-preview", False)
 
 
 def default_branch_description_enabled() -> bool:
@@ -172,6 +173,12 @@ def configured_models() -> tuple[str, str]:
         "scm-toolkit.ai-commit-low-memory-model", DEFAULT_LOW_MEMORY_MODEL
     )
     return primary, low_memory
+
+
+def configured_spellcheck_model() -> str:
+    return os.environ.get("SCM_TOOLKIT_SPELLCHECK_MODEL") or git_config_string(
+        "scm-toolkit.spellcheck-model", DEFAULT_SPELLCHECK_MODEL
+    )
 
 
 def low_memory_threshold_gib() -> float:
@@ -349,18 +356,18 @@ def safe_spellcheck_correction(subject: str, response_text: str) -> str:
 def spellcheck_subject(subject: str) -> str:
     if not subject.strip():
         return subject
+    if not manual_spellcheck_enabled():
+        print(
+            "scm-toolkit: manual commit spellcheck skipped (preview is disabled)",
+            file=sys.stderr,
+        )
+        return subject
 
     installed = installed_local_model_names()
-    model, low_memory_mode = selected_model(installed)
-    primary, low_memory = configured_models()
-    if model is None:
-        detail = (
-            f"low-memory model {low_memory} is not installed locally"
-            if low_memory_mode
-            else f"configured models {primary} and {low_memory} are not installed locally"
-        )
+    model = configured_spellcheck_model()
+    if model not in installed:
         print(
-            f"scm-toolkit: manual commit spellcheck skipped ({detail})",
+            f"scm-toolkit: manual commit spellcheck skipped (spellcheck model {model} is not installed locally)",
             file=sys.stderr,
         )
         return subject

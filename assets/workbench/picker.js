@@ -1526,8 +1526,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 refreshAutocomplete();
             }
 
-            spellcheckButton.hidden = false;
-            refreshSpellcheck();
+            if (settings.spellcheckManualCommit) {
+                spellcheckButton.hidden = false;
+                refreshSpellcheck();
+            }
 
             if (settings.codexCoauthor) {
                 codexButton.hidden = false;

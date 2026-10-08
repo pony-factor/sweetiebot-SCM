@@ -189,9 +189,12 @@ class ConfigurationTests(unittest.TestCase):
     def test_default_branch_description_can_be_disabled(self, _config):
         self.assertFalse(ai_commit.default_branch_description_enabled())
 
-    @patch.object(ai_commit, "git_config_bool", return_value=False)
-    def test_manual_spellcheck_can_be_disabled(self, _config):
-        self.assertFalse(ai_commit.manual_spellcheck_enabled())
+    def test_manual_spellcheck_defaults_off(self):
+        with patch.object(
+            ai_commit, "git_config_bool", side_effect=lambda _key, default: default
+        ) as config:
+            self.assertFalse(ai_commit.manual_spellcheck_enabled())
+        config.assert_called_once_with("scm-toolkit.spellcheck-preview", False)
 
     def test_description_is_limited_to_the_configured_default_branch(self):
         with patch.object(
@@ -211,6 +214,15 @@ class ConfigurationTests(unittest.TestCase):
             ai_commit, "current_branch", return_value="feature/test"
         ):
             self.assertFalse(ai_commit.should_add_default_branch_description())
+
+    def test_spellcheck_model_has_independent_git_config(self):
+        with patch.object(
+            ai_commit, "git_config_string", return_value="spell:test"
+        ) as config:
+            self.assertEqual(ai_commit.configured_spellcheck_model(), "spell:test")
+        config.assert_called_once_with(
+            "scm-toolkit.spellcheck-model", ai_commit.DEFAULT_SPELLCHECK_MODEL
+        )
 
     def test_models_can_be_selected_from_git_config(self):
         values = {
@@ -295,38 +307,33 @@ class ManualSpellcheckTests(unittest.TestCase):
         self.assertTrue(found)
         self.assertEqual(args, ["--quiet", "--message=Fix spelling"])
 
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=False)
+    @patch.object(ai_commit, "installed_local_model_names")
+    def test_disabled_preview_never_queries_models(self, models, _enabled):
+        self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fxi spelling")
+        models.assert_not_called()
+
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True)
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
-    @patch.object(
-        ai_commit,
-        "configured_models",
-        return_value=("primary:test", "fallback:test"),
-    )
-    @patch.object(ai_commit, "available_memory_bytes", return_value=8 * 1024**3)
+    @patch.object(ai_commit, "configured_spellcheck_model", return_value="spell:test")
     def test_missing_model_preserves_manual_subject(
-        self, _memory, _configured, _models
+        self, _configured, _models, _enabled
     ):
         self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fxi spelling")
 
-    @patch.object(ai_commit, "installed_local_model_names", return_value={"primary:test"})
-    @patch.object(
-        ai_commit,
-        "selected_model",
-        return_value=("primary:test", False),
-    )
-    @patch.object(
-        ai_commit,
-        "configured_models",
-        return_value=("primary:test", "fallback:test"),
-    )
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True)
+    @patch.object(ai_commit, "installed_local_model_names", return_value={"spell:test"})
+    @patch.object(ai_commit, "configured_spellcheck_model", return_value="spell:test")
     @patch.object(
         ai_commit,
         "ollama_json",
         return_value={"response": '{"subject":"Fix spelling"}'},
     )
-    def test_local_model_correction_is_used(
-        self, _request, _configured, _selected, _models
+    def test_dedicated_spellcheck_model_correction_is_used(
+        self, request, _configured, _models, _enabled
     ):
         self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
+        self.assertEqual(request.call_args.args[1]["model"], "spell:test")
 
     def test_rejects_malformed_or_unrelated_spellcheck_output(self):
         subject = "🐜 Fxi commit titel"
@@ -354,13 +361,14 @@ class ManualSpellcheckTests(unittest.TestCase):
 
     def test_spellcheck_request_uses_json_schema(self):
         response = {"response": '{"subject":"Fix spelling"}'}
-        with patch.object(ai_commit, "installed_local_model_names", return_value={"primary:test"}), patch.object(
-            ai_commit, "selected_model", return_value=("primary:test", False)
+        with patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True), patch.object(
+            ai_commit, "installed_local_model_names", return_value={"spell:test"}
         ), patch.object(
-            ai_commit, "configured_models", return_value=("primary:test", "fallback:test")
+            ai_commit, "configured_spellcheck_model", return_value="spell:test"
         ), patch.object(ai_commit, "ollama_json", return_value=response) as request:
             self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
         payload = request.call_args.args[1]
+        self.assertEqual(payload["model"], "spell:test")
         self.assertEqual(payload["format"]["required"], ["subject"])
         self.assertFalse(payload["format"]["additionalProperties"])
 
