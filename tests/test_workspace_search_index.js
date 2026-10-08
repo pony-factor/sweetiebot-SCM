@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path');
 const {normalizeVector} = require('../efs/core');
 
 async function run() {
@@ -10,18 +11,28 @@ async function run() {
   const exampleUri = {toString: () => 'file:///example.txt'};
   const emptyUri = {toString: () => 'file:///notes/empty-notes.md'};
   const overlookedUri = {toString: () => 'file:///drafts/apa-nondeference.md'};
+  const outsideCapUri = {toString: () => 'file:///projects/finance/report.md'};
+  const rootUri = {toString: () => 'file:///'};
   let filenameScans = 0;
   const vscode = {
-    Uri: {joinPath: (_root, file) => file, parse: text => ({toString: () => text})},
+    Uri: {
+      joinPath: (uri, component) => {
+        if (uri === rootUri && component.startsWith('workspace-search-')) return component;
+        const url = new URL(uri.toString());
+        url.pathname = path.posix.resolve(url.pathname, component);
+        return {toString: () => url.toString()};
+      },
+      parse: text => ({toString: () => text})
+    },
     FileType: {File: 1},
     workspace: {
-      workspaceFolders: [],
-      asRelativePath: uri => uri.toString() === overlookedUri.toString() ? 'drafts/apa-nondeference.md'
-        : uri.toString() === emptyUri.toString() ? 'notes/empty-notes.md' : 'example.txt',
+      workspaceFolders: [{uri: rootUri}],
+      getWorkspaceFolder: () => ({uri: rootUri}),
+      asRelativePath: uri => uri.toString().replace(/^file:\/\/\//, '') || 'workspace',
       findFiles: async (_glob, _exclude, maxFiles) => {
         if (maxFiles) return [exampleUri, emptyUri];
         filenameScans += 1;
-        return [exampleUri, emptyUri, overlookedUri];
+        return [exampleUri, emptyUri, overlookedUri, outsideCapUri];
       },
       fs: {readFile: async () => {throw new Error('No cache');}, createDirectory: async () => {},
         writeFile: async (_uri, bytes) => {persisted = JSON.parse(bytes.toString());},
@@ -41,7 +52,7 @@ async function run() {
     return require(name);
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search_index.js'), 'utf8'), sandbox);
-  const index = new sandbox.module.exports.SearchIndex({globalStorageUri: {}}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
+  const index = new sandbox.module.exports.SearchIndex({globalStorageUri: rootUri}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
   unavailable = true;
   await index.refresh();
   assert.match(index.embeddingWarning, /Model missing/);
@@ -74,7 +85,16 @@ async function run() {
   assert.equal(result.results[0].relative, 'drafts/apa-nondeference.md', 'Full filenames must match without case sensitivity');
   result = await index.search('nondeference', 'semantic');
   assert.ok(result.results.some(item => item.relative === 'drafts/apa-nondeference.md' && item.kind === 'filename'), 'Semantic mode must discover names of unindexed files');
-  assert.equal(filenameScans, 1, 'Repeated queries should reuse the short-lived filename listing');
-  console.log('Workspace model recovery, uncapped filenames, exact-name priority, and index checks passed.');
+  result = await index.search('finance', 'exact');
+  const folderResult = result.results.find(item => item.kind === 'folder' && item.relative === 'projects/finance');
+  assert.ok(folderResult, 'Folder names should be searchable beyond the content-index file cap');
+  assert.equal(result.results[0].relative, 'projects/finance', 'Exact folder-name matches should lead');
+  assert.equal(folderResult.text, 'Folder name match');
+  assert.equal(folderResult.line, 0);
+  assert.ok(!persisted.files.some(file => file.uri === outsideCapUri.toString()), 'Folder lookup must not require content indexing');
+  result = await index.search('projects finance', 'hybrid');
+  assert.ok(result.results.some(item => item.kind === 'folder' && item.relative === 'projects/finance'), 'Folder paths should be searchable');
+  assert.equal(filenameScans, 2, 'Repeated queries should reuse independent filename and folder listings');
+  console.log('Workspace model recovery, uncapped filenames, exact-name priority, folder search, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});

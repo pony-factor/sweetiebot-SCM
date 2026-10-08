@@ -8,12 +8,17 @@ const { embedTexts } = require('./ollama');
 
 const INDEX_VERSION = 2;
 const FILENAME_CACHE_TTL_MS = 2 * 60 * 1000;
+const FOLDER_CACHE_TTL_MS = 2 * 60 * 1000;
 
 // Treat punctuation and spaces alike when comparing a filename to a typed title.
 function normalizedName(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+
+function normalizedFolderName(value) {
+  return normalizedName(value);
+}
 
 function workspaceKey() {
   const folders = (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.toString()).sort().join('\n');
@@ -35,6 +40,8 @@ class SearchIndex {
     this.refreshPromise = undefined;
     this.filenameCache = undefined;
     this.filenameScanPromise = undefined;
+    this.folderCache = undefined;
+    this.folderScanPromise = undefined;
   }
 
   get storageUri() {
@@ -86,10 +93,12 @@ class SearchIndex {
     const key = uri.toString();
     this.dirty.add(key);
     if (!this.files.has(key)) this.filenameCache = undefined;
+    this.folderCache = undefined;
   }
 
   remove(uri) {
     this.filenameCache = undefined;
+    this.folderCache = undefined;
     this.dirty.delete(uri.toString());
     this.files.delete(uri.toString());
     this.schedulePersist();
@@ -97,6 +106,7 @@ class SearchIndex {
 
   async clear() {
     this.filenameCache = undefined;
+    this.folderCache = undefined;
     this.files.clear();
     this.dirty.clear();
     try { await vscode.workspace.fs.delete(this.storageUri, { useTrash: false }); } catch {}
@@ -187,6 +197,46 @@ class SearchIndex {
     }
   }
 
+  async discoverFolders(settings) {
+    const exclude = settings.exclude || undefined;
+    if (this.folderCache?.exclude === exclude && Date.now() < this.folderCache.expires) {
+      return this.folderCache.uris;
+    }
+    if (this.folderScanPromise) return this.folderScanPromise;
+
+    const work = (async () => {
+      // Discover folder paths without the passage index's maxFiles limit.
+      const files = await vscode.workspace.findFiles('**/*', exclude);
+      const folders = new Map();
+      for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
+        folders.set(workspaceFolder.uri.toString(), workspaceFolder.uri);
+      }
+      for (const uri of files) {
+        const workspaceRoot = vscode.workspace.getWorkspaceFolder(uri)?.uri;
+        if (!workspaceRoot) continue;
+        let parent = vscode.Uri.joinPath(uri, '..');
+        while (parent.toString() !== workspaceRoot.toString()) {
+          const key = parent.toString();
+          if (folders.has(key)) break;
+          folders.set(key, parent);
+          const next = vscode.Uri.joinPath(parent, '..');
+          if (next.toString() === key) break;
+          parent = next;
+        }
+      }
+      const uris = [...folders.values()];
+      this.folderCache = { exclude, uris, expires: Date.now() + FOLDER_CACHE_TTL_MS };
+      return uris;
+    })();
+    this.folderScanPromise = work;
+    try {
+      return await work;
+    } finally {
+      if (this.folderScanPromise === work) this.folderScanPromise = undefined;
+    }
+  }
+
+
   async search(query, mode) {
     await this.load();
     if (!this.files.size || this.embeddingModel !== this.getSettings().embeddingModel) await this.refresh();
@@ -208,6 +258,24 @@ class SearchIndex {
     const scored = [];
     const fuzzy = selectedMode === 'hybrid';
     const normalizedQuery = normalizedName(query);
+    for (const folderUri of await this.discoverFolders(settings)) {
+      const relative = vscode.workspace.asRelativePath(folderUri, false);
+      const name = relative.split(/[\\/]/).pop() || relative;
+      const nameScore = keywordScore(query, name, { fuzzy: fuzzy });
+      const pathScore = keywordScore(query, relative, { fuzzy: fuzzy });
+      const directMatch = normalizedQuery && normalizedQuery === normalizedFolderName(name);
+      const score = directMatch ? 2 : Math.max(nameScore * 1.15, pathScore * 1.05);
+      if (score > 0) {
+        scored.push({
+          uri: folderUri.toString(),
+          relative,
+          line: 0,
+          text: directMatch || nameScore >= pathScore ? 'Folder name match' : 'Folder path match',
+          score,
+          kind: 'folder'
+        });
+      }
+    }
     const filenames = await this.discoverFilenames(settings);
     for (const uri of filenames) {
       const relative = vscode.workspace.asRelativePath(uri, false);
