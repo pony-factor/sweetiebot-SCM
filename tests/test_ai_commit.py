@@ -522,6 +522,32 @@ class TitleTests(unittest.TestCase):
     def test_history_excludes_sync_titles(self, _git):
         self.assertEqual(ai_commit.recent_subjects(), "📝 Reorganize research notes\nFix parser")
 
+    def test_generated_titles_require_at_least_two_words(self):
+        for title in ["🐛 Fix", "📝 Update", "🔧 Refactor"]:
+            with self.subTest(title=title):
+                self.assertFalse(ai_commit.valid_generated_message(title, "", False))
+        self.assertTrue(
+            ai_commit.valid_generated_message("🐛 Fix parser", "", False)
+        )
+
+    def test_one_word_model_title_retries_then_falls_back(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+                ("ollama_json", {"response": '{"subject":"Fix","description":""}'}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = ai_commit.ollama_json
+            self.assertEqual(
+                ai_commit.generate_message("", "", ["parser.py"]),
+                ("🔧 Update parser.py", ""),
+            )
+            self.assertEqual(generate.call_count, 2)
+
     def test_generated_sync_titles_are_rejected_for_normal_and_context_commits(self):
         for title in ["🔄 Sync branch to main", "Sync branch with main", "Synchronize repository changes"]:
             for context in ["", "Moved the research notes into an archive"]:

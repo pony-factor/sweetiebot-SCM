@@ -1180,7 +1180,8 @@ def valid_generated_message(title: str, description: str, include_description: b
         "retain", "revert", "save", "secure", "show", "simplify", "sort", "split",
         "streamline", "strip", "support", "track", "trim", "update", "use", "validate", "verify", "wire",
     }
-    if not wording or wording.split()[0] not in verbs or is_sync_title(title):
+    words = wording.split()
+    if len(words) < 2 or words[0] not in verbs or is_sync_title(title):
         return False
     if not re.match(r"^[\U0001F300-\U0001FAFF\u2600-\u27BF][\ufe0e\ufe0f]? \w", title):
         return False
