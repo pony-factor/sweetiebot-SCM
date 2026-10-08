@@ -108,6 +108,7 @@ async function run() {
   assert.equal(osascriptCall.file, '/usr/bin/osascript');
   assert.equal(osascriptCall.args[0], '-e');
   assert.match(osascriptCall.args[1], /frontApp contains "Code"/);
+  assert.match(osascriptCall.args[1], /tell application "System Events"\nset frontApp/);
   assert.match(osascriptCall.args[1], /key code 36/);
   assert.match(osascriptCall.args[1], /\nkey code 36\n/);
   assert(!osascriptCall.args[1].includes('\\n'), 'AppleScript must contain real newlines, not backslash-n text');

@@ -3,7 +3,7 @@
 const { execFile } = require('child_process');
 const { githubRepository } = require('./pull_request');
 
-const CHAT_SUBMIT_DELAY_MS = 1500;
+const CHAT_SUBMIT_DELAY_MS = 3000;
 
 function repositoryName(repositoryUrl) {
   const normalized = githubRepository(repositoryUrl);
