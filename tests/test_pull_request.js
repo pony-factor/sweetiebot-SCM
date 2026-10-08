@@ -33,6 +33,14 @@ async function run() {
   const berryPunch = matchSweetiebotPonyCatalog('berry-punch', ponyCatalog);
   assert.equal(berryPunch.packId, 'g4-mares');
   assert.equal(berryPunch.packLabel, 'G4 mares');
+  const celena = matchSweetiebotPonyCatalog('celena', ponyCatalog);
+  assert.equal(celena.packId, 'idw-comics');
+  assert.equal(celena.source, 'https://mlp.fandom.com/wiki/Sailor_Moon_ponies');
+  const legacyCelena = matchSweetiebotPonyCatalog('magical-ponycelena', ponyCatalog);
+  assert.equal(legacyCelena.slug, 'magical-ponycelena');
+  assert.equal(legacyCelena.name, 'Celena');
+  assert.equal(legacyCelena.source, celena.source);
+  assert.equal((await readSweetiebotPony('magical-ponycelena')).name, 'Celena');
   assert.equal(matchSweetiebotPonyCatalog('not-a-sweetiebot-pony', ponyCatalog), undefined);
   assert.equal((await readSweetiebotPony('berry-punch')).packId, 'g4-mares');
   const honeyDrop = matchSweetiebotPonyCatalog('honey-drop', ponyCatalog);

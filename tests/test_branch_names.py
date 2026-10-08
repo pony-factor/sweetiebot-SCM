@@ -19,6 +19,7 @@ class BranchNamePackTests(unittest.TestCase):
             "alicorn-royal-guards",
             "game-playin-schoolponybutton-mash",
             "janitor-ponyclean-sweep",
+            "magical-ponycelena",
             "the-tenth-doctor-doctor-whooves-3",
             "wavy-haired-pegasusthe-tenth-doctor-doctor-whooves-3",
         ):

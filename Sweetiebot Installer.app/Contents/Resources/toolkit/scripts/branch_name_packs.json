@@ -333,7 +333,6 @@
         "magdalena",
         "mage-meadowbrook",
         "magenta-surf",
-        "magical-ponycelena",
         "majesty",
         "mama-biceps",
         "mane-allgood",
@@ -1782,7 +1781,10 @@
         "larissa",
         "pete-canterbell",
         "raspberry-fluff"
-      ]
+      ],
+      "sources": {
+        "celena": "https://mlp.fandom.com/wiki/Sailor_Moon_ponies"
+      }
     },
     {
       "id": "pony-life",

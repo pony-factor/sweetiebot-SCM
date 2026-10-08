@@ -42,19 +42,22 @@ async function readKefaniaInstructions(repositoryPath, readFile = fs.readFile) {
 function matchSweetiebotPonyCatalog(branch, catalog) {
   const slug = String(branch || '').trim();
   if (!slug || !catalog || !Array.isArray(catalog.packs)) return undefined;
+  // Recognize legacy branches without offering the malformed scraped name again.
+  const lookupSlug = slug === 'magical-ponycelena' ? 'celena' : slug;
 
   for (const pack of catalog.packs) {
-    if (!Array.isArray(pack?.names) || !pack.names.includes(slug)) continue;
+    if (!Array.isArray(pack?.names) || !pack.names.includes(lookupSlug)) continue;
     const match = {
       slug,
       packId: String(pack.id || ''),
       packLabel: String(pack.label || ''),
       packDescription: String(pack.description || ''),
     };
-    const source = typeof pack?.sources?.[slug] === 'string' ? pack.sources[slug].trim() : '';
+    if (lookupSlug !== slug) match.name = 'Celena';
+    const source = typeof pack?.sources?.[lookupSlug] === 'string' ? pack.sources[lookupSlug].trim() : '';
     if (source) match.source = source;
-    const images = Array.isArray(pack?.images?.[slug])
-      ? pack.images[slug].flatMap(item => {
+    const images = Array.isArray(pack?.images?.[lookupSlug])
+      ? pack.images[lookupSlug].flatMap(item => {
           const candidate = typeof item === 'string' ? { url: item } : item;
           const url = String(candidate?.url || '').trim();
           if (!/^https:\/\//i.test(url)) return [];
