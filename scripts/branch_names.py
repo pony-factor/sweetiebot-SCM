@@ -61,6 +61,26 @@ def _normalize_pack(value: object, context: str) -> dict[str, object]:
             raise ValueError(f"{context} source for {name!r} cannot be empty.")
         sources[name] = source.strip()
 
+    raw_aliases = value.get("aliases", {})
+    if not isinstance(raw_aliases, dict):
+        raise ValueError(f"{context} aliases must be an object when present.")
+    aliases: dict[str, str] = {}
+    for old_slug, target in raw_aliases.items():
+        old_slug = _validate_slug(old_slug, f"{context} alias")
+        target = _validate_slug(target, f"{context} alias target")
+        if old_slug in seen_names or target not in seen_names:
+            raise ValueError(f"{context} alias {old_slug!r} must point to an existing distinct name.")
+        aliases[old_slug] = target
+
+    raw_display_names = value.get("displayNames", {})
+    if not isinstance(raw_display_names, dict):
+        raise ValueError(f"{context} displayNames must be an object when present.")
+    display_names: dict[str, str] = {}
+    for slug, display in raw_display_names.items():
+        if slug not in seen_names or not isinstance(display, str) or not display.strip():
+            raise ValueError(f"{context} display name for {slug!r} must belong to a known name and be nonempty.")
+        display_names[slug] = display.strip()
+
     normalized: dict[str, object] = {
         "id": pack_id,
         "label": label.strip(),
@@ -69,6 +89,10 @@ def _normalize_pack(value: object, context: str) -> dict[str, object]:
     }
     if sources:
         normalized["sources"] = sources
+    if aliases:
+        normalized["aliases"] = aliases
+    if display_names:
+        normalized["displayNames"] = display_names
     return normalized
 
 

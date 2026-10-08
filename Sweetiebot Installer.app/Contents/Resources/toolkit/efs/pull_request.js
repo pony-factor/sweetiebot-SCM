@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { displayName } = require('./pony_profile');
 const { chatgptPromptUrl } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
@@ -42,19 +43,26 @@ async function readKefaniaInstructions(repositoryPath, readFile = fs.readFile) {
 function matchSweetiebotPonyCatalog(branch, catalog) {
   const slug = String(branch || '').trim();
   if (!slug || !catalog || !Array.isArray(catalog.packs)) return undefined;
-
   for (const pack of catalog.packs) {
-    if (!Array.isArray(pack?.names) || !pack.names.includes(slug)) continue;
+    // Corrected names remain recognizable for already-created Git branches.
+    const canonical = pack?.aliases && Object.prototype.hasOwnProperty.call(pack.aliases, slug)
+      ? pack.aliases[slug]
+      : undefined;
+    const lookupSlug = typeof canonical === 'string' ? canonical.trim() : slug;
+    if (!Array.isArray(pack?.names) || !pack.names.includes(lookupSlug)) continue;
     const match = {
       slug,
       packId: String(pack.id || ''),
       packLabel: String(pack.label || ''),
       packDescription: String(pack.description || ''),
     };
-    const source = typeof pack?.sources?.[slug] === 'string' ? pack.sources[slug].trim() : '';
+    const label = pack?.displayNames?.[lookupSlug];
+    if (typeof label === 'string' && label.trim()) match.name = label.trim();
+    else if (lookupSlug !== slug) match.name = displayName(lookupSlug);
+    const source = typeof pack?.sources?.[lookupSlug] === 'string' ? pack.sources[lookupSlug].trim() : '';
     if (source) match.source = source;
-    const images = Array.isArray(pack?.images?.[slug])
-      ? pack.images[slug].flatMap(item => {
+    const images = Array.isArray(pack?.images?.[lookupSlug])
+      ? pack.images[lookupSlug].flatMap(item => {
           const candidate = typeof item === 'string' ? { url: item } : item;
           const url = String(candidate?.url || '').trim();
           if (!/^https:\/\//i.test(url)) return [];

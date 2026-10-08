@@ -19,10 +19,110 @@ class BranchNamePackTests(unittest.TestCase):
             "alicorn-royal-guards",
             "game-playin-schoolponybutton-mash",
             "janitor-ponyclean-sweep",
+            "magical-ponycelena",
             "the-tenth-doctor-doctor-whooves-3",
             "wavy-haired-pegasusthe-tenth-doctor-doctor-whooves-3",
         ):
             self.assertNotIn(noisy, names)
+
+    def test_legacy_scrape_artifacts_resolve_to_real_pony_slugs(self):
+        catalog = branch_names.load_catalog()
+        all_names = [n for pack in catalog["packs"] for n in pack["names"]]
+        names = set(all_names)
+        aliases = {
+            old: target
+            for pack in catalog["packs"]
+            for old, target in pack.get("aliases", {}).items()
+        }
+        expected = {
+            "magical-ponycelena": "celena",
+            "athletic-dancerflashdancer": "flashdancer",
+            "builder-ponyambrosia": "ambrosia",
+            "clerkraspberry-vinaigrette": "raspberry-vinaigrette",
+            "inquisitive-shopperrainbowshine": "rainbowshine",
+            "librarianamethyst-maresbury": "amethyst-maresbury",
+            "masseuse-ponyquake": "quake-masseuse",
+            "nasal-ponypretzel": "pretzel",
+            "posh-ponycayenne": "cayenne-canterlot",
+            "pushy-ponyturf": "turf",
+            "salesponyjasmine-leaf": "jasmine-leaf",
+            "serene-dignitaryimmemoria": "immemoria",
+            "announcer-ponymadden": "madden",
+            "astro-ponyneptunio": "neptunio",
+            "caballerons-bandolerobiff": "biff",
+            "caballerons-brigandrogue": "rogue",
+            "caballerons-thugwithers": "withers",
+            "clumsy-clownsponypratfall": "pratfall",
+            "coloraturas-stylistlimelight": "limelight",
+            "dancing-clownsponycaramel": "caramel",
+            "elite-ponyponet": "ponet",
+            "emt-ponyhermes": "hermes",
+            "eyeshade-ponykarat": "karat",
+            "henchponypickpocket": "pickpocket",
+            "horticultural-pegasusevergreen": "evergreen",
+            "messy-stallionpigpen": "pigpen",
+            "pegasus-dadnightjar": "nightjar",
+            "sandbars-dadbeachcomber": "beachcomber",
+            "security-guardlockdown": "lockdown",
+            "snide-bullyscore": "score",
+            "train-conductorsteamer": "steamer",
+            "clever-schoolponyboysenberry": "boysenberry",
+            "rookie-archaeologistgentiana": "gentiana",
+            "the-great-and-powerfultwily": "twily",
+        }
+        self.assertEqual(aliases, expected)
+        self.assertEqual(len(expected), 34)
+        self.assertEqual(len(set(expected.values())), 34)
+        for old, target in expected.items():
+            self.assertNotIn(old, names)
+            self.assertEqual(
+                all_names.count(target), 1,
+                f"{target} must occur exactly once across every built-in pony pack",
+            )
+        mares = next(pack for pack in catalog["packs"] if pack["id"] == "g4-mares")
+        self.assertEqual(mares["displayNames"]["quake-masseuse"], "Quake")
+        self.assertEqual(mares["displayNames"]["cayenne-canterlot"], "Cayenne")
+
+    def test_rejects_invalid_imported_alias_metadata(self):
+        bad_packs = [
+            {"id": "bad", "label": "Bad", "names": ["true"], "aliases": {"bad": "unknown"}},
+            {"id": "bad", "label": "Bad", "names": ["true"], "aliases": {"true": "true"}},
+            {"id": "bad", "label": "Bad", "names": ["true"], "displayNames": {"missing": "Wrong"}},
+        ]
+        for pack in bad_packs:
+            with self.subTest(pack=pack), self.assertRaises(ValueError):
+                branch_names.parse_imported_packs(json.dumps(pack))
+
+    def test_same_name_uses_g4_instead_of_g5(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        g4_names = {
+            name
+            for pack in catalog["packs"] if pack["id"].startswith("g4-")
+            for name in pack["names"]
+        }
+        g5_names = {
+            name
+            for pack in catalog["packs"] if pack["id"].startswith("g5-")
+            for name in pack["names"]
+        }
+        preferred_g4 = {
+            "blue-belle": "g4-mares",
+            "jade": "g4-mares",
+            "minty": "g4-mares",
+            "primrose": "g4-mares",
+            "comet-tail": "g4-stallions",
+            "pickle-barrel": "g4-colts",
+        }
+        all_names = [
+            name for pack in catalog["packs"] for name in pack["names"]
+        ]
+        self.assertTrue(g4_names.isdisjoint(g5_names), "G4 names take priority over G5.")
+        self.assertEqual(len(all_names), len(set(all_names)), "Each branch name must appear only once.")
+        for name, pack_id in preferred_g4.items():
+            self.assertIn(name, packs[pack_id]["names"])
+            self.assertNotIn(name, g5_names)
+            self.assertEqual(all_names.count(name), 1)
 
     def test_builtin_catalog_has_unique_names_within_each_pack(self):
         catalog = branch_names.load_catalog()
@@ -53,7 +153,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         remaining = set(packs["g5-remaining"]["names"])
 
-        self.assertEqual(len(packs["g5-remaining"]["names"]), 193)
+        self.assertEqual(len(packs["g5-remaining"]["names"]), 187)
         for name in (
             "arpeggia",
             "fretlock",
@@ -63,7 +163,6 @@ class BranchNamePackTests(unittest.TestCase):
             "queen-haven",
             "alphabittle-blossomforth",
             "comet",
-            "comet-tail",
             "leaf-dragon",
             "violette-rainbow",
             "tracy-tailspin",

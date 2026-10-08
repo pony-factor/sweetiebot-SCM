@@ -33,6 +33,74 @@ async function run() {
   const berryPunch = matchSweetiebotPonyCatalog('berry-punch', ponyCatalog);
   assert.equal(berryPunch.packId, 'g4-mares');
   assert.equal(berryPunch.packLabel, 'G4 mares');
+  const celena = matchSweetiebotPonyCatalog('celena', ponyCatalog);
+  assert.equal(celena.packId, 'idw-comics');
+  assert.equal(celena.source, 'https://mlp.fandom.com/wiki/Sailor_Moon_ponies');
+  const legacyCelena = matchSweetiebotPonyCatalog('magical-ponycelena', ponyCatalog);
+  assert.equal(legacyCelena.slug, 'magical-ponycelena');
+  assert.equal(legacyCelena.name, 'Celena');
+  assert.equal(legacyCelena.source, celena.source);
+  assert.equal((await readSweetiebotPony('magical-ponycelena')).name, 'Celena');
+  assert.equal(ponyCatalog.packs.flatMap(pack => pack.names).filter(name => name === 'celena').length, 1);
+  // Every corrected branch remains recognizable without appearing as a new branch option.
+  const legacyNames = {
+    'athletic-dancerflashdancer': 'flashdancer',
+    'builder-ponyambrosia': 'ambrosia',
+    'clerkraspberry-vinaigrette': 'raspberry-vinaigrette',
+    'inquisitive-shopperrainbowshine': 'rainbowshine',
+    'librarianamethyst-maresbury': 'amethyst-maresbury',
+    'masseuse-ponyquake': 'quake-masseuse',
+    'nasal-ponypretzel': 'pretzel',
+    'posh-ponycayenne': 'cayenne-canterlot',
+    'pushy-ponyturf': 'turf',
+    'salesponyjasmine-leaf': 'jasmine-leaf',
+    'serene-dignitaryimmemoria': 'immemoria',
+    'announcer-ponymadden': 'madden',
+    'astro-ponyneptunio': 'neptunio',
+    'caballerons-bandolerobiff': 'biff',
+    'caballerons-brigandrogue': 'rogue',
+    'caballerons-thugwithers': 'withers',
+    'clumsy-clownsponypratfall': 'pratfall',
+    'coloraturas-stylistlimelight': 'limelight',
+    'dancing-clownsponycaramel': 'caramel',
+    'elite-ponyponet': 'ponet',
+    'emt-ponyhermes': 'hermes',
+    'eyeshade-ponykarat': 'karat',
+    'henchponypickpocket': 'pickpocket',
+    'horticultural-pegasusevergreen': 'evergreen',
+    'messy-stallionpigpen': 'pigpen',
+    'pegasus-dadnightjar': 'nightjar',
+    'sandbars-dadbeachcomber': 'beachcomber',
+    'security-guardlockdown': 'lockdown',
+    'snide-bullyscore': 'score',
+    'train-conductorsteamer': 'steamer',
+    'clever-schoolponyboysenberry': 'boysenberry',
+    'rookie-archaeologistgentiana': 'gentiana',
+    'the-great-and-powerfultwily': 'twily',
+  };
+  assert.equal(Object.keys(legacyNames).length + 1, 34); // Celena is tested above.
+  const allSelectableNames = ponyCatalog.packs.flatMap(pack => pack.names);
+  const correctedNames = new Set([...Object.values(legacyNames), 'celena']);
+  assert.equal(correctedNames.size, 34);
+  for (const name of correctedNames) {
+    assert.equal(allSelectableNames.filter(candidate => candidate === name).length, 1,
+      `${name} must be offered in exactly one built-in pony pack`);
+  }
+  for (const [old, target] of Object.entries(legacyNames)) {
+    const legacy = matchSweetiebotPonyCatalog(old, ponyCatalog);
+    const canonical = matchSweetiebotPonyCatalog(target, ponyCatalog);
+    assert(canonical, `Missing target: ${target}`);
+    assert(legacy, `Missing legacy alias: ${old}`);
+    assert.equal(legacy.slug, old);
+    assert.equal(legacy.packId, canonical.packId);
+    assert.equal(legacy.name, canonical.name || target.split('-').map(part => part[0].toUpperCase() + part.slice(1)).join(' '));
+    assert.equal(legacy.source, canonical.source);
+    assert(!ponyCatalog.packs.some(pack => pack.names.includes(old)));
+  }
+  assert.equal(matchSweetiebotPonyCatalog('quake-masseuse', ponyCatalog).name, 'Quake');
+  assert.equal(matchSweetiebotPonyCatalog('cayenne-canterlot', ponyCatalog).name, 'Cayenne');
+  assert.equal(matchSweetiebotPonyCatalog('quake', ponyCatalog).packId, 'g4-stallions');
+  assert.equal(matchSweetiebotPonyCatalog('cayenne', ponyCatalog).packId, 'fallout-equestria');
   assert.equal(matchSweetiebotPonyCatalog('not-a-sweetiebot-pony', ponyCatalog), undefined);
   assert.equal((await readSweetiebotPony('berry-punch')).packId, 'g4-mares');
   const honeyDrop = matchSweetiebotPonyCatalog('honey-drop', ponyCatalog);
