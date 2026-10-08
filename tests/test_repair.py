@@ -22,6 +22,7 @@ class RepairTests(unittest.TestCase):
             stack.enter_context(patch.object(install, 'application_paths', return_value=('test', [js, css])))
             stack.enter_context(patch.object(install, 'load_settings', return_value=dict(toolkit_settings.DEFAULT_SETTINGS)))
             stack.enter_context(patch.object(install.github_pr, 'patch_files', return_value=[]))
+            stack.enter_context(patch.object(install.browser_pr, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.codex_colors, 'stylesheet_path', return_value=None))
             stack.enter_context(patch.object(install, 'codex_bundle_paths', return_value=[]))
             for module in (install.codex_context, install.codex_usage, install.codex_composer):
