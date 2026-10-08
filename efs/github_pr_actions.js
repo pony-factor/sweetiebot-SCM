@@ -114,6 +114,8 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     if (busy.has(url)) return;
     busy.add(url);
     try {
+      // Never invoke a merge with an unresolved or mismatched PR identity.
+      if (!url) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
       const result = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: `Squash-merge PR #${model?.number ?? ''} into main`, cancellable: false
