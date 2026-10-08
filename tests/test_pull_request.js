@@ -41,6 +41,7 @@ async function run() {
   assert.equal(legacyCelena.name, 'Celena');
   assert.equal(legacyCelena.source, celena.source);
   assert.equal((await readSweetiebotPony('magical-ponycelena')).name, 'Celena');
+  assert.equal(ponyCatalog.packs.flatMap(pack => pack.names).filter(name => name === 'celena').length, 1);
   // Every corrected branch remains recognizable without appearing as a new branch option.
   const legacyNames = {
     'athletic-dancerflashdancer': 'flashdancer',
@@ -77,6 +78,14 @@ async function run() {
     'rookie-archaeologistgentiana': 'gentiana',
     'the-great-and-powerfultwily': 'twily',
   };
+  assert.equal(Object.keys(legacyNames).length + 1, 34); // Celena is tested above.
+  const allSelectableNames = ponyCatalog.packs.flatMap(pack => pack.names);
+  const correctedNames = new Set([...Object.values(legacyNames), 'celena']);
+  assert.equal(correctedNames.size, 34);
+  for (const name of correctedNames) {
+    assert.equal(allSelectableNames.filter(candidate => candidate === name).length, 1,
+      `${name} must be offered in exactly one built-in pony pack`);
+  }
   for (const [old, target] of Object.entries(legacyNames)) {
     const legacy = matchSweetiebotPonyCatalog(old, ponyCatalog);
     const canonical = matchSweetiebotPonyCatalog(target, ponyCatalog);

@@ -27,7 +27,8 @@ class BranchNamePackTests(unittest.TestCase):
 
     def test_legacy_scrape_artifacts_resolve_to_real_pony_slugs(self):
         catalog = branch_names.load_catalog()
-        names = {n for pack in catalog["packs"] for n in pack["names"]}
+        all_names = [n for pack in catalog["packs"] for n in pack["names"]]
+        names = set(all_names)
         aliases = {
             old: target
             for pack in catalog["packs"]
@@ -70,9 +71,14 @@ class BranchNamePackTests(unittest.TestCase):
             "the-great-and-powerfultwily": "twily",
         }
         self.assertEqual(aliases, expected)
+        self.assertEqual(len(expected), 34)
+        self.assertEqual(len(set(expected.values())), 34)
         for old, target in expected.items():
             self.assertNotIn(old, names)
-            self.assertIn(target, names)
+            self.assertEqual(
+                all_names.count(target), 1,
+                f"{target} must occur exactly once across every built-in pony pack",
+            )
         mares = next(pack for pack in catalog["packs"] if pack["id"] == "g4-mares")
         self.assertEqual(mares["displayNames"]["quake-masseuse"], "Quake")
         self.assertEqual(mares["displayNames"]["cayenne-canterlot"], "Cayenne")
