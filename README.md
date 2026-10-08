@@ -576,7 +576,7 @@ python3 scripts/install.py
 When `blank-state-refresh` is enabled, the toolkit asks VS Code's built-in Git
 extension to refresh a repository more aggressively while SCM has zero changed
 resources. It performs an initial refresh after about 300 ms, then falls back to
-roughly 1.5-second refreshes while VS Code is visible. The polling stops as soon
+roughly 750 ms refreshes while VS Code is visible. The polling stops as soon
 as SCM reports a change and automatically resumes after the repository becomes
 clean again. Hidden windows back off instead of polling at the foreground rate.
 
@@ -585,9 +585,10 @@ own Git status implementation. The SCM progress bar stays hidden, including duri
 background Git fetches, so updates do not flash a distracting animation.
 
 When `auto-pull-clean` is enabled, the toolkit checks the current branch against its
-tracked upstream on the same polling schedule, even when `blank-state-refresh` is
+tracked upstream in the background, even when `blank-state-refresh` is
 disabled. Disabling blank-state refresh skips the extra `git.refresh` calls while
-automatic pulling continues. The toolkit pulls only when the working tree is
+automatic pulling continues. Network fetches never hold up the next local SCM
+refresh, and only one automatic pull check runs at a time. The toolkit pulls only when the working tree is
 still clean and the local HEAD is an ancestor of the upstream HEAD. That means a
 behind-only branch can fast-forward automatically, while branches with unpushed or
 diverged commits are left untouched. The pull uses VS Code's existing `git.pull`

@@ -285,6 +285,7 @@ function scmToolkitEnableBlankStateRefresh(
 
     let timer;
     let refreshing = false;
+    let autoPullInProgress = false;
     let disposed = false;
     let lastAutoPullState;
     let lastAutoFetch;
@@ -324,6 +325,18 @@ function scmToolkitEnableBlankStateRefresh(
         }
     };
 
+    // A slow network fetch must never delay the next local Git status refresh.
+    // Only one background pull check may run at a time.
+    const startAutoPull = () => {
+        if (!autoPullClean || autoPullInProgress || disposed || hasChanges()) return;
+        autoPullInProgress = true;
+        void maybeAutoPull().catch(() => {
+            // Background sync is best-effort; local change detection must continue.
+        }).finally(() => {
+            autoPullInProgress = false;
+        });
+    };
+
     const schedule = delay => {
         clearTimer();
         if (disposed || hasChanges()) return;
@@ -342,12 +355,12 @@ function scmToolkitEnableBlankStateRefresh(
                 if (blankStateRefresh) {
                     await commands.executeCommand('git.refresh', repositoryArgument);
                 }
-                await maybeAutoPull();
+                startAutoPull();
             } catch {
                 // The built-in Git extension owns refresh errors; keep blank-state polling best-effort.
             } finally {
                 refreshing = false;
-                if (!disposed && !hasChanges()) schedule(1500);
+                if (!disposed && !hasChanges()) schedule(750);
             }
         }, delay);
     };
