@@ -626,6 +626,12 @@ The trailer is added after a blank line and is not duplicated if it is already
 present. If the commit fails and VS Code leaves the message untouched, the toolkit
 restores the original message.
 
+### ChatGPT project context for GitHub PR actions
+
+In Sweetie Bot settings → **GitHub**, set **ChatGPT project for PR actions** to a project address such as `https://chatgpt.com/g/g-p-6ac73804b6b081918ef8d1f0c88d4ba0/project`. You can also use VS Code's `scmToolkit.chatgptProjectUrl` setting (including a workspace override), or `git config --global scm-toolkit.chatgpt-project-url "https://chatgpt.com/g/g-p-.../project"` followed by syncing settings through the configurator. An empty value retains normal ChatGPT chats. This affects **PR drafting** and **Squash Selected Pull Requests with ChatGPT**; the direct GitHub CLI quick-merge button does not open a chat and is unchanged.
+
+Sweetie Bot appends the prepared prompt as the URL's `q` parameter within the chosen project. ChatGPT's project-scoped `q` behavior is not a documented API, so verify the draft appears in the project composer before submitting; if it does not, paste the prepared prompt manually. The project must already be accessible to the signed-in ChatGPT account. Project instructions and files are supplied by ChatGPT, not by Sweetie Bot.
+
 ### Pull requests through Kafania
 
 The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.

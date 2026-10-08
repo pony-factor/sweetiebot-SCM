@@ -52,6 +52,7 @@ class Setting:
 SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
+    Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
@@ -229,6 +230,16 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             continue
 
         value = raw_value.strip()
+        if setting.kind == "chatgpt_project_url":
+            if value:
+                url = urllib.parse.urlsplit(value)
+                if (url.scheme != "https" or url.netloc != "chatgpt.com" or
+                        url.query or url.fragment or
+                        not re.fullmatch(r"/g/g-p-[A-Za-z0-9-]+/project/?", url.path)):
+                    raise ValueError(f"{setting.label} must be a ChatGPT project link like https://chatgpt.com/g/g-p-.../project.")
+                value = f"https://chatgpt.com{url.path.rstrip('/')}"
+            parsed[setting.name] = value
+            continue
         if setting.kind == "browser_url":
             value = value or "https://chatgpt.com/"
             if any(char in value for char in ("\x00", "\n", "\r")) or not urllib.parse.urlparse(value).scheme:
@@ -467,6 +478,8 @@ def _setting_control(setting: Setting, current: object) -> str:
         required = ' placeholder="#43AF49"'
     elif setting.kind == "optional_text":
         required = ""
+    elif setting.kind == "chatgpt_project_url":
+        required = ' placeholder="https://chatgpt.com/g/g-p-.../project"'
     elif setting.kind == "browser_url":
         required = ' placeholder="https://chatgpt.com/"'
     elif setting.kind == "optional_model":

@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { chatgptPromptUrl } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -228,7 +229,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       mcpServer: options.mcpServer || DEFAULT_MCP_SERVER,
       mcpTool: options.mcpTool || DEFAULT_MCP_TOOL,
     });
-    const url = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
+    const projectUrl = vscode.workspace?.getConfiguration('scmToolkit').get('chatgptProjectUrl', '') || '';
+    const url = chatgptPromptUrl(prompt, projectUrl);
     await vscode.commands.executeCommand('workbench.action.browser.open', {
       url, openToSide: false, reuseUrlFilter: url
     });

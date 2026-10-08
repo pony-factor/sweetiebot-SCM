@@ -113,7 +113,12 @@ async function run() {
     return { getAPI: () => ({ getRepository(root) { assert.equal(root, uri); return repository; } }) };
   } };
   const codexExtension = { isActive: true, async activate() {} };
+  let configuredProject = '';
   const vscode = {
+    workspace: { getConfiguration(section) {
+      assert.equal(section, 'scmToolkit');
+      return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+    } },
     Uri: {
       from: components => components,
       parse: value => ({ value })
@@ -178,6 +183,13 @@ async function run() {
   assert(openedPrompt.includes('test-pack'));
   assert.match(openedPrompt, /local chat context only/);
   assert.equal(browserOptions.openToSide, false);
+
+  configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.equal(new URL(calls[0].args[0].url).pathname, '/g/g-p-test123/project');
+  assert.match(new URL(calls[0].args[0].url).searchParams.get('q'), /"draft"/);
+  configuredProject = '';
 
   calls.length = 0;
   codexSnapshot = {

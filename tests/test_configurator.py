@@ -34,6 +34,26 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_chatgpt_project_url_validation(self):
+        values = form_values()
+        values["chatgptProjectUrl"] = ["https://chatgpt.com/g/g-p-sample123/project/"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["chatgptProjectUrl"], "https://chatgpt.com/g/g-p-sample123/project")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="chatgptProjectUrl"', page)
+        values["chatgptProjectUrl"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["chatgptProjectUrl"], "")
+        for bad_url in [
+            "https://chatgpt.com.evil.test/g/g-p-sample/project",
+            "http://chatgpt.com/g/g-p-sample/project",
+            "https://chatgpt.com/g/g-p-sample/project?redirect=1",
+            "https://chatgpt.com/",
+            "https://user@chatgpt.com/g/g-p-sample/project",
+        ]:
+            values["chatgptProjectUrl"] = [bad_url]
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(values)
+
     def test_available_push_control_is_disabled_without_a_visibility_switch(self):
         values = form_values()
         values["messageBarLayout"] = ['{"before":["codex"],"after":[]}']

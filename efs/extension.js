@@ -94,7 +94,8 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       codexKeepAwake: scm.get('codexKeepAwake', true),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
-      pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true)
+      pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
+      chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },
     editorSettings: {
       'inlineSuggest.enabled': vscode.workspace.getConfiguration('editor').get('inlineSuggest.enabled', true)

@@ -118,7 +118,12 @@ async function run() {
     rootUri: { scheme: 'file', fsPath: '/workspace/repo' },
     state: { remotes: [{ name: 'origin', fetchUrl: 'git@github.com:owner/repo.git' }] }
   };
+  let configuredProject = '';
   const vscode = {
+    workspace: { getConfiguration(section) {
+      assert.equal(section, 'scmToolkit');
+      return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+    } },
     extensions: {
       getExtension(id) {
         assert.equal(id, 'vscode.git');
@@ -184,6 +189,13 @@ async function run() {
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
   assert.equal(submitCalls, 1);
+
+  configuredProject = 'https://chatgpt.com/g/g-p-example/project';
+  await handler();
+  const scopedChat = new URL(browserCalls.at(-1).options.url);
+  assert.equal(scopedChat.pathname, '/g/g-p-example/project');
+  assert.match(scopedChat.searchParams.get('q'), /pull\/41/);
+  assert.equal(submitCalls, 2);
 
   const pkg = require('../efs/package.json');
   assert(pkg.activationEvents.includes('onCommand:sweetiebot.openPullRequestBatchChat'));
