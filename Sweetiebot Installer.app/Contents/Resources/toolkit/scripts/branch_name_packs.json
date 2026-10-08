@@ -1474,7 +1474,7 @@
     {
       "id": "idw-comics",
       "label": "IDW comics",
-      "description": "Named comic-only pony characters without duplicate built-in branch names; distinct mirror-universe characters use disambiguated slugs.",
+      "description": "Named pony characters from the comic-only roster, excluding characters and branch names already represented in another built-in pack.",
       "names": [
         "time-turner",
         "amy-ratcliffe",
@@ -1652,7 +1652,6 @@
         "umbriel",
         "al-roker",
         "celena",
-        "mirror-universe-cadance",
         "princess-trixie",
         "paper-hearts",
         "princess-glitter-punch",
@@ -1769,10 +1768,7 @@
         "larissa",
         "pete-canterbell",
         "raspberry-fluff"
-      ],
-      "sources": {
-        "mirror-universe-cadance": "https://mlp.fandom.com/wiki/List_of_comic_ponies/Alicorn_ponies"
-      }
+      ]
     },
     {
       "id": "pony-life",
