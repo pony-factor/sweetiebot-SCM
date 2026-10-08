@@ -118,7 +118,7 @@ async function main() {
   ]);
   await handler({});
   assert.equal(errors.length, 1);
-  assert.deepEqual(refreshes, ['pr.refreshList']);
+  assert.deepEqual(refreshes, ['pr.refreshList', 'pr.refreshList']);
   const conflictErrors = [];
   const conflictRefreshes = [];
   registerGitHubPullRequestActions({
@@ -155,7 +155,7 @@ async function main() {
   assert.deepEqual(selected, [url, url, url, url, url]);
   assert.equal(errors.length, 1);
   assert.equal(notices.length, 5);
-  assert.deepEqual(refreshes, Array(6).fill('pr.refreshList'));
+  assert.deepEqual(refreshes, Array(7).fill('pr.refreshList'));
   // An inline PR row can be clicked before its TreeItem/selection metadata
   // becomes available. Retry the exact row after one refresh, without a second
   // click or duplicate merge.
