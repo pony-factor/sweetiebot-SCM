@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path');
 const {normalizeVector} = require('../efs/core');
 
 async function run() {
@@ -9,13 +10,25 @@ async function run() {
   const calls = [];
   const exampleUri = {toString: () => 'file:///example.txt'};
   const emptyUri = {toString: () => 'file:///notes/empty-notes.md'};
+  const outsideCapUri = {toString: () => 'file:///projects/finance/report.md'};
+  const rootUri = {toString: () => 'file:///'};
   const vscode = {
-    Uri: {joinPath: (_root, file) => file, parse: text => ({toString: () => text})},
+    Uri: {
+      joinPath: (uri, component) => {
+        if (uri === rootUri && component.startsWith('workspace-search-')) return component;
+        const url = new URL(uri.toString());
+        url.pathname = path.posix.resolve(url.pathname, component);
+        return {toString: () => url.toString()};
+      },
+      parse: text => ({toString: () => text})
+    },
     FileType: {File: 1},
     workspace: {
-      workspaceFolders: [],
-      asRelativePath: uri => uri.toString() === emptyUri.toString() ? 'notes/empty-notes.md' : 'example.txt',
-      findFiles: async () => [exampleUri, emptyUri],
+      workspaceFolders: [{uri: rootUri}],
+      getWorkspaceFolder: () => ({uri: rootUri}),
+      asRelativePath: uri => uri.toString().replace(/^file:\/\/\//, '') || 'workspace',
+      findFiles: async (_pattern, _exclude, maxFiles) =>
+        maxFiles ? [exampleUri, emptyUri] : [exampleUri, emptyUri, outsideCapUri],
       fs: {readFile: async () => {throw new Error('No cache');}, createDirectory: async () => {},
         writeFile: async (_uri, bytes) => {persisted = JSON.parse(bytes.toString());},
         delete: async () => {}, rename: async () => {}, stat: async () => ({type: 1, size: 20, mtime: 1})}
@@ -34,7 +47,7 @@ async function run() {
     return require(name);
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search_index.js'), 'utf8'), sandbox);
-  const index = new sandbox.module.exports.SearchIndex({globalStorageUri: {}}, () => ({embeddingModel: model, resultLimit: 10, mode: 'semantic'}));
+  const index = new sandbox.module.exports.SearchIndex({globalStorageUri: rootUri}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
   unavailable = true;
   await index.refresh();
   assert.match(index.embeddingWarning, /Model missing/);
@@ -58,6 +71,16 @@ async function run() {
   assert.ok(filenameResult, 'Semantic search should return files whose names match even without extractable text');
   assert.equal(filenameResult.text, 'File name match');
   assert.ok(persisted.files.some(file => file.uri === emptyUri.toString()), 'Empty files should remain in the index for filename search');
-  console.log('Workspace model recovery, filename search, and index checks passed.');
+  result = await index.search('finance', 'exact');
+  const folderResult = result.results.find(item => item.kind === 'folder' && item.relative === 'projects/finance');
+  assert.ok(folderResult, 'Folder names should be searchable even beyond the content-index file cap');
+  assert.equal(result.results[0].relative, 'projects/finance', 'Direct folder-name matches should outrank incidental path matches');
+  assert.equal(folderResult.text, 'Folder name match');
+  assert.equal(folderResult.line, 0);
+  assert.ok(!persisted.files.some(file => file.uri === outsideCapUri.toString()), 'Folder search must not require content indexing');
+  result = await index.search('projects finance', 'hybrid');
+  assert.ok(result.results.some(item => item.kind === 'folder' && item.relative === 'projects/finance'),
+    'Folder paths should be searchable as well as folder basenames');
+  console.log('Workspace model recovery, filename search, folder search, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});

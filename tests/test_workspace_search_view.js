@@ -5,6 +5,7 @@ const vm = require('node:vm');
 
 async function run() {
   const clipboard = [];
+  const commands = [];
   const vscodeStub = {
     Uri: {
       parse(value) { return {path: String(value).replace(/^file:\/\//, '')}; },
@@ -13,7 +14,8 @@ async function run() {
     env: {
       uriScheme: 'vscode',
       clipboard: {async writeText(value) { clipboard.push(value); }}
-    }
+    },
+    commands: {async executeCommand(command, uri) {commands.push({command, uri});}}
   };
   const sandbox = { module: { exports: {} }, require(name) {
     if (name === 'vscode') return vscodeStub;
@@ -63,6 +65,12 @@ async function run() {
   assert.equal(clipboard[0], '[new.txt:5](vscode://file/tmp/new.txt:5)');
   assert.equal(messages.at(-1).type, 'copied');
   assert.equal(messages.at(-1).index, 0);
+  provider.lastResults = [{kind: 'folder', uri: 'file:///tmp/research', relative: 'research', line: 0}];
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[1], '[research](vscode://file/tmp/research)', 'Folder links must not append a line number');
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(commands.at(-1).command, 'revealInExplorer', 'Opening a folder result reveals it in Explorer');
+  assert.equal(commands.at(-1).uri.path, '/tmp/research');
 
   const elements = new Map();
   for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle']) {
@@ -90,8 +98,11 @@ async function run() {
   assert.match(html, /className='folder-tree'/);
   assert.match(html, /className='folder-route'/);
   assert.match(html, /className='file-name'/);
+  assert.match(html, /group\.entries\[0\]\?\.result\?\.kind==='folder'/);
+  assert.match(html, /if\(result\.kind!=='folder'\)meta\.append\(line\)/);
   assert.match(html, /id="summary" class="result-summary"/);
-  assert.match(html, /' across '\+groups\.length\+' file'/);
+  assert.match(html, /' across '\+fileCount\+' file'/);
+  assert.match(html, /' and '\+folderCount\+' folder'/);
   assert.doesNotMatch(html, /' · '\+message\.mode/);
   assert.match(html, /className='line-number'/);
   assert.match(html, /meta\.append\(line,score,copied\)/);
