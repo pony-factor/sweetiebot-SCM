@@ -138,10 +138,11 @@ class BranchNamePackTests(unittest.TestCase):
             "saddle-rager",
             "zapp",
             "smash-fortune",
-            "wind-rider",
         ]
         self.assertEqual(packs["g4-caricatures"]["label"], "G4 caricatures")
         self.assertEqual(packs["g4-caricatures"]["names"], expected)
+        self.assertIn("wind-rider", packs["g4-stallions"]["names"])
+        self.assertNotIn("wind-rider", packs["g4-caricatures"]["names"])
         self.assertNotIn("g4-founders-power-ponies", packs)
         for pack_id, pack in packs.items():
             if pack_id != "g4-caricatures":
