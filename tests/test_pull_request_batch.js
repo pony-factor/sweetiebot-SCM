@@ -68,21 +68,68 @@ async function run() {
   assert.match(requested[0].url, /state=open&base=main/);
   assert.equal(requested[0].options.headers.Authorization, 'Bearer token');
 
-  const allResult = await pickPullRequests({
-    window: { async showQuickPick(items, options) {
-      assert.equal(options.canPickMany, true);
-      assert.equal(options.placeHolder, 'Select one or more pull requests, then press OK.');
-      assert.equal(items.length, pulls.length);
-      assert.equal(items.some(item => item.selectAll), false);
-      return items;
-    } }
-  }, pulls);
-  assert.deepEqual(allResult, pulls);
+  function pickerHarness(action, verify = () => {}) {
+    const events = {};
+    let hidden = false;
+    let disposed = false;
+    const picker = {
+      items: [],
+      buttons: [],
+      selectedItems: [],
+      onDidTriggerButton(callback) { events.button = callback; return { dispose() {} }; },
+      onDidAccept(callback) { events.accept = callback; return { dispose() {} }; },
+      onDidHide(callback) { events.hide = callback; return { dispose() {} }; },
+      show() {
+        verify(this);
+        if (action === 'all') events.button(this.buttons[0]);
+        else if (action === 'one') {
+          this.selectedItems = [this.items[1]];
+          events.accept();
+        } else if (action === 'first') {
+          this.selectedItems = [this.items[0]];
+          events.accept();
+        } else if (action === 'empty') events.accept();
+        else if (action === 'cancel') events.hide();
+      },
+      hide() {
+        if (!hidden) {
+          hidden = true;
+          events.hide();
+        }
+      },
+      dispose() { disposed = true; }
+    };
+    return {
+      picker,
+      vscode: {
+        ThemeIcon: class { constructor(id) { this.id = id; } },
+        window: { createQuickPick() { return picker; } }
+      },
+      get disposed() { return disposed; }
+    };
+  }
 
-  const oneResult = await pickPullRequests({
-    window: { async showQuickPick(items) { return [items[1]]; } }
-  }, pulls);
+  const allPicker = pickerHarness('all', picker => {
+    assert.equal(picker.canSelectMany, true);
+    assert.equal(picker.items.length, pulls.length);
+    assert.equal(picker.items.some(item => item.selectAll), false);
+    assert.equal(picker.buttons.length, 1);
+    assert.equal(picker.buttons[0].iconPath.id, 'run-all');
+    assert.match(picker.buttons[0].tooltip, /Queue all pull requests/);
+  });
+  assert.deepEqual(await pickPullRequests(allPicker.vscode, pulls), pulls);
+  assert.equal(allPicker.disposed, true);
+
+  const onePicker = pickerHarness('one');
+  const oneResult = await pickPullRequests(onePicker.vscode, pulls);
   assert.deepEqual(oneResult.map(pr => pr.number), [10]);
+  assert.equal(onePicker.disposed, true);
+
+  const emptyPicker = pickerHarness('empty');
+  assert.deepEqual(await pickPullRequests(emptyPicker.vscode, pulls), []);
+  const cancelPicker = pickerHarness('cancel');
+  assert.equal(await pickPullRequests(cancelPicker.vscode, pulls), undefined);
+  assert.equal(cancelPicker.disposed, true);
 
   const prompt = batchMergePrompt({
     repositoryUrl: 'https://github.com/owner/repo',
@@ -133,7 +180,9 @@ async function run() {
     state: { remotes: [{ name: 'origin', fetchUrl: 'git@github.com:owner/repo.git' }] }
   };
   let configuredProject = '';
+  let pickerAction = 'first';
   const vscode = {
+    ThemeIcon: class { constructor(id) { this.id = id; } },
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
       return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
@@ -162,10 +211,7 @@ async function run() {
       async executeCommand(id, options) { browserCalls.push({ id, options }); }
     },
     window: {
-      async showQuickPick(items, options) {
-        assert.equal(options.canPickMany, true);
-        return [items[0]];
-      },
+      createQuickPick() { return pickerHarness(pickerAction).picker; },
       showErrorMessage(message) { errors.push(message); },
       showInformationMessage(message) { infos.push(message); },
       showWarningMessage(message) { warnings.push(message); }
@@ -205,12 +251,24 @@ async function run() {
   assert.equal(browserCalls[0].options.openToSide, false);
   assert.equal(submitCalls, 1);
 
+  pickerAction = 'all';
+  await handler();
+  const allChat = new URL(browserCalls.at(-1).options.url);
+  assert.match(allChat.searchParams.get('q'), /pull\/41/);
+  assert.match(allChat.searchParams.get('q'), /pull\/40/);
+  assert.equal(submitCalls, 2);
+  pickerAction = 'cancel';
+  await handler();
+  assert.equal(browserCalls.length, 2, 'Cancelling must not submit a merge request');
+  assert.equal(submitCalls, 2);
+  pickerAction = 'first';
+
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
   await handler();
   const scopedChat = new URL(browserCalls.at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
   assert.match(scopedChat.searchParams.get('q'), /pull\/41/);
-  assert.equal(submitCalls, 2);
+  assert.equal(submitCalls, 3);
   configuredProject = '';
 
   registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'focus' }), 'darwin');

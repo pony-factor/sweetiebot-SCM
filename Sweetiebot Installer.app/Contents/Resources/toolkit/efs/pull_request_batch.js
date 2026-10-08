@@ -94,21 +94,44 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
 }
 
 async function pickPullRequests(vscode, pullRequests) {
-  const selected = await vscode.window.showQuickPick(
-    pullRequests.map(pullRequest => ({
-      label: `#${pullRequest.number} ${pullRequest.title}`,
-      description: pullRequest.head ? `← ${pullRequest.head}` : '',
-      detail: pullRequest.url,
-      pullRequest
-    })),
-    {
-      canPickMany: true,
-      title: 'Squash and merge with ChatGPT',
-      placeHolder: 'Select one or more pull requests, then press OK.'
-    }
-  );
-  if (selected === undefined) return undefined;
-  return selected.flatMap(item => item.pullRequest ? [item.pullRequest] : []);
+  const picker = vscode.window.createQuickPick();
+  const queueAllButton = {
+    iconPath: new vscode.ThemeIcon('run-all'),
+    tooltip: 'Queue all pull requests in ChatGPT (one click)'
+  };
+  picker.items = pullRequests.map(pullRequest => ({
+    label: '#' + pullRequest.number + ' ' + pullRequest.title,
+    description: pullRequest.head ? '← ' + pullRequest.head : '',
+    detail: pullRequest.url,
+    pullRequest
+  }));
+  picker.canSelectMany = true;
+  picker.title = 'Squash and merge with ChatGPT';
+  picker.placeholder = 'Select pull requests and press OK, or use Queue All to submit every PR.';
+  picker.buttons = [queueAllButton];
+
+  return new Promise(resolve => {
+    let finished = false;
+    const listeners = [];
+    const finish = selection => {
+      if (finished) return;
+      finished = true;
+      picker.hide();
+      for (const listener of listeners) listener.dispose();
+      picker.dispose();
+      resolve(selection);
+    };
+    listeners.push(
+      picker.onDidTriggerButton(button => {
+        if (button === queueAllButton) finish([...pullRequests]);
+      }),
+      picker.onDidAccept(() => {
+        finish(picker.selectedItems.flatMap(item => item.pullRequest ? [item.pullRequest] : []));
+      }),
+      picker.onDidHide(() => finish(undefined))
+    );
+    picker.show();
+  });
 }
 
 function batchMergePrompt({ repositoryUrl, pullRequests, base = 'main' }) {
