@@ -16,7 +16,7 @@ const binding = source.slice(
 );
 assert(binding, 'Exercise the repository polling binding as well as the timer');
 
-async function check(settings, { dirty = false, ancestor = 'local', upstream = true, hidden = false } = {}) {
+async function check(settings, { dirty = false, ancestor = 'local', upstream = true, hidden = false, slowAutoPull = false } = {}) {
   const calls = [];
   let clock = 0;
   const timers = new Map();
@@ -24,6 +24,7 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
   let resourceListener;
   let visibilityListener;
   let disposable;
+  let finishAutoPull;
   const localRef = { id: 'refs/heads/main', revision: 'local' };
   const remoteRef = upstream ? { id: 'refs/remotes/origin/main', revision: 'remote' } : undefined;
   const provider = {
@@ -58,6 +59,14 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
       assert.equal(argument, 'selected-repository');
       calls.push(command);
       if (options) assert.equal(options.fetch, true);
+      if (command === 'sweetiebot.autoPullClean' && slowAutoPull && options?.fetch && !finishAutoPull) {
+        return new Promise(resolve => {
+          finishAutoPull = () => {
+            if (upstream && ancestor === 'local') localRef.revision = remoteRef.revision;
+            resolve();
+          };
+        });
+      }
       if (command === 'sweetiebot.autoPullClean' && upstream && ancestor === 'local') localRef.revision = remoteRef.revision;
     } },
     currentRepositoryArgument: 'selected-repository',
@@ -70,6 +79,7 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
     const [id, timer] = timers.entries().next().value;
     timers.delete(id);
     await timer.callback();
+    await new Promise(resolve => setImmediate(resolve));
   }
 
   if (disposable && !dirty) {
@@ -80,8 +90,16 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
       ...(settings.autoPullClean ? ['sweetiebot.autoPullClean'] : [])
     ];
     assert.deepEqual(calls, expected);
-    assert.equal([...timers.values()][0].delay, hidden ? 5000 : 1500);
+    assert.equal([...timers.values()][0].delay, hidden ? 5000 : 750);
     await tick();
+    if (slowAutoPull) {
+      assert.equal(calls.filter(command => command === 'git.refresh').length, 2,
+        'SCM keeps refreshing even when an upstream fetch has not completed');
+      assert.equal(calls.filter(command => command === 'sweetiebot.autoPullClean').length, 1,
+        'SCM does not launch a second fetch while one is outstanding');
+      finishAutoPull();
+      await new Promise(resolve => setImmediate(resolve));
+    }
     assert.equal(calls.filter(command => command === 'sweetiebot.autoPullClean').length,
       expected.includes('sweetiebot.autoPullClean') ? 1 : 0, 'Do not pull again after catching up');
     if (settings.autoPullClean && !hidden) {
@@ -117,6 +135,7 @@ async function run() {
   await check(settings, { ancestor: 'diverged' });
   await check(settings, { upstream: false });
   await check(settings, { hidden: true });
+  await check({ blankStateRefresh: true, autoPullClean: true }, { slowAutoPull: true });
   console.log('Automatic pull settings and clean-repository regression checks passed.');
 }
 

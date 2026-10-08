@@ -1477,10 +1477,12 @@
         "saddle-rager",
         "zapp",
         "smash-fortune",
-        "grogar"
+        "grogar",
+        "plainity"
       ],
       "sources": {
-        "grogar": "https://mlp.fandom.com/wiki/Grogar"
+        "grogar": "https://mlp.fandom.com/wiki/Grogar",
+        "plainity": "https://mlp.fandom.com/wiki/Friendship_University"
       }
     },
     {

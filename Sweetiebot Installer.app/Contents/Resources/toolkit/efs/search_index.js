@@ -7,10 +7,17 @@ const { extractText } = require('./extract');
 const { embedTexts } = require('./ollama');
 
 const INDEX_VERSION = 2;
+const FILENAME_CACHE_TTL_MS = 2 * 60 * 1000;
 const FOLDER_CACHE_TTL_MS = 2 * 60 * 1000;
 
-function normalizedFolderName(value) {
+// Treat punctuation and spaces alike when comparing a filename to a typed title.
+function normalizedName(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+
+function normalizedFolderName(value) {
+  return normalizedName(value);
 }
 
 function workspaceKey() {
@@ -31,6 +38,8 @@ class SearchIndex {
     this.persistTimer = undefined;
     this.loadPromise = undefined;
     this.refreshPromise = undefined;
+    this.filenameCache = undefined;
+    this.filenameScanPromise = undefined;
     this.folderCache = undefined;
     this.folderScanPromise = undefined;
   }
@@ -81,11 +90,14 @@ class SearchIndex {
   }
 
   markDirty(uri) {
-    this.dirty.add(uri.toString());
+    const key = uri.toString();
+    this.dirty.add(key);
+    if (!this.files.has(key)) this.filenameCache = undefined;
     this.folderCache = undefined;
   }
 
   remove(uri) {
+    this.filenameCache = undefined;
     this.folderCache = undefined;
     this.dirty.delete(uri.toString());
     this.files.delete(uri.toString());
@@ -93,6 +105,7 @@ class SearchIndex {
   }
 
   async clear() {
+    this.filenameCache = undefined;
     this.folderCache = undefined;
     this.files.clear();
     this.dirty.clear();
@@ -165,6 +178,25 @@ class SearchIndex {
     return { files: this.files.size, processed, warning: this.embeddingWarning };
   }
 
+  async discoverFilenames(settings) {
+    const exclude = settings.exclude || undefined;
+    if (this.filenameCache?.exclude === exclude && Date.now() < this.filenameCache.expires) {
+      return this.filenameCache.uris;
+    }
+    if (this.filenameScanPromise) return this.filenameScanPromise;
+
+    // Unlike content indexing, filename discovery must not use maxFiles.
+    const work = vscode.workspace.findFiles('**/*', exclude);
+    this.filenameScanPromise = work;
+    try {
+      const uris = await work;
+      this.filenameCache = { exclude, uris, expires: Date.now() + FILENAME_CACHE_TTL_MS };
+      return uris;
+    } finally {
+      if (this.filenameScanPromise === work) this.filenameScanPromise = undefined;
+    }
+  }
+
   async discoverFolders(settings) {
     const exclude = settings.exclude || undefined;
     if (this.folderCache?.exclude === exclude && Date.now() < this.folderCache.expires) {
@@ -204,6 +236,7 @@ class SearchIndex {
     }
   }
 
+
   async search(query, mode) {
     await this.load();
     if (!this.files.size || this.embeddingModel !== this.getSettings().embeddingModel) await this.refresh();
@@ -223,13 +256,13 @@ class SearchIndex {
       }
     }
     const scored = [];
-    const fuzzyFolders = selectedMode === 'hybrid';
-    const normalizedQuery = normalizedFolderName(query);
+    const fuzzy = selectedMode === 'hybrid';
+    const normalizedQuery = normalizedName(query);
     for (const folderUri of await this.discoverFolders(settings)) {
       const relative = vscode.workspace.asRelativePath(folderUri, false);
       const name = relative.split(/[\\/]/).pop() || relative;
-      const nameScore = keywordScore(query, name, { fuzzy: fuzzyFolders });
-      const pathScore = keywordScore(query, relative, { fuzzy: fuzzyFolders });
+      const nameScore = keywordScore(query, name, { fuzzy: fuzzy });
+      const pathScore = keywordScore(query, relative, { fuzzy: fuzzy });
       const directMatch = normalizedQuery && normalizedQuery === normalizedFolderName(name);
       const score = directMatch ? 2 : Math.max(nameScore * 1.15, pathScore * 1.05);
       if (score > 0) {
@@ -243,24 +276,30 @@ class SearchIndex {
         });
       }
     }
-    for (const file of this.files.values()) {
-      const uri = vscode.Uri.parse(file.uri);
+    const filenames = await this.discoverFilenames(settings);
+    for (const uri of filenames) {
       const relative = vscode.workspace.asRelativePath(uri, false);
-      const fuzzy = selectedMode === 'hybrid';
       const filename = relative.split(/[\\/]/).pop() || relative;
       const filenameScore = keywordScore(query, filename, { fuzzy });
       const pathScore = keywordScore(query, relative, { fuzzy });
-      const fileScore = Math.max(filenameScore, pathScore * 0.95);
+      const stem = filename.replace(/\.[^.]+$/, '');
+      const directMatch = normalizedQuery && (
+        normalizedQuery === normalizedName(stem) || normalizedQuery === normalizedName(filename)
+      );
+      // Strong filename matches outrank semantic and content results.
+      const fileScore = directMatch ? 2 : Math.max(filenameScore, pathScore * 0.95);
       if (fileScore > 0) {
         scored.push({
-          uri: file.uri,
+          uri: uri.toString(),
           relative,
           line: 0,
-          text: filenameScore >= pathScore * 0.95 ? 'File name match' : 'Path match',
+          text: directMatch || filenameScore >= pathScore * 0.95 ? 'File name match' : 'Path match',
           score: fileScore,
           kind: 'filename'
         });
       }
+    }
+    for (const file of this.files.values()) {
       for (const chunk of file.chunks || []) {
         const exact = keywordScore(query, chunk.text, { fuzzy });
         const semantic = queryVector && chunk.vector ? Math.max(0, cosine(queryVector, chunk.vector)) : 0;
@@ -273,7 +312,7 @@ class SearchIndex {
                     : semantic * 0.78 + exact * 0.22;
         if (score > 0) {
           const line = bestMatchingLine(query, chunk.text, chunk.line, { fuzzy });
-          scored.push({ uri: file.uri, relative, line, text: chunk.text, score });
+          scored.push({ uri: file.uri, relative: vscode.workspace.asRelativePath(vscode.Uri.parse(file.uri), false), line, text: chunk.text, score });
         }
       }
     }

@@ -10,8 +10,10 @@ async function run() {
   const calls = [];
   const exampleUri = {toString: () => 'file:///example.txt'};
   const emptyUri = {toString: () => 'file:///notes/empty-notes.md'};
+  const overlookedUri = {toString: () => 'file:///drafts/apa-nondeference.md'};
   const outsideCapUri = {toString: () => 'file:///projects/finance/report.md'};
   const rootUri = {toString: () => 'file:///'};
+  let filenameScans = 0;
   const vscode = {
     Uri: {
       joinPath: (uri, component) => {
@@ -27,8 +29,11 @@ async function run() {
       workspaceFolders: [{uri: rootUri}],
       getWorkspaceFolder: () => ({uri: rootUri}),
       asRelativePath: uri => uri.toString().replace(/^file:\/\/\//, '') || 'workspace',
-      findFiles: async (_pattern, _exclude, maxFiles) =>
-        maxFiles ? [exampleUri, emptyUri] : [exampleUri, emptyUri, outsideCapUri],
+      findFiles: async (_glob, _exclude, maxFiles) => {
+        if (maxFiles) return [exampleUri, emptyUri];
+        filenameScans += 1;
+        return [exampleUri, emptyUri, overlookedUri, outsideCapUri];
+      },
       fs: {readFile: async () => {throw new Error('No cache');}, createDirectory: async () => {},
         writeFile: async (_uri, bytes) => {persisted = JSON.parse(bytes.toString());},
         delete: async () => {}, rename: async () => {}, stat: async () => ({type: 1, size: 20, mtime: 1})}
@@ -71,16 +76,25 @@ async function run() {
   assert.ok(filenameResult, 'Semantic search should return files whose names match even without extractable text');
   assert.equal(filenameResult.text, 'File name match');
   assert.ok(persisted.files.some(file => file.uri === emptyUri.toString()), 'Empty files should remain in the index for filename search');
+  assert.ok(!persisted.files.some(file => file.uri === overlookedUri.toString()), 'The fixture must be outside the capped content index');
+  result = await index.search('apa nondeference', 'hybrid');
+  assert.equal(result.results[0].relative, 'drafts/apa-nondeference.md', 'Hyphenated exact titles must rank first');
+  assert.equal(result.results[0].kind, 'filename');
+  assert.equal(result.results[0].score, 2, 'Direct filename matches must beat passage scores');
+  result = await index.search('APA-NONDEFERENCE.MD', 'exact');
+  assert.equal(result.results[0].relative, 'drafts/apa-nondeference.md', 'Full filenames must match without case sensitivity');
+  result = await index.search('nondeference', 'semantic');
+  assert.ok(result.results.some(item => item.relative === 'drafts/apa-nondeference.md' && item.kind === 'filename'), 'Semantic mode must discover names of unindexed files');
   result = await index.search('finance', 'exact');
   const folderResult = result.results.find(item => item.kind === 'folder' && item.relative === 'projects/finance');
-  assert.ok(folderResult, 'Folder names should be searchable even beyond the content-index file cap');
-  assert.equal(result.results[0].relative, 'projects/finance', 'Direct folder-name matches should outrank incidental path matches');
+  assert.ok(folderResult, 'Folder names should be searchable beyond the content-index file cap');
+  assert.equal(result.results[0].relative, 'projects/finance', 'Exact folder-name matches should lead');
   assert.equal(folderResult.text, 'Folder name match');
   assert.equal(folderResult.line, 0);
-  assert.ok(!persisted.files.some(file => file.uri === outsideCapUri.toString()), 'Folder search must not require content indexing');
+  assert.ok(!persisted.files.some(file => file.uri === outsideCapUri.toString()), 'Folder lookup must not require content indexing');
   result = await index.search('projects finance', 'hybrid');
-  assert.ok(result.results.some(item => item.kind === 'folder' && item.relative === 'projects/finance'),
-    'Folder paths should be searchable as well as folder basenames');
-  console.log('Workspace model recovery, filename search, folder search, and index checks passed.');
+  assert.ok(result.results.some(item => item.kind === 'folder' && item.relative === 'projects/finance'), 'Folder paths should be searchable');
+  assert.equal(filenameScans, 2, 'Repeated queries should reuse independent filename and folder listings');
+  console.log('Workspace model recovery, uncapped filenames, exact-name priority, folder search, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});

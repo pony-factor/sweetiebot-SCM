@@ -1,2 +1,6 @@
 __pycache__/
 .DS_Store
+
+# Local AI commit style preferences
+/assets/commit-instructions.local.md
+/assets/commit-instructions.local.md.tmp
