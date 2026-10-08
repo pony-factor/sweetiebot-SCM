@@ -666,14 +666,16 @@
         "scarlet-heart",
         "yuma-spurs",
         "zesty-gourmand",
-        "fizzlepop-berrytwist"
+        "fizzlepop-berrytwist",
+        "forward-thinking-friendship-student"
       ],
       "sources": {
         "aloe-vera": "https://mlp.fandom.com/wiki/Credits/Season_nine#Deep_Tissue_Memories",
         "tempest-shadow": "https://mlp.fandom.com/wiki/Tempest_Shadow",
         "the-headless-horse": "https://mlp.fandom.com/wiki/The_Headless_Horse",
         "the-olden-pony": "https://mlp.fandom.com/wiki/List_of_ponies/Elders",
-        "fizzlepop-berrytwist": "https://mlp.fandom.com/wiki/Tempest_Shadow"
+        "fizzlepop-berrytwist": "https://mlp.fandom.com/wiki/Tempest_Shadow",
+        "forward-thinking-friendship-student": "https://mlp-gameloft.fandom.com/wiki/Prank_to_the_Future"
       }
     },
     {
@@ -1188,18 +1190,21 @@
         "whiplash",
         "white-marble",
         "whitewash",
+        "wind-rider",
         "wind-waker",
         "wisp",
         "written-script",
         "wylin-slobinzki",
         "zephyr-breeze",
         "zirconic",
-        "dr-whooves"
+        "dr-whooves",
+        "coiffed-waiter-pony"
       ],
       "sources": {
         "clean-sweep": "https://mlp.fandom.com/wiki/List_of_ponies/Earth_ponies/Stallions",
         "mayor-baltimare": "https://mlp.fandom.com/wiki/List_of_ponies/Earth_ponies/Stallions",
-        "dr-whooves": "https://mlp.fandom.com/wiki/Dr._Hooves"
+        "dr-whooves": "https://mlp.fandom.com/wiki/Dr._Hooves",
+        "coiffed-waiter-pony": "https://mlp-gameloft.fandom.com/wiki/Coiffed_Waiter_Pony"
       }
     },
     {
@@ -1441,18 +1446,22 @@
         "capper-dapperpaws",
         "discord",
         "queen-chrysalis",
-        "queen-novo"
+        "queen-novo",
+        "lord-tirek",
+        "scorpan"
       ],
       "sources": {
         "queen-novo": "https://mlp.fandom.com/wiki/Queen_Novo",
         "capper-dapperpaws": "https://mlp.fandom.com/wiki/Capper",
-        "queen-chrysalis": "https://mlp.fandom.com/wiki/Queen_Chrysalis"
+        "queen-chrysalis": "https://mlp.fandom.com/wiki/Queen_Chrysalis",
+        "lord-tirek": "https://mlp.fandom.com/wiki/Lord_Tirek",
+        "scorpan": "https://mlp.fandom.com/wiki/Scorpan"
       }
     },
     {
-      "id": "g4-characters",
-      "label": "G4 characters",
-      "description": "Notable named G4 characters, including Equestria's founders, the Power Ponies and Humdrum, Smash Fortune, and Wind Rider.",
+      "id": "g4-caricatures",
+      "label": "G4 caricatures",
+      "description": "Notable named G4 caricatures, including Equestria's founders, the Power Ponies and Humdrum, and Smash Fortune.",
       "names": [
         "chancellor-puddinghead",
         "clover-the-clever",
@@ -1468,8 +1477,11 @@
         "saddle-rager",
         "zapp",
         "smash-fortune",
-        "wind-rider"
-      ]
+        "grogar"
+      ],
+      "sources": {
+        "grogar": "https://mlp.fandom.com/wiki/Grogar"
+      }
     },
     {
       "id": "idw-comics",
