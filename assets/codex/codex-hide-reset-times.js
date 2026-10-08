@@ -5,7 +5,7 @@ function scmToolkitStripUsageResetTime(value) {
     const clock = /\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?|\d{1,2}\s*(?:AM|PM)/.source;
     const date = /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?|\d{4}-\d{2}-\d{2}|today|tomorrow|tonight/.source;
     const time = '(?:' + duration + '|' + clock + '|' + date + ')';
-    const when = '(?:\\s+(?:in|at|on|after|until)\\s+|\\s+)' + time;
+    const when = '(?:\\s+(?:in|at|on|after|until)\\s+|\\s*[,;:–—-]\\s*|\\s+)' + time;
     let result = text.replace(new RegExp('\\b(?:try again|retry)' + when, 'gi'), 'Try again later');
     result = result.replace(new RegExp('\\bwait until\\s+' + time, 'gi'), 'wait until your limit resets');
     result = result.replace(new RegExp('\\b(resets?|renews?)' + when, 'gi'), '$1');
@@ -33,6 +33,16 @@ function scmToolkitIsStandaloneTime(value) {
                 if (cleaned !== original) {
                     if (cleaned.trim()) element.setAttribute(name, cleaned);
                     else element.removeAttribute(name);
+                }
+            }
+            // A mixed-content banner may hold its message in a text node beside
+            // an Upgrade button. Clean only its own text, preserving the controls.
+            if (element.children?.length) {
+                for (const node of element.childNodes || []) {
+                    if (node.nodeType !== 3) continue;
+                    const originalText = String(node.textContent || '');
+                    const cleanedText = scmToolkitStripUsageResetTime(originalText);
+                    if (cleanedText !== originalText) node.textContent = cleanedText;
                 }
             }
             const original = String(element.textContent || '');
