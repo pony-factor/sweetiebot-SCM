@@ -1450,9 +1450,9 @@
       }
     },
     {
-      "id": "g4-characters",
-      "label": "G4 characters",
-      "description": "Notable named G4 characters, including Equestria's founders, the Power Ponies and Humdrum, Smash Fortune, and Wind Rider.",
+      "id": "g4-caricatures",
+      "label": "G4 caricatures",
+      "description": "Notable named G4 personalities, including Equestria's founders, the Power Ponies and Humdrum, Smash Fortune, and Wind Rider.",
       "names": [
         "chancellor-puddinghead",
         "clover-the-clever",
