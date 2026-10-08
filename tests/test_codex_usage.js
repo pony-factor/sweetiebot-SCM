@@ -5,9 +5,18 @@ const vm = require('node:vm');
 
 const intervals = [];
 const listeners = {};
+const components = new Map();
 const context = vm.createContext({
-    HTMLElement: class {},
-    customElements: { get() { return true; } },
+    HTMLElement: class {
+        constructor() { this.style = {}; this.attributes = {}; }
+        getAttribute(name) { return this.attributes[name] ?? null; }
+        setAttribute(name, value) { this.attributes[name] = String(value); }
+        removeAttribute(name) { delete this.attributes[name]; }
+    },
+    customElements: {
+        get(name) { return components.get(name); },
+        define(name, element) { components.set(name, element); },
+    },
     setInterval(fn, delay) {
         intervals.push({ fn, delay });
         return intervals.length;
@@ -46,6 +55,26 @@ assert.equal(piePercent(-5), 0);
 assert.equal(piePercent(105), 100);
 assert.equal(piePercent('not-a-number'), null);
 
+// The user's VS Code JSON theme accent applies only at ten percent or below.
+const UsagePie = components.get('scm-toolkit-usage-pie');
+const indicator = new UsagePie();
+indicator.connectedCallback();
+for (const [percent, color] of [
+    [100, 'currentColor'],
+    [11, 'currentColor'],
+    [10, 'var(--vscode-focusBorder, currentColor)'],
+    [1, 'var(--vscode-focusBorder, currentColor)'],
+    [0, 'var(--vscode-focusBorder, currentColor)'],
+    [50, 'currentColor'],
+]) {
+    indicator.setAttribute('percent', percent);
+    indicator.update();
+    assert.ok(indicator.style.background.includes(`, ${color} `), `${percent}% foreground`);
+    assert.equal(indicator.getAttribute('aria-label'), `${percent}% Codex usage remaining`);
+}
+indicator.setAttribute('percent', 'unavailable');
+indicator.update();
+assert.equal(indicator.style.background, 'transparent');
 const keepFresh = context.scmToolkitKeepUsageFresh;
 let firstRefreshes = 0;
 let latestRefreshes = 0;
