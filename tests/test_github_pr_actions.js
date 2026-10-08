@@ -156,5 +156,93 @@ async function main() {
   assert.equal(errors.length, 1);
   assert.equal(notices.length, 5);
   assert.deepEqual(refreshes, Array(6).fill('pr.refreshList'));
+  // An inline PR row can be clicked before its TreeItem/selection metadata
+  // becomes available. Retry the exact row after one refresh, without a second
+  // click or duplicate merge.
+  const firstClick = { pullRequestModel: { number: 12 } };
+  const firstClickMerges = [];
+  const firstClickErrors = [];
+  const firstClickNotices = [];
+  const firstClickCommands = new Map();
+  let rowReady = false, firstClickRefreshes = 0;
+  const firstClickVscode = {
+    commands: {
+      registerCommand: (id, fn) => {
+        firstClickCommands.set(id, fn);
+        return { dispose() {} };
+      },
+      getCommands: async () => [...firstClickCommands.keys()],
+      executeCommand: async (id, argument) => {
+        if (id === 'pr.refreshList') {
+          firstClickRefreshes++;
+          rowReady = true;
+          return;
+        }
+        return firstClickCommands.get(id)(argument);
+      }
+    },
+    ProgressLocation: { Notification: 15 },
+    window: {
+      withProgress: (_, fn) => fn(),
+      showErrorMessage: message => firstClickErrors.push(message),
+      showInformationMessage: message => firstClickNotices.push(message)
+    }
+  };
+  firstClickCommands.set('sweetiebot.resolveSelectedPullRequest', async clicked => {
+    assert.equal(clicked, firstClick, 'Resolve the exact clicked row, not another selected PR');
+    return rowReady ? { url, number: 12 } : { number: 12 };
+  });
+  registerGitHubPullRequestActions(firstClickVscode, { subscriptions: [] }, async selectedUrl => {
+    firstClickMerges.push(selectedUrl);
+    return { merged: false, number: 12 };
+  });
+  await firstClickCommands.get('sweetiebot.squashMergeSelectedPullRequest')(firstClick);
+  assert.deepEqual(firstClickMerges, [url], 'One click must merge once after an automatic identity retry');
+  assert.deepEqual(firstClickErrors, []);
+  assert.equal(firstClickNotices.length, 1);
+  assert.equal(firstClickRefreshes, 2, 'One recovery refresh and one post-action refresh');
+
+  // Refuse a stale resolver returning another PR's URL; never merge whichever
+  // row happens to be selected when the clicked row has not been identified.
+  rowReady = true;
+  const wrongRow = { pullRequestModel: { number: 99 } };
+  firstClickCommands.set('sweetiebot.resolveSelectedPullRequest', async () => ({ url, number: 12 }));
+  await firstClickCommands.get('sweetiebot.squashMergeSelectedPullRequest')(wrongRow);
+  assert.deepEqual(firstClickMerges, [url], 'A mismatched PR must never be merged');
+  assert.match(firstClickErrors.at(-1), /Could not identify the pull request/);
+
+  // The GitHub resolver can itself register only after the first refresh.
+  const lateCommands = new Map();
+  const lateMerges = [];
+  let lateRefreshes = 0;
+  const lateVscode = {
+    ...firstClickVscode,
+    commands: {
+      registerCommand: (id, fn) => {
+        lateCommands.set(id, fn);
+        return { dispose() {} };
+      },
+      getCommands: async () => [...lateCommands.keys()],
+      executeCommand: async (id, argument) => {
+        if (id === 'pr.refreshList') {
+          lateRefreshes++;
+          lateCommands.set('sweetiebot.resolveSelectedPullRequest', async clicked => {
+            assert.equal(clicked, firstClick);
+            return { url, number: 12 };
+          });
+          return;
+        }
+        return lateCommands.get(id)(argument);
+      }
+    }
+  };
+  registerGitHubPullRequestActions(lateVscode, { subscriptions: [] }, async selectedUrl => {
+    lateMerges.push(selectedUrl);
+    return { merged: false, number: 12 };
+  });
+  await lateCommands.get('sweetiebot.squashMergeSelectedPullRequest')(firstClick);
+  assert.deepEqual(lateMerges, [url]);
+  assert.equal(lateRefreshes, 2);
+
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

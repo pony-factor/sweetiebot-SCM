@@ -73,6 +73,39 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
   }
 }
 
+async function resolveMergeTarget(vscode, node) {
+  const direct = pullRequestFromTreeNode(node);
+  if (direct.url) return direct;
+
+  const resolver = 'sweetiebot.resolveSelectedPullRequest';
+  const resolve = async () => {
+    try {
+      if (!(await vscode.commands.getCommands(true)).includes(resolver)) return;
+      // Always resolve the original clicked row. A selected PR from another
+      // row must never be substituted just because the tree is still loading.
+      const model = pullRequestFromTreeNode(await vscode.commands.executeCommand(resolver, node));
+      if (!model.url) return;
+      if (direct.number != null && Number(direct.number) !== model.number) return;
+      return model;
+    } catch {
+      // A row may not have its rendered TreeItem yet.
+      return;
+    }
+  };
+
+  // Inline tree commands can fire before VS Code has published the selection
+  // or completed the first TreeItem. Give the UI a turn before resolving it.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const immediate = await resolve();
+  if (immediate) return immediate;
+
+  // Refresh once and retry this *same* row automatically rather than making
+  // the user click its merge button again. Failure remains non-destructive.
+  await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 50));
+  return (await resolve()) || direct;
+}
+
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
   const handler = async node => {
@@ -125,20 +158,9 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
     vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', async node => {
-      // The optional GitHub tree patch can resolve selection and rendered items.
-      // Keep direct PR arguments working when that extension is unavailable.
-      // A self-contained argument identifies the clicked PR even if the optional
-      // tree resolver is stale or cannot interpret this argument shape.
-      const direct = pullRequestFromTreeNode(node);
-      if (direct.url) return handler(direct);
-      const resolver = 'sweetiebot.resolveSelectedPullRequest';
-      const commands = await vscode.commands.getCommands(true);
-      const model = commands.includes(resolver)
-        ? await vscode.commands.executeCommand(resolver, node)
-        : node;
-      return handler(model);
+      return handler(await resolveMergeTarget(vscode, node));
     })
   );
 }
 
-module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, registerGitHubPullRequestActions };
+module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, resolveMergeTarget, registerGitHubPullRequestActions };
