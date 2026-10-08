@@ -234,7 +234,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 293)
+        self.assertEqual(len(names), 292)
         for name in (
             "acacia-pie",
             "captain-hoofbeard",
@@ -261,13 +261,12 @@ class BranchNamePackTests(unittest.TestCase):
             )
 
         # These refer to characters already listed elsewhere or twice in IDW.
-        for alias in ("kingpin", "dauntless", "cadance"):
+        for alias in ("kingpin", "dauntless", "cadance", "mirror-universe-cadance"):
             self.assertNotIn(alias, idw_names)
         self.assertIn("mr-kingpin", packs["g4-stallions"]["names"])
         self.assertIn("general-dauntless", idw_names)
         self.assertIn("princess-cadance", packs["g4-mares"]["names"])
-        # Mirror-Universe Cadance is a distinct IDW counterpart.
-        self.assertIn("mirror-universe-cadance", idw_names)
+        # Only the G4 Princess Cadance entry is retained.
         self.assertIn("princess-trixie", idw_names)
 
     def test_idw_comics_pack_matches_bundled_installer_catalog(self):
