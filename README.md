@@ -345,18 +345,22 @@ The low-memory path never escalates to the larger primary model when the fallbac
 
 ### Manual commit spellcheck preview
 
-The Source Control message controls include a checkmark action for **Preview spelling correction**.
-It sends only the current subject line to the configured local Ollama model and never changes the
-message until you approve the suggestion. If the suggestion differs, Sweetiebot shows the original
-and corrected subjects in a modal with **Apply correction** and **Keep original**.
+The Source Control message controls can include a checkmark action for **Preview spelling correction**.
+The feature is off by default; enable **Manual commit spellcheck preview** in Sweetiebot settings to
+show the action. It sends only the current subject line to the configured local Ollama model and never
+changes the message until you approve the suggestion. If the suggestion differs, Sweetiebot shows the
+original and corrected subjects in a modal with **Apply correction** and **Keep original**.
 
-The model must return a structured `{"subject":"..."}` response. Sweetiebot rejects malformed
-output, added or removed words, changed punctuation/emoji structure, and unrelated rewrites before
-the preview is shown. Commit bodies are left byte-for-byte in place. Codex-attributed messages are
-excluded from the manual spellcheck path, and blank-message AI generation never enters it.
+Spellcheck uses its own `scm-toolkit.spellcheck-model` setting, defaulting to `qwen2.5:3b`, instead
+of sharing either commit-writing model. The model must return a structured `{"subject":"..."}`
+response. Sweetiebot rejects malformed output, added or removed words, changed punctuation/emoji
+structure, and unrelated rewrites before the preview is shown. Commit bodies are left byte-for-byte
+in place. Codex-attributed messages are excluded from the manual spellcheck path, and blank-message
+AI generation never enters it.
 
-The former `scm-toolkit.spellcheck-manual-commit` automatic rewrite setting is no longer used, so
-an older global Git value cannot silently mutate a manually entered commit subject.
+The preview opt-in is stored as `scm-toolkit.spellcheck-preview`. The former
+`scm-toolkit.spellcheck-manual-commit` automatic rewrite setting remains unused, so an older global
+Git value cannot silently reactivate spellchecking or mutate a manually entered commit subject.
 
 ### AI model picker
 

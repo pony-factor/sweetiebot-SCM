@@ -101,6 +101,8 @@ SETTINGS = (
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
+    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Manual commit spellcheck preview", "Show the Preview spelling correction action for manually written commit subjects. Suggestions require approval before changing the message. Off by default.", "Ollama"),
+    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Ollama model used only for manual commit subject spelling previews.", "Ollama", "model"),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use ASCII punctuation. Off by default.", "Ollama"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
@@ -169,6 +171,8 @@ def validate_models(settings: dict) -> None:
         required.append("workspaceSearchChatModel")
     if settings.get("aiCommit"):
         required.extend(["aiCommitModel", "aiCommitLowMemoryModel"])
+    if settings.get("spellcheckManualCommit"):
+        required.append("spellcheckModel")
     labels = {setting.name: setting.label for setting in SETTINGS}
     for key in required:
         name = model_tag(str(settings[key]))
