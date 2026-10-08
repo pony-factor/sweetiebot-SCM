@@ -52,35 +52,42 @@ def legacy_ai_wrapper_path():
 
 
 def sync_ai_wrapper(remove=False, check=False, destination=None):
-    explicit_destination = destination is not None
-    primary = Path(destination) if explicit_destination else ai_wrapper_path()
-    destinations = [primary]
-    if not explicit_destination:
-        legacy = legacy_ai_wrapper_path()
-        if (
-            legacy != primary
-            and legacy.exists()
-            and not legacy.is_symlink()
-        ):
-            destinations.append(legacy)
+    primary = Path(destination) if destination is not None else ai_wrapper_path()
+    primary_files = [
+        (HERE / "ai_commit.py", primary),
+        (
+            HERE / "post_commit_spellcheck.py",
+            primary.with_name(primary.name + "-spellcheck.py"),
+        ),
+    ]
 
-    files = []
-    for target in destinations:
-        files.extend([
-            (HERE / "ai_commit.py", target),
+    # The normal installer passes destination=ai_wrapper_path(). Treat that
+    # exact call as the canonical install path too, so legacy wrappers cannot
+    # escape refresh merely because the destination was supplied explicitly.
+    manage_legacy = destination is None or primary == ai_wrapper_path()
+    legacy = legacy_ai_wrapper_path()
+    legacy_links = []
+    if (
+        manage_legacy
+        and legacy != primary
+        and (legacy.exists() or legacy.is_symlink())
+    ):
+        legacy_links = [
+            (legacy, primary),
             (
-                HERE / "post_commit_spellcheck.py",
-                target.with_name(target.name + "-spellcheck.py"),
+                legacy.with_name(legacy.name + "-spellcheck.py"),
+                primary.with_name(primary.name + "-spellcheck.py"),
             ),
-        ])
+        ]
 
-    # Validate all destinations before changing any of them.
-    for _, target in files:
+    # The canonical wrapper remains a managed regular file. Existing legacy
+    # names are allowed to be symlinks because they are migrated below.
+    for _, target in primary_files:
         if not remove and target.is_symlink():
             raise RuntimeError(f"Refusing to overwrite symlinked AI wrapper: {target}")
 
     changed = False
-    for source, target in files:
+    for source, target in primary_files:
         if remove:
             exists = target.exists() or target.is_symlink()
             changed |= exists
@@ -96,6 +103,27 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(expected)
             target.chmod(0o755)
+
+    for legacy_target, canonical_target in legacy_links:
+        if remove:
+            exists = legacy_target.exists() or legacy_target.is_symlink()
+            changed |= exists
+            if exists and not check:
+                legacy_target.unlink()
+            continue
+
+        points_to_canonical = (
+            legacy_target.is_symlink()
+            and legacy_target.resolve(strict=False)
+            == canonical_target.resolve(strict=False)
+        )
+        changed |= not points_to_canonical
+        if not points_to_canonical and not check:
+            if legacy_target.exists() or legacy_target.is_symlink():
+                legacy_target.unlink()
+            legacy_target.parent.mkdir(parents=True, exist_ok=True)
+            legacy_target.symlink_to(canonical_target)
+
     return changed
 
 def ai_model_picker_path():
