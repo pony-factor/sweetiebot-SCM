@@ -230,7 +230,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       mcpTool: options.mcpTool || DEFAULT_MCP_TOOL,
     });
     const projectUrl = vscode.workspace?.getConfiguration('scmToolkit').get('chatgptProjectUrl', '') || '';
-    const url = chatgptPromptUrl(prompt, projectUrl) + '&submit=true';
+    const url = chatgptPromptUrl(prompt, projectUrl) + '&sweetiebot_pr=1';
     await vscode.commands.executeCommand('workbench.action.browser.open', {
       url, openToSide: false, reuseUrlFilter: url
     });

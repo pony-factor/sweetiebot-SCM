@@ -15,6 +15,7 @@ import codex_image_drop
 import codex_recent_chats
 import codex_startup
 import github_pr
+import browser_pr
 from pathlib import Path
 from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string
 from branch_names import resolve_runtime_settings
@@ -813,6 +814,10 @@ def main():
     )
 
     if not args.codex_only:
+        for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
+            paths.append(browser_path)
+            old.append(browser_old)
+            new.append(browser_new)
         for github_path, github_old, github_new in github_pr.patch_files(remove=args.uninstall):
             paths.append(github_path)
             old.append(github_old)

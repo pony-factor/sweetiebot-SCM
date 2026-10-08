@@ -179,7 +179,7 @@ async function run() {
   const browserOptions = calls[0].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
-  assert.equal(url.searchParams.get('submit'), 'true');
+  assert.equal(url.searchParams.get('sweetiebot_pr'), '1');
   const openedPrompt = url.searchParams.get('q');
   assert.match(openedPrompt, /"draft"/);
   assert(openedPrompt.includes(rules));
@@ -192,7 +192,7 @@ async function run() {
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.equal(new URL(calls[0].args[0].url).pathname, '/g/g-p-test123/project');
-  assert.equal(new URL(calls[0].args[0].url).searchParams.get('submit'), 'true');
+  assert.equal(new URL(calls[0].args[0].url).searchParams.get('sweetiebot_pr'), '1');
   assert.match(new URL(calls[0].args[0].url).searchParams.get('q'), /"draft"/);
   configuredProject = '';
 
@@ -207,7 +207,7 @@ async function run() {
   };
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
   const codexLaunchUrl = new URL(calls.at(-1).args[0].url);
-  assert.equal(codexLaunchUrl.searchParams.get('submit'), 'true');
+  assert.equal(codexLaunchUrl.searchParams.get('sweetiebot_pr'), '1');
   const codexPrompt = codexLaunchUrl.searchParams.get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));
   assert(codexPrompt.includes(codexSnapshot.text));
