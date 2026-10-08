@@ -12,6 +12,7 @@ async function run() {
   const emptyUri = {toString: () => 'file:///notes/empty-notes.md'};
   const overlookedUri = {toString: () => 'file:///drafts/apa-nondeference.md'};
   const outsideCapUri = {toString: () => 'file:///projects/finance/report.md'};
+  const exactUrl = 'https://example.org/filings/2026?document=abc&part=1#section-2';
   const rootUri = {toString: () => 'file:///'};
   let filenameScans = 0;
   const vscode = {
@@ -43,7 +44,7 @@ async function run() {
     if (name === 'vscode') return vscode;
     if (name === './core') return require('../efs/core');
     if (name === './extract') return {extractText: async uri =>
-      uri.toString() === emptyUri.toString() ? '' : 'Header.\nA meaningful example passage.\nFooter.'};
+      uri.toString() === emptyUri.toString() ? '' : `Header.\nA meaningful example passage.\nFooter.\nReference: ${exactUrl}`};
     if (name === './ollama') return {embedTexts: async (settings, texts) => {
       calls.push(settings.embeddingModel);
       if (unavailable) throw new Error('Model missing');
@@ -69,6 +70,20 @@ async function run() {
   assert.equal(result.results[0].score, 1, 'Changing model must rebuild cached vectors');
   assert.equal(persisted.embeddingModel, model);
   assert.ok(calls.every(name => name === model));
+  // Literal URL hits must beat stronger semantic-only matches in Hybrid mode.
+  index.files.set('file:///semantic-distractor.txt', {
+    uri: 'file:///semantic-distractor.txt', mtime: 1, size: 20,
+    chunks: [{text: 'An unrelated document with a perfect semantic vector.', line: 0, vector: normalizeVector([0, 1])}]
+  });
+  result = await index.search(exactUrl, 'hybrid');
+  assert.equal(result.results[0].uri, exampleUri.toString(), 'A full literal URL hit should rank ahead of semantic distractors');
+  assert.equal(result.results[0].score, 3, 'Literal URL hits need priority over similarity scores');
+  assert.equal(result.results[0].line, 3, 'Open a URL result on the line containing the identical URL');
+  result = await index.search(exactUrl, 'exact');
+  assert.equal(result.results[0].score, 3, 'Exact mode should preserve literal URL priority');
+  result = await index.search(exactUrl.replace('#section-2', '#section-3'), 'hybrid');
+  assert.ok(result.results.every(item => item.score !== 3), 'A different URL must not receive the literal-match boost');
+  index.files.delete('file:///semantic-distractor.txt');
   result = await index.search('empty-notes.md', 'semantic');
   const filenameResult = result.results.find(item =>
     item.kind === 'filename' && item.relative === 'notes/empty-notes.md'
@@ -117,6 +132,6 @@ async function run() {
     'File-name hits remain independent of passage hits');
   vscode.workspace.asRelativePath = originalRelativePath;
 
-  console.log('Workspace model recovery, uncapped filenames, exact-name priority, folder search, and index checks passed.');
+  console.log('Workspace model recovery, literal URL ranking, uncapped filenames, exact-name priority, folder search, and index checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
