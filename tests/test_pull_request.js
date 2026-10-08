@@ -75,6 +75,9 @@ async function run() {
   assert(prompt.includes(rules));
   assert.match(prompt, /Kafania's configured MCP server "codex-drafter"/);
   assert.match(prompt, /"github_create_pull_request"/);
+  assert.match(prompt, /follow the Publishing fallback/);
+  assert(!prompt.includes('instead of substituting a different GitHub writer'));
+  assert.match(prompt, /Do not claim publication succeeded/);
   assert(prompt.includes(chatSource.uuid));
   assert(prompt.includes(chatSource.url));
   assert.match(prompt, /intentSummary/);
@@ -171,6 +174,7 @@ async function run() {
   const browserOptions = calls[0].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
+  assert.equal(url.searchParams.get('submit'), 'true');
   const openedPrompt = url.searchParams.get('q');
   assert.match(openedPrompt, /"draft"/);
   assert(openedPrompt.includes(rules));
@@ -189,7 +193,9 @@ async function run() {
     }
   };
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
-  const codexPrompt = new URL(calls.at(-1).args[0].url).searchParams.get('q');
+  const codexLaunchUrl = new URL(calls.at(-1).args[0].url);
+  assert.equal(codexLaunchUrl.searchParams.get('submit'), 'true');
+  const codexPrompt = codexLaunchUrl.searchParams.get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));
   assert(codexPrompt.includes(codexSnapshot.text));
 

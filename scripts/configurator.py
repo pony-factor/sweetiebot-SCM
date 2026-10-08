@@ -15,6 +15,7 @@ import threading
 import urllib.parse
 import urllib.request
 import webbrowser
+from pathlib import Path
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from toolkit_settings import load_settings, VSCODE_SETTINGS
@@ -111,6 +112,7 @@ SETTINGS = (
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "Configured MCP server name for pull-request integrations.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
+    Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Usage pie indicator", "Replace the Codex remaining-usage percentage with a circular indicator that empties as the five-hour allowance is used.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
@@ -295,6 +297,7 @@ def save_settings(settings: dict[str, bool | str]) -> None:
             [git, "config", "--global", "--get", setting.git_key],
             capture_output=True,
             text=True,
+            cwd=Path.home(),
         )
         if result.returncode not in (0, 1):
             raise RuntimeError(result.stderr.strip() or f"Unable to read {setting.git_key}")
@@ -309,6 +312,7 @@ def save_settings(settings: dict[str, bool | str]) -> None:
                 [git, "config", "--global", "--replace-all", setting.git_key, serialized],
                 capture_output=True,
                 text=True,
+                cwd=Path.home(),
             )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or f"Unable to write {setting.git_key}")
@@ -321,7 +325,7 @@ def save_settings(settings: dict[str, bool | str]) -> None:
                 args += ["--unset-all", setting.git_key]
             else:
                 args += ["--replace-all", setting.git_key, old_value]
-            subprocess.run(args, capture_output=True, text=True)
+            subprocess.run(args, capture_output=True, text=True, cwd=Path.home())
         raise
 
 

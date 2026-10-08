@@ -4,21 +4,52 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { runtimeRevision } = require('./runtime_revision');
 
-// Restore the running local app and the Codex version VS Code actually selects.
+const QUIET_PERIOD_MS = 8000;
+
+// Repair the app and the selected Codex extension before offering one reload.
+// Extension installs can finish after Sweetie Bot starts, so a repair followed
+// by an extension change must be reconciled before showing the notification.
 function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   if (process.platform !== 'darwin' || vscode.env.remoteName) return;
   const output = vscode.window.createOutputChannel('Sweetie Bot app repair');
-  let child, timer, disposed = false, pending = false, offeredRevision;
+  let child, timer, settleTimer, disposed = false, pending = false, offeredRevision;
+  let extensionGeneration = 0;
   const loadedRevision = runtimeRevision(vscode, context);
   const enabled = () => vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
+  const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
+
+  const offerReload = revision => {
+    if (!revision || revision === loadedRevision || revision === offeredRevision || disposed || !enabled()) return;
+    offeredRevision = revision;
+    void vscode.window.showInformationMessage(
+      'Sweetie Bot and extension customizations are ready. Reload this window once to apply all updates.',
+      'Reload Window'
+    ).then(async choice => {
+      if (!disposed && choice === 'Reload Window') {
+        await beforeReload();
+        if (!disposed) return vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    }).catch(error => {
+      offeredRevision = undefined;
+      output.appendLine(error.message);
+    });
+  };
+
+  const schedule = (delay = 2000) => {
+    clearTimeout(timer);
+    clearTimeout(settleTimer);
+    if (!disposed && enabled()) timer = setTimeout(refresh, delay);
+  };
+
   const refresh = () => {
     if (disposed || !enabled()) return;
     if (child) { pending = true; return; }
-    const codex = vscode.extensions.getExtension('openai.chatgpt');
+    const codexPath = selectedCodexPath();
+    const generation = extensionGeneration;
     const script = vscode.Uri.joinPath(context.extensionUri,
       'codex-customizations', 'scripts', 'repair.py').fsPath;
     const args = [script, '--app', path.resolve(vscode.env.appRoot, '../../..')];
-    if (codex) args.push('--codex-extension', codex.extensionPath);
+    if (codexPath) args.push('--codex-extension', codexPath);
     child = spawn('python3', args, {
       cwd: context.extensionPath,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
@@ -36,44 +67,57 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
       finished = true;
       clearTimeout(timeout);
       child = undefined;
-      const revision = !disposed && !timedOut && code === 0 ? runtimeRevision(vscode, context) : undefined;
-      if (revision && revision !== loadedRevision && revision !== offeredRevision) {
-        offeredRevision = revision;
-        void vscode.window.showInformationMessage(
-          'Sweetie Bot updated or restored your app customizations. Reload this window to apply them.',
-          'Reload Window'
-        ).then(async choice => {
-          if (!disposed && choice === 'Reload Window') {
-            await beforeReload();
-            if (!disposed) return vscode.commands.executeCommand('workbench.action.reloadWindow');
-          }
-        }).catch(error => { offeredRevision = undefined; output.appendLine(error.message); });
-      } else if (!disposed && code !== 0) {
+      if (disposed) return;
+      if (code !== 0 || timedOut) {
         output.appendLine('Repair did not complete. Check the error above; macOS App Management permission or support for this app version may be required.');
       }
-      if (pending && !disposed) { pending = false; schedule(); }
+      // A new extension version may have landed while Python was running.
+      // In that case, repair the newly selected extension before any prompt.
+      if (pending || extensionGeneration !== generation || selectedCodexPath() !== codexPath) {
+        pending = false;
+        schedule(QUIET_PERIOD_MS);
+        return;
+      }
+      if (code !== 0 || timedOut) return;
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        if (disposed || !enabled()) return;
+        if (child || pending || extensionGeneration !== generation || selectedCodexPath() !== codexPath) {
+          schedule(QUIET_PERIOD_MS);
+          return;
+        }
+        offerReload(runtimeRevision(vscode, context));
+      }, QUIET_PERIOD_MS);
     };
     running.stdout.on('data', data => output.append(data.toString()));
     running.stderr.on('data', data => output.append(data.toString()));
     running.on('error', error => { output.appendLine(error.message); finish(-1); });
     running.on('close', finish);
   };
-  const schedule = () => {
-    clearTimeout(timer);
-    if (!disposed) timer = setTimeout(refresh, 2000);
-  };
-  // Periodic checks also catch updates missed while this extension was inactive.
-  const interval = setInterval(schedule, 60 * 60 * 1000);
-  context.subscriptions.push(output, vscode.extensions.onDidChange(schedule),
+
+  const interval = setInterval(() => schedule(QUIET_PERIOD_MS), 60 * 60 * 1000);
+  context.subscriptions.push(output, vscode.extensions.onDidChange(() => {
+    extensionGeneration++;
+    schedule(QUIET_PERIOD_MS);
+  }),
     vscode.window.onDidChangeWindowState(event => {
-      if (event.focused && enabled() && runtimeRevision(vscode, context) !== loadedRevision) schedule();
+      if (event.focused && enabled() && runtimeRevision(vscode, context) !== loadedRevision) {
+        schedule(QUIET_PERIOD_MS);
+      }
     }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('scmToolkit.automaticAppRepair')) schedule();
+      if (event.affectsConfiguration('scmToolkit.automaticAppRepair')) schedule(QUIET_PERIOD_MS);
     }), {
-      dispose() { disposed = true; clearInterval(interval); clearTimeout(timer); child?.kill(); }
+      dispose() {
+        disposed = true;
+        clearInterval(interval);
+        clearTimeout(timer);
+        clearTimeout(settleTimer);
+        child?.kill();
+      }
     });
-  schedule();
+  // Allow startup extension discovery and pending installs to settle first.
+  schedule(QUIET_PERIOD_MS);
 }
 
 module.exports = { registerCodexRefresh };

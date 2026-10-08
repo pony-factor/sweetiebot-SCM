@@ -414,6 +414,18 @@ class SubmissionTests(unittest.TestCase):
         )
 
 class GitConfigTests(unittest.TestCase):
+    @patch("toolkit_settings.subprocess.run")
+    def test_global_git_settings_use_stable_directory(self, run):
+        run.side_effect = lambda args, **kwargs: SimpleNamespace(
+            returncode=1 if "--get" in args else 0, stdout="", stderr=""
+        )
+
+        self.assertTrue(toolkit_settings.read_git_bool("scm-toolkit.branch-picker", True))
+        self.assertEqual(toolkit_settings.read_git_string("scm-toolkit.remote", "origin"), "origin")
+        toolkit_settings.persist_message_bar_layout({"messageBarLayout": '{"before":[],"after":[]}'})
+        self.assertEqual(run.call_count, 4)
+        self.assertTrue(all(call.kwargs.get("cwd") == Path.home() for call in run.call_args_list))
+
     @patch("toolkit_settings.read_git_bool")
     @patch("toolkit_settings.read_git_string")
     def test_disabled_pack_setting_can_be_explicitly_empty(self, read_string, read_bool):
@@ -474,6 +486,7 @@ class GitConfigTests(unittest.TestCase):
 
         writes = [call.args[0] for call in run.call_args_list if "--replace-all" in call.args[0]]
         self.assertEqual(len(writes), len(configurator.SETTINGS))
+        self.assertTrue(all(call.kwargs.get('cwd') == Path.home() for call in run.call_args_list))
         self.assertIn(
             [
                 "/usr/bin/git",
