@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
 
@@ -68,6 +69,7 @@ DEFAULT_SETTINGS = {
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
+    "codexHideUsageResetTimes": False,
     "codexUsagePieIndicator": False,
     "codexHidePromotions": False,
     "codexHideDictation": False,
@@ -90,6 +92,7 @@ def read_git_bool(key, default):
             ["git", "config", "--global", "--type=bool", "--get", key],
             capture_output=True,
             text=True,
+            cwd=Path.home(),
         )
     except FileNotFoundError:
         return default
@@ -107,6 +110,7 @@ def read_git_string(key, default, preserve_empty=False):
             ["git", "config", "--global", "--get", key],
             capture_output=True,
             text=True,
+            cwd=Path.home(),
         )
     except FileNotFoundError:
         return default
@@ -167,7 +171,7 @@ def persist_message_bar_layout(settings):
         return
     result = subprocess.run(
         ["git", "config", "--global", key, str(settings["messageBarLayout"])],
-        capture_output=True, text=True,
+        capture_output=True, text=True, cwd=Path.home(),
     )
     if result.returncode != 0:
         raise RuntimeError("Unable to save the message bar layout: " + result.stderr.strip())
@@ -234,6 +238,7 @@ SETTING_KEYS = {
     "mcpPrServer": "scm-toolkit.mcp-pr-server",
     "mcpPrTool": "scm-toolkit.mcp-pr-tool",
     "codexUsageResetCountdown": "scm-toolkit.codex-usage-reset-countdown",
+    "codexHideUsageResetTimes": "scm-toolkit.codex-hide-usage-reset-times",
     "codexUsagePieIndicator": "scm-toolkit.codex-usage-pie-indicator",
     "codexHidePromotions": "scm-toolkit.codex-hide-promotions",
     "codexHideDictation": "scm-toolkit.codex-hide-dictation",

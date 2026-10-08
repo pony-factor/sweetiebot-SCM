@@ -2,6 +2,7 @@
 
 const vscode = require('vscode');
 const { spawn } = require('child_process');
+const os = require('node:os');
 const { SearchIndex } = require('./search_index');
 const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
@@ -111,7 +112,8 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
     '--parent-pid', String(process.pid),
     ...persistedSettingsSessionArgs(context)
   ], {
-    cwd: context.extensionPath,
+    // This server survives extension repairs; its cwd must not be a replaceable install folder.
+    cwd: os.homedir(),
     stdio: ['ignore', 'pipe', 'pipe']
   });
   configuratorProcess = child;

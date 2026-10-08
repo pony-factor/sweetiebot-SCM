@@ -26,6 +26,8 @@ START = '\n/* scm-toolkit:start */\n'
 END = '\n/* scm-toolkit:end */\n'
 CODEX_START = '\n/* scm-toolkit-codex-countdown:start */\n'
 CODEX_END = '\n/* scm-toolkit-codex-countdown:end */\n'
+CODEX_HIDE_RESET_START = '\n/* scm-toolkit-codex-hide-reset-times:start */\n'
+CODEX_HIDE_RESET_END = '\n/* scm-toolkit-codex-hide-reset-times:end */\n'
 CODEX_PROMOTIONS_START = '\n/* scm-toolkit-codex-promotions:start */\n'
 CODEX_PROMOTIONS_END = '\n/* scm-toolkit-codex-promotions:end */\n'
 CODEX_TIMESTAMPS_START = '\n/* scm-toolkit-codex-timestamps:start */\n'
@@ -521,7 +523,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -530,6 +532,12 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         js = before + after
     js = codex_image_drop.transform(js, remove=remove)
     js = codex_recent_chats.transform(js, remove=remove)
+    if js.count(CODEX_HIDE_RESET_START) != js.count(CODEX_HIDE_RESET_END) or js.count(CODEX_HIDE_RESET_START) > 1:
+        raise ValueError("Incomplete Codex reset-time hiding patch; refusing to overwrite it.")
+    if CODEX_HIDE_RESET_START in js:
+        before, rest = js.split(CODEX_HIDE_RESET_START, 1)
+        _, after = rest.split(CODEX_HIDE_RESET_END, 1)
+        js = before + after
     if CODEX_DICTATION_START in js:
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
@@ -567,6 +575,13 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + " */\n"
             + (CODEX_ASSETS / "codex-countdown.js").read_text()
             + CODEX_END
+        )
+
+    if not remove and hide_reset_times:
+        js += (
+            CODEX_HIDE_RESET_START
+            + (CODEX_ASSETS / "codex-hide-reset-times.js").read_text()
+            + CODEX_HIDE_RESET_END
         )
 
     if not remove and hide_promotions:
@@ -853,11 +868,13 @@ def main():
             old.append(awake_old)
             new.append(awake_new)
     usage_pie = settings.get("codexUsagePieIndicator", False)
+    hide_reset_times = settings.get("codexHideUsageResetTimes", False)
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=(settings["codexUsageResetCountdown"] or usage_pie) and not args.uninstall,
+        enabled=(settings["codexUsageResetCountdown"] or usage_pie or hide_reset_times) and not args.uninstall,
+        hide_reset_times=hide_reset_times,
         pie_indicator=usage_pie,
-        reset_countdown=settings["codexUsageResetCountdown"],
+        reset_countdown=settings["codexUsageResetCountdown"] and not hide_reset_times,
     ):
         paths.append(usage_path)
         old.append(usage_old)
@@ -876,6 +893,7 @@ def main():
 
     should_find_codex = (
         settings["codexUsageResetCountdown"]
+        or hide_reset_times
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
         or settings["codexHideDictation"]
@@ -893,10 +911,11 @@ def main():
         try:
             codex_new = transform_codex(
                 codex_old,
-                enabled=settings["codexUsageResetCountdown"] and (
+                enabled=settings["codexUsageResetCountdown"] and not hide_reset_times and (
                     CODEX_START in codex_old or 'codex.rateLimitUpsellBanner.dismiss' in codex_old
                     or 'You’re out of Codex messages' in codex_old
                 ),
+                hide_reset_times=hide_reset_times,
                 hide_promotions=settings["codexHidePromotions"],
                 hide_timestamps=settings["codexHideChatTimestamps"],
                 hide_dictation=settings["codexHideDictation"],
