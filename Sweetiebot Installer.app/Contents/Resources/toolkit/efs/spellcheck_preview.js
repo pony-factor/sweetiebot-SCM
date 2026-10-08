@@ -63,6 +63,12 @@ function runSpellcheck(script, cwd, subject) {
   });
 }
 
+function hasCodexCoauthor(message) {
+  return String(message || '').split(/\r?\n/).some(
+    line => /^Co-authored-by:\s*Codex(?: Web)?\s*</i.test(line.trim())
+  );
+}
+
 function registerSpellcheckPreviewCommand(vscode, extensionContext) {
   extensionContext.subscriptions.push(vscode.commands.registerCommand(
     'sweetiebot.previewCommitSpellcheck',
@@ -71,7 +77,7 @@ function registerSpellcheckPreviewCommand(vscode, extensionContext) {
         vscode.window.showInformationMessage('Enter a commit message before previewing spelling corrections.');
         return message;
       }
-      if (/^Co-authored-by:\s*Codex(?: Web)?\s*</mi.test(message)) {
+      if (hasCodexCoauthor(message)) {
         vscode.window.showInformationMessage(
           'Codex-attributed commit messages are not passed through manual spellcheck.'
         );
@@ -109,4 +115,4 @@ function registerSpellcheckPreviewCommand(vscode, extensionContext) {
   ));
 }
 
-module.exports = { runSpellcheck, registerSpellcheckPreviewCommand };
+module.exports = { runSpellcheck, hasCodexCoauthor, registerSpellcheckPreviewCommand };
