@@ -2,6 +2,7 @@
 
 const { execFile } = require('child_process');
 const { githubRepository } = require('./pull_request');
+const { chatgptPromptUrl } = require('./chatgpt_project');
 
 const CHAT_SUBMIT_DELAY_MS = 3000;
 
@@ -188,7 +189,8 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         pullRequests: selected,
         base: 'main'
       });
-      const url = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
+      const projectUrl = vscode.workspace?.getConfiguration('scmToolkit').get('chatgptProjectUrl', '') || '';
+      const url = chatgptPromptUrl(prompt, projectUrl);
       await vscode.commands.executeCommand('workbench.action.browser.open', {
         url,
         openToSide: false,
