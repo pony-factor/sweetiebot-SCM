@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 import toolkit_settings
 import workspace_search
@@ -126,6 +127,20 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             list(package["contributes"]["views"]),
             [workspace_search.STANDALONE_CONTAINER_ID],
         )
+
+
+    def test_standalone_activity_bar_icon_is_upright(self):
+        icon_path = workspace_search.SOURCE / "media" / "efs.svg"
+        icon = ET.fromstring(icon_path.read_text())
+        self.assertFalse(
+            any("rotate(" in element.attrib.get("transform", "") for element in icon.iter()),
+            "The Activity Bar icon should remain upright even if other EFS artwork is tilted.",
+        )
+        bundled_icon = (
+            workspace_search.SOURCE.parent / "Sweetiebot Installer.app"
+            / "Contents" / "Resources" / "toolkit" / "efs" / "media" / "efs.svg"
+        )
+        self.assertEqual(icon_path.read_bytes(), bundled_icon.read_bytes())
 
     def test_standalone_manifest_uses_custom_label(self):
         settings = dict(
