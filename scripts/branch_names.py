@@ -10,6 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CATALOG_PATH = HERE / "branch_name_packs.json"
 SAFE_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+LEGACY_PACK_IDS = {"g4-founders-power-ponies": "g4-characters"}
 
 
 def _validate_slug(value: object, label: str) -> str:
@@ -152,6 +153,7 @@ def parse_pack_id_list(raw: object) -> list[str]:
         if not value:
             continue
         pack_id = _validate_slug(value, "Branch-name pack id")
+        pack_id = LEGACY_PACK_IDS.get(pack_id, pack_id)
         if pack_id not in seen:
             seen.add(pack_id)
             ids.append(pack_id)

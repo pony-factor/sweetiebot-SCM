@@ -118,7 +118,7 @@ class BranchNamePackTests(unittest.TestCase):
         ):
             self.assertNotIn(name, g4_names)
 
-    def test_g4_founders_and_power_ponies_are_in_default_on_pack(self):
+    def test_g4_characters_include_notable_ponies_and_are_enabled_by_default(self):
         import toolkit_settings
 
         catalog = branch_names.load_catalog()
@@ -137,18 +137,34 @@ class BranchNamePackTests(unittest.TestCase):
             "radiance",
             "saddle-rager",
             "zapp",
+            "smash-fortune",
+            "wind-rider",
         ]
-        self.assertEqual(packs["g4-founders-power-ponies"]["names"], expected)
+        self.assertEqual(packs["g4-characters"]["label"], "G4 characters")
+        self.assertEqual(packs["g4-characters"]["names"], expected)
+        self.assertNotIn("g4-founders-power-ponies", packs)
         for pack_id, pack in packs.items():
-            if pack_id != "g4-founders-power-ponies":
+            if pack_id != "g4-characters":
                 self.assertTrue(set(expected).isdisjoint(pack["names"]), pack_id)
         default_disabled = toolkit_settings.DEFAULT_SETTINGS["branchNameDisabledPacks"]
         settings = branch_names.resolve_runtime_settings(
             {"branchNameDisabledPacks": default_disabled}
         )
-        self.assertNotIn(
-            "g4-founders-power-ponies", settings["branchNameDisabledPacks"]
+        self.assertNotIn("g4-characters", settings["branchNameDisabledPacks"])
+
+    def test_legacy_g4_pack_id_keeps_saved_enable_disable_preferences(self):
+        self.assertEqual(
+            branch_names.parse_pack_id_list("g4-founders-power-ponies,g4-characters"),
+            ["g4-characters"],
         )
+        disabled = branch_names.resolve_runtime_settings(
+            {"branchNameDisabledPacks": "g4-founders-power-ponies"}
+        )
+        self.assertIn("g4-characters", disabled["branchNameDisabledPacks"])
+        enabled = branch_names.resolve_runtime_settings(
+            {"branchNameEnabledPacks": "g4-founders-power-ponies"}
+        )
+        self.assertNotIn("g4-characters", enabled["branchNameDisabledPacks"])
 
     def test_g4_stallions_use_full_wacky_hair_day_and_spray_name(self):
         catalog = branch_names.load_catalog()
