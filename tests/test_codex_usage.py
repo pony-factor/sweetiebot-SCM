@@ -22,6 +22,13 @@ class CodexUsageTests(unittest.TestCase):
                 else:
                     self.assertIn('"reset-at":bucket.resetsAt', patched)
 
+    def test_hide_only_is_independent_of_countdown(self):
+        patched = codex_usage.transform(FIXTURE, hide_reset_times=True, reset_countdown=False)
+        self.assertIn('scmToolkitStripUsageResetTime', patched)
+        self.assertIn('function label(e)', patched.split(codex_usage.START)[0])
+        self.assertEqual(codex_usage.transform(patched, hide_reset_times=True, reset_countdown=False), patched)
+        self.assertEqual(codex_usage.transform(patched, enabled=False), FIXTURE)
+
 
 if __name__ == '__main__':
     unittest.main()
