@@ -594,11 +594,15 @@
     transition-delay: .4s;
 }
 
-/* Give commit generation and operation failures their own notification glyphs. */
+/* Give Sweetie Bot's repair notice, commit generation, and operation failures their own glyphs. */
+.notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
     font-size: 14px;
+}
+.notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before {
+    content: '🤖';
 }
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before {
     content: '✨';

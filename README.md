@@ -318,7 +318,9 @@ Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-
 
 **Ollama is required for this feature.** Run a local Ollama server and install the models you select before relying on AI-generated subjects. The wrapper talks only to Ollama on `127.0.0.1:11434`, bypasses proxy settings for that local request, and checks the local model inventory before generation. If the selected model or Ollama is unavailable, it uses a deterministic fallback subject.
 
-Both normal and Codex-context generation read the `Commit titles should …` preference directly from `~/.codex/AGENTS.md` on each request (`SCM_TOOLKIT_CODEX_HOME` can override that directory). Other global instructions stay excluded by default. Enable **Sync AI commits with Codex instructions** on the Sweetiebot settings page, or set `scm-toolkit.ai-commit-custom-instructions = true`, to reread the rest of that global custom-instructions file for every generated commit. Synced instructions may shape commit wording and style, but staged changes remain authoritative and the generator still refuses instruction-driven trailers, metadata, or output-format changes.
+Both normal and Codex-context generation read commit-writing preferences from `~/.config/sweetiebot/commit-instructions.md` on each request. Edit that file through the Sweetiebot settings page, or set `SCM_TOOLKIT_COMMIT_INSTRUCTIONS` to select another file. Instructions may shape commit wording and style, but staged changes remain authoritative and the generator refuses instruction-driven trailers, metadata, or output-format changes.
+
+`assets/commit-instructions.md` is the shared starter kit: a professional emoji, a brief imperative title, and a fuller description for commits directly to `main`. Personal preferences can be kept in the ignored `assets/commit-instructions.local.md`; copy that file to the default local path or select it with `SCM_TOOLKIT_COMMIT_INSTRUCTIONS` to use it. The installer bundles only the shared starter kit.
 
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
@@ -576,7 +578,7 @@ python3 scripts/install.py
 When `blank-state-refresh` is enabled, the toolkit asks VS Code's built-in Git
 extension to refresh a repository more aggressively while SCM has zero changed
 resources. It performs an initial refresh after about 300 ms, then falls back to
-roughly 1.5-second refreshes while VS Code is visible. The polling stops as soon
+roughly 750 ms refreshes while VS Code is visible. The polling stops as soon
 as SCM reports a change and automatically resumes after the repository becomes
 clean again. Hidden windows back off instead of polling at the foreground rate.
 
@@ -585,9 +587,10 @@ own Git status implementation. The SCM progress bar stays hidden, including duri
 background Git fetches, so updates do not flash a distracting animation.
 
 When `auto-pull-clean` is enabled, the toolkit checks the current branch against its
-tracked upstream on the same polling schedule, even when `blank-state-refresh` is
+tracked upstream in the background, even when `blank-state-refresh` is
 disabled. Disabling blank-state refresh skips the extra `git.refresh` calls while
-automatic pulling continues. The toolkit pulls only when the working tree is
+automatic pulling continues. Network fetches never hold up the next local SCM
+refresh, and only one automatic pull check runs at a time. The toolkit pulls only when the working tree is
 still clean and the local HEAD is an ancestor of the upstream HEAD. That means a
 behind-only branch can fast-forward automatically, while branches with unpushed or
 diverged commits are left untouched. The pull uses VS Code's existing `git.pull`

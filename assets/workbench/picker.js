@@ -285,6 +285,7 @@ function scmToolkitEnableBlankStateRefresh(
 
     let timer;
     let refreshing = false;
+    let autoPullInProgress = false;
     let disposed = false;
     let lastAutoPullState;
     let lastAutoFetch;
@@ -324,6 +325,18 @@ function scmToolkitEnableBlankStateRefresh(
         }
     };
 
+    // A slow network fetch must never delay the next local Git status refresh.
+    // Only one background pull check may run at a time.
+    const startAutoPull = () => {
+        if (!autoPullClean || autoPullInProgress || disposed || hasChanges()) return;
+        autoPullInProgress = true;
+        void maybeAutoPull().catch(() => {
+            // Background sync is best-effort; local change detection must continue.
+        }).finally(() => {
+            autoPullInProgress = false;
+        });
+    };
+
     const schedule = delay => {
         clearTimer();
         if (disposed || hasChanges()) return;
@@ -342,12 +355,12 @@ function scmToolkitEnableBlankStateRefresh(
                 if (blankStateRefresh) {
                     await commands.executeCommand('git.refresh', repositoryArgument);
                 }
-                await maybeAutoPull();
+                startAutoPull();
             } catch {
                 // The built-in Git extension owns refresh errors; keep blank-state polling best-effort.
             } finally {
                 refreshing = false;
-                if (!disposed && !hasChanges()) schedule(1500);
+                if (!disposed && !hasChanges()) schedule(750);
             }
         }, delay);
     };
@@ -1655,6 +1668,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const text = message?.textContent.trim() ?? '';
         row.classList.toggle('scm-toolkit-generating-commit',
             /^Generating commit message(?: ✨)?$/.test(text));
+        row.classList.toggle('scm-toolkit-reload-ready',
+            text === 'Sweetie Bot and extension customizations are ready. Reload this window once to apply all updates.');
         row.classList.toggle('scm-toolkit-operation-failed',
             /^(?:Git could not complete the operation:|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
     };
