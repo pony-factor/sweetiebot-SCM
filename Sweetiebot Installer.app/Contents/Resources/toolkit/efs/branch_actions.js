@@ -473,6 +473,8 @@ function registerBranchCommands(vscode, context) {
   );
 
   let scanning = false, disposed = false;
+  const lastFetch = new WeakMap();
+  const retryAfter = new WeakMap();
   const scan = async () => {
     if (scanning || disposed) return;
     scanning = true;
@@ -482,7 +484,16 @@ function registerBranchCommands(vscode, context) {
       const git = await extension.activate();
       for (const repository of git.getAPI(1).repositories ?? []) {
         if (disposed || repository.rootUri.scheme !== 'file') continue;
+        const head = repository.state.HEAD;
+        if (head?.name !== 'main' || commitInProgress(repository)) continue;
+        const now = Date.now();
+        if (now < (retryAfter.get(repository) ?? 0)) continue;
+        const fetch = !lastFetch.has(repository) || now - lastFetch.get(repository) >= 60000;
+        // Git may discover an incoming commit through another fetch. Pull it
+        // promptly instead of waiting for our next network-fetch interval.
+        if (!fetch && (!head.behind || head.ahead)) continue;
         await queueRepositoryOperation(repository, async () => {
+          if (disposed || commitInProgress(repository)) return;
           await repository.status();
           if (disposed || repository.state.HEAD?.name !== 'main') return;
           try {
@@ -493,15 +504,20 @@ function registerBranchCommands(vscode, context) {
           } catch (error) {
             if (error.code !== 1) return; // An unset preference defaults to enabled.
           }
-          await autoPullClean(repository, { fetch: true });
-        }).catch(() => {}); // Git preserves edits when an incoming path overlaps.
+          if (fetch) lastFetch.set(repository, Date.now());
+          await autoPullClean(repository, { fetch });
+          retryAfter.delete(repository);
+        }).catch(() => {
+          // Avoid repeatedly attempting an overlapping fast-forward every second.
+          retryAfter.set(repository, Date.now() + 5000);
+        }); // Git preserves edits when an incoming path overlaps.
       }
     } finally {
       scanning = false;
     }
   };
   const run = () => void scan().catch(() => {});
-  const timer = setInterval(run, 60000);
+  const timer = setInterval(run, 1000);
   timer.unref?.();
   context.subscriptions.push({ dispose() { disposed = true; clearInterval(timer); } });
   run();
