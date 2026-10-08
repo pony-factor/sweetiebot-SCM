@@ -571,8 +571,11 @@ class GitConfigTests(unittest.TestCase):
         self.assertTrue(install.read_git_bool("scm-toolkit.branch-picker", True))
 
     def test_manual_commit_spellcheck_is_preview_only(self):
-        self.assertNotIn("spellcheckManualCommit", install.DEFAULT_SETTINGS)
-        self.assertNotIn("spellcheckManualCommit", toolkit_settings.SETTING_KEYS)
+        self.assertFalse(install.DEFAULT_SETTINGS["spellcheckManualCommit"])
+        self.assertEqual(
+            toolkit_settings.SETTING_KEYS["spellcheckManualCommit"],
+            "scm-toolkit.spellcheck-preview",
+        )
 
     @patch("toolkit_settings.subprocess.run")
     def test_string_git_config_uses_value(self, run):
