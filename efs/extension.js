@@ -8,6 +8,7 @@ const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
+const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
@@ -307,6 +308,7 @@ async function activate(context) {
   registerBranchCommands(vscode, context);
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
+  registerLocalPullRequestCommand(vscode, context);
   registerEditorActions(vscode, context);
   registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);

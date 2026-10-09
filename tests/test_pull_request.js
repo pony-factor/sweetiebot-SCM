@@ -141,13 +141,14 @@ async function run() {
   assert(prompt.includes('in repository https://github.com/owner/repo, against'));
   assert(!prompt.includes('/repo with spaces'));
   assert(prompt.includes(rules));
-  assert.match(prompt, /Kafania's connected MCP server "codex-drafter"/);
+  assert.match(prompt, /Prefer Kafania's connected MCP server "codex-drafter"/);
   assert.match(prompt, /"github_create_pull_request"/);
   assert.match(prompt, /github_get_pull_request_context/);
   assert.match(prompt, /expectedHeadSha/);
-  assert.match(prompt, /Secure MCP Tunnel/);
+  assert.match(prompt, /continue using the authenticated GitHub fallback/);
   assert.match(prompt, /A VS Code stdio registration alone does not expose tools to ChatGPT/);
   assert(!prompt.includes('instead of substituting a different GitHub writer'));
+  assert(!prompt.includes('If the Kefania tools are unavailable here, stop'));
   assert.match(prompt, /Do not claim publication succeeded/);
   assert(prompt.includes(chatSource.uuid));
   assert(prompt.includes(chatSource.url));
@@ -379,7 +380,7 @@ async function run() {
     refreshBranchControls() {},
     notifications: { error(error) { throw error; } },
     commands: { async executeCommand(id, root, options) {
-      assert.equal(id, 'sweetiebot.openPullRequestChat');
+      assert.equal(id, 'sweetiebot.createLocalPullRequest');
       assert.equal(root, uri);
       assert.equal(options.branch, 'draft');
       assert.equal(options.base, 'main');
@@ -393,16 +394,19 @@ async function run() {
   await click({ stopPropagation() {} });
   await Promise.resolve();
   assert.equal(sandbox.creatingPullRequest, false);
-  assert.equal(sandbox.recorded.length, 1);
-  assert.equal(sandbox.recorded[0].branch, 'draft');
-  assert.equal(sandbox.recorded[0].base, 'main');
-  assert.deepEqual(sandbox.recorded[0].source, pickerSource);
-  assert.equal(sandbox.recorded[0].launch.repositoryUrl, 'https://github.com/owner/repo');
+  assert.equal(sandbox.recorded.length, 0);
   sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
-  sandbox.commands.executeCommand = async () => assert.fail('Unavailable Kefania must not launch the chat');
-  await assert.rejects(click({ stopPropagation() {} }), /Kefania unavailable/);
+  let fallbackLaunches = 0;
+  sandbox.commands.executeCommand = async (id) => {
+    assert.equal(id, 'sweetiebot.createLocalPullRequest');
+    fallbackLaunches += 1;
+    return { repositoryUrl: 'https://github.com/owner/repo' };
+  };
+  await click({ stopPropagation() {} });
+  await Promise.resolve();
+  assert.equal(fallbackLaunches, 1);
   assert.equal(sandbox.creatingPullRequest, false);
-  assert.equal(sandbox.recorded.length, 1);
+  assert.equal(sandbox.recorded.length, 0);
 
   console.log('Kafania pull-request bridge checks passed.');
 }

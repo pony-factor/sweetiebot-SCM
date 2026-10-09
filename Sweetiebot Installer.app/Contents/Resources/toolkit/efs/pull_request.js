@@ -145,8 +145,8 @@ function pullRequestPrompt({
   const repositoryReference = githubRepository(repositoryUrl) || JSON.stringify(repositoryPath);
   const sections = [
     `Create a new descriptive pull request for branch ${JSON.stringify(branch)} in repository ${repositoryReference}, against ${JSON.stringify(base)}.`,
-    `Use Kafania's connected MCP server ${JSON.stringify(mcpServer)} and its ${JSON.stringify(mcpTool)} tool for the GitHub write. First call github_get_pull_request_context for this exact repository, head, and base. Draft from that evidence and pass its headSha as expectedHeadSha when publishing. Do not claim publication succeeded until the tool returns the created pull request.`,
-    'For a Kefania server running on the author\'s computer, this ChatGPT chat must be connected to its plugin through Secure MCP Tunnel. A VS Code stdio registration alone does not expose tools to ChatGPT. If the Kefania tools are unavailable here, stop and explain that the author must connect the local server in ChatGPT Plugins using Secure MCP Tunnel. Do not substitute another GitHub writer or pretend the local connection is shared automatically.',
+    `Prefer Kafania's connected MCP server ${JSON.stringify(mcpServer)} and its ${JSON.stringify(mcpTool)} tool for the GitHub write when available. With Kafania, first call github_get_pull_request_context for this exact repository, head, and base. Draft from that evidence and pass its headSha as expectedHeadSha when publishing. Do not claim publication succeeded until the tool returns the created pull request.`,
+    'A VS Code stdio registration alone does not expose tools to ChatGPT. If Kefania or codex-drafter is unavailable in this chat, continue using the authenticated GitHub fallback in the canonical rules below: read the exact branch comparison, check for an existing open PR, and publish with an available authenticated GitHub pull-request tool. Preserve the description image and supplied conversation provenance as those rules specify. If no authenticated GitHub tool is available, still prepare the finished title and description when repository evidence is accessible, and report the missing publishing connection. Never stage, commit, or push as part of this request.',
     `The canonical pull-request drafting rules below were loaded from the sibling ${KEFANIA_DIRECTORY}/${KEFANIA_RULES_FILE}. Follow them as the source of truth:\n\n${instructions}`,
   ];
 
@@ -256,6 +256,7 @@ module.exports = {
   normalizeConversationSource,
   pullRequestPrompt,
   readKefaniaInstructions,
+  readCodexConversation,
   readSweetiebotPony,
   registerPullRequestCommand,
 };
