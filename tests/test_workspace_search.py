@@ -136,11 +136,13 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             any("rotate(" in element.attrib.get("transform", "") for element in icon.iter()),
             "The Activity Bar icon should remain upright even if other EFS artwork is tilted.",
         )
-        bundled_icon = (
-            workspace_search.SOURCE.parent / "Sweetiebot Installer.app"
-            / "Contents" / "Resources" / "toolkit" / "efs" / "media" / "efs.svg"
+        # The installer is generated; its assets must come from source files.
+        import build_installer_app
+
+        self.assertEqual(
+            build_installer_app.source_files()[Path("efs/media/efs.svg")],
+            icon_path,
         )
-        self.assertEqual(icon_path.read_bytes(), bundled_icon.read_bytes())
 
     def test_standalone_manifest_uses_custom_label(self):
         settings = dict(

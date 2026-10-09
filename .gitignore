@@ -4,3 +4,6 @@ __pycache__/
 # Local AI commit style preferences
 /assets/commit-instructions.local.md
 /assets/commit-instructions.local.md.tmp
+
+# Built locally from source; never track compiled/signed app payloads.
+/Sweetiebot Installer.app/

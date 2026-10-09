@@ -33,6 +33,19 @@ class UpdateTests(unittest.TestCase):
                              ['scripts/update.py', 'assets/browser/pull_request_submit.js'])
             self.assertFalse((root / 'scripts/link.py').exists())
 
+    def test_updates_use_sources_without_a_generated_installer_app(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            update.extract_sources(archive({
+                'scripts/branch_name_packs.json': '{"version": 1}',
+                'Sweetiebot Installer.app/Contents/Resources/toolkit/scripts/branch_name_packs.json': 'stale',
+            }), root)
+            self.assertEqual(
+                (root / 'scripts/branch_name_packs.json').read_text(),
+                '{"version": 1}',
+            )
+            self.assertFalse((root / 'Sweetiebot Installer.app').exists())
+
     def test_skip_old_bootstrap_and_already_installed_revision(self):
         for supports_updates in (False, True):
             with tempfile.TemporaryDirectory() as directory:

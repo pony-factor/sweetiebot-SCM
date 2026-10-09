@@ -411,12 +411,19 @@ class BranchNamePackTests(unittest.TestCase):
         # Only the G4 Princess Cadance entry is retained.
         self.assertIn("princess-trixie", idw_names)
 
-    def test_idw_comics_pack_matches_bundled_installer_catalog(self):
-        bundled = (
-            branch_names.HERE.parent / "Sweetiebot Installer.app" / "Contents"
-            / "Resources" / "toolkit" / "scripts" / "branch_name_packs.json"
+    def test_installer_builder_uses_canonical_catalog(self):
+        from pathlib import Path
+        import build_installer_app
+
+        files = build_installer_app.source_files()
+        self.assertEqual(
+            files[Path("scripts/branch_name_packs.json")],
+            branch_names.CATALOG_PATH,
         )
-        self.assertEqual(branch_names.CATALOG_PATH.read_bytes(), bundled.read_bytes())
+        self.assertIn(Path("assets/workbench/picker.js"), files)
+        self.assertTrue(all(
+            "Sweetiebot Installer.app" not in path.parts for path in files
+        ))
 
     def test_convention_mascots_include_historic_bronycon_trio(self):
         catalog = branch_names.load_catalog()
