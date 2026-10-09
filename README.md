@@ -407,6 +407,26 @@ python3 scripts/install.py
 
 The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MODEL`, and `SCM_TOOLKIT_AI_LOW_MEMORY_GIB` can temporarily override the corresponding Git-config values.
 
+### Custom Codex window label
+
+In Sweetie Bot's **Codex** settings, change **Codex window label** to any
+single-line name, such as **CelestAI**. This changes the contributed Codex
+sidebar title and view name (including the Activity Bar or secondary sidebar),
+without changing commands, provider IDs, or chat behavior. The original
+**Codex** label is used by default.
+
+You can also configure it from a terminal:
+
+```sh
+git config --global scm-toolkit.codex-window-label "CelestAI"
+python3 scripts/install.py --codex-only
+```
+
+Reload VS Code after applying the change. Restore the original label by
+setting the value back to `Codex` and rerunning the installer, or by
+uninstalling Sweetie Bot. Installed Codex extension updates may reset its
+manifest; automatic app repair reapplies the selected label.
+
 ### Codex composer appearance
 
 The bottom of the configurator's **Codex → Customization** group includes

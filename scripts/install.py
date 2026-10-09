@@ -7,6 +7,7 @@ import os
 import re
 import workspace_search
 import codex_colors
+import codex_label
 import codex_composer
 import codex_usage
 import codex_context
@@ -883,6 +884,17 @@ def main():
             paths.append(github_path)
             old.append(github_old)
             new.append(github_new)
+
+    label_patch = codex_label.patch_file(
+        args.codex_extension,
+        label=settings["codexWindowLabel"],
+        remove=args.uninstall,
+    )
+    if label_patch is not None:
+        label_path, label_old, label_new = label_patch
+        paths.append(label_path)
+        old.append(label_old)
+        new.append(label_new)
 
     color_path = codex_colors.stylesheet_path(args.codex_extension)
     if color_path is not None:

@@ -77,6 +77,7 @@ SETTINGS = (
     Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Message bar"),
     Setting("codexCommitContext", "scm-toolkit.codex-commit-context", "Local commit messages from Codex text", "When the co-author commit message is blank, use this window's current conversation and staged changes with local Ollama. Codex keeps running.", "Source control"),
     Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Prevent idle sleep on macOS while Codex tasks are running. The display can still turn off. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
+    Setting("codexWindowLabel", "scm-toolkit.codex-window-label", "Codex window label", "Rename the Codex sidebar and its Activity Bar / secondary sidebar title, e.g. CelestAI. Use Codex to restore its original label; apply with app repair and reload VS Code.", "Codex", "text"),
     Setting("hideOutgoingSyncCount", "scm-toolkit.hide-outgoing-sync-count", "Hide outgoing count", "Remove the outgoing commit count from Sync.", "Source control"),
     Setting("blankStateRefresh", "scm-toolkit.blank-state-refresh", "Refresh blank repositories", "Refresh clean repositories so their first new change appears quickly.", "Source control"),
     Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically sync", "Fetch remote updates and fast-forward branches when possible. Runs independently of the push-after-committing checkbox.", "Source control"),
