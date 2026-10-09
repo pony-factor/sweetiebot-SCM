@@ -418,7 +418,7 @@ class TransformTests(unittest.TestCase):
 
         self.assertIn(
             'browserViews.getOrCreateLazy({id:parsed.id,...options?.viewState,'
-            'url:options?.viewState?.url||"https://chatgpt.com/"})',
+            'url:options?.viewState?.url||"https://chatgpt.com/?sweetiebot_fresh=1"})',
             patched_js,
         )
         restored = install.transform(
@@ -434,7 +434,21 @@ class TransformTests(unittest.TestCase):
         enabled["browserHomeUrl"] = "https://chatgpt.com/"
         updated = install.transform(*patched, settings=enabled)
         self.assertNotIn('url:options?.viewState?.url||"https://example.com/?q=hello"', updated[0])
+        self.assertIn('url:options?.viewState?.url||"https://chatgpt.com/?sweetiebot_fresh=1"', updated[0])
         self.assertEqual(install.transform(*updated, remove=True, settings=enabled), (original, "base-css"))
+
+    def test_blank_project_home_clears_draft_but_explicit_prompts_do_not(self):
+        source = workbench_fixture() + browser_resolver_fixture()
+        project = "https://chatgpt.com/g/g-p-example123/project"
+        for home, expected in [
+            (project, project + "?sweetiebot_fresh=1"),
+            ("https://chatgpt.com/?q=Do%20not%20clear", "https://chatgpt.com/?q=Do%20not%20clear"),
+            ("https://example.com/", "https://example.com/"),
+        ]:
+            enabled = dict(SETTINGS, browserChatgptHome=True, browserHomeUrl=home)
+            patched = install.transform(source, "base-css", settings=enabled)
+            self.assertIn('url:options?.viewState?.url||' + json.dumps(expected), patched[0])
+            self.assertEqual(install.transform(*patched, remove=True, settings=enabled), (source, "base-css"))
 
     def test_install_and_remove_round_trip(self):
         original_js = workbench_fixture()
