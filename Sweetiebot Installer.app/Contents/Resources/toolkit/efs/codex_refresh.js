@@ -22,7 +22,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
     if (!revision || revision === loadedRevision || revision === offeredRevision || disposed || !enabled()) return;
     offeredRevision = revision;
     void vscode.window.showInformationMessage(
-      'Sweetie Bot and extension customizations are ready. Reload this window once to apply all updates.',
+      'Sweetie Bot and extension customizations are ready.',
       'Reload Window'
     ).then(async choice => {
       if (!disposed && choice === 'Reload Window') {
@@ -68,6 +68,11 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
       clearTimeout(timeout);
       child = undefined;
       if (disposed) return;
+      if (code === 75 && !timedOut) {
+        pending = false;
+        schedule(QUIET_PERIOD_MS);
+        return;
+      }
       if (code !== 0 || timedOut) {
         output.appendLine('Repair did not complete. Check the error above; macOS App Management permission or support for this app version may be required.');
       }

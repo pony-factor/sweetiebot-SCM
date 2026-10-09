@@ -116,6 +116,16 @@ assert.equal(children.at(-1).killed, true);
 children.at(-1).callbacks.get('close')(0);
 assert.equal(intervals.size, 0);
 assert.equal(timers.size, 0, 'disposal cancels repair and its timeout');
+const retryContext = { ...context, subscriptions: [] };
+sandbox.module.exports.registerCodexRefresh(vscode, retryContext);
+tick();
+const noticesBeforeBusy = notices.length;
+children.at(-1).callbacks.get('close')(75);
+assert.equal(notices.length, noticesBeforeBusy, 'a busy updater never offers a premature reload');
+assert.equal(timers.size, 1, 'a busy updater schedules a retry');
+tick();
+assert.equal(launches, 7, 'the waiting window retries without a reload');
+retryContext.subscriptions.at(-1).dispose();
 console.log('Codex update repair lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

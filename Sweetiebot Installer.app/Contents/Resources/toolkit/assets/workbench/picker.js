@@ -285,6 +285,7 @@ function scmToolkitEnableBlankStateRefresh(
 
     let timer;
     let refreshing = false;
+    let autoPullInProgress = false;
     let disposed = false;
     let lastAutoPullState;
     let lastAutoFetch;
@@ -324,6 +325,18 @@ function scmToolkitEnableBlankStateRefresh(
         }
     };
 
+    // A slow network fetch must never delay the next local Git status refresh.
+    // Only one background pull check may run at a time.
+    const startAutoPull = () => {
+        if (!autoPullClean || autoPullInProgress || disposed || hasChanges()) return;
+        autoPullInProgress = true;
+        void maybeAutoPull().catch(() => {
+            // Background sync is best-effort; local change detection must continue.
+        }).finally(() => {
+            autoPullInProgress = false;
+        });
+    };
+
     const schedule = delay => {
         clearTimer();
         if (disposed || hasChanges()) return;
@@ -342,12 +355,12 @@ function scmToolkitEnableBlankStateRefresh(
                 if (blankStateRefresh) {
                     await commands.executeCommand('git.refresh', repositoryArgument);
                 }
-                await maybeAutoPull();
+                startAutoPull();
             } catch {
                 // The built-in Git extension owns refresh errors; keep blank-state polling best-effort.
             } finally {
                 refreshing = false;
-                if (!disposed && !hasChanges()) schedule(1500);
+                if (!disposed && !hasChanges()) schedule(750);
             }
         }, delay);
     };
@@ -601,6 +614,27 @@ async function scmToolkitWaitForChatgptConversationSource(doc, initialUuid) {
         await new Promise(resolve => (win ? win.setTimeout(resolve, 250) : setTimeout(resolve, 250)));
     }
     return undefined;
+}
+
+async function scmToolkitCheckPullRequestMcp(doc, mcpService, settings) {
+    const serverName = settings.mcpPrServer;
+    const statusTool = await scmToolkitKafaniaTool(doc, mcpService, serverName, 'kefania_status');
+    if (!statusTool) {
+        throw new Error(`Kefania is not ready in VS Code. Start the MCP server "${serverName}" from MCP: List Servers, then try New PR again. For a local checkout, register kefania/src/index.js as a Node stdio server.`);
+    }
+    const result = await statusTool.call({});
+    if (result?.isError) throw new Error(`Kefania cannot access GitHub: ${scmToolkitMcpError(result)}`);
+    let status = result?.structuredContent;
+    if (!status) {
+        try { status = JSON.parse(result?.content?.find(item => item?.type === 'text')?.text || ''); }
+        catch { throw new Error('Kefania returned an invalid connection status. Update the server before creating a PR.'); }
+    }
+    if (status?.ready !== true) throw new Error('Kefania is not ready. Check the server and its GitHub login before creating a PR.');
+    for (const name of ['github_get_pull_request_context', settings.mcpPrTool]) {
+        if (!(await scmToolkitKafaniaTool(doc, mcpService, serverName, name))) {
+            throw new Error(`Kefania is missing the MCP tool "${name}". Update the server before creating a PR.`);
+        }
+    }
 }
 
 async function scmToolkitRecordPullRequestSource(
@@ -1627,9 +1661,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         row.classList.toggle('scm-toolkit-generating-commit',
             /^Generating commit message(?: ✨)?$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
-            text === 'Sweetie Bot and extension customizations are ready. Reload this window once to apply all updates.');
+            text === 'Sweetie Bot and extension customizations are ready.');
         row.classList.toggle('scm-toolkit-operation-failed',
-            /^(?:Git could not complete the operation:|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
+            /^(?:Git (?:could not complete the operation:|is locked|stopped because|refused because|could not authenticate|rejected the update|could not find|cannot complete|reported)|This folder is not a Git repository\.|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
     };
     const observer = new MutationObserver(records => {
         const rows = new Set();

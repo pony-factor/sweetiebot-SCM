@@ -55,7 +55,7 @@ class RepairTests(unittest.TestCase):
     def test_busy_lock_skips_repair(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
                 patch.object(repair.fcntl, 'flock', side_effect=BlockingIOError), patch.object(repair.os, 'execv') as execute:
-            self.assertEqual(repair.repair([]), 0)
+            self.assertEqual(repair.repair([]), repair.RETRY_LATER)
             execute.assert_not_called()
 
     def test_exec_keeps_lock_and_passes_custom_app_path(self):
@@ -70,7 +70,7 @@ class RepairTests(unittest.TestCase):
     def test_update_installs_companion_and_records_only_success(self):
         for code in (0, 1):
             with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
-                    patch.object(repair, 'prepare_update', return_value=(Path('/candidate/scripts/install.py'), 'abc')), \
+                    patch.object(repair, 'prepare_update', side_effect=[(Path('/candidate/scripts/install.py'), 'abc'), None]), \
                     patch.object(repair.subprocess, 'run') as run, patch.object(repair.os, 'execv') as execute:
                 run.return_value.returncode = code
                 repair.repair(['--app', '/Custom/Code.app'])
@@ -78,6 +78,18 @@ class RepairTests(unittest.TestCase):
                 marker = Path(directory) / 'Library/Caches/dev.ponyfactor.sweetiebot/installed-revision'
                 self.assertEqual(marker.exists(), code == 0)
                 self.assertEqual(execute.called, code != 0)
+
+    def test_newer_tip_is_installed_before_returning(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', side_effect=[
+                    (Path('/candidate/scripts/install.py'), 'abc'),
+                    (Path('/candidate/scripts/install.py'), 'latest'), None]), \
+                patch.object(repair.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            self.assertEqual(repair.repair([]), 0)
+            self.assertEqual(run.call_count, 2)
+            marker = Path(directory) / 'Library/Caches/dev.ponyfactor.sweetiebot/installed-revision'
+            self.assertEqual(marker.read_text(), 'latest\n')
 
     def test_offline_update_still_repairs(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \

@@ -924,6 +924,11 @@ def main():
             old.append(composer_old)
             new.append(composer_new)
 
+        index = paths.index(composer_path)
+        new[index] = codex_composer.transform_placeholders(
+            new[index], {} if args.uninstall else settings
+        )
+
     should_find_codex = (
         settings["codexUsageResetCountdown"]
         or hide_reset_times

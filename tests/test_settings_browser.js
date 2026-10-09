@@ -147,7 +147,7 @@ async function run() {
   children[0].emit('exit', 0);
   await open();
   assert.equal(children.length, 2, 'A finished settings session must be restartable');
-  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-6), ['--parent-pid', String(process.pid), '--port', '49152', '--token', 'test']);
+  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-5), ['--parent-pid', String(process.pid), '--port', '49152', '--token=test']);
   failOpen = true;
   children[1].stdout.emit('data', line + '\n');
   await tick();
@@ -156,7 +156,10 @@ async function run() {
   failOpen = false;
   children[1].exitCode = 0;
   children[1].emit('exit', 0);
+  workspaceState.set('scmToolkit.settingsSessionUrl', 'http://127.0.0.1:49152/?token=-synthetic-test-token');
   await open();
+  assert.equal(children[2].spawnArgs.at(-1), '--token=-synthetic-test-token',
+    'Tokens beginning with a dash must remain an option value');
   const shutdown = sandbox.module.exports.deactivate();
   assert.equal(children[2].killed, true, 'Closing the extension must stop its server');
   children[2].emit('exit', 0);

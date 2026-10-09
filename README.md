@@ -406,6 +406,13 @@ The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MOD
 
 ### Codex composer appearance
 
+The bottom of the configurator's **Codex → Customization** group includes
+**New chat input text** and **Follow-up input text**, replacing **Do anything**
+and **Ask for follow-up changes**. Blank values restore the original text.
+These use `scm-toolkit.codex-new-chat-placeholder` and
+`scm-toolkit.codex-follow-up-placeholder`. App repair applies the saved text;
+reload VS Code afterward, or run `python3 scripts/install.py` to apply it immediately.
+
 Enable **Hide access label** in the configurator's **Codex** section to show only
 the permission icon instead of text such as **Full access**. It defaults to off
 and preserves the access menu and the current mode for screen readers. The Git

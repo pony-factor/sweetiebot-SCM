@@ -9,6 +9,7 @@ import tarfile
 from pathlib import Path
 from update import prepare_update
 
+RETRY_LATER = 75
 
 def repair(arguments):
     lock_dir = Path.home() / 'Library/Caches/dev.ponyfactor.sweetiebot'
@@ -17,19 +18,32 @@ def repair(arguments):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return 0
+            print('Another window is updating Sweetie Bot; retrying before offering a reload.', flush=True)
+            return RETRY_LATER
         try:
             update = prepare_update(lock_dir)
         except (OSError, subprocess.SubprocessError, ValueError, tarfile.TarError) as error:
             print(f"Toolkit update check unavailable ({type(error).__name__}); repairing installed sources.", flush=True)
             update = None
-        if update:
+        for attempt in range(3):
+            if not update:
+                break
             installer, revision = update
             result = subprocess.run([sys.executable, str(installer), *arguments])
             if result.returncode == 0:
                 (lock_dir / 'installed-revision').write_text(revision + '\n')
-                return 0
+                try:
+                    update = prepare_update(lock_dir)
+                except (OSError, subprocess.SubprocessError, ValueError, tarfile.TarError):
+                    return 0
+                if not update:
+                    return 0
+                continue
             print('Toolkit update could not be installed; repairing installed sources.', flush=True)
+            break
+        else:
+            print('Published sources are still changing; retrying before offering a reload.', flush=True)
+            return RETRY_LATER
         # Exec retains the lock until the installer exits, including if the host
         # terminates the repair on shutdown or timeout.
         os.set_inheritable(lock.fileno(), True)

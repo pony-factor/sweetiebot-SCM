@@ -83,6 +83,8 @@ DEFAULT_SETTINGS = {
     "codexSendForeground": "",
     "codexComposerLabelColor": "",
     "codexDropAccent": "",
+    "codexNewChatPlaceholder": "",
+    "codexFollowUpPlaceholder": "",
     "defaultBranch": "main",
     "remote": "origin",
 }
@@ -254,6 +256,8 @@ SETTING_KEYS = {
     "codexSendForeground": "scm-toolkit.codex-send-foreground",
     "codexComposerLabelColor": "scm-toolkit.codex-composer-label-color",
     "codexDropAccent": "scm-toolkit.codex-drop-accent",
+    "codexNewChatPlaceholder": "scm-toolkit.codex-new-chat-placeholder",
+    "codexFollowUpPlaceholder": "scm-toolkit.codex-follow-up-placeholder",
     "defaultBranch": "scm-toolkit.default-branch",
     "remote": "scm-toolkit.remote",
 }

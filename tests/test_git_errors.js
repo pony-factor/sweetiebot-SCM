@@ -30,6 +30,7 @@ function run() {
   for (const [error, expected] of cases) {
     const message = formatGitError(error);
     assert.match(message, expected);
+    assert(!message.includes('Git could not complete the operation'));
     assert(!message.includes('⛓️‍💥'));
   }
 
