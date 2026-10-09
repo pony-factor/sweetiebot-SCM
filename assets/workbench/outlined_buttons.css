@@ -19,14 +19,14 @@
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button {
-    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
+    border: 0 !important;
     background: transparent !important;
     color: var(--vscode-foreground) !important;
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown {
-    /* One continuous themed outline includes the dropdown and settings icon. */
-    border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder, var(--vscode-widget-border)));
+    /* Keep the action row free of a persistent themed outline. */
+    border: 0 !important;
     border-radius: var(--vscode-cornerRadius-small, 4px);
 }
 
