@@ -4,7 +4,7 @@
     {
       "id": "g4-mares",
       "label": "G4 mares",
-      "description": "Named adult female G4 ponies, including background and minor characters.",
+      "description": "Named adult female G4 equines, including ponies, zebras, donkeys, and background characters.",
       "names": [
         "abradacanter",
         "fairy-flight",
@@ -344,6 +344,7 @@
         "mare-e-lynn",
         "maribelle",
         "maroon-carrot",
+        "matilda",
         "open-heart",
         "quake-masseuse",
         "maybelline",
@@ -663,6 +664,7 @@
         "wrangler",
         "scarlet-heart",
         "yuma-spurs",
+        "zecora",
         "zesty-gourmand",
         "fizzlepop-berrytwist",
         "forward-thinking-friendship-student"
@@ -697,7 +699,7 @@
     {
       "id": "g4-stallions",
       "label": "G4 stallions",
-      "description": "Named adult male G4 ponies, including background and minor characters.",
+      "description": "Named adult male G4 equines, including ponies, zebras, donkeys, and background characters.",
       "names": [
         "ace-point",
         "acrylic-paint",
@@ -802,6 +804,7 @@
         "papa-beard",
         "count-caesar",
         "crafty-crate",
+        "cranky-doodle-donkey",
         "creme-brulee",
         "crest-crown",
         "crimson-heart",
