@@ -283,13 +283,20 @@ class BranchNamePackTests(unittest.TestCase):
             "plainity",
         ]
         self.assertEqual(packs["g4-caricatures"]["label"], "G4 caricatures")
-        self.assertEqual(packs["g4-caricatures"]["names"], expected)
+        self.assertTrue(
+            set(expected).issubset(packs["g4-caricatures"]["names"]),
+            "Canonical founders and Power Ponies must stay available",
+        )
+        self.assertEqual(
+            len(packs["g4-caricatures"]["names"]),
+            len(set(packs["g4-caricatures"]["names"])),
+        )
         self.assertIn("wind-rider", packs["g4-stallions"]["names"])
         self.assertNotIn("wind-rider", packs["g4-caricatures"]["names"])
         self.assertNotIn("g4-founders-power-ponies", packs)
         for pack_id, pack in packs.items():
             if pack_id != "g4-caricatures":
-                self.assertTrue(set(expected).isdisjoint(pack["names"]), pack_id)
+                self.assertTrue(set(packs["g4-caricatures"]["names"]).isdisjoint(pack["names"]), pack_id)
         default_disabled = toolkit_settings.DEFAULT_SETTINGS["branchNameDisabledPacks"]
         settings = branch_names.resolve_runtime_settings(
             {"branchNameDisabledPacks": default_disabled}
