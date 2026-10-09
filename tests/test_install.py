@@ -226,7 +226,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name })", js)
         self.assertIn("await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`)", js)
         self.assertIn("await originalPush.call(repository, repository.HEAD)", js)
-        self.assertIn("commands.executeCommand('sweetiebot.openPullRequestChat', repository, {", js)
+        self.assertIn("commands.executeCommand('sweetiebot.createLocalPullRequest', repository, {", js)
         self.assertIn("mcpService.activateCollections()", js)
         self.assertIn("'github_comment_pull_request_source'", js)
         self.assertIn("scm-toolkit-pull-request", css)
