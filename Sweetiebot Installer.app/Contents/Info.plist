@@ -59,5 +59,9 @@
 	<string>This script needs access to administer this system to run.</string>
 	<key>OSAAppletShowStartupScreen</key>
 	<false/>
+	<key>SweetiebotSigningIdentity</key>
+	<string>8F2DA33C3C0B71BC7213883043E0C1976718C118</string>
+	<key>SweetiebotSourceDigest</key>
+	<string>4ee0c8ce70992c5f28330f145cfcf41070f1c7a4009dd31140dd953ac1e90b64</string>
 </dict>
 </plist>

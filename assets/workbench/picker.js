@@ -1671,9 +1671,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         row.classList.toggle('scm-toolkit-generating-commit',
             /^Generating commit message(?: ✨)?$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
-            text === 'Sweetie Bot and extension customizations are ready. Reload this window once to apply all updates.');
+            text === 'Sweetie Bot and extension customizations are ready.');
         row.classList.toggle('scm-toolkit-operation-failed',
-            /^(?:Git could not complete the operation:|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
+            /^(?:Git (?:could not complete the operation:|is locked|stopped because|refused because|could not authenticate|rejected the update|could not find|cannot complete|reported)|This folder is not a Git repository\.|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
     };
     const observer = new MutationObserver(records => {
         const rows = new Set();

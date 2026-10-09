@@ -61,10 +61,11 @@
   const attempt = () => {
     if (stopped) return;
     if (Date.now() >= deadline || window.location.pathname !== launch.pathname) return stop();
-    const composer = document.querySelector('#prompt-textarea');
+    const composer = document.querySelector('#prompt-textarea')
+      || document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
     const button = document.querySelector(
-      'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"]'
+      'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
     );
     const label = button?.getAttribute('aria-label') || '';
     if (composer && text === expected && button && !button.disabled

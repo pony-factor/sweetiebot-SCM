@@ -176,7 +176,7 @@ function formatGitError(error) {
       : `Git reported ${error?.gitErrorCode || 'an error'} without a specific reason. Open Git Output for the command details.`;
   }
 
-  return `Git could not complete the operation: ${reason}`;
+  return reason;
 }
 
 function explainGitError(error) {
@@ -187,7 +187,7 @@ function explainGitError(error) {
     || error?.stdout
     || /^(?:Git error|Failed to execute git)$/i.test(message)
   );
-  if (!isGitFailure || message.startsWith('Git could not complete the operation:')) return error;
+  if (!isGitFailure || (error?.cause && message === formatGitError(error.cause))) return error;
   return new Error(formatGitError(error), { cause: error });
 }
 

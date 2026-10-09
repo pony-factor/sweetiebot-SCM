@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const message = 'Sweetie Bot and extension customizations are ready. Reload this window once to apply all updates.';
+const message = 'Sweetie Bot and extension customizations are ready.';
 const roots = [
   'assets/workbench',
   'Sweetiebot Installer.app/Contents/Resources/toolkit/assets/workbench'

@@ -7,6 +7,7 @@ from pathlib import Path
 START = '\n/* scm-toolkit-codex-usage:start */\n'
 END = '\n/* scm-toolkit-codex-usage:end */\n'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-usage.js'
+HIDE_ASSET = ASSET.with_name('codex-hide-reset-times.js')
 IDENTIFIER = r'[A-Za-z_$][\w$]*'
 
 
@@ -26,6 +27,12 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
             js = js.replace(replacement, original, 1)
     if not enabled:
         return js
+
+    # Hiding times alone must not replace the native usage percentage/label.
+    if hide_reset_times and not reset_countdown and not pie_indicator:
+        asset = 'const scmToolkitHideUsageResetTimes = true;\n'
+        asset += ASSET.read_text() + '\n' + HIDE_ASSET.read_text()
+        return js + START + '/* edits:[] */\n' + asset + END
 
     functions = list(re.finditer(rf'function ({IDENTIFIER})\(', js))
     label = None
@@ -93,6 +100,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
     asset = f'const scmToolkitUsageResetCountdown = {str(bool(reset_countdown)).lower()};\n' + asset
     if hide_reset_times:
         asset = 'const scmToolkitHideUsageResetTimes = true;\n' + asset
+        asset += '\n' + HIDE_ASSET.read_text()
     return js + START + '/* edits:' + json.dumps(edits) + ' */\n' + asset + END
 
 
