@@ -1662,6 +1662,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             /^Generating commit message(?: ✨)?$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
             text === 'Sweetie Bot and extension customizations are ready.');
+        row.classList.toggle('scm-toolkit-pr-merged',
+            /^PR #[1-9]\d* merged into main\.$/.test(text));
+        row.classList.toggle('scm-toolkit-pr-queued',
+            /^PR #[1-9]\d* queued for merge\.$/.test(text));
         row.classList.toggle('scm-toolkit-operation-failed',
             /^(?:Git (?:could not complete the operation:|is locked|stopped because|refused because|could not authenticate|rejected the update|could not find|cannot complete|reported)|This folder is not a Git repository\.|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
     };

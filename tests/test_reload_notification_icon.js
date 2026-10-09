@@ -16,6 +16,8 @@ for (const directory of roots) {
   assert(javascript.includes(`text === '${message}'`), `Reload marker should match only the repair notice in ${directory}`);
   assert.match(css, /\.notification-list-item\.scm-toolkit-reload-ready \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🤖';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-reload-ready \.notification-list-item-icon\.codicon-info::before,/);
+  assert.match(css, /\.notification-list-item\.scm-toolkit-pr-merged \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🎉';/);
+  assert.match(css, /\.notification-list-item\.scm-toolkit-pr-queued \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '⏳';/);
 
   const start = javascript.indexOf('// Notification rows are reused, so update the marker whenever their message changes.');
   assert(start >= 0, `Missing notification observer in ${directory}`);
@@ -42,9 +44,19 @@ for (const directory of roots) {
     }
   });
   assert(classes.has('scm-toolkit-reload-ready'), `Robot icon class not added in ${directory}`);
+  currentMessage = 'PR #12 merged into main.';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-pr-merged'), `Merge icon class not added in ${directory}`);
+  assert(!classes.has('scm-toolkit-reload-ready'), `Reused notification retained robot icon in ${directory}`);
+  currentMessage = 'PR #12 queued for merge.';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-pr-queued'), `Queue icon class not added in ${directory}`);
+  assert(!classes.has('scm-toolkit-pr-merged'), `Reused notification retained merge icon in ${directory}`);
   currentMessage = 'Unrelated information notification.';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(!classes.has('scm-toolkit-reload-ready'), `Reused notification retained robot icon in ${directory}`);
+  assert(!classes.has('scm-toolkit-pr-queued'), `Reused notification retained queue icon in ${directory}`);
+  assert(!classes.has('scm-toolkit-pr-merged'), `Reused notification retained merge icon in ${directory}`);
 }
 
 const refresh = fs.readFileSync(path.join(root, 'efs/codex_refresh.js'), 'utf8');
