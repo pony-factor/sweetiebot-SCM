@@ -359,6 +359,7 @@ async function run() {
     doc: {},
     currentBranch: 'draft',
     currentRepositoryUri: uri,
+    currentDefaultBranch: 'develop',
     settings: {
       mcpPullRequest: true,
       defaultBranch: 'main',
@@ -383,7 +384,7 @@ async function run() {
       assert.equal(id, 'sweetiebot.createLocalPullRequest');
       assert.equal(root, uri);
       assert.equal(options.branch, 'draft');
-      assert.equal(options.base, 'main');
+      assert.equal(options.base, 'develop');
       assert.equal(options.mcpServer, 'codex-drafter');
       assert.equal(options.mcpTool, 'github_create_pull_request');
       assert.deepEqual(options.source, pickerSource);
