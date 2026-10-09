@@ -4,7 +4,7 @@
     {
       "id": "g4-mares",
       "label": "G4 mares",
-      "description": "Named adult female G4 characters, including ponies, zebras, donkeys, hippogriffs, seaponies, and background characters.",
+      "description": "Named adult female G4 characters, including ponies, zebras, donkeys, hippogriffs, seaponies, yaks, and background characters.",
       "names": [
         "abradacanter",
         "fairy-flight",
@@ -668,7 +668,8 @@
         "zesty-gourmand",
         "fizzlepop-berrytwist",
         "forward-thinking-friendship-student",
-        "princess-skystar"
+        "princess-skystar",
+        "yigrid"
       ],
       "sources": {
         "aloe-vera": "https://mlp.fandom.com/wiki/Credits/Season_nine#Deep_Tissue_Memories",
@@ -1560,7 +1561,7 @@
     {
       "id": "idw-comics",
       "label": "IDW comics",
-      "description": "Named pony characters from the comic-only roster, excluding characters and branch names already represented in another built-in pack.",
+      "description": "Named G4 comic-only characters, excluding characters and branch names already represented in another built-in pack.",
       "names": [
         "time-turner",
         "amy-ratcliffe",
@@ -1853,7 +1854,9 @@
         "bronco-benson",
         "larissa",
         "pete-canterbell",
-        "raspberry-fluff"
+        "raspberry-fluff",
+        "yakmina",
+        "prince-ulysses"
       ],
       "sources": {
         "celena": "https://mlp.fandom.com/wiki/Sailor_Moon_ponies"
