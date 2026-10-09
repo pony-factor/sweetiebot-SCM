@@ -231,7 +231,7 @@ class BranchNamePackTests(unittest.TestCase):
             "tiberius", "ripley", "albus", "quincy", "bunny",
             "ray", "boulder",
             "hummingway", "elizabeak", "henrita", "judy", "edgar",
-            "castor", "pollux", "firebrand", "denise",
+            "castor", "pollux", "firebrand", "denise", "smoky-jr",
         })
         self.assertEqual(len(pets["names"]), len(set(pets["names"])))
         self.assertNotIn("g4-pets-creatures", packs)
