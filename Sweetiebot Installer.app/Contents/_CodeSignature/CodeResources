@@ -42,7 +42,7 @@
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-hide-chat-timestamps.js</key>
 		<data>
-		HDIqejIL2h4ZSEhPoJqc4KCoT40=
+		OKdYkds7txTBGUcBZVFjS4JgeCg=
 		</data>
 		<key>Resources/toolkit/assets/codex/codex-hide-dictation.js</key>
 		<data>
@@ -74,7 +74,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/hide_progress.css</key>
 		<data>
-		PHzhj8y/RJZn+5glSC/7I+A+eDk=
+		9bswsIfiE3z+hWEPEAHONe3IHEs=
 		</data>
 		<key>Resources/toolkit/assets/workbench/message_bar.js</key>
 		<data>
@@ -90,7 +90,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		eHXBvKw6FPB/cIMzj3DvpRnERK8=
+		9OEAa3WGmM8U7fRbIUOvI7eBrN8=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -142,7 +142,7 @@
 		</data>
 		<key>Resources/toolkit/efs/github_pr_actions.js</key>
 		<data>
-		j0V3eAxNMfD54+wQuEMYFv0Gyvk=
+		WG1HAEjr+SQecQUHMFcfDWvu68I=
 		</data>
 		<key>Resources/toolkit/efs/github_pr_refresh.js</key>
 		<data>
@@ -174,7 +174,7 @@
 		</data>
 		<key>Resources/toolkit/efs/pull_request.js</key>
 		<data>
-		gDYpui/nCCKao+zyNI+8ZXTEXTk=
+		oX/duUinguBoMIjpzHZkneOtwDk=
 		</data>
 		<key>Resources/toolkit/efs/pull_request_batch.js</key>
 		<data>
@@ -194,11 +194,11 @@
 		</data>
 		<key>Resources/toolkit/efs/search_index.js</key>
 		<data>
-		yAFmd1ETslbraCGXWvJiqhpe9FM=
+		1TE9+1nLGoVUctu44TiKw3SdnZw=
 		</data>
 		<key>Resources/toolkit/efs/spellcheck_preview.js</key>
 		<data>
-		Z2LqrONksKQRBmgg/G44O8b5rNo=
+		MVAd9J+zJkhAksijQHWQdkJE8VM=
 		</data>
 		<key>Resources/toolkit/efs/view.js</key>
 		<data>
@@ -206,15 +206,15 @@
 		</data>
 		<key>Resources/toolkit/scripts/ai_commit.py</key>
 		<data>
-		0xdvXV1eLYP4R7TmIB1GQxqqN6A=
+		P0N2hFRDHSxubHt1kcO2+cxRr2k=
 		</data>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<data>
-		/kJYR2os5uackIT18lVYRLpi6PY=
+		9/yc54NlYqQdZ1og+PvWetwjsBc=
 		</data>
 		<key>Resources/toolkit/scripts/branch_names.py</key>
 		<data>
-		adaksoehhF2BzUh4kumrJ5kAt/w=
+		qV0t6tk4YejiiSX776ZiifGB6sQ=
 		</data>
 		<key>Resources/toolkit/scripts/browser_pr.py</key>
 		<data>
@@ -230,7 +230,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/codex_composer.py</key>
 		<data>
-		wrAmivByDLQKZ2QhZ3PibmH9P8Y=
+		SghWhTWue3tHmagmQwQvzbuGM+c=
 		</data>
 		<key>Resources/toolkit/scripts/codex_context.py</key>
 		<data>
@@ -258,7 +258,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/configurator.py</key>
 		<data>
-		chTnR9CviI9HUuGVY7hVRsvCRRc=
+		R46TwgndH/tVwD9I6pe2dnv+wB8=
 		</data>
 		<key>Resources/toolkit/scripts/configure.py</key>
 		<data>
@@ -270,7 +270,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/install.py</key>
 		<data>
-		Ca+CcbZpGImV6d6wqvMLcgFgKkI=
+		1Xh/2Iiyfcrc8v1tY3SWv4WZK6o=
 		</data>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
 		<data>
@@ -310,7 +310,7 @@
 		</data>
 		<key>Resources/toolkit/scripts/toolkit_settings.py</key>
 		<data>
-		mcgahl3vn1Y5Ukf/zUXlghR6gpQ=
+		ik9AQ6xT5gOHG2wT81BIftQUbVM=
 		</data>
 		<key>Resources/toolkit/scripts/update.py</key>
 		<data>
@@ -426,11 +426,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			HDIqejIL2h4ZSEhPoJqc4KCoT40=
+			OKdYkds7txTBGUcBZVFjS4JgeCg=
 			</data>
 			<key>hash2</key>
 			<data>
-			t0STZ19FxH010pfu7Ibeatb7lt5uNFPk9nWNyjLhwqo=
+			kTzXbA9S84WzX1z6kflrwcqXJfMOotaGVXE3MqbAzYI=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/codex/codex-hide-dictation.js</key>
@@ -514,11 +514,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			PHzhj8y/RJZn+5glSC/7I+A+eDk=
+			9bswsIfiE3z+hWEPEAHONe3IHEs=
 			</data>
 			<key>hash2</key>
 			<data>
-			TNFf4utytqpHQjlULerjjVetOUPNJXvVFyq8qJWivXs=
+			D3xNBV0+z1q2D5N+uFUMRBLBtJ+PsahSkd7h1v2wGkw=
 			</data>
 		</dict>
 		<key>Resources/toolkit/assets/workbench/message_bar.js</key>
@@ -558,11 +558,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			eHXBvKw6FPB/cIMzj3DvpRnERK8=
+			9OEAa3WGmM8U7fRbIUOvI7eBrN8=
 			</data>
 			<key>hash2</key>
 			<data>
-			UkMYePMsXQ6bb1l2tEz3o+8y6KlRaFLBJIh/hyQuwac=
+			oyQ/6s8piNF33qWwhVinUdg376zhqrFqgpahVyKQDJA=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -701,11 +701,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			j0V3eAxNMfD54+wQuEMYFv0Gyvk=
+			WG1HAEjr+SQecQUHMFcfDWvu68I=
 			</data>
 			<key>hash2</key>
 			<data>
-			yyd5J+FDe9CB+UO/FQI0ZuA2XX/BedF/EyC6mapzqxI=
+			Z8LEgOiNccFbnt6i9kLyD+4HYO2j/54tyPbgwi5GCxc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/github_pr_refresh.js</key>
@@ -789,11 +789,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			gDYpui/nCCKao+zyNI+8ZXTEXTk=
+			oX/duUinguBoMIjpzHZkneOtwDk=
 			</data>
 			<key>hash2</key>
 			<data>
-			HkYgzCQqC8HWzyZrX5iJD7sn+lfDm0W1CjLs6enI6Ns=
+			EuBjiHS/wyu4nmeDDhNmmE7kEvddtAhaCRge1UzuI90=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/pull_request_batch.js</key>
@@ -844,22 +844,22 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			yAFmd1ETslbraCGXWvJiqhpe9FM=
+			1TE9+1nLGoVUctu44TiKw3SdnZw=
 			</data>
 			<key>hash2</key>
 			<data>
-			8h7s1k706tZRJshoSB+UEB6YnZ3lxOzFrTR7iSqfeDU=
+			y4BGyBmceKFJXv3X6K+xZg1lHZugMgxpYu/Fxj1gj9w=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/spellcheck_preview.js</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			Z2LqrONksKQRBmgg/G44O8b5rNo=
+			MVAd9J+zJkhAksijQHWQdkJE8VM=
 			</data>
 			<key>hash2</key>
 			<data>
-			MVrP55wGh1Q9aKk0vLeKlTVnzLYTesl6DKv/fbXcWjM=
+			nkAKMj6dqO9jqGkGQUU2NYq+wBf3joiyav7uyVUn+rM=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/view.js</key>
@@ -877,33 +877,33 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			0xdvXV1eLYP4R7TmIB1GQxqqN6A=
+			P0N2hFRDHSxubHt1kcO2+cxRr2k=
 			</data>
 			<key>hash2</key>
 			<data>
-			SZDBfoUvQvLEAk8PSgGHEGYXSRjSU4etXrr56kPCKAQ=
+			R434M90qSNO8B4pvr2PcGL92/WoHDCHDwSrHvxO3Cr0=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_name_packs.json</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			/kJYR2os5uackIT18lVYRLpi6PY=
+			9/yc54NlYqQdZ1og+PvWetwjsBc=
 			</data>
 			<key>hash2</key>
 			<data>
-			RyXSAWU1+Mv0b3nunWn4I99kJDKkHSXjA1Vwdv0CHno=
+			A1teeQqJBsKKcuAuMjHGWGR8zeaZfUoiFu4SJrHkLC4=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/branch_names.py</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			adaksoehhF2BzUh4kumrJ5kAt/w=
+			qV0t6tk4YejiiSX776ZiifGB6sQ=
 			</data>
 			<key>hash2</key>
 			<data>
-			H7MiSKbUTEBRlrgbGI9AHYeBZwLYxigYpydonHwPbHg=
+			xV7YEW0Yd5Ov5B+972VaSRdkK/+c9j9pBCVCKeXxN/c=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/browser_pr.py</key>
@@ -943,11 +943,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			wrAmivByDLQKZ2QhZ3PibmH9P8Y=
+			SghWhTWue3tHmagmQwQvzbuGM+c=
 			</data>
 			<key>hash2</key>
 			<data>
-			9zXuOa4jUFlj8D7T7iWeaidea2CtitnGteyt5yNklDE=
+			IT9Rs1LJVY0Yye1GFwmxEU5CBeNVfHXnWMSn44N6vlQ=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/codex_context.py</key>
@@ -1020,11 +1020,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			chTnR9CviI9HUuGVY7hVRsvCRRc=
+			R46TwgndH/tVwD9I6pe2dnv+wB8=
 			</data>
 			<key>hash2</key>
 			<data>
-			DyqbxhxiKTwonzZZkFpsRN2TjBaf8DAR+iEBVDOL2sk=
+			lEvaU3zU+Y+0Z343tUcmE1FLz/eN8nKVGU7opqnkCso=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/configure.py</key>
@@ -1053,11 +1053,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			Ca+CcbZpGImV6d6wqvMLcgFgKkI=
+			1Xh/2Iiyfcrc8v1tY3SWv4WZK6o=
 			</data>
 			<key>hash2</key>
 			<data>
-			40Hf8SM6uC/o1ROJl6DeWN4JknowH7Av9McrXFwh6eA=
+			a4f/7TyUC4jxjZ0ndOExt6SLFiXj7BzhU8YJQzVwFDc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/local_codex_commit.py</key>
@@ -1163,11 +1163,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			mcgahl3vn1Y5Ukf/zUXlghR6gpQ=
+			ik9AQ6xT5gOHG2wT81BIftQUbVM=
 			</data>
 			<key>hash2</key>
 			<data>
-			nBCoaLrqyhaYbkCQGLK5qou0J8GtV6iQUmGyb6iXV4M=
+			IvI3UQKMZqJHprc6wDLLSIkjcmEYNJ+zyLcluhrXHBc=
 			</data>
 		</dict>
 		<key>Resources/toolkit/scripts/update.py</key>

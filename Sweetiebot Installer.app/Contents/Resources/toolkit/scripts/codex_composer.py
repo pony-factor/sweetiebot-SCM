@@ -13,6 +13,43 @@ END = '\n/* scm-toolkit-codex-composer:end */\n'
 LAYOUT_START = '\n/* scm-toolkit-codex-inline-location:start */\n'
 LAYOUT_END = '\n/* scm-toolkit-codex-inline-location:end */\n'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-composer-controls.js'
+PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
+PLACEHOLDER_END = '\nscm-toolkit-codex-placeholders:end */\n'
+
+
+def transform_placeholders(source: str, settings: dict) -> str:
+    """Replace native placeholder expressions with reversible plain text literals."""
+    if source.count(PLACEHOLDER_START) != source.count(PLACEHOLDER_END) or source.count(PLACEHOLDER_START) > 1:
+        raise ValueError("Incomplete Codex placeholder patch.")
+    if PLACEHOLDER_START in source:
+        before, rest = source.split(PLACEHOLDER_START, 1)
+        metadata, after = rest.split(PLACEHOLDER_END, 1)
+        source = before + after
+        for original, replacement in reversed(json.loads(metadata)):
+            if source.count(replacement) != 1:
+                raise ValueError("Installed Codex placeholder patch changed.")
+            source = source.replace(replacement, original, 1)
+    edits = []
+    for name, key in (
+        ("codexNewChatPlaceholder", "homePage.composer.placeholder.askAnything.v2"),
+        ("codexFollowUpPlaceholder", "composer.placeholder.localFollowUp.locally"),
+    ):
+        value = str(settings.get(name, "")).strip()
+        if not value:
+            continue
+        pattern = (r'[\w$]+\.formatMessage\(\{id:`' + re.escape(key)
+                   + r'`,defaultMessage:`(?:\\.|[^`])*`,description:`(?:\\.|[^`])*`\}\)')
+        matches = list(re.finditer(pattern, source))
+        if len(matches) != 1:
+            raise ValueError(f"Codex placeholder {key} could not be identified uniquely.")
+        original = matches[0][0]
+        replacement = '(' + json.dumps(value, ensure_ascii=True) + f'/* scm-toolkit:{name} */)'
+        source = source.replace(original, replacement, 1)
+        edits.append([original, replacement])
+    if edits:
+        metadata = json.dumps(edits, ensure_ascii=True).replace('*', '\\u002a')
+        source += PLACEHOLDER_START + metadata + PLACEHOLDER_END
+    return source
 
 
 def transform(source: str) -> str:
