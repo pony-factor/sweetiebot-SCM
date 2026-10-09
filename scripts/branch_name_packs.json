@@ -699,7 +699,7 @@
     {
       "id": "g4-stallions",
       "label": "G4 stallions",
-      "description": "Named adult male G4 equines, including ponies, zebras, donkeys, and background characters.",
+      "description": "Named adult male G4 characters, including ponies, zebras, donkeys, hippogriffs, griffons, and background characters.",
       "names": [
         "ace-point",
         "acrylic-paint",
@@ -1214,7 +1214,11 @@
         "zephyr-breeze",
         "zirconic",
         "dr-whooves",
-        "coiffed-waiter-pony"
+        "coiffed-waiter-pony",
+        "terramar",
+        "sky-beak",
+        "grampa-gruff",
+        "gustave-le-grand"
       ],
       "sources": {
         "clean-sweep": "https://mlp.fandom.com/wiki/List_of_ponies/Earth_ponies/Stallions",
