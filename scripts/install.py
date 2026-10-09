@@ -299,9 +299,14 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
 
     match = matches[0]
     original = match.group(0)
+    destination = home_url or "https://chatgpt.com/"
+    # A newly created blank ChatGPT home gets one fresh-draft signal.
+    # Restored tabs, deep links, and explicit ?q= prompts keep their URL.
+    if re.fullmatch(r"https://chatgpt[.]com/(?:g/g-p-[A-Za-z0-9-]+/project/?)?", destination):
+        destination += "?sweetiebot_fresh=1"
     replacement = (
         f'{match.group("prefix")},url:{match.group("options")}?.viewState?.url'
-        f'||{json.dumps(home_url or "https://chatgpt.com/")}{match.group("suffix")}'
+        f'||{json.dumps(destination)}{match.group("suffix")}'
     )
     return [(original, replacement)]
 

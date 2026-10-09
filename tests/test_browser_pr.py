@@ -6,6 +6,8 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
     def test_install_is_idempotent_and_reversible(self):
         original = '"vscode:browserView:preloadReady";'
         installed = browser_pr.transform(original)
+        self.assertIn("sweetiebot_fresh", installed)
+        self.assertIn("oai/apps/lightweight-web/composerDraft/v1", installed)
         self.assertEqual(browser_pr.transform(installed), installed)
         self.assertEqual(browser_pr.transform(installed, remove=True), original)
 

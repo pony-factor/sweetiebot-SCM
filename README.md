@@ -626,8 +626,21 @@ left to VS Code.
 
 When `browser-chatgpt-home` is enabled, a blank Integrated Browser tab starts at
 `https://chatgpt.com/`. Explicit URLs continue to win, so commands and extensions
-that open a specific page are unchanged. The toggle is applied by the installer,
-so rerun `python3 scripts/install.py` and reload VS Code after changing it.
+that open a specific page are unchanged. For a blank ChatGPT home or project
+URL, each newly opened tab also starts with an empty composer rather than
+restoring a draft typed in another tab. Sweetie Bot clears only ChatGPT's
+known shared composer-draft storage entry before the new page loads; it does
+not clear cookies, logins, conversations, or the general browser cache.
+Explicit `?q=` prompts (including PR actions), restored tabs, and unrelated
+websites are unchanged.
+
+**Draft caution:** ChatGPT currently stores unsent composer text in shared
+browser storage. Opening a fresh home tab removes that saved draft for other
+tabs too, although text already visible in an open tab remains. Send or copy
+important unsent text before opening a blank ChatGPT tab. If ChatGPT changes
+its draft-storage format, this targeted reset may need an update. The toggle
+is applied by the installer, so rerun `python3 scripts/install.py` and reload
+VS Code after changing it.
 
 ### Codex co-author commit
 
