@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean } = require('../efs/branch_actions');
+const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean } = require('../efs/branch_actions');
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 
@@ -73,6 +73,11 @@ async function run() {
     repository.state[dirty] = [{}];
     assert.equal(await autoPullClean(repository, { fetch: true }), false);
     assert(!calls.some(call => ['fetch', 'merge'].includes(call[0])));
+  }
+  {
+    const { repository, calls } = fixture();
+    assert.equal(await returnHome(repository, { defaultBranch: 'develop' }), 'develop');
+    assert.deepEqual(calls, [['checkout', 'develop'], ['status']]);
   }
   {
     const { repository, calls } = fixture();
@@ -212,6 +217,12 @@ async function run() {
       /active branch changed/
     );
     assert(!calls.some(call => call[0] === 'push'));
+  }
+  {
+    const { repository } = fixture();
+    await assert.rejects(deleteBranch(repository, {
+      branch: 'master', defaultBranch: 'master', remote: 'origin'
+    }), /Cannot delete master/);
   }
   {
     const { repository, calls } = fixture();
@@ -355,8 +366,9 @@ async function run() {
     };
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
-    assert.equal(context.subscriptions.length, 9);
+    assert.equal(context.subscriptions.length, 10);
     assert.equal(await commands.get('sweetiebot.returnHome')({ rootUri: uri }), 'main');
+    assert.equal(await commands.get('sweetiebot.resolveDefaultBranch')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
     assert.equal(await commands.get('sweetiebot.createBranch')({ ...uri }, options), 'fresh');
     assert.equal(await commands.get('sweetiebot.createBranch')({ rootUri: uri }, options), 'fresh');

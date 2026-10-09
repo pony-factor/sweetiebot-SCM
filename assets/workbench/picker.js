@@ -697,8 +697,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     homeButton.type = 'button';
     homeButton.className = 'scm-toolkit-home codicon codicon-home';
     homeButton.hidden = true;
-    homeButton.title = 'Home: switch to main';
-    homeButton.setAttribute('aria-label', 'Home: switch to main');
+    homeButton.title = 'Home: switch to the default branch';
+    homeButton.setAttribute('aria-label', 'Home: switch to the default branch');
 
     const branchButton = doc.createElement('button');
     branchButton.type = 'button';
@@ -842,6 +842,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let currentBranch;
     let currentRepositoryArgument;
     let currentRepositoryUri;
+    let currentDefaultBranch;
+    let repositoryResolveToken = 0;
     let currentInput;
     let pending = false;
     let deletingBranch = false;
@@ -996,8 +998,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         if (
             configuration.getValue('scmToolkit.autoPublishNewBranches') !== true
             || !currentRepositoryUri
+            || !currentDefaultBranch
             || !branch
-            || branch === settings.defaultBranch
+            || branch === currentDefaultBranch
             || publishingBranch === branch
         ) {
             return false;
@@ -1091,14 +1094,15 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const unavailable =
             !settings.mcpPullRequest
             || !branch
-            || branch === settings.defaultBranch
+            || branch === currentDefaultBranch
+            || !currentDefaultBranch
             || !currentRepositoryUri;
 
         pullRequestButton.hidden = !settings.mcpPullRequest;
         pullRequestButton.disabled =
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
-        pullRequestTooltip.textContent = branch === settings.defaultBranch
-            ? `${settings.defaultBranch} is the pull-request base branch`
+        pullRequestTooltip.textContent = branch === currentDefaultBranch
+            ? `${currentDefaultBranch} is the pull-request base branch`
             : `Draft and publish a pull request for ${branch ?? 'the current branch'} with local Kefania and Codex`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
@@ -1110,7 +1114,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         if (
             !settings.mcpPullRequest
             || !branch
-            || branch === settings.defaultBranch
+            || branch === currentDefaultBranch
+            || !currentDefaultBranch
             || !repository
             || pending
             || deletingBranch
@@ -1124,7 +1129,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const source = scmToolkitChatgptConversationSource(doc);
             await commands.executeCommand('sweetiebot.createLocalPullRequest', repository, {
                 branch,
-                base: settings.defaultBranch,
+                base: currentDefaultBranch,
                 remote: settings.remote,
                 mcpServer: settings.mcpPrServer,
                 mcpTool: settings.mcpPrTool,
@@ -1139,7 +1144,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
 
     const refreshPonyBranch = () => {
-        const unavailable = !settings.ponyBranch || !currentRepositoryUri;
+        const unavailable = !settings.ponyBranch || !currentRepositoryUri || !currentDefaultBranch;
         ponyBranchButton.hidden = !settings.ponyBranch;
         ponyBranchButton.disabled =
             pending
@@ -1149,7 +1154,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || unavailable;
 
         const description =
-            `Create a random pony branch from ${settings.defaultBranch}; sync first when there are no uncommitted changes`;
+            `Create a random pony branch from ${currentDefaultBranch}; sync first when there are no uncommitted changes`;
         ponyBranchButton.setAttribute('aria-label', description);
         ponyBranchTooltip.textContent = description;
     };
@@ -1160,6 +1165,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const repository = currentRepositoryUri;
         if (
             !settings.ponyBranch
+            || !currentDefaultBranch
             || !repository
             || pending
             || deletingBranch
@@ -1175,7 +1181,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         try {
             const branch = await commands.executeCommand('sweetiebot.createBranch', repository, {
-                defaultBranch: settings.defaultBranch,
+                defaultBranch: currentDefaultBranch,
                 remote: settings.remote,
                 names: scmToolkitBranchNamePool(),
             });
@@ -1199,11 +1205,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || creatingPullRequest
             || creatingPonyBranch
             || !repository
-            || branch === settings.defaultBranch;
+            || !currentDefaultBranch
+            || branch === currentDefaultBranch;
 
-        const description = branch === settings.defaultBranch
-            ? `${settings.defaultBranch} is the sync base branch`
-            : `Sync ${branch ?? 'current branch'} with ${settings.remote}/${settings.defaultBranch}`;
+        const description = branch === currentDefaultBranch
+            ? `${currentDefaultBranch} is the sync base branch`
+            : `Sync ${branch ?? 'current branch'} with ${settings.remote}/${currentDefaultBranch}`;
         syncButton.title = description;
         syncButton.setAttribute('aria-label', description);
     };
@@ -1215,7 +1222,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const repository = currentRepositoryUri;
         if (
             !branch
-            || branch === settings.defaultBranch
+            || branch === currentDefaultBranch
+            || !currentDefaultBranch
             || !repository
             || pending
             || deletingBranch
@@ -1232,10 +1240,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         try {
             await commands.executeCommand('sweetiebot.syncBranch', repository, {
                 branch,
-                defaultBranch: settings.defaultBranch,
+                defaultBranch: currentDefaultBranch,
                 remote: settings.remote,
             });
-            notifications.info(`Synced ${branch} with ${settings.defaultBranch}.`);
+            notifications.info(`Synced ${branch} with ${currentDefaultBranch}.`);
         } catch (error) {
             // Leave merge conflicts untouched and keep the sync message for the manual commit.
             notifications.error(error);
@@ -1248,8 +1256,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const refreshBranchControls = () => {
         homeButton.hidden = branchButton.hidden;
+        const homeDescription = `Home: switch to ${currentDefaultBranch || 'the default branch'}`;
+        homeButton.title = homeDescription;
+        homeButton.setAttribute('aria-label', homeDescription);
         homeButton.disabled = pending || deletingBranch || creatingPullRequest || creatingPonyBranch
-            || !currentRepositoryUri || currentBranch === 'main';
+            || !currentRepositoryUri || !currentDefaultBranch || currentBranch === currentDefaultBranch;
         branchButton.disabled =
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || !currentCommand?.id;
 
@@ -1265,13 +1276,14 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || creatingPullRequest
             || creatingPonyBranch
             || unavailable
-            || currentBranch === settings.defaultBranch;
+            || !currentDefaultBranch
+            || currentBranch === currentDefaultBranch;
 
         if (!currentBranch) {
             deleteButton.removeAttribute('aria-label');
             deleteTooltip.textContent = '';
-        } else if (currentBranch === settings.defaultBranch) {
-            const description = `${settings.defaultBranch} cannot be deleted`;
+        } else if (currentBranch === currentDefaultBranch) {
+            const description = `${currentDefaultBranch} cannot be deleted`;
             deleteButton.setAttribute('aria-label', description);
             deleteTooltip.textContent = description;
         } else {
@@ -1292,7 +1304,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const returnHome = async event => {
         event.stopPropagation();
         const repository = currentRepositoryUri;
-        if (!repository || currentBranch === 'main' || pending || deletingBranch
+        if (!repository || !currentDefaultBranch || currentBranch === currentDefaultBranch || pending || deletingBranch
             || creatingPullRequest || creatingPonyBranch) return;
 
         pending = true;
@@ -1336,6 +1348,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             !settings.branchCleanup
             || !branch
             || !repositoryArgument
+            || !currentDefaultBranch
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
@@ -1344,8 +1357,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             return;
         }
 
-        if (branch === settings.defaultBranch) {
-            notifications.error(`Cannot delete ${settings.defaultBranch}.`);
+        if (branch === currentDefaultBranch) {
+            notifications.error(`Cannot delete ${currentDefaultBranch}.`);
             return;
         }
 
@@ -1356,7 +1369,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         try {
             await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
                 branch,
-                defaultBranch: settings.defaultBranch,
+                defaultBranch: currentDefaultBranch,
                 remote: settings.remote,
             });
         } catch (error) {
@@ -1468,6 +1481,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentBranch = undefined;
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
+            currentDefaultBranch = undefined;
+            const resolutionToken = ++repositoryResolveToken;
             currentInput = undefined;
             homeButton.hidden = true;
             homeButton.disabled = true;
@@ -1499,6 +1514,16 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             settingsButton.hidden = false;
             const provider = input.repository.provider;
             currentRepositoryUri = provider.rootUri;
+            void commands.executeCommand('sweetiebot.resolveDefaultBranch', provider.rootUri, {
+                remote: settings.remote
+            }).then(branch => {
+                if (repositoryResolveToken !== resolutionToken) return;
+                currentDefaultBranch = branch;
+                refreshBranchControls();
+                widget.layout();
+            }).catch(error => {
+                if (repositoryResolveToken === resolutionToken) notifications.error(error);
+            });
 
             if (settings.commitAndPush) {
                 pushControl.hidden = false;

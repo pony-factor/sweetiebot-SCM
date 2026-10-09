@@ -45,8 +45,50 @@ async function gitConfig(repository, key, fallback) {
   }
 }
 
+const resolvedDefaultBranches = new WeakMap();
+
+// A repository-local override wins; otherwise identify the real remote HEAD.
+// Cache the result briefly so branch-control refreshes do not repeatedly fetch.
+async function resolveDefaultBranch(repository, remote = 'origin') {
+  const cwd = repository.rootUri?.fsPath;
+  if (!cwd) return gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+  const cached = resolvedDefaultBranches.get(repository);
+  if (cached?.remote === remote && cached.expires > Date.now()) return cached.name;
+  const git = async args => (await promisify(execFile)('git', args, {
+    cwd, timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  let name;
+  try {
+    name = await git(['config', '--local', '--get', 'scm-toolkit.default-branch']);
+  } catch { /* No local override. */ }
+  if (!name) {
+    try {
+      const refs = await git(['ls-remote', '--symref', remote, 'HEAD']);
+      name = refs.match(/^ref:\s+refs\/heads\/([^\s]+)\s+HEAD$/m)?.[1];
+    } catch { /* Use the remote-tracking symbolic ref when offline. */ }
+  }
+  if (!name) {
+    try {
+      const ref = await git(['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`]);
+      if (ref.startsWith(`${remote}/`)) name = ref.slice(remote.length + 1);
+    } catch { /* No remote HEAD available locally. */ }
+  }
+  if (!name) {
+    const configured = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+    try {
+      await git(['show-ref', '--verify', `refs/heads/${configured}`]);
+      name = configured;
+    } catch { /* Do not guess a nonexistent branch. */ }
+  }
+  if (!name) {
+    throw new Error(`Could not determine this repository's default branch. Check ${remote}/HEAD or set a repository-local scm-toolkit.default-branch override.`);
+  }
+  resolvedDefaultBranches.set(repository, { remote, name, expires: Date.now() + 60000 });
+  return name;
+}
+
 async function automaticPullTarget(repository, head, remote) {
-  const defaultBranch = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+  const defaultBranch = await resolveDefaultBranch(repository, remote || 'origin');
   if (head?.name === defaultBranch) {
     return {
       remote: remote || await gitConfig(repository, 'scm-toolkit.remote', head.upstream?.remote),
@@ -118,13 +160,13 @@ async function cleanupMergedBranch(repository, branch) {
   ], { timeout: 120000 });
 }
 
-async function returnHome(repository) {
-  await repository.checkout('main');
+async function returnHome(repository, { defaultBranch = 'main' } = {}) {
+  await repository.checkout(defaultBranch);
   await repository.status();
-  if (repository.state.HEAD?.name !== 'main') {
-    throw new Error('Could not switch to main.');
+  if (repository.state.HEAD?.name !== defaultBranch) {
+    throw new Error(`Could not switch to ${defaultBranch}.`);
   }
-  return 'main';
+  return defaultBranch;
 }
 
 function errorText(error) {
@@ -271,7 +313,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
   let added = false;
   try {
     await checkBranch();
-    // Checking main out in a separate worktree reserves it without switching
+    // Checking the default branch out in a separate worktree reserves it without switching
     // the user's editor or disturbing their working files.
     await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
     added = true;
@@ -369,8 +411,8 @@ async function deleteBranch(repository, { branch, defaultBranch, remote }, clean
   if (home.upstream?.remote !== remote || !home.upstream.name) {
     throw new Error(`${defaultBranch} must track a branch on ${remote} before syncing.`);
   }
-  // Advance the inactive local ref before checkout. Checking out stale main
-  // first can reject edits based on the merged topic, even when updated main
+  // Advance the inactive local ref before checkout. Checking out a stale default
+  // branch first can reject edits based on the merged topic, even when the updated branch
   // can carry them intact. Git rejects non-fast-forwards and worktree-held refs;
   // this never creates a merge commit, pushes, stashes, or changes staging.
   await repository.fetch({
@@ -443,6 +485,10 @@ function registerBranchCommands(vscode, context) {
     return repository;
   };
 
+  const needsDefaultBranch = new Set([
+    'sweetiebot.returnHome', 'sweetiebot.createBranch',
+    'sweetiebot.deleteBranch', 'sweetiebot.syncBranch'
+  ]);
   for (const [command, action] of [
     ['sweetiebot.returnHome', returnHome],
     ['sweetiebot.autoPullClean', autoPullClean],
@@ -454,7 +500,11 @@ function registerBranchCommands(vscode, context) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
       try {
         const repository = await resolveRepository(uri);
-        return await queueRepositoryOperation(repository, () => action(repository, options));
+        return await queueRepositoryOperation(repository, async () => {
+          if (!needsDefaultBranch.has(command)) return action(repository, options);
+          const defaultBranch = await resolveDefaultBranch(repository, options?.remote || 'origin');
+          return action(repository, { ...options, defaultBranch });
+        });
       } catch (error) {
         throw explainGitError(error);
       }
@@ -462,6 +512,14 @@ function registerBranchCommands(vscode, context) {
   }
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.resolveDefaultBranch', async (uri, options) => {
+      try {
+        const repository = await resolveRepository(uri);
+        return await resolveDefaultBranch(repository, options?.remote || 'origin');
+      } catch (error) {
+        throw explainGitError(error);
+      }
+    }),
     vscode.commands.registerCommand('sweetiebot.beginCommit', async uri => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, () => beginRepositoryCommit(repository));
@@ -485,7 +543,9 @@ function registerBranchCommands(vscode, context) {
       for (const repository of git.getAPI(1).repositories ?? []) {
         if (disposed || repository.rootUri.scheme !== 'file') continue;
         const head = repository.state.HEAD;
-        if (head?.name !== 'main' || commitInProgress(repository)) continue;
+        if (!head?.name || commitInProgress(repository)) continue;
+        const defaultBranch = await resolveDefaultBranch(repository);
+        if (head.name !== defaultBranch) continue;
         const now = Date.now();
         if (now < (retryAfter.get(repository) ?? 0)) continue;
         const fetch = !lastFetch.has(repository) || now - lastFetch.get(repository) >= 60000;
@@ -495,7 +555,7 @@ function registerBranchCommands(vscode, context) {
         await queueRepositoryOperation(repository, async () => {
           if (disposed || commitInProgress(repository)) return;
           await repository.status();
-          if (disposed || repository.state.HEAD?.name !== 'main') return;
+          if (disposed || repository.state.HEAD?.name !== defaultBranch) return;
           try {
             const { stdout } = await promisify(execFile)('git', ['config', '--bool', '--get', 'scm-toolkit.auto-pull-clean'], {
               cwd: repository.rootUri.fsPath, timeout: 10000
@@ -524,6 +584,7 @@ function registerBranchCommands(vscode, context) {
 }
 
 module.exports = {
+  resolveDefaultBranch,
   returnHome,
   createBranch,
   publishBranch,

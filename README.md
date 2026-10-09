@@ -13,7 +13,7 @@ Current features:
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
-- optionally create a branch from `main` using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
+- optionally create a branch from each repository's default branch using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline code completion
 - optionally show a commit button that appends the Codex co-author trailer
 - optionally open a pull request for the current branch through a configured MCP server
@@ -141,7 +141,7 @@ After installation, the gear at the right end of the Source Control message row 
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
 
-With **Automatically pull clean branches** enabled, `main` fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Sweetiebot pauses these ref-moving pulls for the full lifetime of a VS Code commit so background syncing cannot advance `HEAD` between Git reading and updating the branch ref. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, changed branch tips or upstreams also pause pulling.
+With **Automatically pull clean branches** enabled, each repository's default branch fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Sweetiebot pauses these ref-moving pulls for the full lifetime of a VS Code commit so background syncing cannot advance `HEAD` between Git reading and updating the branch ref. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, changed branch tips or upstreams also pause pulling.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
 
