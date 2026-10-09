@@ -6,10 +6,8 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const message = 'Sweetie Bot and extension customizations are ready.';
-const roots = [
-  'assets/workbench',
-  'Sweetiebot Installer.app/Contents/Resources/toolkit/assets/workbench'
-];
+// The signed installer is generated from the canonical workbench assets.
+const roots = ['assets/workbench'];
 
 for (const directory of roots) {
   const javascript = fs.readFileSync(path.join(root, directory, 'picker.js'), 'utf8');
