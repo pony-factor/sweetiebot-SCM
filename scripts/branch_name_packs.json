@@ -4,7 +4,7 @@
     {
       "id": "g4-mares",
       "label": "G4 mares",
-      "description": "Named adult female G4 equines, including ponies, zebras, donkeys, and background characters.",
+      "description": "Named adult female G4 characters, including ponies, zebras, donkeys, hippogriffs, seaponies, and background characters.",
       "names": [
         "abradacanter",
         "fairy-flight",
@@ -667,7 +667,8 @@
         "zecora",
         "zesty-gourmand",
         "fizzlepop-berrytwist",
-        "forward-thinking-friendship-student"
+        "forward-thinking-friendship-student",
+        "princess-skystar"
       ],
       "sources": {
         "aloe-vera": "https://mlp.fandom.com/wiki/Credits/Season_nine#Deep_Tissue_Memories",
