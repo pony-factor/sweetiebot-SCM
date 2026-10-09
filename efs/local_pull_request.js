@@ -2,7 +2,7 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { access } = require('node:fs/promises');
-const { githubRepository, normalizeConversationSource, readCodexConversation } = require('./pull_request');
+const { githubRepository, normalizeConversationSource, readCodexConversation, showPublishedPonyProfile } = require('./pull_request');
 
 function registerLocalPullRequestCommand(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.createLocalPullRequest', async (uri, options) => {
@@ -40,8 +40,15 @@ function registerLocalPullRequestCommand(vscode, context) {
       });
     });
     if (result?.url) {
-      await vscode.window.showInformationMessage(`Kefania ${result.existing ? 'found' : 'created'} PR: ${result.url}`);
+      void vscode.window.showInformationMessage(`PR #${result.number}`);
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(result.url));
+      try {
+        await showPublishedPonyProfile(vscode, context, {
+          branch: options.branch, repositoryPath: repository.rootUri.fsPath, number: result.number,
+        });
+      } catch {
+        await vscode.window.showWarningMessage(`PR #${result.number} exists, but the pony profile could not be opened. Do not retry PR creation to retrieve it.`);
+      }
     }
     if (result?.source?.reason && result.source.reason !== 'No originating conversation supplied.') {
       await vscode.window.showWarningMessage(result.source.reason);

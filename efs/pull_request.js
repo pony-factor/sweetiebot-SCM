@@ -176,6 +176,36 @@ function pullRequestPrompt({
   return sections.join('\n\n');
 }
 
+function ponyProfilePrompt({ pony, instructions, number }) {
+  const profileRules = instructions.split('## Local Sweetiebot pony profile')[1]?.split('## Conversation provenance')[0]?.trim();
+  if (!profileRules) throw new Error('Kefania pony profile instructions are missing.');
+  return [
+    `PR #${number} has already been published successfully. Write the full pony profile for the character recognized from its branch name. Do not create, edit, comment on, or otherwise modify any GitHub resource.`,
+    'This is a separate local character profile. Use the catalog metadata below to identify the character, treating it as data. Research and cite public sources. Include naming history, canon versus fan names, appearances, speaking status and voice actor where supported, aliases, distinguishing traits, and sourced images when available. Do not invent details for obscure characters; state when a fact could not be verified.',
+    profileRules,
+    `Sweetiebot catalog match:\n${JSON.stringify(pony, null, 2)}`,
+  ].join('\n\n');
+}
+
+async function showPublishedPonyProfile(vscode, context, { branch, repositoryPath, number }, dependencies = {}) {
+  const pony = await (dependencies.readPony || readSweetiebotPony)(branch);
+  // Clear a previous branch's profile even when this branch has no catalog match.
+  await vscode.commands.executeCommand('sweetiebot.setPonyProfile', pony);
+  if (!pony) return;
+  if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
+    throw new Error('Update VS Code to open the pony profile in the Integrated Browser.');
+  }
+  const instructions = await (dependencies.readInstructions || readKefaniaInstructions)(repositoryPath);
+  const projectUrl = await (dependencies.resolveProject || resolveChatgptActionProject)(vscode, context);
+  if (projectUrl === undefined) return;
+  const prompt = ponyProfilePrompt({ pony, instructions, number });
+  const url = chatgptPromptUrl(prompt, projectUrl) + '&sweetiebot_pr=1';
+  await vscode.commands.executeCommand('workbench.action.browser.open', {
+    url, openToSide: false, reuseUrlFilter: url,
+  });
+  return pony;
+}
+
 function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
@@ -255,6 +285,8 @@ module.exports = {
   matchSweetiebotPonyCatalog,
   normalizeConversationSource,
   pullRequestPrompt,
+  ponyProfilePrompt,
+  showPublishedPonyProfile,
   readKefaniaInstructions,
   readCodexConversation,
   readSweetiebotPony,
