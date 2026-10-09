@@ -41,9 +41,10 @@ async function run() {
   provider.acceptInputCommand = { id: 'provider.updatedCommit', arguments: ['updated-repository'] };
   await context.commit({ stopPropagation() {} });
   assert.equal(calls[0].id, 'sweetiebot.prepareCodexCommit');
-  assert.equal(calls[1].id, 'provider.updatedCommit', 'click uses the latest provider command');
-  assert.deepEqual(calls[1].args, ['updated-repository']);
-  assert.match(calls[1].message, /Co-authored-by: Codex <noreply@openai.com>/);
+  assert.equal(calls[1].id, 'sweetiebot.commitWithMessage');
+  assert.equal(calls[1].args[0], context.currentRepositoryUri);
+  assert.match(calls[1].args[1], /Co-authored-by: Codex <noreply@openai.com>/);
+  assert.equal(calls[1].message, 'Fix button', 'attribution never enters the SCM field');
   assert.equal(input.value, 'Fix button');
   assert.equal(context.codexButton.disabled, false);
   assert.deepEqual(errors, []);
@@ -55,9 +56,19 @@ async function run() {
     if (id === 'sweetiebot.generateCodexCommitMessage') return 'Fix local commit generation';
   };
   await context.commit({ stopPropagation() {} });
-  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.prepareCodexCommit', 'sweetiebot.generateCodexCommitMessage', 'provider.updatedCommit']);
-  assert.match(calls[2].message, /^Fix local commit generation\n\nCo-authored-by: Codex/);
+  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.prepareCodexCommit', 'sweetiebot.generateCodexCommitMessage', 'sweetiebot.commitWithMessage']);
+  assert.match(calls[2].args[1], /^Fix local commit generation\n\nCo-authored-by: Codex/);
+  assert(calls.every(call => call.message === ''), 'generated text never appears in the SCM field');
   assert.equal(input.value, '');
+  calls.length = 0;
+  context.commands.executeCommand = async (id, ...args) => {
+    calls.push({ id, args, message: input.value });
+    if (id === 'sweetiebot.generateCodexCommitMessage') return 'Generated message';
+    if (id === 'sweetiebot.commitWithMessage') throw new Error('Commit failed');
+  };
+  await context.commit({ stopPropagation() {} });
+  assert.equal(input.value, '', 'failed commits leave the SCM field empty');
+  assert(calls.every(call => call.message === ''));
   calls.length = 0;
   context.commands.executeCommand = async id => {
     calls.push({ id });

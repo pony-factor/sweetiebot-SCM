@@ -1060,7 +1060,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             return;
         }
 
-        let attributedMessage;
         committingWithCodex = true;
         refreshCodexCommit();
 
@@ -1075,18 +1074,13 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             if (typeof message !== 'string' || !message.trim()) {
                 throw new Error('Local Ollama returned an empty commit message.');
             }
-            attributedMessage = scmToolkitWithCodexCoauthor(message);
-            input.setValue(attributedMessage, false);
             await commands.executeCommand(
-                currentCommitCommand.id,
-                ...(currentCommitCommand.arguments ?? [])
+                'sweetiebot.commitWithMessage', repositoryUri,
+                scmToolkitWithCodexCoauthor(message)
             );
         } catch (error) {
             notifications.error(error);
         } finally {
-            if (attributedMessage && input.value === attributedMessage) {
-                input.setValue(originalMessage, false);
-            }
             committingWithCodex = false;
             refreshCodexCommit();
         }

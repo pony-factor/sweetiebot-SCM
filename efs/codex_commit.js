@@ -32,6 +32,29 @@ function generateMessage(script, cwd, context) {
 }
 
 function registerCodexCommitCommand(vscode, extensionContext) {
+  extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.commitWithMessage', async (uri, message) => {
+    if (typeof message !== 'string' || !message.trim()) throw new Error('A commit message is required.');
+    const extension = vscode.extensions.getExtension('vscode.git');
+    if (!extension) throw new Error('The VS Code Git extension is unavailable.');
+    const git = await extension.activate();
+    const root = vscode.Uri.from(uri?.rootUri ?? uri);
+    const repository = git.getAPI(1).getRepository(root);
+    if (!repository) throw new Error('The selected Git repository is unavailable.');
+    await repository.status();
+    if (repository.state.mergeChanges.length) throw new Error('Resolve merge conflicts before committing.');
+    if (!repository.state.indexChanges.length) throw new Error('There are no staged changes to commit.');
+    const configuration = vscode.workspace.getConfiguration('git', root);
+    // Pass the message directly to Git; never publish it to the SCM input.
+    await repository.commit(message, {
+      signCommit: configuration.get('enableCommitSigning') === true ? true : undefined,
+      signoff: configuration.get('alwaysSignOff') === true
+    });
+    // The public Git API suppresses post-commit commands. Keep the Push
+    // checkbox behavior by dispatching the normal push command afterward.
+    if (configuration.get('postCommitCommand') === 'push') {
+      await vscode.commands.executeCommand('git.push', root);
+    }
+  }));
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.prepareCodexCommit', async uri => {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');

@@ -19,6 +19,7 @@
     "onCommand:sweetiebot.openPullRequestBatchChat",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.prepareCodexCommit",
+    "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
     "onCommand:sweetiebot.previewCommitSpellcheck",
     "onCommand:sweetiebot.createBranch",

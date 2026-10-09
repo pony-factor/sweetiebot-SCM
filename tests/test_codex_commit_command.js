@@ -13,9 +13,18 @@ async function run() {
   let expectedContext = '';
   const commands = new Map();
   let additions = 0;
+  const commits = [];
+  let commitError;
+  const gitSettings = {};
+  let pushes = 0;
   const repository = {
     rootUri: { fsPath: '/selected' },
     state: { indexChanges: ['staged'], workingTreeChanges: [{ uri: { fsPath: '/selected/edited file' } }, { uri: { fsPath: '/selected/deleted file' } }], untrackedChanges: [{ uri: { fsPath: '/selected/new file' } }], mergeChanges: [] },
+    get inputBox() { throw new Error('The commit backend must not access the message box'); },
+    async commit(message, options) {
+      commits.push({ message, options });
+      if (commitError) throw commitError;
+    },
     async status() {},
     async add(paths) {
       assert.deepEqual(Array.from(paths), ['/selected/edited file', '/selected/deleted file', '/selected/new file']);
@@ -70,20 +79,49 @@ async function run() {
         if (discoveryError) throw discoveryError;
         return bridgeInstalled ? ['sweetiebot.readCodexContext'] : [];
       },
-      async executeCommand(id) {
+      async executeCommand(id, root) {
+        if (id === 'git.push') {
+          assert.equal(root.fsPath, '/selected');
+          pushes++;
+          return;
+        }
         assert.equal(id, 'sweetiebot.readCodexContext');
         if (captureError) throw captureError;
         return snapshot;
       } },
+    workspace: { getConfiguration(section, root) {
+      assert.equal(section, 'git');
+      assert.equal(root.fsPath, '/selected');
+      return { get: key => gitSettings[key] };
+    } },
     ProgressLocation: { Notification: 15 },
     window: { async withProgress(options, callback) { progress++; assert.equal(options.title, 'Generating commit message'); return callback(); } }
   };
   sandbox.module.exports.registerCodexCommitCommand(vscode, { subscriptions: [], extensionUri: { fsPath: '/extension' } });
+  const commit = commands.get('sweetiebot.commitWithMessage');
   const prepare = commands.get('sweetiebot.prepareCodexCommit');
   const uri = { scheme: 'file', fsPath: '/selected' };
+  await commit(uri, 'Generated title');
+  assert.equal(commits[0].message, 'Generated title');
+  assert.equal(commits[0].options.signoff, false);
+  gitSettings.enableCommitSigning = true;
+  gitSettings.alwaysSignOff = true;
+  await commit(uri, 'Signed title');
+  assert.equal(commits[1].options.signCommit, true);
+  assert.equal(commits[1].options.signoff, true);
+  assert.equal(pushes, 0, 'push stays opt-in');
+  gitSettings.postCommitCommand = 'push';
+  await commit(uri, 'Commit and push');
+  assert.equal(pushes, 1, 'the push checkbox still triggers the normal Git push command');
+  await assert.rejects(commit(uri, ''), /message is required/);
+  commitError = new Error('Hook failed');
+  await assert.rejects(commit(uri, 'Failed title'), /Hook failed/);
+  assert.equal(pushes, 1, 'a failed commit never pushes');
+  commitError = undefined;
   await prepare(uri);
   assert.equal(additions, 0, 'existing staged changes leave unstaged changes alone');
   repository.state.indexChanges = [];
+  await assert.rejects(commit(uri, 'Unstaged title'), /no staged changes/);
   await prepare(uri);
   assert.equal(additions, 1, 'empty index stages the working tree including new files');
   repository.state.indexChanges = [];
@@ -92,6 +130,7 @@ async function run() {
   await assert.rejects(prepare(uri), /no changes to commit/);
   repository.state.mergeChanges = ['conflict'];
   await assert.rejects(prepare(uri), /Resolve merge conflicts/);
+  await assert.rejects(commit(uri, 'Conflicted title'), /Resolve merge conflicts/);
   assert.equal(additions, 1, 'clean and conflicted repositories do not stage anything');
   assert.equal(await command({ scheme: 'file', fsPath: '/selected' }), 'Fix generation');
   assert.equal(active, true, 'activate Codex before looking for its bridge');
