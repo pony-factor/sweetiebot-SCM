@@ -12,7 +12,7 @@ DEFAULT_SETTINGS = {
     "branchPicker": True,
     "messageBarLayout": DEFAULT_MESSAGE_BAR_LAYOUT_JSON,
     "ponyBranch": True,
-    "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining,g4-pets-creatures",
+    "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining,g4-pets",
     "branchCustomNames": "",
     "branchNameImports": "[]",
     "messagePlaceholder": "Message",

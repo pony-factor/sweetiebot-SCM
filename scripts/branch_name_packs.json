@@ -1503,9 +1503,9 @@
       }
     },
     {
-      "id": "g4-pets-creatures",
-      "label": "G4 pets & creatures",
-      "description": "Optional G4 animal companions and additional named non-pony creatures not already in the G4 creatures or pony packs.",
+      "id": "g4-pets",
+      "label": "G4 pets",
+      "description": "Optional named pets and animal companions from G4 and related media; separate from intelligent non-pony creatures.",
       "names": [
         "angel",
         "constance",
@@ -1523,38 +1523,15 @@
         "quincy",
         "bunny",
         "ray",
-        "boulder",
-        "ahuizotl",
-        "captain-celaeno",
-        "chief-thunderhooves",
-        "fido",
-        "grampa-gruff",
-        "greta",
-        "gustave-le-grand",
-        "iron-will",
-        "king-aspen",
-        "king-grover",
-        "little-strongheart",
-        "manny-roar",
-        "mulia-mild",
-        "ocean-flow",
-        "prince-rutherford",
-        "princess-skystar",
-        "rover",
-        "sky-beak",
-        "spot",
-        "stratus-skyranger",
-        "terramar",
-        "the-smooze",
-        "torch",
-        "sludge"
+        "boulder"
       ],
       "sources": {
         "angel": "https://mlp.fandom.com/wiki/Category:Pets",
-        "constance": "https://mlp.fandom.com/wiki/Characters",
-        "rover": "https://mlp.fandom.com/wiki/Diamond_Dogs",
-        "grampa-gruff": "https://mlp.fandom.com/wiki/Grampa_Gruff",
-        "stratus-skyranger": "https://mlp-gameloft.fandom.com/wiki/Stratus_Skyranger"
+        "constance": "https://mlp.fandom.com/wiki/Constance",
+        "boulder": "https://mlp.fandom.com/wiki/Boulder",
+        "albus": "https://mlp.fandom.com/wiki/List_of_non-pony_characters",
+        "quincy": "https://mlp.fandom.com/wiki/Relationships",
+        "ray": "https://mlp.fandom.com/wiki/Relationships"
       }
     },
     {

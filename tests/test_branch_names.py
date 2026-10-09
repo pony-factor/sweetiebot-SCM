@@ -218,41 +218,44 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertNotIn(name, g4_names)
 
 
-    def test_g4_pets_and_creatures_are_unique_and_disabled_by_default(self):
+    def test_g4_pets_are_unique_and_disabled_by_default(self):
         import toolkit_settings
 
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
-        pets = packs["g4-pets-creatures"]
-        self.assertEqual(pets["label"], "G4 pets & creatures")
-        self.assertTrue({
-            "angel", "gummy", "winona", "opalescence",
-            "owlowiscious", "tank", "peewee", "philomena",
-            "iron-will", "princess-skystar",
-            "rover", "fido", "spot",
-        }.issubset(pets["names"]))
+        pets = packs["g4-pets"]
+        self.assertEqual(pets["label"], "G4 pets")
+        self.assertEqual(set(pets["names"]), {
+            "angel", "constance", "gummy", "harry", "opalescence",
+            "owlowiscious", "peewee", "philomena", "tank", "winona",
+            "tiberius", "ripley", "albus", "quincy", "bunny",
+            "ray", "boulder",
+        })
         self.assertEqual(len(pets["names"]), len(set(pets["names"])))
+        self.assertNotIn("g4-pets-creatures", packs)
+        self.assertIn("spike", packs["g4-creatures"]["names"])
+        self.assertIn("steven-magnet", packs["g4-creatures"]["names"])
         for pack_id, other_pack in packs.items():
-            if pack_id != "g4-pets-creatures":
+            if pack_id != "g4-pets":
                 self.assertTrue(
                     set(pets["names"]).isdisjoint(other_pack["names"]),
                     f"Duplicate branch-name slug in {pack_id}",
                 )
 
         defaults = toolkit_settings.DEFAULT_SETTINGS["branchNameDisabledPacks"]
-        self.assertIn("g4-pets-creatures", branch_names.parse_pack_id_list(defaults))
+        self.assertIn("g4-pets", branch_names.parse_pack_id_list(defaults))
         runtime = branch_names.resolve_runtime_settings({
             "branchNameDisabledPacks": defaults,
         })
-        self.assertIn("g4-pets-creatures", runtime["branchNameDisabledPacks"])
+        self.assertIn("g4-pets", runtime["branchNameDisabledPacks"])
         enabled = ",".join(
             pack_id for pack_id in branch_names.parse_pack_id_list(defaults)
-            if pack_id != "g4-pets-creatures"
+            if pack_id != "g4-pets"
         )
         runtime = branch_names.resolve_runtime_settings({
             "branchNameDisabledPacks": enabled,
         })
-        self.assertNotIn("g4-pets-creatures", runtime["branchNameDisabledPacks"])
+        self.assertNotIn("g4-pets", runtime["branchNameDisabledPacks"])
 
     def test_g4_caricatures_include_notable_ponies_and_are_enabled_by_default(self):
         import toolkit_settings
