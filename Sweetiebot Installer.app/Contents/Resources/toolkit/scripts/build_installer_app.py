@@ -55,6 +55,7 @@ def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
             ("scripts", {".py", ".json"}),
             ("assets/workbench", {".js", ".css"}),
             ("assets/codex", {".js", ".css"}),
+            ("assets/browser", {".js"}),
             ("efs", {".js", ".json", ".svg", ".md"}),
         ):
             for source in (ROOT / directory).rglob("*"):

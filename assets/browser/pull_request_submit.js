@@ -29,7 +29,7 @@
     const composer = document.querySelector('#prompt-textarea');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
     const button = document.querySelector(
-      'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"]'
+      'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
     );
     const label = button?.getAttribute('aria-label') || '';
     if (composer && text === expected && button && !button.disabled
