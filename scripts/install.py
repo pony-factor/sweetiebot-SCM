@@ -306,6 +306,23 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     return [(original, replacement)]
 
 
+def extension_update_toolbar_edits(js):
+    changes = []
+    for command in ("checkForUpdates", "updateAllExtensions"):
+        anchor = f'id:"workbench.extensions.action.{command}"'
+        if anchor not in js:
+            continue
+        start = js.index(anchor)
+        segment = js[start:start + 800]
+        match = re.search(r'group:"1_updates",order:[12]', segment)
+        if not match:
+            raise ValueError("Unsupported VS Code build: extension update menu does not match.")
+        original = segment[:match.end()]
+        replacement = original.replace('group:"1_updates"', 'group:"navigation"')
+        changes.append((original, replacement))
+    return changes
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -393,6 +410,9 @@ def edits(js=None, settings=None):
             (original, replacement, count)
             for (original, replacement), count in modifier_edits.items()
         )
+
+    if js is not None:
+        changes.extend(extension_update_toolbar_edits(js))
 
     return changes
 
