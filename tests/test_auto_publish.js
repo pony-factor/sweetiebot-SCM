@@ -16,6 +16,7 @@ async function run() {
     settings: { autoPublishToggle: false, defaultBranch: 'main', remote: 'origin' },
     configuration: { getValue: () => enabled },
     currentRepositoryUri: 'selected-repository',
+    currentDefaultBranch: 'develop',
     publishingBranch: undefined,
     refreshAutoPublish() {},
     notifications: { info() {}, error(error) { throw error; } },
@@ -26,10 +27,11 @@ async function run() {
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], 'sweetiebot.publishBranch');
   assert.equal(calls[0][2].remote, 'origin');
-  assert.equal(await context.publish('main'), false, 'The protected default branch is skipped');
+  assert.equal(await context.publish('develop'), false, 'The repository default branch is skipped');
+  assert.equal(await context.publish('main'), true, 'A non-default main branch remains publishable');
   enabled = false;
   assert.equal(await context.publish('another-branch'), false, 'The saved publishing switch disables publishing');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   console.log('Automatic publishing preference regression checks passed.');
 }
 
