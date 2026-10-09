@@ -1127,7 +1127,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         creatingPullRequest = true;
         refreshBranchControls();
         try {
-            await scmToolkitCheckPullRequestMcp(doc, mcpService, settings);
             const source = scmToolkitChatgptConversationSource(doc);
             const launch = await commands.executeCommand('sweetiebot.openPullRequestChat', repository, {
                 branch,
