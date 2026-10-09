@@ -256,6 +256,7 @@ module.exports = {
   normalizeConversationSource,
   pullRequestPrompt,
   readKefaniaInstructions,
+  readCodexConversation,
   readSweetiebotPony,
   registerPullRequestCommand,
 };

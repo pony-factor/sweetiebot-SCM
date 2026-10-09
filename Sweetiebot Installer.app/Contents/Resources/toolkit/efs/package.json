@@ -57,7 +57,8 @@
     "onCommand:sweetiebot.checkCommitLimits",
     "onCommand:scmToolkit.checkCommitLimits",
     "onCommand:sweetiebot.endCommit",
-    "onCommand:scmToolkit.endCommit"
+    "onCommand:scmToolkit.endCommit",
+    "onCommand:sweetiebot.createLocalPullRequest"
   ],
   "contributes": {
     "views": {

@@ -15,6 +15,7 @@
   "activationEvents": [
     "onCommand:sweetiebot.returnHome",
     "onCommand:sweetiebot.openPullRequestChat",
+    "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.openPullRequestBatchChat",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.prepareCodexCommit",

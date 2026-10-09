@@ -380,7 +380,7 @@ async function run() {
     refreshBranchControls() {},
     notifications: { error(error) { throw error; } },
     commands: { async executeCommand(id, root, options) {
-      assert.equal(id, 'sweetiebot.openPullRequestChat');
+      assert.equal(id, 'sweetiebot.createLocalPullRequest');
       assert.equal(root, uri);
       assert.equal(options.branch, 'draft');
       assert.equal(options.base, 'main');
@@ -394,15 +394,11 @@ async function run() {
   await click({ stopPropagation() {} });
   await Promise.resolve();
   assert.equal(sandbox.creatingPullRequest, false);
-  assert.equal(sandbox.recorded.length, 1);
-  assert.equal(sandbox.recorded[0].branch, 'draft');
-  assert.equal(sandbox.recorded[0].base, 'main');
-  assert.deepEqual(sandbox.recorded[0].source, pickerSource);
-  assert.equal(sandbox.recorded[0].launch.repositoryUrl, 'https://github.com/owner/repo');
+  assert.equal(sandbox.recorded.length, 0);
   sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
   let fallbackLaunches = 0;
   sandbox.commands.executeCommand = async (id) => {
-    assert.equal(id, 'sweetiebot.openPullRequestChat');
+    assert.equal(id, 'sweetiebot.createLocalPullRequest');
     fallbackLaunches += 1;
     return { repositoryUrl: 'https://github.com/owner/repo' };
   };
@@ -410,7 +406,7 @@ async function run() {
   await Promise.resolve();
   assert.equal(fallbackLaunches, 1);
   assert.equal(sandbox.creatingPullRequest, false);
-  assert.equal(sandbox.recorded.length, 2);
+  assert.equal(sandbox.recorded.length, 0);
 
   console.log('Kafania pull-request bridge checks passed.');
 }
