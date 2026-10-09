@@ -94,7 +94,7 @@
 		</data>
 		<key>Resources/toolkit/assets/workbench/picker.js</key>
 		<data>
-		vyvAIdpQEXuSvCrtgIsjWahyS7Q=
+		+azgMPtC0nSaEdDJkbA4+o6gWFA=
 		</data>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
 		<data>
@@ -102,7 +102,7 @@
 		</data>
 		<key>Resources/toolkit/efs/branch_actions.js</key>
 		<data>
-		IEIKbuTAdr0fy2xchvcMRqAaSWs=
+		jfARAIelT4xYRiBTy5tHoNv0GWg=
 		</data>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
 		<data>
@@ -577,11 +577,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			vyvAIdpQEXuSvCrtgIsjWahyS7Q=
+			+azgMPtC0nSaEdDJkbA4+o6gWFA=
 			</data>
 			<key>hash2</key>
 			<data>
-			dsXMjzINQGSFacUgOcZxLk7T2c2+XLNQhMXYTuS7f9U=
+			Wdau/CugUkS5D+okQGA4kQt+FX8T/rEIudeTSpP9yWo=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/THIRD_PARTY_NOTICES.md</key>
@@ -599,11 +599,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			IEIKbuTAdr0fy2xchvcMRqAaSWs=
+			jfARAIelT4xYRiBTy5tHoNv0GWg=
 			</data>
 			<key>hash2</key>
 			<data>
-			2BEPB5bLrslhPLvjt06BbWRK3kj86JbyAlOosJ33igE=
+			GRT2PRLDxmRDJof6oajp2OPO2XHq821AZufE9LybEes=
 			</data>
 		</dict>
 		<key>Resources/toolkit/efs/branch_maintenance.js</key>
