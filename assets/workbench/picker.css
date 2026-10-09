@@ -594,9 +594,10 @@
     transition-delay: .4s;
 }
 
-/* Give Sweetie Bot's repair, PR merge, commit generation, and failure notices their own glyphs. */
+/* Give Sweetie Bot's repair, PR creation/merge, commit generation, and failure notices their own glyphs. */
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-queued .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {
@@ -608,6 +609,9 @@
 }
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before {
     content: '✨';
+}
+.notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before {
+    content: '🐴';
 }
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {
     content: '⛓️‍💥';

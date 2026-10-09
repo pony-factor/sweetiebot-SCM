@@ -1654,6 +1654,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const text = message?.textContent.trim() ?? '';
         row.classList.toggle('scm-toolkit-generating-commit',
             /^Generating commit message(?: ✨)?$/.test(text));
+        row.classList.toggle('scm-toolkit-making-pr',
+            /^Kefania: making PR for .+ with local Codex$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
             text === 'Sweetie Bot and extension customizations are ready.');
         row.classList.toggle('scm-toolkit-pr-merged',

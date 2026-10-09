@@ -22,7 +22,7 @@ function registerLocalPullRequestCommand(vscode, context) {
     await access(runner).catch(() => { throw new Error('Keep an updated kefania checkout beside this repository, with npm dependencies installed.'); });
     const source = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
-      title: `Kefania: draft PR for ${options.branch} with local Codex`, cancellable: false }, async () => {
+      title: `Kefania: making PR for ${options.branch} with local Codex`, cancellable: false }, async () => {
       return new Promise((resolve, reject) => {
         const env = { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter) };
         const child = spawn('node', [runner], { cwd: repository.rootUri.fsPath, env, stdio: ['pipe', 'pipe', 'pipe'] });
