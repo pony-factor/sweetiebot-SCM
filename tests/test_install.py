@@ -244,6 +244,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("commands.executeCommand('sweetiebot.createBranch', repository, {", js)
         self.assertIn("currentRepositoryUri = provider.rootUri;", js)
         self.assertIn("'sweetiebot.resolveDefaultBranch', provider.rootUri", js)
+        self.assertIn('onCommand:sweetiebot.resolveDefaultBranch', (install.EFS_SOURCE / 'package.json').read_text())
         self.assertIn("currentDefaultBranch = branch;", js)
         self.assertIn("currentBranch === currentDefaultBranch", js)
         self.assertNotIn("currentBranch === 'main'", js)
