@@ -46,7 +46,7 @@ class UpdateTests(unittest.TestCase):
             )
             self.assertFalse((root / 'Sweetiebot Installer.app').exists())
 
-    def test_skip_old_bootstrap_and_already_installed_revision(self):
+    def test_skip_old_bootstrap(self):
         for supports_updates in (False, True):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -57,7 +57,29 @@ class UpdateTests(unittest.TestCase):
                 with patch.object(update, 'git', side_effect=[b'', b'', b'abc\n', archive(payload)]):
                     result = update.prepare_update(root)
                 self.assertEqual(result is not None, supports_updates)
-                (root / 'installed-revision').write_text('abc\n')
-                with patch.object(update, 'git', side_effect=[b'', b'abc\n']) as git:
-                    self.assertIsNone(update.prepare_update(root))
-                    self.assertEqual(git.call_count, 2)
+
+    def test_same_revision_repairs_missing_or_stale_installed_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache, extensions = root / 'cache', root / 'extensions'
+            cache.mkdir()
+            (cache / 'upstream.git').mkdir()
+            (cache / 'installed-revision').write_text('abc\n')
+            payload = {
+                'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
+                'scripts/repair.py': 'repair', 'scripts/codex_composer.py': 'new placeholders',
+                'efs/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
+            }
+            installed = extensions / 'pony-factor.sweetiebot-scm-0.3.2/codex-customizations'
+
+            def prepare():
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                    return update.prepare_update(cache, extensions)
+
+            self.assertIsNotNone(prepare())
+            update.extract_sources(archive(payload), installed)
+            self.assertIsNone(prepare())
+            (installed / 'scripts/codex_composer.py').write_text('old composer')
+            self.assertIsNotNone(prepare())
+            (installed / 'scripts/codex_composer.py').unlink()
+            self.assertIsNotNone(prepare())
