@@ -213,7 +213,7 @@ class SubmissionTests(unittest.TestCase):
     def test_optional_name_packs_default_off(self):
         self.assertEqual(
             set(install.DEFAULT_SETTINGS["branchNameDisabledPacks"].split(",")),
-            {"pony-life", "idw-comics", "g5-remaining"},
+            {"pony-life", "idw-comics", "g5-remaining", "g4-pets"},
         )
         page = configurator.render_form(
             install.DEFAULT_SETTINGS,
@@ -222,7 +222,7 @@ class SubmissionTests(unittest.TestCase):
             "test-token",
             "Save",
         )
-        for pack_id in ("pony-life", "idw-comics", "g5-remaining"):
+        for pack_id in ("pony-life", "idw-comics", "g5-remaining", "g4-pets"):
             self.assertIn(
                 f'<input type="checkbox" name="branchNamePack" value="{pack_id}">',
                 page,
