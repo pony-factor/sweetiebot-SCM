@@ -109,7 +109,7 @@ async function main() {
   registerGitHubPullRequestActions({
     commands: { getCommands: async () => [], registerCommand: (id, fn) => { registeredIds.push(id); handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
-    ProgressLocation: { Notification: 15 },
+    ProgressLocation: { Window: 10 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message) }
   }, { subscriptions: [] });
   assert.deepEqual(registeredIds, [
@@ -124,7 +124,7 @@ async function main() {
   registerGitHubPullRequestActions({
     commands: { getCommands: async () => [], registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async id => conflictRefreshes.push(id) },
-    ProgressLocation: { Notification: 15 },
+    ProgressLocation: { Window: 10 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => conflictErrors.push(message) }
   }, { subscriptions: [] }, async () => {
     throw Object.assign(new Error("Unable to merge #12: conflicts with `main`"), {
@@ -139,7 +139,7 @@ async function main() {
   registerGitHubPullRequestActions({
     commands: { getCommands: async () => [], registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
-    ProgressLocation: { Notification: 15 },
+    ProgressLocation: { Window: 10 },
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message),
       showInformationMessage: message => notices.push(message) }
   }, { subscriptions: [] }, async selectedUrl => {
@@ -156,6 +156,30 @@ async function main() {
   assert.equal(errors.length, 1);
   assert.equal(notices.length, 5);
   assert.deepEqual(refreshes, Array(7).fill('pr.refreshList'));
+  assert.deepEqual(notices, Array(5).fill('PR #12 queued for merge.'));
+
+  // A completed PR gets one brief notice; in-flight progress is only in the status bar.
+  const successNotices = [], progressOptions = [];
+  registerGitHubPullRequestActions({
+    commands: { registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
+      executeCommand: async () => {} },
+    ProgressLocation: { Window: 10, Notification: 15 },
+    extensions: { getExtension: () => undefined },
+    window: {
+      withProgress: (options, fn) => { progressOptions.push(options); return fn(); },
+      showInformationMessage: message => successNotices.push(message),
+      showWarningMessage: () => { throw new Error('Unexpected cleanup warning'); },
+      showErrorMessage: () => { throw new Error('Unexpected merge error'); }
+    }
+  }, { subscriptions: [] }, async () => ({
+    merged: true, number: 12, repo: 'owner/repo',
+    pr: { ...open, state: 'MERGED', isCrossRepository: true }
+  }));
+  await handler({ url, number: 12 });
+  assert.deepEqual(successNotices, ['PR #12 merged into main.']);
+  assert.equal(progressOptions.length, 1);
+  assert.equal(progressOptions[0].location, 10);
+  assert.equal(progressOptions[0].cancellable, false);
   // An inline PR row can be clicked before its TreeItem/selection metadata
   // becomes available. Retry the exact row after one refresh, without a second
   // click or duplicate merge.
@@ -181,7 +205,7 @@ async function main() {
         return firstClickCommands.get(id)(argument);
       }
     },
-    ProgressLocation: { Notification: 15 },
+    ProgressLocation: { Window: 10 },
     window: {
       withProgress: (_, fn) => fn(),
       showErrorMessage: message => firstClickErrors.push(message),

@@ -117,13 +117,14 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       // Never invoke a merge with an unresolved or mismatched PR identity.
       if (!url) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
       const result = await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Squash-merge PR #${model?.number ?? ''} into main`, cancellable: false
+        location: vscode.ProgressLocation.Window,
+        title: `Squash-merging PR #${model?.number ?? ''} into main`, cancellable: false
       }, () => merge(url));
       if (!result.merged) {
-        vscode.window.showInformationMessage(`PR #${result.number} is queued for merge. Branch cleanup will wait until it merges.`);
+        vscode.window.showInformationMessage(`PR #${result.number} queued for merge.`);
         return;
       }
+      vscode.window.showInformationMessage(`PR #${result.number} merged into main.`);
       try {
         await deleteMergedRemoteBranch(result);
       } catch (error) {
