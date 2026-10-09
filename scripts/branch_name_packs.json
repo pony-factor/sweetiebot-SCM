@@ -339,7 +339,6 @@
         "manely-gold",
         "mango-juice",
         "maple-cheer",
-        "mare-do-well",
         "mare-e-belle",
         "mare-e-lynn",
         "maribelle",
@@ -1499,7 +1498,7 @@
     {
       "id": "g4-caricatures",
       "label": "G4 caricatures",
-      "description": "Notable named G4 caricatures, including Equestria's founders, the Power Ponies and Humdrum, and Smash Fortune.",
+      "description": "Notable named G4 caricatures, including Equestria's founders, the Power Ponies and Humdrum, Mare Do Well, and Smash Fortune.",
       "names": [
         "chancellor-puddinghead",
         "clover-the-clever",
@@ -1509,6 +1508,7 @@
         "smart-cookie",
         "fili-second",
         "humdrum",
+        "mare-do-well",
         "masked-matter-horn",
         "mistress-mare-velous",
         "radiance",
