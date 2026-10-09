@@ -308,6 +308,10 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
 
 def extension_update_toolbar_edits(js):
     changes = []
+    search_toolbar = re.search(
+        r'extensions-search-actions-container"\)\);this\._register\(this\.instantiationService\.createInstance\('
+        r'[\w$]+,[\w$]+,([\w$]+),\{toolbarOptions:', js
+    )
     for command in ("checkForUpdates", "updateAllExtensions"):
         anchor = f'id:"workbench.extensions.action.{command}"'
         if anchor not in js:
@@ -319,6 +323,15 @@ def extension_update_toolbar_edits(js):
             raise ValueError("Unsupported VS Code build: extension update menu does not match.")
         original = segment[:match.end()]
         replacement = original.replace('group:"1_updates"', 'group:"navigation"')
+        if search_toolbar:
+            # This toolbar belongs to the Extensions search header itself, so
+            # its actions survive moving the view between sidebar and panel.
+            replacement = replacement.replace(
+                'menu:[',
+                f'menu:[{{id:{search_toolbar.group(1)},group:"navigation",order:'
+                f'{1 if command == "checkForUpdates" else 2}}},',
+                1,
+            )
         changes.append((original, replacement))
     return changes
 
