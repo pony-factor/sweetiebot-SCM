@@ -144,6 +144,8 @@ class BranchNamePackTests(unittest.TestCase):
 
         self.assertIn("queen-chrysalis", packs["g4-creatures"]["names"])
         self.assertNotIn("chrysalis", packs["g4-creatures"]["names"])
+        for diamond_dog in ("rover", "fido", "spot"):
+            self.assertIn(diamond_dog, packs["g4-creatures"]["names"])
         for name in ("fractured", "dazzle-feather", "starsong"):
             self.assertIn(name, packs["tamers12345"]["names"])
         self.assertNotIn("lauren-faust", all_names)
