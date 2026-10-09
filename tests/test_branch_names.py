@@ -226,7 +226,7 @@ class BranchNamePackTests(unittest.TestCase):
         pets = packs["g4-pets"]
         self.assertEqual(pets["label"], "G4 pets")
         self.assertEqual(set(pets["names"]), {
-            "angel", "constance", "gummy", "harry", "opalescence",
+            "angel", "constance", "gummy", "harry-bear", "opalescence",
             "owlowiscious", "peewee", "philomena", "tank", "winona",
             "tiberius", "ripley", "albus", "quincy", "bunny",
             "ray", "boulder",
