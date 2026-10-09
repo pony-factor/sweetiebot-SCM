@@ -1218,7 +1218,6 @@
         "dr-whooves",
         "coiffed-waiter-pony",
         "terramar",
-        "sky-beak",
         "grampa-gruff",
         "gustave-le-grand"
       ],
@@ -1520,7 +1519,10 @@
         "lilac-breezie",
         "sea-breezie",
         "sunset-breezie",
-        "mulia-mild"
+        "mulia-mild",
+        "king-grover",
+        "ocean-flow",
+        "sky-beak"
       ],
       "sources": {
         "queen-novo": "https://mlp.fandom.com/wiki/Queen_Novo",
@@ -1857,7 +1859,8 @@
         "pete-canterbell",
         "raspberry-fluff",
         "yakmina",
-        "prince-ulysses"
+        "prince-ulysses",
+        "king-aspen"
       ],
       "sources": {
         "celena": "https://mlp.fandom.com/wiki/Sailor_Moon_ponies"

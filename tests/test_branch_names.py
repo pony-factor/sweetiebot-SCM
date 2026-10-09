@@ -373,12 +373,31 @@ class BranchNamePackTests(unittest.TestCase):
         }
         self.assertTrue(pony_life_names.isdisjoint(g4_names))
 
+    def test_g4_royal_creatures_and_idw_king_are_in_correct_packs(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        creatures = set(packs["g4-creatures"]["names"])
+        stallions = set(packs["g4-stallions"]["names"])
+        comics = set(packs["idw-comics"]["names"])
+
+        for name in ("king-grover", "ocean-flow", "sky-beak", "chief-thunderhooves"):
+            self.assertIn(name, creatures)
+        self.assertNotIn("sky-beak", stallions)
+        self.assertIn("king-aspen", comics)
+        self.assertTrue(creatures.isdisjoint(comics))
+        for name in ("king-grover", "ocean-flow", "sky-beak", "king-aspen"):
+            self.assertEqual(
+                sum(name in pack["names"] for pack in catalog["packs"]),
+                1,
+                f"{name} must have one canonical pack",
+            )
+
     def test_idw_comics_pack_covers_named_comic_roster(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 292)
+        self.assertEqual(len(names), 295)
         for name in (
             "acacia-pie",
             "captain-hoofbeard",
