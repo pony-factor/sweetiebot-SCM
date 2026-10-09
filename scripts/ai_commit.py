@@ -142,6 +142,10 @@ def feature_enabled() -> bool:
     return git_config_bool("scm-toolkit.ai-commit", True)
 
 
+def staged_whitespace_enabled() -> bool:
+    return git_config_bool("scm-toolkit.normalize-staged-whitespace", True)
+
+
 def manual_spellcheck_enabled() -> bool:
     return git_config_bool("scm-toolkit.spellcheck-preview", False)
 
@@ -463,6 +467,28 @@ def uses_staged_index(args: list[str]) -> bool:
         "--status",
     }
     return all(arg in flags or arg.startswith("--gpg-sign=") for arg in args)
+
+
+def has_manual_staged_message(args: list[str]) -> bool:
+    """Accept manual -m messages only for ordinary index-based commits."""
+    other_args = []
+    has_message = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in {"-m", "--message"}:
+            if index + 1 >= len(args):
+                return False
+            has_message = True
+            index += 2
+            continue
+        if arg.startswith("--message=") or (arg.startswith("-m") and arg != "-m"):
+            has_message = True
+            index += 1
+            continue
+        other_args.append(arg)
+        index += 1
+    return has_message and uses_staged_index(other_args)
 
 
 def normalize_staged_final_newlines() -> list[str]:
@@ -1334,18 +1360,25 @@ def main() -> None:
     GIT_GLOBAL_ARGS = argv[:index]
     commit_args = argv[index + 1 :]
 
-    if (
-        not feature_enabled()
-        or has_explicit_message_or_special_mode(commit_args)
-        or not uses_staged_index(commit_args)
-    ):
+    manual_staged_commit = has_manual_staged_message(commit_args)
+    automatic_staged_commit = (
+        not has_explicit_message_or_special_mode(commit_args)
+        and uses_staged_index(commit_args)
+        and feature_enabled()
+    )
+    if not (manual_staged_commit or automatic_staged_commit):
         os.execv(REAL_GIT, [REAL_GIT, *argv])
 
-    try:
-        normalize_staged_final_newlines()
-    except RuntimeError as exc:
-        print(f"scm-toolkit: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
+    if staged_whitespace_enabled():
+        try:
+            normalize_staged_final_newlines()
+        except RuntimeError as exc:
+            print(f"scm-toolkit: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+    if manual_staged_commit:
+        # Keep the user's exact message and skip AI generation after normalizing.
+        os.execv(REAL_GIT, [REAL_GIT, *argv])
 
     stat, diff, files = staged_diff()
     if not stat and not diff:

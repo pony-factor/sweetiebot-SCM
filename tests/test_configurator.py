@@ -178,6 +178,25 @@ class SubmissionTests(unittest.TestCase):
         values["spellcheckManualCommit"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
+    def test_staged_whitespace_toggle_defaults_on_and_can_be_disabled(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["normalizeStagedWhitespace"])
+        self.assertEqual(
+            toolkit_settings.SETTING_KEYS["normalizeStagedWhitespace"],
+            "scm-toolkit.normalize-staged-whitespace",
+        )
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["normalizeStagedWhitespace"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="normalizeStagedWhitespace" value="true" checked', page)
+        values.pop("normalizeStagedWhitespace")
+        self.assertFalse(configurator.parse_submission(values)["normalizeStagedWhitespace"])
+        page = configurator.render_form(
+            dict(install.DEFAULT_SETTINGS, normalizeStagedWhitespace=False),
+            [], "Ready", "test-token", "Save",
+        )
+        self.assertIn('name="normalizeStagedWhitespace" value="true"', page)
+        self.assertNotIn('name="normalizeStagedWhitespace" value="true" checked', page)
+
     def test_post_commit_spellcheck_toggle_defaults_off_and_saves_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["postCommitSpellcheck"])
@@ -444,6 +463,17 @@ class SubmissionTests(unittest.TestCase):
         )
 
 class GitConfigTests(unittest.TestCase):
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_disabled_staged_whitespace_setting_loads(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: default
+        read_bool.side_effect = lambda key, default: (
+            False if key == "scm-toolkit.normalize-staged-whitespace" else default
+        )
+        settings = toolkit_settings.load_settings()
+        self.assertFalse(settings["normalizeStagedWhitespace"])
+
+
     @patch("toolkit_settings.subprocess.run")
     def test_global_git_settings_use_stable_directory(self, run):
         run.side_effect = lambda args, **kwargs: SimpleNamespace(

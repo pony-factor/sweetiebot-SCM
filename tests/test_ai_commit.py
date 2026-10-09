@@ -104,6 +104,31 @@ class RoutingTests(unittest.TestCase):
             ai_commit.manual_message_location(["--fixup=HEAD", "-m", "Manual"])
         )
 
+    def test_recognizes_manual_staged_messages_without_rewriting_them(self):
+        for args in [
+            ["-m", "Manual subject"],
+            ["--message=Manual subject"],
+            ["-mManual subject"],
+            ["--quiet", "--message", "Manual subject"],
+            ["-m", "Manual subject", "-m", "Manual body"],
+            ["-m", "--amend"],
+        ]:
+            with self.subTest(args=args):
+                self.assertTrue(ai_commit.has_manual_staged_message(args))
+
+    def test_skips_manual_messages_in_special_and_non_index_modes(self):
+        for args in [
+            ["--amend", "-m", "Manual"],
+            ["--fixup=HEAD", "-m", "Manual"],
+            ["--all", "-m", "Manual"],
+            ["--only", "README.md", "-m", "Manual"],
+            ["README.md", "-m", "Manual"],
+            ["-F", "commit.txt"],
+            ["-m"],
+        ]:
+            with self.subTest(args=args):
+                self.assertFalse(ai_commit.has_manual_staged_message(args))
+
     def test_rejects_path_and_all_modes(self):
         self.assertFalse(ai_commit.uses_staged_index(["README.md"]))
         self.assertFalse(ai_commit.uses_staged_index(["--all"]))
@@ -126,8 +151,49 @@ class RoutingTests(unittest.TestCase):
 
 
 class NewlineRoutingTests(unittest.TestCase):
-    def test_manual_disabled_and_non_index_commits_skip_normalization(self):
-        for args, enabled in [(["commit", "-m", "Manual"], True), (["commit"], False), (["commit", "--all"], True), (["status"], True)]:
+    @patch.object(ai_commit, "git_config_bool")
+    def test_staged_whitespace_normalization_defaults_on(self, config):
+        config.return_value = True
+        self.assertTrue(ai_commit.staged_whitespace_enabled())
+        config.assert_called_once_with("scm-toolkit.normalize-staged-whitespace", True)
+
+    def test_toggle_off_skips_normalization_for_manual_and_generated_commits(self):
+        for args in [["commit", "-m", "Keep this message"], ["commit"]]:
+            with self.subTest(args=args), patch.object(
+                sys, "argv", ["wrapper", *args]
+            ), patch.object(ai_commit, "staged_whitespace_enabled", return_value=False), patch.object(
+                ai_commit, "feature_enabled", return_value=True
+            ), patch.object(ai_commit, "normalize_staged_final_newlines") as normalize, patch.object(
+                ai_commit, "staged_diff", return_value=("", "", [])
+            ), patch.object(ai_commit.os, "execv", side_effect=RuntimeError("exec")) as execv:
+                with self.assertRaisesRegex(RuntimeError, "exec"):
+                    ai_commit.main()
+                normalize.assert_not_called()
+                execv.assert_called_once_with(ai_commit.REAL_GIT, [ai_commit.REAL_GIT, *args])
+
+    def test_manual_staged_commit_normalizes_without_changing_the_message(self):
+        for argv in [
+            ["commit", "-m", "Manual subject"],
+            ["commit", "-m", "Manual subject", "-m", "Manual body"],
+            ["commit", "--message=Manual subject"],
+        ]:
+            with self.subTest(argv=argv), patch.object(
+                sys, "argv", ["wrapper", *argv]
+            ), patch.object(ai_commit, "feature_enabled") as ai_enabled, patch.object(
+                ai_commit, "staged_whitespace_enabled", return_value=True
+            ), patch.object(ai_commit, "normalize_staged_final_newlines"
+            ) as normalize, patch.object(ai_commit, "staged_diff") as diff, patch.object(
+                ai_commit.os, "execv", side_effect=RuntimeError("exec")
+            ) as execv:
+                with self.assertRaisesRegex(RuntimeError, "exec"):
+                    ai_commit.main()
+                normalize.assert_called_once_with()
+                ai_enabled.assert_not_called()
+                diff.assert_not_called()
+                execv.assert_called_once_with(ai_commit.REAL_GIT, [ai_commit.REAL_GIT, *argv])
+
+    def test_disabled_and_non_index_commits_skip_normalization(self):
+        for args, enabled in [(["commit", "--amend", "-m", "Manual"], True), (["commit", "--all", "-m", "Manual"], True), (["commit"], False), (["commit", "--all"], True), (["status"], True)]:
             with self.subTest(args=args, enabled=enabled), patch.object(
                 sys, "argv", ["wrapper", *args]
             ), patch.object(ai_commit, "manual_spellcheck_enabled", return_value=False), patch.object(
@@ -144,7 +210,8 @@ class NewlineRoutingTests(unittest.TestCase):
         with patch.object(sys, "argv", ["wrapper", "commit"]), patch.object(
             ai_commit, "manual_spellcheck_enabled", return_value=False
         ), patch.object(ai_commit, "feature_enabled", return_value=True), patch.object(
-            ai_commit, "normalize_staged_final_newlines", side_effect=lambda: calls.append("normalize")
+            ai_commit, "staged_whitespace_enabled", return_value=True
+        ), patch.object(ai_commit, "normalize_staged_final_newlines", side_effect=lambda: calls.append("normalize")
         ), patch.object(ai_commit, "staged_diff", side_effect=lambda: (calls.append("diff") or ("", "", []))), patch.object(
             ai_commit.os, "execv", side_effect=RuntimeError("exec")
         ):
