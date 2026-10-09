@@ -12,6 +12,9 @@ START = '\n/* scm-toolkit-codex-composer:start */\n'
 END = '\n/* scm-toolkit-codex-composer:end */\n'
 LAYOUT_START = '\n/* scm-toolkit-codex-inline-location:start */\n'
 LAYOUT_END = '\n/* scm-toolkit-codex-inline-location:end */\n'
+PASTE_START = '\n/* scm-toolkit-codex-clipboard:start */\n'
+PASTE_END = '\n/* scm-toolkit-codex-clipboard:end */\n'
+PASTE_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-clipboard-submit.js'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-composer-controls.js'
 PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
 PLACEHOLDER_END = '\nscm-toolkit-codex-placeholders:end */\n'
@@ -73,7 +76,7 @@ def transform(source: str) -> str:
     return source
 
 
-def transform_layout(source: str, inline: bool = True) -> str:
+def transform_layout(source: str, inline: bool = True, paste_button: bool = False) -> str:
     """Place the native computer/usage control beside access without changing React source."""
     source = transform(source)
     if source.count(LAYOUT_START) != source.count(LAYOUT_END) or source.count(LAYOUT_START) > 1:
@@ -82,12 +85,21 @@ def transform_layout(source: str, inline: bool = True) -> str:
         before, rest = source.split(LAYOUT_START, 1)
         _, after = rest.split(LAYOUT_END, 1)
         source = before + after
-    if inline and 'composer.placeholder.localFollowUp.locally' in source:
-        source += LAYOUT_START + ';\n' + ASSET.read_text() + LAYOUT_END
+    if source.count(PASTE_START) != source.count(PASTE_END) or source.count(PASTE_START) > 1:
+        raise ValueError("Incomplete Codex clipboard patch.")
+    if PASTE_START in source:
+        before, rest = source.split(PASTE_START, 1)
+        _, after = rest.split(PASTE_END, 1)
+        source = before + after
+    if 'composer.placeholder.localFollowUp.locally' in source:
+        if inline:
+            source += LAYOUT_START + ';\n' + ASSET.read_text() + LAYOUT_END
+        if paste_button:
+            source += PASTE_START + ';\n' + PASTE_ASSET.read_text() + PASTE_END
     return source
 
 
-def patch_files(extension_path: Path | None = None, inline: bool | None = None):
+def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False):
     """Yield only Codex webview bundles that still contain the retired patch."""
     candidates = (
         [Path(extension_path)]
@@ -100,8 +112,8 @@ def patch_files(extension_path: Path | None = None, inline: bool | None = None):
             if inline is None:
                 if START in original:
                     yield path, original, transform(original)
-            elif START in original or LAYOUT_START in original or 'composer.placeholder.localFollowUp.locally' in original:
-                yield path, original, transform_layout(original, inline)
+            elif START in original or LAYOUT_START in original or PASTE_START in original or 'composer.placeholder.localFollowUp.locally' in original:
+                yield path, original, transform_layout(original, inline, paste_button)
 
 
 def repair(extension_path: Path | None = None) -> list[Path]:

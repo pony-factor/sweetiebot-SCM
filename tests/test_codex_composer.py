@@ -17,6 +17,21 @@ class RetiredComposerPatchTests(unittest.TestCase):
         self.assertEqual(codex_composer.transform_layout(patched, False), source)
         self.assertEqual(codex_composer.transform(patched), patched)
 
+
+    def test_clipboard_button_patch_is_reversible_and_independent_of_location(self):
+        source = '/* composer.placeholder.localFollowUp.locally */\nbase;'
+        patched = codex_composer.transform_layout(source, inline=False, paste_button=True)
+        self.assertIn(codex_composer.PASTE_START, patched)
+        self.assertNotIn(codex_composer.LAYOUT_START, patched)
+        self.assertIn('scm-toolkit-codex-clipboard-submit', patched)
+        self.assertEqual(codex_composer.transform_layout(patched, False, True), patched)
+        self.assertEqual(codex_composer.transform_layout(patched, False, False), source)
+
+    def test_clipboard_patch_refuses_partial_marker(self):
+        source = 'base' + codex_composer.PASTE_START + 'incomplete'
+        with self.assertRaisesRegex(ValueError, 'clipboard'):
+            codex_composer.transform_layout(source, False, True)
+
     def test_transform_removes_injected_payload(self):
         patched = (
             "base"
