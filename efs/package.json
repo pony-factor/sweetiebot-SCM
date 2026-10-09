@@ -14,6 +14,7 @@
   "main": "./extension.js",
   "activationEvents": [
     "onCommand:sweetiebot.returnHome",
+    "onCommand:sweetiebot.resolveDefaultBranch",
     "onCommand:sweetiebot.openPullRequestChat",
     "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.openPullRequestBatchChat",
