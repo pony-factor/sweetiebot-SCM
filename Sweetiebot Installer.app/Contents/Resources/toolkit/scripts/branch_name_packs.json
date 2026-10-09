@@ -2300,7 +2300,10 @@
         "carry-on",
         "mane-event",
         "hoof-beatz",
-        "blank-canvas"
+        "blank-canvas",
+        "clipper-ship",
+        "treasure-trove",
+        "sunkissed"
       ],
       "sources": {
         "harmonic-tune": "https://2025.harmonycon.org/",
@@ -2337,7 +2340,10 @@
         "carry-on": "https://nightmarenights.org/",
         "mane-event": "https://archive.bronycon.org/2015/registration.html",
         "hoof-beatz": "https://archive.bronycon.org/2015/registration.html",
-        "blank-canvas": "https://archive.bronycon.org/2015/registration.html"
+        "blank-canvas": "https://archive.bronycon.org/2015/registration.html",
+        "clipper-ship": "https://mascots.pone.voyage/",
+        "treasure-trove": "https://mascots.pone.voyage/",
+        "sunkissed": "https://mascots.pone.voyage/"
       }
     },
     {

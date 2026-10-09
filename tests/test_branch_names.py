@@ -426,6 +426,18 @@ class BranchNamePackTests(unittest.TestCase):
         for name in ("blank-canvas", "hoof-beatz", "mane-event"):
             self.assertIn(name, names)
 
+    def test_convention_mascots_include_pone_voyage_trio(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        mascots = packs["con-mascots"]
+        for slug in ("clipper-ship", "treasure-trove", "sunkissed"):
+            self.assertIn(slug, mascots["names"])
+            self.assertEqual(mascots["sources"][slug], "https://mascots.pone.voyage/")
+            self.assertEqual(
+                sum(slug in pack["names"] for pack in catalog["packs"]),
+                1,
+            )
+
     def test_imports_accept_single_pack_array_or_catalog_object(self):
         pack = {"id": "friends", "label": "Friends", "names": ["one", "two"]}
         self.assertEqual(
