@@ -322,7 +322,7 @@ def extension_update_toolbar_edits(js):
         if not match:
             raise ValueError("Unsupported VS Code build: extension update menu does not match.")
         original = segment[:match.end()]
-        replacement = original.replace('group:"1_updates"', 'group:"navigation"')
+        replacement = original
         if search_toolbar:
             # This toolbar belongs to the Extensions search header itself, so
             # its actions survive moving the view between sidebar and panel.
