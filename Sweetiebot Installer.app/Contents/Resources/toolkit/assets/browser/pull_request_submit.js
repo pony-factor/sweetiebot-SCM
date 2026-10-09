@@ -6,6 +6,41 @@
   if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
       || launch.searchParams.get('sweetiebot_pr') !== '1' || !prompt) return;
 
+  // Collapse only the PR launch's sidebar once, including delayed hydration.
+  // Use the close control rather than changing ChatGPT's shared preferences.
+  const sidebarDeadline = Date.now() + 60000;
+  let sidebarTimer;
+  let sidebarDone = false;
+  const finishSidebar = () => {
+    sidebarDone = true;
+    clearTimeout(sidebarTimer);
+    document.removeEventListener('click', onSidebarClick, true);
+  };
+  const sidebarLabels = new Set(['hide sidebar', 'close sidebar', 'collapse sidebar',
+    'show sidebar', 'open sidebar', 'expand sidebar']);
+  const onSidebarClick = event => {
+    const button = event.target.closest?.('button');
+    if (event.isTrusted && sidebarLabels.has((button?.getAttribute('aria-label') || '').toLowerCase())) {
+      finishSidebar();
+    }
+  };
+  const collapseSidebar = () => {
+    if (sidebarDone) return;
+    if (Date.now() >= sidebarDeadline || window.location.origin !== launch.origin) return finishSidebar();
+    const button = document.querySelector(
+      'button[aria-label="Hide sidebar"], button[aria-label="Close sidebar"], button[aria-label="Collapse sidebar"]'
+    );
+    if (button && !button.disabled && button.getAttribute('aria-disabled') !== 'true'
+        && button.getClientRects().length) {
+      finishSidebar();
+      button.click();
+      return;
+    }
+    sidebarTimer = setTimeout(collapseSidebar, 250);
+  };
+  document.addEventListener('click', onSidebarClick, true);
+  collapseSidebar();
+
   const normalize = text => String(text || '').replace(/\s+/g, ' ').trim();
   const expected = normalize(prompt);
   const deadline = Date.now() + 60000;
