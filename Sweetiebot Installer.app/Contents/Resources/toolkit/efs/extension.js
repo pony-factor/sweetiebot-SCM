@@ -50,7 +50,7 @@ function persistedSettingsSessionArgs(context) {
     const port = Number(parsed.port);
     if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !token ||
         !Number.isInteger(port) || port < 1 || port > 65535) return [];
-    return ['--port', String(port), '--token', token];
+    return ['--port', String(port), `--token=${token}`];
   } catch {
     return [];
   }
