@@ -14,6 +14,7 @@ FORMATS = {
     "efs": {".js", ".json", ".svg", ".md"},
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
+    "assets/browser": {".js"},
 }
 
 

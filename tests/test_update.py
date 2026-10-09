@@ -27,9 +27,10 @@ class UpdateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             update.extract_sources(archive({'scripts/update.py': 'ok', '../escape.py': 'bad',
-                                           'scripts/config.env': 'excluded', 'README.md': 'excluded'}), root)
+                                           'scripts/config.env': 'excluded', 'README.md': 'excluded',
+                                           'assets/browser/pull_request_submit.js': 'browser'}), root)
             self.assertEqual([p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()],
-                             ['scripts/update.py'])
+                             ['scripts/update.py', 'assets/browser/pull_request_submit.js'])
             self.assertFalse((root / 'scripts/link.py').exists())
 
     def test_skip_old_bootstrap_and_already_installed_revision(self):

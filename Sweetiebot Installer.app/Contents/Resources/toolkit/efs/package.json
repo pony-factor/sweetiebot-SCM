@@ -256,6 +256,12 @@
           "default": true,
           "description": "Show an inline button to squash and merge a GitHub pull request into main without opening it."
         },
+        "scmToolkit.chatgptProjectUrl": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Optional ChatGPT project URL used when opening PR drafting and batch squash-merge prompts. Blank opens a normal ChatGPT chat. Example: https://chatgpt.com/g/g-p-.../project."
+        },
         "scmToolkit.automaticAppRepair": {
           "type": "boolean",
           "default": true,

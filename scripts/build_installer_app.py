@@ -2,6 +2,7 @@
 """Build a self-contained macOS app for double-click installation."""
 
 import argparse
+import hashlib
 import os
 import plistlib
 import re
@@ -13,6 +14,50 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "Sweetiebot Installer.app"
 SIGNING_IDENTITY = "Sweetiebot Installer Local Signing"
+FORMATS = (
+    ("scripts", {".py", ".json"}),
+    ("assets/workbench", {".js", ".css"}),
+    ("assets/codex", {".js", ".css"}),
+    ("assets/browser", {".js"}),
+    ("efs", {".js", ".json", ".svg", ".md"}),
+)
+
+
+def source_files():
+    files = {Path("assets/commit-instructions.md"): ROOT / "assets/commit-instructions.md"}
+    for directory, suffixes in FORMATS:
+        for source in (ROOT / directory).rglob("*"):
+            if source.is_file() and source.suffix in suffixes:
+                files[source.relative_to(ROOT)] = source
+    return dict(sorted(files.items()))
+
+
+def source_digest(files):
+    digest = hashlib.sha256()
+    for relative, source in [(Path("assets/installer.applescript"), ROOT / "assets/installer.applescript"), *files.items()]:
+        data = source.read_bytes()
+        digest.update(str(relative).encode() + b"\0")
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def up_to_date(destination, files, digest, fingerprint):
+    try:
+        with (destination / "Contents/Info.plist").open("rb") as stream:
+            info = plistlib.load(stream)
+        if info.get("SweetiebotSourceDigest") != digest or info.get("SweetiebotSigningIdentity") != fingerprint:
+            return False
+        payload = destination / "Contents/Resources/toolkit"
+        actual = {path.relative_to(payload) for path in payload.rglob("*") if path.is_file()}
+        if actual != set(files) or any((payload / relative).read_bytes() != source.read_bytes()
+                                      for relative, source in files.items()):
+            return False
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(destination)],
+                       check=True, capture_output=True)
+        return True
+    except (OSError, ValueError, plistlib.InvalidFileException, subprocess.SubprocessError):
+        return False
 
 
 def signing_identity(name: str) -> str:
@@ -40,6 +85,11 @@ def signing_identity(name: str) -> str:
 def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
     fingerprint = signing_identity(identity)
     destination = destination.expanduser().resolve()
+    files = source_files()
+    digest = source_digest(files)
+    if up_to_date(destination, files, digest, fingerprint):
+        print(f"Already up to date: {destination}")
+        return
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent) as staging:
         app = Path(staging) / APP_NAME
@@ -49,20 +99,11 @@ def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
         )
         payload = app / "Contents/Resources/toolkit"
         (payload / "assets").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / "assets/commit-instructions.md", payload / "assets/commit-instructions.md")
         # Bundle only known installer source formats, never local configuration.
-        for directory, suffixes in (
-            ("scripts", {".py", ".json"}),
-            ("assets/workbench", {".js", ".css"}),
-            ("assets/codex", {".js", ".css"}),
-            ("assets/browser", {".js"}),
-            ("efs", {".js", ".json", ".svg", ".md"}),
-        ):
-            for source in (ROOT / directory).rglob("*"):
-                if source.is_file() and source.suffix in suffixes:
-                    target = payload / directory / source.relative_to(ROOT / directory)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source, target)
+        for relative, source in files.items():
+            target = payload / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
         info_path = app / "Contents/Info.plist"
         with info_path.open("rb") as stream:
             info = plistlib.load(stream)
@@ -72,6 +113,8 @@ def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
             CFBundleDisplayName="Sweetiebot Installer",
             CFBundleShortVersionString="1.0",
             CFBundleVersion="1",
+            SweetiebotSourceDigest=digest,
+            SweetiebotSigningIdentity=fingerprint,
         )
         with info_path.open("wb") as stream:
             plistlib.dump(info, stream)

@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { displayName } = require('./pony_profile');
-const { chatgptPromptUrl } = require('./chatgpt_project');
+const { chatgptPromptUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -145,7 +145,8 @@ function pullRequestPrompt({
   const repositoryReference = githubRepository(repositoryUrl) || JSON.stringify(repositoryPath);
   const sections = [
     `Create a new descriptive pull request for branch ${JSON.stringify(branch)} in repository ${repositoryReference}, against ${JSON.stringify(base)}.`,
-    `Use Kafania's configured MCP server ${JSON.stringify(mcpServer)} and its ${JSON.stringify(mcpTool)} tool for the GitHub write. If that Kafania tool is unavailable, follow the Publishing fallback in the canonical rules below using an available authenticated GitHub tool. Do not claim publication succeeded until the tool returns the created pull request.`,
+    `Use Kafania's connected MCP server ${JSON.stringify(mcpServer)} and its ${JSON.stringify(mcpTool)} tool for the GitHub write. First call github_get_pull_request_context for this exact repository, head, and base. Draft from that evidence and pass its headSha as expectedHeadSha when publishing. Do not claim publication succeeded until the tool returns the created pull request.`,
+    'For a Kefania server running on the author\'s computer, this ChatGPT chat must be connected to its plugin through Secure MCP Tunnel. A VS Code stdio registration alone does not expose tools to ChatGPT. If the Kefania tools are unavailable here, stop and explain that the author must connect the local server in ChatGPT Plugins using Secure MCP Tunnel. Do not substitute another GitHub writer or pretend the local connection is shared automatically.',
     `The canonical pull-request drafting rules below were loaded from the sibling ${KEFANIA_DIRECTORY}/${KEFANIA_RULES_FILE}. Follow them as the source of truth:\n\n${instructions}`,
   ];
 
@@ -237,7 +238,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       mcpServer: options.mcpServer || DEFAULT_MCP_SERVER,
       mcpTool: options.mcpTool || DEFAULT_MCP_TOOL,
     });
-    const projectUrl = vscode.workspace?.getConfiguration('scmToolkit').get('chatgptProjectUrl', '') || '';
+    const projectUrl = await resolveChatgptActionProject(vscode, context);
+    if (projectUrl === undefined) return;
     const url = chatgptPromptUrl(prompt, projectUrl) + '&sweetiebot_pr=1';
     await vscode.commands.executeCommand('workbench.action.browser.open', {
       url, openToSide: false, reuseUrlFilter: url
