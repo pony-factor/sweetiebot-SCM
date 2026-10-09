@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const message = 'Sweetie Bot and extension customizations are ready.';
+const message = 'Sweetiebot update ready';
 // The signed installer is generated from the canonical workbench assets.
 const roots = ['assets/workbench'];
 
