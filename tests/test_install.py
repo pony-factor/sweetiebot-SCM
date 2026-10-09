@@ -215,7 +215,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn(".scm-toolkit-autocomplete:hover > .scm-toolkit-tooltip", css)
         self.assertIn("Co-authored-by: Codex <noreply@openai.com>", js)
         self.assertIn("currentInput?.repository.provider.acceptInputCommand", js)
-        self.assertIn("currentCommitCommand.id,", js)
+        self.assertIn("currentCommitCommand?.id", js)
         self.assertIn("...(currentCommitCommand.arguments ?? [])", js)
         self.assertNotIn("commands.executeCommand('git.commit', currentRepositoryArgument)", js)
         self.assertIn("scmToolkitGuardCommit(", js)
