@@ -142,6 +142,10 @@ def feature_enabled() -> bool:
     return git_config_bool("scm-toolkit.ai-commit", True)
 
 
+def staged_whitespace_enabled() -> bool:
+    return git_config_bool("scm-toolkit.normalize-staged-whitespace", True)
+
+
 def manual_spellcheck_enabled() -> bool:
     return git_config_bool("scm-toolkit.spellcheck-preview", False)
 
@@ -1365,11 +1369,12 @@ def main() -> None:
     if not (manual_staged_commit or automatic_staged_commit):
         os.execv(REAL_GIT, [REAL_GIT, *argv])
 
-    try:
-        normalize_staged_final_newlines()
-    except RuntimeError as exc:
-        print(f"scm-toolkit: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
+    if staged_whitespace_enabled():
+        try:
+            normalize_staged_final_newlines()
+        except RuntimeError as exc:
+            print(f"scm-toolkit: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
 
     if manual_staged_commit:
         # Keep the user's exact message and skip AI generation after normalizing.

@@ -151,6 +151,26 @@ class RoutingTests(unittest.TestCase):
 
 
 class NewlineRoutingTests(unittest.TestCase):
+    @patch.object(ai_commit, "git_config_bool")
+    def test_staged_whitespace_normalization_defaults_on(self, config):
+        config.return_value = True
+        self.assertTrue(ai_commit.staged_whitespace_enabled())
+        config.assert_called_once_with("scm-toolkit.normalize-staged-whitespace", True)
+
+    def test_toggle_off_skips_normalization_for_manual_and_generated_commits(self):
+        for args in [["commit", "-m", "Keep this message"], ["commit"]]:
+            with self.subTest(args=args), patch.object(
+                sys, "argv", ["wrapper", *args]
+            ), patch.object(ai_commit, "staged_whitespace_enabled", return_value=False), patch.object(
+                ai_commit, "feature_enabled", return_value=True
+            ), patch.object(ai_commit, "normalize_staged_final_newlines") as normalize, patch.object(
+                ai_commit, "staged_diff", return_value=("", "", [])
+            ), patch.object(ai_commit.os, "execv", side_effect=RuntimeError("exec")) as execv:
+                with self.assertRaisesRegex(RuntimeError, "exec"):
+                    ai_commit.main()
+                normalize.assert_not_called()
+                execv.assert_called_once_with(ai_commit.REAL_GIT, [ai_commit.REAL_GIT, *args])
+
     def test_manual_staged_commit_normalizes_without_changing_the_message(self):
         for argv in [
             ["commit", "-m", "Manual subject"],
@@ -160,7 +180,8 @@ class NewlineRoutingTests(unittest.TestCase):
             with self.subTest(argv=argv), patch.object(
                 sys, "argv", ["wrapper", *argv]
             ), patch.object(ai_commit, "feature_enabled") as ai_enabled, patch.object(
-                ai_commit, "normalize_staged_final_newlines"
+                ai_commit, "staged_whitespace_enabled", return_value=True
+            ), patch.object(ai_commit, "normalize_staged_final_newlines"
             ) as normalize, patch.object(ai_commit, "staged_diff") as diff, patch.object(
                 ai_commit.os, "execv", side_effect=RuntimeError("exec")
             ) as execv:
@@ -189,7 +210,8 @@ class NewlineRoutingTests(unittest.TestCase):
         with patch.object(sys, "argv", ["wrapper", "commit"]), patch.object(
             ai_commit, "manual_spellcheck_enabled", return_value=False
         ), patch.object(ai_commit, "feature_enabled", return_value=True), patch.object(
-            ai_commit, "normalize_staged_final_newlines", side_effect=lambda: calls.append("normalize")
+            ai_commit, "staged_whitespace_enabled", return_value=True
+        ), patch.object(ai_commit, "normalize_staged_final_newlines", side_effect=lambda: calls.append("normalize")
         ), patch.object(ai_commit, "staged_diff", side_effect=lambda: (calls.append("diff") or ("", "", []))), patch.object(
             ai_commit.os, "execv", side_effect=RuntimeError("exec")
         ):
