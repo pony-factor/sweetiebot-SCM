@@ -28,7 +28,7 @@ def _validate_label(label):
     if not isinstance(label, str):
         raise ValueError("Codex window label must be text.")
     label = label.strip()
-    if not label or len(label) > 80 or any(char in label for char in "\\r\\n\\0"):
+    if not label or len(label) > 80 or any(char in label for char in "\r\n\0"):
         raise ValueError("Codex window label must be 1–80 characters on one line.")
     return label
 
@@ -72,9 +72,9 @@ def transform(source: str, label: str = "Codex", remove: bool = False) -> str:
             item[field] = label
         manifest[MARKER] = {"label": label, "entries": entries}
 
-    indent = 2 if "\\n" in source else None
+    indent = 2 if "\n" in source else None
     serialized = json.dumps(manifest, ensure_ascii=False, indent=indent)
-    return serialized + ("\\n" if source.endswith("\\n") else "")
+    return serialized + ("\n" if source.endswith("\n") else "")
 
 
 def manifest_path(extension_path=None):
