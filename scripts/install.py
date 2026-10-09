@@ -948,10 +948,13 @@ def main():
 
     # Clean the legacy source edits while retaining the requested native-control placement.
     inline_location = settings["codexInlineLocation"] and not args.uninstall
-    for composer_path, composer_old, composer_new in codex_composer.patch_files(args.codex_extension, inline=inline_location):
+    clipboard_submit = settings["codexClipboardSubmit"] and not args.uninstall
+    for composer_path, composer_old, composer_new in codex_composer.patch_files(
+        args.codex_extension, inline=inline_location, paste_button=clipboard_submit
+    ):
         if composer_path in paths:
             index = paths.index(composer_path)
-            new[index] = codex_composer.transform_layout(new[index], inline_location)
+            new[index] = codex_composer.transform_layout(new[index], inline_location, clipboard_submit)
         else:
             paths.append(composer_path)
             old.append(composer_old)

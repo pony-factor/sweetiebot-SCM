@@ -27,6 +27,7 @@ Current features:
 - optionally make Source Control Graph **Open File** open the checked-out working-tree file instead of the selected commit snapshot
 - optionally generate a commit subject locally when the normal Commit button is used with a blank message
 - preview spelling corrections for manually entered commit subjects before applying them
+- optionally show a clipboard button at the right end of the Codex composer, sending pasted text when idle or using native queued follow-ups while Codex is busy (Codex follow-up mode should be set to `queue`)
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
 - independently hide reset times in Codex menus, dialogs, tooltips, and usage-limit messages
 - optionally hide Codex promotional cards such as the Fast mode upsell
