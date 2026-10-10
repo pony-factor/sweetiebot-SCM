@@ -1682,7 +1682,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         row.classList.toggle('scm-toolkit-making-pr',
             text === 'Creating new pull request with Kefania instructions');
         row.classList.toggle('scm-toolkit-reload-ready',
-            text === 'Sweetie Bot and extension customizations are ready.');
+            text === 'Sweetiebot update ready');
         row.classList.toggle('scm-toolkit-pr-merged',
             /^PR #[1-9]\d* merged into main\.$/.test(text));
         row.classList.toggle('scm-toolkit-pr-queued',

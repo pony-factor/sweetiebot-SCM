@@ -22,7 +22,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
     if (!revision || revision === loadedRevision || revision === offeredRevision || disposed || !enabled()) return;
     offeredRevision = revision;
     void vscode.window.showInformationMessage(
-      'Sweetie Bot and extension customizations are ready.',
+      'Sweetiebot update ready',
       'Reload Window'
     ).then(async choice => {
       if (!disposed && choice === 'Reload Window') {
