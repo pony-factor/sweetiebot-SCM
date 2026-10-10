@@ -77,6 +77,17 @@ async function resolveMergeTarget(vscode, node) {
   const direct = pullRequestFromTreeNode(node);
   if (direct.url) return direct;
 
+  // Even if the GitHub extension's private resolver is not installed yet,
+  // an actual clicked PRNode can render its own TreeItem with a PR resource URI.
+  if (node && typeof node.getTreeItem === 'function') {
+    try {
+      const item = pullRequestFromTreeNode(await node.getTreeItem());
+      if (item.url && (direct.number == null || item.number === Number(direct.number))) return item;
+    } catch {
+      // Fall through to the extension-owned resolver and one guarded refresh.
+    }
+  }
+
   const resolver = 'sweetiebot.resolveSelectedPullRequest';
   const resolve = async () => {
     try {
@@ -109,7 +120,9 @@ async function resolveMergeTarget(vscode, node) {
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
   const handler = async node => {
-    const model = pullRequestFromTreeNode(node);
+    // Resolve the exact clicked PR row for both command entry points. A row
+    // without a URL may expose it only through its asynchronous TreeItem.
+    const model = await resolveMergeTarget(vscode, node);
     const url = model.url;
     if (busy.has(url)) return;
     busy.add(url);
@@ -158,9 +171,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
   };
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
-    vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', async node => {
-      return handler(await resolveMergeTarget(vscode, node));
-    })
+    vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', handler)
   );
 }
 
