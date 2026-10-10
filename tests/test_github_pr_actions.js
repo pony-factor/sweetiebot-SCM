@@ -134,6 +134,22 @@ async function main() {
   await handler({ pullRequestModel: { url, number: 12 } });
   assert.deepEqual(conflictErrors, ["Unable to merge #12: conflicts with `main`"]);
   assert.deepEqual(conflictRefreshes, ['pr.refreshList']);
+
+  const mergeErrors = [];
+  let mergeFailure = new Error('Required checks have not passed');
+  registerGitHubPullRequestActions({
+    commands: { getCommands: async () => [], registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
+      executeCommand: async () => {} },
+    ProgressLocation: { Window: 10 },
+    window: { withProgress: (_, fn) => fn(), showErrorMessage: message => mergeErrors.push(message) }
+  }, { subscriptions: [] }, async () => { throw mergeFailure; });
+  await handler({ pullRequestModel: { url, number: 12 } });
+  mergeFailure = Object.assign(new Error('Fallback error'), { stderr: '  gh: branch protection prevented merge  ' });
+  await handler({ pullRequestModel: { url, number: 12 } });
+  assert.deepEqual(mergeErrors, [
+    'Required checks have not passed',
+    'gh: branch protection prevented merge'
+  ]);
   const selected = [];
   const notices = [];
   registerGitHubPullRequestActions({
