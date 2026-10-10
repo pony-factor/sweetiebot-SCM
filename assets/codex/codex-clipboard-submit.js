@@ -8,6 +8,7 @@
     const BUTTON_ID = 'scm-toolkit-codex-clipboard-submit';
     const EDITOR_SELECTOR = 'textarea:not([disabled]), [contenteditable="true"][role="textbox"], [contenteditable="true"][data-placeholder], .ProseMirror[contenteditable="true"], [data-testid*="composer" i] [contenteditable="true"]';
     const CONTROL_SELECTOR = 'button[data-composer-navigation-target="permissions"], button[data-composer-navigation-target="run-location"]';
+    const RUNNING_CONTROL = /\b(stop(?:\s+(?:response|generating|task))?|interrupt|cancel\s+run)\b/i;
     let scheduled = false;
     let busy = false;
 
@@ -20,9 +21,9 @@
         return Boolean(element && element.isConnected && element.getClientRects().length);
     }
 
-    function classify(button) {
+    function classify(button, includeDisabled = false) {
         if (!button || button.id === BUTTON_ID || !visible(button)
-            || button.disabled || button.getAttribute('aria-disabled') === 'true') return '';
+            || (!includeDisabled && (button.disabled || button.getAttribute('aria-disabled') === 'true'))) return '';
         const name = label(button);
         if (/\b(stop|cancel|interrupt|pause|voice|dictat|microphone|retry)\b/i.test(name)) return '';
         if (/\bqueue\b/i.test(name) && !/\b(remove|delete|edit|reorder)\b/i.test(name)) return 'queue';
@@ -37,9 +38,21 @@
             || eligible.find(button => classify(button) === 'send') || null;
     }
 
+    // Mounting must not depend on an enabled Send button: after a chat starts,
+    // Send can be disabled (empty draft) or replaced by Stop during a run.
+    function chooseMountTarget(buttons, active) {
+        const candidates = buttons.filter(button => button && button.id !== BUTTON_ID && visible(button));
+        const kind = button => RUNNING_CONTROL.test(label(button)) ? 'stop' : classify(button, true);
+        const find = (target, enabledOnly = false) => candidates.find(button =>
+            kind(button) === target && (!enabledOnly
+                || (!button.disabled && button.getAttribute('aria-disabled') !== 'true')));
+        return (active && find('queue', true)) || find('send', true)
+            || (active && find('stop')) || find('send') || find('queue') || find('stop') || null;
+    }
+
     function isRunning(root) {
         return [...root.querySelectorAll('button')].some(button =>
-            visible(button) && /\b(stop(?:\s+(?:response|generating|task))?|interrupt|cancel\s+run)\b/i.test(label(button)))
+            visible(button) && RUNNING_CONTROL.test(label(button)))
             || Boolean(root.querySelector('[data-state="streaming"], [data-state="generating"], [data-state="running"]'));
     }
 
@@ -52,8 +65,8 @@
             for (let depth = 0; root && root !== document.body && depth < 10; depth++, root = root.parentElement) {
                 const editor = [...root.querySelectorAll(EDITOR_SELECTOR)].find(visible);
                 if (!editor) continue;
-                const submit = chooseAction([...root.querySelectorAll('button')], isRunning(root));
-                if (submit) return { root, editor, submit };
+                const mountTarget = chooseMountTarget([...root.querySelectorAll('button')], isRunning(root));
+                if (mountTarget) return { root, editor, mountTarget };
             }
         }
         return null;
@@ -165,14 +178,14 @@
         scheduled = false;
         const surface = findSurface();
         const existing = document.getElementById(BUTTON_ID);
-        if (!surface?.submit?.parentElement) {
+        if (!surface?.mountTarget?.parentElement) {
             if (existing) existing.remove();
             return;
         }
         const button = existing || createButton();
-        if (button.parentElement !== surface.submit.parentElement
-            || button.nextElementSibling !== surface.submit) {
-            surface.submit.before(button);
+        if (button.parentElement !== surface.mountTarget.parentElement
+            || button.nextElementSibling !== surface.mountTarget) {
+            surface.mountTarget.before(button);
         }
         button.disabled = busy;
     }
@@ -187,6 +200,8 @@
     if (globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__) {
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.classify = classify;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseAction = chooseAction;
+        globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseMountTarget = chooseMountTarget;
+        globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.findSurface = findSurface;
         return;
     }
 
