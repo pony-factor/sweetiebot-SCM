@@ -100,7 +100,7 @@
       },
       {
         "command": "sweetiebot.squashMergeSelectedPullRequest",
-        "title": "Squash and Merge into main",
+        "title": "Squash and Merge Pull Request",
         "icon": "$(git-merge)"
       },
       {
@@ -257,7 +257,7 @@
         "scmToolkit.pullRequestQuickMerge": {
           "type": "boolean",
           "default": true,
-          "description": "Show an inline button to squash and merge a GitHub pull request into main without opening it."
+          "description": "Show an inline button to squash-merge a GitHub pull request into its base branch, confirming non-main targets."
         },
         "scmToolkit.chatgptProjectUrl": {
           "type": "string",
