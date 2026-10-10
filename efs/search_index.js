@@ -306,13 +306,17 @@ class SearchIndex {
         const exact = keywordScore(query, chunk.text, { fuzzy });
         const semantic = queryVector && chunk.vector ? Math.max(0, cosine(queryVector, chunk.vector)) : 0;
         // An identical URL must never be buried by semantically similar passages.
+        const literalMatch = chunk.text.toLowerCase().includes(String(query).trim().toLowerCase());
         const score = literalUrlOffset >= 0 ? 3 : selectedMode === 'exact'
             ? exact
             : selectedMode === 'semantic'
                 ? semantic
-                : (!queryVector || !chunk.vector)
-                    ? exact
-                    : semantic * 0.78 + exact * 0.22;
+                : literalMatch
+                    // Literal matches lead; semantic relevance orders that group.
+                    ? 1 + semantic * 0.2
+                    : (!queryVector || !chunk.vector)
+                        ? exact
+                        : exact * 0.65 + semantic * 0.35;
         if (score > 0) {
           const line = literalUrlOffset >= 0
             ? chunk.line + (chunk.text.slice(0, literalUrlOffset).match(/\n/g) || []).length
