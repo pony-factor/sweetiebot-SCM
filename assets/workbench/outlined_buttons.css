@@ -19,14 +19,14 @@
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button {
-    border: 0 !important;
+    border: 1px solid var(--vscode-button-border, var(--vscode-widget-border));
     background: transparent !important;
     color: var(--vscode-foreground) !important;
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown {
-    /* Keep the action row free of a persistent themed outline. */
-    border: 0 !important;
+    /* One continuous themed outline includes the dropdown and settings icon. */
+    border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder, var(--vscode-widget-border)));
     border-radius: var(--vscode-cornerRadius-small, 4px);
 }
 
@@ -39,7 +39,11 @@
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-dropdown-button {
-    border-left: 1px solid var(--vscode-button-border, var(--vscode-focusBorder, var(--vscode-widget-border))) !important;
+    border-left: 0 !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button-dropdown-separator {
+    display: none !important;
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:hover,
