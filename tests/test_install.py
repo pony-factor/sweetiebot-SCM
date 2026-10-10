@@ -801,6 +801,33 @@ class CodexTimestampTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
 
+class CodexWindowLabelRenderingTests(unittest.TestCase):
+    def test_replaces_entire_codex_header_and_restores_on_default(self):
+        original = "const app='codex';"
+        patched = install.transform_codex(original, window_label="CelestAI")
+        self.assertIn(install.CODEX_WINDOW_LABEL_START, patched)
+        self.assertIn('const label = "CelestAI";', patched)
+        self.assertTrue(install.codex_bundle_matches(patched))
+        self.assertEqual(install.transform_codex(patched, window_label="CelestAI"), patched)
+        updated = install.transform_codex(patched, window_label="Luna")
+        self.assertIn('const label = "Luna";', updated)
+        self.assertNotIn('const label = "CelestAI";', updated)
+        self.assertEqual(install.transform_codex(patched, window_label="Codex"), original)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_label_is_scoped_and_reversible_with_other_patches(self):
+        original = "const app='codex';"
+        patched = install.transform_codex(original, hide_dictation=True, window_label="CelestAI")
+        self.assertIn(install.CODEX_DICTATION_START, patched)
+        self.assertIn(install.CODEX_WINDOW_LABEL_START, patched)
+        self.assertEqual(install.transform_codex(patched, hide_dictation=True), install.transform_codex(original, hide_dictation=True))
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_malformed_header_patch_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "Incomplete Codex window-label patch"):
+            install.transform_codex("const app='codex';" + install.CODEX_WINDOW_LABEL_START, window_label="CelestAI")
+
+
 class CodexModelLabelTests(unittest.TestCase):
     def test_toggle_and_removal_preserve_other_patches(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexShortModelLabels"])
