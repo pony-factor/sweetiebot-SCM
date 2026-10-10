@@ -39,6 +39,8 @@ CODEX_DICTATION_END = '\n/* scm-toolkit-codex-dictation:end */\n'
 
 CODEX_LABELS_START = '\n/* scm-toolkit-codex-model-labels:start */\n'
 CODEX_LABELS_END = '\n/* scm-toolkit-codex-model-labels:end */\n'
+CODEX_WINDOW_LABEL_START = '\n/* scm-toolkit-codex-window-label:start */\n'
+CODEX_WINDOW_LABEL_END = '\n/* scm-toolkit-codex-window-label:end */\n'
 
 
 def ai_wrapper_path():
@@ -591,12 +593,18 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex"):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
         before, rest = js.split(CODEX_LABELS_START, 1)
         _, after = rest.split(CODEX_LABELS_END, 1)
+        js = before + after
+    if js.count(CODEX_WINDOW_LABEL_START) != js.count(CODEX_WINDOW_LABEL_END) or js.count(CODEX_WINDOW_LABEL_START) > 1:
+        raise ValueError("Incomplete Codex window-label patch; refusing to overwrite it.")
+    if CODEX_WINDOW_LABEL_START in js:
+        before, rest = js.split(CODEX_WINDOW_LABEL_START, 1)
+        _, after = rest.split(CODEX_WINDOW_LABEL_END, 1)
         js = before + after
     js = codex_image_drop.transform(js, remove=remove)
     js = codex_recent_chats.transform(js, remove=remove)
@@ -676,6 +684,14 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
     if not remove and short_model_labels:
         js += CODEX_LABELS_START + (CODEX_ASSETS / "codex-short-model-labels.js").read_text() + CODEX_LABELS_END
 
+    if not remove and window_label != "Codex":
+        # Use the manifest's already-validated, single-line custom label.
+        label = codex_label._validate_label(window_label)
+        script = (CODEX_ASSETS / "codex-window-label.js").read_text().replace(
+            "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", json.dumps(label, ensure_ascii=True)
+        )
+        js += CODEX_WINDOW_LABEL_START + script + CODEX_WINDOW_LABEL_END
+
     return js
 
 def transform(js, css, remove=False, settings=None):
@@ -748,6 +764,8 @@ def codex_bundle_matches(text):
     if CODEX_START in text or CODEX_PROMOTIONS_START in text or CODEX_TIMESTAMPS_START in text or CODEX_DICTATION_START in text:
         return True
 
+    if CODEX_WINDOW_LABEL_START in text:
+        return True
     if CODEX_LABELS_START in text or ('data-selected-reasoning-effort' in text and 'data-composer-navigation-target' in text):
         return True
 
@@ -989,6 +1007,7 @@ def main():
         or settings["codexHideChatTimestamps"]
         or settings["codexHideDictation"]
         or settings["codexShortModelLabels"]
+        or settings["codexWindowLabel"] != "Codex"
         or args.uninstall
     )
     if not codex_paths and should_find_codex:
@@ -1011,6 +1030,7 @@ def main():
                 hide_timestamps=settings["codexHideChatTimestamps"],
                 hide_dictation=settings["codexHideDictation"],
                 short_model_labels=settings["codexShortModelLabels"],
+                window_label=settings["codexWindowLabel"],
                 remove=args.uninstall,
             )
         except ValueError as error:
@@ -1021,6 +1041,7 @@ def main():
                 or CODEX_TIMESTAMPS_START in codex_old
                 or CODEX_DICTATION_START in codex_old
                 or CODEX_LABELS_START in codex_old
+                or CODEX_WINDOW_LABEL_START in codex_old
             ):
                 raise
             print(f"Warning: {error} Skipping optional Codex customizations.")
