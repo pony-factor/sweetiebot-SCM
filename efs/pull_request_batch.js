@@ -65,7 +65,7 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
   const pulls = [];
   for (let page = 1; page <= 20; page += 1) {
     const response = await fetchImpl(
-      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=open&base=main&per_page=100&page=${page}`,
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=open&per_page=100&page=${page}`,
       {
         headers: {
           Accept: 'application/vnd.github+json',
@@ -78,7 +78,7 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
     const pageItems = await response.json();
     if (!Array.isArray(pageItems)) throw new Error('GitHub returned an invalid pull-request list.');
     for (const pr of pageItems) {
-      if (pr?.draft || pr?.base?.ref !== 'main') continue;
+      if (pr?.draft || !pr?.base?.ref) continue;
       const number = Number(pr.number);
       const url = String(pr.html_url || '');
       if (!Number.isInteger(number) || number < 1 || !/^https:\/\/github\.com\//.test(url)) continue;
@@ -86,7 +86,8 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
         number,
         title: String(pr.title || `Pull request #${number}`),
         url,
-        head: String(pr.head?.ref || '')
+        head: String(pr.head?.ref || ''),
+        base: String(pr.base.ref)
       });
     }
     if (pageItems.length < 100) break;
@@ -102,7 +103,7 @@ async function pickPullRequests(vscode, pullRequests) {
   };
   picker.items = pullRequests.map(pullRequest => ({
     label: '#' + pullRequest.number + ' ' + pullRequest.title,
-    description: pullRequest.head ? '← ' + pullRequest.head : '',
+    description: `${pullRequest.head ? '← ' + pullRequest.head + ' ' : ''}→ ${pullRequest.base}`,
     detail: pullRequest.url,
     pullRequest
   }));
@@ -135,19 +136,20 @@ async function pickPullRequests(vscode, pullRequests) {
   });
 }
 
-function batchMergePrompt({ repositoryUrl, pullRequests, base = 'main' }) {
+function batchMergePrompt({ repositoryUrl, pullRequests }) {
   if (!Array.isArray(pullRequests) || !pullRequests.length) {
     throw new Error('Select at least one pull request.');
   }
+  if (pullRequests.some(pr => !pr.base)) throw new Error('A selected pull request has no target branch.');
   const list = pullRequests.map(pr =>
-    `- #${pr.number}: ${pr.title} — ${pr.url}${pr.head ? ` (head: ${pr.head})` : ''}`
+    `- #${pr.number}: ${pr.title} — ${pr.url} (head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)})`
   ).join('\n');
   return [
-    `Squash and merge the following selected pull request${pullRequests.length === 1 ? '' : 's'} into ${JSON.stringify(base)} in repository ${repositoryUrl}:`,
+    `Squash and merge the following selected pull request${pullRequests.length === 1 ? '' : 's'} into each PR's explicitly listed base branch in repository ${repositoryUrl}:`,
     list,
-    `Use the GitHub connection or tools available in this chat. Read the current ${base} branch and every selected pull request and diff before making changes. Re-check each selected pull request immediately before merging it. Do not merge, close, edit, or otherwise act on any unselected pull request.`,
-    'Determine a safe merge order from dependencies, overlapping changes, and the current branch state. For each selected pull request, squash-merge its intended changes into main and use the pull-request title as the resulting squash commit title. If an earlier merge changes what a later pull request needs, reconcile the later pull request safely rather than blindly merging stale or duplicated changes.',
-    'Before creating or updating any commit, verify the resulting tree differs from its parent and that the intended changes are actually present. Never force-push main or another protected branch. If rewriting a selected pull-request branch is genuinely necessary, use force-with-lease only on that pull-request branch. Preserve unrelated work and delete a merged source branch only when it is safe.',
+    'Use the GitHub connection or tools available in this chat. Read every listed base branch and selected pull request and diff before making changes. Re-check each selected pull request immediately before merging it. If its current base differs from the listed base, stop for that PR and request fresh confirmation; do not silently merge it into another branch. Do not merge, close, edit, or otherwise act on any unselected pull request.',
+    'Determine a safe merge order from dependencies, overlapping changes, and the current branch states. For each selected pull request, squash-merge its intended changes ONLY into its listed base branch (which may not be main) and use the pull-request title as the resulting squash commit title. If an earlier merge changes what a later pull request needs, reconcile the later pull request safely rather than blindly merging stale or duplicated changes.',
+    'Before creating or updating any commit, verify the resulting tree differs from its parent and that the intended changes are actually present. Never force-push main, any PR base branch, or another protected branch. If rewriting a selected pull-request branch is genuinely necessary, use force-with-lease only on that pull-request branch. Preserve unrelated work and delete a merged source branch only when it is safe.',
     'If a selected pull request cannot be merged safely, explain the blocker instead of substituting a different pull request or forcing the merge. Continue with other selected pull requests only when the blocker does not make them unsafe.'
   ].join('\n\n');
 }
@@ -198,7 +200,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         selectedRepository.repositoryUrl, session.accessToken, fetchImpl
       );
       if (!pullRequests.length) {
-        vscode.window.showInformationMessage('No open, ready-for-review pull requests targeting main were found.');
+        vscode.window.showInformationMessage('No open, ready-for-review pull requests were found.');
         return;
       }
       const selected = await pickPullRequests(vscode, pullRequests);
@@ -207,10 +209,20 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         vscode.window.showInformationMessage('Select at least one pull request.');
         return;
       }
+      const nonMain = selected.filter(pr => pr.base !== 'main');
+      if (nonMain.length) {
+        const targets = [...new Set(nonMain.map(pr => pr.base))].map(name => '"' + name + '"').join(', ');
+        const action = 'Continue with non-main targets';
+        const choice = await vscode.window.showWarningMessage(
+          `Selected PRs target ${targets}, not main. Continue with those base branches?`,
+          { modal: true, detail: "The merge request will use each PR's listed base branch, not automatically main." },
+          action
+        );
+        if (choice !== action) return;
+      }
       const prompt = batchMergePrompt({
         repositoryUrl: selectedRepository.repositoryUrl,
-        pullRequests: selected,
-        base: 'main'
+        pullRequests: selected
       });
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;
