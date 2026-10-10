@@ -427,10 +427,12 @@ The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MOD
 ### Custom Codex window label
 
 In Sweetie Bot's **Codex** settings, change **Codex window label** to any
-single-line name, such as **CelestAI**. This changes the contributed Codex
-sidebar title and view name (including the Activity Bar or secondary sidebar),
-without changing commands, provider IDs, or chat behavior. The original
-**Codex** label is used by default.
+single-line name, such as **CelestAI**. This replaces the displayed Codex
+sidebar/container title and the home-view heading in the Codex webview:
+**CelestAI: Codex** becomes **CelestAI**, rather than showing the custom name
+as a prefix. The Activity Bar and secondary sidebar use the same setting,
+without changing commands, provider IDs, conversation text, or chat behavior.
+The original **Codex** label is used by default.
 
 You can also configure it from a terminal:
 
