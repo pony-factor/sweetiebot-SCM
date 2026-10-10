@@ -196,6 +196,51 @@ async function main() {
   assert.equal(progressOptions.length, 1);
   assert.equal(progressOptions[0].location, 10);
   assert.equal(progressOptions[0].cancellable, false);
+  // Native PR nodes can expose their URI only after rendering. Both the
+  // direct command and the inline context action must resolve that clicked row.
+  const renderedMerges = [], renderedErrors = [], renderedRefreshes = [];
+  const renderedCommands = new Map();
+  const renderedVscode = {
+    commands: {
+      registerCommand: (id, fn) => {
+        renderedCommands.set(id, fn);
+        return { dispose() {} };
+      },
+      getCommands: async () => [...renderedCommands.keys()],
+      executeCommand: async id => { renderedRefreshes.push(id); }
+    },
+    ProgressLocation: { Window: 10 },
+    window: {
+      withProgress: (_, fn) => fn(),
+      showErrorMessage: message => renderedErrors.push(message),
+      showInformationMessage: () => {}
+    }
+  };
+  registerGitHubPullRequestActions(renderedVscode, { subscriptions: [] }, async clicked => {
+    renderedMerges.push(clicked);
+    return { merged: false, number: 12 };
+  });
+  const renderedNode = {
+    pullRequestModel: { number: 12 },
+    async getTreeItem() {
+      return { resourceUri: { query: JSON.stringify({
+        prIdentifier: 'git@github.com:owner/repo.git:12'
+      }) } };
+    }
+  };
+  await renderedCommands.get('sweetiebot.squashMergePullRequest')(renderedNode);
+  await renderedCommands.get('sweetiebot.squashMergeSelectedPullRequest')(renderedNode);
+  assert.deepEqual(renderedMerges, [url, url], 'Both merge entry points resolve the clicked PR');
+  assert.deepEqual(renderedErrors, []);
+  assert.deepEqual(renderedRefreshes, ['pr.refreshList', 'pr.refreshList']);
+
+  await renderedCommands.get('sweetiebot.squashMergeSelectedPullRequest')({
+    pullRequestModel: { number: 99 },
+    getTreeItem: renderedNode.getTreeItem
+  });
+  assert.deepEqual(renderedMerges, [url, url], 'A mismatched row cannot merge another PR');
+  assert.match(renderedErrors.at(-1), /Could not identify the pull request/);
+
   // An inline PR row can be clicked before its TreeItem/selection metadata
   // becomes available. Retry the exact row after one refresh, without a second
   // click or duplicate merge.
