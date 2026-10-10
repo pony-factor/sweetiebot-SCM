@@ -1,32 +1,67 @@
 function pullRequestFromTreeNode(node) {
   if (Array.isArray(node)) node = node.length === 1 ? node[0] : undefined;
-  const model = node?.pullRequestModel ?? node;
-  const directMatch = [typeof model === 'string' ? model : undefined,
-    model?.html_url, model?.htmlUrl, model?.url].map(value => String(value || '').match(
-    /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)\/?$/
-  )).find(Boolean);
-  if (directMatch) {
-    return { url: directMatch[0].replace(/\/$/, ''), number: Number(directMatch[3]) };
+  if (!node) return { url: undefined, number: undefined };
+
+  // VS Code passes either a PRNode, its rendered TreeItem, or occasionally a
+  // plain command argument. The TreeItem's command points back to the PRNode.
+  const argumentsNode = node.command?.arguments?.length === 1 ? node.command.arguments[0] : undefined;
+  const candidates = [node, node.pullRequestModel, argumentsNode, argumentsNode?.pullRequestModel]
+    .filter(Boolean);
+  const parseUrl = value => {
+    const matched = String(value || '').match(
+      /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)\/?$/i
+    );
+    return matched ? { url: `https://github.com/${matched[1]}/${matched[2]}/pull/${matched[3]}`,
+      number: Number(matched[3]) } : undefined;
+  };
+  const numberHint = candidates.map(candidate => candidate?.number)
+    .find(value => /^[1-9]\d*$/.test(String(value)));
+
+  for (const candidate of candidates) {
+    for (const url of [typeof candidate === 'string' ? candidate : undefined,
+      candidate?.html_url, candidate?.htmlUrl, candidate?.url]) {
+      const result = parseUrl(url);
+      if (result) return result;
+    }
   }
 
-  const resourceUri = node?.resourceUri ?? model?.resourceUri ??
-    (node?.scheme === 'prnode' ? node : undefined);
-  let identifier;
-  try {
-    identifier = JSON.parse(String(resourceUri?.query || '')).prIdentifier;
-  } catch {
-    identifier = undefined;
+  // GitHub's PR tree often exposes the identity on a rendered TreeItem URI.
+  for (const candidate of candidates) {
+    const resourceUri = candidate?.resourceUri ?? (candidate?.scheme === 'prnode' ? candidate : undefined);
+    let identifier;
+    try { identifier = JSON.parse(String(resourceUri?.query || '')).prIdentifier; }
+    catch { identifier = undefined; }
+    const match = String(identifier || '').match(/^(.*):([1-9]\d*)$/);
+    const remote = match?.[1];
+    const repo = String(remote || '').match(
+      /^(?:https?:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i
+    );
+    if (repo) return { url: `https://github.com/${repo[1]}/${repo[2]}/pull/${match[2]}`,
+      number: Number(match[2]) };
   }
-  // PRNode identifiers contain the Git remote URL, which can be SSH or end in .git.
-  const uriMatch = String(identifier || '').match(/^(.*):([1-9]\d*)$/);
-  const remote = uriMatch?.[1] ?? model?.remote?.url;
-  const repoMatch = String(remote || '').match(
-    /^(?:https?:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i
-  );
-  const number = uriMatch?.[2] ?? model?.number;
-  return repoMatch && /^[1-9]\d*$/.test(String(number))
-    ? { url: `https://github.com/${repoMatch[1]}/${repoMatch[2]}/pull/${number}`, number: Number(number) }
-    : { url: undefined, number: model?.number };
+
+  // A PRNode also includes a remote plus the PR number. Never infer a
+  // repository from the currently active VS Code workspace or selected row.
+  for (const candidate of candidates) {
+    const remote = candidate?.remote?.url ?? candidate?.remote ??
+      candidate?.githubRepository?.remote?.url;
+    const repo = String(remote || '').match(
+      /^(?:https?:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i
+    );
+    const number = candidate?.number ?? numberHint;
+    if (repo && /^[1-9]\d*$/.test(String(number))) {
+      return { url: `https://github.com/${repo[1]}/${repo[2]}/pull/${number}`, number: Number(number) };
+    }
+  }
+
+  // When only the rendered TreeItem survives, GitHub supplies its canonical
+  // PR URL as a substring of the item's stable ID (after the category ID).
+  const id = typeof node.id === 'string' ? node.id : '';
+  const urls = [...id.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/([1-9]\d*)/gi)];
+  if (urls.length === 1 && (!numberHint || Number(urls[0][1]) === Number(numberHint))) {
+    return parseUrl(urls[0][0]);
+  }
+  return { url: undefined, number: numberHint };
 }
 
 function installPullRequestRefresh(vscode, view, owner) {
