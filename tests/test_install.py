@@ -226,7 +226,14 @@ class TransformTests(unittest.TestCase):
         self.assertIn("await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name })", js)
         self.assertIn("await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`)", js)
         self.assertIn("await originalPush.call(repository, repository.HEAD)", js)
-        self.assertIn("commands.executeCommand('sweetiebot.createLocalPullRequest', repository, {", js)
+        # The PR button supports both the legacy local flow and the browser-first
+        # flow, which must retain a fallback only when the browser is unavailable.
+        if "commands.executeCommand('sweetiebot.openPullRequestChat', repository, options)" in js:
+            self.assertIn("commands.executeCommand('sweetiebot.createLocalPullRequest', repository, options)", js)
+            self.assertIn("error?.browserUnavailable", js)
+            self.assertIn("error?.name !== 'SweetiebotBrowserUnavailable'", js)
+        else:
+            self.assertIn("commands.executeCommand('sweetiebot.createLocalPullRequest', repository, {", js)
         self.assertIn("mcpService.activateCollections()", js)
         self.assertIn("'github_comment_pull_request_source'", js)
         self.assertIn("scm-toolkit-pull-request", css)
