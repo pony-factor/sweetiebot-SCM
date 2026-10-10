@@ -64,8 +64,10 @@ async function run() {
     requested.push({ url, options });
     return { ok: true, status: 200, async json() { return apiPulls; } };
   });
-  assert.deepEqual(pulls.map(pr => pr.number), [12, 10]);
-  assert.match(requested[0].url, /state=open&base=main/);
+  assert.deepEqual(pulls.map(pr => pr.number), [12, 10, 9]);
+  assert.deepEqual(pulls.map(pr => pr.base), ['main', 'main', 'develop']);
+  assert.match(requested[0].url, /state=open&per_page=100/);
+  assert(!requested[0].url.includes('base=main'));
   assert.equal(requested[0].options.headers.Authorization, 'Bearer token');
 
   function pickerHarness(action, verify = () => {}) {
@@ -136,7 +138,14 @@ async function run() {
     pullRequests: [pulls[0]],
     base: 'main'
   });
-  assert.match(prompt, /Squash and merge the following selected pull request into "main"/);
+  assert.match(prompt, /Squash and merge the following selected pull request into each PR's explicitly listed base branch/);
+  assert.match(prompt, /base: "main"/);
+  const mixedPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [pulls[0], pulls[2]] });
+  assert.match(mixedPrompt, /#9: Wrong base/);
+  assert.match(mixedPrompt, /base: "develop"/);
+  assert.match(mixedPrompt, /ONLY into its listed base branch/);
+  assert.match(mixedPrompt, /request fresh confirmation/);
   assert.match(prompt, /#12: Newest ready change/);
   assert(!prompt.includes('#10: Ready change'));
   assert.match(prompt, /Do not merge, close, edit, or otherwise act on any unselected pull request/);
@@ -181,6 +190,9 @@ async function run() {
   };
   let configuredProject = '';
   let pickerAction = 'first';
+  let includeNonMain = false;
+  let approveNonMain = false;
+  const modalWarnings = [];
   const vscode = {
     ThemeIcon: class { constructor(id) { this.id = id; } },
     workspace: { getConfiguration(section) {
@@ -214,7 +226,13 @@ async function run() {
       createQuickPick() { return pickerHarness(pickerAction).picker; },
       showErrorMessage(message) { errors.push(message); },
       showInformationMessage(message) { infos.push(message); },
-      showWarningMessage(message) { warnings.push(message); }
+      showWarningMessage(message, options, action) {
+        if (options?.modal) {
+          modalWarnings.push({ message, options, action });
+          return approveNonMain ? action : undefined;
+        }
+        warnings.push(message);
+      }
     }
   };
   const fetchImpl = async () => ({
@@ -224,7 +242,7 @@ async function run() {
       return [
         {
           number: 41, title: 'Selected PR', html_url: 'https://github.com/owner/repo/pull/41',
-          draft: false, base: { ref: 'main' }, head: { ref: 'selected' }
+          draft: false, base: { ref: includeNonMain ? 'kefania' : 'main' }, head: { ref: 'selected' }
         },
         {
           number: 40, title: 'Unselected PR', html_url: 'https://github.com/owner/repo/pull/40',
@@ -257,10 +275,25 @@ async function run() {
   assert.match(allChat.searchParams.get('q'), /pull\/41/);
   assert.match(allChat.searchParams.get('q'), /pull\/40/);
   assert.equal(submitCalls, 2);
+  includeNonMain = true;
+  pickerAction = 'first';
+  await handler();
+  assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
+  assert.equal(submitCalls, 2);
+  assert.equal(modalWarnings.length, 1);
+  assert.match(modalWarnings[0].message, /kefania.*not main/);
+  assert.equal(modalWarnings[0].options.modal, true);
+  approveNonMain = true;
+  await handler();
+  const alternateChat = new URL(browserCalls.at(-1).options.url);
+  assert.match(alternateChat.searchParams.get('q'), /base: "kefania"/);
+  assert.equal(submitCalls, 3);
+  includeNonMain = false;
+  approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
-  assert.equal(browserCalls.length, 2, 'Cancelling must not submit a merge request');
-  assert.equal(submitCalls, 2);
+  assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
+  assert.equal(submitCalls, 3);
   pickerAction = 'first';
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
@@ -268,7 +301,7 @@ async function run() {
   const scopedChat = new URL(browserCalls.at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
   assert.match(scopedChat.searchParams.get('q'), /pull\/41/);
-  assert.equal(submitCalls, 3);
+  assert.equal(submitCalls, 4);
   configuredProject = '';
 
   registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'focus' }), 'darwin');

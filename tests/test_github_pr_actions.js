@@ -15,7 +15,7 @@ async function main() {
   const result = await squashMergePullRequest(url, execute);
   assert.equal(result.merged, true);
   assert.deepEqual(calls[1], ['pr', 'merge', '12', '--repo', 'owner/repo', '--squash', '--match-head-commit', open.headRefOid]);
-  for (const invalid of [{ isDraft: true }, { baseRefName: 'develop' }, { state: 'CLOSED' }, { headRefOid: '' }]) {
+  for (const invalid of [{ isDraft: true }, { baseRefName: '' }, { state: 'CLOSED' }, { headRefOid: '' }]) {
     let count = 0;
     await assert.rejects(squashMergePullRequest(url, async () => {
       count++;
@@ -23,6 +23,52 @@ async function main() {
     }));
     assert.equal(count, 1);
   }
+  const alternate = { ...open, baseRefName: 'kefania' };
+  const cancelledCalls = [];
+  const cancelled = await squashMergePullRequest(url, async args => {
+    cancelledCalls.push(args);
+    return { stdout: JSON.stringify(alternate) };
+  }, async target => {
+    assert.deepEqual(target, { repo: 'owner/repo', number: '12', base: 'kefania' });
+    return false;
+  });
+  assert.equal(cancelled.cancelled, true);
+  assert.equal(cancelled.merged, false);
+  assert.equal(cancelledCalls.length, 1, 'Cancellation must not call merge');
+  const alternateCalls = [];
+  let alternateMerged = false;
+  const alternateResult = await squashMergePullRequest(url, async args => {
+    alternateCalls.push(args);
+    if (args[1] === 'merge') { alternateMerged = true; return { stdout: '' }; }
+    return { stdout: JSON.stringify({ ...alternate, state: alternateMerged ? 'MERGED' : 'OPEN' }) };
+  }, async () => true);
+  assert.equal(alternateResult.merged, true);
+  assert.equal(alternateResult.base, 'kefania');
+  assert.deepEqual(alternateCalls.map(args => args[1]), ['view', 'view', 'merge', 'view']);
+  assert.deepEqual(alternateCalls[2], ['pr', 'merge', '12', '--repo', 'owner/repo', '--squash', '--match-head-commit', open.headRefOid]);
+
+  // The modal approval is invalidated if the base, head, or state changes.
+  for (const changed of [{ baseRefName: 'main' }, { headRefOid: 'b'.repeat(40) }, { state: 'CLOSED' }]) {
+    let reads = 0, merges = 0;
+    await assert.rejects(squashMergePullRequest(url, async args => {
+      if (args[1] === 'merge') { merges++; return { stdout: '' }; }
+      return { stdout: JSON.stringify({ ...alternate, ...(++reads === 2 ? changed : {}) }) };
+    }, async () => true), /changed since confirmation/);
+    assert.equal(merges, 0, 'Do not merge a retargeted or changed PR');
+  }
+  let conflicts = 0;
+  await assert.rejects(squashMergePullRequest(url, async args => {
+    if (args[1] === 'merge') conflicts++;
+    return { stdout: JSON.stringify({ ...alternate, mergeable: 'CONFLICTING' }) };
+  }, async () => true), /conflicts with \`kefania\`/);
+  assert.equal(conflicts, 0);
+  // A main-targeted merge must not request the alternate-branch approval.
+  let confirmedMain = 0;
+  await squashMergePullRequest(url, async args => {
+    if (args[1] === 'merge') return { stdout: '' };
+    return { stdout: JSON.stringify({ ...open, state: confirmedMain++ ? 'MERGED' : 'OPEN' }) };
+  }, async () => { throw new Error('Main must not ask for confirmation'); });
+
   await assert.rejects(squashMergePullRequest('https://other.example/owner/repo/pull/12', execute));
   assert.equal((await squashMergePullRequest(url, async () => ({ stdout: JSON.stringify(open) }))).merged, false);
   await assert.rejects(squashMergePullRequest(url, async args => {
@@ -180,6 +226,44 @@ async function main() {
   assert.equal(progressOptions.length, 1);
   assert.equal(progressOptions[0].location, 10);
   assert.equal(progressOptions[0].cancellable, false);
+
+  // The inline button warns before launching a non-main merge; dismissal does nothing.
+  const targetDialogs = [], targetNotices = [], targetMerges = [];
+  let approveAlternate = false;
+  registerGitHubPullRequestActions({
+    commands: {
+      registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
+      executeCommand: async () => {}
+    },
+    ProgressLocation: { Window: 10 },
+    extensions: { getExtension: () => undefined },
+    window: {
+      withProgress: (_, fn) => fn(),
+      showWarningMessage: (message, options, action) => {
+        targetDialogs.push({ message, options, action });
+        return approveAlternate ? action : undefined;
+      },
+      showInformationMessage: message => targetNotices.push(message),
+      showErrorMessage: message => { throw new Error(message); }
+    }
+  }, { subscriptions: [] }, async (prUrl, _execute, confirm) => {
+    const approved = await confirm({ number: '12', base: 'kefania' });
+    if (!approved) return { cancelled: true, merged: false, number: 12 };
+    targetMerges.push(prUrl);
+    return { merged: true, number: 12, repo: 'owner/repo', base: 'kefania',
+      pr: { ...alternate, state: 'MERGED', isCrossRepository: true } };
+  });
+  await handler({ url, number: 12 });
+  assert.equal(targetMerges.length, 0);
+  assert.deepEqual(targetNotices, []);
+  assert.match(targetDialogs[0].message, /kefania.*not.*main/);
+  assert.equal(targetDialogs[0].options.modal, true);
+  assert.equal(targetDialogs[0].action, 'Squash into kefania');
+  approveAlternate = true;
+  await handler({ url, number: 12 });
+  assert.deepEqual(targetMerges, [url]);
+  assert.deepEqual(targetNotices, ['PR #12 merged into kefania.']);
+
   // An inline PR row can be clicked before its TreeItem/selection metadata
   // becomes available. Retry the exact row after one refresh, without a second
   // click or duplicate merge.

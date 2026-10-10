@@ -10,7 +10,7 @@ const run = promisify(execFile);
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 const executeGh = args => run(gh, args, { timeout: 120000 });
 
-async function squashMergePullRequest(url, execute = executeGh) {
+async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -18,14 +18,28 @@ async function squashMergePullRequest(url, execute = executeGh) {
   const fields = 'state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository,mergeable';
   const read = async () => JSON.parse((await execute(['pr', 'view', number, '--repo', repo, '--json', fields])).stdout);
   const pr = await read();
-  if (pr.state !== 'OPEN' || pr.isDraft || pr.baseRefName !== 'main' || !/^[0-9a-f]{40}$/i.test(pr.headRefOid)) {
-    throw new Error('Only open, ready-for-review pull requests targeting main can be squash-merged.');
+  if (pr.state !== 'OPEN' || pr.isDraft || !pr.baseRefName || !/^[0-9a-f]{40}$/i.test(pr.headRefOid)) {
+    throw new Error('Only open, ready-for-review pull requests with a valid base branch can be squash-merged.');
   }
   const conflict = () => Object.assign(
     new Error(`Unable to merge #${number}: conflicts with \`${pr.baseRefName}\``),
     { code: 'SWEETIEBOT_MERGE_CONFLICT' }
   );
   if (pr.mergeable === 'CONFLICTING') throw conflict();
+  if (pr.baseRefName !== 'main') {
+    // Do not merge into a non-main branch unless the user confirms its name.
+    if (!(await confirmNonMain({ repo, number, base: pr.baseRefName }))) {
+      return { merged: false, cancelled: true, repo, number, base: pr.baseRefName };
+    }
+    // A confirmation is only valid for the exact base and head initially displayed.
+    const latest = await read();
+    if (latest.state !== 'OPEN' || latest.isDraft ||
+        latest.baseRefName !== pr.baseRefName || latest.headRefName !== pr.headRefName ||
+        latest.headRefOid !== pr.headRefOid) {
+      throw new Error(`PR #${number} changed since confirmation. Refresh and try again.`);
+    }
+    if (latest.mergeable === 'CONFLICTING') throw conflict();
+  }
   try {
     await execute(['pr', 'merge', number, '--repo', repo, '--squash', '--match-head-commit', pr.headRefOid]);
   } catch (error) {
@@ -36,11 +50,11 @@ async function squashMergePullRequest(url, execute = executeGh) {
   }
   const merged = await read();
   // Merge queues can accept the request without having merged it yet.
-  if (merged.state !== 'MERGED') return { merged: false, repo, number };
-  if (merged.headRefOid !== pr.headRefOid || merged.baseRefName !== 'main') {
+  if (merged.state !== 'MERGED') return { merged: false, repo, number, base: pr.baseRefName };
+  if (merged.headRefOid !== pr.headRefOid || merged.baseRefName !== pr.baseRefName) {
     throw new Error('The pull request changed during merging; branch cleanup was skipped.');
   }
-  return { merged: true, repo, number, pr: merged };
+  return { merged: true, repo, number, base: pr.baseRefName, pr: merged };
 }
 
 async function deleteMergedRemoteBranch(result, execute = executeGh) {
@@ -116,15 +130,26 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     try {
       // Never invoke a merge with an unresolved or mismatched PR identity.
       if (!url) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
+      const confirmNonMain = async ({ number, base }) => {
+        const action = `Squash into ${base}`;
+        const choice = await vscode.window.showWarningMessage(
+          `PR #${number} targets \`${base}\`, not \`main\`. Confirm squash-merge into \`${base}\`?`,
+          { modal: true, detail: 'This will merge into the displayed branch, not main.' },
+          action
+        );
+        return choice === action;
+      };
       const result = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Window,
-        title: `Squash-merging PR #${model?.number ?? ''} into main`, cancellable: false
-      }, () => merge(url));
+        title: `Squash-merging PR #${model?.number ?? ''}`, cancellable: false
+      }, () => merge(url, undefined, confirmNonMain));
+      if (result.cancelled) return;
+      const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {
-        vscode.window.showInformationMessage(`PR #${result.number} queued for merge.`);
+        vscode.window.showInformationMessage(`PR #${result.number} queued for merge${base !== 'main' ? ` into \`${base}\`` : ''}.`);
         return;
       }
-      vscode.window.showInformationMessage(`PR #${result.number} merged into main.`);
+      vscode.window.showInformationMessage(`PR #${result.number} merged into ${base}.`);
       try {
         await deleteMergedRemoteBranch(result);
       } catch (error) {
@@ -136,7 +161,8 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         const repository = api?.repositories.find(candidate => candidate.state.remotes.some(remote =>
           [remote.fetchUrl, remote.pushUrl].some(value => value &&
             require('./pull_request').githubRepository(value) === `https://github.com/${result.repo}`)));
-        if (repository && !result.pr.isCrossRepository && result.pr.headRefName !== 'main') {
+        // Default-branch cleanup must not infer that a non-main merge reached main.
+        if (repository && base === 'main' && !result.pr.isCrossRepository && result.pr.headRefName !== 'main') {
           const installed = path.join(__dirname, 'prune_merged_branches.py');
           const script = existsSync(installed) ? installed : path.join(__dirname, '../scripts/prune_merged_branches.py');
           await run(process.platform === 'win32' ? 'python' : 'python3', [script, '--force', '--repo',
