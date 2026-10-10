@@ -84,6 +84,20 @@ async function run() {
   result = await index.search(exactUrl.replace('#section-2', '#section-3'), 'hybrid');
   assert.ok(result.results.every(item => item.score !== 3), 'A different URL must not receive the literal-match boost');
   index.files.delete('file:///semantic-distractor.txt');
+  index.files.set('file:///literal-linking.md', {
+    uri: 'file:///literal-linking.md', chunks: [{text: 'The linking of clearance facilities.', line: 36, vector: normalizeVector([1, 0])}]
+  });
+  index.files.set('file:///semantic-distractor.txt', {
+    uri: 'file:///semantic-distractor.txt', chunks: [{text: 'Connected systems and interoperability.', line: 0, vector: normalizeVector([0, 1])}]
+  });
+  result = await index.search('linking', 'hybrid');
+  assert.equal(result.results[0].uri, 'file:///literal-linking.md', 'Literal words must beat perfect semantic-only matches');
+  assert.equal(result.results[0].line, 36);
+  result = await index.search('linking', 'semantic');
+  assert.equal(result.results.find(item => item.uri === 'file:///semantic-distractor.txt').score, 1, 'Semantic mode must retain similarity ranking');
+  assert.ok(!result.results.some(item => item.uri === 'file:///literal-linking.md'), 'Semantic mode must not boost a zero-similarity literal match');
+  index.files.delete('file:///literal-linking.md');
+  index.files.delete('file:///semantic-distractor.txt');
   result = await index.search('empty-notes.md', 'semantic');
   const filenameResult = result.results.find(item =>
     item.kind === 'filename' && item.relative === 'notes/empty-notes.md'
