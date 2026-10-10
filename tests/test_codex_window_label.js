@@ -53,7 +53,7 @@ function exercise(label) {
                     current++;
                     if (current >= parts.length) return false;
                     this.currentNode = parts[current];
-                    return true;
+                    return this.currentNode;
                 }
             };
         }
