@@ -87,9 +87,12 @@ class ProposalTests(unittest.TestCase):
                 worker, "index_is_clean", return_value=True
             ), patch.object(worker, "load_core", return_value=core), patch.object(
                 worker, "apply_spellcheck", return_value=proposals
-            ), patch.object(worker, "dialog_choice", return_value=choice), patch.object(worker, "discard_proposals") as discard, patch.object(worker, "git_run") as git:
+            ), patch.object(worker, "dialog_choice", return_value=choice), patch.object(worker, "discard_proposals") as discard, patch.object(
+                worker, "proposal_is_untouched", return_value=True
+            ), patch.object(worker, "write_spellcheck_notice") as notice, patch.object(worker, "git_run") as git:
                 self.assertEqual(worker.run_post_commit_job(), 0)
                 self.assertEqual(discard.called, choice == "Discard")
+                self.assertEqual(notice.called, choice != "Discard")
                 git.assert_not_called()
 
     def test_changed_head_after_dialog_preserves_edits(self):
@@ -118,6 +121,44 @@ class ProposalTests(unittest.TestCase):
         ), patch.object(worker, "apply_spellcheck") as apply:
             worker.run_post_commit_job()
             apply.assert_not_called()
+
+
+    def test_notice_is_written_only_inside_git_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gitdir = root / ".git"
+            gitdir.mkdir()
+            result = subprocess.CompletedProcess([], 0, stdout=str(gitdir))
+            with patch.object(worker, "git_run", return_value=result):
+                self.assertTrue(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"]))
+                notice = gitdir / worker.NOTICE_FILE_NAME
+                self.assertEqual(json.loads(notice.read_text()), {
+                    "version": 1, "head": "a" * 40, "paths": ["readme.md"],
+                })
+                self.assertFalse((root / worker.NOTICE_FILE_NAME).exists())
+
+    def test_notice_write_handles_missing_metadata(self):
+        result = subprocess.CompletedProcess([], 1, stdout="")
+        with patch.object(worker, "git_run", return_value=result):
+            self.assertFalse(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"]))
+
+    def test_no_notice_after_discard_or_intervening_edit(self):
+        job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
+        proposals = {"note.md": (b"before", b"after")}
+        for untouched, choice in [(False, "Keep edits"), (True, "Discard")]:
+            with self.subTest(untouched=untouched, choice=choice), patch.dict(
+                worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}
+            ), patch.object(worker, "head_sha", return_value="expected"), patch.object(
+                worker, "has_unstaged_changes", return_value=False
+            ), patch.object(worker, "index_is_clean", return_value=True), patch.object(
+                worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True)
+            ), patch.object(worker, "apply_spellcheck", return_value=proposals), patch.object(
+                worker, "dialog_choice", return_value=choice
+            ), patch.object(worker, "proposal_is_untouched", return_value=untouched), patch.object(
+                worker, "write_spellcheck_notice"
+            ) as notice, patch.object(worker, "discard_proposals"):
+                worker.run_post_commit_job()
+                notice.assert_not_called()
 
 
 if __name__ == '__main__':

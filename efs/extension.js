@@ -18,6 +18,7 @@ const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
 const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
+const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
 const { PonyProfileViewProvider, VIEW_ID: PONY_VIEW_ID } = require('./pony_profile');
@@ -292,6 +293,9 @@ function settings() {
 async function activate(context) {
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
+  void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
+    console.warn('Sweetiebot spellcheck notification initialization:', error.message);
+  });
   // Register PR merge commands before compatibility aliases and awaited startup
   // work so a stale legacy command cannot leave contributed actions without handlers.
   registerPullRequestBatchCommand(vscode, context);

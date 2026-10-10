@@ -6,6 +6,7 @@ import importlib.util
 from importlib.machinery import SourceFileLoader
 import json
 import os
+import tempfile
 from pathlib import Path
 import re
 import subprocess
@@ -24,6 +25,7 @@ SPELLCHECK_MAX_RANGE_CHARS = int(os.environ.get("SCM_TOOLKIT_SPELLCHECK_MAX_RANG
 SPELLCHECK_NUM_CTX = int(os.environ.get("SCM_TOOLKIT_SPELLCHECK_NUM_CTX", "8192"))
 SPELLCHECK_JOB_ENV = "SCM_TOOLKIT_SPELLCHECK_JOB"
 POST_COMMIT_ARG = "--post-commit-spellcheck"
+NOTICE_FILE_NAME = "sweetiebot-spellcheck-ready.json"
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 URL_RE = re.compile(r"https?://[^\s)>]+")
@@ -400,6 +402,38 @@ def discard_proposals(global_args: list[str], proposals: dict[str, tuple[bytes, 
     git_run(global_args, "--literal-pathspecs", "restore", "--worktree", "--", *proposals.keys())
 
 
+
+def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str]) -> bool:
+    """Hand off kept spellcheck edits to VS Code without touching tracked files."""
+    result = git_run(global_args, "rev-parse", "--absolute-git-dir", text=True)
+    if result.returncode != 0:
+        return False
+    git_directory = Path(result.stdout.strip())
+    if not git_directory.is_absolute() or not git_directory.is_dir():
+        return False
+    notice = git_directory / NOTICE_FILE_NAME
+    payload = {
+        "version": 1,
+        "head": expected_head,
+        "paths": sorted(paths),
+    }
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=git_directory,
+            prefix=".sweetiebot-spellcheck-", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
+        os.replace(temporary_path, notice)
+        return True
+    except OSError:
+        return False
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def run_post_commit_job() -> int:
     raw = os.environ.get(SPELLCHECK_JOB_ENV, "")
     try:
@@ -425,8 +459,15 @@ def run_post_commit_job() -> int:
         return 0
 
     choice = dialog_choice(len(proposals))
-    if choice == "Discard" and head_sha(global_args) == expected_head and index_is_clean(global_args):
-        discard_proposals(global_args, proposals)
+    if choice == "Discard":
+        if head_sha(global_args) == expected_head and index_is_clean(global_args):
+            discard_proposals(global_args, proposals)
+    elif (
+        head_sha(global_args) == expected_head
+        and index_is_clean(global_args)
+        and proposal_is_untouched(global_args, proposals)
+    ):
+        write_spellcheck_notice(global_args, expected_head, list(proposals))
     return 0
 
 
