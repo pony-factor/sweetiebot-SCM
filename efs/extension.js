@@ -282,7 +282,7 @@ function settings() {
     chatModel: cfg.get('chatModel', '').trim(),
     ollamaUrl: cfg.get('ollamaUrl', 'http://127.0.0.1:11434'),
     mode: cfg.get('mode', 'hybrid'),
-    resultLimit: cfg.get('resultLimit', 20),
+    resultLimit: cfg.get('resultLimit', 100),
     maxFiles: cfg.get('maxFiles', 5000),
     maxFileSizeMB: cfg.get('maxFileSizeMB', 10),
     exclude: cfg.get('exclude', '**/{.git,node_modules,dist,build,out,target,.venv,venv,__pycache__,coverage}/**'),

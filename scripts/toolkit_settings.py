@@ -43,7 +43,7 @@ DEFAULT_SETTINGS = {
     "postCommitAction": "none",
     "workspaceSearchOllamaUrl": "http://127.0.0.1:11434",
     "workspaceSearchMode": "hybrid",
-    "workspaceSearchResultLimit": "20",
+    "workspaceSearchResultLimit": "100",
     "workspaceSearchMaxFiles": "5000",
     "workspaceSearchMaxFileSizeMB": "10",
     "workspaceSearchExclude": "**/{.git,node_modules,dist,build,out,target,.venv,venv,__pycache__,coverage}/**",
