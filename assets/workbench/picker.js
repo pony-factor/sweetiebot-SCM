@@ -1103,7 +1103,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
-            : `Draft and publish a pull request for ${branch ?? 'the current branch'} with local Kefania and Codex`;
+            : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -1127,14 +1127,21 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
         try {
             const source = scmToolkitChatgptConversationSource(doc);
-            await commands.executeCommand('sweetiebot.createLocalPullRequest', repository, {
+            const options = {
                 branch,
                 base: currentDefaultBranch,
                 remote: settings.remote,
                 mcpServer: settings.mcpPrServer,
                 mcpTool: settings.mcpPrTool,
                 source,
-            });
+            };
+            try {
+                await commands.executeCommand('sweetiebot.openPullRequestChat', repository, options);
+            } catch (error) {
+                // Only fall back before any browser chat can have been launched.
+                if (!error?.browserUnavailable && error?.name !== 'SweetiebotBrowserUnavailable') throw error;
+                await commands.executeCommand('sweetiebot.createLocalPullRequest', repository, options);
+            }
         } catch (error) {
             notifications.error(error);
         } finally {
