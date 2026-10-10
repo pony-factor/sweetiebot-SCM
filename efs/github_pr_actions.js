@@ -147,12 +147,10 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         vscode.window.showWarningMessage(`PR #${result.number} merged, but local branch cleanup failed: ${error.message}`);
       }
     } catch (error) {
-      const detail = error.stderr?.trim() || error.message;
-      vscode.window.showErrorMessage(
-        error.code === 'SWEETIEBOT_MERGE_CONFLICT'
-          ? error.message
-          : `Unable to squash-merge pull request: ${detail}`
-      );
+      const detail = error.code === 'SWEETIEBOT_MERGE_CONFLICT'
+        ? error.message
+        : error.stderr?.trim() || error.message;
+      vscode.window.showErrorMessage(detail);
     } finally {
       busy.delete(url);
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
