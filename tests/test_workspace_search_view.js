@@ -72,11 +72,23 @@ async function run() {
   assert.equal(commands.at(-1).command, 'revealInExplorer', 'Opening a folder result reveals it in Explorer');
   assert.equal(commands.at(-1).uri.path, '/tmp/research');
 
+  const makeNode = tagName => ({
+    tagName, children: [], dataset: {}, listeners: {},
+    addEventListener(event, listener) { this.listeners[event] = listener; },
+    append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } },
+    replaceChildren(...children) { this.children = []; this.append(...children); },
+    setAttribute(name, value) { this[name] = value; },
+    closest(selector) {
+      for (let node = this; node; node = node.parent) {
+        if (selector === '[data-index]' && Object.hasOwn(node.dataset, 'index')) return node;
+      }
+      return null;
+    },
+    remove() { this.removed = true; }
+  });
   const elements = new Map();
   for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle']) {
-    elements.set(id, {value: id === 'mode' ? 'hybrid' : '', listeners: {},
-      addEventListener(event, listener) { this.listeners[event] = listener; },
-      replaceChildren() {}, focus() {}});
+    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : '', focus() {}}));
   }
   const windowListeners = {};
   const timers = new Map(); let nextTimer = 0; const sent = [];
@@ -98,6 +110,8 @@ async function run() {
   assert.match(html, /className='folder-tree'/);
   assert.match(html, /className='folder-route'/);
   assert.match(html, /className='file-name'/);
+  assert.match(html, /\.file-heading:hover\{background:var\(--vscode-list-hoverBackground\)\}/);
+  assert.match(html, /\.file-heading:focus-visible\{outline:1px solid var\(--vscode-focusBorder\)/);
   assert.match(html, /group\.entries\[0\]\?\.result\?\.kind==='folder'/);
   assert.match(html, /if\(result\.kind!=='folder'\)meta\.append\(line\)/);
   assert.match(html, /id="summary" class="result-summary"/);
@@ -108,7 +122,7 @@ async function run() {
   assert.match(html, /meta\.append\(score,copied\)/);
   assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
   assert.match(html, /more\.textContent='…'/);
-  const page = {document: {getElementById: id => elements.get(id)},
+  const page = {document: {getElementById: id => elements.get(id), createElement: makeNode},
     acquireVsCodeApi: () => ({postMessage: message => sent.push(message)}),
     setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
     clearTimeout: id => timers.delete(id), window: {addEventListener(event, listener) { windowListeners[event] = listener; }}};
@@ -150,6 +164,28 @@ async function run() {
   windowListeners.paste({target: query, clipboardData: {getData: () => ' additive'}, preventDefault() { pastePrevented = true; }});
   assert.equal(pastePrevented, false, 'paste stays native while the user is actively editing the query field');
   query.listeners.blur();
-  console.log('Workspace search debounce, submit, composition, clear, and stale-response checks passed.');
+
+  windowListeners.message({data: {type: 'results', results: [
+    {uri: 'file:///tmp/src/foo.js', relative: 'src/foo.js', text: 'first match', score: .9, line: 3},
+    {uri: 'file:///tmp/src/foo.js', relative: 'src/foo.js', text: 'second match', score: .7, line: 8},
+    {kind: 'folder', uri: 'file:///tmp/src', relative: 'src', text: 'directory', score: .6, line: 0}
+  ]}});
+  const sections = elements.get('results').children;
+  assert.equal(sections.length, 2, 'multiple hits for one file share a clickable heading');
+  const fileHeading = sections[0].children[0];
+  assert.equal(fileHeading.tagName, 'button', 'file headings are keyboard-accessible buttons');
+  assert.equal(fileHeading.dataset.index, '0', 'file headings open the top-ranked hit');
+  assert.equal(fileHeading['aria-label'], 'Open src/foo.js');
+  for (const target of [fileHeading.children[1], fileHeading.children[2]]) {
+    elements.get('results').listeners.click({target});
+    assert.equal(sent.at(-1).type, 'open', 'clicking the file route or filename opens the result');
+    assert.equal(sent.at(-1).index, 0);
+  }
+  const folderHeading = sections[1].children[0];
+  assert.equal(folderHeading.dataset.index, '2');
+  elements.get('results').listeners.click({target: folderHeading.children[1]});
+  assert.equal(sent.at(-1).type, 'open', 'folder headings still use the existing reveal action');
+  assert.equal(sent.at(-1).index, 2);
+  console.log('Workspace search debounce, submit, composition, clear, file-heading click, and stale-response checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
