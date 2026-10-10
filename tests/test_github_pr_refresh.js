@@ -60,6 +60,25 @@ async function main() {
       assert.deepEqual(pullRequestFromTreeNode({ resourceUri: { query: JSON.stringify({ prIdentifier: `${remote}:12` }) } }), { url, number: 12 });
       assert.deepEqual(pullRequestFromTreeNode({ pullRequestModel: { remote: { url: remote }, number: 12 } }), { url, number: 12 });
     }
+    // GitHub PR tree commands can receive a rendered TreeItem rather than a
+    // fully hydrated PRNode. Its command arguments and stable ID retain identity.
+    const renderedWithCommand = {
+      id: 'category-https://github.com/owner/repo/pull/12',
+      command: { arguments: [{ pullRequestModel: { html_url: url, number: 12 } }] }
+    };
+    assert.deepEqual(pullRequestFromTreeNode(renderedWithCommand), { url, number: 12 });
+    assert.deepEqual(pullRequestFromTreeNode({ id: 'category-' + url }), { url, number: 12 });
+    assert.deepEqual(pullRequestFromTreeNode({ id: 'category-' + url, number: 99 }),
+      { url: undefined, number: 99 }, 'Never substitute a PR when the clicked row number disagrees');
+    assert.deepEqual(pullRequestFromTreeNode({ command: { arguments: [
+      { remote: { url: 'git@github.com:owner/repo.git' }, number: 12 }
+    ] } }), { url, number: 12 });
+    assert.deepEqual(pullRequestFromTreeNode({ pullRequestModel: {
+      githubRepository: { remote: { url: 'https://github.com/owner/repo.git' } }, number: 12
+    } }), { url, number: 12 });
+    assert.equal(pullRequestFromTreeNode({ command: { arguments: [] }, id: 'unrelated-tree-item' }).url, undefined);
+    assert.equal(pullRequestFromTreeNode({ id: 'prefixhttps://github.com/owner/repo/pull/12https://github.com/owner/repo/pull/13' }).url, undefined,
+      'Never guess between multiple PR identities');
     assert.equal(pullRequestFromTreeNode({ resourceUri: { query: '{invalid' } }).url, undefined);
     assert.equal(pullRequestFromTreeNode({ remote: { url: 'git@other.example:owner/repo.git' }, number: 12 }).url, undefined);
     assert.deepEqual(pullRequestFromTreeNode({ html_url: '', url, number: 99 }), { url, number: 12 },
