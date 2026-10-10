@@ -124,6 +124,22 @@ python3 scripts/install.py --app "/path/to/Visual Studio Code.app"
 
 If macOS blocks the write, allow the terminal or Python process you are using under **System Settings → Privacy & Security → App Management**, then run the installer again.
 
+
+### Automatic spellcheck commit notification
+
+When the opt-in post-commit Markdown spellcheck produces edits and you keep them, Sweetiebot leaves the edits **unstaged**, shows a small VS Code notification, and fills an **empty** Source Control commit box with a `🤖 Spellcheck …` message. An existing draft is never overwritten: the notification offers **Use spellcheck message** instead. No follow-up commit or push happens automatically.
+
+Enable automatic post-commit spellcheck with `git config --global scm-toolkit.post-commit-spellcheck true` if it is not already enabled.
+
+To have GitHub link the Ollama co-author on that *next* commit, configure the **actual account-associated GitHub noreply email of a bot account you control**, not a guessed address:
+
+```sh
+git config --global scm-toolkit.spellcheck-coauthor-email '123456+your-ollama-bot@users.noreply.github.com'
+git config --global scm-toolkit.spellcheck-coauthor-name 'Ollama'
+```
+
+Replace the example with the exact noreply email listed in that bot account's GitHub email settings. Without a configured address, the suggested message still identifies the edit as generated using local Ollama, but **does not invent an account-linked co-author**. GitHub assigns co-author attribution only to an address it recognizes as associated with an account. This feature does not change the spellcheck model choice or the keep/discard review step. It uses a one-time notification file under the repository's Git metadata, including for linked worktrees, without altering versioned files.
+
 ## Configuration
 
 Toolkit settings live in your global Git config under the `scm-toolkit` section. This keeps feature settings in the normal `~/.gitconfig` file and leaves room for new options later.
