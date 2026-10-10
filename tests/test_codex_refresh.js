@@ -11,6 +11,7 @@ let enabled = true, installed = true;
 let revision = 'initial';
 let choice, releaseServer, stopping = false, reloads = 0;
 const notices = [];
+let invalidations = 0;
 let timerId = 0, changed, focusChanged, extensionPath = '/extensions/codex-old', launches = 0;
 const children = [];
 const sandbox = vm.createContext({
@@ -22,6 +23,7 @@ const sandbox = vm.createContext({
   require(name) {
     if (name === 'path') return path;
     if (name === './runtime_revision') return { runtimeRevision() { return revision; } };
+    if (name === './extension_cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
     assert.equal(name, 'child_process');
     return { spawn(executable, args) {
       launches++;
@@ -76,6 +78,7 @@ children[1].callbacks.get('close')(0);
 assert.equal(notices.length, 0, 'reload is withheld until the quiet period elapses');
 tick();
 assert.equal(notices.length, 1, 'successful settled repair offers one reload');
+assert.equal(invalidations, 1, 'VS Code extension cache is cleared before the offered reload');
 await Promise.resolve();
 assert.equal(stopping, true);
 assert.equal(reloads, 0, 'reload waits for the old settings server to exit');
@@ -101,6 +104,7 @@ children.at(-1).callbacks.get('stdout')('Installed SCM toolkit for VS Code 1.0. 
 children.at(-1).callbacks.get('close')(0);
 tick();
 assert.equal(notices.length, 2, 'reloading does not offer the same update again');
+assert.equal(invalidations, 2, 'an unchanged reloaded window does not touch the extension cache');
 focusChanged({ focused: true });
 assert.equal(timers.size, 0, 'an unchanged focused window does not repair');
 reloaded.subscriptions.at(-1).dispose();

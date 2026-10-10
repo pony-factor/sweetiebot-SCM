@@ -3,6 +3,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { runtimeRevision } = require('./runtime_revision');
+const { invalidateUserExtensionCache } = require('./extension_cache');
 
 const QUIET_PERIOD_MS = 8000;
 
@@ -91,7 +92,14 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
           schedule(QUIET_PERIOD_MS);
           return;
         }
-        offerReload(runtimeRevision(vscode, context));
+        const revision = runtimeRevision(vscode, context);
+        if (revision !== loadedRevision && revision !== offeredRevision) {
+          // VS Code caches user extension manifests across reloads. Invalidate its
+          // disposable scan cache before our single reload, so a changed companion
+          // manifest does not trigger a second native reload notification.
+          invalidateUserExtensionCache(context, output);
+        }
+        offerReload(revision);
       }, QUIET_PERIOD_MS);
     };
     running.stdout.on('data', data => output.append(data.toString()));
