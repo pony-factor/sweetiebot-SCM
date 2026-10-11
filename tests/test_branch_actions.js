@@ -99,7 +99,7 @@ async function run() {
   }
   {
     const { repository, calls } = fixture();
-    assert.equal(await syncBranch(repository, { ...options, branch: 'topic' }), 'topic');
+    assert.equal(await syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), 'topic');
     assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin' }], ['status'], ['merge', 'origin/main'], ['status']]);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
@@ -111,7 +111,7 @@ async function run() {
   {
     const { repository, calls } = fixture();
     repository.fetch = async () => { repository.state.HEAD.name = 'changed'; };
-    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic' }), /active branch changed/);
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), /active branch changed/);
     assert(!calls.some(call => call[0] === 'merge'));
   }
   for (const conflict of [false, true]) {
@@ -120,17 +120,17 @@ async function run() {
       if (conflict) repository.state.mergeChanges.push({});
       throw new Error('merge failed');
     };
-    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic' }), /merge failed/);
-    assert.equal(repository.inputBox.value, conflict ? '🔄 Sync branch with main' : 'Existing draft');
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), /merge failed/);
+    assert.equal(repository.inputBox.value, conflict ? '🔄 Sync brach to main' : 'Existing draft');
   }
   {
     const { repository } = fixture();
     repository.fetch = async () => { throw new Error('fetch failed'); };
-    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic' }), /fetch failed/);
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), /fetch failed/);
     assert.equal(repository.inputBox.value, 'Existing draft');
     repository.fetch = async () => {};
     repository.merge = async () => { repository.inputBox.value = 'Edited during sync'; };
-    await syncBranch(repository, { ...options, branch: 'topic' });
+    await syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' });
     assert.equal(repository.inputBox.value, 'Edited during sync');
   }
   {
@@ -378,7 +378,7 @@ async function run() {
     }), true);
     repository.state.HEAD = { name: 'topic' };
     assert.equal(await commands.get('sweetiebot.syncBranch')({ rootUri: uri }, {
-      ...options, branch: 'topic'
+      ...options, branch: 'topic', strategy: 'merge'
     }), 'topic');
     assert.equal(await commands.get('sweetiebot.deleteBranch')({ rootUri: uri }, {
       ...options, branch: 'topic'
@@ -416,6 +416,62 @@ async function run() {
     await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /Checkout blocked/);
     assert.equal(await commands.get('sweetiebot.autoPullClean')(uri), false,
       'A failed operation must not block subsequent background work');
+  }
+  // Exercise the default squash path against a real disposable Git repository.
+  // The mocked VS Code Git API cannot validate index behavior or commit ancestry.
+  {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { execFileSync } = require('node:child_process');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-sync-'));
+    const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    try {
+      git('init', '-b', 'main');
+      git('config', 'user.name', 'Sweetiebot Test');
+      git('config', 'user.email', 'sweetiebot-test@example.invalid');
+      fs.writeFileSync(path.join(root, 'shared.txt'), 'base\\n');
+      git('add', '.');
+      git('commit', '-m', 'Initial');
+      git('branch', 'topic');
+      fs.writeFileSync(path.join(root, 'shared.txt'), 'upstream change\\n');
+      git('add', '.');
+      git('commit', '-m', 'Upstream change');
+      git('checkout', 'topic');
+      fs.writeFileSync(path.join(root, 'topic.txt'), 'topic change\\n');
+      git('add', '.');
+      git('commit', '-m', 'Topic change');
+      git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
+
+      const { repository } = fixture();
+      repository.rootUri = { fsPath: root };
+      const syncOptions = { ...options, branch: 'topic' };
+      assert.equal(await syncBranch(repository, syncOptions), 'topic');
+      const squashHead = git('rev-parse', 'HEAD');
+      assert.equal(git('log', '-1', '--format=%s'), '🔄 Sync brach to main');
+      assert.match(git('log', '-1', '--format=%B'), /Co-authored-by: Codex Web <noreply@openai.com>/);
+      assert.equal(git('rev-list', '--count', 'HEAD'), '3', 'Exactly one squash commit on the topic branch');
+      assert.equal(fs.readFileSync(path.join(root, 'shared.txt'), 'utf8'), 'upstream change\\n');
+      assert.equal(fs.readFileSync(path.join(root, 'topic.txt'), 'utf8'), 'topic change\\n');
+      assert.equal(git('status', '--porcelain'), '');
+      assert.equal(repository.inputBox.value, 'Existing draft');
+
+      // Repeating an unchanged squash must not create another commit.
+      assert.equal(await syncBranch(repository, syncOptions), 'topic');
+      assert.equal(git('rev-parse', 'HEAD'), squashHead);
+      // An already-merged upstream ref is also a no-op.
+      git('update-ref', 'refs/remotes/origin/main', squashHead);
+      assert.equal(await syncBranch(repository, syncOptions), 'topic');
+      assert.equal(git('rev-parse', 'HEAD'), squashHead);
+
+      // Never swallow or rewrite local edits to the workspace.
+      fs.writeFileSync(path.join(root, 'untracked.txt'), 'keep this\\n');
+      await assert.rejects(syncBranch(repository, syncOptions), /Commit or stash your changes/);
+      assert.equal(fs.readFileSync(path.join(root, 'untracked.txt'), 'utf8'), 'keep this\\n');
+      assert.equal(git('rev-parse', 'HEAD'), squashHead);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
   console.log('Branch action regression checks passed.');
 }
