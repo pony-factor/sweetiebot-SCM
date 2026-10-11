@@ -1,0 +1,41 @@
+name: Codex webview browser simulation
+
+on:
+  pull_request:
+    paths:
+      - 'assets/codex/codex-hide-chat-timestamps.js'
+      - 'assets/codex/codex-window-label.js'
+      - 'tests/test_codex_hide_chat_timestamps.js'
+      - 'tests/test_codex_window_label.js'
+      - 'tests/test_codex_label.py'
+      - 'tests/test_codex_webview_browser.py'
+      - '.github/workflows/codex-webview-browser.yml'
+  workflow_dispatch:
+
+jobs:
+  codex-webview-browser:
+    name: Chromium CSS and DOM regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium automation
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Browser-backed Codex webview simulation
+        run: python tests/test_codex_webview_browser.py
+      - name: Node.js timestamp and heading tests
+        run: |
+          node tests/test_codex_hide_chat_timestamps.js
+          node tests/test_codex_window_label.js
+      - name: Codex manifest label tests
+        env:
+          PYTHONPATH: scripts
+        run: python -m unittest discover -s tests -p test_codex_label.py -v
