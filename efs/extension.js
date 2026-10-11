@@ -97,6 +97,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       codexKeepAwake: scm.get('codexKeepAwake', true),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
+      autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
       chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },
     editorSettings: {
