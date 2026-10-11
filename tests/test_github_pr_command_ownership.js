@@ -59,6 +59,26 @@ async function main() {
     await vscode.commands.executeCommand('scmToolkit.squashMergeSelectedPullRequest');
     await vscode.commands.executeCommand('scmToolkit.squashMergePullRequest', { url });
     assert.deepEqual(merged, [url, url, url]);
+    // The inline button resolves in the tree's owner, then hands off only a
+    // URL. Model objects/functions must not cross the extension boundary.
+    const mergeHandler = handlers.get('sweetiebot.squashMergePullRequest');
+    handlers.set('sweetiebot.squashMergePullRequest', target => {
+      assert.equal(target, url, 'The row bridge must send the canonical URL');
+      return mergeHandler(target);
+    });
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', clicked);
+    assert.equal(merged.length, 4);
+    const originalGetTreeItem = owner.getTreeItem;
+    owner.getTreeItem = async () => { throw new Error('stale row'); };
+    const originalShowError = vscode.window.showErrorMessage;
+    const errors = [];
+    vscode.window.showErrorMessage = message => errors.push(message);
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', {});
+    assert.equal(merged.length, 4, 'An unresolved clicked row must not use another selection');
+    assert.match(errors[0], /Could not identify the clicked pull request/);
+    owner.getTreeItem = originalGetTreeItem;
+    vscode.window.showErrorMessage = originalShowError;
+    handlers.set('sweetiebot.squashMergePullRequest', mergeHandler);
     // An optional resolver must never discard or substitute a supplied identity.
     handlers.set('sweetiebot.resolveSelectedPullRequest', async () => ({ url: undefined }));
     await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', { url });
@@ -66,7 +86,7 @@ async function main() {
     await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', {
       scheme: 'prnode', query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:13' })
     });
-    assert.deepEqual(merged, Array(6).fill(url));
+    assert.deepEqual(merged, Array(7).fill(url));
     for (const subscription of subscriptions) subscription.dispose();
     assert.equal(handlers.size, 0);
     // Direct arguments still work without the optional GitHub tree patch.

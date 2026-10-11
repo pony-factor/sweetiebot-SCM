@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { normalizeChatgptProjectUrl, chatgptPromptUrl } = require('../efs/chatgpt_project');
+const { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl } = require('../efs/chatgpt_project');
 
 const project = 'https://chatgpt.com/g/g-p-6ac73804b6b081918ef8d1f0c88d4ba0/project';
 const prompt = 'Merge #12 & #13\nVerify the diff.';
@@ -26,3 +26,9 @@ for (const invalid of [
   assert.throws(() => chatgptPromptUrl(prompt, invalid), /ChatGPT project URL/);
 }
 console.log('ChatGPT project destination checks passed.');
+
+const large = prompt.repeat(6000);
+const pr = new URL(chatgptPullRequestUrl(large, project));
+assert.equal(pr.search, '');
+assert.equal(pr.origin + pr.pathname, project);
+assert.equal(new URLSearchParams(pr.hash.slice(1)).get('q'), large);

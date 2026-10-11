@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { displayName } = require('./pony_profile');
-const { chatgptPromptUrl, resolveChatgptActionProject } = require('./chatgpt_project');
+const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -240,7 +240,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     });
     const projectUrl = await resolveChatgptActionProject(vscode, context);
     if (projectUrl === undefined) return;
-    const url = chatgptPromptUrl(prompt, projectUrl) + '&sweetiebot_pr=1';
+    const url = chatgptPullRequestUrl(prompt, projectUrl);
     await vscode.commands.executeCommand('workbench.action.browser.open', {
       url, openToSide: false, reuseUrlFilter: url
     });

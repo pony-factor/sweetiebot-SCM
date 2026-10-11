@@ -67,7 +67,7 @@ function pullRequestFromTreeNode(node) {
 function installPullRequestRefresh(vscode, view, owner) {
   // Sweetiebot owns the public merge commands and their legacy aliases.
   // Only resolve nodes here, in the extension that owns the GitHub PR tree.
-  owner._register(vscode.commands.registerCommand('sweetiebot.resolveSelectedPullRequest', async node => {
+  const resolve = async node => {
     const selected = node ?? (view.selection?.length === 1 ? view.selection[0] : undefined);
     let model = pullRequestFromTreeNode(selected);
     // Some GitHub nodes expose the PR URI only on their rendered TreeItem.
@@ -79,6 +79,16 @@ function installPullRequestRefresh(vscode, view, owner) {
       }
     }
     return model;
+  };
+  owner._register(vscode.commands.registerCommand('sweetiebot.resolveSelectedPullRequest', resolve));
+  // Tree command arguments belong to the extension host that owns the view.
+  // Resolve them here before handing a serializable URL to Sweetiebot.
+  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', async node => {
+    const model = await resolve(node);
+    if (!model.url) {
+      return vscode.window.showErrorMessage('Could not identify the clicked pull request. Refresh the GitHub Pull Requests view and try again.');
+    }
+    return vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', model.url);
   }));
   let timer;
   let running = false;

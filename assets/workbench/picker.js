@@ -1138,7 +1138,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
-            : `Draft and publish a pull request for ${branch ?? 'the current branch'} with local Kefania and Codex`;
+            : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -1162,7 +1162,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
         try {
             const source = scmToolkitChatgptConversationSource(doc);
-            await commands.executeCommand('sweetiebot.createLocalPullRequest', repository, {
+            await commands.executeCommand('sweetiebot.openPullRequestChat', repository, {
                 branch,
                 base: currentDefaultBranch,
                 remote: settings.remote,

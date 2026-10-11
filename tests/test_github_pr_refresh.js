@@ -106,7 +106,7 @@ async function main() {
     assert.equal(merges.at(-1).url, undefined, 'Never guess among multiple selected PRs');
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
-      'sweetiebot.squashMergeSelectedPullRequest');
+      'sweetiebot.squashMergeTreePullRequest');
     await Promise.resolve();
     assert.equal(calls, 0);
     assert.equal(timers.size, 0);
