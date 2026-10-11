@@ -24,7 +24,7 @@ header {padding:10px;background:#222}
 <div id="activity-row" class="row"><div id="clock"><span>9:</span><span>18 PM</span></div><span id="summary">Read files, ran commands</span></div>
 <div class="row"><time id="single">9:19 PM</time><span>Another activity</span></div>
 <div class="row"><span id="relative">Today at 6:44 PM</span><span>Something else</span></div>
-<article data-message-id="m1"><p>Meet at <span id="prose">9:18 PM</span></p><span id="message">CelestAI: Codex, says the message</span></article>
+<article data-message-id="m1"><p>Meet at <span id="prose">9:18 PM</span></p><span id="message">CelestAI: Codex, says the message</span><div class="markdown"><span id="markdown-time">9:18 PM</span></div><a id="link-time" href="#activity-row">9:18 PM</a></article>
 <button id="activity" aria-expanded="false" aria-label="Worked for 1m 48s">Worked for 1m 48s</button>
 <div id="ordinary">9:18 PM is not a separator</div>
 </body></html>"""
@@ -60,10 +60,12 @@ def run():
 
         for selector in ["#clock", "#single", "#relative"]:
             assert state(selector)["display"] == "none", (selector, state(selector))
-        for selector in ["#summary", "#prose", "#message", "#ordinary"]:
+        for selector in ["#summary", "#prose", "#message", "#markdown-time", "#link-time", "#ordinary"]:
             assert state(selector)["display"] != "none", (selector, state(selector))
         assert state("#title")["text"] == "CelestAINew Chat"
         assert state("#activity")["text"] == "Activity"
+        assert state("#message")["text"] == "CelestAI: Codex, says the message"
+        assert page.locator("#link-time").get_attribute("href") == "#activity-row"
         assert page.locator("#new-chat").is_enabled()
 
         # Regression: React can clear the hidden marker and apply inline !important.
