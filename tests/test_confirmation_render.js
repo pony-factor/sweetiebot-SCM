@@ -20,6 +20,13 @@ context.renderMarkdown(output,'## Profile\n\nA **recognizable** pony with <scrip
 assert.equal(output.children[0].tag,'h3');
 assert.equal(output.children[1].children[1].tag,'strong');
 assert(output.children[1].children.some(node=>node.textContent.includes('<script>')),'Raw HTML remains inert text');
+context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
+const inlineNodes=output.children[0].children;
+assert.deepEqual(inlineNodes.filter(node=>node.tag==='em').map(node=>node.textContent),['Friendship Is Magic','Rock Solid Friendship']);
+assert.equal(inlineNodes.find(node=>node.tag==='strong').textContent,'adult mare');
+assert.equal(inlineNodes.find(node=>node.tag==='code').textContent,'*literal*');
+context.renderMarkdown(output,'ordinary_name_part and https://example.com/rock_solid_friendship');
+assert(!output.children[0].children.some(node=>node.tag==='em'),'Underscores in words and URLs remain literal');
 const remainder=context.imageIndex('Profile\n![Pony credit](https://example.com/image.png)\n![Duplicate](https://example.com/image.png)');
 assert(!remainder.includes('!['));
 assert.equal(images.children.length,1);

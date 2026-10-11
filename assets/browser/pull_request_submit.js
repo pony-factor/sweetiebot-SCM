@@ -19,18 +19,37 @@
   } catch { /* Older manual drafting links do not collect results automatically. */ }
   // Give this action's new tab a blank draft without deleting or replacing the
   // user's shared draft. ChatGPT reads storage in its page world, not preload.
+  let composerIsolated = false;
   if (fragmentLaunch && callback) {
     const isolateComposerDraft = () => {
       const storage = window.localStorage;
-      const key = 'oai/apps/lightweight-web/composerDraft/v1';
+      const keys = new Set(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']);
       const prototype = window.Storage.prototype;
       const get = prototype.getItem, set = prototype.setItem, remove = prototype.removeItem;
-      let draft = null;
-      prototype.getItem = function(name) { return this === storage && String(name) === key ? draft : get.call(this, name); };
-      prototype.setItem = function(name, value) { if (this === storage && String(name) === key) draft = String(value); else set.call(this, name, value); };
-      prototype.removeItem = function(name) { if (this === storage && String(name) === key) draft = null; else remove.call(this, name); };
+      const drafts = new Map();
+      prototype.getItem = function(name) { return this === storage && keys.has(String(name)) ? drafts.get(String(name)) ?? null : get.call(this, name); };
+      prototype.setItem = function(name, value) { if (this === storage && keys.has(String(name))) drafts.set(String(name), String(value)); else set.call(this, name, value); };
+      prototype.removeItem = function(name) { if (this === storage && keys.has(String(name))) drafts.delete(String(name)); else remove.call(this, name); };
+      // ChatGPT also reads named Storage properties rather than getItem.
+      // Keep those reads and writes in the same tab-local draft map.
+      const isolated = new Proxy(storage, {
+        get(target, name) {
+          if (keys.has(name)) return drafts.get(name);
+          const value = Reflect.get(target, name, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+        set(target, name, value) {
+          if (keys.has(name)) { drafts.set(name, String(value)); return true; }
+          return Reflect.set(target, name, value, target);
+        },
+        deleteProperty(target, name) {
+          if (keys.has(name)) { drafts.delete(name); return true; }
+          return Reflect.deleteProperty(target, name);
+        }
+      });
+      Object.defineProperty(window, 'localStorage', { configurable: true, get: () => isolated });
     };
-    try { require('electron').contextBridge.executeInMainWorld({ func: isolateComposerDraft }); }
+    try { require('electron').contextBridge.executeInMainWorld({ func: isolateComposerDraft }); composerIsolated = true; }
     catch { /* Existing composer guards still prevent overwriting a user draft. */ }
   }
   // Remove transport metadata before ChatGPT hydrates or constructs requests.
@@ -45,7 +64,8 @@
     let previous, stableSince;
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return;
-      const generating = document.querySelector('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]');
+      const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
+        .some(button => button.getClientRects().length > 0);
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
@@ -135,6 +155,22 @@
     const composer = document.querySelector('#prompt-textarea')
       || document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
+    if (composerIsolated && composer && text && !samePreparedText(text) && !inserted && composer.getClientRects().length) {
+      // Hydration can read its saved draft before preload isolation runs.
+      // This is a newly created workflow tab; the shared draft is preserved.
+      composer.focus();
+      inserting = true;
+      if (composer.tagName === 'TEXTAREA') {
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(composer, '');
+        composer.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+      }
+      inserting = false;
+      timer = setTimeout(attempt, 250);
+      return;
+    }
     if (fragmentLaunch && composer && !text && !inserted && composer.getClientRects().length) {
       composer.focus();
       inserting = true;

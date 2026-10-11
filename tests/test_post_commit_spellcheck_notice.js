@@ -173,3 +173,29 @@ test('reverted spellcheck edits do not open an empty review window', async () =>
   }, f.repo, { paths: ['notes/report.md'], root: '/repo' }, async () => '');
   assert.equal(f.repo.inputBox.value, '');
 });
+
+test('descriptive titles carry into the preview and empty draft with the actual model', async () => {
+  const title = 'Spellcheck Instinet trading and citations';
+  const data = {version: 1, head, paths: ['notes/report.md'], model: 'qwen:3b', title};
+  assert.equal(parseNotice(JSON.stringify(data)).title, title);
+  assert.equal(parseNotice(JSON.stringify({...data, title: 'Spellcheck too short'})), null);
+  assert.equal(parseNotice(JSON.stringify({...data, title: title + '\nInjected'})), null);
+  const f = fixture();
+  let panelTitle, html;
+  const vscode = {ViewColumn: {Beside: 2}, window: {
+    createWebviewPanel(_type, name) {
+      panelTitle = name;
+      return {webview: {set html(value) { html = value; }}, onDidChangeViewState() {}};
+    }
+  }};
+  await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, f.git);
+  assert.equal(panelTitle, title);
+  assert.match(html, /<h1>Spellcheck Instinet trading and citations<\/h1>/);
+  assert.equal(f.repo.inputBox.value, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
+  f.repo.inputBox.value = '';
+  await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, async () => {
+    f.repo.inputBox.value = 'Draft entered while reading config';
+    return '';
+  });
+  assert.equal(f.repo.inputBox.value, 'Draft entered while reading config');
+});

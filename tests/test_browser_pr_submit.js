@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, hiddenStop = false, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -14,7 +14,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { clicks++; } };
   const navigations = [];
   const location = value => Object.assign(new URL(value), {assign(value){navigations.push(value);}});
-  const persisted = new Map([['oai/apps/lightweight-web/composerDraft/v1', 'Keep the unrelated user draft']]);
+  const persisted = new Map(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts'].map(key => [key, 'Keep the unrelated user draft']));
   class Storage {
     getItem(key) { return persisted.get(key) ?? null; }
     setItem(key,value) { persisted.set(key,String(value)); }
@@ -25,11 +25,12 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
     require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
-    document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
+    document: { execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
+        if (selector.includes('Stop streaming')) return streaming ? [button] : hiddenStop ? [{getClientRects:()=>[]}] : [];
         assert.equal(selector, 'a[href]', 'Collect exact nonce callbacks across ChatGPT message layouts');
         return resultLinks.map(href=>({href}));
       },
@@ -104,14 +105,25 @@ console.log('Fragment handoff checks passed.');
 const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);
+f = fixture({url:collectLaunch,text:'Restored unrelated draft'});
+f.tick(); f.tick();
+assert.equal(f.clicks(),1,'Fresh isolated workflow replaces a draft restored before isolation');
+assert.equal(f.persisted.get('oai/apps/conversationDrafts'),'Keep the unrelated user draft');
 f = fixture({url:collectLaunch,text:'Draft PR',resultLinks:[returnUrl],streaming:true});
-const storageKey='oai/apps/lightweight-web/composerDraft/v1';
+for (const storageKey of ['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']) {
 assert.equal(f.window.localStorage.getItem(storageKey),null,'Workflow tab starts with an isolated blank draft');
 f.window.localStorage.setItem(storageKey,'Workflow text');
 assert.equal(f.window.localStorage.getItem(storageKey),'Workflow text');
 assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft','Original shared draft is never overwritten');
 f.window.localStorage.removeItem(storageKey);
 assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
+assert.equal(f.window.localStorage[storageKey],undefined,'Named property reads also start blank');
+f.window.localStorage[storageKey]='Property workflow text';
+assert.equal(f.window.localStorage.getItem(storageKey),'Property workflow text');
+assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
+delete f.window.localStorage[storageKey];
+assert.equal(f.window.localStorage.getItem(storageKey),null);
+}
 assert.equal(f.clicks(),1);
 f.tick(2500); assert.equal(f.navigations.length,0,'Never collect a streaming partial result');
 f.setStreaming(false);f.tick(2500);assert.deepEqual(f.navigations,[returnUrl]);
@@ -119,6 +131,11 @@ const revisedUrl = callback+'#profile=Revised%20verified%20profile';
 f = fixture({url:collectLaunch,text:'',resultLinks:[returnUrl,revisedUrl]});
 f.tick(2500);
 assert.deepEqual(f.navigations,[revisedUrl], 'Repeated return links stabilize on the final result');
+const draftCallback=callback.replace('/pony','/draft');
+const draftReturn=draftCallback+'#title=Fix%20italics&body=Verified%20description';
+f=fixture({url:fragmentUrl+'&return_to='+encodeURIComponent(draftCallback),resultLinks:[draftReturn],hiddenStop:true});
+f.tick(2500);
+assert.deepEqual(f.navigations,[draftReturn], 'A hidden Stop button after completion must not block the PR return');
 for(const bad of [returnUrl.replace(':1234',':4567'),returnUrl.replace('/pony','/draft'),returnUrl+'&publish=true']){
   f=fixture({url:collectLaunch,text:'',resultLinks:[bad]});f.tick(3000);
   assert.equal(f.navigations.length,0,'Collect only this workflow’s exact local callback');
