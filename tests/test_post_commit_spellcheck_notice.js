@@ -11,6 +11,9 @@ const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });
 
 test('reads only valid, repo-relative Markdown notice data', () => {
   assert.deepEqual(parseNotice(notice), { head, paths: ['notes/report.md'] });
+  assert.deepEqual(parseNotice(JSON.stringify({version: 1, head, paths: ['a.md'], model: 'qwen:3b'})),
+    {head, paths: ['a.md'], model: 'qwen:3b'});
+  assert.equal(parseNotice(JSON.stringify({version: 1, head, paths: ['a.md'], model: 'bad\ntrailer'})), null);
   assert.equal(parseNotice('not json'), null);
   assert.equal(parseNotice(JSON.stringify({ version: 1, head, paths: ['../outside.md'] })), null);
   assert.equal(parseNotice(JSON.stringify({ version: 1, head, paths: ['secret.txt'] })), null);
@@ -25,7 +28,8 @@ test('uses only a configured GitHub noreply bot identity for co-authorship', () 
   assert.equal(coauthor(email, 'Injected\nTrailer'), '');
   assert.match(spellcheckMessage(['a.md', 'b.mdx'], email), /^🤖 Spellcheck 2 Markdown files/);
   assert.match(spellcheckMessage(['a.md'], email), /\n\nCo-authored-by: Ollama <123456\+ollama-bot@users\.noreply\.github\.com>$/);
-  assert.doesNotMatch(spellcheckMessage(['a.md']), /Co-authored-by:/);
+  assert.equal(spellcheckMessage(['a.md'], undefined, 'qwen:3b'),
+    '🤖 Spellcheck 1 Markdown file\n\nCo-authored-by: Ollama (qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
 });
 
 function fixture({ currentHead = head, changed = true, draft = '' } = {}) {
@@ -90,9 +94,9 @@ test('prefills empty SCM input and announces ready spellcheck edits', async () =
     window: { async showInformationMessage(...args) { messages.push(args); return 'Review changes'; } },
     commands: { async executeCommand(name) { cmds.push(name); } },
   };
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo' }, f.git);
+  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b' }, f.git);
   assert.match(f.repo.inputBox.value, /^🤖 Spellcheck 1 Markdown file/);
-  assert.match(f.repo.inputBox.value, /Co-authored-by: Ollama/);
+  assert.match(f.repo.inputBox.value, /Co-authored-by: Ollama \(qwen:3b\)/);
   assert.match(messages[0][0], /spellcheck edits ready for review/);
   assert.deepEqual(cmds, ['workbench.view.scm']);
 });
@@ -104,10 +108,23 @@ test('does not overwrite an existing SCM message unless requested', async () => 
     window: { async showInformationMessage(...args) { announcement = args; return undefined; } },
     commands: { async executeCommand() {} },
   };
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo' }, f.git);
+  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b' }, f.git);
   assert.equal(f.repo.inputBox.value, 'My work in progress');
   assert.match(announcement[0], /Existing commit draft kept/);
   vscode.window.showInformationMessage = async () => 'Use spellcheck message';
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo' }, f.git);
+  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b' }, f.git);
   assert.match(f.repo.inputBox.value, /^🤖 Spellcheck/);
+});
+
+
+test('uses the supplied bot identity when no email is configured', async () => {
+  const f = fixture();
+  const vscode = {
+    window: { async showInformationMessage() {} },
+    commands: { async executeCommand() {} },
+  };
+  await showNotice(vscode, f.repo, {paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b'},
+    async () => { throw new Error('unset'); });
+  assert.equal(f.repo.inputBox.value,
+    '🤖 Spellcheck 1 Markdown file\n\nCo-authored-by: Ollama (qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
 });

@@ -7,7 +7,8 @@ const { promisify } = require('node:util');
 
 const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
-const NOREPLY_EMAIL = /^(?:[1-9]\d*\+)?[a-z\d-]+@users\.noreply\.github\.com$/i;
+const DEFAULT_EMAIL = '326443430+codex-pony[bot]@users.noreply.github.com';
+const NOREPLY_EMAIL = /^(?:[1-9]\d*\+)?[a-z\d-]+(?:\[bot\])?@users\.noreply\.github\.com$/i;
 const SHA = /^[a-f\d]{40,64}$/i;
 
 function parseNotice(content) {
@@ -23,22 +24,24 @@ function parseNotice(content) {
           || !/\.mdx?$/i.test(file)) return null;
       if (!paths.includes(file)) paths.push(file);
     }
-    return { head: data.head, paths };
+    if (data.model !== undefined && (typeof data.model !== 'string' || !data.model.trim()
+        || data.model.length > 200 || /[\r\n<>]/.test(data.model))) return null;
+    return { head: data.head, paths, ...(data.model ? { model: data.model.trim() } : {}) };
   } catch { return null; }
 }
 
-function coauthor(email, name = 'Ollama') {
+function coauthor(email = DEFAULT_EMAIL, model = '') {
+  const name = model ? 'Ollama (' + model + ')' : 'Ollama';
   if (typeof email !== 'string' || !NOREPLY_EMAIL.test(email.trim())) return '';
   if (typeof name !== 'string' || !name.trim() || /[\r\n<>]/.test(name)) return '';
-  return 'Co-authored-by: ' + name.trim().slice(0, 80) + ' <' + email.trim() + '>';
+  return 'Co-authored-by: ' + name.trim() + ' <' + email.trim() + '>';
 }
 
-function spellcheckMessage(paths, email = '', name = 'Ollama') {
+function spellcheckMessage(paths, email = DEFAULT_EMAIL, model = '') {
   const count = paths.length;
   const subject = '🤖 Spellcheck ' + count + ' Markdown file' + (count === 1 ? '' : 's');
-  const body = 'Apply reviewed spelling-only corrections generated with local Ollama.';
-  const trailer = coauthor(email, name);
-  return subject + '\n\n' + body + (trailer ? '\n\n' + trailer : '');
+  const trailer = coauthor(email, model);
+  return subject + (trailer ? '\n\n' + trailer : '');
 }
 
 async function git(cwd, args) {
@@ -81,19 +84,16 @@ async function takeNotice(repository, dependencies = {}) {
 }
 
 async function showNotice(vscode, repository, notice, readConfig = git) {
-  let email = '';
-  let name = 'Ollama';
-  try { email = await readConfig(notice.root, ['config', '--get', 'scm-toolkit.spellcheck-coauthor-email']); }
-  catch { /* No GitHub bot identity was configured. */ }
-  try { name = await readConfig(notice.root, ['config', '--get', 'scm-toolkit.spellcheck-coauthor-name']) || 'Ollama'; }
-  catch { /* Default display name. */ }
+  let email = DEFAULT_EMAIL;
+  try { email = await readConfig(notice.root, ['config', '--get', 'scm-toolkit.spellcheck-coauthor-email']) || DEFAULT_EMAIL; }
+  catch { /* Use the supplied bot identity by default. */ }
 
-  const message = spellcheckMessage(notice.paths, email, name);
+  const message = spellcheckMessage(notice.paths, email, notice.model);
   const input = repository.inputBox;
   const existing = input?.value?.trim();
   if (!existing && input) input.value = message;
 
-  const attribution = coauthor(email, name)
+  const attribution = coauthor(email, notice.model)
     ? ''
     : ' Configure scm-toolkit.spellcheck-coauthor-email with the bot account’s actual GitHub noreply address for linked attribution.';
   const detail = notice.paths.length + ' Markdown file'
