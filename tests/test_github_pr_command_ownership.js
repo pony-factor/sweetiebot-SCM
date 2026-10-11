@@ -77,6 +77,9 @@ async function main() {
     assert.equal(merged.length, 4, 'An unresolved clicked row must not use another selection');
     assert.match(errors[0], /Could not identify the clicked pull request/);
     owner.getTreeItem = originalGetTreeItem;
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest');
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', { number: 99 });
+    assert.equal(merged.length, 4, 'Missing and mismatched rows must not merge the selected PR');
     vscode.window.showErrorMessage = originalShowError;
     handlers.set('sweetiebot.squashMergePullRequest', mergeHandler);
     // An optional resolver must never discard or substitute a supplied identity.

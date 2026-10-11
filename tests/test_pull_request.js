@@ -382,7 +382,7 @@ async function run() {
     refreshBranchControls() {},
     notifications: { error(error) { throw error; } },
     commands: { async executeCommand(id, root, options) {
-      assert.equal(id, 'sweetiebot.createLocalPullRequest');
+      assert.equal(id, 'sweetiebot.openPullRequestChat');
       assert.equal(root, uri);
       assert.equal(options.branch, 'draft');
       assert.equal(options.base, 'develop');
@@ -400,7 +400,7 @@ async function run() {
   sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
   let fallbackLaunches = 0;
   sandbox.commands.executeCommand = async (id) => {
-    assert.equal(id, 'sweetiebot.createLocalPullRequest');
+    assert.equal(id, 'sweetiebot.openPullRequestChat');
     fallbackLaunches += 1;
     return { repositoryUrl: 'https://github.com/owner/repo' };
   };
