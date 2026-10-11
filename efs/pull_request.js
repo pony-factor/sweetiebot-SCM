@@ -220,7 +220,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
             const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
               title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
               run(pending.repository.rootUri.fsPath, { ...pending.input, preparedDraft: { title, body } }, { botOnly: true }));
-            await vscode.window.showInformationMessage(`🦄 Codex Pony opened PR #${result.number}`);
+            await vscode.window.showInformationMessage(`Codex Pony opened PR #${result.number}`);
             await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(result.url));
             return result;
           } catch (error) {

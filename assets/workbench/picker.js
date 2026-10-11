@@ -1723,6 +1723,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             /^Generating commit message(?: ✨)?$/.test(text));
         row.classList.toggle('scm-toolkit-making-pr',
             text === 'Creating new pull request with Kefania instructions');
+        row.classList.toggle('scm-toolkit-pr-opened',
+            /^Codex Pony opened PR #[1-9]\d*$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
             text === 'Sweetiebot update ready');
         row.classList.toggle('scm-toolkit-pr-merged',
