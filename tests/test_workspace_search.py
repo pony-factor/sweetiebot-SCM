@@ -14,6 +14,13 @@ DEFAULTS = dict(toolkit_settings.DEFAULT_SETTINGS)
 
 
 class WorkspaceSearchInstallerTests(unittest.TestCase):
+    def test_pony_view_survives_workspace_search_placement(self):
+        for activity_bar in (False, True):
+            package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchActivityBar=activity_bar))
+            pony = next(view for view in package["contributes"]["views"]["scm"]
+                        if view["id"] == "scmToolkit.ponyInfo")
+            self.assertEqual(pony["when"], "scmToolkit.hasPonyProfile")
+
     def test_saved_feature_preferences_reach_installed_defaults(self):
         settings = dict(DEFAULTS, autoPublishNewBranches=True, automaticBranchCleanup=False,
                         workspaceSearchAutoReindex=False, workspaceSearchMode="exact",
@@ -125,7 +132,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertEqual(container["icon"], "media/efs.svg")
         self.assertEqual(
             list(package["contributes"]["views"]),
-            [workspace_search.STANDALONE_CONTAINER_ID],
+            [workspace_search.STANDALONE_CONTAINER_ID, "scm"],
         )
 
 

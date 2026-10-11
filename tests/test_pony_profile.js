@@ -91,7 +91,8 @@ async function run() {
   });
   assert.equal(profile.name, 'Berry Punch');
   assert.equal(updates.at(-1).key, STATE_KEY);
-  assert.deepEqual(commands.at(-1), ['setContext', CONTEXT_KEY, true]);
+  assert.deepEqual(commands.at(-2), ['setContext', CONTEXT_KEY, true]);
+  assert.deepEqual(commands.at(-1), ['scmToolkit.ponyInfo.focus']);
   assert.equal(posted.at(-1).profile.slug, 'berry-punch');
 
   await listeners[0]({ type: 'openSource' });

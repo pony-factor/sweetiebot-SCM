@@ -72,6 +72,7 @@ class PonyProfileViewProvider {
     await this.context.workspaceState.update(STATE_KEY, this.profile);
     await this.vscode.commands.executeCommand('setContext', CONTEXT_KEY, Boolean(this.profile));
     this.post();
+    if (this.profile) await this.vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     return this.profile;
   }
 
