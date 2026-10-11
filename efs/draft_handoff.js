@@ -4,7 +4,16 @@ const { createServer } = require('node:http');
 // Keep browser-generated draft text on this machine, outside remote redirect URLs.
 async function createDraftHandoff(publish) {
   const page = `<!doctype html><meta charset="utf-8"><title>Publish with Codex Pony</title>
-<style>body{font:16px system-ui;max-width:800px;margin:40px auto;padding:20px}pre{white-space:pre-wrap}button{font:inherit;padding:12px}</style>
+<style>
+:root{color-scheme:dark;background:#1e1e1e;color:#e6e6e6}
+body{font:16px system-ui;max-width:800px;margin:40px auto;padding:20px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+button{font:inherit;padding:12px 18px;background:#303030;color:#fff;border:1px solid #555;border-radius:6px;cursor:pointer}
+button:hover:not(:disabled){background:#3b3b3b}
+button:focus-visible,a:focus-visible{outline:2px solid #9ac7ff;outline-offset:3px}
+button:disabled{opacity:.55;cursor:default}
+a{color:#9ac7ff}
+</style>
 <h1>🦄 Publish with Codex Pony</h1><h2 id="title"></h2><pre id="body"></pre>
 <button id="publish">Publish pull request</button><p id="status"></p>
 <script>
