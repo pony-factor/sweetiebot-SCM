@@ -422,8 +422,11 @@ function scmToolkitBranchNamePool() {
 }
 
 
-async function scmToolkitPushWithPullRetry(repository, originalPush) {
+async function scmToolkitPushWithPullRetry(repository, originalPush, expectedBranch) {
     const head = repository.HEAD;
+    if (expectedBranch && head?.name !== expectedBranch) {
+        throw new Error('The active branch changed before its commit could be pushed.');
+    }
     try {
         await originalPush.call(repository, head);
     } catch (error) {
@@ -480,42 +483,51 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 // Keep commits usable if the companion extension is temporarily unavailable.
             }
 
+            const requestedPostCommitCommand = options?.postCommitCommand;
+            const configuredPostCommitCommand = configuration.getValue('git.postCommitCommand');
+            const shouldReleasePush = typeof originalPush === 'function' && (
+                requestedPostCommitCommand === 'push'
+                || (requestedPostCommitCommand === undefined && configuredPostCommitCommand === 'push')
+            );
+            const selectedBranch = repository.HEAD?.name;
             let commitLease = false;
+            let gateToken = null;
+            let pushTask;
             try {
                 try {
-                    await commands.executeCommand('sweetiebot.beginCommit', repository.rootUri);
+                    gateToken = await commands.executeCommand(
+                        'sweetiebot.beginCommit', repository.rootUri, { waitForPush: shouldReleasePush }
+                    );
                     commitLease = true;
                 } catch {
                     // If the companion extension is unavailable, its auto-pull is unavailable too.
                 }
 
-                const requestedPostCommitCommand = options?.postCommitCommand;
-                const configuredPostCommitCommand =
-                    configuration.getValue('git.postCommitCommand');
-                const shouldReleasePush =
-                    requestedPostCommitCommand === 'push'
-                    || (
-                        requestedPostCommitCommand === undefined
-                        && configuredPostCommitCommand === 'push'
-                    );
-
-                if (!shouldReleasePush || typeof originalPush !== 'function') {
+                if (!shouldReleasePush) {
                     return await originalCommit.call(repository, message, options);
                 }
-
                 await originalCommit.call(repository, message, {
-                    ...(options ?? {}),
-                    postCommitCommand: null,
+                    ...(options ?? {}), postCommitCommand: null
                 });
-
-                void scmToolkitPushWithPullRetry(repository, originalPush)
-                    .catch(error => notifications.error(error));
+                // Preserve the branch being committed and run push/retry in the background.
+                pushTask = scmToolkitPushWithPullRetry(repository, originalPush, selectedBranch)
+                    .then(() => true, error => { notifications.error(error); return false; });
             } finally {
                 if (commitLease) {
-                    try {
-                        await commands.executeCommand('sweetiebot.endCommit', repository.rootUri);
-                    } catch {
-                        // The extension may be reloading; do not turn a successful commit into an error.
+                    const finish = async pushed => {
+                        try {
+                            await commands.executeCommand(
+                                'sweetiebot.endCommit', repository.rootUri, { gateToken, pushed }
+                            );
+                        } catch {
+                            // Extension reloads must not turn a successful commit into an error.
+                        }
+                    };
+                    if (pushTask) {
+                        // Commit UI is released immediately; spellcheck waits for push.
+                        void pushTask.then(finish);
+                    } else {
+                        await finish(false);
                     }
                 }
             }

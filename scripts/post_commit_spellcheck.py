@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 import re
 import subprocess
+import time
 import sys
 from types import ModuleType
 
@@ -26,6 +27,8 @@ SPELLCHECK_NUM_CTX = int(os.environ.get("SCM_TOOLKIT_SPELLCHECK_NUM_CTX", "8192"
 SPELLCHECK_JOB_ENV = "SCM_TOOLKIT_SPELLCHECK_JOB"
 POST_COMMIT_ARG = "--post-commit-spellcheck"
 NOTICE_FILE_NAME = "sweetiebot-spellcheck-ready.json"
+PUSH_GATE_NAME = "sweetiebot-post-commit-push.json"
+PUSH_GATE_TIMEOUT_SECONDS = 300
 DEFAULT_INSTRUCTIONS = "Recognize financial market terminology and proper names, including Instinet. Correct an obvious misspelling only when context identifies the term; do not substitute a different entity."
 DEFAULT_TITLE = "Spellcheck Markdown prose and punctuation"
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -442,6 +445,61 @@ def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: l
             temporary_path.unlink(missing_ok=True)
 
 
+def active_branch(global_args: list[str]) -> str:
+    result = git_run(global_args, "symbolic-ref", "--quiet", "--short", "HEAD", text=True)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def push_gate_file(global_args: list[str]) -> Path | None:
+    result = git_run(global_args, "rev-parse", "--absolute-git-dir", text=True)
+    if result.returncode != 0:
+        return None
+    directory = Path(result.stdout.strip())
+    return directory / PUSH_GATE_NAME if directory.is_absolute() and directory.is_dir() else None
+
+
+def read_push_gate(global_args: list[str], previous_head: str) -> dict | None:
+    file = push_gate_file(global_args)
+    if file is None:
+        return None
+    try:
+        gate = json.loads(file.read_text(encoding="utf-8"))
+        if (not isinstance(gate, dict)
+                or not isinstance(gate.get("token"), str) or not gate["token"]
+                or gate.get("previous_head") != previous_head
+                or gate.get("branch") != active_branch(global_args)
+                or gate.get("state") not in {"pending", "pushed", "failed"}
+                or not isinstance(gate.get("created_ms"), (int, float))
+                or abs(time.time() * 1000 - gate["created_ms"]) > PUSH_GATE_TIMEOUT_SECONDS * 1000):
+            return None
+        return gate
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def wait_for_push_gate(global_args: list[str], token: str, head: str, branch: str) -> bool:
+    """Delay Markdown suggestions until this exact active branch has been pushed."""
+    file = push_gate_file(global_args)
+    if file is None:
+        return False
+    deadline = time.monotonic() + PUSH_GATE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            gate = json.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return False
+        if not isinstance(gate, dict) or gate.get("token") != token:
+            return False
+        if head_sha(global_args) != head or active_branch(global_args) != branch:
+            return False
+        if gate.get("state") == "pushed":
+            return True
+        if gate.get("state") != "pending":
+            return False
+        time.sleep(0.15)
+    return False
+
+
 def run_post_commit_job() -> int:
     raw = os.environ.get(SPELLCHECK_JOB_ENV, "")
     try:
@@ -449,7 +507,12 @@ def run_post_commit_job() -> int:
         global_args = list(job["global_args"])
         paths = list(job["paths"])
         expected_head = str(job["head"])
+        push_gate = str(job.get("push_gate", ""))
+        expected_branch = str(job.get("branch", ""))
     except (KeyError, TypeError, ValueError):
+        return 0
+
+    if push_gate and not wait_for_push_gate(global_args, push_gate, expected_head, expected_branch):
         return 0
 
     if not paths or head_sha(global_args) != expected_head or has_unstaged_changes(global_args) or not index_is_clean(global_args):
@@ -482,15 +545,16 @@ def run_post_commit_job() -> int:
     return 0
 
 
-def spawn_post_commit(global_args: list[str], paths: list[str], committed_head: str, core_path: str) -> None:
+def spawn_post_commit(global_args: list[str], paths: list[str], committed_head: str, core_path: str, previous_head: str = "") -> None:
     if not paths or not committed_head:
         return
     env = os.environ.copy()
     env["SCM_TOOLKIT_COMMIT_CORE"] = core_path
-    env[SPELLCHECK_JOB_ENV] = json.dumps(
-        {"global_args": global_args, "paths": paths, "head": committed_head},
-        separators=(",", ":"),
-    )
+    gate = read_push_gate(global_args, previous_head)
+    job = {"global_args": global_args, "paths": paths, "head": committed_head}
+    if gate:
+        job.update({"push_gate": gate["token"], "branch": gate["branch"]})
+    env[SPELLCHECK_JOB_ENV] = json.dumps(job, separators=(",", ":"))
     subprocess.Popen(
         [sys.executable, os.path.abspath(__file__), POST_COMMIT_ARG],
         env=env,

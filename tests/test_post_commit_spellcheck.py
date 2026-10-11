@@ -102,6 +102,33 @@ class ProposalTests(unittest.TestCase):
                 self.assertEqual(bool(proposals), reason == "safe")
                 self.assertEqual(path.read_bytes(), corrected if reason == "safe" else before)
 
+    def test_push_gate_waits_for_push_and_skips_failure_or_branch_change(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            gate_path = Path(directory) / worker.PUSH_GATE_NAME
+            gate = {"token": "test-token", "state": "pending", "previous_head": "old",
+                    "branch": "topic", "created_ms": worker.time.time() * 1000}
+            gate_path.write_text(json.dumps(gate))
+            result = subprocess.CompletedProcess([], 0, stdout=directory)
+            with patch.object(worker, "git_run", return_value=result), patch.object(
+                worker, "active_branch", return_value="topic"
+            ), patch.object(worker, "head_sha", return_value="new"):
+                self.assertEqual(worker.read_push_gate([], "old")["token"], "test-token")
+                self.assertIsNone(worker.read_push_gate([], "another"))
+                def mark_pushed(_):
+                    gate["state"] = "pushed"
+                    gate_path.write_text(json.dumps(gate))
+                with patch.object(worker.time, "sleep", side_effect=mark_pushed):
+                    self.assertTrue(worker.wait_for_push_gate([], "test-token", "new", "topic"))
+                gate["state"] = "failed"
+                gate_path.write_text(json.dumps(gate))
+                self.assertFalse(worker.wait_for_push_gate([], "test-token", "new", "topic"))
+            with patch.object(worker, "git_run", return_value=result), patch.object(
+                worker, "active_branch", return_value="other"
+            ), patch.object(worker, "head_sha", return_value="new"):
+                self.assertFalse(worker.wait_for_push_gate([], "test-token", "new", "topic"))
+
     def test_spellcheck_emits_notice_without_a_keep_or_discard_dialog(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
         proposals = {"note.md": (b"original", b"corrected")}

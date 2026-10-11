@@ -221,7 +221,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("scmToolkitGuardCommit(", js)
         self.assertIn("'sweetiebot.checkCommitLimits'", js)
         self.assertIn("postCommitCommand: null", js)
-        self.assertIn("scmToolkitPushWithPullRetry(repository, originalPush)", js)
+        self.assertIn("scmToolkitPushWithPullRetry(repository, originalPush, selectedBranch)", js)
         self.assertIn("error?.gitErrorCode !== 'PushRejected'", js)
         self.assertIn("await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name })", js)
         self.assertIn("await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`)", js)

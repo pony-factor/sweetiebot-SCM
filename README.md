@@ -832,6 +832,6 @@ Enable **Post-commit Markdown spellcheck** in SweetieBot settings under Ollama, 
 git config --global scm-toolkit.post-commit-spellcheck true
 ```
 
-This toggle is off by default. After a successful automatic staged commit, the local Ollama model reviews changed Markdown prose and proposes conservative spelling, grammar, and ASCII punctuation corrections. Fenced code, inline code, URLs, Markdown prefixes, and line endings are protected. Unavailable models and unchanged text produce no dialog.
+This toggle is off by default. After a successful automatic staged commit, the local Ollama model reviews changed Markdown prose and proposes conservative spelling, grammar, and ASCII punctuation corrections. When **Commit and push** is checked, the active branch finishes pushing (including any retry) before spellchecking starts. Failed pushes and branch changes skip the spellcheck job without dirtying the working tree. Fenced code, inline code, URLs, Markdown prefixes, and line endings are protected. Unavailable models and unchanged text produce no dialog.
 
 Proposals appear as unstaged edits in Source Control. Choose **Keep edits** to review them or **Discard** to remove untouched proposals. The original commit and index remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
