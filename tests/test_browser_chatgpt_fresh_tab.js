@@ -11,6 +11,15 @@ function open(url, storage = new Map([[DRAFT, 'An unsent draft'], ['other-key', 
     { blockedStorage = false, iframe = false } = {}) {
   const removed = [];
   const window = { location: new URL(url) };
+  const composer = { tagName: 'TEXTAREA', value: 'Restored draft', dispatchEvent() {} };
+  const listeners = new Map();
+  const pending = [];
+  const document = {
+    documentElement: {},
+    addEventListener(type, callback) { listeners.set(type, callback); },
+    removeEventListener(type) { listeners.delete(type); },
+    querySelector() { return composer; }
+  };
   window.top = iframe ? {} : window;
   window.localStorage = {
     removeItem(key) {
@@ -22,8 +31,14 @@ function open(url, storage = new Map([[DRAFT, 'An unsent draft'], ['other-key', 
     state: {},
     replaceState(_state, _title, destination) { window.location = new URL(destination); }
   };
-  vm.runInNewContext(source, { window, history, URL });
-  return { storage, removed, url: window.location.href };
+  vm.runInNewContext(source, {
+    window, history, URL, document,
+    Event: class { constructor(type) { this.type = type; } },
+    setTimeout(fn) { pending.push(fn); return pending.length; },
+    clearTimeout() {}
+  });
+  return { storage, removed, url: window.location.href, composer, listeners,
+    tick() { pending.shift()?.(); } };
 }
 
 let state = open('https://chatgpt.com/?sweetiebot_fresh=1');
@@ -31,6 +46,14 @@ assert.deepEqual(state.removed, [DRAFT]);
 assert.equal(state.storage.has(DRAFT), false);
 assert.equal(state.storage.get('other-key'), 'keep');
 assert.equal(state.url, 'https://chatgpt.com/');
+assert.equal(state.composer.value, '', 'initial composer is empty');
+state.composer.value = 'Restored after hydration';
+state.tick();
+assert.equal(state.composer.value, '', 'late hydration is cleared');
+state.listeners.get('beforeinput')({ isTrusted: true });
+state.composer.value = 'My new input';
+state.tick();
+assert.equal(state.composer.value, 'My new input', 'trusted input is preserved');
 
 state = open('https://chatgpt.com/g/g-p-example/project?sweetiebot_fresh=1');
 assert.deepEqual(state.removed, [DRAFT]);
