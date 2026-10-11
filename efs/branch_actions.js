@@ -1,14 +1,65 @@
 'use strict';
 
 const { execFile } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 const { existsSync } = require('node:fs');
-const { mkdtemp, rm } = require('node:fs/promises');
+const { mkdtemp, rm, readFile, writeFile, rename } = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
+const POST_COMMIT_GATE = 'sweetiebot-post-commit-push.json';
+
+// Store coordination only in .git; never stage or alter the committed worktree.
+async function spellcheckPushGateFile(repository) {
+  const root = repository.rootUri?.fsPath;
+  if (!root) return null;
+  const { stdout } = await promisify(execFile)('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, timeout: 10000 });
+  const gitdir = stdout.trim();
+  return path.isAbsolute(gitdir) ? path.join(gitdir, POST_COMMIT_GATE) : null;
+}
+
+async function storeSpellcheckPushGate(file, gate) {
+  const temporary = file + '.' + randomUUID() + '.tmp';
+  try {
+    await writeFile(temporary, JSON.stringify(gate), { encoding: 'utf8', flag: 'wx' });
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
+async function armSpellcheckPushGate(repository) {
+  try {
+    const file = await spellcheckPushGateFile(repository);
+    if (!file) return null;
+    const token = randomUUID();
+    await storeSpellcheckPushGate(file, {
+      token, state: 'pending', created_ms: Date.now(),
+      previous_head: repository.state.HEAD?.commit || '',
+      branch: repository.state.HEAD?.name || ''
+    });
+    return token;
+  } catch {
+    // Keep normal Git commits usable even when this optional gate is unavailable.
+    return null;
+  }
+}
+
+async function releaseSpellcheckPushGate(repository, token, pushed) {
+  if (!token) return;
+  try {
+    const file = await spellcheckPushGateFile(repository);
+    if (!file) return;
+    const gate = JSON.parse(await readFile(file, 'utf8'));
+    if (gate.token !== token || gate.state !== 'pending') return;
+    await storeSpellcheckPushGate(file, { ...gate, state: pushed ? 'pushed' : 'failed' });
+  } catch {
+    // A worker with an unreleased gate times out without touching files.
+  }
+}
 
 function commitInProgress(repository) {
   return (activeCommits.get(repository) ?? 0) > 0;
@@ -629,13 +680,22 @@ function registerBranchCommands(vscode, context) {
         throw explainGitError(error);
       }
     }),
-    vscode.commands.registerCommand('sweetiebot.beginCommit', async uri => {
+    vscode.commands.registerCommand('sweetiebot.beginCommit', async (uri, options) => {
       const repository = await resolveRepository(uri);
-      return queueRepositoryOperation(repository, () => beginRepositoryCommit(repository));
+      return queueRepositoryOperation(repository, async () => {
+        beginRepositoryCommit(repository);
+        return options?.waitForPush ? armSpellcheckPushGate(repository) : null;
+      });
     }),
-    vscode.commands.registerCommand('sweetiebot.endCommit', async uri => {
+    vscode.commands.registerCommand('sweetiebot.endCommit', async (uri, options) => {
       const repository = await resolveRepository(uri);
-      return queueRepositoryOperation(repository, () => endRepositoryCommit(repository));
+      return queueRepositoryOperation(repository, async () => {
+        try {
+          await releaseSpellcheckPushGate(repository, options?.gateToken, options?.pushed === true);
+        } finally {
+          endRepositoryCommit(repository);
+        }
+      });
     })
   );
 

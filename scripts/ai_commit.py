@@ -1419,7 +1419,7 @@ def main() -> None:
         try:
             committed_head = spellcheck.head_sha(GIT_GLOBAL_ARGS)
             if committed_head and committed_head != previous_head:
-                spellcheck.spawn_post_commit(GIT_GLOBAL_ARGS, paths, committed_head, os.path.abspath(__file__))
+                spellcheck.spawn_post_commit(GIT_GLOBAL_ARGS, paths, committed_head, os.path.abspath(__file__), previous_head)
         except Exception as exc:
             print(f"scm-toolkit: post-commit spellcheck skipped ({exc})", file=sys.stderr)
     raise SystemExit(result.returncode)
