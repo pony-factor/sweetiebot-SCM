@@ -8,6 +8,7 @@ const {
   repositoryUrlForGitRepository,
   fetchOpenPullRequests,
   pickPullRequests,
+  planStackMerges,
   batchMergePrompt,
   submitChatPromptWithEnter,
   classifyChatSubmitError,
@@ -90,6 +91,9 @@ async function run() {
         } else if (action === 'first') {
           this.selectedItems = [this.items[0]];
           events.accept();
+        } else if (action === 'top') {
+          this.selectedItems = [this.items.at(-1)];
+          events.accept();
         } else if (action === 'empty') events.accept();
         else if (action === 'cancel') events.hide();
       },
@@ -144,13 +148,54 @@ async function run() {
     pullRequests: [pulls[0], pulls[2]] });
   assert.match(mixedPrompt, /#9: Wrong base/);
   assert.match(mixedPrompt, /base: "develop"/);
-  assert.match(mixedPrompt, /ONLY into its listed base branch/);
-  assert.match(mixedPrompt, /request fresh confirmation/);
+  assert.match(mixedPrompt, /ONLY into their originally listed base branch/);
+  assert.match(mixedPrompt, /requires fresh confirmation/);
   assert.match(prompt, /#12: Newest ready change/);
   assert(!prompt.includes('#10: Ready change'));
-  assert.match(prompt, /Do not merge, close, edit, or otherwise act on any unselected pull request/);
+  assert.match(prompt, /Never merge, close, edit, or implicitly include an unselected PR/);
   assert.match(prompt, /force-with-lease/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
+
+  // Complete stacks reach main with separate squash commits; partial stacks
+  // and ambiguous fork/branched/cyclic dependencies must not be assumed.
+  const branchPr = (number, head, base, headRepo = 'owner/repo') => ({
+    number, title: 'Layer ' + number, url: 'https://github.com/owner/repo/pull/' + number,
+    head, base, headRepo, baseRepo: 'owner/repo', stack: { number: 7 }
+  });
+  const stackPulls = [
+    branchPr(43, 'top', 'middle'), branchPr(41, 'bottom', 'main'),
+    branchPr(42, 'middle', 'bottom')
+  ];
+  const stackPlan = planStackMerges(stackPulls, 'owner/repo');
+  assert.deepEqual(stackPlan.ordered.map(pr => pr.number), [41, 42, 43]);
+  assert.deepEqual(stackPlan.stacked.map(pr => pr.stackParent), [41, 42]);
+  assert.equal(stackPlan.nonMain.length, 0);
+  const stackPicker = pickerHarness('all', picker => {
+    assert.match(picker.items[1].label, /^↳ #42/);
+    assert.match(picker.items[2].label, /^↳ ↳ #43/);
+  });
+  assert.deepEqual(await pickPullRequests(stackPicker.vscode, stackPulls), stackPulls);
+  const stackPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: stackPulls });
+  assert(stackPrompt.indexOf('#41:') < stackPrompt.indexOf('#42:'));
+  assert(stackPrompt.indexOf('#42:') < stackPrompt.indexOf('#43:'));
+  assert.match(stackPrompt, /ONE separate squash commit per PR/);
+  assert.match(stackPrompt, /gh stack merge <highest-selected-PR-number> --yes --squash/);
+  assert.match(stackPrompt, /asynchronous stack-merge REST API/);
+  assert.match(stackPrompt, /Do NOT use gh pr merge/);
+  assert.match(stackPrompt, /ONLY selected PRs/);
+  assert.deepEqual(planStackMerges([stackPulls[0], stackPulls[1]], 'owner/repo')
+    .nonMain.map(pr => pr.number), [43]);
+  assert.deepEqual(planStackMerges([
+    branchPr(41, 'bottom', 'main', 'fork/repo'),
+    branchPr(42, 'middle', 'bottom')
+  ], 'owner/repo').nonMain.map(pr => pr.number), [42]);
+  assert.deepEqual(planStackMerges([
+    branchPr(41, 'bottom', 'main'), branchPr(42, 'middle', 'bottom'),
+    branchPr(43, 'other', 'bottom')
+  ], 'owner/repo').nonMain.map(pr => pr.number), [43, 42]);
+  assert.equal(planStackMerges([branchPr(44, 'x', 'y'), branchPr(45, 'y', 'x')],
+    'owner/repo').nonMain.length, 2);
 
   let osascriptCall;
   const submittedWithEnter = await submitChatPromptWithEnter(
@@ -191,6 +236,7 @@ async function run() {
   let configuredProject = '';
   let pickerAction = 'first';
   let includeNonMain = false;
+  let includeStack = false;
   let approveNonMain = false;
   const modalWarnings = [];
   const vscode = {
@@ -239,6 +285,11 @@ async function run() {
     ok: true,
     status: 200,
     async json() {
+      if (includeStack) return stackPulls.map(pr => ({
+        number: pr.number, title: pr.title, html_url: pr.url, draft: false,
+        head: { ref: pr.head, repo: { full_name: pr.headRepo } },
+        base: { ref: pr.base }, stack: pr.stack
+      }));
       return [
         {
           number: 41, title: 'Selected PR', html_url: 'https://github.com/owner/repo/pull/41',
@@ -277,7 +328,8 @@ async function run() {
   assert.match(allChat.searchParams.get('q'), /pull\/40/);
   assert.equal(submitCalls, 2);
   includeNonMain = true;
-  pickerAction = 'first';
+  // The planner lists main-targeted PRs before unrelated non-main PRs.
+  pickerAction = 'top';
   await handler();
   assert.equal(browserCalls.length, 4, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(submitCalls, 2);
@@ -311,6 +363,32 @@ async function run() {
   registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'script', detail: 'Expected end of line' }), 'darwin');
   await handler();
   assert.match(warnings.pop(), /Expected end of line/);
+
+  const modalCountBeforeStack = modalWarnings.length;
+  includeStack = true;
+  pickerAction = 'all';
+  await handler();
+  assert.equal(modalWarnings.length, modalCountBeforeStack,
+    'Complete selected stacks must not trigger the non-main warning');
+  const stackChat = new URL(browserCalls.filter(call =>
+    call.id === 'workbench.action.browser.open').at(-1).options.url);
+  assert.match(stackChat.searchParams.get('q'), /gh stack merge/);
+  assert(stackChat.searchParams.get('q').indexOf('#41:') <
+    stackChat.searchParams.get('q').indexOf('#43:'));
+  // The bottom member of a native stack also needs asynchronous stack merge.
+  pickerAction = 'first';
+  await handler();
+  const bottomChat = new URL(browserCalls.filter(call =>
+    call.id === 'workbench.action.browser.open').at(-1).options.url);
+  assert.match(bottomChat.searchParams.get('q'), /gh stack merge/);
+  const existingBrowserCalls = browserCalls.length;
+  pickerAction = 'top';
+  await handler();
+  assert.equal(browserCalls.length, existingBrowserCalls,
+    'A partial native stack must not launch a merge chat');
+  assert.match(modalWarnings.at(-1).message, /missing lower PRs/);
+  includeStack = false;
+  pickerAction = 'first';
 
   const pkg = require('../efs/package.json');
   assert(pkg.activationEvents.includes('onCommand:sweetiebot.openPullRequestBatchChat'));
