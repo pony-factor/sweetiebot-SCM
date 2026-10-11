@@ -20,8 +20,11 @@ def _slots(manifest):
     for container, entries in contributes.get("views", {}).items():
         if container in CONTAINERS:
             for item in entries:
-                if item.get("id") == SIDEBAR_VIEW and isinstance(item.get("name"), str):
-                    yield ("view", container, SIDEBAR_VIEW, item, "name")
+                # VS Code/Codex builds can change the webview ID without changing
+                # its displayed name. Discover every named view in these known
+                # Codex containers, then select only Codex labels when applying.
+                if isinstance(item.get("id"), str) and isinstance(item.get("name"), str):
+                    yield ("view", container, item["id"], item, "name")
 
 
 def _validate_label(label):
@@ -68,6 +71,8 @@ def transform(source: str, label: str = "Codex", remove: bool = False) -> str:
             raise ValueError("Unsupported Codex extension: sidebar label entries were not found.")
         entries = []
         for (kind, parent, identity), (item, field) in slots.items():
+            if kind == "view" and identity != SIDEBAR_VIEW and item[field] != "Codex":
+                continue
             entries.append([kind, parent, identity, item[field]])
             item[field] = label
         manifest[MARKER] = {"label": label, "entries": entries}
