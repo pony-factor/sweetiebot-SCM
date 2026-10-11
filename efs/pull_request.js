@@ -221,7 +221,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
             const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
               title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
               run(pending.repository.rootUri.fsPath, { ...pending.input, preparedDraft: { title, body } }, { botOnly: true }));
-            await vscode.window.showInformationMessage(`Codex Pony opened PR #${result.number}`);
+            await vscode.window.showInformationMessage(result.existing
+              ? `PR #${result.number} already exists; opening it instead.`
+              : `Codex Pony opened PR #${result.number}`);
             await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(result.url));
             return result;
           } catch (error) {
@@ -244,12 +246,6 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   }
 
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestChat', async (uri, options) => {
-    if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
-      const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
-      error.name = 'SweetiebotBrowserUnavailable';
-      error.browserUnavailable = true;
-      throw error;
-    }
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
@@ -276,11 +272,28 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       conversationContext = codex?.text || '';
     }
 
-    const projectUrl = await resolveChatgptActionProject(vscode, context);
-    if (projectUrl === undefined) return;
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
     const input = { repository: repositoryUrl.slice('https://github.com/'.length), head: branch, base: options.base, source };
     const evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
+    // Check GitHub through Kefania before starting a draft, regardless of base.
+    // Never open a second chat or invoke the publisher for an already-open PR.
+    if (evidence.existingPullRequest) {
+      const { number, url } = evidence.existingPullRequest;
+      if (!Number.isSafeInteger(number) || number < 1 || url !== `${repositoryUrl}/pull/${number}`) {
+        throw new Error('Kefania returned an invalid existing pull-request reference.');
+      }
+      await vscode.window.showInformationMessage(`PR #${number} already exists for ${branch}; opening it instead.`);
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
+      return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
+    }
+    if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
+      const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
+      error.name = 'SweetiebotBrowserUnavailable';
+      error.browserUnavailable = true;
+      throw error;
+    }
+    const projectUrl = await resolveChatgptActionProject(vscode, context);
+    if (projectUrl === undefined) return;
     // Keep the browser launch bounded; retain filenames and omission markers.
     let remaining = 30000;
     evidence.files = (evidence.files || []).map(file => {
