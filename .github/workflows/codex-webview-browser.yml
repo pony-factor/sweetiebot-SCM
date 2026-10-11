@@ -9,6 +9,7 @@ on:
       - 'tests/test_codex_window_label.js'
       - 'tests/test_codex_label.py'
       - 'tests/test_codex_webview_browser.py'
+      - 'tests/test_codex_webview_iframe.py'
       - '.github/workflows/codex-webview-browser.yml'
   workflow_dispatch:
 
@@ -30,7 +31,9 @@ jobs:
           python -m pip install playwright==1.57.0
           python -m playwright install --with-deps chromium
       - name: Browser-backed Codex webview simulation
-        run: python tests/test_codex_webview_browser.py
+        run: |
+          python tests/test_codex_webview_browser.py
+          python tests/test_codex_webview_iframe.py
       - name: Node.js timestamp and heading tests
         run: |
           node tests/test_codex_hide_chat_timestamps.js
