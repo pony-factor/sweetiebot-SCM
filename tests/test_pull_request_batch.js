@@ -219,7 +219,7 @@ async function run() {
         handler = callback;
         return { dispose() {} };
       },
-      async getCommands() { return ['workbench.action.browser.open']; },
+      async getCommands() { return ['workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow']; },
       async executeCommand(id, options) { browserCalls.push({ id, options }); }
     },
     window: {
@@ -259,8 +259,9 @@ async function run() {
   await handler();
   assert.equal(errors.length, 0);
   assert.equal(infos.length, 0);
-  assert.equal(browserCalls.length, 1);
+  assert.equal(browserCalls.length, 2);
   assert.equal(browserCalls[0].id, 'workbench.action.browser.open');
+  assert.equal(browserCalls[1].id, 'workbench.action.moveEditorToNewWindow');
   const chat = new URL(browserCalls[0].options.url);
   assert.equal(chat.origin, 'https://chatgpt.com');
   const sentPrompt = chat.searchParams.get('q');
@@ -271,34 +272,34 @@ async function run() {
 
   pickerAction = 'all';
   await handler();
-  const allChat = new URL(browserCalls.at(-1).options.url);
+  const allChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
   assert.match(allChat.searchParams.get('q'), /pull\/41/);
   assert.match(allChat.searchParams.get('q'), /pull\/40/);
   assert.equal(submitCalls, 2);
   includeNonMain = true;
   pickerAction = 'first';
   await handler();
-  assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
+  assert.equal(browserCalls.length, 4, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(submitCalls, 2);
   assert.equal(modalWarnings.length, 1);
   assert.match(modalWarnings[0].message, /kefania.*not main/);
   assert.equal(modalWarnings[0].options.modal, true);
   approveNonMain = true;
   await handler();
-  const alternateChat = new URL(browserCalls.at(-1).options.url);
+  const alternateChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
   assert.match(alternateChat.searchParams.get('q'), /base: "kefania"/);
   assert.equal(submitCalls, 3);
   includeNonMain = false;
   approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
-  assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
+  assert.equal(browserCalls.length, 6, 'Cancelling must not submit a merge request');
   assert.equal(submitCalls, 3);
   pickerAction = 'first';
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
   await handler();
-  const scopedChat = new URL(browserCalls.at(-1).options.url);
+  const scopedChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
   assert.match(scopedChat.searchParams.get('q'), /pull\/41/);
   assert.equal(submitCalls, 4);

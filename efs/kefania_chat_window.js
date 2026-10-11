@@ -1,0 +1,60 @@
+'use strict';
+
+const { execFile } = require('node:child_process');
+
+const BROWSER_COMMAND = 'workbench.action.browser.open';
+const FLOAT_COMMAND = 'workbench.action.moveEditorToNewWindow';
+const COMPACT_MACOS_WINDOW = [
+  'tell application "System Events"',
+  'set foregroundProcess to first application process whose frontmost is true',
+  'if name of foregroundProcess does not contain "Code" then return',
+  'tell foregroundProcess',
+  'if (count of windows) < 2 then return',
+  'set floatingTitle to name of front window',
+  'if floatingTitle does not contain "ChatGPT" and floatingTitle does not contain "Browser" then return',
+  'set size of front window to {680, 720}',
+  'end tell',
+  'end tell'
+].join('\n');
+
+// The VS Code extension API cannot size auxiliary windows directly. Limit the
+// optional macOS resize to a frontmost ChatGPT/Browser window, never the
+// workspace window, and allow missing Accessibility permission to fail safely.
+function resizeMacChatWindow(exec = execFile) {
+  return new Promise(resolve => {
+    try {
+      exec('/usr/bin/osascript', ['-e', COMPACT_MACOS_WINDOW], { timeout: 2500 }, () => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+// Opening and moving are separate native workbench commands. A failed move
+// must not trigger Kefania's local fallback: ChatGPT may already be open.
+async function openCompactKefaniaChat(vscode, url, { platform = process.platform, exec = execFile } = {}) {
+  const commands = await vscode.commands.getCommands(true);
+  if (!commands.includes(BROWSER_COMMAND)) {
+    const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
+    error.name = 'SweetiebotBrowserUnavailable';
+    error.browserUnavailable = true;
+    throw error;
+  }
+  await vscode.commands.executeCommand(BROWSER_COMMAND, {
+    url, openToSide: false, reuseUrlFilter: url
+  });
+  if (!commands.includes(FLOAT_COMMAND)) {
+    await vscode.window.showWarningMessage?.('ChatGPT opened inside the workspace because floating editor windows are unavailable.');
+    return { floating: false };
+  }
+  try {
+    await vscode.commands.executeCommand(FLOAT_COMMAND);
+  } catch {
+    await vscode.window.showWarningMessage?.('ChatGPT opened, but VS Code could not move the tab into a separate window.');
+    return { floating: false };
+  }
+  if (platform === 'darwin') await resizeMacChatWindow(exec);
+  return { floating: true };
+}
+
+module.exports = { openCompactKefaniaChat, resizeMacChatWindow, COMPACT_MACOS_WINDOW };

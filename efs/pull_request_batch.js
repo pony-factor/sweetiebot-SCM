@@ -2,6 +2,7 @@
 
 const { execFile } = require('child_process');
 const { githubRepository } = require('./pull_request');
+const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { chatgptPromptUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const CHAT_SUBMIT_DELAY_MS = 3000;
@@ -227,11 +228,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;
       const url = chatgptPromptUrl(prompt, projectUrl);
-      await vscode.commands.executeCommand('workbench.action.browser.open', {
-        url,
-        openToSide: false,
-        reuseUrlFilter: url
-      });
+      await openCompactKefaniaChat(vscode, url);
       const submission = await submitPrompt();
       if (platform === 'darwin' && submission !== true && !submission?.submitted) {
         const message = submission?.reason === 'focus'
