@@ -115,6 +115,10 @@ assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
 assert.equal(f.clicks(),1);
 f.tick(2500); assert.equal(f.navigations.length,0,'Never collect a streaming partial result');
 f.setStreaming(false);f.tick(2500);assert.deepEqual(f.navigations,[returnUrl]);
+const revisedUrl = callback+'#profile=Revised%20verified%20profile';
+f = fixture({url:collectLaunch,text:'',resultLinks:[returnUrl,revisedUrl]});
+f.tick(2500);
+assert.deepEqual(f.navigations,[revisedUrl], 'Repeated return links stabilize on the final result');
 for(const bad of [returnUrl.replace(':1234',':4567'),returnUrl.replace('/pony','/draft'),returnUrl+'&publish=true']){
   f=fixture({url:collectLaunch,text:'',resultLinks:[bad]});f.tick(3000);
   assert.equal(f.navigations.length,0,'Collect only this workflow’s exact local callback');

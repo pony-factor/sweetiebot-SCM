@@ -49,6 +49,7 @@
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
+      let latest;
       for (const link of links) {
         let url;
         try { url = new URL(link.href); } catch { continue; }
@@ -57,9 +58,12 @@
         const result = new URLSearchParams(url.hash.slice(1));
         const expectedKeys = callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
         if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
-        if (url.href !== previous) { previous = url.href; stableSince = Date.now(); }
-        if (!generating && Date.now() - stableSince >= 2000) { window.location.assign(url.href); return; }
+        latest = url.href;
       }
+      // A response can repeat its return link with a revised draft. Stabilize
+      // the final candidate once, rather than resetting for every earlier link.
+      if (latest !== previous) { previous = latest; stableSince = Date.now(); }
+      if (latest && !generating && Date.now() - stableSince >= 2000) { window.location.assign(latest); return; }
       setTimeout(collect, 500);
     };
     collect();
