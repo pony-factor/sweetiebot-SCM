@@ -76,43 +76,35 @@ class ProposalTests(unittest.TestCase):
                 self.assertEqual(bool(proposals), reason == "safe")
                 self.assertEqual(path.read_bytes(), corrected if reason == "safe" else before)
 
-    def test_dialog_keeps_proposals_without_staging_or_committing(self):
+    def test_spellcheck_emits_notice_without_a_keep_or_discard_dialog(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
         proposals = {"note.md": (b"original", b"corrected")}
         core = SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
-        for choice in ["Keep edits", "", "Discard"]:
-            with self.subTest(choice=choice), patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
-                worker, "head_sha", return_value="expected"
-            ), patch.object(worker, "has_unstaged_changes", return_value=False), patch.object(
-                worker, "index_is_clean", return_value=True
-            ), patch.object(worker, "load_core", return_value=core), patch.object(
-                worker, "apply_spellcheck", return_value=proposals
-            ), patch.object(worker, "dialog_choice", return_value=choice), patch.object(worker, "discard_proposals") as discard, patch.object(
-                worker, "proposal_is_untouched", return_value=True
-            ), patch.object(worker, "write_spellcheck_notice") as notice, patch.object(worker, "git_run") as git:
-                self.assertEqual(worker.run_post_commit_job(), 0)
-                self.assertEqual(discard.called, choice == "Discard")
-                self.assertEqual(notice.called, choice != "Discard")
-                if choice != "Discard":
-                    notice.assert_called_once_with([], "expected", ["note.md"], "model")
-                git.assert_not_called()
+        with patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
+            worker, "head_sha", return_value="expected"
+        ), patch.object(worker, "has_unstaged_changes", return_value=False), patch.object(
+            worker, "index_is_clean", return_value=True
+        ), patch.object(worker, "load_core", return_value=core), patch.object(
+            worker, "apply_spellcheck", return_value=proposals
+        ), patch.object(worker, "proposal_is_untouched", return_value=True), patch.object(
+            worker, "write_spellcheck_notice"
+        ) as notice, patch.object(worker, "git_run") as git:
+            self.assertEqual(worker.run_post_commit_job(), 0)
+            notice.assert_called_once_with([], "expected", ["note.md"], "model")
+            git.assert_not_called()
 
-    def test_changed_head_after_dialog_preserves_edits(self):
+    def test_changed_head_preserves_proposals_without_showing_stale_notice(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
         with patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
             worker, "head_sha", side_effect=["expected", "changed"]
-        ), patch.object(worker, "has_unstaged_changes", return_value=False), patch.object(worker, "index_is_clean", return_value=True), patch.object(
-            worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
+        ), patch.object(worker, "has_unstaged_changes", return_value=False), patch.object(
+            worker, "index_is_clean", return_value=True
+        ), patch.object(worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
         ), patch.object(worker, "apply_spellcheck", return_value={"note.md": (b"original", b"corrected")}), patch.object(
-            worker, "dialog_choice", return_value="Discard"
-        ), patch.object(worker, "discard_proposals") as discard:
-            worker.run_post_commit_job()
-            discard.assert_not_called()
-
-    def test_discard_refuses_modified_proposals(self):
-        with patch.object(worker, "proposal_is_untouched", return_value=False), patch.object(worker, "git_run") as git:
-            worker.discard_proposals([], {"note.md": (b"original", b"corrected")})
-            git.assert_not_called()
+            worker, "write_spellcheck_notice"
+        ) as notice:
+            self.assertEqual(worker.run_post_commit_job(), 0)
+            notice.assert_not_called()
 
     def test_toggle_off_skips_job_without_loading_model(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
@@ -144,23 +136,19 @@ class ProposalTests(unittest.TestCase):
         with patch.object(worker, "git_run", return_value=result):
             self.assertFalse(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b"))
 
-    def test_no_notice_after_discard_or_intervening_edit(self):
+    def test_no_notice_after_intervening_edit(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
         proposals = {"note.md": (b"before", b"after")}
-        for untouched, choice in [(False, "Keep edits"), (True, "Discard")]:
-            with self.subTest(untouched=untouched, choice=choice), patch.dict(
-                worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}
-            ), patch.object(worker, "head_sha", return_value="expected"), patch.object(
-                worker, "has_unstaged_changes", return_value=False
-            ), patch.object(worker, "index_is_clean", return_value=True), patch.object(
-                worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
-            ), patch.object(worker, "apply_spellcheck", return_value=proposals), patch.object(
-                worker, "dialog_choice", return_value=choice
-            ), patch.object(worker, "proposal_is_untouched", return_value=untouched), patch.object(
-                worker, "write_spellcheck_notice"
-            ) as notice, patch.object(worker, "discard_proposals"):
-                worker.run_post_commit_job()
-                notice.assert_not_called()
+        with patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
+            worker, "head_sha", return_value="expected"
+        ), patch.object(worker, "has_unstaged_changes", return_value=False), patch.object(
+            worker, "index_is_clean", return_value=True
+        ), patch.object(worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
+        ), patch.object(worker, "apply_spellcheck", return_value=proposals), patch.object(
+            worker, "proposal_is_untouched", return_value=False
+        ), patch.object(worker, "write_spellcheck_notice") as notice:
+            self.assertEqual(worker.run_post_commit_job(), 0)
+            notice.assert_not_called()
 
 
 if __name__ == '__main__':
