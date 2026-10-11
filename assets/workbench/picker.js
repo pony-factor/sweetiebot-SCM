@@ -1162,14 +1162,21 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
         try {
             const source = scmToolkitChatgptConversationSource(doc);
-            await commands.executeCommand('sweetiebot.openPullRequestChat', repository, {
+            const options = {
                 branch,
                 base: currentDefaultBranch,
                 remote: settings.remote,
                 mcpServer: settings.mcpPrServer,
                 mcpTool: settings.mcpPrTool,
                 source,
-            });
+            };
+            try {
+                await commands.executeCommand('sweetiebot.openPullRequestChat', repository, options);
+            } catch (error) {
+                // Only fall back before any browser chat can have been launched.
+                if (!error?.browserUnavailable && error?.name !== 'SweetiebotBrowserUnavailable') throw error;
+                await commands.executeCommand('sweetiebot.createLocalPullRequest', repository, options);
+            }
         } catch (error) {
             notifications.error(error);
         } finally {

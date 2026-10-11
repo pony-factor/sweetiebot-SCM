@@ -199,8 +199,13 @@ async function run() {
       parse: value => ({ value })
     },
     window: {
-      registerUriHandler(handler) { uriHandler = handler; return { dispose() {} }; }
+      registerUriHandler(handler) { uriHandler = handler; return { dispose() {} }; },
+      async withProgress(_options, task) { return task(); },
+      async showInformationMessage() {},
+      async showWarningMessage() {},
+      async showErrorMessage(message) { throw new Error(message); },
     },
+    ProgressLocation: { Notification: 1 },
     extensions: {
       getExtension(id) {
         if (id === 'vscode.git') return gitExtension;
@@ -226,6 +231,14 @@ async function run() {
     }
   };
   registerPullRequestCommand(vscode, { subscriptions: [] }, {
+    async runKefania(repositoryPath, input, options) {
+      assert.equal(repositoryPath, uri.fsPath);
+      assert.equal(options.botOnly, true);
+      if (input.contextOnly) return { aheadBy: 1, headSha: 'a'.repeat(40), files: [] };
+      assert.equal(input.expectedHeadSha, 'a'.repeat(40));
+      assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup', body: 'Keep the verified source reference.' });
+      return { url: 'https://github.com/owner/repo/pull/1' };
+    },
     readInstructions: async repositoryPath => {
       assert.equal(repositoryPath, uri.fsPath);
       return rules;
@@ -259,7 +272,17 @@ async function run() {
   assert(openedPrompt.includes(chatSource.uuid));
   assert(openedPrompt.includes('test-pack'));
   assert.match(openedPrompt, /local chat context only/);
+  assert.match(openedPrompt, /Do not publish through any GitHub connector/);
+  assert.match(openedPrompt, /primary sources/);
+  assert.match(openedPrompt, /codex-pony\[bot\]/);
+  const draftPath = openedPrompt.match(/vscode:\/\/[^/]+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
+  calls.length = 0;
+  await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
+  assert.equal(calls[0].id, 'vscode.open');
+  calls.length = 0;
+  await uriHandler.handleUri({ path: draftPath, query: 'title=Replay&body=Replay' });
+  assert.equal(calls.length, 0, 'A consumed draft must never publish twice');
 
   configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
   calls.length = 0;
@@ -400,7 +423,8 @@ async function run() {
   sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
   let fallbackLaunches = 0;
   sandbox.commands.executeCommand = async (id) => {
-    assert.equal(id, 'sweetiebot.openPullRequestChat');
+    if (id === 'sweetiebot.openPullRequestChat') throw Object.assign(new Error('Browser unavailable'), { name: 'SweetiebotBrowserUnavailable' });
+    assert.equal(id, 'sweetiebot.createLocalPullRequest');
     fallbackLaunches += 1;
     return { repositoryUrl: 'https://github.com/owner/repo' };
   };
@@ -409,6 +433,9 @@ async function run() {
   assert.equal(fallbackLaunches, 1);
   assert.equal(sandbox.creatingPullRequest, false);
   assert.equal(sandbox.recorded.length, 0);
+  sandbox.commands.executeCommand = async () => { throw new Error('A chat may already be running'); };
+  await assert.rejects(click({ stopPropagation() {} }), /already be running/);
+  assert.equal(fallbackLaunches, 1, 'An uncertain browser launch must never start a second drafter');
 
   console.log('Kafania pull-request bridge checks passed.');
 }

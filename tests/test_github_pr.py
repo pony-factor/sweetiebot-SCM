@@ -8,6 +8,39 @@ LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick
 
 
 class GitHubPRTests(unittest.TestCase):
+    def test_description_hydrates_only_incomplete_models_before_initialization(self):
+        source = 'async updateItemNow(e){var t,i,r;this._item=e,this.context={body:e.body,bodyHTML:e.bodyHTML}}'
+        patched = github_pr.transform_description(source)
+        self.assertEqual(github_pr.transform_description(patched), patched)
+        self.assertEqual(github_pr.transform_description(patched, remove=True), source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_description(source + source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_description(patched.replace('sweetiebotResolved;', 'changed;', 1))
+        script = '''
+const assert=require('node:assert/strict');
+class Panel { PATCHED }
+(async()=>{
+ for(const [body,bodyHTML,expected] of [['Text',undefined,1],['Text','',1],
+   ['Text','  ',1],['Text','<p>Text</p>',0],['',undefined,0]]) {
+  const panel=new Panel();let calls=0;
+  const model={body,bodyHTML,remote:{owner:'owner',repositoryName:'repo'},number:214};
+  panel._folderRepositoryManager={resolvePullRequest:async(...args)=>{
+   calls++;assert.deepEqual(args,['owner','repo',214]);
+   return {...model,bodyHTML:'<p>Text</p>'};
+  }};
+  await panel.updateItemNow(model);
+  assert.equal(calls,expected);
+  assert.equal(panel.context.bodyHTML,expected?'<p>Text</p>':bodyHTML);
+ }
+ const panel=new Panel();
+ panel._folderRepositoryManager={resolvePullRequest:async()=>{throw new Error('offline')}};
+ await assert.rejects(panel.updateItemNow({body:'Text',remote:{},number:214}),/offline/);
+ assert.equal(panel.context,undefined);
+})().catch(error=>{console.error(error);process.exitCode=1});
+'''.replace('PATCHED', patched)
+        subprocess.run(['node', '-e', script], check=True)
+
     def test_timeout_notice_is_short_and_preserves_other_errors(self):
         notice = 's.l10n.t("Fetching pull requests failed: {0}",Pe(l))'
         source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});'

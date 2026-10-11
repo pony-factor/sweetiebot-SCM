@@ -544,8 +544,6 @@ function registerBranchCommands(vscode, context) {
         if (disposed || repository.rootUri.scheme !== 'file') continue;
         const head = repository.state.HEAD;
         if (!head?.name || commitInProgress(repository)) continue;
-        const defaultBranch = await resolveDefaultBranch(repository);
-        if (head.name !== defaultBranch) continue;
         const now = Date.now();
         if (now < (retryAfter.get(repository) ?? 0)) continue;
         const fetch = !lastFetch.has(repository) || now - lastFetch.get(repository) >= 60000;
@@ -555,7 +553,9 @@ function registerBranchCommands(vscode, context) {
         await queueRepositoryOperation(repository, async () => {
           if (disposed || commitInProgress(repository)) return;
           await repository.status();
-          if (disposed || repository.state.HEAD?.name !== defaultBranch) return;
+          // Follow the branch that was scanned, including tracked topic branches.
+          // A checkout while this operation was queued must wait for the next scan.
+          if (disposed || repository.state.HEAD?.name !== head.name) return;
           try {
             const { stdout } = await promisify(execFile)('git', ['config', '--bool', '--get', 'scm-toolkit.auto-pull-clean'], {
               cwd: repository.rootUri.fsPath, timeout: 10000

@@ -721,9 +721,9 @@ Sweetie Bot appends the prepared prompt as the URL's `q` parameter within the ch
 
 The pull-request button immediately left of the new-branch button opens ChatGPT in VS Code's Integrated Browser and automatically submits the drafting prompt with the selected branch, GitHub repository, and base branch. Sweetiebot no longer owns the long drafting prompt: it reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 
-Before opening the chat, Sweetiebot checks the configured VS Code MCP server (by default `codex-drafter`), verifies GitHub access through `kefania_status`, and checks that the branch-context and publishing tools are available. A missing server, failed login, or missing tool stops the launch with a setup message.
+Before opening the chat, Sweetiebot reads the published branch comparison through local Kefania using the saved GitHub App credentials. It sends bounded evidence to ChatGPT, withholds secret-bearing patches, and retains the verified head SHA locally.
 
-The request tells ChatGPT to read `github_get_pull_request_context` before drafting and pass its `headSha` as `expectedHeadSha` to `github_create_pull_request`. If Kefania is unavailable in ChatGPT, the chat explains the missing connection instead of substituting another publisher.
+The request asks ChatGPT to research relevant earlier PRs, commits, and primary sources, then present its finished title and description with a **Publish with codex-pony bot** link. Clicking the one-time link returns the description to local Kefania, which verifies the unchanged branch head and publishes as the bot without another Codex drafting run. The link expires after one hour. If the Integrated Browser is unavailable before launch, the button uses the local Codex fallback; an uncertain or unfinished browser launch never starts a second drafter.
 
 When the Integrated Browser is already showing a private ChatGPT conversation, Sweetiebot records its `/c/<uuid>` URL as the source. Otherwise it asks the patched Codex extension for the active local conversation UUID and a read-only context snapshot. The Codex UUID is linked through a Sweetiebot VS Code deep link so the author can reopen the local session even though it is not public.
 
@@ -735,7 +735,7 @@ The two repositories are expected to be checked out beside each other so Sweetie
 
 Kefania can run on your computer; it does not need a dedicated website or domain. Register `kefania/src/index.js` as a Node stdio MCP server named `codex-drafter` in VS Code. Use **MCP: List Servers** to start it. Its GitHub CLI login must have access to the repository.
 
-VS Code's local connection and ChatGPT's connection are separate. For ChatGPT in the Integrated Browser, create a Secure MCP Tunnel in OpenAI Platform and run its tunnel client with the local Kefania stdio command. Associate the tunnel with the account/workspace that uses ChatGPT. In ChatGPT Plugins, add a custom MCP server, choose **Tunnel**, select that tunnel, and enable the resulting plugin in the drafting chat. Follow the [official Secure MCP Tunnel setup](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) for the runtime key and connection steps. Keep credentials in the supported local credential store or process environment, never in repository files.
+VS Code's local connection and ChatGPT's connection are separate. The PR button does not require a ChatGPT MCP connection or tunnel: browser research and drafting return to the local bot publisher through the one-time link. Other ChatGPT MCP workflows can use the [official Secure MCP Tunnel setup](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels). Keep credentials in the supported local credential store or process environment, never in repository files.
 
 Sweetiebot's availability check verifies the VS Code server and GitHub login. It cannot verify the signed-in ChatGPT account's tunnel/plugin connection. The drafting prompt reports missing tools if that separate connection has not been completed.
 

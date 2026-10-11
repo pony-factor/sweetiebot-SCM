@@ -4,12 +4,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 let tick, enabled = true, fetches = 0, merges = 0, cleared = false, clock = 0, mergeError = false;
+let topicFetches = 0, topicMerges = 0;
 const fetchCalls = [];
 const main = { rootUri: { scheme: 'file', fsPath: '/repo' }, state: {
   HEAD: { name: 'main', commit: 'base', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 0 },
   indexChanges: [{}], workingTreeChanges: [{}], mergeChanges: []
 }, async status() {}, async fetch(options) { fetches++; fetchCalls.push(options); } };
-const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: { HEAD: { name: 'topic' } }, async status() {} };
+const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: {
+  HEAD: { name: 'kefania', commit: 'topic-base', upstream: { remote: 'origin', name: 'kefania' }, ahead: 0, behind: 2 },
+  mergeChanges: []
+}, async status() {}, async fetch(options) {
+  assert.equal(options.remote, 'origin', 'Topic branches use their tracked remote');
+  assert.equal(options.ref, 'kefania', 'Topic branches fetch their tracked branch');
+  topicFetches++;
+} };
 const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../efs/branch_actions')), process,
   require(name) {
     if (name === 'node:util') return { promisify(fn) { return (...args) => new Promise((resolve, reject) =>
@@ -27,6 +35,13 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
         assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...refs/remotes/upstream/main']);
         callback(null, '0\t1\n', '');
       } else {
+        if (options.cwd === '/topic') {
+          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/origin/kefania']);
+          topicMerges++;
+          topic.state.HEAD.behind = 0;
+          callback(null, '', '');
+          return;
+        }
         assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/upstream/main']);
         merges++;
         if (mergeError) callback(new Error('local changes would be overwritten by merge'), '', '');
@@ -79,6 +94,27 @@ const vscode = {
     'Default-branch auto-pull uses the configured remote instead of the tracked origin');
   assert.equal(fetchCalls[0]?.ref, 'main');
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
+  assert.equal(topicFetches, 1, 'Tracked non-default branches are fetched without a renderer');
+  assert.equal(topicMerges, 1, 'Incoming commits on kefania fast-forward automatically');
+
+  topic.state.HEAD.behind = 1;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicFetches, 1, 'Known topic updates do not require another fetch');
+  assert.equal(topicMerges, 2, 'Known topic updates pull on the next scan');
+
+  topic.state.HEAD.ahead = 1;
+  topic.state.HEAD.behind = 1;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicMerges, 2, 'Diverged topic branches are not merged automatically');
+  topic.state.HEAD.ahead = 0;
+  topic.state.mergeChanges = [{}];
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicMerges, 2, 'Topic branches with conflicts are left alone');
+  topic.state.mergeChanges = [];
+  delete topic.state.HEAD.upstream;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicMerges, 2, 'Untracked topic branches are left alone');
+  topic.state.HEAD.behind = 0;
 
   tick(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'A caught-up repository does not fetch every second');
@@ -122,5 +158,5 @@ const vscode = {
   assert.equal(merges, 6, 'Disabling automatic pull also prevents pending fast-forwards');
   context.subscriptions.at(-1).dispose(); assert(cleared);
   enabled = true; tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
-  console.log('Main auto-pull works without a rendered input and respects disable/dispose.');
+  console.log('Default and tracked topic branches auto-pull without a rendered input and respect safeguards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

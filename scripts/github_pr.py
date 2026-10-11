@@ -7,6 +7,9 @@ START = '\n/* sweetiebot-github-pr:start */\n'
 END = '\n/* sweetiebot-github-pr:end */\n'
 REFRESH_START = '\n/* sweetiebot-github-pr-refresh:start */\n'
 REFRESH_END = '\n/* sweetiebot-github-pr-refresh:end */\n'
+DESCRIPTION_START = '\n/* sweetiebot-github-pr-description:start */\n'
+DESCRIPTION_END = '\n/* sweetiebot-github-pr-description:end */\n'
+DESCRIPTION = re.compile(r'async updateItemNow\(([\w$]+)\)\{var ([\w$]+),([\w$]+),([\w$]+);this\._item=\1,')
 TREE = re.compile(r'([\w$]+)\.window\.createTreeView\("pr:github",\{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0\}\)')
 REFRESH_COMMAND = re.compile(r'([\w$]+)=>\{this\.prsTreeModel\.forceClearCache\(\),this\.refreshAllQueryResults\(!0\)\}')
 FETCH_NOTICE = re.compile(
@@ -90,6 +93,37 @@ def transform_refresh(source, remove=False):
     return source + REFRESH_START + '/* edits:' + json.dumps(edits) + ' */' + REFRESH_END
 
 
+def transform_description(source, remove=False):
+    if source.count(DESCRIPTION_START) != source.count(DESCRIPTION_END) or source.count(DESCRIPTION_START) > 1:
+        raise ValueError('Incomplete GitHub PR description patch; refusing to overwrite it.')
+    if DESCRIPTION_START in source:
+        before, remainder = source.split(DESCRIPTION_START)
+        metadata, after = remainder.split(DESCRIPTION_END)
+        original, replacement = json.loads(metadata.removeprefix('/* edit:').removesuffix(' */'))
+        source = before + after
+        if source.count(replacement) != 1:
+            raise ValueError('GitHub PR description patch changed; refusing to overwrite it.')
+        source = source.replace(replacement, original, 1)
+    if remove:
+        return source
+    matches = list(DESCRIPTION.finditer(source))
+    if len(matches) != 1:
+        raise ValueError('Unsupported GitHub PR description build: expected one matching anchor.')
+    original = matches[0].group()
+    model = matches[0].group(1)
+    # Tree models can contain raw body text without bodyHTML. Resolve that exact
+    # PR before constructing the initial context, preserving GitHub's Markdown.
+    hydration = (
+        f'if({model}.body?.trim()&&!{model}.bodyHTML?.trim()){{'
+        f'const sweetiebotResolved=await this._folderRepositoryManager.resolvePullRequest('
+        f'{model}.remote.owner,{model}.remote.repositoryName,{model}.number);'
+        'if(!sweetiebotResolved)throw new Error("Failed to load pull request description");'
+        f'{model}=sweetiebotResolved;}}'
+    )
+    replacement = original.replace(f'this._item={model},', hydration + f'this._item={model},')
+    return source.replace(original, replacement, 1) + DESCRIPTION_START + '/* edit:' + json.dumps([original, replacement]) + ' */' + DESCRIPTION_END
+
+
 def patch_files(extension_path=None, remove=False):
     candidates = ([Path(extension_path)] if extension_path else
                   sorted((Path.home() / '.vscode/extensions').glob('github.vscode-pull-request-github-*')))
@@ -104,7 +138,7 @@ def patch_files(extension_path=None, remove=False):
             if remove and START not in old:
                 continue
             try:
-                stripped = transform_refresh(old, remove=True) if kind == 'host' else old
+                stripped = transform_description(transform_refresh(old, remove=True), remove=True) if kind == 'host' else old
                 new = transform(stripped, kind, remove)
             except ValueError:
                 if START in old or REFRESH_START in old:
@@ -112,6 +146,12 @@ def patch_files(extension_path=None, remove=False):
                 print(f'Warning: unsupported GitHub PR asset {path.name}; skipping this optional fix.')
                 continue
             if kind == 'host' and not remove:
+                try:
+                    new = transform_description(new)
+                except ValueError:
+                    if DESCRIPTION_START in old:
+                        raise
+                    print(f'Warning: unsupported GitHub PR description in {path.name}; skipping description hydration.')
                 try:
                     new = transform_refresh(new)
                 except ValueError:
