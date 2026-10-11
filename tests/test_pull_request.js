@@ -336,7 +336,7 @@ async function run() {
   assert.equal(calls[0].args[1], 'chatgpt.conversationEditor');
 
   browserAvailable = false;
-  await assert.rejects(callback(uri, { branch: 'draft', base: 'main' }), /Update VS Code/);
+  await assert.rejects(callback(uri, { branch: 'draft', remote: 'origin', base: 'main' }), /Update VS Code/);
   browserAvailable = true;
   repository.state.HEAD.name = 'other';
   await assert.rejects(callback(uri, { branch: 'draft', base: 'main' }), /active branch changed/);
