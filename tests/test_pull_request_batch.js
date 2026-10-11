@@ -152,7 +152,7 @@ async function run() {
   assert.match(mixedPrompt, /requires fresh confirmation/);
   assert.match(prompt, /#12: Newest ready change/);
   assert(!prompt.includes('#10: Ready change'));
-  assert.match(prompt, /Do not merge, close, edit, or otherwise act on any unselected pull request/);
+  assert.match(prompt, /Never merge, close, edit, or implicitly include an unselected PR/);
   assert.match(prompt, /force-with-lease/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
 
