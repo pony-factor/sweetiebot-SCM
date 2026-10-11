@@ -7,16 +7,16 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
-  const composer = { innerText: text };
+  const composer = { innerText: text, getClientRects: () => [1], focus() {} };
   const sidebarButton = { disabled: false, getAttribute: key => key === 'aria-label' ? 'Hide sidebar' : null,
     getClientRects: () => [1], click: () => { sidebarClicks++; sidebar = false; } };
   const button = { disabled, getAttribute: key => key === 'aria-label' ? label : null,
     getClientRects: () => [1], click: () => { clicks++; } };
   const window = { location: new URL(url) }; window.top = window;
   const history = { state: {}, replaceState(state, title, url) { window.location = new URL(url); } };
-  vm.runInNewContext(source, { window, history, URL, Date: { now: () => now },
+  vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
-    document: { querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
+    document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = value; listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) : button,
       addEventListener: (name, callback) => {
@@ -64,3 +64,22 @@ f.listeners.get('click').forEach(callback => callback({ isTrusted: true,
   target: { closest: () => ({ getAttribute: () => 'Show sidebar' }) } }));
 f.revealSidebar(); f.tick(); assert.equal(f.sidebarClicks(), 0);
 console.log('Browser PR Send-button and sidebar checks passed.');
+
+const fragmentUrl = 'https://chatgpt.com/g/g-p-test123/project#sweetiebot_pr=1&q=' + encodeURIComponent('Draft PR');
+f = fixture({ url: fragmentUrl, text: '', disabled: true });
+assert.equal(f.composer.innerText, 'Draft PR');
+assert.equal(f.clicks(), 0);
+f.button.disabled = false; f.tick();
+assert.equal(f.clicks(), 1);
+assert.equal(f.window.location.hash, '');
+f.tick(); assert.equal(f.clicks(), 1);
+f = fixture({ url: fragmentUrl, text: 'Keep my draft' });
+f.tick(); assert.equal(f.composer.innerText, 'Keep my draft'); assert.equal(f.clicks(), 0);
+f = fixture({ url: fragmentUrl, text: '', disabled: true });
+f.listeners.get('input').forEach(callback => callback({ isTrusted: true }));
+f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
+const largePrompt = 'Evidence 🫧 & backrefs\n'.repeat(6000);
+f = fixture({ url: 'https://chatgpt.com/#sweetiebot_pr=1&q=' + encodeURIComponent(largePrompt), text: '' });
+assert.equal(f.composer.innerText, largePrompt);
+f.tick(); assert.equal(f.clicks(), 1);
+console.log('Fragment handoff checks passed.');

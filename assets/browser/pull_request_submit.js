@@ -2,9 +2,12 @@
 (() => {
   if (window.top !== window) return;
   const launch = new URL(window.location.href);
-  const prompt = launch.searchParams.get('q');
+  const fragment = new URLSearchParams(launch.hash.slice(1));
+  const fragmentLaunch = fragment.get('sweetiebot_pr') === '1';
+  const payload = fragmentLaunch ? fragment : launch.searchParams;
+  const prompt = payload.get('q');
   if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
-      || launch.searchParams.get('sweetiebot_pr') !== '1' || !prompt) return;
+      || payload.get('sweetiebot_pr') !== '1' || !prompt) return;
 
   // Collapse only the PR launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
@@ -46,13 +49,15 @@
   const deadline = Date.now() + 60000;
   let timer;
   let stopped = false;
+  let inserted = false;
+  let inserting = false;
   const stop = () => {
     stopped = true;
     clearTimeout(timer);
     document.removeEventListener('input', onInput, true);
     document.removeEventListener('click', onClick, true);
   };
-  const onInput = event => { if (event.isTrusted) stop(); };
+  const onInput = event => { if (event.isTrusted && !inserting) stop(); };
   const onClick = event => {
     if (event.isTrusted && event.target.closest?.('button')) stop();
   };
@@ -64,6 +69,22 @@
     const composer = document.querySelector('#prompt-textarea')
       || document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
+    if (fragmentLaunch && composer && !text && !inserted && composer.getClientRects().length) {
+      composer.focus();
+      inserting = true;
+      if (composer.tagName === 'TEXTAREA') {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(composer, prompt);
+        composer.dispatchEvent(new Event('input', { bubbles: true }));
+        inserted = true;
+      } else {
+        // Editing through the browser updates ProseMirror's state as well as DOM.
+        inserted = document.execCommand('insertText', false, prompt);
+      }
+      inserting = false;
+      timer = setTimeout(attempt, 250);
+      return;
+    }
     const button = document.querySelector(
       'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
     );
@@ -77,6 +98,7 @@
       const clean = new URL(window.location.href);
       clean.searchParams.delete('q');
       clean.searchParams.delete('sweetiebot_pr');
+      if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
       button.click();
       return;

@@ -104,6 +104,11 @@
         "icon": "$(git-merge)"
       },
       {
+        "command": "sweetiebot.squashMergeTreePullRequest",
+        "title": "Squash and Merge Pull Request",
+        "icon": "$(git-merge)"
+      },
+      {
         "command": "sweetiebot.openPullRequestBatchChat",
         "title": "Squash Selected Pull Requests with ChatGPT",
         "icon": {
@@ -137,7 +142,7 @@
       ],
       "view/item/context": [
         {
-          "command": "sweetiebot.squashMergeSelectedPullRequest",
+          "command": "sweetiebot.squashMergeTreePullRequest",
           "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
         }

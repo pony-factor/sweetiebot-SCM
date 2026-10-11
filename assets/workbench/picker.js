@@ -682,7 +682,42 @@ async function scmToolkitRecordPullRequestSource(
     return false;
 }
 
+// Time out workbench notifications, keeping the actionable update prompt open.
+const scmToolkitTimedNotificationServices = new WeakSet();
+function scmToolkitExpireNotifications(notifications) {
+    if (!notifications || scmToolkitTimedNotificationServices.has(notifications)) return;
+    const scheduled = new WeakSet();
+    const track = (handle, message) => {
+        const text = typeof message === 'string' ? message : message?.value ?? message?.message ?? '';
+        if (!handle || (typeof handle !== 'object' && typeof handle !== 'function')
+            || typeof handle.close !== 'function'
+            || String(text).trim() === 'Sweetiebot update ready'
+            || scheduled.has(handle)) return handle;
+        scheduled.add(handle);
+        const timeout = setTimeout(() => handle.close(), 20_000);
+        if (typeof handle.onDidClose === 'function') {
+            handle.onDidClose(() => clearTimeout(timeout));
+        }
+        return handle;
+    };
+    const wrap = (method, messageAt) => {
+        const original = notifications[method];
+        if (typeof original !== 'function') return;
+        notifications[method] = function (...args) {
+            return track(original.apply(this, args), messageAt(args));
+        };
+    };
+    // Methods often delegate to notify; a WeakSet prevents duplicate timers.
+    wrap('notify', args => args[0]?.message);
+    wrap('prompt', args => args[1]);
+    for (const method of ['info', 'warn', 'error']) {
+        wrap(method, args => args[0]);
+    }
+    scmToolkitTimedNotificationServices.add(notifications);
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
+    scmToolkitExpireNotifications(notifications);
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);
     if (settings.commitButtonLabel || settings.commitAndSendButtonLabel) {

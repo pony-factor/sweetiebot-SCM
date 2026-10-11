@@ -5,7 +5,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { runKefania } = require('./kefania_runner');
 const { displayName } = require('./pony_profile');
-const { chatgptPromptUrl, resolveChatgptActionProject } = require('./chatgpt_project');
+const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -300,7 +300,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       mcpTool: options.mcpTool || DEFAULT_MCP_TOOL,
       browserDraft: { evidence, callback: `vscode://${extensionId}/kefania-draft/${draftId}` },
     });
-    const url = chatgptPromptUrl(prompt, projectUrl) + '&sweetiebot_pr=1';
+    const url = chatgptPullRequestUrl(prompt, projectUrl);
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
