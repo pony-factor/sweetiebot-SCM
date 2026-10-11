@@ -2,6 +2,7 @@
 import json
 import re
 from pathlib import Path
+import github_pr_reactions
 
 START = '\n/* sweetiebot-github-pr:start */\n'
 END = '\n/* sweetiebot-github-pr:end */\n'
@@ -138,7 +139,9 @@ def patch_files(extension_path=None, remove=False):
             if remove and START not in old:
                 continue
             try:
-                stripped = transform_description(transform_refresh(old, remove=True), remove=True) if kind == 'host' else old
+                stripped = (github_pr_reactions.transform_csp(old, remove=True) if kind == 'host'
+                            else github_pr_reactions.transform_webview(old, remove=True))
+                stripped = transform_description(transform_refresh(stripped, remove=True), remove=True) if kind == 'host' else stripped
                 new = transform(stripped, kind, remove)
             except ValueError:
                 if START in old or REFRESH_START in old:
@@ -158,5 +161,15 @@ def patch_files(extension_path=None, remove=False):
                     if REFRESH_START in old:
                         raise
                     print(f'Warning: unsupported GitHub PR tree in {path.name}; skipping automatic refresh.')
+            if not remove:
+                try:
+                    new = (github_pr_reactions.transform_csp(new) if kind == 'host'
+                           else github_pr_reactions.transform_webview(new))
+                except ValueError:
+                    marker = (github_pr_reactions.CSP_START if kind == 'host'
+                              else github_pr_reactions.WEBVIEW_START)
+                    if marker in old:
+                        raise
+                    print(f'Warning: unsupported GitHub PR reaction asset {path.name}; skipping hover profiles.')
             edits.append((path, old, new))
     return edits
