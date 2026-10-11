@@ -1284,8 +1284,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 branch,
                 defaultBranch: currentDefaultBranch,
                 remote: settings.remote,
+                strategy: event.altKey ? 'merge' : 'squash',
             });
-            notifications.info(`Synced ${branch} with ${currentDefaultBranch}.`);
+            notifications.info(`Synced ${branch} with ${currentDefaultBranch} (${event.altKey ? 'merge' : 'single commit'}).`);
         } catch (error) {
             // Leave merge conflicts untouched and keep the sync message for the manual commit.
             notifications.error(error);
