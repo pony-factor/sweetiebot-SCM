@@ -10,7 +10,6 @@ This runs real JS assets in a browser DOM, not the proprietary Codex extension.
 from pathlib import Path
 import os
 import shutil
-from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets" / "codex"
@@ -31,6 +30,10 @@ header {padding:10px;background:#222}
 </body></html>"""
 
 def run():
+    # Keep Python unittest discovery dependency-free; Playwright belongs only to
+    # the dedicated browser integration job.
+    from playwright.sync_api import sync_playwright
+
     custom_browser = os.environ.get("CODEX_TEST_CHROMIUM") or shutil.which("chromium") or shutil.which("chromium-browser")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
