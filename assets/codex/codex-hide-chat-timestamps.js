@@ -97,7 +97,7 @@
         }
         if (!found) return null;
         // A matching time inside prose is user content, not a chat separator.
-        if (found.closest?.('p,blockquote,pre,code,[contenteditable="true"]')) return null;
+        if (found.closest?.('p,blockquote,pre,code,a,button,[role="textbox"],[class*="markdown"],[class*="prose"],[data-testid*="message-content"],[contenteditable="true"]')) return null;
 
         const label = normalize(found.textContent);
         let best = found;
