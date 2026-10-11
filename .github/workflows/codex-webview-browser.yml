@@ -5,6 +5,8 @@ on:
     paths:
       - 'assets/codex/codex-hide-chat-timestamps.js'
       - 'assets/codex/codex-window-label.js'
+      - 'assets/codex/codex-usage.js'
+      - 'tests/test_codex_usage.js'
       - 'tests/test_codex_hide_chat_timestamps.js'
       - 'tests/test_codex_window_label.js'
       - 'tests/test_codex_label.py'
@@ -38,6 +40,7 @@ jobs:
         run: |
           node tests/test_codex_hide_chat_timestamps.js
           node tests/test_codex_window_label.js
+          node tests/test_codex_usage.js
       - name: Codex manifest label tests
         env:
           PYTHONPATH: scripts
