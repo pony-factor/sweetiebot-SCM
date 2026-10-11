@@ -29,7 +29,6 @@
     "onCommand:sweetiebot.autoPullClean",
     "onCommand:sweetiebot.syncBranch",
     "onView:scmToolkit.workspaceSearch",
-    "onView:scmToolkit.ponyInfo",
     "onCommand:sweetiebot.openSettings",
     "onStartupFinished",
     "onCommand:sweetiebot.workspaceSearch.clearIndex",
@@ -71,14 +70,6 @@
           "type": "webview",
           "visibility": "visible",
           "contextualTitle": "SCM Workspace Search"
-        },
-        {
-          "id": "scmToolkit.ponyInfo",
-          "name": "Pony Info",
-          "type": "webview",
-          "visibility": "collapsed",
-          "when": "scmToolkit.hasPonyProfile",
-          "contextualTitle": "Sweetiebot Pony Info"
         }
       ]
     },

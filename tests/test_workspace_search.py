@@ -14,12 +14,11 @@ DEFAULTS = dict(toolkit_settings.DEFAULT_SETTINGS)
 
 
 class WorkspaceSearchInstallerTests(unittest.TestCase):
-    def test_pony_view_survives_workspace_search_placement(self):
+    def test_pony_information_has_no_sidebar_view(self):
         for activity_bar in (False, True):
             package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchActivityBar=activity_bar))
-            pony = next(view for view in package["contributes"]["views"]["scm"]
-                        if view["id"] == "scmToolkit.ponyInfo")
-            self.assertEqual(pony["when"], "scmToolkit.hasPonyProfile")
+            views = [view for group in package["contributes"]["views"].values() for view in group]
+            self.assertNotIn("scmToolkit.ponyInfo", [view["id"] for view in views])
 
     def test_saved_feature_preferences_reach_installed_defaults(self):
         settings = dict(DEFAULTS, autoPublishNewBranches=True, automaticBranchCleanup=False,

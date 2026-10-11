@@ -261,8 +261,7 @@ async function run() {
     mcpTool: 'github_create_pull_request',
     source: chatSource
   });
-  assert.equal(shownPonies.length, 1);
-  assert.equal(shownPonies[0].packId, 'test-pack');
+  assert.equal(shownPonies.length, 0, 'Pony information appears only in the confirmation window');
   assert.equal(calls.length, 4);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
   assert.equal(calls[1].id, 'workbench.action.browser.open');
