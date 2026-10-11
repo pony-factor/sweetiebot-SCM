@@ -96,15 +96,41 @@ function installPullRequestRefresh(vscode, view, owner) {
   let timer;
   let running = false;
   let disposed = false;
+  let lastAttemptAt = -Infinity;
+  let blockedUntil = 0;
+  let consecutiveLimits = 0;
+  const config = () => vscode.workspace.getConfiguration('scmToolkit');
+  const interval = () => {
+    const seconds = Number(config().get('pullRequestRefreshIntervalSeconds', 120));
+    return Number.isFinite(seconds) ? Math.max(30, Math.min(3600, seconds)) * 1000 : 120000;
+  };
   const active = () => !disposed && view.visible && vscode.window.state.focused &&
-    vscode.workspace.getConfiguration('scmToolkit').get('pullRequestAutoRefresh', true);
+    config().get('pullRequestAutoRefresh', true);
+  // GitHub Pull Requests can swallow fetch errors. Its patched formatter
+  // reports them here without replacing native GitHub error notifications.
+  const previousErrorHandler = globalThis.__sweetiebotGitHubPrRefreshError;
+  const reportFetchError = message => {
+    if (typeof previousErrorHandler === 'function') {
+      try { previousErrorHandler(message); } catch { /* Preserve the native error. */ }
+    }
+    if (!/API rate limit exceeded|secondary rate limit|abuse detection|too many requests|HTTP 429/i.test(String(message))) return;
+    const now = Date.now();
+    if (now < blockedUntil) return; // Deduplicate multiple repository failures.
+    consecutiveLimits = Math.min(consecutiveLimits + 1, 3);
+    blockedUntil = now + Math.min(3600000, 900000 * 2 ** (consecutiveLimits - 1));
+  };
+  globalThis.__sweetiebotGitHubPrRefreshError = reportFetchError;
   const refresh = async () => {
-    if (!active() || running) return;
+    const now = Date.now();
+    if (!active() || running || now < blockedUntil || now - lastAttemptAt < interval()) return;
     running = true;
+    lastAttemptAt = now;
+    const priorBlock = blockedUntil;
     try {
       await vscode.commands.executeCommand('pr.refreshList');
-    } catch {
-      // A transient offline/authentication failure must not create recurring popups.
+      if (blockedUntil === priorBlock) consecutiveLimits = 0;
+    } catch (error) {
+      reportFetchError(error?.message || String(error));
     } finally {
       running = false;
     }
@@ -114,15 +140,23 @@ function installPullRequestRefresh(vscode, view, owner) {
     timer = undefined;
     if (active()) {
       void refresh();
-      timer = setInterval(refresh, 5000);
+      timer = setInterval(refresh, interval());
     }
   };
   owner._register(view.onDidChangeVisibility(update));
   owner._register(vscode.window.onDidChangeWindowState(update));
   owner._register(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('scmToolkit.pullRequestAutoRefresh')) update();
+    if (event.affectsConfiguration('scmToolkit.pullRequestAutoRefresh') ||
+        event.affectsConfiguration('scmToolkit.pullRequestRefreshIntervalSeconds')) update();
   }));
-  owner._register({ dispose() { disposed = true; clearInterval(timer); } });
+  owner._register({ dispose() {
+    disposed = true;
+    clearInterval(timer);
+    if (globalThis.__sweetiebotGitHubPrRefreshError === reportFetchError) {
+      if (previousErrorHandler === undefined) delete globalThis.__sweetiebotGitHubPrRefreshError;
+      else globalThis.__sweetiebotGitHubPrRefreshError = previousErrorHandler;
+    }
+  } });
   queueMicrotask(update);
   return view;
 }
