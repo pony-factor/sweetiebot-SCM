@@ -80,6 +80,16 @@ for (const message of ['Bad credentials', 'API rate limit exceeded', 'Not Found'
         with self.assertRaises(ValueError):
             github_pr.transform_refresh(patched.replace('5000', '10000', 1))
 
+    def test_tree_refresh_supports_multiselect_option_in_0168(self):
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:cn(),manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)}')
+        patched = github_pr.transform_refresh(source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        self.assertIn("registerCommand('sweetiebot.squashMergeTreePullRequest'", patched)
+        self.assertIn('canSelectMany:cn()', patched)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+
     def test_reversible_idempotent_and_guarded(self):
         for kind, original in [('host', HOST), ('webview', LINK)]:
             source = 'prefix;' + original + ';suffix;'
