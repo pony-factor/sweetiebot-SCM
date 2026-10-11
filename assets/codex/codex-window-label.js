@@ -7,7 +7,7 @@
 
     const combined = `${label}: Codex`;
     const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
-    const selectors = 'h1,h2,h3,h4,[role="heading"],[class*="Heading"],[class*="heading"],[class*="Title"],[class*="title"]';
+    const selectors = 'h1,h2,h3,h4,header,[role="heading"],[role="banner"],[class*="Header"],[class*="header"],[class*="Heading"],[class*="heading"],[class*="Title"],[class*="title"]';
     const excluded = 'article,[data-message-id],[data-testid*="message"],[contenteditable="true"],input,textarea';
 
     function nearTop(element) {
