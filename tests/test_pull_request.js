@@ -176,6 +176,8 @@ async function run() {
   let uriHandler;
   let browserAvailable = true;
   let codexSnapshot;
+  let existingPullRequest;
+  const informationMessages = [];
   const calls = [];
   const shownPonies = [];
   const uri = { scheme: 'file', fsPath: '/workspace/project' };
@@ -201,7 +203,7 @@ async function run() {
     window: {
       registerUriHandler(handler) { uriHandler = handler; return { dispose() {} }; },
       async withProgress(_options, task) { return task(); },
-      async showInformationMessage() {},
+      async showInformationMessage(message) { informationMessages.push(message); },
       async showWarningMessage() {},
       async showErrorMessage(message) { throw new Error(message); },
     },
@@ -234,7 +236,8 @@ async function run() {
     async runKefania(repositoryPath, input, options) {
       assert.equal(repositoryPath, uri.fsPath);
       assert.equal(options.botOnly, true);
-      if (input.contextOnly) return { aheadBy: 1, headSha: 'a'.repeat(40), files: [] };
+      if (input.contextOnly) return { aheadBy: 1, headSha: 'a'.repeat(40), files: [],
+        ...(existingPullRequest ? { existingPullRequest } : {}) };
       assert.equal(input.expectedHeadSha, 'a'.repeat(40));
       assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup', body: 'Keep the verified source reference.' });
       return { url: 'https://github.com/owner/repo/pull/1' };
@@ -284,6 +287,23 @@ async function run() {
   calls.length = 0;
   await uriHandler.handleUri({ path: draftPath, query: 'title=Replay&body=Replay' });
   assert.equal(calls.length, 0, 'A consumed draft must never publish twice');
+
+  // The second click must open the existing PR, not another draft/chat.
+  existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', head: 'draft', base: 'release' };
+  calls.length = 0;
+  const existingResult = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.equal(existingResult.existing, true);
+  assert.equal(existingResult.base, 'release', 'The existing PR can target a different base');
+  assert.deepEqual(calls.map(call => call.id), ['vscode.open']);
+  assert.equal(calls[0].args[0].value, existingPullRequest.url);
+  assert.match(informationMessages.at(-1), /already exists/);
+  browserAvailable = false;
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.deepEqual(calls.map(call => call.id), ['vscode.open'],
+    'Existing PR must open even without the Integrated Browser');
+  browserAvailable = true;
+  existingPullRequest = undefined;
 
   configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
   calls.length = 0;
