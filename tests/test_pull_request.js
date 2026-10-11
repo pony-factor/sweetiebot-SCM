@@ -264,10 +264,10 @@ async function run() {
   assert.equal(shownPonies.length, 0, 'Pony information appears only in the confirmation window');
   assert.equal(calls.length, 4);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
-  assert.equal(calls[1].id, 'workbench.action.browser.open');
+  assert.equal(calls[1].id, 'workbench.action.moveEditorToNewWindow');
   assert.equal(calls[2].id, 'workbench.action.browser.open');
-  assert.equal(calls[3].id, 'workbench.action.moveEditorToNewWindow');
-  const browserOptions = calls[0].args[0];
+  assert.equal(calls[3].id, 'workbench.action.browser.open');
+  const browserOptions = calls[2].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
   assert.equal(url.search, '', 'PR prompt must not enter the HTTP request target');
@@ -277,14 +277,14 @@ async function run() {
   assert(openedPrompt.includes(rules));
   assert(openedPrompt.includes(chatSource.uuid));
   assert(!openedPrompt.includes('test-pack'), 'PR drafting must not receive pony metadata');
-  const profileUrl = new URL(calls[1].args[0].url);
+  const profileUrl = new URL(calls[3].args[0].url);
   const profilePrompt = new URLSearchParams(profileUrl.hash.slice(1)).get('q');
   assert(profilePrompt.includes('test-pack'));
   assert(!profilePrompt.includes('headSha'), 'Pony research must not receive repository evidence');
   assert.match(profilePrompt, /independently/);
   assert.equal(new URLSearchParams(profileUrl.hash.slice(1)).get('return_to').endsWith('/pony'), true);
   assert.equal(new URLSearchParams(url.hash.slice(1)).get('return_to').endsWith('/draft'), true);
-  assert.match(calls[2].args[0].url, /^http:\/\/127\.0\.0\.1:/);
+  assert.match(calls[0].args[0].url, /^http:\/\/127\.0\.0\.1:/);
   assert.match(openedPrompt, /Do not publish through any GitHub connector/);
   assert.match(openedPrompt, /primary sources/);
   assert.match(openedPrompt, /codex-pony\[bot\]/);
@@ -300,18 +300,18 @@ async function run() {
   configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
-  assert.equal(new URL(calls[0].args[0].url).pathname, '/g/g-p-test123/project');
-  assert.equal(new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
-  assert.match(new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('q'), /"draft"/);
+  assert.equal(new URL(calls[2].args[0].url).pathname, '/g/g-p-test123/project');
+  assert.equal(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
+  assert.match(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q'), /"draft"/);
   configuredProject = '';
 
   contextFailure = new Error('Published comparison unavailable');
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.equal(calls.length, 3, 'Pony research and confirmation still open when PR preparation fails');
-  const independentPrompt = new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('q');
+  const independentPrompt = new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q');
   assert(independentPrompt.includes('test-pack'));
-  const failedState = await (await fetch(calls[1].args[0].url + '/state')).json();
+  const failedState = await (await fetch(calls[0].args[0].url + '/state')).json();
   assert.equal(failedState.errors.draft, contextFailure.message);
   contextFailure = undefined;
 
@@ -325,7 +325,7 @@ async function run() {
     }
   };
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
-  const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open').args[0].url);
+  const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open' && call.args[0].url.startsWith('https://chatgpt.com')).args[0].url);
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));

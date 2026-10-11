@@ -17,6 +17,22 @@
         && candidate.port && !candidate.username && !candidate.password && !candidate.search && !candidate.hash
         && /^\/kefania-draft\/[0-9a-f-]{36}\/(draft|pony)$/.test(candidate.pathname)) callback = candidate;
   } catch { /* Older manual drafting links do not collect results automatically. */ }
+  // Give this action's new tab a blank draft without deleting or replacing the
+  // user's shared draft. ChatGPT reads storage in its page world, not preload.
+  if (fragmentLaunch && callback) {
+    const isolateComposerDraft = () => {
+      const storage = window.localStorage;
+      const key = 'oai/apps/lightweight-web/composerDraft/v1';
+      const prototype = window.Storage.prototype;
+      const get = prototype.getItem, set = prototype.setItem, remove = prototype.removeItem;
+      let draft = null;
+      prototype.getItem = function(name) { return this === storage && String(name) === key ? draft : get.call(this, name); };
+      prototype.setItem = function(name, value) { if (this === storage && String(name) === key) draft = String(value); else set.call(this, name, value); };
+      prototype.removeItem = function(name) { if (this === storage && String(name) === key) draft = null; else remove.call(this, name); };
+    };
+    try { require('electron').contextBridge.executeInMainWorld({ func: isolateComposerDraft }); }
+    catch { /* Existing composer guards still prevent overwriting a user draft. */ }
+  }
   // Remove transport metadata before ChatGPT hydrates or constructs requests.
   // The complete prompt remains in this isolated preload closure.
   if (fragmentLaunch) {

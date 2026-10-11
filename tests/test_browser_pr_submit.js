@@ -14,9 +14,16 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { clicks++; } };
   const navigations = [];
   const location = value => Object.assign(new URL(value), {assign(value){navigations.push(value);}});
-  const window = { location: location(url) }; window.top = window;
+  const persisted = new Map([['oai/apps/lightweight-web/composerDraft/v1', 'Keep the unrelated user draft']]);
+  class Storage {
+    getItem(key) { return persisted.get(key) ?? null; }
+    setItem(key,value) { persisted.set(key,String(value)); }
+    removeItem(key) { persisted.delete(key); }
+  }
+  const window = { location: location(url), Storage, localStorage:new Storage() }; window.top = window;
   const history = { state: {}, replaceState(state, title, url) { window.location = location(url); } };
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
+    require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = value; listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
@@ -27,7 +34,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
-  return { composer, button, window, listeners, navigations, setStreaming(value){streaming=value;}, clicks: () => clicks,
+  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, clicks: () => clicks,
     sidebarClicks: () => sidebarClicks, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
@@ -93,6 +100,13 @@ const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-55
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);
 f = fixture({url:collectLaunch,text:'Draft PR',resultLinks:[returnUrl],streaming:true});
+const storageKey='oai/apps/lightweight-web/composerDraft/v1';
+assert.equal(f.window.localStorage.getItem(storageKey),null,'Workflow tab starts with an isolated blank draft');
+f.window.localStorage.setItem(storageKey,'Workflow text');
+assert.equal(f.window.localStorage.getItem(storageKey),'Workflow text');
+assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft','Original shared draft is never overwritten');
+f.window.localStorage.removeItem(storageKey);
+assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
 assert.equal(f.clicks(),1);
 f.tick(2500); assert.equal(f.navigations.length,0,'Never collect a streaming partial result');
 f.setStreaming(false);f.tick(2500);assert.deepEqual(f.navigations,[returnUrl]);

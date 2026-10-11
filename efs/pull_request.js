@@ -321,6 +321,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
+      await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
       for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {
@@ -332,7 +333,6 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         }
         catch (error) { localHandoff.reportError(draftId, kind, error.message); }
       }
-      await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
     } catch (error) { pendingDrafts.delete(draftId); throw error; }
     return { source, conversationContext, repositoryUrl, pony };
   }));
