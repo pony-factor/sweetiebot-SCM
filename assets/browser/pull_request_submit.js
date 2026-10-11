@@ -8,6 +8,44 @@
   const prompt = payload.get('q');
   if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
       || payload.get('sweetiebot_pr') !== '1' || !prompt) return;
+  if (encodeURIComponent(prompt).length > 70000) return;
+
+  let callback;
+  try {
+    const candidate = new URL(payload.get('return_to'));
+    if (candidate.protocol === 'http:' && candidate.hostname === '127.0.0.1'
+        && candidate.port && !candidate.username && !candidate.password && !candidate.search && !candidate.hash
+        && /^\/kefania-draft\/[0-9a-f-]{36}\/(draft|pony)$/.test(candidate.pathname)) callback = candidate;
+  } catch { /* Older manual drafting links do not collect results automatically. */ }
+  // Remove transport metadata before ChatGPT hydrates or constructs requests.
+  // The complete prompt remains in this isolated preload closure.
+  if (fragmentLaunch) {
+    const clean = new URL(launch.href); clean.hash = '';
+    history.replaceState(history.state, '', clean.href);
+  }
+  const collectResult = () => {
+    if (!callback) return;
+    const expires = Date.now() + 1200000;
+    let previous, stableSince;
+    const collect = () => {
+      if (Date.now() > expires || window.location.origin !== launch.origin) return;
+      const generating = document.querySelector('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]');
+      const links = document.querySelectorAll('[data-message-author-role="assistant"] a[href]');
+      for (const link of links) {
+        let url;
+        try { url = new URL(link.href); } catch { continue; }
+        if (url.origin !== callback.origin || url.pathname !== callback.pathname || url.search
+            || url.href.length > 80000) continue;
+        const result = new URLSearchParams(url.hash.slice(1));
+        const expectedKeys = callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
+        if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
+        if (url.href !== previous) { previous = url.href; stableSince = Date.now(); }
+        if (!generating && Date.now() - stableSince >= 2000) { window.location.assign(url.href); return; }
+      }
+      setTimeout(collect, 500);
+    };
+    collect();
+  };
 
   // Collapse only the PR launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
@@ -101,6 +139,7 @@
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
       button.click();
+      collectResult();
       return;
     }
     timer = setTimeout(attempt, 250);

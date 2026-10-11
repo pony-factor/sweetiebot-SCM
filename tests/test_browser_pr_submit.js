@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -12,18 +12,22 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { sidebarClicks++; sidebar = false; } };
   const button = { disabled, getAttribute: key => key === 'aria-label' ? label : null,
     getClientRects: () => [1], click: () => { clicks++; } };
-  const window = { location: new URL(url) }; window.top = window;
-  const history = { state: {}, replaceState(state, title, url) { window.location = new URL(url); } };
+  const navigations = [];
+  const location = value => Object.assign(new URL(value), {assign(value){navigations.push(value);}});
+  const window = { location: location(url) }; window.top = window;
+  const history = { state: {}, replaceState(state, title, url) { window.location = location(url); } };
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = value; listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
-      selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) : button,
+      selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
+      selector.includes('Stop streaming') ? (streaming ? button : null) : button,
+      querySelectorAll: () => resultLinks.map(href=>({href})),
       addEventListener: (name, callback) => {
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
-  return { composer, button, window, listeners, clicks: () => clicks,
+  return { composer, button, window, listeners, navigations, setStreaming(value){streaming=value;}, clicks: () => clicks,
     sidebarClicks: () => sidebarClicks, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
@@ -68,6 +72,7 @@ console.log('Browser PR Send-button and sidebar checks passed.');
 const fragmentUrl = 'https://chatgpt.com/g/g-p-test123/project#sweetiebot_pr=1&q=' + encodeURIComponent('Draft PR');
 f = fixture({ url: fragmentUrl, text: '', disabled: true });
 assert.equal(f.composer.innerText, 'Draft PR');
+assert.equal(f.window.location.hash, '', 'Clear the payload before ChatGPT hydrates');
 assert.equal(f.clicks(), 0);
 f.button.disabled = false; f.tick();
 assert.equal(f.clicks(), 1);
@@ -80,6 +85,19 @@ f.listeners.get('input').forEach(callback => callback({ isTrusted: true }));
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
 const largePrompt = 'Evidence 🫧 & backrefs\n'.repeat(6000);
 f = fixture({ url: 'https://chatgpt.com/#sweetiebot_pr=1&q=' + encodeURIComponent(largePrompt), text: '' });
-assert.equal(f.composer.innerText, largePrompt);
-f.tick(); assert.equal(f.clicks(), 1);
+assert.equal(f.composer.innerText, '');
+f.tick(); assert.equal(f.clicks(), 0, 'Reject an oversized encoded launch');
 console.log('Fragment handoff checks passed.');
+
+const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
+const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
+const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);
+f = fixture({url:collectLaunch,text:'Draft PR',resultLinks:[returnUrl],streaming:true});
+assert.equal(f.clicks(),1);
+f.tick(2500); assert.equal(f.navigations.length,0,'Never collect a streaming partial result');
+f.setStreaming(false);f.tick(2500);assert.deepEqual(f.navigations,[returnUrl]);
+for(const bad of [returnUrl.replace(':1234',':4567'),returnUrl.replace('/pony','/draft'),returnUrl+'&publish=true']){
+  f=fixture({url:collectLaunch,text:'',resultLinks:[bad]});f.tick(3000);
+  assert.equal(f.navigations.length,0,'Collect only this workflow’s exact local callback');
+}
+console.log('Independent result collection checks passed.');

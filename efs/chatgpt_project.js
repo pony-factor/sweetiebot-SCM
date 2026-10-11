@@ -27,9 +27,10 @@ function chatgptPromptUrl(prompt, configuredProjectUrl = '') {
 
 // Keep long PR instructions out of the HTTP request target. The browser preload
 // reads this fragment and inserts the complete prompt after ChatGPT hydrates.
-function chatgptPullRequestUrl(prompt, configuredProjectUrl = '') {
+function chatgptPullRequestUrl(prompt, configuredProjectUrl = '', resultUrl = '') {
   const destination = normalizeChatgptProjectUrl(configuredProjectUrl) || 'https://chatgpt.com/';
-  return destination + '#sweetiebot_pr=1&q=' + encodeURIComponent(prompt);
+  return destination + '#sweetiebot_pr=1&q=' + encodeURIComponent(prompt)
+    + (resultUrl ? '&return_to=' + encodeURIComponent(resultUrl) : '');
 }
 
 
