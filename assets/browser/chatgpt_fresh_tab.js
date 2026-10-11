@@ -4,7 +4,7 @@
   if (window.top !== window) return;
   const launch = new URL(window.location.href);
   if (launch.origin !== 'https://chatgpt.com'
-      || !(launch.pathname === '/' || /^\\/g\\/g-p-[A-Za-z0-9-]+\\/project\\/?$/.test(launch.pathname))
+      || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
       || launch.searchParams.get('sweetiebot_fresh') !== '1'
       || launch.searchParams.has('q')) return;
 
@@ -37,7 +37,7 @@
   const clearComposer = () => {
     if (stopped || userEdited) return;
     if (window.location.origin !== launch.origin
-        || (window.location.pathname !== launch.pathname && window.location.pathname !== launch.pathname.replace(/\\/$/, ''))) {
+        || (window.location.pathname !== launch.pathname && window.location.pathname !== launch.pathname.replace(/\/$/, ''))) {
       stop();
       return;
     }
