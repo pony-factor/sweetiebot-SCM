@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
 } = require('../efs/post_commit_spellcheck_notice');
+const { renderSpellcheckDiff, parseUnifiedDiff } = require('../efs/spellcheck_diff');
 
 const head = 'a'.repeat(40);
 const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });
@@ -86,45 +87,89 @@ test('refuses to read a symlinked or oversized metadata notice', async () => {
   }
 });
 
-test('prefills empty SCM input and announces ready spellcheck edits', async () => {
-  const f = fixture();
-  const messages = [];
-  const cmds = [];
-  const vscode = {
-    window: { async showInformationMessage(...args) { messages.push(args); return 'Review changes'; } },
-    commands: { async executeCommand(name) { cmds.push(name); } },
-  };
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b' }, f.git);
-  assert.match(f.repo.inputBox.value, /^🤖 Spellcheck 1 Markdown file/);
-  assert.match(f.repo.inputBox.value, /Co-authored-by: Ollama \(qwen:3b\)/);
-  assert.match(messages[0][0], /spellcheck edits ready for review/);
-  assert.deepEqual(cmds, ['workbench.view.scm']);
+const patch = [
+  'diff --git a/notes/report.md b/notes/report.md',
+  'index 123..456 100644',
+  '--- a/notes/report.md',
+  '+++ b/notes/report.md',
+  '@@ -1,3 +1,3 @@',
+  ' unchanged context',
+  '-This is teh <script>alert(1)</script> line.',
+  '+This is the <script>alert(1)</script> line.',
+  ' after context',
+  'diff --git a/notes/second.mdx b/notes/second.mdx',
+  '--- a/notes/second.mdx',
+  '+++ b/notes/second.mdx',
+  '@@ -9 +9 @@',
+  '-Anotehr errror',
+  '+Another error',
+  ''
+].join('\n');
+
+test('renders every file and changed line as an escaped, theme-based inline diff', () => {
+  const files = parseUnifiedDiff(patch);
+  assert.deepEqual(files.map(file => file.name), ['notes/report.md', 'notes/second.mdx']);
+  assert.deepEqual(files[0].rows.filter(row => row.kind === 'add').map(row => row.newNumber), [2]);
+  const html = renderSpellcheckDiff(patch);
+  assert.match(html, /--vscode-diffEditor-insertedTextBackground/);
+  assert.match(html, /--vscode-diffEditor-removedTextBackground/);
+  assert.match(html, /notes\/report\.md/);
+  assert.match(html, /notes\/second\.mdx/);
+  assert.match(html, /changed-token/);
+  const visibleText = html.replace(/<\/?span[^>]*>/g, '');
+  assert.match(visibleText, /Anotehr errror/);
+  assert.match(visibleText, /Another error/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  assert.doesNotMatch(html, /Keep edits|Discard.*button|Markdown files have/);
+  assert.match(html, /All proposed edits are unstaged in Source Control/);
 });
 
-test('does not overwrite an existing SCM message unless requested', async () => {
-  const f = fixture({ draft: 'My work in progress' });
-  let announcement;
+test('spellcheck review opens a read-only transient panel and keeps SCM edits and drafts', async () => {
+  const f = fixture({ draft: 'Do not modify this draft' });
+  let panel, changeState;
+  const args = [];
   const vscode = {
-    window: { async showInformationMessage(...args) { announcement = args; return undefined; } },
-    commands: { async executeCommand() {} },
+    ViewColumn: { Beside: 2 },
+    window: {
+      createWebviewPanel(...options) {
+        args.push(options);
+        panel = {
+          active: true,
+          webview: { html: '' },
+          disposed: false,
+          onDidChangeViewState(handler) { changeState = handler; },
+          dispose() { this.disposed = true; }
+        };
+        return panel;
+      },
+      showInformationMessage() { throw new Error('No Keep/Discard notification is allowed'); }
+    },
+    commands: { executeCommand() { throw new Error('No SCM command should be triggered'); } }
   };
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b' }, f.git);
-  assert.equal(f.repo.inputBox.value, 'My work in progress');
-  assert.match(announcement[0], /Existing commit draft kept/);
-  vscode.window.showInformationMessage = async () => 'Use spellcheck message';
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b' }, f.git);
-  assert.match(f.repo.inputBox.value, /^🤖 Spellcheck/);
+  const invocations = [];
+  const diff = async (root, argv) => {
+    invocations.push({ root, argv });
+    return patch;
+  };
+  await showNotice(vscode, f.repo, { paths: ['notes/report.md', 'notes/second.mdx'], root: '/repo' }, diff);
+  assert.equal(f.repo.inputBox.value, 'Do not modify this draft');
+  assert.equal(args[0][0], 'sweetiebot.spellcheckDiff');
+  assert.equal(args[0][2], 2);
+  assert.equal(args[0][3].enableScripts, false);
+  assert.match(panel.webview.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
+  assert.deepEqual(invocations[0], {
+    root: '/repo',
+    argv: ['diff', '--no-ext-diff', '--no-color', '--unified=3', '--', 'notes/report.md', 'notes/second.mdx']
+  });
+  changeState({ webviewPanel: { active: false, dispose: () => panel.dispose() } });
+  assert.equal(panel.disposed, true);
 });
 
-
-test('uses the supplied bot identity when no email is configured', async () => {
+test('reverted spellcheck edits do not open an empty review window', async () => {
   const f = fixture();
-  const vscode = {
-    window: { async showInformationMessage() {} },
-    commands: { async executeCommand() {} },
-  };
-  await showNotice(vscode, f.repo, {paths: ['notes/report.md'], root: '/repo', model: 'qwen:3b'},
-    async () => { throw new Error('unset'); });
-  assert.equal(f.repo.inputBox.value,
-    '🤖 Spellcheck 1 Markdown file\n\nCo-authored-by: Ollama (qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
+  await showNotice({
+    window: { createWebviewPanel() { throw new Error('unexpected panel'); } }
+  }, f.repo, { paths: ['notes/report.md'], root: '/repo' }, async () => '');
+  assert.equal(f.repo.inputBox.value, '');
 });

@@ -449,8 +449,9 @@ async function deleteBranch(repository, { branch, defaultBranch, remote }, clean
   return branch;
 }
 
-async function syncBranch(repository, { branch, defaultBranch, remote }) {
+async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash' }) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot sync ${defaultBranch} into itself.`);
+  if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
   const checkBranch = async () => {
     await repository.status();
     if (repository.state.HEAD?.name !== branch) {
@@ -461,10 +462,51 @@ async function syncBranch(repository, { branch, defaultBranch, remote }) {
   await repository.fetch({ remote });
   await checkBranch();
   const previousMessage = repository.inputBox.value;
-  const message = `🔄 Sync branch with ${defaultBranch}`;
+  const message = defaultBranch === 'main'
+    ? '🔄 Sync brach to main'
+    : `🔄 Sync branch to ${defaultBranch}`;
   repository.inputBox.value = message;
   try {
-    await repository.merge(`${remote}/${defaultBranch}`);
+    if (strategy === 'merge') {
+      // Keep ordinary Git ancestry as an explicit alternative.
+      await repository.merge(`${remote}/${defaultBranch}`);
+    } else {
+      const root = repository.rootUri.fsPath;
+      const git = async args => (await promisify(execFile)('git', args, {
+        cwd: root, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+      })).stdout.trim();
+      // Squash must not consume the user's index, working tree, or unresolved conflicts.
+      if (await git(['status', '--porcelain'])) {
+        throw new Error('Commit or stash your changes before squashing the default branch.');
+      }
+      const target = `refs/remotes/${remote}/${defaultBranch}`;
+      const headBefore = await git(['rev-parse', 'HEAD']);
+      // If the target is already an ancestor there is nothing to incorporate.
+      const ancestor = await promisify(execFile)('git',
+        ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
+        .then(() => true, error => {
+          if (error.code === 1) return false;
+          throw error;
+        });
+      if (!ancestor) {
+        await checkBranch();
+        // A conflict intentionally leaves the index and worktree available to resolve.
+        await git(['merge', '--squash', target]);
+        await checkBranch();
+        const staged = await promisify(execFile)('git',
+          ['diff', '--cached', '--quiet'], { cwd: root })
+          .then(() => false, error => {
+            if (error.code === 1) return true;
+            throw error;
+          });
+        if (staged) {
+          if (await git(['rev-parse', 'HEAD']) !== headBefore) {
+            throw new Error('The branch advanced during synchronization; changes were left staged.');
+          }
+          await git(['commit', '-m', `${message}\n\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+        }
+      }
+    }
   } finally {
     await repository.status();
     if (!repository.state.mergeChanges.length && repository.inputBox.value === message) {

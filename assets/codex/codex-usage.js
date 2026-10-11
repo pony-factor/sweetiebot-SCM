@@ -178,9 +178,10 @@ function scmToolkitKeepUsageFresh(refetch) {
                 return;
             }
             const degrees = (100 - percent) * 3.6;
-            // VS Code exposes the user theme's focus border color to webviews.
+            // An embedded Codex webview may not expose the VS Code theme token.
+            // Preserve the theme override, but never silently revert to the normal text color.
             const foreground = percent <= 10
-                ? 'var(--vscode-focusBorder, currentColor)'
+                ? 'var(--vscode-focusBorder, #ffb900)'
                 : 'currentColor';
             this.style.background =
                 `conic-gradient(from 0deg, color-mix(in srgb, currentColor 20%, transparent) 0 ${degrees}deg, ${foreground} ${degrees}deg 360deg)`;

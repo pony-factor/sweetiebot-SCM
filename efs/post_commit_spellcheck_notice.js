@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { renderSpellcheckDiff } = require('./spellcheck_diff');
 
 const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
@@ -83,31 +84,32 @@ async function takeNotice(repository, dependencies = {}) {
   }
 }
 
-async function showNotice(vscode, repository, notice, readConfig = git) {
-  let email = DEFAULT_EMAIL;
-  try { email = await readConfig(notice.root, ['config', '--get', 'scm-toolkit.spellcheck-coauthor-email']) || DEFAULT_EMAIL; }
-  catch { /* Use the supplied bot identity by default. */ }
+async function gitDiff(cwd, args) {
+  // No artificial hunk or file-count cutoff: the preview shows the actual unstaged patch.
+  return (await execFileAsync('git', args, {
+    cwd, timeout: 15000, maxBuffer: 64 * 1024 * 1024,
+  })).stdout;
+}
 
-  const message = spellcheckMessage(notice.paths, email, notice.model);
-  const input = repository.inputBox;
-  const existing = input?.value?.trim();
-  if (!existing && input) input.value = message;
+async function showNotice(vscode, repository, notice, readDiff = gitDiff) {
+  const patch = await readDiff(notice.root, [
+    'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...notice.paths
+  ]);
+  if (!patch.trim()) return;
 
-  const attribution = coauthor(email, notice.model)
-    ? ''
-    : ' Configure scm-toolkit.spellcheck-coauthor-email with the bot account’s actual GitHub noreply address for linked attribution.';
-  const detail = notice.paths.length + ' Markdown file'
-    + (notice.paths.length === 1 ? ' has' : 's have')
-    + ' spellcheck edits ready for review.';
-  const action = existing ? 'Use spellcheck message' : 'Review changes';
-  const selection = await vscode.window.showInformationMessage(
-    'Sweetiebot: ' + detail
-      + (existing ? ' Existing commit draft kept.' : ' Commit message prepared.')
-      + attribution,
-    action
+  // This is a disposable read-only preview, not a modal Keep/Discard decision.
+  // The Git working tree and any existing SCM commit draft remain untouched.
+  const panel = vscode.window.createWebviewPanel(
+    'sweetiebot.spellcheckDiff',
+    'Spellcheck suggestions',
+    vscode.ViewColumn.Beside,
+    { enableScripts: false, retainContextWhenHidden: false }
   );
-  if (selection === 'Use spellcheck message' && input) input.value = message;
-  if (selection === 'Review changes') await vscode.commands.executeCommand('workbench.view.scm');
+  panel.webview.html = renderSpellcheckDiff(patch);
+  panel.onDidChangeViewState(event => {
+    // Dismiss by focusing another editor or Source Control, without changing edits.
+    if (!event.webviewPanel.active) event.webviewPanel.dispose();
+  });
 }
 
 async function registerPostCommitSpellcheckNotice(vscode, extensionContext, dependencies = {}) {
@@ -124,7 +126,7 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
       if (!root || pending.has(root)) continue;
       pending.add(root);
       void takeNotice(repository, dependencies)
-        .then(notice => notice && !disposed ? showNotice(vscode, repository, notice, dependencies.git || git) : undefined)
+        .then(notice => notice && !disposed ? showNotice(vscode, repository, notice, dependencies.diff || gitDiff) : undefined)
         .catch(error => console.warn('Sweetiebot spellcheck notification:', error.message))
         .finally(() => pending.delete(root));
     }
@@ -142,6 +144,6 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
 }
 
 module.exports = {
-  parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice,
+  parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
   registerPostCommitSpellcheckNotice,
 };
