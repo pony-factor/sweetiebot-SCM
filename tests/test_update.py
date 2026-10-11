@@ -72,13 +72,14 @@ class UpdateTests(unittest.TestCase):
             }
             installed = extensions / 'pony-factor.sweetiebot-scm-0.3.2/codex-customizations'
 
-            def prepare():
+            def prepare(force=False):
                 with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
-                    return update.prepare_update(cache, extensions)
+                    return update.prepare_update(cache, extensions, force=force)
 
             self.assertIsNotNone(prepare())
             update.extract_sources(archive(payload), installed)
             self.assertIsNone(prepare())
+            self.assertIsNotNone(prepare(force=True))
             (installed / 'scripts/codex_composer.py').write_text('old composer')
             self.assertIsNotNone(prepare())
             (installed / 'scripts/codex_composer.py').unlink()

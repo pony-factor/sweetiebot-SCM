@@ -12,13 +12,14 @@ let revision = 'initial';
 let choice, releaseServer, stopping = false, reloads = 0;
 const notices = [];
 let invalidations = 0;
+const delays = [];
 let timerId = 0, changed, focusChanged, extensionPath = '/extensions/codex-old', launches = 0;
 const children = [];
 const sandbox = vm.createContext({
   module: { exports: {} }, process: { platform: 'darwin', env: {} },
   setInterval(fn) { intervals.set(++timerId, fn); return timerId; },
   clearInterval(id) { intervals.delete(id); },
-  setTimeout(fn) { timers.set(++timerId, fn); return timerId; },
+  setTimeout(fn, delay) { delays.push(delay); timers.set(++timerId, fn); return timerId; },
   clearTimeout(id) { timers.delete(id); },
   require(name) {
     if (name === 'path') return path;
@@ -129,6 +130,20 @@ assert.equal(notices.length, noticesBeforeBusy, 'a busy updater never offers a p
 assert.equal(timers.size, 1, 'a busy updater schedules a retry');
 tick();
 assert.equal(launches, 7, 'the waiting window retries without a reload');
+for (const delay of [15000, 60000, 300000]) {
+  children.at(-1).callbacks.get('close')(1);
+  assert.equal(timers.size, 1, 'failed repairs schedule a bounded retry');
+  assert.equal(delays.at(-1), delay);
+  tick();
+}
+children.at(-1).callbacks.get('close')(1);
+assert.equal(timers.size, 0, 'persistent failures stop retrying until the next scheduled check');
+assert.equal(notices.length, noticesBeforeBusy, 'failed repairs never offer a reload');
+changed(); tick();
+revision = 'recovered';
+children.at(-1).callbacks.get('close')(0);
+tick();
+assert.equal(notices.length, noticesBeforeBusy + 1, 'an extension update can recover after exhausted retries');
 retryContext.subscriptions.at(-1).dispose();
 console.log('Codex update repair lifecycle checks passed.');
 }

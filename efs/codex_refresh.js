@@ -6,6 +6,7 @@ const { runtimeRevision } = require('./runtime_revision');
 const { invalidateUserExtensionCache } = require('./extension_cache');
 
 const QUIET_PERIOD_MS = 8000;
+const RETRY_DELAYS_MS = [15000, 60000, 300000];
 
 // Repair the app and the selected Codex extension before offering one reload.
 // Extension installs can finish after Sweetie Bot starts, so a repair followed
@@ -15,6 +16,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   const output = vscode.window.createOutputChannel('Sweetie Bot app repair');
   let child, timer, settleTimer, disposed = false, pending = false, offeredRevision;
   let extensionGeneration = 0;
+  let failures = 0;
   const loadedRevision = runtimeRevision(vscode, context);
   const enabled = () => vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
   const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
@@ -84,7 +86,15 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
         schedule(QUIET_PERIOD_MS);
         return;
       }
-      if (code !== 0 || timedOut) return;
+      if (code !== 0 || timedOut) {
+        if (failures < RETRY_DELAYS_MS.length) {
+          const delay = RETRY_DELAYS_MS[failures++];
+          output.appendLine(`Retrying automatic repair in ${delay / 1000} seconds.`);
+          schedule(delay);
+        }
+        return;
+      }
+      failures = 0;
       clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
         if (disposed || !enabled()) return;
@@ -108,9 +118,10 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
     running.on('close', finish);
   };
 
-  const interval = setInterval(() => schedule(QUIET_PERIOD_MS), 60 * 60 * 1000);
+  const interval = setInterval(() => { failures = 0; schedule(QUIET_PERIOD_MS); }, 60 * 60 * 1000);
   context.subscriptions.push(output, vscode.extensions.onDidChange(() => {
     extensionGeneration++;
+    failures = 0;
     schedule(QUIET_PERIOD_MS);
   }),
     vscode.window.onDidChangeWindowState(event => {

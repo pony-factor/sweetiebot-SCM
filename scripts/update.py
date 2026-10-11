@@ -56,7 +56,7 @@ def installed_sources_match(candidate, extensions_dir):
     return True
 
 
-def prepare_update(cache, extensions_dir=None):
+def prepare_update(cache, extensions_dir=None, *, force=False):
     repository = cache / "upstream.git"
     if not repository.exists():
         repository.mkdir(parents=True)
@@ -73,7 +73,7 @@ def prepare_update(cache, extensions_dir=None):
     if not all((candidate / "scripts" / name).is_file()
                for name in ("update.py", "repair.py", "install.py")):
         return None
-    if (marker.exists() and marker.read_text().strip() == revision
+    if (not force and marker.exists() and marker.read_text().strip() == revision
             and installed_sources_match(candidate, extensions_dir or default_extensions_dir())):
         return None
     return candidate / "scripts/install.py", revision

@@ -24,6 +24,7 @@ class RepairTests(unittest.TestCase):
             stack.enter_context(patch.object(install.github_pr, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.browser_pr, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.codex_colors, 'stylesheet_path', return_value=None))
+            stack.enter_context(patch.object(install.codex_label, 'patch_file', return_value=None))
             stack.enter_context(patch.object(install, 'codex_bundle_paths', return_value=[]))
             for module in (install.codex_context, install.codex_usage, install.codex_composer):
                 stack.enter_context(patch.object(module, 'patch_files', return_value=[]))
@@ -73,11 +74,47 @@ class RepairTests(unittest.TestCase):
                     patch.object(repair, 'prepare_update', side_effect=[(Path('/candidate/scripts/install.py'), 'abc'), None]), \
                     patch.object(repair.subprocess, 'run') as run, patch.object(repair.os, 'execv') as execute:
                 run.return_value.returncode = code
-                repair.repair(['--app', '/Custom/Code.app'])
+                self.assertEqual(repair.repair(['--app', '/Custom/Code.app']), code)
                 self.assertNotIn('--repair', run.call_args.args[0])
                 marker = Path(directory) / 'Library/Caches/dev.ponyfactor.sweetiebot/installed-revision'
                 self.assertEqual(marker.exists(), code == 0)
-                self.assertEqual(execute.called, code != 0)
+                execute.assert_not_called()
+
+    def test_manual_install_fetches_even_when_revision_is_already_installed(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', side_effect=[
+                    (Path('/candidate/scripts/install.py'), 'abc'), None]) as prepare, \
+                patch.object(repair.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            self.assertEqual(repair.repair([], install=True), 0)
+            self.assertTrue(prepare.call_args_list[0].kwargs['force'])
+            self.assertNotIn('--repair', run.call_args.args[0])
+
+    def test_manual_offline_install_refreshes_the_companion(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', side_effect=OSError), \
+                patch.object(repair.os, 'execv') as execute:
+            repair.repair(['--app', '/Custom/Code.app'], install=True)
+            self.assertNotIn('--repair', execute.call_args.args[1])
+            self.assertEqual(execute.call_args.args[1][-2:], ['--app', '/Custom/Code.app'])
+
+    def test_manifest_cache_is_cleared_without_touching_other_cache_files(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)):
+            root = Path(directory)
+            app = root / 'Code.app'
+            product = app / 'Contents/Resources/app/product.json'
+            product.parent.mkdir(parents=True)
+            product.write_text('{"nameShort":"Code"}')
+            cache = root / 'Library/Application Support/Code/CachedExtensions'
+            cache.mkdir(parents=True)
+            (cache / 'user').write_text('old manifest scan')
+            (cache / 'builtin').write_text('preserved')
+            install.invalidate_extension_cache(app)
+            self.assertFalse((cache / 'user').exists())
+            self.assertTrue((cache / 'builtin').exists())
+            (cache / 'user').symlink_to(cache / 'builtin')
+            install.invalidate_extension_cache(app)
+            self.assertTrue((cache / 'user').is_symlink())
 
     def test_newer_tip_is_installed_before_returning(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \

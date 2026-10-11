@@ -819,6 +819,20 @@ def write_pair(paths, new_contents, old_contents):
         raise
 
 
+def invalidate_extension_cache(app):
+    """Discard only VS Code's manifest scan so the next reload sees new labels."""
+    try:
+        product = json.loads((app / 'Contents/Resources/app/product.json').read_text())
+        name = product.get('nameShort')
+        if not isinstance(name, str) or not name or Path(name).name != name or name in ('.', '..'):
+            return
+        cache = Path.home() / 'Library/Application Support' / name / 'CachedExtensions/user'
+        if not cache.is_symlink() and cache.is_file():
+            cache.unlink()
+    except (OSError, ValueError) as error:
+        print(f'Could not reset the VS Code extension manifest cache ({type(error).__name__}); another reload may be needed.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1060,6 +1074,8 @@ def main():
         and not workspace_search_changed
         and not legacy_changed
     ):
+        if not args.check and not args.repair:
+            invalidate_extension_cache(args.app)
         action = "not installed" if args.uninstall else "already up to date"
         print(f"SCM toolkit is {action} for VS Code {version}.")
         return
@@ -1082,6 +1098,11 @@ def main():
                 remove=args.uninstall,
                 settings=settings,
             )
+        if workspace_search_changed or any(
+            path.name == 'package.json' and previous != updated
+            for path, previous, updated in zip(paths, old, new)
+        ) or not args.repair:
+            invalidate_extension_cache(args.app)
 
     if not args.check and not args.uninstall and not args.codex_only:
         persist_message_bar_layout(settings)

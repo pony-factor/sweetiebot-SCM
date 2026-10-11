@@ -1,6 +1,6 @@
 on run
     set toolkitPath to (POSIX path of (path to me)) & "Contents/Resources/toolkit/"
-    set installCommand to "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin; export PYTHONDONTWRITEBYTECODE=1; cd " & quoted form of toolkitPath & " && python3 scripts/install.py"
+    set installCommand to "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin; export PYTHONDONTWRITEBYTECODE=1; cd " & quoted form of toolkitPath & " && python3 scripts/repair.py --install"
     try
         do shell script installCommand
         display dialog "Sweetiebot is installed.\n\nClose and reopen your VS Code windows to load the buttons. Sweetie Bot will automatically restore supported customizations after app updates and offer a reload." with title "Sweetiebot Installer" buttons {"Done"} default button "Done" with icon note

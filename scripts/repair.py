@@ -11,17 +11,17 @@ from update import prepare_update
 
 RETRY_LATER = 75
 
-def repair(arguments):
+def repair(arguments, *, install=False):
     lock_dir = Path.home() / 'Library/Caches/dev.ponyfactor.sweetiebot'
     lock_dir.mkdir(parents=True, exist_ok=True)
     with (lock_dir / 'repair.lock').open('a') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if install else fcntl.LOCK_NB))
         except BlockingIOError:
             print('Another window is updating Sweetie Bot; retrying before offering a reload.', flush=True)
             return RETRY_LATER
         try:
-            update = prepare_update(lock_dir)
+            update = prepare_update(lock_dir, force=True) if install else prepare_update(lock_dir)
         except (OSError, subprocess.SubprocessError, ValueError, tarfile.TarError) as error:
             print(f"Toolkit update check unavailable ({type(error).__name__}); repairing installed sources.", flush=True)
             update = None
@@ -39,8 +39,10 @@ def repair(arguments):
                 if not update:
                     return 0
                 continue
-            print('Toolkit update could not be installed; repairing installed sources.', flush=True)
-            break
+            # A fetched release failed to apply. Running the older bundled
+            # installer here can silently undo a newer partial repair.
+            print('Toolkit update could not be installed; keeping the fetched release for retry.', flush=True)
+            return result.returncode
         else:
             print('Published sources are still changing; retrying before offering a reload.', flush=True)
             return RETRY_LATER
@@ -48,8 +50,12 @@ def repair(arguments):
         # terminates the repair on shutdown or timeout.
         os.set_inheritable(lock.fileno(), True)
         os.execv(sys.executable, [sys.executable,
-            str(Path(__file__).with_name('install.py')), '--repair', *arguments])
+            str(Path(__file__).with_name('install.py')), *([] if install else ['--repair']), *arguments])
 
 
 if __name__ == '__main__':
-    raise SystemExit(repair(sys.argv[1:]))
+    arguments = sys.argv[1:]
+    install = '--install' in arguments
+    if install:
+        arguments.remove('--install')
+    raise SystemExit(repair(arguments, install=install))
