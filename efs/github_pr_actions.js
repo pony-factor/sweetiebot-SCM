@@ -15,7 +15,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
   const number = match[3];
-  const fields = 'state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository,mergeable';
+  const fields = 'state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository,mergeable,title';
   const read = async () => JSON.parse((await execute(['pr', 'view', number, '--repo', repo, '--json', fields])).stdout);
   const pr = await read();
   if (pr.state !== 'OPEN' || pr.isDraft || !pr.baseRefName || !/^[0-9a-f]{40}$/i.test(pr.headRefOid)) {
@@ -131,6 +131,36 @@ async function resolveMergeTarget(vscode, node) {
   return (await resolve()) || direct;
 }
 
+// GitHub Pull Requests renders PR overviews as webview tabs titled
+// "#<number> <title>" with a 20-character, word-boundary truncation.
+// Match both the native webview type and its full displayed label: a PR
+// number alone also occurs in other repositories (and in issue tabs).
+function pullRequestOverviewLabel(number, title) {
+  if (!/^[1-9]\\d*$/.test(String(number)) || typeof title !== 'string' || !title.trim()) return;
+  let abbreviated = title;
+  if (title.length > 20) {
+    const lastSpace = title.lastIndexOf(' ', 20);
+    abbreviated = title.substring(0, lastSpace > 0 ? lastSpace : 20) + '...';
+  }
+  return `#${number} ${abbreviated}`;
+}
+
+async function closeMergedPullRequestTab(vscode, result) {
+  if (!result?.merged) return false;
+  const label = pullRequestOverviewLabel(result.number, result.pr?.title);
+  const tabGroups = vscode.window?.tabGroups;
+  if (!label || !tabGroups?.all || typeof tabGroups.close !== 'function' ||
+      typeof vscode.TabInputWebview !== 'function') return false;
+  const matches = tabGroups.all.flatMap(group => group.tabs || []).filter(tab =>
+    tab.input instanceof vscode.TabInputWebview &&
+    /(?:^|\\.)PullRequestOverview$/.test(tab.input.viewType || '') &&
+    tab.label === label);
+  // The VS Code Tabs API exposes a webview's title/type but not its repository
+  // identity. Never guess which tab to close if multiple tabs look identical.
+  if (matches.length !== 1) return false;
+  return tabGroups.close(matches[0], true);
+}
+
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
   const handler = async node => {
@@ -163,6 +193,13 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         return;
       }
       vscode.window.showInformationMessage(`PR #${result.number} merged into ${base}.`);
+      // Close only this merged PR's open overview, even when it is not the
+      // active editor. Closing the tab must not affect successful merging.
+      try {
+        await closeMergedPullRequestTab(vscode, result);
+      } catch (error) {
+        vscode.window.showWarningMessage(`PR #${result.number} merged, but its tab could not be closed: ${error.message}`);
+      }
       try {
         await deleteMergedRemoteBranch(result);
       } catch (error) {
@@ -201,4 +238,4 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
   );
 }
 
-module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, resolveMergeTarget, registerGitHubPullRequestActions };
+module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, resolveMergeTarget, closeMergedPullRequestTab, registerGitHubPullRequestActions };

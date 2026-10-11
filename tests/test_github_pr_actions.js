@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { squashMergePullRequest, deleteMergedRemoteBranch, registerGitHubPullRequestActions } = require('../efs/github_pr_actions');
+const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../efs/github_pr_actions');
 const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',
   headRefOid: 'a'.repeat(40), isCrossRepository: false };
@@ -412,6 +412,95 @@ async function main() {
   await lateCommands.get('sweetiebot.squashMergeSelectedPullRequest')(firstClick);
   assert.deepEqual(lateMerges, [url]);
   assert.equal(lateRefreshes, 2);
+
+  // Closing the merged PR overview must not close an unrelated editor, issue,
+  // different PR, or another webview. It must work in a non-active group.
+  class WebviewTab {
+    constructor(viewType) { this.viewType = viewType; }
+  }
+  const prViewType = 'github.vscode-pull-request-github.PullRequestOverview';
+  const tab = (label, type = prViewType) => ({ label, input: new WebviewTab(type) });
+  const mergedTitle = 'Close pull request after a successful merge';
+  const matchingTab = tab('#12 Close pull request...');
+  const nearby = [
+    tab('#120 Close pull request...'),
+    tab('#12 Completely different'),
+    tab('#12 Close pull request...', 'github.vscode-pull-request-github.IssueOverview'),
+    { label: matchingTab.label, input: { viewType: prViewType } }
+  ];
+  const closedTabs = [];
+  const overviewVscode = {
+    TabInputWebview: WebviewTab,
+    window: { tabGroups: {
+      all: [{ tabs: nearby }, { tabs: [matchingTab] }],
+      close: async (tabToClose, preserveFocus) => {
+        closedTabs.push({ tabToClose, preserveFocus });
+        return true;
+      }
+    } }
+  };
+  const completed = { merged: true, number: 12, pr: { title: mergedTitle } };
+  assert.equal(await closeMergedPullRequestTab(overviewVscode, completed), true);
+  assert.deepEqual(closedTabs, [{ tabToClose: matchingTab, preserveFocus: true }]);
+  assert.equal(await closeMergedPullRequestTab(overviewVscode, { ...completed, merged: false }), false);
+  assert.equal(await closeMergedPullRequestTab(overviewVscode, { ...completed, pr: {} }), false);
+  assert.equal(await closeMergedPullRequestTab({ window: {} }, completed), false);
+  assert.equal(closedTabs.length, 1);
+  const duplicate = tab(matchingTab.label);
+  overviewVscode.window.tabGroups.all[0].tabs.push(duplicate);
+  assert.equal(await closeMergedPullRequestTab(overviewVscode, completed), false,
+    'Identical PR overview labels are ambiguous across repositories');
+  assert.equal(closedTabs.length, 1);
+  overviewVscode.window.tabGroups.all[0].tabs.pop();
+  assert.equal(await closeMergedPullRequestTab(overviewVscode, {
+    merged: true, number: 12, pr: { title: 'A different pull request' }
+  }), false);
+  assert.equal(closedTabs.length, 1);
+
+  // The merge handler closes the PR's own tab only after a confirmed merge.
+  // Queued merges, failures and cancellations must leave editors untouched.
+  let closeHandler;
+  const handlerClosed = [], handlerNotices = [], handlerWarnings = [];
+  const handlerTab = tab('#12 The merged PR');
+  const actionVscode = {
+    TabInputWebview: WebviewTab,
+    commands: {
+      registerCommand: (_id, fn) => { closeHandler = fn; return { dispose() {} }; },
+      executeCommand: async () => {}
+    },
+    ProgressLocation: { Window: 10 },
+    extensions: { getExtension: () => undefined },
+    window: {
+      tabGroups: {
+        all: [{ tabs: [handlerTab, tab('#13 Another PR')] }],
+        close: async openedTab => { handlerClosed.push(openedTab); return true; }
+      },
+      withProgress: (_, fn) => fn(),
+      showInformationMessage: message => handlerNotices.push(message),
+      showWarningMessage: message => handlerWarnings.push(message),
+      showErrorMessage: message => { throw new Error(message); }
+    }
+  };
+  let mergeState = 'queued';
+  registerGitHubPullRequestActions(actionVscode, { subscriptions: [] }, async () => {
+    if (mergeState === 'cancelled') return { cancelled: true, merged: false };
+    if (mergeState === 'error') throw new Error('Unable to merge');
+    if (mergeState === 'queued') return { merged: false, number: 12 };
+    return {
+      merged: true, number: 12, repo: 'owner/repo', base: 'main',
+      pr: { ...open, state: 'MERGED', isCrossRepository: true, title: 'The merged PR' }
+    };
+  });
+  await closeHandler({ url, number: 12 });
+  assert.equal(handlerClosed.length, 0);
+  mergeState = 'cancelled';
+  await closeHandler({ url, number: 12 });
+  assert.equal(handlerClosed.length, 0);
+  mergeState = 'complete';
+  await closeHandler({ url, number: 12 });
+  assert.deepEqual(handlerClosed, [handlerTab]);
+  assert.deepEqual(handlerNotices, ['PR #12 queued for merge.', 'PR #12 merged into main.']);
+  assert.deepEqual(handlerWarnings, []);
 
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
