@@ -1280,13 +1280,13 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('sweetiebot.syncBranch', repository, {
+            const result = await commands.executeCommand('sweetiebot.syncBranch', repository, {
                 branch,
                 defaultBranch: currentDefaultBranch,
                 remote: settings.remote,
                 strategy: event.altKey ? 'merge' : 'squash',
             });
-            notifications.info(`Synced ${branch} with ${currentDefaultBranch} (${event.altKey ? 'merge' : 'single commit'}).`);
+            if (result) notifications.info(`Synced ${branch} with ${currentDefaultBranch} (${event.altKey ? 'merge' : 'single commit'}).`);
         } catch (error) {
             // Leave merge conflicts untouched and keep the sync message for the manual commit.
             notifications.error(error);

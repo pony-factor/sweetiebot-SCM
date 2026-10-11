@@ -233,6 +233,67 @@ function explainGitError(error) {
   return new Error(formatGitError(error), { cause: error });
 }
 
+
+function isBlockedByLocalChanges(error) {
+  const details = [errorText(error), errorText(error?.cause)].join('\n');
+  return /(?:local changes|untracked (?:working tree )?files)[\s\S]*?would be overwritten|would be overwritten by (?:checkout|merge|switch)|commit or stash your changes before/i.test(details);
+}
+
+async function stashLocalChanges(repository, command) {
+  const cwd = repository.rootUri?.fsPath;
+  if (!cwd) throw new Error('This repository has no local working directory for a Git stash.');
+  const git = async args => (await promisify(execFile)('git', args, {
+    cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  const before = await git(['rev-parse', '-q', '--verify', 'refs/stash']).catch(() => '');
+  await git(['stash', 'push', '--include-untracked', '-m', `Sweetiebot recovery: ${command}`]);
+  const after = await git(['rev-parse', '-q', '--verify', 'refs/stash']).catch(() => '');
+  if (!after || after === before) {
+    throw new Error('Git found no changes to stash. Review the working tree before retrying.');
+  }
+  return after;
+}
+
+// Do not discard or silently move local edits. Only the explicit stash choice
+// changes the working tree, and its saved changes stay recoverable after retry.
+async function offerBlockedChangesOptions(vscode, repository, command, retry, stash = stashLocalChanges) {
+  const choices = [
+    { label: '$(diff) Review changes', description: 'Open Source Control without changing files', id: 'review' },
+    { label: '$(archive) Stash changes and retry', description: 'Save staged, unstaged, and untracked changes; restore them later', id: 'stash' },
+    { label: '$(check) Commit changes', description: 'Open Source Control to commit, then retry manually', id: 'commit' },
+    { label: '$(output) Show Git output', description: 'Inspect the original error before deciding', id: 'output' },
+    { label: '$(circle-slash) Cancel', description: 'Keep all local changes untouched', id: 'cancel' }
+  ];
+  const choice = await vscode.window.showQuickPick(choices, {
+    title: 'Git blocked this operation to protect local changes',
+    placeHolder: 'Choose how to preserve your work',
+    ignoreFocusOut: true
+  });
+  if (choice?.id === 'review' || choice?.id === 'commit') {
+    await vscode.commands.executeCommand('workbench.view.scm');
+  } else if (choice?.id === 'output') {
+    await vscode.commands.executeCommand('git.showOutput');
+  } else if (choice?.id === 'stash') {
+    const expectedBranch = repository.state.HEAD?.name;
+    return queueRepositoryOperation(repository, async () => {
+      await repository.status();
+      if (repository.state.HEAD?.name !== expectedBranch) {
+        throw new Error('The active branch changed while choosing recovery. Review the changes and try again.');
+      }
+      if (repository.state.mergeChanges?.length) {
+        throw new Error('Resolve merge conflicts before stashing changes.');
+      }
+      const stashSha = await stash(repository, command);
+      void vscode.window.showInformationMessage(
+        `Saved local changes in Git stash (${stashSha.slice(0, 8)}). Restore them with git stash pop --index when ready.`
+      );
+      return retry();
+    });
+  }
+  // Cancelling or opening the review/commit/output UI should not report success.
+  return undefined;
+}
+
 async function retryConnection(operation) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -542,11 +603,17 @@ function registerBranchCommands(vscode, context) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
       try {
         const repository = await resolveRepository(uri);
-        return await queueRepositoryOperation(repository, async () => {
+        const attempt = async () => {
           if (!needsDefaultBranch.has(command)) return action(repository, options);
           const defaultBranch = await resolveDefaultBranch(repository, options?.remote || 'origin');
           return action(repository, { ...options, defaultBranch });
-        });
+        };
+        try {
+          return await queueRepositoryOperation(repository, attempt);
+        } catch (error) {
+          if (!isBlockedByLocalChanges(error)) throw error;
+          return await offerBlockedChangesOptions(vscode, repository, command, attempt);
+        }
       } catch (error) {
         throw explainGitError(error);
       }
@@ -638,5 +705,8 @@ module.exports = {
   endRepositoryCommit,
   commitInProgress,
   formatGitError,
-  explainGitError
+  explainGitError,
+  isBlockedByLocalChanges,
+  offerBlockedChangesOptions,
+  stashLocalChanges
 };
