@@ -21,7 +21,7 @@ async function main() {
     const view = { visible: false, onDidChangeVisibility: fn => { visibility = fn; return { dispose() {} }; } };
     const vscode = {
       window: { state: { focused: true }, onDidChangeWindowState: fn => { focus = fn; return { dispose() {} }; } },
-      workspace: { getConfiguration: () => ({ get: () => enabled }),
+      workspace: { getConfiguration: () => ({ get: (key, fallback) => key === 'pullRequestAutoRefresh' ? enabled : fallback }),
         onDidChangeConfiguration: fn => { configChanged = fn; return { dispose() {} }; } },
       commands: { registerCommand: (id, handler) => {
         assert(!commands.has(id), `Command ${id} already exists`);
