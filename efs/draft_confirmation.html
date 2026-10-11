@@ -17,7 +17,7 @@ let latest, lastProfile;
 function imageIndex(profile){el('images').replaceChildren();for(const match of profile.matchAll(/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g)){const link=document.createElement('a');link.href=match[2];link.target='_blank';link.rel='noopener noreferrer';const img=document.createElement('img');img.src=match[2];img.alt=match[1]||'Character image';link.append(img);el('images').append(link)}}
 async function refresh(){try{const response=await fetch(root+'/state');const state=await response.json();if(!response.ok)throw new Error(state.error);latest=state;
 if(state.draft){el('title').textContent=state.draft.title;el('body').textContent=state.draft.body;el('draft-status').textContent='Draft ready for review.'}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
-el('publish').disabled=!state.draft||!!state.result||state.publishing;
+el('publish').disabled=!state.draft||state.attempted||state.publishing;
 if(state.result){el('publication').replaceChildren(document.createTextNode('🦄 Codex Pony opened PR #'+state.result.number+' '));const link=document.createElement('a');link.href=state.result.url;link.textContent='Open pull request';el('publication').append(link)}
 el('pony-section').hidden=!state.pony;
 if(state.pony)el('pony-title').textContent=(state.pony.name||state.pony.slug)+' — Pony profile';

@@ -23,7 +23,7 @@ async function createDraftHandoff(publish) {
     if (!state || state.expires < Date.now()) return fail(410, 'This confirmation page expired. Start the workflows again.');
     const kind = match[2];
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, errors: state.errors, publishing: Boolean(state.publishing) });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted) });
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
     if (request.method !== 'POST' || kind === 'state' || request.headers.origin !== origin || request.headers['content-type'] !== 'application/json') return fail(403, 'Use the local confirmation page.');

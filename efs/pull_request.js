@@ -280,7 +280,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     if (projectUrl === undefined) return;
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
     const input = { repository: repositoryUrl.slice('https://github.com/'.length), head: branch, base: options.base, source };
-    const evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
+    let evidence, evidenceError;
+    try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
+    catch (error) { evidenceError = error; }
     const draftId = randomUUID();
     if (!handoff) throw new Error('The local PR draft handoff is unavailable.');
     const localHandoff = await handoff();
@@ -288,7 +290,22 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const confirmationUrl = `${localHandoff.origin}/kefania-draft/${draftId}`;
     const draftCallback = confirmationUrl + '/draft';
     const profileCallback = confirmationUrl + '/pony';
-    const launch = boundedLaunch(boundedEvidence => pullRequestPrompt({
+    const workflows = [];
+    const prepare = (kind, create) => {
+      try { workflows.push([kind, create()]); }
+      catch (error) { localHandoff.reportError(draftId, kind, error.message); }
+    };
+    const closers = new Map();
+    const timers = new Map();
+    context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
+    localHandoff.register(draftId, { pony, onResult: async kind => {
+      clearTimeout(timers.get(kind));
+      timers.delete(kind);
+      await closers.get(kind)?.();
+    } });
+    prepare('draft', () => {
+      if (evidenceError) throw evidenceError;
+      return boundedLaunch(boundedEvidence => pullRequestPrompt({
       branch,
       repositoryPath: repository.rootUri.fsPath,
       repositoryUrl,
@@ -299,21 +316,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       mcpServer: options.mcpServer || DEFAULT_MCP_SERVER,
       mcpTool: options.mcpTool || DEFAULT_MCP_TOOL,
       browserDraft: { evidence: boundedEvidence, callback: draftCallback },
-    }), prompt => chatgptPullRequestUrl(prompt, projectUrl, draftCallback), evidence);
-    const profileLaunch = pony ? boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
-      prompt => chatgptPullRequestUrl(prompt, projectUrl, profileCallback)) : undefined;
-    const closers = new Map();
-    const timers = new Map();
-    context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, onResult: async kind => {
-      clearTimeout(timers.get(kind));
-      timers.delete(kind);
-      await closers.get(kind)?.();
-    } });
+      }), prompt => chatgptPullRequestUrl(prompt, projectUrl, draftCallback), evidence);
+    });
+    if (pony) prepare('pony', () => boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
+      prompt => chatgptPullRequestUrl(prompt, projectUrl, profileCallback)));
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
-    pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
+    if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
-      for (const [kind, workflow] of [['draft', launch], ['pony', profileLaunch]]) {
+      for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {
           closers.set(kind, await openWorkflow(vscode, workflow.url));

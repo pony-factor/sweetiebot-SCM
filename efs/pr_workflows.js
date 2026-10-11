@@ -31,7 +31,10 @@ function boundedLaunch(makePrompt, makeUrl, evidence) {
     if (Buffer.byteLength(url, 'utf8') <= MAX_LAUNCH_BYTES) return { prompt, url, evidence: copy };
     const largest = copy?.files?.filter(file => file.patch).sort((a, b) => b.patch.length - a.patch.length)[0];
     if (!largest) throw new Error('Kefania instructions exceed the 70 KB browser launch budget. Shorten the drafting instructions and retry.');
-    largest.patch = largest.patch.slice(0, Math.floor(largest.patch.length / 2));
+    let end = Math.floor(largest.patch.length / 2);
+    // Percent encoding rejects an unmatched surrogate from a split emoji.
+    if (/[\uD800-\uDBFF]/.test(largest.patch[end - 1] || '')) end--;
+    largest.patch = largest.patch.slice(0, end);
     largest.patchTruncated = true;
     copy.incomplete = true;
   }

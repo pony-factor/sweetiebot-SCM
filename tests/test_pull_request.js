@@ -189,6 +189,7 @@ async function run() {
   } };
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
+  let contextFailure;
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
@@ -234,7 +235,10 @@ async function run() {
     async runKefania(repositoryPath, input, options) {
       assert.equal(repositoryPath, uri.fsPath);
       assert.equal(options.botOnly, true);
-      if (input.contextOnly) return { aheadBy: 1, headSha: 'a'.repeat(40), files: [] };
+      if (input.contextOnly) {
+        if (contextFailure) throw contextFailure;
+        return { aheadBy: 1, headSha: 'a'.repeat(40), files: [] };
+      }
       assert.equal(input.expectedHeadSha, 'a'.repeat(40));
       assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup', body: 'Keep the verified source reference.' });
       return { url: 'https://github.com/owner/repo/pull/1' };
@@ -301,6 +305,16 @@ async function run() {
   assert.equal(new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
   assert.match(new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('q'), /"draft"/);
   configuredProject = '';
+
+  contextFailure = new Error('Published comparison unavailable');
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.equal(calls.length, 3, 'Pony research and confirmation still open when PR preparation fails');
+  const independentPrompt = new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('q');
+  assert(independentPrompt.includes('test-pack'));
+  const failedState = await (await fetch(calls[1].args[0].url + '/state')).json();
+  assert.equal(failedState.errors.draft, contextFailure.message);
+  contextFailure = undefined;
 
   calls.length = 0;
   codexSnapshot = {

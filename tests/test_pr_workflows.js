@@ -12,6 +12,9 @@ const { chatgptPullRequestUrl } = require('../efs/chatgpt_project');
   assert(launch.evidence.incomplete);
   assert(!launch.evidence.instructions);
   assert(!evidence.incomplete, 'Budgeting does not mutate publication evidence');
+  const emojiLaunch = boundedLaunch(data => data.files[0].patch, prompt => chatgptPullRequestUrl(prompt),
+    {files:[{patch:'🦄'.repeat(20001)}]});
+  assert(Buffer.byteLength(emojiLaunch.url) <= MAX_LAUNCH_BYTES, 'Truncation must preserve complete emoji');
   assert.throws(() => boundedLaunch(() => '🦄'.repeat(20000), prompt => chatgptPullRequestUrl(prompt)), /budget/);
   const rules = '## Description\nExplain changes.\n\n## Local Sweetiebot pony profile\nPublish the pull request normally first. After a successful publication, add a compact pony profile to the assistant\'s chat response.\nVerify sources.\n\n## Publishing\nPublish normally.';
   assert(!prRules(rules).includes('Verify sources.'));
