@@ -46,7 +46,7 @@
     if (!composer) return;
     if (composer.tagName === 'TEXTAREA') {
       if (composer.value) {
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+        const setter = (window.HTMLTextAreaElement && Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set);
         if (setter) setter.call(composer, '');
         else composer.value = '';
         composer.dispatchEvent(new Event('input', { bubbles: true }));
