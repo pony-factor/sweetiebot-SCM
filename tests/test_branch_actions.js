@@ -99,7 +99,7 @@ async function run() {
   }
   {
     const { repository, calls } = fixture();
-    assert.equal(await syncBranch(repository, { ...options, branch: 'topic' }), 'topic');
+    assert.equal(await syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), 'topic');
     assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin' }], ['status'], ['merge', 'origin/main'], ['status']]);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
@@ -111,7 +111,7 @@ async function run() {
   {
     const { repository, calls } = fixture();
     repository.fetch = async () => { repository.state.HEAD.name = 'changed'; };
-    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic' }), /active branch changed/);
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), /active branch changed/);
     assert(!calls.some(call => call[0] === 'merge'));
   }
   for (const conflict of [false, true]) {
@@ -120,17 +120,17 @@ async function run() {
       if (conflict) repository.state.mergeChanges.push({});
       throw new Error('merge failed');
     };
-    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic' }), /merge failed/);
-    assert.equal(repository.inputBox.value, conflict ? '🔄 Sync branch with main' : 'Existing draft');
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), /merge failed/);
+    assert.equal(repository.inputBox.value, conflict ? '🔄 Sync brach to main' : 'Existing draft');
   }
   {
     const { repository } = fixture();
     repository.fetch = async () => { throw new Error('fetch failed'); };
-    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic' }), /fetch failed/);
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), /fetch failed/);
     assert.equal(repository.inputBox.value, 'Existing draft');
     repository.fetch = async () => {};
     repository.merge = async () => { repository.inputBox.value = 'Edited during sync'; };
-    await syncBranch(repository, { ...options, branch: 'topic' });
+    await syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' });
     assert.equal(repository.inputBox.value, 'Edited during sync');
   }
   {
