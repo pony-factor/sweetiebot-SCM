@@ -60,6 +60,10 @@ async function run() {
   }
   await assert.rejects(openCompactKefaniaChat(mockVscode({ browser: false }), url),
     error => error.browserUnavailable === true);
+  const noFloat = mockVscode({float:false});
+  await assert.rejects(openCompactKefaniaChat(noFloat, url, {requireFloating:true}), /separate window/);
+  assert.equal(noFloat.calls.length, 0, 'Required floating window never falls back to a workspace tab');
+  await assert.rejects(openCompactKefaniaChat(mockVscode({moveError:true}), url, {requireFloating:true}), /separate window/);
   const launchFailure = mockVscode({ openError: true });
   await assert.rejects(openCompactKefaniaChat(launchFailure, url), /Cannot open browser/);
   assert.equal(launchFailure.calls.length, 1, 'Do not move another editor after a failed launch');
