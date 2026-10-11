@@ -36,9 +36,17 @@ async function armSpellcheckPushGate(repository) {
     const file = await spellcheckPushGateFile(repository);
     if (!file) return null;
     const token = randomUUID();
+    // Use Git's actual pre-commit HEAD rather than a potentially stale VS Code
+    // status snapshot, so the worker can match this gate to the right commit.
+    let previousHead = '';
+    try {
+      previousHead = (await promisify(execFile)('git', ['rev-parse', '--verify', 'HEAD'], {
+        cwd: repository.rootUri.fsPath, timeout: 10000
+      })).stdout.trim();
+    } catch { /* An unborn repository has no HEAD yet. */ }
     await storeSpellcheckPushGate(file, {
       token, state: 'pending', created_ms: Date.now(),
-      previous_head: repository.state.HEAD?.commit || '',
+      previous_head: previousHead,
       branch: repository.state.HEAD?.name || ''
     });
     return token;
