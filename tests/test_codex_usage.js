@@ -62,9 +62,9 @@ indicator.connectedCallback();
 for (const [percent, color] of [
     [100, 'currentColor'],
     [11, 'currentColor'],
-    [10, 'var(--vscode-focusBorder, currentColor)'],
-    [1, 'var(--vscode-focusBorder, currentColor)'],
-    [0, 'var(--vscode-focusBorder, currentColor)'],
+    [10, 'var(--vscode-focusBorder, #ffb900)'],
+    [1, 'var(--vscode-focusBorder, #ffb900)'],
+    [0, 'var(--vscode-focusBorder, #ffb900)'],
     [50, 'currentColor'],
 ]) {
     indicator.setAttribute('percent', percent);
