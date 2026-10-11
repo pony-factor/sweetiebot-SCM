@@ -32,18 +32,20 @@ function element(parts, top = 40, isMessage = false) {
 function exercise(label) {
     const heading = element([text('CelestAI: Codex')]);
     const split = element([text('CelestAI:'), text(' Codex')]);
+    const withActions = element([text('CelestAI:'), text(' Codex')]);
+    withActions.querySelector = () => ({ tagName: 'BUTTON' });
     const nativeHeader = element([text('Codex')]);
     const message = element([text('CelestAI: Codex')], 100, true);
     const distant = element([text('CelestAI: Codex')], 400);
     const description = element([text('Codex can help')]);
     const plainTitle = element([text('CelestAI: Codex')], 72);
-    const all = [heading, split, nativeHeader, message, distant, description, plainTitle];
+    const all = [heading, split, withActions, nativeHeader, message, distant, description, plainTitle];
     const observerCalls = [];
     const document = {
         readyState: 'complete',
         documentElement: {},
         body: { parts: all.flatMap(item => item.parts) },
-        querySelectorAll() { return [heading, split, nativeHeader, message, distant, description]; },
+        querySelectorAll() { return [heading, split, withActions, nativeHeader, message, distant, description]; },
         createTreeWalker(root) {
             const parts = root.parts || [];
             let current = -1;
@@ -70,12 +72,13 @@ function exercise(label) {
         globalThis: {}
     };
     vm.runInNewContext(render(label), globals);
-    return { heading, split, nativeHeader, message, distant, description, plainTitle, observerCalls };
+    return { heading, split, withActions, nativeHeader, message, distant, description, plainTitle, observerCalls };
 }
 
 const view = exercise('CelestAI');
 assert.equal(view.heading.textContent, 'CelestAI');
 assert.equal(view.split.textContent, 'CelestAI', 'Split heading nodes should not retain a Codex suffix');
+assert.equal(view.withActions.textContent, 'CelestAI', 'Heading controls must not prevent relabeling');
 assert.equal(view.nativeHeader.textContent, 'CelestAI');
 assert.equal(view.plainTitle.textContent, 'CelestAI', 'Plain div fallback should cover sidebar headers');
 assert.equal(view.message.textContent, 'CelestAI: Codex', 'Never alter conversation content');

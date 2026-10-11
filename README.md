@@ -431,7 +431,9 @@ single-line name, such as **CelestAI**. This replaces the displayed Codex
 sidebar/container title and the home-view heading in the Codex webview:
 **CelestAI: Codex** becomes **CelestAI**, rather than showing the custom name
 as a prefix. The Activity Bar and secondary sidebar use the same setting,
-without changing commands, provider IDs, conversation text, or chat behavior.
+including builds with a different Codex chat view ID. The replacement also
+handles heading action buttons without touching them, and does not change
+commands, provider IDs, conversation text, or chat behavior.
 The original **Codex** label is used by default.
 
 You can also configure it from a terminal:
@@ -573,8 +575,11 @@ access list or a separate personal access token.
 When `codex-hide-chat-timestamps` is enabled, the Codex webview hides standalone
 conversation date/time separators such as `Today 6:44 PM`. It also replaces
 elapsed-time labels like `Worked for 1m 48s` with `Activity` on collapsible Codex
-activity controls, preserving their expand behavior. Message content, unrelated
-buttons, links, and inputs remain untouched.
+activity controls, preserving their expand behavior. Exact time labels such as
+`9:18 PM` are also hidden when split into several text nodes. A persistent
+stylesheet and mutation handling keep them hidden when React changes their
+attributes or styles. Message content, unrelated buttons, links, and inputs
+remain untouched.
 
 This option uses the same `--codex-only` install/refresh path as the other Codex
 customizations.
