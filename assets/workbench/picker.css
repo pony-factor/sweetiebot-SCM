@@ -598,6 +598,7 @@
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-queued .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {
@@ -612,6 +613,9 @@
 }
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before {
     content: '🫧';
+}
+.notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before {
+    content: '🦄';
 }
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {
     content: '⛓️‍💥';

@@ -275,7 +275,7 @@ async function run() {
   assert.match(openedPrompt, /Do not publish through any GitHub connector/);
   assert.match(openedPrompt, /primary sources/);
   assert.match(openedPrompt, /codex-pony\[bot\]/);
-  const draftPath = openedPrompt.match(/vscode:\/\/[^/]+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
+  const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
   calls.length = 0;
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
