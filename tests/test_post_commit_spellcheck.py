@@ -79,7 +79,7 @@ class ProposalTests(unittest.TestCase):
     def test_dialog_keeps_proposals_without_staging_or_committing(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
         proposals = {"note.md": (b"original", b"corrected")}
-        core = SimpleNamespace(git_config_bool=lambda *args: True)
+        core = SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
         for choice in ["Keep edits", "", "Discard"]:
             with self.subTest(choice=choice), patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
                 worker, "head_sha", return_value="expected"
@@ -93,6 +93,8 @@ class ProposalTests(unittest.TestCase):
                 self.assertEqual(worker.run_post_commit_job(), 0)
                 self.assertEqual(discard.called, choice == "Discard")
                 self.assertEqual(notice.called, choice != "Discard")
+                if choice != "Discard":
+                    notice.assert_called_once_with([], "expected", ["note.md"], "model")
                 git.assert_not_called()
 
     def test_changed_head_after_dialog_preserves_edits(self):
@@ -100,7 +102,7 @@ class ProposalTests(unittest.TestCase):
         with patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
             worker, "head_sha", side_effect=["expected", "changed"]
         ), patch.object(worker, "has_unstaged_changes", return_value=False), patch.object(worker, "index_is_clean", return_value=True), patch.object(
-            worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True)
+            worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
         ), patch.object(worker, "apply_spellcheck", return_value={"note.md": (b"original", b"corrected")}), patch.object(
             worker, "dialog_choice", return_value="Discard"
         ), patch.object(worker, "discard_proposals") as discard:
@@ -130,17 +132,17 @@ class ProposalTests(unittest.TestCase):
             gitdir.mkdir()
             result = subprocess.CompletedProcess([], 0, stdout=str(gitdir))
             with patch.object(worker, "git_run", return_value=result):
-                self.assertTrue(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"]))
+                self.assertTrue(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b"))
                 notice = gitdir / worker.NOTICE_FILE_NAME
                 self.assertEqual(json.loads(notice.read_text()), {
-                    "version": 1, "head": "a" * 40, "paths": ["readme.md"],
+                    "version": 1, "head": "a" * 40, "paths": ["readme.md"], "model": "qwen:3b",
                 })
                 self.assertFalse((root / worker.NOTICE_FILE_NAME).exists())
 
     def test_notice_write_handles_missing_metadata(self):
         result = subprocess.CompletedProcess([], 1, stdout="")
         with patch.object(worker, "git_run", return_value=result):
-            self.assertFalse(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"]))
+            self.assertFalse(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b"))
 
     def test_no_notice_after_discard_or_intervening_edit(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
@@ -151,7 +153,7 @@ class ProposalTests(unittest.TestCase):
             ), patch.object(worker, "head_sha", return_value="expected"), patch.object(
                 worker, "has_unstaged_changes", return_value=False
             ), patch.object(worker, "index_is_clean", return_value=True), patch.object(
-                worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True)
+                worker, "load_core", return_value=SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
             ), patch.object(worker, "apply_spellcheck", return_value=proposals), patch.object(
                 worker, "dialog_choice", return_value=choice
             ), patch.object(worker, "proposal_is_untouched", return_value=untouched), patch.object(

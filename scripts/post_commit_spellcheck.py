@@ -329,8 +329,9 @@ def index_is_clean(global_args: list[str]) -> bool:
     return git_run(global_args, "diff", "--cached", "--quiet", "--no-ext-diff", "--").returncode == 0
 
 
-def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str], expected_head: str) -> dict[str, tuple[bytes, bytes]]:
-    model, _ = core.selected_model(core.installed_local_model_names())
+def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str], expected_head: str, model: str | None = None) -> dict[str, tuple[bytes, bytes]]:
+    if model is None:
+        model, _ = core.selected_model(core.installed_local_model_names())
     if model is None:
         return {}
     proposals = {}
@@ -403,7 +404,7 @@ def discard_proposals(global_args: list[str], proposals: dict[str, tuple[bytes, 
 
 
 
-def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str]) -> bool:
+def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str], model: str = "") -> bool:
     """Hand off kept spellcheck edits to VS Code without touching tracked files."""
     result = git_run(global_args, "rev-parse", "--absolute-git-dir", text=True)
     if result.returncode != 0:
@@ -416,6 +417,7 @@ def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: l
         "version": 1,
         "head": expected_head,
         "paths": sorted(paths),
+        **({"model": model} if model else {}),
     }
     temporary_path = None
     try:
@@ -452,7 +454,10 @@ def run_post_commit_job() -> int:
         core.GIT_GLOBAL_ARGS = global_args
         if not core.git_config_bool("scm-toolkit.post-commit-spellcheck", False):
             return 0
-        proposals = apply_spellcheck(core, global_args, paths, expected_head)
+        model, _ = core.selected_model(core.installed_local_model_names())
+        if model is None:
+            return 0
+        proposals = apply_spellcheck(core, global_args, paths, expected_head, model=model)
     except Exception:
         return 0
     if not proposals:
@@ -467,7 +472,7 @@ def run_post_commit_job() -> int:
         and index_is_clean(global_args)
         and proposal_is_untouched(global_args, proposals)
     ):
-        write_spellcheck_notice(global_args, expected_head, list(proposals))
+        write_spellcheck_notice(global_args, expected_head, list(proposals), model)
     return 0
 
 

@@ -131,14 +131,13 @@ When the opt-in post-commit Markdown spellcheck produces edits and you keep them
 
 Enable automatic post-commit spellcheck with `git config --global scm-toolkit.post-commit-spellcheck true` if it is not already enabled.
 
-To have GitHub link the Ollama co-author on that *next* commit, configure the **actual account-associated GitHub noreply email of a bot account you control**, not a guessed address:
+The prepared message includes the model that actually generated the corrections:
 
-```sh
-git config --global scm-toolkit.spellcheck-coauthor-email '123456+your-ollama-bot@users.noreply.github.com'
-git config --global scm-toolkit.spellcheck-coauthor-name 'Ollama'
+```text
+Co-authored-by: Ollama (Model Name) <326443430+codex-pony[bot]@users.noreply.github.com>
 ```
 
-Replace the example with the exact noreply email listed in that bot account's GitHub email settings. Without a configured address, the suggested message still identifies the edit as generated using local Ollama, but **does not invent an account-linked co-author**. GitHub assigns co-author attribution only to an address it recognizes as associated with an account. This feature does not change the spellcheck model choice or the keep/discard review step. It uses a one-time notification file under the repository's Git metadata, including for linked worktrees, without altering versioned files.
+The model name comes from the completed spellcheck job, including when the low-memory model is selected. To override the bot email, set `scm-toolkit.spellcheck-coauthor-email` to another account-associated GitHub noreply address. This feature preserves the keep/discard review step and uses a one-time notification file under the repository's Git metadata, including for linked worktrees.
 
 ## Configuration
 
