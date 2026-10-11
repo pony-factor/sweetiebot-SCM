@@ -1,6 +1,21 @@
 // Runs as part of the Codex webview bundle when chat timestamp hiding is enabled.
 (() => {
+    // Multiple lazy-loaded webview chunks may include this helper.
+    if (globalThis.scmToolkitHideTimestampsInitialized) return;
+    globalThis.scmToolkitHideTimestampsInitialized = true;
     const hiddenAttribute = 'data-scm-toolkit-hidden-chat-timestamp';
+    const styleId = 'scm-toolkit-hidden-chat-timestamp-style';
+
+    function installStyle() {
+        if (document.getElementById?.(styleId) || !document.createElement) return;
+        const root = document.head || document.documentElement;
+        if (!root?.appendChild) return;
+        const style = document.createElement('style');
+        style.id = styleId;
+        // A persistent stylesheet wins over React resetting the inline style.
+        style.textContent = `[${hiddenAttribute}] { display: none !important; }`;
+        root.appendChild(style);
+    }
 
     const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
 
@@ -70,12 +85,20 @@
 
     function timestampContainer(node) {
         let element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-        if (!element) return null;
+        // Timestamp labels can be split into several text nodes or spans.
+        // Find a small exact-match ancestor without hiding its surrounding row.
+        let found = null;
+        for (let depth = 0; element && depth < 5; depth += 1, element = element.parentElement) {
+            if (looksLikeTimestamp(element.textContent)) {
+                found = element;
+                break;
+            }
+            if (element === document.body || element === document.documentElement) break;
+        }
+        if (!found) return null;
 
-        const label = normalize(element.textContent);
-        if (!looksLikeTimestamp(label)) return null;
-
-        let best = element;
+        const label = normalize(found.textContent);
+        let best = found;
         for (let depth = 0; depth < 5; depth += 1) {
             const parent = best.parentElement;
             if (
@@ -96,15 +119,22 @@
 
     function hideTimestamp(node) {
         const container = timestampContainer(node);
-        if (!container || container.hasAttribute(hiddenAttribute)) return;
+        if (!container) return;
 
-        container.setAttribute(hiddenAttribute, 'true');
-        container.setAttribute('aria-hidden', 'true');
-        container.style.setProperty('display', 'none', 'important');
+        if (container.getAttribute(hiddenAttribute) !== 'true') {
+            container.setAttribute(hiddenAttribute, 'true');
+        }
+        if (container.getAttribute('aria-hidden') !== 'true') {
+            container.setAttribute('aria-hidden', 'true');
+        }
+        if (container.style?.getPropertyValue?.('display') !== 'none'
+            || container.style?.getPropertyPriority?.('display') !== 'important') {
+            container.style?.setProperty('display', 'none', 'important');
+        }
     }
 
     function processTextNode(node) {
-        if (looksLikeTimestamp(node.textContent)) hideTimestamp(node);
+        if (timestampContainer(node)) hideTimestamp(node);
         else if (activityLeadPattern.test(normalize(node.textContent))) relabelActivityDuration(node);
     }
 
@@ -118,12 +148,14 @@
 
         if (!(root instanceof Element) && root !== document) return;
 
+        if (root !== document && timestampContainer(root)) hideTimestamp(root);
         const walker = document.createTreeWalker(
             root,
             NodeFilter.SHOW_TEXT,
             {
                 acceptNode(node) {
                     return looksLikeTimestamp(node.textContent)
+                        || looksLikeTimestamp(node.parentElement?.textContent)
                         || activityLeadPattern.test(normalize(node.textContent))
                         ? NodeFilter.FILTER_ACCEPT
                         : NodeFilter.FILTER_REJECT;
@@ -137,9 +169,15 @@
     }
 
     function start() {
+        installStyle();
         scan(document);
         const observer = new MutationObserver((records) => {
             for (const record of records) {
+                if (record.type === 'attributes') {
+                    // React may remove our marker or accessible hiding state.
+                    scan(record.target);
+                    continue;
+                }
                 if (record.type === 'characterData') {
                     scan(record.target);
                     continue;
@@ -151,6 +189,8 @@
             childList: true,
             subtree: true,
             characterData: true,
+            attributes: true,
+            attributeFilter: [hiddenAttribute, 'aria-hidden'],
         });
     }
 
