@@ -98,6 +98,20 @@ def run():
             page.wait_for_timeout(5)
             assert state("#clock")["display"] == "none", (index, state("#clock"))
 
+        # Exercise actual paint frames: none may show the timestamp.
+        visible_frames = page.evaluate("""async () => {
+            let visible = 0;
+            for (let i = 0; i < 60; i++) {
+                const el = document.getElementById('clock');
+                el.removeAttribute('data-scm-toolkit-hidden-chat-timestamp');
+                el.style.setProperty('display', 'inline-flex', 'important');
+                await new Promise(requestAnimationFrame);
+                if (getComputedStyle(el).display !== 'none') visible++;
+            }
+            return visible;
+        }""")
+        assert visible_frames == 0, f"{visible_frames} painted frames exposed the timestamp"
+
         # The label must persist after the host rebuilds a header with controls.
         page.eval_on_selector("#title", """el => {
             el.innerHTML = '<span>CelestAI:</span><span> Codex</span><button>New Chat</button>';
