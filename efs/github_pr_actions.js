@@ -136,7 +136,7 @@ async function resolveMergeTarget(vscode, node) {
 // Match both the native webview type and its full displayed label: a PR
 // number alone also occurs in other repositories (and in issue tabs).
 function pullRequestOverviewLabel(number, title) {
-  if (!/^[1-9]\\d*$/.test(String(number)) || typeof title !== 'string' || !title.trim()) return;
+  if (!/^[1-9]\d*$/.test(String(number)) || typeof title !== 'string' || !title.trim()) return;
   let abbreviated = title;
   if (title.length > 20) {
     const lastSpace = title.lastIndexOf(' ', 20);
@@ -153,7 +153,7 @@ async function closeMergedPullRequestTab(vscode, result) {
       typeof vscode.TabInputWebview !== 'function') return false;
   const matches = tabGroups.all.flatMap(group => group.tabs || []).filter(tab =>
     tab.input instanceof vscode.TabInputWebview &&
-    /(?:^|\\.)PullRequestOverview$/.test(tab.input.viewType || '') &&
+    /(?:^|\.)PullRequestOverview$/.test(tab.input.viewType || '') &&
     tab.label === label);
   // The VS Code Tabs API exposes a webview's title/type but not its repository
   // identity. Never guess which tab to close if multiple tabs look identical.
