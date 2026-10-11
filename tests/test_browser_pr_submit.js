@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, hiddenStop = false, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -30,6 +30,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
+        if (selector.includes('Stop streaming')) return streaming ? [button] : hiddenStop ? [{getClientRects:()=>[]}] : [];
         assert.equal(selector, 'a[href]', 'Collect exact nonce callbacks across ChatGPT message layouts');
         return resultLinks.map(href=>({href}));
       },
@@ -119,6 +120,11 @@ const revisedUrl = callback+'#profile=Revised%20verified%20profile';
 f = fixture({url:collectLaunch,text:'',resultLinks:[returnUrl,revisedUrl]});
 f.tick(2500);
 assert.deepEqual(f.navigations,[revisedUrl], 'Repeated return links stabilize on the final result');
+const draftCallback=callback.replace('/pony','/draft');
+const draftReturn=draftCallback+'#title=Fix%20italics&body=Verified%20description';
+f=fixture({url:fragmentUrl+'&return_to='+encodeURIComponent(draftCallback),resultLinks:[draftReturn],hiddenStop:true});
+f.tick(2500);
+assert.deepEqual(f.navigations,[draftReturn], 'A hidden Stop button after completion must not block the PR return');
 for(const bad of [returnUrl.replace(':1234',':4567'),returnUrl.replace('/pony','/draft'),returnUrl+'&publish=true']){
   f=fixture({url:collectLaunch,text:'',resultLinks:[bad]});f.tick(3000);
   assert.equal(f.navigations.length,0,'Collect only this workflow’s exact local callback');

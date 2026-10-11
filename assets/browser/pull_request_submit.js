@@ -45,7 +45,8 @@
     let previous, stableSince;
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return;
-      const generating = document.querySelector('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]');
+      const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
+        .some(button => button.getClientRects().length > 0);
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
