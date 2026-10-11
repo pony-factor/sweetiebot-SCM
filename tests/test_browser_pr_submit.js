@@ -14,7 +14,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { clicks++; } };
   const navigations = [];
   const location = value => Object.assign(new URL(value), {assign(value){navigations.push(value);}});
-  const persisted = new Map([['oai/apps/lightweight-web/composerDraft/v1', 'Keep the unrelated user draft']]);
+  const persisted = new Map(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts'].map(key => [key, 'Keep the unrelated user draft']));
   class Storage {
     getItem(key) { return persisted.get(key) ?? null; }
     setItem(key,value) { persisted.set(key,String(value)); }
@@ -106,13 +106,14 @@ const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-55
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);
 f = fixture({url:collectLaunch,text:'Draft PR',resultLinks:[returnUrl],streaming:true});
-const storageKey='oai/apps/lightweight-web/composerDraft/v1';
+for (const storageKey of ['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']) {
 assert.equal(f.window.localStorage.getItem(storageKey),null,'Workflow tab starts with an isolated blank draft');
 f.window.localStorage.setItem(storageKey,'Workflow text');
 assert.equal(f.window.localStorage.getItem(storageKey),'Workflow text');
 assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft','Original shared draft is never overwritten');
 f.window.localStorage.removeItem(storageKey);
 assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
+}
 assert.equal(f.clicks(),1);
 f.tick(2500); assert.equal(f.navigations.length,0,'Never collect a streaming partial result');
 f.setStreaming(false);f.tick(2500);assert.deepEqual(f.navigations,[returnUrl]);

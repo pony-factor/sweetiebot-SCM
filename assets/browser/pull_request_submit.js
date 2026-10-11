@@ -22,13 +22,13 @@
   if (fragmentLaunch && callback) {
     const isolateComposerDraft = () => {
       const storage = window.localStorage;
-      const key = 'oai/apps/lightweight-web/composerDraft/v1';
+      const keys = new Set(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']);
       const prototype = window.Storage.prototype;
       const get = prototype.getItem, set = prototype.setItem, remove = prototype.removeItem;
-      let draft = null;
-      prototype.getItem = function(name) { return this === storage && String(name) === key ? draft : get.call(this, name); };
-      prototype.setItem = function(name, value) { if (this === storage && String(name) === key) draft = String(value); else set.call(this, name, value); };
-      prototype.removeItem = function(name) { if (this === storage && String(name) === key) draft = null; else remove.call(this, name); };
+      const drafts = new Map();
+      prototype.getItem = function(name) { return this === storage && keys.has(String(name)) ? drafts.get(String(name)) ?? null : get.call(this, name); };
+      prototype.setItem = function(name, value) { if (this === storage && keys.has(String(name))) drafts.set(String(name), String(value)); else set.call(this, name, value); };
+      prototype.removeItem = function(name) { if (this === storage && keys.has(String(name))) drafts.delete(String(name)); else remove.call(this, name); };
     };
     try { require('electron').contextBridge.executeInMainWorld({ func: isolateComposerDraft }); }
     catch { /* Existing composer guards still prevent overwriting a user draft. */ }
