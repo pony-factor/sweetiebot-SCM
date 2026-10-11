@@ -1252,7 +1252,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         const description = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the sync base branch`
-            : `Sync ${branch ?? 'current branch'} with ${settings.remote}/${currentDefaultBranch}`;
+            : `Sync ${branch ?? 'current branch'} with ${settings.remote}/${currentDefaultBranch} as one commit (Alt-click to preserve merge ancestry)`;
         syncButton.title = description;
         syncButton.setAttribute('aria-label', description);
     };
