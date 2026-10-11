@@ -19,14 +19,17 @@
         if (!nearTop(element) || element.closest?.(excluded)) return;
         const value = normalize(element.textContent);
         if (value !== combined && value !== 'Codex') return;
-        // Alter only the text nodes of an exact heading; leave icons and controls intact.
-        if (element.querySelector?.('button,a,input,textarea')) return;
+        // A real sidebar header can contain action buttons next to its title.
+        // Skip their text, but do not skip the entire heading because of them.
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         const nodes = [];
         while (walker.nextNode()) {
-            if (normalize(walker.currentNode.nodeValue)) nodes.push(walker.currentNode);
+            const part = walker.currentNode;
+            if (part.parentElement?.closest?.('button,a,input,textarea,select,[contenteditable="true"]')) continue;
+            if (normalize(part.nodeValue)) nodes.push(part);
         }
-        if (!nodes.length || nodes.length > 3) return;
+        if (!nodes.length || nodes.length > 3
+            || normalize(nodes.map(part => part.nodeValue).join('')) !== value) return;
         nodes.forEach((node, index) => {
             node.nodeValue = index === 0 ? label : '';
         });
