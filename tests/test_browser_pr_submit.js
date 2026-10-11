@@ -25,7 +25,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
     require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
-    document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
+    document: { execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
@@ -105,6 +105,10 @@ console.log('Fragment handoff checks passed.');
 const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);
+f = fixture({url:collectLaunch,text:'Restored unrelated draft'});
+f.tick(); f.tick();
+assert.equal(f.clicks(),1,'Fresh isolated workflow replaces a draft restored before isolation');
+assert.equal(f.persisted.get('oai/apps/conversationDrafts'),'Keep the unrelated user draft');
 f = fixture({url:collectLaunch,text:'Draft PR',resultLinks:[returnUrl],streaming:true});
 for (const storageKey of ['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']) {
 assert.equal(f.window.localStorage.getItem(storageKey),null,'Workflow tab starts with an isolated blank draft');
@@ -113,6 +117,12 @@ assert.equal(f.window.localStorage.getItem(storageKey),'Workflow text');
 assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft','Original shared draft is never overwritten');
 f.window.localStorage.removeItem(storageKey);
 assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
+assert.equal(f.window.localStorage[storageKey],undefined,'Named property reads also start blank');
+f.window.localStorage[storageKey]='Property workflow text';
+assert.equal(f.window.localStorage.getItem(storageKey),'Property workflow text');
+assert.equal(f.persisted.get(storageKey),'Keep the unrelated user draft');
+delete f.window.localStorage[storageKey];
+assert.equal(f.window.localStorage.getItem(storageKey),null);
 }
 assert.equal(f.clicks(),1);
 f.tick(2500); assert.equal(f.navigations.length,0,'Never collect a streaming partial result');
