@@ -221,7 +221,7 @@ async function run() {
       },
       async getCommands() {
         return browserAvailable
-          ? ['workbench.action.browser.open', ...(codexSnapshot ? ['sweetiebot.readCodexConversation'] : [])]
+          ? ['workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow', ...(codexSnapshot ? ['sweetiebot.readCodexConversation'] : [])]
           : [];
       },
       async executeCommand(id, ...args) {
@@ -259,8 +259,9 @@ async function run() {
   });
   assert.equal(shownPonies.length, 1);
   assert.equal(shownPonies[0].packId, 'test-pack');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
+  assert.equal(calls[1].id, 'workbench.action.moveEditorToNewWindow');
   const browserOptions = calls[0].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
@@ -302,7 +303,7 @@ async function run() {
     }
   };
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
-  const codexLaunchUrl = new URL(calls.at(-1).args[0].url);
+  const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open').args[0].url);
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));

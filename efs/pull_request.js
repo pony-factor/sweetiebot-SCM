@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { runKefania } = require('./kefania_runner');
+const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { createDraftHandoff } = require('./draft_handoff');
 const { displayName } = require('./pony_profile');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
@@ -310,7 +311,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
-      await vscode.commands.executeCommand('workbench.action.browser.open', { url, openToSide: false, reuseUrlFilter: url });
+      await openCompactKefaniaChat(vscode, url);
     } catch (error) { pendingDrafts.delete(draftId); throw error; }
     return { source, conversationContext, repositoryUrl, pony };
   }));
