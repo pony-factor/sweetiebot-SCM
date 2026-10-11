@@ -91,6 +91,9 @@ async function run() {
         } else if (action === 'first') {
           this.selectedItems = [this.items[0]];
           events.accept();
+        } else if (action === 'top') {
+          this.selectedItems = [this.items.at(-1)];
+          events.accept();
         } else if (action === 'empty') events.accept();
         else if (action === 'cancel') events.hide();
       },
@@ -371,6 +374,18 @@ async function run() {
   assert.match(stackChat.searchParams.get('q'), /gh stack merge/);
   assert(stackChat.searchParams.get('q').indexOf('#41:') <
     stackChat.searchParams.get('q').indexOf('#43:'));
+  // The bottom member of a native stack also needs asynchronous stack merge.
+  pickerAction = 'first';
+  await handler();
+  const bottomChat = new URL(browserCalls.filter(call =>
+    call.id === 'workbench.action.browser.open').at(-1).options.url);
+  assert.match(bottomChat.searchParams.get('q'), /gh stack merge/);
+  const existingBrowserCalls = browserCalls.length;
+  pickerAction = 'top';
+  await handler();
+  assert.equal(browserCalls.length, existingBrowserCalls,
+    'A partial native stack must not launch a merge chat');
+  assert.match(modalWarnings.at(-1).message, /missing lower PRs/);
   includeStack = false;
   pickerAction = 'first';
 

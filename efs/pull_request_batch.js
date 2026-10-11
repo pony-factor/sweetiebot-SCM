@@ -145,7 +145,7 @@ async function pickPullRequests(vscode, pullRequests) {
   const plan = planStackMerges(pullRequests, pullRequests[0]?.baseRepo);
   picker.items = plan.ordered.map(item => ({
     label: `${'↳ '.repeat(item.stackDepth || 0)}#${item.number} ${item.title}`,
-    description: `${item.head ? item.head + ' → ' : ''}${item.base}${item.stackDepth > 0 ? ' (stacked toward main)' : ''}`,
+    description: `${item.head ? item.head + ' → ' : ''}${item.base}${item.stackDepth > 0 ? ' (stacked toward main)' : item.stack ? ' (GitHub stack)' : ''}`,
     detail: item.url,
     pullRequest: pullRequests.find(pr => pr.number === item.number)
   }));
@@ -184,23 +184,24 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
   }
   if (pullRequests.some(pr => !pr.base)) throw new Error('A selected pull request has no target branch.');
   const plan = planStackMerges(pullRequests, repositoryName(repositoryUrl));
+  const hasStack = plan.stacked.length > 0 || plan.ordered.some(pr => pr.stack);
   const list = plan.ordered.map(pr =>
     `- #${pr.number}: ${pr.title} — ${pr.url} (head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)}${pr.stackDepth > 0 ? `; selected parent: #${pr.stackParent}; intended destination: main` : ''}${pr.stack ? '; GitHub stack metadata present' : ''})`
   ).join('\n');
-  const summary = plan.stacked.length
+  const summary = hasStack
     ? `Squash and merge the following selected pull requests in repository ${repositoryUrl}. Complete selected stacks must land on main in ancestor-first order, with ONE separate squash commit per PR. Unrelated PRs retain their explicitly listed bases:`
     : `Squash and merge the following selected pull request${pullRequests.length === 1 ? '' : 's'} into each PR's explicitly listed base branch in repository ${repositoryUrl}:`;
   return [
     summary,
     list,
     'Use the GitHub connection or tools available in this chat. Inspect main, every selected base and PR, and every diff before changes. Re-check each selected PR and its head/base just before acting. A snapshot mismatch requires fresh confirmation. Never merge, close, edit, or implicitly include an unselected PR.',
-    plan.stacked.length
+    hasStack
       ? 'COMPLETE SELECTED STACKS: The list is ordered from closest to main upward. For GitHub-native linked stacks, first verify live GitHub stack membership, the base branch, all approvals/checks, and that the exact contiguous prefix through the highest selected PR contains ONLY selected PRs. Prefer the GitHub-native atomic stack squash operation: gh stack merge <highest-selected-PR-number> --yes --squash, or the equivalent asynchronous stack-merge REST API. Do NOT use gh pr merge or the legacy synchronous merge endpoint for a native stack. GitHub creates one squash commit per PR. If a merge queue overrides the squash method, report that limitation; do not promise squash commits. Poll/verify each actual merge result rather than assuming a queued request completed. Do not add unselected PRs just to complete a stack.'
       : 'Determine a safe merge order from dependencies, overlapping changes, and current branch states.',
-    plan.stacked.length
+    hasStack
       ? 'BRANCH-LINKED BUT NOT GITHUB-NATIVE: Do not mistake a head/base branch-name chain for verified native stack membership. If native stack merge is unavailable, only use manual ancestor-first squash and child-only replay when you can prove each child diff excludes all ancestor changes, safely retarget ONLY selected descendants to main, respect branch protections, and preserve one squash commit per PR. Do not force-push a protected or unselected parent/base branch. If that cannot be verified and performed safely with available tools, STOP that stack; never fall back to merging children into parent branches and calling the result delivered to main.'
       : '',
-    'PRs outside complete selected stacks must merge ONLY into their originally listed base branch. Do not change their base, silently merge them into main, or pull in an unselected dependency. Report blockers, unexpected base changes, or incomplete selected stacks and continue only with unrelated safe PRs.',
+    'For GitHub-native stacked PRs missing selected lower ancestors, STOP and request a complete prefix: never merge one into an intermediate base or implicitly include its unselected ancestors. PRs outside complete selected stacks and without native stack membership must merge ONLY into their originally listed base branch. Do not silently merge them into main or pull in an unselected dependency. Report blockers or unexpected base changes and continue only with unrelated safe PRs.',
     'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Use each PR title as its squash-commit title and include the required Codex Web co-author trailer wherever the operation allows explicit commit text. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
     'Report which PRs actually landed on main versus another branch, which were only queued, and which were blocked. Never collapse multiple selected PRs into a single squash commit or claim an intermediate-branch merge reached main.'
   ].filter(Boolean).join('\n\n');
@@ -262,6 +263,15 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         return;
       }
       const plan = planStackMerges(selected, repositoryName(selectedRepository.repositoryUrl));
+      // A native stacked PR cannot merge above unselected lower layers.
+      const incompleteNative = plan.nonMain.filter(pr => pr.stack);
+      if (incompleteNative.length) {
+        vscode.window.showWarningMessage(
+          `Select the missing lower PRs for GitHub stack member(s) ${incompleteNative.map(pr => '#' + pr.number).join(', ')}. A partial stack cannot be merged into main safely.`,
+          { modal: true, detail: 'Select a contiguous prefix from main up to each desired layer; no merge request was launched.' }
+        );
+        return;
+      }
       // A complete selected stack targets main even when intermediate PRs
       // have another selected PR's branch as their direct base.
       if (plan.nonMain.length) {
