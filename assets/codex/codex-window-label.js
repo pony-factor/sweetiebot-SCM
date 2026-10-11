@@ -7,7 +7,7 @@
 
     const combined = `${label}: Codex`;
     const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
-    const selectors = 'h1,h2,h3,h4,[role="heading"],[class*="Heading"],[class*="heading"],[class*="Title"],[class*="title"]';
+    const selectors = 'h1,h2,h3,h4,header,[role="heading"],[role="banner"],[class*="Header"],[class*="header"],[class*="Heading"],[class*="heading"],[class*="Title"],[class*="title"]';
     const excluded = 'article,[data-message-id],[data-testid*="message"],[contenteditable="true"],input,textarea';
 
     function nearTop(element) {
@@ -17,8 +17,8 @@
 
     function replaceHeading(element) {
         if (!nearTop(element) || element.closest?.(excluded)) return;
-        const value = normalize(element.textContent);
-        if (value !== combined && value !== 'Codex') return;
+        // A header's own text may include labels from neighboring action buttons,
+        // so compare only non-interactive text nodes below.
         // A real sidebar header can contain action buttons next to its title.
         // Skip their text, but do not skip the entire heading because of them.
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
@@ -28,8 +28,9 @@
             if (part.parentElement?.closest?.('button,a,input,textarea,select,[contenteditable="true"]')) continue;
             if (normalize(part.nodeValue)) nodes.push(part);
         }
-        if (!nodes.length || nodes.length > 3
-            || normalize(nodes.map(part => part.nodeValue).join('')) !== value) return;
+        if (!nodes.length || nodes.length > 3) return;
+        const titleText = normalize(nodes.map(part => part.nodeValue).join(''));
+        if (titleText !== combined && titleText !== 'Codex') return;
         nodes.forEach((node, index) => {
             node.nodeValue = index === 0 ? label : '';
         });

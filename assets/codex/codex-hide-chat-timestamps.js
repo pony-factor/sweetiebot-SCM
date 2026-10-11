@@ -96,6 +96,8 @@
             if (element === document.body || element === document.documentElement) break;
         }
         if (!found) return null;
+        // A matching time inside prose is user content, not a chat separator.
+        if (found.closest?.('p,blockquote,pre,code,a,button,[role="textbox"],[class*="markdown"],[class*="prose"],[data-testid*="message-content"],[contenteditable="true"]')) return null;
 
         const label = normalize(found.textContent);
         let best = found;
@@ -138,8 +140,19 @@
         else if (activityLeadPattern.test(normalize(node.textContent))) relabelActivityDuration(node);
     }
 
+    function hasTimestampAncestor(node) {
+        let parent = node.parentElement;
+        for (let depth = 0; parent && depth < 5; depth += 1, parent = parent.parentElement) {
+            if (looksLikeTimestamp(parent.textContent)) return true;
+            if (parent === document.body || parent === document.documentElement) break;
+        }
+        return false;
+    }
+
     function scan(root) {
         if (!root) return;
+        // Reinstall the stylesheet if the host replaces the webview <head>.
+        installStyle();
 
         if (root.nodeType === Node.TEXT_NODE) {
             processTextNode(root);
@@ -155,7 +168,7 @@
             {
                 acceptNode(node) {
                     return looksLikeTimestamp(node.textContent)
-                        || looksLikeTimestamp(node.parentElement?.textContent)
+                        || hasTimestampAncestor(node)
                         || activityLeadPattern.test(normalize(node.textContent))
                         ? NodeFilter.FILTER_ACCEPT
                         : NodeFilter.FILTER_REJECT;
@@ -190,7 +203,9 @@
             subtree: true,
             characterData: true,
             attributes: true,
-            attributeFilter: [hiddenAttribute, 'aria-hidden'],
+            // React may overwrite display with an inline !important value,
+            // which has higher precedence than our stylesheet rule.
+            attributeFilter: [hiddenAttribute, 'aria-hidden', 'style'],
         });
     }
 
