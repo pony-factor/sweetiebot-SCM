@@ -69,6 +69,38 @@ class BranchCleanupTests(unittest.TestCase):
         self.assertEqual(len(prune.prune_repo(self.repo, branch_filter='topic')), 1)
         self.assertFalse(self.exists())
 
+    def test_deleted_upstream_head_uses_verified_last_pr_commit(self):
+        self.pr['headRefOid'] = None
+        self.pr['commits'] = [{'oid': self.oid}]
+        self.assertEqual(len(prune.prune_repo(self.repo)), 1)
+        self.assertFalse(self.exists())
+
+    def test_deleted_upstream_head_without_final_commit_is_preserved(self):
+        self.pr['headRefOid'] = None
+        self.pr['commits'] = []
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertTrue(self.exists())
+
+    def test_conflicting_head_oid_is_not_overridden_by_pr_commits(self):
+        self.pr['headRefOid'] = '0' * 40
+        self.pr['commits'] = [{'oid': self.oid}]
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertTrue(self.exists())
+
+    def test_fetch_prune_removes_deleted_remote_refs_not_local_branches(self):
+        remote = self.repo / 'test-remote.git'
+        subprocess.run(['git', 'init', '--bare', str(remote)], check=True,
+                       capture_output=True, text=True)
+        self.git('remote', 'set-url', 'origin', str(remote))
+        self.git('push', 'origin', 'main', 'topic')
+        self.git('fetch', 'origin')
+        self.assertIn('origin/topic', prune.origin_tracking_refs(self.repo))
+        subprocess.run(['git', '--git-dir', str(remote), 'update-ref', '-d', 'refs/heads/topic'],
+                       check=True, capture_output=True, text=True)
+        self.assertEqual(prune.prune_origin_tracking(self.repo), ['origin/topic'])
+        self.assertNotIn('origin/topic', prune.origin_tracking_refs(self.repo))
+        self.assertTrue(self.exists(), 'A deleted upstream alone must never delete local work')
+
     def test_changed_tip_is_preserved(self):
         self.pr['headRefOid'] = '0' * 40
         self.assertEqual(prune.prune_repo(self.repo), [])

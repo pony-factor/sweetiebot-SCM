@@ -803,13 +803,15 @@ python3 scripts/install.py --uninstall --check
 
 ## Automatic merged-branch cleanup
 
-Sweetiebot checks open local repositories when VS Code starts and every ten minutes. It looks up merged PRs for each outstanding local branch on `origin`, including older PRs outside the repository's recent history. It uses authenticated `gh` to verify that a same-repository PR merged into the default branch. A local branch is removed only if its tip still equals the recorded PR head and no PR for that branch is open. If the merged branch is active, Sweetiebot switches to the local default branch (normally `main`) before removing it, provided there are no uncommitted changes or Git operations in progress. Branches checked out in other worktrees are preserved. Git removes the reference with the expected SHA, preserving a branch that moves during cleanup. Closing a PR without merging leaves its local branch alone. Remote branches are left to GitHub’s repository setting.
+Sweetiebot checks open local repositories when VS Code starts and every ten minutes. Each automatic scan first fetches `origin` with `--prune`, removing locally cached remote-tracking refs whose upstream branches have been deleted, without deleting local branches on that evidence alone. It then looks up merged PRs for each outstanding local branch on `origin`, including older PRs outside the repository's recent history. A deleted PR head ref is validated against the final commit recorded for that PR when GitHub no longer reports a head-ref OID. It uses authenticated `gh` to verify that a same-repository PR merged into the default branch. A local branch is removed only if its tip still equals the recorded PR head and no PR for that branch is open. If the merged branch is active, Sweetiebot switches to the local default branch (normally `main`) before removing it, provided there are no uncommitted changes or Git operations in progress. Branches checked out in other worktrees are preserved. Git removes the reference with the expected SHA, preserving a branch that moves during cleanup. Closing a PR without merging leaves its local branch alone. Remote branches are left to GitHub’s repository setting.
 
 Preview one repository without deleting branches:
 
 ```sh
 python3 scripts/prune_merged_branches.py --repo /path/to/repository --force --dry-run
 ```
+
+Automatic scans report successful pruning and skipped operations in the VS Code **Sweetiebot Branch Cleanup** output channel. A dry run does not fetch or remove remote-tracking refs. A GitHub CLI authentication failure never authorizes deletion of local branches.
 
 The installer also applies reversible fixes to supported GitHub Pull Requests extension builds. It suppresses the automatic cleanup prompt when the repository already deletes branches on merge, while retaining the manual Delete Branch action and explicitly configured native automatic deletion. The PR-number link keeps its existing click handler as its sole opening path. Rerun the installer after updating that extension; unsupported assets are skipped with a warning.
 

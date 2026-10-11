@@ -2,7 +2,9 @@
 """Prune local branches whose GitHub pull requests have safely merged."""
 import argparse
 import json
+import os
 import re
+import sys
 import shutil
 import subprocess
 import time
@@ -41,6 +43,7 @@ def run(command, cwd=None, timeout=30):
         capture_output=True,
         timeout=timeout,
         check=False,
+        env={**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GH_PROMPT_DISABLED': '1'},
     )
 
 
@@ -137,6 +140,34 @@ def pull_requests(repo, repository, branch):
     return data if isinstance(data, list) else None
 
 
+def origin_tracking_refs(repo):
+    result = run([GIT, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"],
+                 cwd=repo, timeout=10)
+    if result.returncode:
+        raise RuntimeError("Cannot inspect origin tracking refs")
+    return {ref for ref in result.stdout.splitlines() if ref and ref != "origin/HEAD"}
+
+
+def prune_origin_tracking(repo):
+    """Reconcile deleted upstream branches without touching local branch refs."""
+    before = origin_tracking_refs(repo)
+    result = run([GIT, "fetch", "--prune", "--no-tags", "origin"], cwd=repo, timeout=60)
+    if result.returncode:
+        raise RuntimeError("Cannot fetch/prune origin: " + (result.stderr.strip() or "Git failed"))
+    return sorted(before - origin_tracking_refs(repo))
+
+
+def merged_pr_head_matches(pr, expected_oid):
+    """A deleted PR head ref can have null headRefOid; use its recorded final commit."""
+    oid = pr.get("headRefOid")
+    if oid is not None:
+        return oid == expected_oid
+    commits = pr.get("commits")
+    return bool(isinstance(commits, list) and commits
+                and isinstance(commits[-1], dict)
+                and commits[-1].get("oid") == expected_oid)
+
+
 def current_branch(repo):
     result = run([GIT, "symbolic-ref", "--quiet", "--short", "HEAD"], cwd=repo, timeout=10)
     return result.stdout.strip() if result.returncode == 0 else None
@@ -180,7 +211,7 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
                     and not pr.get("isCrossRepository")
                     and pr.get("baseRefName") == default_branch
                     and pr.get("headRefName") == branch
-                    and pr.get("headRefOid") == local_oid):
+                    and pr.get("headRefOid") in (None, local_oid)):
                 candidates[(branch, local_oid)] = pr.get("number")
 
     pruned = []
@@ -192,7 +223,7 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
         if branches.get(branch) != expected_oid:
             continue
         current = run([GH, "pr", "view", str(number), "--repo", name_with_owner, "--json",
-                       "state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt"], cwd=repo)
+                       "state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt,commits"], cwd=repo)
         opened = run([GH, "pr", "list", "--repo", name_with_owner, "--state", "open", "--head", branch,
                       "--limit", "1", "--json", "number"], cwd=repo)
         try:
@@ -205,7 +236,7 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
                 or not verified.get("mergedAt") or verified.get("isCrossRepository")
                 or verified.get("baseRefName") != default_branch
                 or verified.get("headRefName") != branch
-                or verified.get("headRefOid") != expected_oid):
+                or not merged_pr_head_matches(verified, expected_oid)):
             continue
         if branch in checked_out_branches(repo):
             if not return_to_default(repo, branch, default_branch, expected_oid, dry_run):
@@ -233,16 +264,25 @@ def main():
     parser.add_argument("--branch", help="Limit cleanup to one local branch")
     args = parser.parse_args()
 
-    if not GIT or not GH or not due(args.force):
+    if not GIT or not due(args.force):
         return 0
 
     found = []
     try:
         for repo in list(dict.fromkeys(path.resolve() for path in args.repo))[:MAX_REPOS]:
+            if not args.branch and not args.dry_run:
+                try:
+                    for ref in prune_origin_tracking(repo):
+                        print(f"Pruned deleted origin tracking branch {repo}: {ref}")
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                    print(f"Could not prune origin refs in {repo}: {error}", file=sys.stderr)
+            if not GH:
+                print(f"Skipping merged local-branch cleanup in {repo}: install/authenticate GitHub CLI (gh)", file=sys.stderr)
+                continue
             try:
                 found.extend(prune_repo(repo, args.dry_run, args.branch))
-            except (OSError, RuntimeError, subprocess.TimeoutExpired):
-                continue
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                print(f"Could not check merged local branches in {repo}: {error}", file=sys.stderr)
     finally:
         if not args.dry_run:
             mark_run()
