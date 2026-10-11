@@ -122,9 +122,9 @@ async function generatePreview(vscode, repository) {
         vscode.Uri.file(file.target), vscode.Uri.file(file.candidate),
         'Lindsey proposal: ' + file.path);
     }
-    const approval = await vscode.window.showWarningMessage(
-      'Review the Lindsey diff editors. Apply ' + files.length + ' proposed resolution(s) to the working tree? Nothing will be staged, committed or pushed.',
-      { modal: true }, 'Apply proposed resolutions');
+    const approval = await vscode.window.showInformationMessage(
+      'Review the Lindsey diff editors, then choose Apply proposed resolutions to write ' + files.length + ' working-tree file(s). Nothing will be staged, committed or pushed.',
+      'Apply proposed resolutions');
     if (approval !== 'Apply proposed resolutions') return undefined;
     const applied = await applyPreview(repository, temporary, manifest);
     void vscode.window.showInformationMessage(
