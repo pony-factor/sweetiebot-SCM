@@ -176,8 +176,6 @@ async function run() {
   let uriHandler;
   let browserAvailable = true;
   let codexSnapshot;
-  let existingPullRequest;
-  const informationMessages = [];
   const calls = [];
   const shownPonies = [];
   const uri = { scheme: 'file', fsPath: '/workspace/project' };
@@ -191,10 +189,13 @@ async function run() {
   } };
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
+  let contextFailure;
+  let existingPullRequest;
+  const informationMessages = [];
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) { if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {
       from: components => components,
@@ -236,8 +237,11 @@ async function run() {
     async runKefania(repositoryPath, input, options) {
       assert.equal(repositoryPath, uri.fsPath);
       assert.equal(options.botOnly, true);
-      if (input.contextOnly) return { aheadBy: 1, headSha: 'a'.repeat(40), files: [],
-        ...(existingPullRequest ? { existingPullRequest } : {}) };
+      if (input.contextOnly) {
+        if (contextFailure) throw contextFailure;
+        return { aheadBy: 1, headSha: 'a'.repeat(40), files: [],
+          ...(existingPullRequest ? { existingPullRequest } : {}) };
+      }
       assert.equal(input.expectedHeadSha, 'a'.repeat(40));
       assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup', body: 'Keep the verified source reference.' });
       return { url: 'https://github.com/owner/repo/pull/1' };
@@ -260,12 +264,13 @@ async function run() {
     mcpTool: 'github_create_pull_request',
     source: chatSource
   });
-  assert.equal(shownPonies.length, 1);
-  assert.equal(shownPonies[0].packId, 'test-pack');
-  assert.equal(calls.length, 2);
+  assert.equal(shownPonies.length, 0, 'Pony information appears only in the confirmation window');
+  assert.equal(calls.length, 4);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
   assert.equal(calls[1].id, 'workbench.action.moveEditorToNewWindow');
-  const browserOptions = calls[0].args[0];
+  assert.equal(calls[2].id, 'workbench.action.browser.open');
+  assert.equal(calls[3].id, 'workbench.action.browser.open');
+  const browserOptions = calls[2].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
   assert.equal(url.search, '', 'PR prompt must not enter the HTTP request target');
@@ -274,8 +279,15 @@ async function run() {
   assert.match(openedPrompt, /"draft"/);
   assert(openedPrompt.includes(rules));
   assert(openedPrompt.includes(chatSource.uuid));
-  assert(openedPrompt.includes('test-pack'));
-  assert.match(openedPrompt, /local chat context only/);
+  assert(!openedPrompt.includes('test-pack'), 'PR drafting must not receive pony metadata');
+  const profileUrl = new URL(calls[3].args[0].url);
+  const profilePrompt = new URLSearchParams(profileUrl.hash.slice(1)).get('q');
+  assert(profilePrompt.includes('test-pack'));
+  assert(!profilePrompt.includes('headSha'), 'Pony research must not receive repository evidence');
+  assert.match(profilePrompt, /independently/);
+  assert.equal(new URLSearchParams(profileUrl.hash.slice(1)).get('return_to').endsWith('/pony'), true);
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('return_to').endsWith('/draft'), true);
+  assert.match(calls[0].args[0].url, /^http:\/\/127\.0\.0\.1:/);
   assert.match(openedPrompt, /Do not publish through any GitHub connector/);
   assert.match(openedPrompt, /primary sources/);
   assert.match(openedPrompt, /codex-pony\[bot\]/);
@@ -283,17 +295,17 @@ async function run() {
   assert.equal(browserOptions.openToSide, false);
   calls.length = 0;
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
-  assert.equal(calls[0].id, 'vscode.open');
+  assert.equal(calls.length, 0, 'Publication stays on the confirmation page');
   calls.length = 0;
   await uriHandler.handleUri({ path: draftPath, query: 'title=Replay&body=Replay' });
   assert.equal(calls.length, 0, 'A consumed draft must never publish twice');
 
-  // The second click must open the existing PR, not another draft/chat.
+  // Repeated clicks must reuse an open PR for the head even if its base differs.
   existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', head: 'draft', base: 'release' };
   calls.length = 0;
   const existingResult = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.equal(existingResult.existing, true);
-  assert.equal(existingResult.base, 'release', 'The existing PR can target a different base');
+  assert.equal(existingResult.base, 'release');
   assert.deepEqual(calls.map(call => call.id), ['vscode.open']);
   assert.equal(calls[0].args[0].value, existingPullRequest.url);
   assert.match(informationMessages.at(-1), /already exists/);
@@ -308,10 +320,20 @@ async function run() {
   configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
-  assert.equal(new URL(calls[0].args[0].url).pathname, '/g/g-p-test123/project');
-  assert.equal(new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
-  assert.match(new URLSearchParams(new URL(calls[0].args[0].url).hash.slice(1)).get('q'), /"draft"/);
+  assert.equal(new URL(calls[2].args[0].url).pathname, '/g/g-p-test123/project');
+  assert.equal(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
+  assert.match(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q'), /"draft"/);
   configuredProject = '';
+
+  contextFailure = new Error('Published comparison unavailable');
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.equal(calls.length, 3, 'Pony research and confirmation still open when PR preparation fails');
+  const independentPrompt = new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q');
+  assert(independentPrompt.includes('test-pack'));
+  const failedState = await (await fetch(calls[0].args[0].url + '/state')).json();
+  assert.equal(failedState.errors.draft, contextFailure.message);
+  contextFailure = undefined;
 
   calls.length = 0;
   codexSnapshot = {
@@ -323,7 +345,7 @@ async function run() {
     }
   };
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
-  const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open').args[0].url);
+  const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open' && call.args[0].url.startsWith('https://chatgpt.com')).args[0].url);
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));

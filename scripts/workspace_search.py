@@ -41,6 +41,7 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
     package = json.loads((SOURCE / "package.json").read_text())
     contributes = package["contributes"]
     workspace_view = contributes["views"]["scm"][0]
+    companion_views = contributes["views"]["scm"][1:]
     workspace_view["name"] = str(settings["workspaceSearchLabel"])
     workspace_view["contextualTitle"] = str(settings["workspaceSearchLabel"])
     properties = contributes["configuration"]["properties"]
@@ -77,10 +78,10 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
                 }
             ]
         }
-        contributes["views"] = {STANDALONE_CONTAINER_ID: [workspace_view]}
+        contributes["views"] = {STANDALONE_CONTAINER_ID: [workspace_view], "scm": companion_views}
     else:
         contributes.pop("viewsContainers", None)
-        contributes["views"] = {"scm": [workspace_view]}
+        contributes["views"] = {"scm": [workspace_view, *companion_views]}
 
     return package
 

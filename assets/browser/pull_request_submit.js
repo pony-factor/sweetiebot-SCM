@@ -8,6 +8,69 @@
   const prompt = payload.get('q');
   if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
       || payload.get('sweetiebot_pr') !== '1' || !prompt) return;
+  if (encodeURIComponent(prompt).length > 70000) return;
+
+  let callback;
+  try {
+    const candidate = new URL(payload.get('return_to'));
+    if (candidate.protocol === 'http:' && candidate.hostname === '127.0.0.1'
+        && candidate.port && !candidate.username && !candidate.password && !candidate.search && !candidate.hash
+        && /^\/kefania-draft\/[0-9a-f-]{36}\/(draft|pony)$/.test(candidate.pathname)) callback = candidate;
+  } catch { /* Older manual drafting links do not collect results automatically. */ }
+  // Give this action's new tab a blank draft without deleting or replacing the
+  // user's shared draft. ChatGPT reads storage in its page world, not preload.
+  if (fragmentLaunch && callback) {
+    const isolateComposerDraft = () => {
+      const storage = window.localStorage;
+      const key = 'oai/apps/lightweight-web/composerDraft/v1';
+      const prototype = window.Storage.prototype;
+      const get = prototype.getItem, set = prototype.setItem, remove = prototype.removeItem;
+      let draft = null;
+      prototype.getItem = function(name) { return this === storage && String(name) === key ? draft : get.call(this, name); };
+      prototype.setItem = function(name, value) { if (this === storage && String(name) === key) draft = String(value); else set.call(this, name, value); };
+      prototype.removeItem = function(name) { if (this === storage && String(name) === key) draft = null; else remove.call(this, name); };
+    };
+    try { require('electron').contextBridge.executeInMainWorld({ func: isolateComposerDraft }); }
+    catch { /* Existing composer guards still prevent overwriting a user draft. */ }
+  }
+  // Remove transport metadata before ChatGPT hydrates or constructs requests.
+  // The complete prompt remains in this isolated preload closure.
+  if (fragmentLaunch) {
+    const clean = new URL(launch.href); clean.hash = '';
+    history.replaceState(history.state, '', clean.href);
+  }
+  const collectResult = () => {
+    if (!callback) return;
+    const expires = Date.now() + 1200000;
+    let previous, stableSince;
+    const collect = () => {
+      if (Date.now() > expires || window.location.origin !== launch.origin) return;
+      const generating = document.querySelector('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]');
+      // The nonce-bearing callback validates ownership without depending on
+      // ChatGPT's changing message-container markup.
+      const links = document.querySelectorAll('a[href]');
+      let latest;
+      for (const link of links) {
+        let url;
+        try { url = new URL(link.href); } catch { continue; }
+        if (url.origin !== callback.origin || url.pathname !== callback.pathname || url.search
+            || url.href.length > 80000) continue;
+        const result = new URLSearchParams(url.hash.slice(1));
+        const expectedKeys = callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
+        if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
+        latest = url.href;
+      }
+      // A response can repeat its return link with a revised draft. Stabilize
+      // the final candidate once, rather than resetting for every earlier link.
+      if (latest !== previous) { previous = latest; stableSince = Date.now(); }
+      if (latest && !generating && Date.now() - stableSince >= 2000) { window.location.assign(latest); return; }
+      setTimeout(collect, 500);
+    };
+    collect();
+  };
+  // Collection also covers a deliberate manual Send; publication is owned by
+  // the local receiver and its auto-publish preference.
+  collectResult();
 
   // Collapse only the PR launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
@@ -46,7 +109,8 @@
 
   const normalize = text => String(text || '').replace(/\s+/g, ' ').trim();
   const expected = normalize(prompt);
-  const deadline = Date.now() + 60000;
+  const samePreparedText = text => text === expected || (inserted && text.replace(/\s/g, '') === expected.replace(/\s/g, ''));
+  const deadline = Date.now() + 180000;
   let timer;
   let stopped = false;
   let inserted = false;
@@ -59,7 +123,9 @@
   };
   const onInput = event => { if (event.isTrusted && !inserting) stop(); };
   const onClick = event => {
-    if (event.isTrusted && event.target.closest?.('button')) stop();
+    const button = event.target.closest?.('button');
+    const label = button?.getAttribute('aria-label') || '';
+    if (event.isTrusted && /^(send|send prompt|stop|stop streaming|start voice)$/i.test(label)) stop();
   };
   document.addEventListener('input', onInput, true);
   document.addEventListener('click', onClick, true);
@@ -89,7 +155,7 @@
       'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
     );
     const label = button?.getAttribute('aria-label') || '';
-    if (composer && text === expected && button && !button.disabled
+    if (composer && samePreparedText(text) && button && !button.disabled
         && button.getAttribute('aria-disabled') !== 'true'
         && button.getClientRects().length && !/stop|voice/i.test(label)
         && button.getAttribute('data-testid') !== 'stop-button') {

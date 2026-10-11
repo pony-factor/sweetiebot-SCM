@@ -139,6 +139,23 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             configurator.parse_submission(values)
 
+    def test_pr_auto_publish_preference_round_trips_into_vscode(self):
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["autoPublishPullRequests"])
+
+        values.pop("autoPublishPullRequests")
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["autoPublishPullRequests"])
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertFalse(payload["vscodeSettings"]["autoPublishPullRequests"])
+
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertFalse(current["autoPublishPullRequests"])
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="autoPublishPullRequests"', page)
+        self.assertNotIn('name="autoPublishPullRequests" value="true" checked', page)
+
     def test_cloud_preference_round_trips_into_vscode(self):
         current = dict(install.DEFAULT_SETTINGS)
         configurator.apply_vscode_settings(current, {

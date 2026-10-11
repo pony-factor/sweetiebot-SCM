@@ -14,6 +14,12 @@ DEFAULTS = dict(toolkit_settings.DEFAULT_SETTINGS)
 
 
 class WorkspaceSearchInstallerTests(unittest.TestCase):
+    def test_pony_information_has_no_sidebar_view(self):
+        for activity_bar in (False, True):
+            package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchActivityBar=activity_bar))
+            views = [view for group in package["contributes"]["views"].values() for view in group]
+            self.assertNotIn("scmToolkit.ponyInfo", [view["id"] for view in views])
+
     def test_saved_feature_preferences_reach_installed_defaults(self):
         settings = dict(DEFAULTS, autoPublishNewBranches=True, automaticBranchCleanup=False,
                         workspaceSearchAutoReindex=False, workspaceSearchMode="exact",
@@ -125,7 +131,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertEqual(container["icon"], "media/efs.svg")
         self.assertEqual(
             list(package["contributes"]["views"]),
-            [workspace_search.STANDALONE_CONTAINER_ID],
+            [workspace_search.STANDALONE_CONTAINER_ID, "scm"],
         )
 
 
