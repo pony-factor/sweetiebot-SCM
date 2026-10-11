@@ -88,12 +88,52 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
         title: String(pr.title || `Pull request #${number}`),
         url,
         head: String(pr.head?.ref || ''),
-        base: String(pr.base.ref)
+        headRepo: String(pr.head?.repo?.full_name || ''),
+        base: String(pr.base.ref),
+        baseRepo: fullName,
+        stack: pr.stack && typeof pr.stack === 'object' ? pr.stack : null
       });
     }
     if (pageItems.length < 100) break;
   }
   return pulls.sort((a, b) => b.number - a.number);
+}
+
+/** Find complete selected linear chains rooted at main. A branch-name link is
+ * only a preview: verify GitHub-native stack membership before merging. */
+function planStackMerges(pullRequests, repositoryFullName, defaultBranch = 'main') {
+  const heads = new Map();
+  for (const pr of pullRequests) {
+    if (!pr.head || pr.headRepo !== repositoryFullName) continue;
+    heads.set(pr.head, heads.has(pr.head) ? null : pr);
+  }
+  const children = new Map();
+  for (const pr of pullRequests) {
+    if (pr.base !== defaultBranch) children.set(pr.base, (children.get(pr.base) || 0) + 1);
+  }
+  const ancestry = (pr, seen = new Set()) => {
+    if (seen.has(pr.number)) return null;
+    if (pr.base === defaultBranch) return { stackDepth: 0, stackRoot: pr.number, stackParent: null };
+    // Forks, duplicate heads, cycles and branched chains cannot be inferred
+    // safely as a single contiguous stack.
+    if (children.get(pr.base) !== 1) return null;
+    const parent = heads.get(pr.base);
+    if (!parent || parent.number === pr.number) return null;
+    const chain = ancestry(parent, new Set([...seen, pr.number]));
+    return chain && { stackDepth: chain.stackDepth + 1, stackRoot: chain.stackRoot, stackParent: parent.number };
+  };
+  const ordered = pullRequests.map(pr => ({
+    ...pr, ...(ancestry(pr) || { stackDepth: null, stackRoot: null, stackParent: null })
+  })).sort((a, b) => {
+    if (a.stackDepth === null) return b.stackDepth === null ? b.number - a.number : 1;
+    if (b.stackDepth === null) return -1;
+    return b.stackRoot - a.stackRoot || a.stackDepth - b.stackDepth || a.number - b.number;
+  });
+  return {
+    ordered,
+    stacked: ordered.filter(pr => pr.stackDepth > 0),
+    nonMain: ordered.filter(pr => pr.base !== defaultBranch && pr.stackDepth === null)
+  };
 }
 
 async function pickPullRequests(vscode, pullRequests) {
@@ -102,11 +142,12 @@ async function pickPullRequests(vscode, pullRequests) {
     iconPath: new vscode.ThemeIcon('run-all'),
     tooltip: 'Queue all pull requests in ChatGPT (one click)'
   };
-  picker.items = pullRequests.map(pullRequest => ({
-    label: '#' + pullRequest.number + ' ' + pullRequest.title,
-    description: `${pullRequest.head ? '← ' + pullRequest.head + ' ' : ''}→ ${pullRequest.base}`,
-    detail: pullRequest.url,
-    pullRequest
+  const plan = planStackMerges(pullRequests, pullRequests[0]?.baseRepo);
+  picker.items = plan.ordered.map(item => ({
+    label: `${'↳ '.repeat(item.stackDepth || 0)}#${item.number} ${item.title}`,
+    description: `${item.head ? item.head + ' → ' : ''}${item.base}${item.stackDepth > 0 ? ' (stacked toward main)' : ''}`,
+    detail: item.url,
+    pullRequest: pullRequests.find(pr => pr.number === item.number)
   }));
   picker.canSelectMany = true;
   picker.title = 'Squash and merge with ChatGPT';
@@ -142,17 +183,27 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
     throw new Error('Select at least one pull request.');
   }
   if (pullRequests.some(pr => !pr.base)) throw new Error('A selected pull request has no target branch.');
-  const list = pullRequests.map(pr =>
-    `- #${pr.number}: ${pr.title} — ${pr.url} (head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)})`
+  const plan = planStackMerges(pullRequests, repositoryName(repositoryUrl));
+  const list = plan.ordered.map(pr =>
+    `- #${pr.number}: ${pr.title} — ${pr.url} (head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)}${pr.stackDepth > 0 ? `; selected parent: #${pr.stackParent}; intended destination: main` : ''}${pr.stack ? '; GitHub stack metadata present' : ''})`
   ).join('\n');
+  const summary = plan.stacked.length
+    ? `Squash and merge the following selected pull requests in repository ${repositoryUrl}. Complete selected stacks must land on main in ancestor-first order, with ONE separate squash commit per PR. Unrelated PRs retain their explicitly listed bases:`
+    : `Squash and merge the following selected pull request${pullRequests.length === 1 ? '' : 's'} into each PR's explicitly listed base branch in repository ${repositoryUrl}:`;
   return [
-    `Squash and merge the following selected pull request${pullRequests.length === 1 ? '' : 's'} into each PR's explicitly listed base branch in repository ${repositoryUrl}:`,
+    summary,
     list,
-    'Use the GitHub connection or tools available in this chat. Read every listed base branch and selected pull request and diff before making changes. Re-check each selected pull request immediately before merging it. If its current base differs from the listed base, stop for that PR and request fresh confirmation; do not silently merge it into another branch. Do not merge, close, edit, or otherwise act on any unselected pull request.',
-    'Determine a safe merge order from dependencies, overlapping changes, and the current branch states. For each selected pull request, squash-merge its intended changes ONLY into its listed base branch (which may not be main) and use the pull-request title as the resulting squash commit title. If an earlier merge changes what a later pull request needs, reconcile the later pull request safely rather than blindly merging stale or duplicated changes.',
-    'Before creating or updating any commit, verify the resulting tree differs from its parent and that the intended changes are actually present. Never force-push main, any PR base branch, or another protected branch. If rewriting a selected pull-request branch is genuinely necessary, use force-with-lease only on that pull-request branch. Preserve unrelated work and delete a merged source branch only when it is safe.',
-    'If a selected pull request cannot be merged safely, explain the blocker instead of substituting a different pull request or forcing the merge. Continue with other selected pull requests only when the blocker does not make them unsafe.'
-  ].join('\n\n');
+    'Use the GitHub connection or tools available in this chat. Inspect main, every selected base and PR, and every diff before changes. Re-check each selected PR and its head/base just before acting. A snapshot mismatch requires fresh confirmation. Never merge, close, edit, or implicitly include an unselected PR.',
+    plan.stacked.length
+      ? 'COMPLETE SELECTED STACKS: The list is ordered from closest to main upward. For GitHub-native linked stacks, first verify live GitHub stack membership, the base branch, all approvals/checks, and that the exact contiguous prefix through the highest selected PR contains ONLY selected PRs. Prefer the GitHub-native atomic stack squash operation: gh stack merge <highest-selected-PR-number> --yes --squash, or the equivalent asynchronous stack-merge REST API. Do NOT use gh pr merge or the legacy synchronous merge endpoint for a native stack. GitHub creates one squash commit per PR. If a merge queue overrides the squash method, report that limitation; do not promise squash commits. Poll/verify each actual merge result rather than assuming a queued request completed. Do not add unselected PRs just to complete a stack.'
+      : 'Determine a safe merge order from dependencies, overlapping changes, and current branch states.',
+    plan.stacked.length
+      ? 'BRANCH-LINKED BUT NOT GITHUB-NATIVE: Do not mistake a head/base branch-name chain for verified native stack membership. If native stack merge is unavailable, only use manual ancestor-first squash and child-only replay when you can prove each child diff excludes all ancestor changes, safely retarget ONLY selected descendants to main, respect branch protections, and preserve one squash commit per PR. Do not force-push a protected or unselected parent/base branch. If that cannot be verified and performed safely with available tools, STOP that stack; never fall back to merging children into parent branches and calling the result delivered to main.'
+      : '',
+    'PRs outside complete selected stacks must merge ONLY into their originally listed base branch. Do not change their base, silently merge them into main, or pull in an unselected dependency. Report blockers, unexpected base changes, or incomplete selected stacks and continue only with unrelated safe PRs.',
+    'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Use each PR title as its squash-commit title and include the required Codex Web co-author trailer wherever the operation allows explicit commit text. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
+    'Report which PRs actually landed on main versus another branch, which were only queued, and which were blocked. Never collapse multiple selected PRs into a single squash commit or claim an intermediate-branch merge reached main.'
+  ].filter(Boolean).join('\n\n');
 }
 
 function classifyChatSubmitError(error, stderr = '') {
@@ -210,13 +261,23 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         vscode.window.showInformationMessage('Select at least one pull request.');
         return;
       }
-      const nonMain = selected.filter(pr => pr.base !== 'main');
-      if (nonMain.length) {
-        const targets = [...new Set(nonMain.map(pr => pr.base))].map(name => '"' + name + '"').join(', ');
+      const plan = planStackMerges(selected, repositoryName(selectedRepository.repositoryUrl));
+      // A complete selected stack targets main even when intermediate PRs
+      // have another selected PR's branch as their direct base.
+      if (plan.nonMain.length) {
+        const targets = [...new Set(plan.nonMain.map(pr => pr.base))].map(name => '"' + name + '"').join(', ');
+        const selectedNumbers = new Set(selected.map(pr => pr.number));
+        const missing = [...new Set(plan.nonMain.flatMap(pr => pullRequests
+          .filter(candidate => candidate.head === pr.base
+            && candidate.headRepo === repositoryName(selectedRepository.repositoryUrl)
+            && !selectedNumbers.has(candidate.number))
+          .map(candidate => '#' + candidate.number)))];
         const action = 'Continue with non-main targets';
         const choice = await vscode.window.showWarningMessage(
-          `Selected PRs target ${targets}, not main. Continue with those base branches?`,
-          { modal: true, detail: "The merge request will use each PR's listed base branch, not automatically main." },
+          `Selected PRs target ${targets}, not main, and are not part of a complete selected stack. Continue with those base branches?`,
+          { modal: true, detail: missing.length
+            ? `Missing selected parent PR(s): ${missing.join(', ')}. Select a complete stack to land separate squash commits on main; otherwise merge only into the stated base.`
+            : 'These PRs merge into their stated bases, not automatically main. Complete selected stacks do not trigger this warning.' },
           action
         );
         if (choice !== action) return;
@@ -252,6 +313,7 @@ module.exports = {
   workspaceGitHubRepositories,
   fetchOpenPullRequests,
   pickPullRequests,
+  planStackMerges,
   batchMergePrompt,
   submitChatPromptWithEnter,
   classifyChatSubmitError,
