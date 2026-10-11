@@ -111,7 +111,7 @@ function installPullRequestRefresh(vscode, view, owner) {
   const previousErrorHandler = globalThis.__sweetiebotGitHubPrRefreshError;
   const reportFetchError = message => {
     if (typeof previousErrorHandler === 'function') {
-      try { previousErrorHandler(message); } catch { /* Preserve the native error. */ }
+      try { previousErrorHandler(message); } catch {}
     }
     if (!/API rate limit exceeded|secondary rate limit|abuse detection|too many requests|HTTP 429/i.test(String(message))) return;
     const now = Date.now();
