@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import subprocess
 import tarfile
 from pathlib import Path
-from workspace_search import default_extensions_dir
+from workspace_search import default_extensions_dir, source_files
 
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
 FORMATS = {
@@ -43,16 +44,38 @@ def extract_sources(archive, destination):
 
 
 def installed_sources_match(candidate, extensions_dir):
-    """Verify the installed repair payload instead of trusting a revision marker."""
+    """Verify bundled sources and the files actually executed by VS Code/Git."""
     package = json.loads((candidate / "efs/package.json").read_text())
     destination = extensions_dir / f'{package["publisher"]}.{package["name"]}-{package["version"]}'
-    payload = destination / "codex-customizations"
-    for source in candidate.rglob("*"):
+    for relative, source in source_files(candidate).items():
         if not source.is_file():
             continue
-        target = payload / source.relative_to(candidate)
+        target = destination / relative
+        # The installer renders this manifest with user-selected view labels
+        # and configuration defaults; source bytes are intentionally different.
+        if relative == Path("package.json"):
+            if target.is_symlink() or not target.is_file():
+                return False
+            try:
+                installed = json.loads(target.read_text())
+            except (OSError, ValueError):
+                return False
+            if any(installed.get(key) != package.get(key) for key in ("publisher", "name", "version", "main")):
+                return False
+            continue
         if target.is_symlink() or not target.is_file() or target.read_bytes() != source.read_bytes():
             return False
+    wrapper = Path(os.environ.get("SCM_TOOLKIT_AI_WRAPPER_PATH", "~/.local/bin/scm-toolkit-git")).expanduser()
+    for name, target in (("ai_commit.py", wrapper), ("post_commit_spellcheck.py", wrapper.with_name(wrapper.name + "-spellcheck.py"))):
+        source = candidate / "scripts" / name
+        if source.is_file() and (target.is_symlink() or not target.is_file()
+                or not os.access(target, os.X_OK) or target.read_bytes() != source.read_bytes()):
+            return False
+    legacy = Path.home() / ".local/bin/git-auto-title"
+    if (candidate / "scripts/ai_commit.py").is_file() and legacy != wrapper and (legacy.exists() or legacy.is_symlink()):
+        for alias, target in ((legacy, wrapper), (legacy.with_name(legacy.name + "-spellcheck.py"), wrapper.with_name(wrapper.name + "-spellcheck.py"))):
+            if not alias.is_symlink() or alias.resolve() != target.resolve():
+                return False
     return True
 
 

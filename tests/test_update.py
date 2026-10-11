@@ -68,16 +68,53 @@ class UpdateTests(unittest.TestCase):
             payload = {
                 'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                 'scripts/repair.py': 'repair', 'scripts/codex_composer.py': 'new placeholders',
+                'scripts/ai_commit.py': 'current Git wrapper',
+                'scripts/post_commit_spellcheck.py': 'current spellcheck helper',
+                'efs/post_commit_spellcheck_notice.js': 'current notice handler',
                 'efs/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
-            installed = extensions / 'pony-factor.sweetiebot-scm-0.3.2/codex-customizations'
+            destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'
+            installed = destination / 'codex-customizations'
+            wrapper = root / 'bin/scm-toolkit-git'
+            helper = wrapper.with_name(wrapper.name + '-spellcheck.py')
 
             def prepare(force=False):
-                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]), patch.dict(update.os.environ, {'SCM_TOOLKIT_AI_WRAPPER_PATH': str(wrapper)}), patch.object(Path, 'home', return_value=root):
                     return update.prepare_update(cache, extensions, force=force)
 
             self.assertIsNotNone(prepare())
             update.extract_sources(archive(payload), installed)
+            # Matching bundle metadata is insufficient without active runtime files.
+            self.assertIsNotNone(prepare())
+            for relative, source in update.source_files(cache / 'candidate').items():
+                if source.is_file():
+                    target = destination / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(source.read_bytes())
+            wrapper.parent.mkdir()
+            wrapper.write_text(payload['scripts/ai_commit.py'])
+            helper.write_text(payload['scripts/post_commit_spellcheck.py'])
+            wrapper.chmod(0o755)
+            helper.chmod(0o755)
+            self.assertIsNone(prepare())
+            legacy = root / '.local/bin/git-auto-title'
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text('old standalone wrapper')
+            self.assertIsNotNone(prepare())
+            legacy.unlink()
+            legacy.symlink_to(wrapper)
+            self.assertIsNotNone(prepare())
+            legacy.with_name(legacy.name + '-spellcheck.py').symlink_to(helper)
+            self.assertIsNone(prepare())
+            for target in [destination / 'post_commit_spellcheck_notice.js', destination / 'ai_commit.py', wrapper, helper]:
+                expected = target.read_bytes()
+                target.write_text('stale runtime')
+                self.assertIsNotNone(prepare())
+                target.write_bytes(expected)
+                self.assertIsNone(prepare())
+            helper.chmod(0o644)
+            self.assertIsNotNone(prepare())
+            helper.chmod(0o755)
             self.assertIsNone(prepare())
             self.assertIsNotNone(prepare(force=True))
             (installed / 'scripts/codex_composer.py').write_text('old composer')

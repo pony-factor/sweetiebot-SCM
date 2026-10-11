@@ -12,7 +12,7 @@ from test_install import workbench_fixture
 
 
 class RepairTests(unittest.TestCase):
-    def test_repair_restores_workbench_without_reinstalling_companion(self):
+    def test_repair_restores_workbench_and_stale_runtime_tools(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             root = Path(directory)
             js, css = root / 'workbench.js', root / 'workbench.css'
@@ -30,18 +30,33 @@ class RepairTests(unittest.TestCase):
                 stack.enter_context(patch.object(module, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.codex_keep_awake, 'patch_file', return_value=None))
             stack.enter_context(patch.object(install.codex_startup, 'patch_file', return_value=None))
-            extension = stack.enter_context(patch.object(workspace_search, 'sync_extension'))
+            stack.enter_context(patch.object(install, 'persist_message_bar_layout'))
+            stack.enter_context(patch.object(install, 'invalidate_extension_cache'))
+            extensions = root / 'extensions'
+            stack.enter_context(patch.object(workspace_search, 'default_extensions_dir', return_value=extensions))
+            extension = stack.enter_context(patch.object(workspace_search, 'sync_extension', wraps=workspace_search.sync_extension))
             stack.enter_context(patch.object(workspace_search, 'remove_legacy_extensions', return_value=False))
-            wrapper = stack.enter_context(patch.object(install, 'sync_ai_wrapper'))
+            wrapper_path = root / 'bin/scm-toolkit-git'
+            stack.enter_context(patch.object(install, 'ai_wrapper_path', return_value=wrapper_path))
+            stack.enter_context(patch.object(install, 'legacy_ai_wrapper_path', return_value=root / 'bin/git-auto-title'))
+            wrapper = stack.enter_context(patch.object(install, 'sync_ai_wrapper', wraps=install.sync_ai_wrapper))
             picker = stack.enter_context(patch.object(install, 'sync_model_picker'))
             install.main()
             self.assertIn(install.START, js.read_text())
             self.assertIn(install.START, css.read_text())
+            destination = workspace_search.extension_destination(extensions)
+            helper = wrapper_path.with_name(wrapper_path.name + '-spellcheck.py')
+            notice = destination / 'post_commit_spellcheck_notice.js'
+            # A later startup must repair these even when the app patch is current.
+            helper.write_text('stale helper')
+            notice.write_text('stale notice')
             with patch.object(install, 'write_pair') as write:
                 install.main()
                 write.assert_not_called()
-            extension.assert_not_called()
-            wrapper.assert_not_called()
+            self.assertEqual(helper.read_bytes(), (install.HERE / 'post_commit_spellcheck.py').read_bytes())
+            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / notice.name).read_bytes())
+            self.assertFalse(install.sync_ai_wrapper(check=True, destination=wrapper_path))
+            self.assertFalse(workspace_search.sync_extension(check=True, settings=dict(toolkit_settings.DEFAULT_SETTINGS)))
             picker.assert_not_called()
 
     def test_bundled_repair_has_workbench_assets(self):

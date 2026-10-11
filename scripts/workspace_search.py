@@ -86,28 +86,30 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
     return package
 
 
-def source_files() -> dict[Path, Path]:
+def source_files(root: Path | None = None) -> dict[Path, Path]:
+    here = root / "scripts" if root is not None else HERE
+    source_root = root / "efs" if root is not None else SOURCE
     files = {
-        path.relative_to(SOURCE): path
-        for path in SOURCE.rglob("*")
+        path.relative_to(source_root): path
+        for path in source_root.rglob("*")
         if path.is_file()
     }
-    files[Path("prune_merged_branches.py")] = HERE / "prune_merged_branches.py"
-    files[Path("configurator.py")] = HERE / "configurator.py"
-    files[Path("toolkit_settings.py")] = HERE / "toolkit_settings.py"
-    files[Path("message_bar.py")] = HERE / "message_bar.py"
-    files[Path("message_bar_configurator.py")] = HERE / "message_bar_configurator.py"
-    files[Path("codex_colors.py")] = HERE / "codex_colors.py"
-    files[Path("ai_commit.py")] = HERE / "ai_commit.py"
-    files[Path("local_codex_commit.py")] = HERE / "local_codex_commit.py"
-    files[Path("branch_names.py")] = HERE / "branch_names.py"
-    files[Path("branch_name_packs.json")] = HERE / "branch_name_packs.json"
-    files[Path("local_setup.py")] = HERE / "local_setup.py"
+    files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
+    files[Path("configurator.py")] = here / "configurator.py"
+    files[Path("toolkit_settings.py")] = here / "toolkit_settings.py"
+    files[Path("message_bar.py")] = here / "message_bar.py"
+    files[Path("message_bar_configurator.py")] = here / "message_bar_configurator.py"
+    files[Path("codex_colors.py")] = here / "codex_colors.py"
+    files[Path("ai_commit.py")] = here / "ai_commit.py"
+    files[Path("local_codex_commit.py")] = here / "local_codex_commit.py"
+    files[Path("branch_names.py")] = here / "branch_names.py"
+    files[Path("branch_name_packs.json")] = here / "branch_name_packs.json"
+    files[Path("local_setup.py")] = here / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
     for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/browser", {".js"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md"})):
-        for source in (HERE.parent / directory).rglob("*"):
+        for source in (here.parent / directory).rglob("*"):
             if source.is_file() and source.suffix in suffixes:
-                files[Path("codex-customizations") / source.relative_to(HERE.parent)] = source
+                files[Path("codex-customizations") / source.relative_to(here.parent)] = source
     return dict(sorted(files.items()))
 
 

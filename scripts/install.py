@@ -858,7 +858,7 @@ def main():
         type=Path,
         help="Path to an OpenAI Codex VS Code extension directory",
     )
-    parser.add_argument("--repair", action="store_true", help="Repair app patches without reinstalling companion tools")
+    parser.add_argument("--repair", action="store_true", help="Repair app patches and refresh companion tools")
     args = parser.parse_args()
     if args.repair and (args.uninstall or args.configure or args.codex_only):
         parser.error("--repair cannot be combined with --uninstall, --configure, or --codex-only")
@@ -886,7 +886,7 @@ def main():
     wrapper_path = ai_wrapper_path()
     wrapper_changed = (
         False
-        if args.codex_only or args.repair
+        if args.codex_only
         else sync_ai_wrapper(
             remove=args.uninstall, check=True, destination=wrapper_path
         )
@@ -904,7 +904,7 @@ def main():
     )
     workspace_search_changed = (
         False
-        if args.codex_only or args.repair
+        if args.codex_only
         else workspace_search.sync_extension(
             remove=args.uninstall,
             check=True,
@@ -1087,16 +1087,14 @@ def main():
             if old != [path.read_text() for path in paths]:
                 raise RuntimeError("VS Code changed during validation; retry the command.")
             write_pair(paths, new, old)
-        if not args.codex_only and not args.repair:
+        if not args.codex_only:
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
+            workspace_search.sync_extension(remove=args.uninstall, settings=settings)
+        if not args.codex_only and not args.repair:
             sync_model_picker(
                 enabled=settings["aiModelPicker"],
                 remove=args.uninstall,
                 destination=model_picker_path,
-            )
-            workspace_search.sync_extension(
-                remove=args.uninstall,
-                settings=settings,
             )
         if workspace_search_changed or any(
             path.name == 'package.json' and previous != updated
