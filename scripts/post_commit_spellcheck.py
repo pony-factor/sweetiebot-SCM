@@ -362,27 +362,6 @@ def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str],
     return proposals
 
 
-def dialog_choice(file_count: int) -> str:
-    message = (
-        f"Spellcheck proposed changes in {file_count} Markdown file"
-        f"{'s' if file_count != 1 else ''}.\n\n"
-        "Review the unstaged diff in Source Control.\n\n"
-        "Keep edits: leave the changes unstaged for review.\n"
-        "Discard: remove the generated changes."
-    )
-    script = """on run argv
-set resultDialog to display dialog (item 1 of argv) with title "Spellcheck" buttons {"Discard", "Keep edits"} default button "Keep edits"
-return button returned of resultDialog
-end run"""
-    result = subprocess.run(
-        ["/usr/bin/osascript", "-e", script, message],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else ""
-
-
 def proposal_is_untouched(global_args: list[str], proposals: dict[str, tuple[bytes, bytes]]) -> bool:
     root_result = git_run(global_args, "rev-parse", "--show-toplevel")
     if root_result.returncode != 0:
@@ -395,13 +374,6 @@ def proposal_is_untouched(global_args: list[str], proposals: dict[str, tuple[byt
         except OSError:
             return False
     return True
-
-
-def discard_proposals(global_args: list[str], proposals: dict[str, tuple[bytes, bytes]]) -> None:
-    if not proposal_is_untouched(global_args, proposals):
-        return
-    git_run(global_args, "--literal-pathspecs", "restore", "--worktree", "--", *proposals.keys())
-
 
 
 def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str], model: str = "") -> bool:
@@ -463,11 +435,9 @@ def run_post_commit_job() -> int:
     if not proposals:
         return 0
 
-    choice = dialog_choice(len(proposals))
-    if choice == "Discard":
-        if head_sha(global_args) == expected_head and index_is_clean(global_args):
-            discard_proposals(global_args, proposals)
-    elif (
+    # Keep corrected text unstaged for the native Source Control review.
+    # Never accept or discard edits in an external dialog.
+    if (
         head_sha(global_args) == expected_head
         and index_is_clean(global_args)
         and proposal_is_untouched(global_args, proposals)
