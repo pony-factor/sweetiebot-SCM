@@ -118,7 +118,36 @@ def run():
         }""")
         page.wait_for_timeout(50)
         assert state("#title")["text"] == "CelestAINew Chat"
+        # Browser-level regression: CSS must resolve to an accent even when the
+        # Codex host does not expose the VS Code focus-border theme variable.
+        page.add_script_tag(content=(ASSETS / "codex-usage.js").read_text())
+        page.evaluate("""() => {
+            const pie = document.createElement('scm-toolkit-usage-pie');
+            pie.id = 'codex-usage-pie';
+            document.body.appendChild(pie);
+            document.documentElement.style.removeProperty('--vscode-focusBorder');
+        }""")
+
+        def gradient(percent):
+            return page.evaluate("""percent => {
+                const pie = document.getElementById('codex-usage-pie');
+                pie.setAttribute('percent', percent);
+                return getComputedStyle(pie).backgroundImage;
+            }""", percent)
+
+        normal = gradient(11)
+        assert '255, 185, 0' not in normal and 'rgb(255, 255, 255)' in normal, normal
+        no_host_token = gradient(10)
+        assert '255, 185, 0' in no_host_token, no_host_token
+        assert '255, 185, 0' in gradient(1)
+        page.evaluate("document.documentElement.style.setProperty('--vscode-focusBorder', '#12ab34')")
+        configured_accent = gradient(10)
+        assert '18, 171, 52' in configured_accent, configured_accent
+        assert '255, 185, 0' not in configured_accent, configured_accent
+        reset = gradient(50)
+        assert '18, 171, 52' not in reset and 'rgb(255, 255, 255)' in reset, reset
         assert not errors, errors
+        print("PASS: Chromium usage accent with absent theme token, override and reset")
         print("PASS: headless Chromium computed CSS, header, activity and 75 React-style rewrites")
         browser.close()
 
