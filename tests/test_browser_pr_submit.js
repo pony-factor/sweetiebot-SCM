@@ -29,7 +29,10 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
-      querySelectorAll: () => resultLinks.map(href=>({href})),
+      querySelectorAll: selector => {
+        assert.equal(selector, 'a[href]', 'Collect exact nonce callbacks across ChatGPT message layouts');
+        return resultLinks.map(href=>({href}));
+      },
       addEventListener: (name, callback) => {
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },

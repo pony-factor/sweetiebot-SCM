@@ -46,7 +46,9 @@
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return;
       const generating = document.querySelector('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]');
-      const links = document.querySelectorAll('[data-message-author-role="assistant"] a[href]');
+      // The nonce-bearing callback validates ownership without depending on
+      // ChatGPT's changing message-container markup.
+      const links = document.querySelectorAll('a[href]');
       for (const link of links) {
         let url;
         try { url = new URL(link.href); } catch { continue; }
@@ -62,7 +64,8 @@
     };
     collect();
   };
-  // Collection also covers a deliberate manual Send; it cannot publish by itself.
+  // Collection also covers a deliberate manual Send; publication is owned by
+  // the local receiver and its auto-publish preference.
   collectResult();
 
   // Collapse only the PR launch's sidebar once, including delayed hydration.
