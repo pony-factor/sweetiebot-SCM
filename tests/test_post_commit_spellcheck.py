@@ -19,13 +19,39 @@ class CorrectionTests(unittest.TestCase):
 
     def test_protected_tokens_line_count_and_markdown_prefixes(self):
         for original, corrected in [
-            ("Use `Alpine’s` here.", "Use `Alpine’s` here."),
             ("Visit https://example.com/a", "Visit https://example.com/b"),
             ("# Heading", "Heading"),
             ("Two lines\nremain", "One line"),
         ]:
             with self.subTest(original=original):
                 self.assertIsNone(worker.request_correction(self.core(corrected), "model", "note.md", original, "", ""))
+
+    def test_numeric_ranges_preserve_dates_urls_code_and_numbers(self):
+        original = "Pages 12952-12953, 2026-10-11, S7-2026-25, `1-5`, https://example.com/1-5."
+        corrected = worker.normalize_smart_punctuation(original)
+        self.assertIn("12952–12953", corrected)
+        for token in ["2026-10-11", "S7-2026-25", "`1-5`", "https://example.com/1-5."]:
+            self.assertIn(token, corrected)
+        self.assertTrue(worker.safe_correction(original, corrected))
+        self.assertFalse(worker.safe_correction(original, corrected.replace("12953", "12954")))
+        self.assertEqual(worker.normalize_smart_punctuation("Use `Alpine’s` here."), "Use `Alpine’s` here.")
+
+    def test_custom_terminology_is_in_prompt(self):
+        prompts = []
+        core = SimpleNamespace(
+            git_config_string=lambda key, default: "Instinet is a financial market name.",
+            ollama_json=lambda endpoint, payload: prompts.append(payload["prompt"]) or {"response": '{"text":"Instinet trading."}'},
+        )
+        self.assertEqual(worker.request_correction(core, "model", "note.md", "Instinet trading.", "", ""), "Instinet trading.")
+        self.assertIn("Instinet is a financial market name.", prompts[0])
+        self.assertIn("en dash for numeric ranges", prompts[0])
+
+    def test_descriptive_title_and_invalid_output_fallback(self):
+        proposals = {"note.md": (b"Instnet trading.", b"Instinet trading.")}
+        for title in ["Spellcheck Instinet trading and citations", "Too short", "Spellcheck one two three four five six", "Spellcheck trading\nInject new trailer"]:
+            core = SimpleNamespace(ollama_json=lambda *args: {"response": json.dumps({"title": title})})
+            expected = title if title == "Spellcheck Instinet trading and citations" else worker.DEFAULT_TITLE
+            self.assertEqual(worker.spellcheck_title(core, "model", proposals), expected)
 
     def test_fenced_code_excluded_from_prose(self):
         lines = ["prose\n", "```python\n", "typo in code\n", "```\n", "more prose\n"]
@@ -88,9 +114,9 @@ class ProposalTests(unittest.TestCase):
             worker, "apply_spellcheck", return_value=proposals
         ), patch.object(worker, "proposal_is_untouched", return_value=True), patch.object(
             worker, "write_spellcheck_notice"
-        ) as notice, patch.object(worker, "git_run") as git:
+        ) as notice, patch.object(worker, "spellcheck_title", return_value="Spellcheck Instinet trading and citations"), patch.object(worker, "git_run") as git:
             self.assertEqual(worker.run_post_commit_job(), 0)
-            notice.assert_called_once_with([], "expected", ["note.md"], "model")
+            notice.assert_called_once_with([], "expected", ["note.md"], "model", "Spellcheck Instinet trading and citations")
             git.assert_not_called()
 
     def test_changed_head_preserves_proposals_without_showing_stale_notice(self):
@@ -124,17 +150,17 @@ class ProposalTests(unittest.TestCase):
             gitdir.mkdir()
             result = subprocess.CompletedProcess([], 0, stdout=str(gitdir))
             with patch.object(worker, "git_run", return_value=result):
-                self.assertTrue(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b"))
+                self.assertTrue(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b", "Spellcheck Instinet trading and citations"))
                 notice = gitdir / worker.NOTICE_FILE_NAME
                 self.assertEqual(json.loads(notice.read_text()), {
-                    "version": 1, "head": "a" * 40, "paths": ["readme.md"], "model": "qwen:3b",
+                    "version": 1, "head": "a" * 40, "paths": ["readme.md"], "model": "qwen:3b", "title": "Spellcheck Instinet trading and citations",
                 })
                 self.assertFalse((root / worker.NOTICE_FILE_NAME).exists())
 
     def test_notice_write_handles_missing_metadata(self):
         result = subprocess.CompletedProcess([], 1, stdout="")
         with patch.object(worker, "git_run", return_value=result):
-            self.assertFalse(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b"))
+            self.assertFalse(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], "qwen:3b", "Spellcheck Instinet trading and citations"))
 
     def test_no_notice_after_intervening_edit(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}

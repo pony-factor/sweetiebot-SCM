@@ -96,7 +96,7 @@ function renderRows(rows) {
   }).join('');
 }
 
-function renderSpellcheckDiff(patch) {
+function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
   const files = parseUnifiedDiff(patch);
   const blocks = files.filter(file => file.rows.length).map(file =>
     '<section class="file"><h2>' + escapeHtml(file.name) + '</h2><div class="rows">'
@@ -124,7 +124,7 @@ function renderSpellcheckDiff(patch) {
     + '.remove .changed-token{background:var(--vscode-diffEditor-removedTextBackground,rgba(248,81,73,.35));border-radius:2px}'
     + '.hunk{background:var(--vscode-diffEditor-diagonalFill,transparent);color:var(--vscode-textLink-foreground);padding:4px 12px;white-space:pre}'
     + '.meta{color:var(--vscode-descriptionForeground);padding:0 12px;font-style:italic}'
-    + '</style></head><body><header class="intro"><h1>Spellcheck suggestions</h1>'
+    + '</style></head><body><header class="intro"><h1>' + escapeHtml(title || 'Spellcheck suggestions') + '</h1>'
     + '<p>All proposed edits are unstaged in Source Control. Click outside this preview to close it; review, stage, or discard edits in SCM.</p></header>'
     + (blocks || '<p style="padding:20px">There are no remaining unstaged spellcheck changes to display.</p>')
     + '</body></html>';

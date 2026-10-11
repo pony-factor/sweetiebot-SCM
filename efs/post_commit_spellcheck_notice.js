@@ -27,7 +27,10 @@ function parseNotice(content) {
     }
     if (data.model !== undefined && (typeof data.model !== 'string' || !data.model.trim()
         || data.model.length > 200 || /[\r\n<>]/.test(data.model))) return null;
-    return { head: data.head, paths, ...(data.model ? { model: data.model.trim() } : {}) };
+    if (data.title !== undefined && (typeof data.title !== 'string' || !data.title.startsWith('Spellcheck ')
+        || data.title.length > 72 || /[\r\n<>]/.test(data.title)
+        || data.title.trim().split(/\s+/).length < 4 || data.title.trim().split(/\s+/).length > 6)) return null;
+    return { head: data.head, paths, ...(data.model ? { model: data.model.trim() } : {}), ...(data.title ? { title: data.title.trim() } : {}) };
   } catch { return null; }
 }
 
@@ -38,9 +41,9 @@ function coauthor(email = DEFAULT_EMAIL, model = '') {
   return 'Co-authored-by: ' + name.trim() + ' <' + email.trim() + '>';
 }
 
-function spellcheckMessage(paths, email = DEFAULT_EMAIL, model = '') {
+function spellcheckMessage(paths, email = DEFAULT_EMAIL, model = '', title = '') {
   const count = paths.length;
-  const subject = '🤖 Spellcheck ' + count + ' Markdown file' + (count === 1 ? '' : 's');
+  const subject = '🤖 ' + (title || 'Spellcheck ' + count + ' Markdown file' + (count === 1 ? '' : 's'));
   const trailer = coauthor(email, model);
   return subject + (trailer ? '\n\n' + trailer : '');
 }
@@ -91,21 +94,29 @@ async function gitDiff(cwd, args) {
   })).stdout;
 }
 
-async function showNotice(vscode, repository, notice, readDiff = gitDiff) {
+async function showNotice(vscode, repository, notice, readDiff = gitDiff, readConfig = git) {
   const patch = await readDiff(notice.root, [
     'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...notice.paths
   ]);
   if (!patch.trim()) return;
 
+  if (notice.title && repository.inputBox && !repository.inputBox.value?.trim()) {
+    let email = DEFAULT_EMAIL;
+    try { email = await readConfig(notice.root, ['config', '--get', 'scm-toolkit.spellcheck-coauthor-email']) || DEFAULT_EMAIL; }
+    catch { /* Use the default bot identity. */ }
+    // Recheck after the asynchronous config read to preserve a newly typed draft.
+    if (!repository.inputBox.value?.trim()) repository.inputBox.value = spellcheckMessage(notice.paths, email, notice.model, notice.title);
+  }
+
   // This is a disposable read-only preview, not a modal Keep/Discard decision.
   // The Git working tree and any existing SCM commit draft remain untouched.
   const panel = vscode.window.createWebviewPanel(
     'sweetiebot.spellcheckDiff',
-    'Spellcheck suggestions',
+    notice.title || 'Spellcheck suggestions',
     vscode.ViewColumn.Beside,
     { enableScripts: false, retainContextWhenHidden: false }
   );
-  panel.webview.html = renderSpellcheckDiff(patch);
+  panel.webview.html = renderSpellcheckDiff(patch, notice.title);
   panel.onDidChangeViewState(event => {
     // Dismiss by focusing another editor or Source Control, without changing edits.
     if (!event.webviewPanel.active) event.webviewPanel.dispose();
@@ -126,7 +137,7 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
       if (!root || pending.has(root)) continue;
       pending.add(root);
       void takeNotice(repository, dependencies)
-        .then(notice => notice && !disposed ? showNotice(vscode, repository, notice, dependencies.diff || gitDiff) : undefined)
+        .then(notice => notice && !disposed ? showNotice(vscode, repository, notice, dependencies.diff || gitDiff, dependencies.git || git) : undefined)
         .catch(error => console.warn('Sweetiebot spellcheck notification:', error.message))
         .finally(() => pending.delete(root));
     }
