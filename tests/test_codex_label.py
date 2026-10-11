@@ -44,6 +44,24 @@ class CodexWindowLabelTests(unittest.TestCase):
         self.assertEqual(result["displayName"], "Codex - OpenAI's coding agent")
         self.assertEqual(result["contributes"]["views"]["unrelated"][0]["name"], "Other")
 
+    def test_new_codex_view_ids_are_relabelled_without_touching_other_views(self):
+        data = json.loads(example_manifest())
+        for container in ("codexViewContainer", "codexSecondaryViewContainer"):
+            data["contributes"]["views"][container] = [
+                {"id": "chatgpt.newSidebarWebview", "type": "webview", "name": "Codex"},
+                {"id": "chatgpt.help", "type": "webview", "name": "Help"},
+            ]
+        original = json.dumps(data)
+        patched = codex_label.transform(original, "CelestAI")
+        modified = json.loads(patched)
+        for container in ("codexViewContainer", "codexSecondaryViewContainer"):
+            entries = modified["contributes"]["views"][container]
+            self.assertEqual([view["name"] for view in entries], ["CelestAI", "Help"])
+        self.assertEqual(codex_label.transform(patched, "CelestAI"), patched)
+        updated = codex_label.transform(patched, "Luna")
+        self.assertEqual(codex_label.transform(updated, "Codex"), original)
+        self.assertEqual(codex_label.transform(patched, remove=True), original)
+
     def test_idempotent_relabel_and_restore(self):
         original = example_manifest()
         changed = codex_label.transform(original, "CelestAI")
