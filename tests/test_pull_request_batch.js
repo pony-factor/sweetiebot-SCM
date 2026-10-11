@@ -328,7 +328,8 @@ async function run() {
   assert.match(allChat.searchParams.get('q'), /pull\/40/);
   assert.equal(submitCalls, 2);
   includeNonMain = true;
-  pickerAction = 'first';
+  // The planner lists main-targeted PRs before unrelated non-main PRs.
+  pickerAction = 'top';
   await handler();
   assert.equal(browserCalls.length, 4, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(submitCalls, 2);
