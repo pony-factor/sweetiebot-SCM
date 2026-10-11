@@ -136,7 +136,7 @@ def run():
             }""", percent)
 
         normal = gradient(11)
-        assert '255, 185, 0' not in normal and 'currentcolor' in normal.lower(), normal
+        assert '255, 185, 0' not in normal and 'rgb(255, 255, 255)' in normal, normal
         no_host_token = gradient(10)
         assert '255, 185, 0' in no_host_token, no_host_token
         assert '255, 185, 0' in gradient(1)
@@ -145,7 +145,7 @@ def run():
         assert '18, 171, 52' in configured_accent, configured_accent
         assert '255, 185, 0' not in configured_accent, configured_accent
         reset = gradient(50)
-        assert '18, 171, 52' not in reset and 'currentcolor' in reset.lower(), reset
+        assert '18, 171, 52' not in reset and 'rgb(255, 255, 255)' in reset, reset
         assert not errors, errors
         print("PASS: Chromium usage accent with absent theme token, override and reset")
         print("PASS: headless Chromium computed CSS, header, activity and 75 React-style rewrites")
