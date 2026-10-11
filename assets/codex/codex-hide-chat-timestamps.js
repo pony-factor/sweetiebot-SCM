@@ -140,6 +140,8 @@
 
     function scan(root) {
         if (!root) return;
+        // Reinstall the stylesheet if the host replaces the webview <head>.
+        installStyle();
 
         if (root.nodeType === Node.TEXT_NODE) {
             processTextNode(root);
@@ -190,7 +192,9 @@
             subtree: true,
             characterData: true,
             attributes: true,
-            attributeFilter: [hiddenAttribute, 'aria-hidden'],
+            // React may overwrite display with an inline !important value,
+            // which has higher precedence than our stylesheet rule.
+            attributeFilter: [hiddenAttribute, 'aria-hidden', 'style'],
         });
     }
 
