@@ -23,6 +23,9 @@ function imageIndex(profile){el('images').replaceChildren();const seen=new Set()
 async function refresh(){try{const response=await fetch(root+'/state');const state=await response.json();if(!response.ok)throw new Error(state.error);
 if(state.draft){el('title').textContent=state.draft.title;if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
 el('publish').disabled=!state.draft||state.attempted||state.publishing;
+el('publish').hidden=state.autoPublish;
+if(state.autoPublish&&!state.result)el('publication').textContent=state.errors.publish||(state.publishing?'Publishing your pull request…':'Auto-publish is on.');
+if(state.result){document.title='PR #'+state.result.number+' · Kefania';document.querySelector('h1').textContent='PR #'+state.result.number;}
 if(state.result){el('publication').replaceChildren(document.createTextNode('🦄 PR #'+state.result.number+' published. '));const link=document.createElement('a');link.href=state.result.url;link.textContent='Open pull request ↗';el('publication').append(link)}
 el('pony-section').hidden=!state.pony;
 if(state.pony)el('pony-title').textContent=state.pony.name||String(state.pony.slug).split('-').map(part=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');

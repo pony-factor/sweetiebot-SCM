@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -25,7 +25,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
     require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
-    document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = value; listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
+    document: { execCommand(command, ui, value) { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
@@ -47,7 +47,7 @@ f.composer.innerText = 'Draft\nPR'; f.tick(); assert.equal(f.clicks(), 1);
 f = fixture({ text: 'Different draft' }); f.tick(); assert.equal(f.clicks(), 0);
 f = fixture({ disabled: true }); f.listeners.get('input').forEach(callback => callback({ isTrusted: true }));
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
-f = fixture({ disabled: true }); f.tick(60000); f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
+f = fixture({ disabled: true }); f.tick(180000); f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
 for (const label of ['Stop', 'Start Voice']) { f = fixture({ label }); f.tick(); assert.equal(f.clicks(), 0); }
 f = fixture({ url: 'https://chatgpt.com/g/g-p-test123/project?q=Draft%20PR&sweetiebot_pr=1' });
 assert.equal(f.clicks(), 1);
@@ -85,6 +85,8 @@ f.button.disabled = false; f.tick();
 assert.equal(f.clicks(), 1);
 assert.equal(f.window.location.hash, '');
 f.tick(); assert.equal(f.clicks(), 1);
+f = fixture({ url: fragmentUrl, text: '', formatInserted: text => text.replace('Draft PR', 'DraftPR') });
+f.tick();assert.equal(f.clicks(),1,'Own inserted text tolerates composer whitespace formatting');
 f = fixture({ url: fragmentUrl, text: 'Keep my draft' });
 f.tick(); assert.equal(f.composer.innerText, 'Keep my draft'); assert.equal(f.clicks(), 0);
 f = fixture({ url: fragmentUrl, text: '', disabled: true });

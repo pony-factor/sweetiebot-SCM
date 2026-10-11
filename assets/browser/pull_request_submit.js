@@ -62,6 +62,8 @@
     };
     collect();
   };
+  // Collection also covers a deliberate manual Send; it cannot publish by itself.
+  collectResult();
 
   // Collapse only the PR launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
@@ -100,7 +102,8 @@
 
   const normalize = text => String(text || '').replace(/\s+/g, ' ').trim();
   const expected = normalize(prompt);
-  const deadline = Date.now() + 60000;
+  const samePreparedText = text => text === expected || (inserted && text.replace(/\s/g, '') === expected.replace(/\s/g, ''));
+  const deadline = Date.now() + 180000;
   let timer;
   let stopped = false;
   let inserted = false;
@@ -113,7 +116,9 @@
   };
   const onInput = event => { if (event.isTrusted && !inserting) stop(); };
   const onClick = event => {
-    if (event.isTrusted && event.target.closest?.('button')) stop();
+    const button = event.target.closest?.('button');
+    const label = button?.getAttribute('aria-label') || '';
+    if (event.isTrusted && /^(send|send prompt|stop|stop streaming|start voice)$/i.test(label)) stop();
   };
   document.addEventListener('input', onInput, true);
   document.addEventListener('click', onClick, true);
@@ -143,7 +148,7 @@
       'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
     );
     const label = button?.getAttribute('aria-label') || '';
-    if (composer && text === expected && button && !button.disabled
+    if (composer && samePreparedText(text) && button && !button.disabled
         && button.getAttribute('aria-disabled') !== 'true'
         && button.getClientRects().length && !/stop|voice/i.test(label)
         && button.getAttribute('data-testid') !== 'stop-button') {
@@ -155,7 +160,6 @@
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
       button.click();
-      collectResult();
       return;
     }
     timer = setTimeout(attempt, 250);

@@ -281,6 +281,11 @@
           "type": "string",
           "default": "Send",
           "description": "Text shown on the primary commit action when git.postCommitCommand is push."
+        },
+        "scmToolkit.autoPublishPullRequests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically publish completed Kefania PR drafts without text confirmation. Pony research finishes independently."
         }
       }
     }

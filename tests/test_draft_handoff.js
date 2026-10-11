@@ -38,6 +38,14 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     state = await (await fetch(url+'/state')).json();
     assert.equal(state.profile,'Bushel profile with a source.');
     assert.equal(state.result.number,2);
+    const automaticId='22222222-2222-4333-8444-555555555555';
+    handoff.register(automaticId,{pony:{slug:'maud-pie'},autoPublish:true});
+    const automaticUrl=handoff.origin+'/kefania-draft/'+automaticId;
+    await fetch(automaticUrl+'/draft',{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body});
+    const automaticState=await (await fetch(automaticUrl+'/state')).json();
+    assert.equal(automaticState.result.number,2,'Auto-publish creates the PR without a confirmation POST');
+    assert.equal(automaticState.profile,undefined,'Auto-publish never waits for pony research');
+    assert.equal(writes,2);
     console.log('Local browser draft handoff checks passed.');
   } finally {handoff.dispose();}
 })().catch(error => {console.error(error);process.exitCode=1;});

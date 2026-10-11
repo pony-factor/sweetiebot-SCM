@@ -10,6 +10,19 @@ const page = readFileSync(join(__dirname, 'draft_confirmation.html'), 'utf8');
 // Collecting a result never calls the publisher; only the confirmation button does.
 async function createDraftHandoff(publish) {
   const drafts = new Map();
+  async function publishDraft(id, state) {
+    if (state.result) return state.result;
+    if (state.attempted) throw new Error('Publication was already attempted. Check GitHub before starting again.');
+    state.attempted = true;
+    state.publishing = true;
+    try {
+      const result = await publish({path: `/kefania-draft/${id}`, query: new URLSearchParams(state.draft).toString()});
+      if (!result?.url) throw new Error('PR could not be published. Check the VS Code notification and GitHub.');
+      state.result = result;
+      return result;
+    } catch (error) { state.errors.publish = error.message; throw error; }
+    finally { state.publishing = false; }
+  }
   const server = createServer({ maxHeaderSize: MAX_REQUEST_BYTES }, async (request, response) => {
     const origin = `http://127.0.0.1:${server.address().port}`;
     response.setHeader('Cache-Control', 'no-store');
@@ -23,7 +36,7 @@ async function createDraftHandoff(publish) {
     if (!state || state.expires < Date.now()) return fail(410, 'This confirmation page expired. Start the workflows again.');
     const kind = match[2];
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted) });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish });
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
     if (request.method !== 'POST' || kind === 'state' || request.headers.origin !== origin || request.headers['content-type'] !== 'application/json') return fail(403, 'Use the local confirmation page.');
@@ -49,17 +62,11 @@ async function createDraftHandoff(publish) {
         const draft = state.draft || input;
         if (typeof draft.title !== 'string' || !draft.title.trim() || draft.title.length > 256 || typeof draft.body !== 'string' || !draft.body.trim() || Buffer.byteLength(draft.body) > 60000) return fail(400, 'Wait for a valid PR draft.');
         state.draft = draft;
-        state.attempted = true;
-        state.publishing = true;
-        try {
-          const result = await publish({path: `/kefania-draft/${match[1]}`, query: new URLSearchParams(draft).toString()});
-          if (!result?.url) return fail(409, 'PR could not be published. Check the VS Code notification and GitHub.');
-          state.result = result;
-          return json(200, result);
-        } finally { state.publishing = false; }
+        return json(200, await publishDraft(match[1], state));
       }
       json(200, { collected: kind });
       Promise.resolve().then(() => state.onResult?.(kind)).catch(() => {});
+      if (kind === 'draft' && state.autoPublish && !state.attempted) void publishDraft(match[1], state).catch(() => {});
     } catch { fail(400, 'Request failed. Check the VS Code notification before retrying publication.'); }
   });
   await new Promise((resolve,reject) => { server.once('error',reject); server.listen(0,'127.0.0.1',resolve); });
@@ -68,7 +75,7 @@ async function createDraftHandoff(publish) {
   expiry.unref();
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, onResult} = {}) { drafts.set(id, {pony, onResult, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, onResult, autoPublish = false} = {}) { drafts.set(id, {pony, onResult, autoPublish, errors: {}, expires: Date.now() + 3600000}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { clearTimeout(expiry); drafts.clear(); server.close(); }
   };

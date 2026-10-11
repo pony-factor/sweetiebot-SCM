@@ -296,7 +296,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, onResult: async kind => {
+    localHandoff.register(draftId, { pony, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async kind => {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();
