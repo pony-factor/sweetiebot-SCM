@@ -1717,7 +1717,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const action = doc.createElement('button');
         action.type = 'button';
         action.setAttribute('role', 'menuitem');
-        action.textContent = 'Delete empty branch (local + origin)…'.replace('origin', settings.remote);
+        action.textContent = `Delete empty branch (local + ${settings.remote})…`;
         action.addEventListener('click', click => {
             closeBranchContextMenu();
             void deleteBranch(click, true);

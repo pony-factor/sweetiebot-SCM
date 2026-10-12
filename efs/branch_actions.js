@@ -629,10 +629,30 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
     throw new Error(`Cannot delete ${remote}/${branch}: its tip differs from the local branch.`);
   }
 
-  // Fast-forward the inactive default ref before switching. This is the same
-  // non-destructive checkout preparation as the existing cleanup action.
+  // Fast-forward the inactive default ref when possible. If the local
+  // default is already ahead of origin, preserve those unpublished commits.
   await verifyCurrent();
-  await repository.fetch({ remote: '.', ref: `${baseRef}:refs/heads/${defaultBranch}` });
+  const localBaseRef = `refs/heads/${defaultBranch}`;
+  let canFastForward;
+  try {
+    await git('merge-base', '--is-ancestor', localBaseRef, baseRef);
+    canFastForward = true;
+  } catch (error) {
+    if (error.code !== 1) throw error;
+    canFastForward = false;
+  }
+  if (canFastForward) {
+    await repository.fetch({ remote: '.', ref: `${baseRef}:${localBaseRef}` });
+  } else {
+    try {
+      await git('merge-base', '--is-ancestor', expected, localBaseRef);
+    } catch (error) {
+      if (error.code === 1) {
+        throw new Error('The local default branch diverges from the empty branch; deletion was cancelled.');
+      }
+      throw error;
+    }
+  }
   await verifyCurrent();
   if (await git('rev-parse', '--verify', localRef) !== expected
       || await git('status', '--porcelain')) {
