@@ -698,6 +698,46 @@ async function scmToolkitRecordPullRequestSource(
 const scmToolkitTimedNotificationServices = new WeakSet();
 function scmToolkitExpireNotifications(notifications) {
     if (!notifications || scmToolkitTimedNotificationServices.has(notifications)) return;
+
+    // Extension-host notices (including "PR #... merged into main.") may be
+    // added directly to the workbench model; info/warn/error also return void.
+    // Observe the model so every notice, including ones already open, expires.
+    const model = notifications.model;
+    if (model && Array.isArray(model.notifications) && typeof model.onDidChangeNotification === 'function') {
+        const timers = new WeakMap();
+        const messageOf = item =>
+            String(item?.message?.raw ?? item?.message?.value ?? item?.message ?? '').trim();
+        const cancel = item => {
+            if (!timers.has(item)) return;
+            clearTimeout(timers.get(item));
+            timers.delete(item);
+        };
+        const schedule = item => {
+            if (!item || typeof item.close !== 'function') return;
+            if (messageOf(item) === 'Sweetiebot update ready') {
+                cancel(item);
+                return;
+            }
+            if (timers.has(item)) return;
+            const timeout = setTimeout(() => {
+                timers.delete(item);
+                if (model.notifications.includes(item) && messageOf(item) !== 'Sweetiebot update ready') {
+                    item.close();
+                }
+            }, 20_000);
+            timers.set(item, timeout);
+            if (typeof item.onDidClose === 'function') item.onDidClose(() => cancel(item));
+        };
+        // 0 = ADD and 1 = CHANGE in the workbench notification model.
+        model.onDidChangeNotification(event => {
+            if (event?.kind === 0 || event?.kind === 1) schedule(event.item);
+        });
+        for (const item of model.notifications) schedule(item);
+        scmToolkitTimedNotificationServices.add(notifications);
+        return;
+    }
+
+    // Fallback for older workbench services that do not expose a model.
     const scheduled = new WeakSet();
     const track = (handle, message) => {
         const text = typeof message === 'string' ? message : message?.value ?? message?.message ?? '';
