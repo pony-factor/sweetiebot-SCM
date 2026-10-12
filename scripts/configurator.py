@@ -53,8 +53,7 @@ class Setting:
 SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-    Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "GitHub"),
-    Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
@@ -116,6 +115,7 @@ SETTINGS = (
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open the configured pull-request drafting chat and publish through the configured Kafania MCP tool.", "Message bar"),
+    Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
