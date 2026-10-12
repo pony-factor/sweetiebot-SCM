@@ -711,7 +711,7 @@
 }
 .scm-toolkit-spellcheck-popup[open] { display: flex; flex-direction: column; }
 .scm-toolkit-spellcheck-popup::backdrop { background: #0006; }
-.scm-toolkit-spellcheck-popup iframe { width: 100%; flex: 1; min-height: 0; border: 0; }
+.scm-toolkit-spellcheck-content { width: 100%; flex: 1; min-height: 0; overflow: auto; padding: 0 20px 20px; }
 .scm-toolkit-spellcheck-close {
     align-self: flex-end;
     margin: 8px 12px;
@@ -723,3 +723,25 @@
     cursor: pointer;
 }
 .scm-toolkit-spellcheck-close:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+
+.scm-toolkit-spellcheck-content *,.scm-toolkit-spellcheck-content *::before,.scm-toolkit-spellcheck-content *::after{box-sizing:border-box}
+.scm-toolkit-spellcheck-content{margin:0;color:var(--vscode-editor-foreground);background:var(--vscode-editor-background);font:var(--vscode-font-size,13px) var(--vscode-font-family,sans-serif)}
+.scm-toolkit-spellcheck-content .intro{position:sticky;top:0;z-index:2;background:var(--vscode-editorWidget-background,var(--vscode-editor-background));border-bottom:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border));padding:14px 20px}
+.scm-toolkit-spellcheck-content h1{font-size:1.15rem;margin:0 0 6px}
+.scm-toolkit-spellcheck-content p{margin:0;color:var(--vscode-descriptionForeground);line-height:1.5}
+.scm-toolkit-spellcheck-content .file{margin:16px 20px;border:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border));border-radius:5px;overflow:hidden}
+.scm-toolkit-spellcheck-content h2{font-size:1em;overflow-wrap:anywhere;font-weight:600;margin:0;padding:10px 12px;background:var(--vscode-sideBarSectionHeader-background,var(--vscode-editorWidget-background));border-bottom:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border))}
+.scm-toolkit-spellcheck-content .rows{overflow-x:hidden;font:var(--vscode-editor-font-size,12px)/1.6 var(--vscode-editor-font-family,monospace);tab-size:4}
+.scm-toolkit-spellcheck-content .diff-line{display:grid;grid-template-columns:4.2em 4.2em 2em minmax(0,1fr);width:100%}
+.scm-toolkit-spellcheck-content .line-number{padding:0 7px;text-align:right;user-select:none;color:var(--vscode-editorLineNumber-foreground);border-right:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border))}
+.scm-toolkit-spellcheck-content .sign{padding-left:8px;user-select:none}
+.scm-toolkit-spellcheck-content .line-text{min-width:0;padding-right:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.scm-toolkit-spellcheck-content .add{background:var(--vscode-diffEditor-insertedLineBackground,rgba(46,160,67,.15))}
+.scm-toolkit-spellcheck-content .remove{background:var(--vscode-diffEditor-removedLineBackground,rgba(248,81,73,.15))}
+.scm-toolkit-spellcheck-content .add .sign{color:var(--vscode-editorGutter-addedBackground,#3fb950)}
+.scm-toolkit-spellcheck-content .remove .sign{color:var(--vscode-editorGutter-deletedBackground,#f85149)}
+.scm-toolkit-spellcheck-content .add .changed-token{background:var(--vscode-diffEditor-insertedTextBackground,rgba(46,160,67,.35));border-radius:2px}
+.scm-toolkit-spellcheck-content .remove .changed-token{background:var(--vscode-diffEditor-removedTextBackground,rgba(248,81,73,.35));border-radius:2px}
+.scm-toolkit-spellcheck-content .hunk{background:var(--vscode-diffEditor-diagonalFill,transparent);color:var(--vscode-textLink-foreground);padding:4px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.scm-toolkit-spellcheck-content .meta{color:var(--vscode-descriptionForeground);padding:0 12px;font-style:italic}
+

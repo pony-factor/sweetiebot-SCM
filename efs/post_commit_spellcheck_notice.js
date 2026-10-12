@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { renderSpellcheckDiff } = require('./spellcheck_diff');
+const { renderSpellcheckDiff, spellcheckDiffFiles } = require('./spellcheck_diff');
 
 const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
@@ -111,7 +111,7 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
     if (!repository.inputBox.value?.trim()) repository.inputBox.value = spellcheckMessage(notice.paths, email, notice.model, notice.title);
   }
 
-  previews.push({ title: notice.title || 'Spellcheck suggestions', html: renderSpellcheckDiff(patch, notice.title) });
+  previews.push({ title: notice.title || 'Spellcheck suggestions', html: renderSpellcheckDiff(patch, notice.title), files: spellcheckDiffFiles(patch) });
 
 }
 

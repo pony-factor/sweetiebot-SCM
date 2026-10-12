@@ -49,7 +49,7 @@ function parseUnifiedDiff(patch) {
   return files;
 }
 
-function highlightChange(before, after) {
+function highlightChange(before, after, segments = false) {
   const left = Array.from(before), right = Array.from(after);
   let start = 0, end = 0;
   while (start < left.length && start < right.length && left[start] === right[start]) start++;
@@ -74,15 +74,17 @@ function highlightChange(before, after) {
     }
   }
   function render(text, middle, same) {
-    let html = escapeHtml(text.slice(0, start).join('')), changed = false;
-    middle.forEach((character, index) => {
-      const next = !same.has(index);
-      if (next !== changed) html += next ? '<span class="changed-token">' : '</span>';
-      changed = next;
-      html += escapeHtml(character);
-    });
-    if (changed) html += '</span>';
-    return html + escapeHtml(end ? text.slice(-end).join('') : '');
+    const parts = [];
+    const append = (value, changed) => {
+      if (!value) return;
+      if (parts.at(-1)?.changed === changed) parts.at(-1).text += value;
+      else parts.push({ text: value, changed });
+    };
+    append(text.slice(0, start).join(''), false);
+    middle.forEach((character, index) => append(character, !same.has(index)));
+    append(end ? text.slice(-end).join('') : '', false);
+    return segments ? parts : parts.map(part => part.changed
+      ? '<span class="changed-token">' + escapeHtml(part.text) + '</span>' : escapeHtml(part.text)).join('');
   }
   return [render(left, a, sameA), render(right, b, sameB)];
 }
@@ -119,6 +121,24 @@ function renderRows(rows) {
   }).join('');
 }
 
+function spellcheckDiffFiles(patch) {
+  return parseUnifiedDiff(patch).filter(file => file.rows.length).map(file => {
+    const rows = file.rows.map(row => ({ ...row, segments: [{text: row.text, changed: false}] }));
+    for (let i = 0; i < rows.length;) {
+      if (!['add', 'remove'].includes(rows[i].kind)) { i++; continue; }
+      let j = i;
+      while (j < rows.length && ['add', 'remove'].includes(rows[j].kind)) j++;
+      const removed = rows.slice(i, j).filter(row => row.kind === 'remove');
+      const added = rows.slice(i, j).filter(row => row.kind === 'add');
+      for (let k = 0; k < Math.min(removed.length, added.length); k++) {
+        [removed[k].segments, added[k].segments] = highlightChange(removed[k].text, added[k].text, true);
+      }
+      i = j;
+    }
+    return { name: file.name, rows };
+  });
+}
+
 function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
   const files = parseUnifiedDiff(patch);
   const blocks = files.filter(file => file.rows.length).map(file =>
@@ -153,4 +173,4 @@ function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
     + '</body></html>';
 }
 
-module.exports = { escapeHtml, parseUnifiedDiff, highlightChange, renderSpellcheckDiff };
+module.exports = { spellcheckDiffFiles, escapeHtml, parseUnifiedDiff, highlightChange, renderSpellcheckDiff };

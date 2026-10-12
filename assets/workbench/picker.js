@@ -747,11 +747,44 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const close = doc.createElement('button');
             close.className = 'scm-toolkit-spellcheck-close';
             close.textContent = 'Close';
-            const frame = doc.createElement('iframe');
-            frame.title = preview.title || 'Spellcheck suggestions';
-            // The escaped preview has no scripts, forms, or navigation capabilities.
-            frame.setAttribute('sandbox', 'allow-same-origin');
-            frame.srcdoc = preview.html;
+            const content = doc.createElement('div');
+            content.className = 'scm-toolkit-spellcheck-content';
+            const heading = doc.createElement('h1');
+            heading.textContent = preview.title || 'Spellcheck suggestions';
+            const description = doc.createElement('p');
+            description.textContent = 'All proposed edits are unstaged in Source Control. Click outside this preview to close it; review, stage, or discard edits in SCM.';
+            content.append(heading, description);
+            for (const file of preview.files || []) {
+                const section = doc.createElement('section');
+                section.className = 'file';
+                const name = doc.createElement('h2');
+                name.textContent = file.name;
+                section.append(name);
+                for (const row of file.rows) {
+                    const line = doc.createElement('div');
+                    line.className = ['hunk', 'meta'].includes(row.kind) ? row.kind : 'diff-line ' + row.kind;
+                    if (['hunk', 'meta'].includes(row.kind)) line.textContent = row.text;
+                    else {
+                        for (const [className, value] of [['line-number', row.oldNumber], ['line-number', row.newNumber], ['sign', row.kind === 'add' ? '+' : row.kind === 'remove' ? '−' : ' ']]) {
+                            const cell = doc.createElement('span');
+                            cell.className = className;
+                            cell.textContent = value == null ? '' : String(value);
+                            line.append(cell);
+                        }
+                        const text = doc.createElement('span');
+                        text.className = 'line-text';
+                        for (const segment of row.segments) {
+                            const token = doc.createElement('span');
+                            if (segment.changed) token.className = 'changed-token';
+                            token.textContent = segment.text;
+                            text.append(token);
+                        }
+                        line.append(text);
+                    }
+                    section.append(line);
+                }
+                content.append(section);
+            }
             const dismiss = () => dialog.close();
             close.addEventListener('click', dismiss);
             dialog.addEventListener('click', event => {
@@ -765,19 +798,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                 dialog.remove();
                 if (previousFocus?.isConnected) previousFocus.focus();
             }, { once: true });
-            frame.addEventListener('load', () => {
-                const content = frame.contentDocument;
-                if (!content) return;
-                const theme = doc.defaultView.getComputedStyle(doc.querySelector('.monaco-workbench') || doc.documentElement);
-                for (let index = 0; index < theme.length; index++) {
-                    const name = theme[index];
-                    if (name.startsWith('--vscode-')) content.documentElement.style.setProperty(name, theme.getPropertyValue(name));
-                }
-                content.addEventListener('keydown', event => {
-                    if (event.key === 'Escape') { event.preventDefault(); dismiss(); }
-                });
-            });
-            dialog.append(close, frame);
+            dialog.append(close, content);
             doc.body.append(dialog);
             popup = dialog;
             dialog.showModal();
