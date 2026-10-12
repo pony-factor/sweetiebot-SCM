@@ -179,9 +179,9 @@ function scmToolkitKeepUsageFresh(refetch) {
             }
             const degrees = (100 - percent) * 3.6;
             // An embedded Codex webview may not expose the VS Code theme token.
-            // Preserve the theme override, but never silently revert to the normal text color.
+            // Use the configured hover accent; focusBorder is the normal green in this theme.
             const foreground = percent <= 10
-                ? 'var(--vscode-focusBorder, #ffb900)'
+                ? 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'
                 : 'currentColor';
             this.style.background =
                 `conic-gradient(from 0deg, color-mix(in srgb, currentColor 20%, transparent) 0 ${degrees}deg, ${foreground} ${degrees}deg 360deg)`;
