@@ -34,8 +34,7 @@ class BranchNamePackTests(unittest.TestCase):
         self.assertIn("trixie-lulamoon", mares)
         self.assertEqual(all_names.count("trixie-lulamoon"), 1)
         self.assertNotIn("trixie", all_names)
-        # IDW's Princess Trixie is a different character variant.
-        self.assertIn("princess-trixie", packs["idw-comics"]["names"])
+        self.assertNotIn("princess-trixie", all_names)
 
     def test_legacy_scrape_artifacts_resolve_to_real_pony_slugs(self):
         catalog = branch_names.load_catalog()
@@ -459,7 +458,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 295)
+        self.assertEqual(len(names), 294)
         for name in (
             "acacia-pie",
             "captain-hoofbeard",
@@ -491,8 +490,8 @@ class BranchNamePackTests(unittest.TestCase):
         self.assertIn("mr-kingpin", packs["g4-stallions"]["names"])
         self.assertIn("general-dauntless", idw_names)
         self.assertIn("princess-cadance", packs["g4-mares"]["names"])
-        # Only the G4 Princess Cadance entry is retained.
-        self.assertIn("princess-trixie", idw_names)
+        # Do not offer the alternate-universe Princess Trixie as a branch name.
+        self.assertNotIn("princess-trixie", idw_names)
 
     def test_installer_builder_uses_canonical_catalog(self):
         from pathlib import Path
