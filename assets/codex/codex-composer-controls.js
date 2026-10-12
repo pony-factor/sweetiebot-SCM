@@ -4,6 +4,20 @@
     globalThis.scmToolkitComposerControls = true;
     const style = document.createElement('style');
     style.textContent = `
+      :root[data-codex-window-type="extension"] [data-composer-body] [data-composer-input-layout],
+      :root[data-codex-window-type="extension"] [data-composer-body] [data-rich-text-layout] {
+        min-width: 0 !important; max-width: 100%; }
+      :root[data-codex-window-type="extension"] [data-composer-body] .ProseMirror,
+      :root[data-codex-window-type="extension"] [data-composer-body] .ProseMirror p {
+        white-space: pre-wrap !important; overflow-wrap: anywhere; }
+      :root[data-codex-window-type="extension"] [data-composer-body] [data-composer-input-layout="single-line"] {
+        height: auto !important; max-height: min(25dvh, 7lh); overflow-y: auto !important; }
+      :root[data-codex-window-type="extension"] [data-composer-body] [data-composer-input-layout="single-line"] > * {
+        height: auto !important; }
+      :root[data-codex-window-type="extension"] [data-composer-body] [class*="ComposerLayoutFooter_"][data-composer-layout="single-line"] > [class*="AdaptiveFooterInput_"] {
+        grid-column: 1 / -1; min-width: 0; }
+      :root[data-codex-window-type="extension"] [data-composer-body] div:has(> .scm-toolkit-codex-clipboard-button) {
+        gap: 4px !important; }
       button[data-composer-navigation-target="run-location"]:not(.scm-toolkit-inline-location) {
         visibility: hidden !important;
       }
