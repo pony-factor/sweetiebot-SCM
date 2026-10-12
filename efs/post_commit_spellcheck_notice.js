@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { renderSpellcheckDiff, spellcheckDiffFiles } = require('./spellcheck_diff');
@@ -11,6 +12,7 @@ const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
 const DEFAULT_EMAIL = '326443430+codex-pony[bot]@users.noreply.github.com';
 const NOREPLY_EMAIL = /^(?:[1-9]\d*\+)?[a-z\d-]+(?:\[bot\])?@users\.noreply\.github\.com$/i;
 const previews = [];
+const previewSessions = new Map();
 function takeSpellcheckPopup() { return previews.shift(); }
 
 const SHA = /^[a-f\d]{40,64}$/i;
@@ -97,6 +99,56 @@ async function gitDiff(cwd, args) {
   })).stdout;
 }
 
+function editablePreview(session, patch) {
+  session.edits = new Map();
+  const files = spellcheckDiffFiles(patch);
+  for (const file of files) {
+    if (!session.paths.includes(file.name)) continue;
+    for (const row of file.rows) {
+      if (!['add', 'context'].includes(row.kind)) continue;
+      const editId = randomUUID();
+      session.edits.set(editId, { file: file.name, line: row.newNumber - 1, expected: row.text });
+      row.editId = editId;
+    }
+  }
+  return { sessionId: session.id, title: session.title, html: renderSpellcheckDiff(patch, session.title), files };
+}
+
+async function saveSpellcheckEdit(vscode, sessionId, editId, text) {
+  const session = previewSessions.get(sessionId);
+  const edit = session?.edits.get(editId);
+  if (!edit || typeof text !== 'string' || text.length > 1024 * 1024 || text.includes('\0')) {
+    throw new Error('This spellcheck preview is no longer available.');
+  }
+  if (session.saving) throw new Error('Wait for the current spelling edit to finish saving.');
+  session.saving = true;
+  try {
+    const target = path.resolve(session.root, edit.file);
+    const root = await fs.realpath(session.root);
+    const actual = await fs.realpath(target);
+    const relative = path.relative(root, actual);
+    if (relative.startsWith('..' + path.sep) || relative === '..' || path.isAbsolute(relative)) {
+      throw new Error('The preview file is outside this repository.');
+    }
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
+    if (document.isDirty) throw new Error('Save the existing editor changes before editing this preview.');
+    if (edit.line >= document.lineCount || document.lineAt(edit.line).text !== edit.expected) {
+      throw new Error('This line changed since the preview opened. Reopen its diff before editing it.');
+    }
+    const replacement = text.replace(/\r\n|\r/g, '\n').replace(/\n/g, document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n');
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    workspaceEdit.replace(document.uri, document.lineAt(edit.line).range, replacement);
+    if (!await vscode.workspace.applyEdit(workspaceEdit)) throw new Error('Could not apply the spelling edit.');
+    if (!await document.save()) throw new Error('The spelling edit remains unsaved in the editor.');
+    const patch = await session.readDiff(session.root, [
+      'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...session.paths
+    ]);
+    return editablePreview(session, patch);
+  } finally { session.saving = false; }
+}
+
+function closeSpellcheckPopup(sessionId) { previewSessions.delete(sessionId); }
+
 async function showNotice(vscode, repository, notice, readDiff = gitDiff, readConfig = git) {
   const patch = await readDiff(notice.root, [
     'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...notice.paths
@@ -111,7 +163,9 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
     if (!repository.inputBox.value?.trim()) repository.inputBox.value = spellcheckMessage(notice.paths, email, notice.model, notice.title);
   }
 
-  previews.push({ title: notice.title || 'Spellcheck suggestions', html: renderSpellcheckDiff(patch, notice.title), files: spellcheckDiffFiles(patch) });
+  const session = {id: randomUUID(), root: notice.root, paths: notice.paths, title: notice.title || 'Spellchecks Performed', readDiff};
+  previewSessions.set(session.id, session);
+  previews.push(editablePreview(session, patch));
 
 }
 
@@ -119,6 +173,12 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
   extensionContext.subscriptions.push(vscode.commands.registerCommand(
     'sweetiebot.takeSpellcheckPopup', takeSpellcheckPopup
   ));
+  extensionContext.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.saveSpellcheckEdit', (sessionId, editId, text) =>
+      saveSpellcheckEdit(vscode, sessionId, editId, text)),
+    vscode.commands.registerCommand('sweetiebot.closeSpellcheckPopup', closeSpellcheckPopup),
+    {dispose() { previews.length = 0; previewSessions.clear(); }}
+  );
   const extension = vscode.extensions.getExtension('vscode.git');
   if (!extension) return;
   const gitExtension = await extension.activate();
@@ -150,6 +210,6 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
 }
 
 module.exports = {
-  takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
+  saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
   registerPostCommitSpellcheckNotice,
 };

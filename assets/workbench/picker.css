@@ -747,3 +747,25 @@
 
 
 .scm-toolkit-spellcheck-content .diff-line, .scm-toolkit-spellcheck-content .hunk { font: var(--vscode-editor-font-size, 12px)/1.6 var(--vscode-editor-font-family, monospace); tab-size: 4; }
+
+.scm-toolkit-spellcheck-content .editable { cursor: text; }
+.scm-toolkit-spellcheck-content .editable:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+.scm-toolkit-spellcheck-line-editor {
+    display: block;
+    width: 100%;
+    min-height: 1.6em;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    outline: 1px solid var(--vscode-focusBorder);
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    line-height: inherit;
+    resize: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.scm-toolkit-spellcheck-status { padding: 0 20px 8px; color: var(--vscode-descriptionForeground); }
+.scm-toolkit-spellcheck-status:empty { display: none; }
