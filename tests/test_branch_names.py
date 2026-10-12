@@ -25,6 +25,18 @@ class BranchNamePackTests(unittest.TestCase):
         ):
             self.assertNotIn(noisy, names)
 
+    def test_trixie_uses_full_name_as_canonical_branch_slug(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        mares = packs["g4-mares"]["names"]
+        all_names = [name for pack in catalog["packs"] for name in pack["names"]]
+
+        self.assertIn("trixie-lulamoon", mares)
+        self.assertEqual(all_names.count("trixie-lulamoon"), 1)
+        self.assertNotIn("trixie", all_names)
+        # IDW's Princess Trixie is a different character variant.
+        self.assertIn("princess-trixie", packs["idw-comics"]["names"])
+
     def test_legacy_scrape_artifacts_resolve_to_real_pony_slugs(self):
         catalog = branch_names.load_catalog()
         all_names = [n for pack in catalog["packs"] for n in pack["names"]]
