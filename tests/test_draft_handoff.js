@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const {createDraftHandoff} = require('../efs/draft_handoff');
 (async () => {
-  let writes = 0;
+  let writes = 0, closes = 0;
   const handoff = await createDraftHandoff(async uri => {
     writes++;
     const values = new URLSearchParams(uri.query);
@@ -12,11 +12,12 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
   });
   try {
     const url = handoff.origin + '/kefania-draft/11111111-2222-4333-8444-555555555555';
-    handoff.register('11111111-2222-4333-8444-555555555555', {pony:{slug:'bushel'}});
+    handoff.register('11111111-2222-4333-8444-555555555555', {pony:{slug:'bushel'},onClose:async()=>{closes++;}});
     const page = await fetch(url);
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Publish pull request/);
     assert.equal(writes,0,'Opening a draft must not publish it');
+    assert.equal((await fetch(url+'/close')).status,405,'Closing requires an explicit local POST');
     assert.equal((await fetch(url.replace(/555555555555$/, '666666666666'))).status,410);
     const post = (path, value) => fetch(url+path,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:JSON.stringify(value)});
     assert.equal((await post('/pony', {profile:'Bushel profile with a source.'})).status,200);
@@ -29,6 +30,7 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     const rejected = await fetch(url,{method:'POST',headers:{Origin:'https://chatgpt.com','Content-Type':'application/json'},body});
     assert.equal(rejected.status,403);
     assert.equal(writes,0);
+    assert.equal((await post('/close',{})).status,409,'Cannot close before publication');
     const result = await fetch(url,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body});
     assert.equal(result.status,200);
     assert.equal((await result.json()).number,2);
@@ -38,14 +40,18 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     state = await (await fetch(url+'/state')).json();
     assert.equal(state.profile,'Bushel profile with a source.');
     assert.equal(state.result.number,2);
+    assert.equal((await post('/close',{})).status,200);
+    assert.equal(closes,1,'Closing the confirmation never publishes again');
     const automaticId='22222222-2222-4333-8444-555555555555';
-    handoff.register(automaticId,{pony:{slug:'maud-pie'},autoPublish:true});
+    handoff.register(automaticId,{pony:{slug:'maud-pie'},autoPublish:true,onClose:async()=>{closes++;}});
     const automaticUrl=handoff.origin+'/kefania-draft/'+automaticId;
     await fetch(automaticUrl+'/draft',{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body});
     const automaticState=await (await fetch(automaticUrl+'/state')).json();
     assert.equal(automaticState.result.number,2,'Auto-publish creates the PR without a confirmation POST');
     assert.equal(automaticState.profile,undefined,'Auto-publish never waits for pony research');
     assert.equal(writes,2);
-    console.log('Local browser draft handoff checks passed.');
+    assert.equal((await fetch(automaticUrl+'/close',{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'})).status,200);
+    assert.equal(closes,2,'Auto-published PR can close before pony research finishes');
+    console.log('Local browser draft handoff and close checks passed.');
   } finally {handoff.dispose();}
 })().catch(error => {console.error(error);process.exitCode=1;});

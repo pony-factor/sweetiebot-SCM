@@ -306,10 +306,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       try { workflows.push([kind, create()]); }
       catch (error) { localHandoff.reportError(draftId, kind, error.message); }
     };
+    let closeConfirmation;
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async kind => {
+    localHandoff.register(draftId, { pony, onClose: async () => {
+      if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
+      await closeConfirmation();
+    }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async kind => {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();
@@ -334,7 +338,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
-      await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
+      const confirmationWindow = await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
+      closeConfirmation = confirmationWindow.close;
       for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {
