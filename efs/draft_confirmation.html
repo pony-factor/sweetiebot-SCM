@@ -44,7 +44,33 @@ let lastProfile, lastBody;
 let imageSources=[],currentImage=-1,focusBeforeLightbox;
 const lightbox=el('image-lightbox');
 function safeLink(url){try{const value=new URL(url);return ['https:','http:'].includes(value.protocol)&&!value.username&&!value.password?value.href:null}catch{return null}}
-function inline(parent,text){const pattern=/(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\n]+)\*|(?<!\w)_([^_\n]+)_(?!\w)|https?:\/\/[^\s<>]+)/g;let start=0;for(const match of text.matchAll(pattern)){parent.append(document.createTextNode(text.slice(start,match.index)));const url=match[3]||(/^https?:/.test(match[0])?match[0]:null);let node;if(url&&safeLink(url)){node=document.createElement('a');node.href=safeLink(url);node.target='_blank';node.rel='noopener noreferrer';node.textContent=match[2]||url}else if(match[4]||match[5]||match[6]||match[7]){node=document.createElement(match[4]?'strong':match[5]?'code':'em');node.textContent=match[4]||match[5]||match[6]||match[7]}else node=document.createTextNode(match[0]);parent.append(node);start=match.index+match[0].length}parent.append(document.createTextNode(text.slice(start)))}
+function inline(parent,text){
+  // Recurse through emphasis so source links within italic or bold copy stay clickable.
+  // Generated research may separate a Markdown link label and URL with whitespace.
+  const pattern=/(\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\n]+)\*|(?<!\w)_([^_\n]+)_(?!\w)|https?:\/\/[^\s<>]+)/g;
+  let start=0;
+  for(const match of text.matchAll(pattern)){
+    parent.append(document.createTextNode(text.slice(start,match.index)));
+    const url=match[3]||(/^https?:/.test(match[0])?match[0]:null);
+    const safe=url&&safeLink(url);
+    let node;
+    if(safe){
+      node=document.createElement('a');
+      node.href=safe;
+      node.target='_blank';
+      node.rel='noopener noreferrer';
+      node.textContent=match[2]||url;
+    }else if(match[4]||match[5]||match[6]||match[7]){
+      node=document.createElement(match[4]?'strong':match[5]?'code':'em');
+      const value=match[4]||match[5]||match[6]||match[7];
+      if(match[5])node.textContent=value;
+      else inline(node,value);
+    }else node=document.createTextNode(match[0]);
+    parent.append(node);
+    start=match.index+match[0].length;
+  }
+  parent.append(document.createTextNode(text.slice(start)));
+}
 function renderMarkdown(target,markdown){target.replaceChildren();let paragraph=[],list,code;const flush=()=>{if(paragraph.length){const p=document.createElement('p');inline(p,paragraph.join(' '));target.append(p);paragraph=[]}list=undefined};for(const line of markdown.split('\n')){if(/^\s*```/.test(line)){flush();if(code){target.append(code);code=undefined}else code=document.createElement('pre');continue}if(code){code.append(document.createTextNode(line+'\n'));continue}if(!line.trim()){flush();continue}const heading=/^#{1,6}\s+(.+)$/.exec(line),item=/^\s*(?:[-*]|\d+\.)\s+(.+)$/.exec(line);if(heading){flush();const h=document.createElement('h3');inline(h,heading[1]);target.append(h)}else if(item){if(paragraph.length)flush();if(!list){list=document.createElement('ul');target.append(list)}const li=document.createElement('li');inline(li,item[1]);list.append(li)}else{list=undefined;paragraph.push(line)}}flush();if(code)target.append(code)}
 
 function showImage(index){
