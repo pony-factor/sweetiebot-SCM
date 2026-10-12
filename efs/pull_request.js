@@ -280,9 +280,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
-    const branch = repository.state.HEAD?.name;
-    if (!branch || branch === options.base) throw new Error('Select a branch other than the pull-request base.');
-    if (branch !== options.branch) throw new Error('The active branch changed; select the branch for the pull request again.');
+    // The picker captured this branch at click time. Checkout can change while
+    // the read-only GitHub preflight or independent browser drafting continues.
+    // Never retarget publication to the current worktree HEAD.
+    const branch = options?.branch;
+    if (typeof branch !== 'string' || !branch || branch === options.base) {
+      throw new Error('Select a branch other than the pull-request base.');
+    }
 
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
