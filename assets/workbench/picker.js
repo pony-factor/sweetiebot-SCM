@@ -799,7 +799,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                 if (previousFocus?.isConnected) previousFocus.focus();
             }, { once: true });
             dialog.append(close, content);
-            doc.body.append(dialog);
+            (doc.querySelector?.('.monaco-workbench') || doc.body).append(dialog);
             popup = dialog;
             dialog.showModal();
             close.focus();

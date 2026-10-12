@@ -704,8 +704,8 @@
     padding: 0;
     border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
     border-radius: 8px;
-    color: var(--vscode-editor-foreground);
-    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground, #d4d4d4);
+    background: var(--vscode-editor-background, #1e1e1e);
     box-shadow: 0 8px 32px var(--vscode-widget-shadow, #0008);
     overflow: hidden;
 }
@@ -745,3 +745,5 @@
 .scm-toolkit-spellcheck-content .hunk{background:var(--vscode-diffEditor-diagonalFill,transparent);color:var(--vscode-textLink-foreground);padding:4px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .scm-toolkit-spellcheck-content .meta{color:var(--vscode-descriptionForeground);padding:0 12px;font-style:italic}
 
+
+.scm-toolkit-spellcheck-content .diff-line, .scm-toolkit-spellcheck-content .hunk { font: var(--vscode-editor-font-size, 12px)/1.6 var(--vscode-editor-font-family, monospace); tab-size: 4; }
