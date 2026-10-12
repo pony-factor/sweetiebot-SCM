@@ -1103,6 +1103,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let currentRepositoryArgument;
     let currentRepositoryUri;
     let currentDefaultBranch;
+    let currentBranchRevision;
+    let pullRequestEligibilityKey;
+    let pullRequestEligibility;
     let repositoryResolveToken = 0;
     let currentInput;
     let pending = false;
@@ -1358,12 +1361,44 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || !currentDefaultBranch
             || !currentRepositoryUri;
 
+        const key = [currentRepositoryUri?.toString(), branch, currentDefaultBranch,
+            currentBranchRevision, settings.remote].join('|');
+        if (!unavailable && key !== pullRequestEligibilityKey) {
+            pullRequestEligibilityKey = key;
+            pullRequestEligibility = undefined;
+            void commands.executeCommand('sweetiebot.pullRequestEligibility', currentRepositoryUri, {
+                branch,
+                base: currentDefaultBranch,
+                remote: settings.remote,
+            }).then(result => {
+                if (pullRequestEligibilityKey !== key) return;
+                pullRequestEligibility = result;
+                refreshPullRequest();
+            }).catch(error => {
+                if (pullRequestEligibilityKey !== key) return;
+                pullRequestEligibility = { allowed: false, reason: 'unavailable',
+                    message: error.message || String(error) };
+                refreshPullRequest();
+            });
+        }
+
         pullRequestButton.hidden = !settings.mcpPullRequest;
-        pullRequestButton.disabled =
-            pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
+        pullRequestButton.disabled = pending || deletingBranch || creatingPullRequest
+            || creatingPonyBranch || unavailable || pullRequestEligibility?.allowed !== true;
+        const previous = pullRequestEligibility?.pullRequest;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
-            : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
+            : !pullRequestEligibility
+                ? 'Checking existing PRs and starting base…'
+                : pullRequestEligibility.reason === 'open-pr'
+                    ? `PR #${previous?.number ?? '?'} is already open; new commits appear there automatically`
+                    : pullRequestEligibility.reason === 'same-starting-base'
+                        ? `PR #${previous?.number ?? '?'} already used this starting base; branch must start from a different commit`
+                        : pullRequestEligibility.reason === 'no-commits'
+                            ? 'No published commits ahead of the base'
+                            : pullRequestEligibility.reason === 'unavailable'
+                                ? `Cannot verify PR eligibility: ${pullRequestEligibility.message}`
+                                : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -1381,6 +1416,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
+            || pullRequestEligibility?.allowed !== true
         ) return;
 
         creatingPullRequest = true;
@@ -1750,6 +1786,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
             currentDefaultBranch = undefined;
+            currentBranchRevision = undefined;
+            pullRequestEligibilityKey = undefined;
+            pullRequestEligibility = undefined;
             const resolutionToken = ++repositoryResolveToken;
             currentInput = undefined;
             homeButton.hidden = true;
@@ -1923,6 +1962,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 currentBranch = historyItemRef?.id?.startsWith('refs/heads/')
                     ? historyItemRef.name
                     : undefined;
+                currentBranchRevision = historyItemRef?.revision;
                 if (previousBranch && currentBranch && previousBranch !== currentBranch) {
                     void maybePublishBranch(currentBranch);
                 }

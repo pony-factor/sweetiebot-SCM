@@ -173,6 +173,7 @@ async function run() {
   }
 
   let callback;
+  let eligibilityCallback;
   let uriHandler;
   let browserAvailable = true;
   let codexSnapshot;
@@ -194,6 +195,7 @@ async function run() {
   const ponyLookups = [];
   let publicationFailure;
   let existingPullRequest;
+  let repeatedStartingBase = false;
   const informationMessages = [];
   const vscode = {
     workspace: { getConfiguration(section) {
@@ -221,8 +223,9 @@ async function run() {
     },
     commands: {
       registerCommand(id, handler) {
-        assert.equal(id, 'sweetiebot.openPullRequestChat');
-        callback = handler;
+        if (id === 'sweetiebot.openPullRequestChat') callback = handler;
+        else if (id === 'sweetiebot.pullRequestEligibility') eligibilityCallback = handler;
+        else assert.fail('Unexpected command: ' + id);
         return { dispose() {} };
       },
       async getCommands() {
@@ -243,6 +246,12 @@ async function run() {
       if (input.contextOnly) {
         if (contextFailure) throw contextFailure;
         return { aheadBy, headSha: 'a'.repeat(40), files: [],
+          newPullRequest: existingPullRequest
+            ? { allowed: false, reason: 'open-pr', pullRequest: existingPullRequest }
+            : repeatedStartingBase
+              ? { allowed: false, reason: 'same-starting-base',
+                pullRequest: { number: 41, url: 'https://github.com/owner/repo/pull/41' } }
+              : { allowed: aheadBy > 0, reason: aheadBy > 0 ? 'new-starting-base' : 'no-commits' },
           ...(existingPullRequest ? { existingPullRequest } : {}) };
       }
       if (publicationFailure) throw publicationFailure;
@@ -310,6 +319,10 @@ async function run() {
   await uriHandler.handleUri({ path: draftPath, query: 'title=Replay&body=Replay' });
   assert.equal(calls.length, 0, 'A consumed draft must never publish twice');
 
+  assert.equal((await eligibilityCallback(uri, {
+    branch: 'draft', base: 'main', remote: 'origin',
+  })).allowed, true, 'The button permits a new starting base');
+
   // Repeated clicks must reuse an open PR for the head even if its base differs.
   existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', head: 'draft', base: 'release' };
   calls.length = 0;
@@ -326,6 +339,18 @@ async function run() {
     'Existing PR must open even without the Integrated Browser');
   browserAvailable = true;
   existingPullRequest = undefined;
+  repeatedStartingBase = true;
+  calls.length = 0;
+  assert.equal((await eligibilityCallback(uri, {
+    branch: 'draft', base: 'main', remote: 'origin',
+  })).reason, 'same-starting-base');
+  const skippedRepeatedBase = await callback(uri, {
+    branch: 'draft', remote: 'origin', base: 'main', source: chatSource,
+  });
+  assert.equal(skippedRepeatedBase.reason, 'same-starting-base');
+  assert.equal(calls.length, 0, 'A previously used starting base must not open ChatGPT');
+  assert.match(informationMessages.at(-1), /already used the starting base/);
+  repeatedStartingBase = false;
 
   // An unmodified published branch must not launch a PR draft, pony research,
   // or even the confirmation window. Existing PR reuse is tested above.

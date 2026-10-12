@@ -196,6 +196,32 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const pendingDrafts = new Map();
   context.subscriptions.push({ dispose() { pendingDrafts.clear(); } });
 
+  // This is a read-only preflight for the New PR button. The backend compares
+  // the current fork point with the original starting base of prior PRs.
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.pullRequestEligibility', async (uri, options) => {
+    const extension = vscode.extensions.getExtension('vscode.git');
+    if (!extension) throw new Error('The VS Code Git extension is unavailable.');
+    const git = await extension.activate();
+    const root = vscode.Uri.from(uri?.rootUri ?? uri);
+    const repository = git.getAPI(1).getRepository(root);
+    if (!repository) throw new Error('The selected Git repository is unavailable.');
+    await repository.status();
+    if (repository.state.HEAD?.name !== options.branch || options.branch === options.base) {
+      throw new Error('The selected branch changed during the PR eligibility check.');
+    }
+    const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
+    const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
+    if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    const evidence = await run(repository.rootUri.fsPath, {
+      repository: repositoryUrl.slice('https://github.com/'.length),
+      head: options.branch, base: options.base, contextOnly: true,
+    }, { botOnly: true });
+    if (typeof evidence?.newPullRequest?.allowed !== 'boolean') {
+      throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
+    }
+    return evidence.newPullRequest;
+  }));
+
   if (typeof vscode.window.registerUriHandler === 'function') {
     const uriHandler = {
       async handleUri(uri) {
@@ -286,6 +312,18 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
       return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
     }
+    if (evidence && typeof evidence.newPullRequest?.allowed !== 'boolean') {
+      throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
+    }
+    // The historical fork point must differ from previous PRs for this head,
+    // even if the prior PR was merged months ago and new commits were added.
+    if (evidence?.newPullRequest?.reason === 'same-starting-base') {
+      const previous = evidence.newPullRequest.pullRequest;
+      await vscode.window.showInformationMessage(
+        `PR #${previous?.number ?? '?'} already used the starting base for ${branch}. Create a new branch from a different base commit.`
+      );
+      return { skipped: true, reason: 'same-starting-base', repositoryUrl };
+    }
     // Kefania's published comparison is authoritative: an empty branch cannot
     // produce a PR, so do not open either the draft or independent pony chat.
     if (evidence?.aheadBy === 0) {
@@ -293,6 +331,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         `No published commits on ${branch} ahead of ${options.base}. Commit and push changes before creating a pull request.`
       );
       return { skipped: true, reason: 'no-commits', repositoryUrl };
+    }
+    if (evidence && evidence.newPullRequest?.allowed !== true) {
+      throw new Error('Kefania could not verify that this branch is eligible for a new PR.');
     }
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
       const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
