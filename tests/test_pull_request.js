@@ -494,6 +494,7 @@ async function run() {
     deletingBranch: false,
     creatingPullRequest: false,
     creatingPonyBranch: false,
+    pullRequestEligibility: { allowed: true, reason: 'new-starting-base' },
     scmToolkitChatgptConversationSource() { return pickerSource; },
     recorded,
     async scmToolkitRecordPullRequestSource(_doc, _mcpService, _settings, launch, branch, base, source) {
@@ -519,6 +520,11 @@ async function run() {
   await Promise.resolve();
   assert.equal(sandbox.creatingPullRequest, false);
   assert.equal(sandbox.recorded.length, 0);
+  sandbox.pullRequestEligibility = { allowed: false, reason: 'same-starting-base' };
+  const beforeDisabledClick = sandbox.recorded.length;
+  await click({ stopPropagation() {} });
+  assert.equal(sandbox.recorded.length, beforeDisabledClick, 'Disabled New PR must not invoke the drafter');
+  sandbox.pullRequestEligibility = { allowed: true, reason: 'new-starting-base' };
   sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
   let fallbackLaunches = 0;
   sandbox.commands.executeCommand = async (id) => {
