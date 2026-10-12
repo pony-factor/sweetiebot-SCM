@@ -13,6 +13,7 @@ Current features:
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
+- right-click the SCM branch selector to delete an empty topic branch locally and on origin (when published), with confirmation, clean-tree checks, ancestry verification, and an exact-SHA remote lease
 - optionally create a branch from each repository's default branch using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline code completion
 - optionally show a commit button that appends the Codex co-author trailer

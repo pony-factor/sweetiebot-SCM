@@ -571,6 +571,115 @@ async function deleteBranch(repository, { branch, defaultBranch, remote }, clean
   return branch;
 }
 
+/**
+ * Delete a topic with no commits of its own, including the matching origin
+ * branch when published. Do not reuse merged-PR cleanup for this: an empty
+ * branch has no PR to validate. All remote deletion is SHA-leased.
+ */
+async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = 'origin' }) {
+  if (!branch || !defaultBranch || branch === defaultBranch) {
+    throw new Error('Select a non-default branch to delete.');
+  }
+  if (!repository.rootUri?.fsPath) throw new Error('A local Git repository is required.');
+  const root = repository.rootUri.fsPath;
+  const git = async (...args) => (await promisify(execFile)('git', args, {
+    cwd: root, timeout: 120000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  const localRef = `refs/heads/${branch}`;
+  const remoteRef = `refs/heads/${branch}`;
+  const verifyCurrent = async () => {
+    await repository.status();
+    if (repository.state.HEAD?.name !== branch) {
+      throw new Error('The active branch changed; no branch was deleted.');
+    }
+  };
+  await verifyCurrent();
+  if (commitInProgress(repository)) throw new Error('Finish the current commit before deleting a branch.');
+  if (repository.state.mergeChanges?.length || await git('status', '--porcelain')) {
+    throw new Error('Commit, stash, or discard working-tree changes before deleting an empty branch.');
+  }
+  const expected = await git('rev-parse', '--verify', localRef);
+  const home = await repository.getBranch(defaultBranch);
+  if (!home?.upstream?.name || home.upstream.remote !== remote) {
+    throw new Error(`${defaultBranch} must track a branch on ${remote} before deleting an empty branch.`);
+  }
+
+  // The actual remote must be reachable; remote-tracking refs alone may be stale.
+  await git('fetch', '--prune', '--no-tags', remote);
+  const baseRef = `refs/remotes/${remote}/${home.upstream.name}`;
+  await git('rev-parse', '--verify', baseRef);
+  if (await git('rev-parse', '--verify', localRef) !== expected) {
+    throw new Error('The branch advanced while checking it; deletion was cancelled.');
+  }
+  try {
+    await git('merge-base', '--is-ancestor', expected, baseRef);
+  } catch (error) {
+    if (error.code === 1) {
+      throw new Error(`Cannot delete ${branch}: it contains commits absent from ${remote}/${home.upstream.name}.`);
+    }
+    throw error;
+  }
+  const refs = await git('ls-remote', '--heads', remote, remoteRef);
+  const remoteTip = refs.split('\n').filter(Boolean)
+    .map(line => line.split('\t'))
+    .find(parts => parts.length === 2 && parts[1] === remoteRef)?.[0] || null;
+  if (refs.trim() && !remoteTip) throw new Error('Could not verify the remote branch.');
+  if (remoteTip && remoteTip !== expected) {
+    throw new Error(`Cannot delete ${remote}/${branch}: its tip differs from the local branch.`);
+  }
+
+  // Fast-forward the inactive default ref when possible. If the local
+  // default is already ahead of origin, preserve those unpublished commits.
+  await verifyCurrent();
+  const localBaseRef = `refs/heads/${defaultBranch}`;
+  let canFastForward;
+  try {
+    await git('merge-base', '--is-ancestor', localBaseRef, baseRef);
+    canFastForward = true;
+  } catch (error) {
+    if (error.code !== 1) throw error;
+    canFastForward = false;
+  }
+  if (canFastForward) {
+    await repository.fetch({ remote: '.', ref: `${baseRef}:${localBaseRef}` });
+  } else {
+    try {
+      await git('merge-base', '--is-ancestor', expected, localBaseRef);
+    } catch (error) {
+      if (error.code === 1) {
+        throw new Error('The local default branch diverges from the empty branch; deletion was cancelled.');
+      }
+      throw error;
+    }
+  }
+  await verifyCurrent();
+  if (await git('rev-parse', '--verify', localRef) !== expected
+      || await git('status', '--porcelain')) {
+    throw new Error('The branch or working tree changed during verification; deletion was cancelled.');
+  }
+  await repository.checkout(defaultBranch);
+  await repository.status();
+  if (repository.state.HEAD?.name !== defaultBranch) {
+    throw new Error('Could not safely switch to the default branch; deletion was cancelled.');
+  }
+  if (await git('rev-parse', '--verify', localRef) !== expected) {
+    throw new Error('The branch advanced after checkout; deletion was cancelled.');
+  }
+
+  // Git compares the exact expected remote tip before accepting the deletion.
+  // Never delete a newer remote branch even if another user pushes meanwhile.
+  if (remoteTip) {
+    await git('push', `--force-with-lease=${remoteRef}:${remoteTip}`,
+      remote, `:${remoteRef}`);
+  }
+  if (await git('rev-parse', '--verify', localRef) !== expected) {
+    throw new Error('The local branch advanced during remote deletion and was preserved.');
+  }
+  await repository.deleteBranch(branch, false);
+  return { branch, remoteDeleted: Boolean(remoteTip) };
+}
+
 async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash' }) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot sync ${defaultBranch} into itself.`);
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
@@ -686,6 +795,26 @@ function registerBranchCommands(vscode, context) {
     }));
   }
 
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.deleteEmptyBranch', async (uri, options = {}) => {
+    try {
+      const repository = await resolveRepository(uri);
+      const defaultBranch = await resolveDefaultBranch(repository, options.remote || 'origin');
+      const branch = options.branch;
+      if (!branch || branch === defaultBranch) throw new Error('Select a non-default branch to delete.');
+      const choice = await vscode.window.showWarningMessage(
+        `Delete empty branch "${branch}"?`,
+        { modal: true, detail: `This deletes the local branch and, if present, ${options.remote || 'origin'}/${branch}. A branch with unique commits or unmatched remote changes is protected.` },
+        'Delete Empty Branch'
+      );
+      if (choice !== 'Delete Empty Branch') return false;
+      return await queueRepositoryOperation(repository, () => deleteEmptyBranch(repository, {
+        branch, defaultBranch, remote: options.remote || 'origin'
+      }));
+    } catch (error) {
+      throw explainGitError(error);
+    }
+  }));
+
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.resolveDefaultBranch', async (uri, options) => {
       try {
@@ -773,6 +902,7 @@ module.exports = {
   createBranch,
   publishBranch,
   deleteBranch,
+  deleteEmptyBranch,
   syncBranch,
   registerBranchCommands,
   autoPullClean,

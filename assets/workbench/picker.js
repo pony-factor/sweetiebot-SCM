@@ -1682,7 +1682,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 
-    const deleteBranch = async event => {
+    const deleteBranch = async (event, onlyEmpty = false) => {
         event.stopPropagation();
 
         const branch = currentBranch;
@@ -1711,11 +1711,23 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
-                branch,
-                defaultBranch: currentDefaultBranch,
-                remote: settings.remote,
-            });
+            let result;
+            if (onlyEmpty) {
+                result = await commands.executeCommand('sweetiebot.deleteEmptyBranch', repositoryArgument, {
+                    branch,
+                    defaultBranch: currentDefaultBranch,
+                    remote: settings.remote,
+                });
+            } else {
+                await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
+                    branch,
+                    defaultBranch: currentDefaultBranch,
+                    remote: settings.remote,
+                });
+            }
+            if (onlyEmpty && result) {
+                notifications.info(`Deleted empty branch ${branch}${result.remoteDeleted ? ' locally and on ' + settings.remote : ' locally'}.`);
+            }
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1724,6 +1736,51 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             refreshBranchControls();
         }
     };
+
+    // Right-clicking the branch selector exposes safe deletion of an empty
+    // branch. This does not change the existing trash-button/merged-PR path.
+    let branchContextMenu;
+    const closeBranchContextMenu = () => {
+        branchContextMenu?.remove();
+        branchContextMenu = undefined;
+    };
+    const showBranchContextMenu = event => {
+        if (
+            !settings.branchCleanup || !currentBranch || !currentRepositoryUri
+            || !currentDefaultBranch || currentBranch === currentDefaultBranch
+            || pending || deletingBranch || creatingPullRequest || creatingPonyBranch
+        ) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeBranchContextMenu();
+        const menu = doc.createElement('div');
+        menu.className = 'scm-toolkit-branch-context-menu';
+        menu.setAttribute('role', 'menu');
+        const action = doc.createElement('button');
+        action.type = 'button';
+        action.setAttribute('role', 'menuitem');
+        action.textContent = `Delete empty branch (local + ${settings.remote})…`;
+        action.addEventListener('click', click => {
+            closeBranchContextMenu();
+            void deleteBranch(click, true);
+        });
+        menu.append(action);
+        (doc.body || doc.documentElement).append(menu);
+        const width = 260;
+        menu.style.left = `${Math.max(0, Math.min(event.clientX, doc.defaultView.innerWidth - width))}px`;
+        menu.style.top = `${Math.max(0, Math.min(event.clientY, doc.defaultView.innerHeight - menu.offsetHeight))}px`;
+        branchContextMenu = menu;
+        action.focus();
+    };
+    const dismissBranchContextMenu = event => {
+        if (branchContextMenu && !branchContextMenu.contains(event.target)) closeBranchContextMenu();
+    };
+    const escapeBranchContextMenu = event => {
+        if (event.key === 'Escape') closeBranchContextMenu();
+    };
+    doc.addEventListener('pointerdown', dismissBranchContextMenu, true);
+    doc.addEventListener('keydown', escapeBranchContextMenu);
+    branchButton.addEventListener('contextmenu', showBranchContextMenu);
 
     const openSettings = async event => {
         event.stopPropagation();
@@ -1747,6 +1804,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         dispose() {
             homeButton.removeEventListener('click', returnHome);
             branchButton.removeEventListener('click', openBranchPicker);
+            branchButton.removeEventListener('contextmenu', showBranchContextMenu);
+            doc.removeEventListener('pointerdown', dismissBranchContextMenu, true);
+            doc.removeEventListener('keydown', escapeBranchContextMenu);
+            closeBranchContextMenu();
             syncButton.removeEventListener('click', syncBranch);
             deleteButton.removeEventListener('click', deleteBranch);
             pushCheckbox.removeEventListener('change', changePush);
