@@ -120,6 +120,9 @@ async function main() {
     };
     const rowVscode = {
       ...vscode,
+      // Keep this isolated test view from replacing the main view's listeners.
+      window: { ...vscode.window, onDidChangeWindowState: () => ({ dispose() {} }) },
+      workspace: { ...vscode.workspace, onDidChangeConfiguration: () => ({ dispose() {} }) },
       commands: {
         registerCommand(id, fn) {
           rowCommands.set(id, fn);
@@ -135,7 +138,9 @@ async function main() {
         }
       }
     };
-    installPullRequestRefresh(rowVscode, { ...view, visible: false }, rowOwner);
+    installPullRequestRefresh(rowVscode, {
+      visible: false, onDidChangeVisibility: () => ({ dispose() {} })
+    }, rowOwner);
     const clicked = { pullRequestModel: { url, number: 12 } };
     const another = { pullRequestModel: { url: 'https://github.com/owner/repo/pull/13', number: 13 } };
     const clickMerge = rowCommands.get('sweetiebot.squashMergeTreePullRequest');
@@ -167,7 +172,6 @@ async function main() {
     }
     assert.equal(dispatched.length, 4);
     for (const subscription of rowSubscriptions) subscription.dispose();
-    assert.equal(rowOwner.getTreeItem, rowOwner.getTreeItem);
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
       'sweetiebot.squashMergeTreePullRequest');
