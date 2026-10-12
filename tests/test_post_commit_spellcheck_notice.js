@@ -293,3 +293,68 @@ test('Accept and Revert reject changed previews, dirty editors, and staged chang
     closeSpellcheckPopup(preview.sessionId);
   }
 });
+
+test('Accept honors the Commit and push checkbox, while Revert never pushes', async () => {
+  for (const enabled of [false, true]) {
+    for (const action of ['accept', 'revert']) {
+      const f = fixture({draft: 'Preserve my draft'});
+      const pushes = [];
+      const commands = [];
+      f.repo.push = async () => { pushes.push('pushed'); };
+      const readDiff = async (_root, args) => args.includes('--cached') ? '' : patch;
+      const readGit = async (root, args) => args[0] === 'symbolic-ref'
+        ? 'refs/heads/cherry-jubilee' : f.git(root, args);
+      await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, readDiff, readGit);
+      const preview = takeSpellcheckPopup();
+      const vscode = {
+        Uri: {file: fsPath => ({fsPath})},
+        workspace: {
+          textDocuments: [],
+          getConfiguration(section, resource) {
+            assert.equal(section, 'git');
+            assert.equal(resource.fsPath, '/repo');
+            return {get: name => {
+              assert.equal(name, 'postCommitCommand');
+              return enabled ? 'push' : 'none';
+            }};
+          }
+        },
+      };
+      const result = await finishSpellcheckPreview(vscode, preview.sessionId, action, preview.message,
+        async (_root, args) => { commands.push(args); });
+      assert.equal(commands.length, 1);
+      assert.equal(pushes.length, enabled && action === 'accept' ? 1 : 0);
+      assert.equal(result.pushed, enabled && action === 'accept' ? true : undefined);
+      assert.equal(f.repo.inputBox.value, 'Preserve my draft');
+    }
+  }
+});
+
+test('Failed push preserves the accepted commit and reports the failure without retrying Accept', async () => {
+  for (const switchBranch of [false, true]) {
+    const f = fixture();
+    let committed = false;
+    let pushed = false;
+    const messages = [];
+    f.repo.push = async () => { pushed = true; throw new Error('upstream rejected'); };
+    const readGit = async (root, args) => args[0] === 'symbolic-ref'
+      ? (committed && switchBranch ? 'refs/heads/other' : 'refs/heads/cherry-jubilee')
+      : f.git(root, args);
+    await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']},
+      async (_root, args) => args.includes('--cached') ? '' : patch, readGit);
+    const preview = takeSpellcheckPopup();
+    const vscode = {
+      Uri: {file: fsPath => ({fsPath})},
+      workspace: {textDocuments: [], getConfiguration: () => ({get: () => 'push'})},
+      window: {showErrorMessage(message) { messages.push(message); }}
+    };
+    const result = await finishSpellcheckPreview(vscode, preview.sessionId, 'accept', preview.message,
+      async (_root, args) => { assert.equal(args[1], 'commit'); committed = true; });
+    assert.equal(committed, true);
+    assert.equal(pushed, !switchBranch);
+    assert.equal(result.pushed, false);
+    assert.match(messages[0], /committed locally, but could not be pushed/);
+    assert.match(messages[0], switchBranch ? /active branch changed/ : /upstream rejected/);
+    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', preview.message), /no longer available/);
+  }
+});
