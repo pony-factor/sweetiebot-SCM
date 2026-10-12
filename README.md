@@ -668,6 +668,12 @@ The installer extends the modifier state VS Code already uses for its native
 close-others tab action. Normal clicks and normal ⌘-click tab selection are otherwise
 left to VS Code.
 
+### Moving Integrated Browser tabs between VS Code windows
+
+Sweetiebot applies a reversible, guarded workaround when moving an **Integrated Browser** tab to another VS Code workspace window. VS Code can deserialize a transferred browser tab with an ID still owned by the source window. The destination then fails to resolve the editor with `Browser view … closed during creation`. When the destination has no registered view for that ID, Sweetiebot opens a new view using the transferred tab's saved URL and title rather than attaching to a view owned by a different window. Moving within one workspace, including floating auxiliary windows, retains the original view identity.
+
+This is **reopening, not live Electron view migration**. Unsent form input, in-memory page state, navigation history, DevTools state, and other transient data may not transfer. Copy important unsent text first. The workaround does not address screenshot-capture failures or unrelated browser crashes, and it applies only to supported VS Code builds. Rerun Sweetiebot's repair after an update and reload the windows.
+
 ### Integrated Browser ChatGPT home
 
 When `browser-chatgpt-home` is enabled, a blank Integrated Browser tab starts at

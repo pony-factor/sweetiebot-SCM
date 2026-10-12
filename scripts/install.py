@@ -280,6 +280,44 @@ def browser_globe_new_tab_edits(js):
     return [(original, replacement)]
 
 
+
+def browser_cross_window_reopen_edits(js):
+    """Reopen foreign browser editor IDs instead of attaching to their native view."""
+    anchor = "closed during creation"
+    if anchor not in js:
+        return []  # Older builds without the native Integrated Browser.
+
+    ident = r"[A-Za-z_$][\w$]*"
+    pattern = re.compile(
+        rf"getOrCreateLazy\((?P<data>{ident})\)"
+        rf"\{{return this\._getOrCreateLazy\((?P=data)\)\}}"
+    )
+    # Restrict the match to the service containing the browser-creation error,
+    # rather than rewriting another module's similarly named public method.
+    matches = [
+        match for match in pattern.finditer(js)
+        if 0 < js.find(anchor, match.end()) - match.end() < 12000
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Unsupported VS Code build: browser view window handoff does not match."
+        )
+
+    match = matches[0]
+    data = match.group("data")
+    original = match.group(0)
+    # The main process returns an existing browser view without emitting a
+    # creation event to a *different* workbench window that imported its ID.
+    # Keep locally registered views (also used by native auxiliary windows);
+    # otherwise reopen the saved URL under a fresh view ID in the target.
+    replacement = (
+        f"getOrCreateLazy({data}){{return this._getOrCreateLazy("
+        f"this._known.has({data}.id)?{data}:"
+        f"{{...{data},id:globalThis.crypto.randomUUID()}})}}"
+    )
+    return [(original, replacement)]
+
+
 def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     anchor = "Invalid browser view resource:"
     anchor_index = js.find(anchor)
@@ -403,6 +441,9 @@ def edits(js=None, settings=None):
 
     if js is not None and settings and settings.get("browserGlobeNewTab"):
         changes.extend(browser_globe_new_tab_edits(js))
+
+    if js is not None:
+        changes.extend(browser_cross_window_reopen_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))

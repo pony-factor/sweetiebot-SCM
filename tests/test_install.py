@@ -77,6 +77,18 @@ def workbench_fixture():
     )
 
 
+
+def browser_cross_window_fixture():
+    # Mimics the minified public API next to its model-creation exception.
+    return (
+        'class BrowserViewWorkbenchService{'
+        'getOrCreateLazy(e){return this._getOrCreateLazy(e)}'
+        '_getOrCreateLazy(e){'
+        'throw new Error("Browser view ID closed during creation")}'
+        '}'
+    )
+
+
 def browser_resolver_fixture():
     return (
         'throw new Error(`Invalid browser view resource: ${resource}`);'
@@ -405,6 +417,64 @@ class TransformTests(unittest.TestCase):
             install.browser_globe_new_tab_edits("unsupported")
         with self.assertRaisesRegex(ValueError, "browser globe action"):
             install.browser_globe_new_tab_edits(action + action)
+
+
+    def test_cross_window_browser_views_reopen_without_reusing_foreign_ids(self):
+        original = workbench_fixture() + browser_cross_window_fixture()
+        patched, css = install.transform(original, "base-css", settings=SETTINGS)
+        self.assertIn(
+            "getOrCreateLazy(e){return this._getOrCreateLazy("
+            "this._known.has(e.id)?e:{...e,id:globalThis.crypto.randomUUID()})}",
+            patched,
+        )
+        self.assertEqual(
+            install.transform(patched, css, remove=True, settings=SETTINGS),
+            (original, "base-css"),
+        )
+        self.assertEqual(
+            install.browser_cross_window_reopen_edits(workbench_fixture()), [],
+        )
+
+        with self.assertRaisesRegex(ValueError, "browser view window handoff"):
+            install.browser_cross_window_reopen_edits(
+                "Browser view ID closed during creation"
+            )
+        with self.assertRaisesRegex(ValueError, "browser view window handoff"):
+            install.browser_cross_window_reopen_edits(
+                browser_cross_window_fixture() * 2
+            )
+
+    def test_cross_window_browser_resolution_preserves_local_views(self):
+        import shutil
+        import subprocess
+
+        if not shutil.which("node"):
+            self.skipTest("Node.js is unavailable")
+        # Execute the generated JavaScript, testing copied URL/title and
+        # unchanged local view identity as well as the new destination ID.
+        snippet = (
+            'class ViewService{constructor(known){this._known=new Map(known);}'
+            'getOrCreateLazy(e){return this._getOrCreateLazy(e)}'
+            '_getOrCreateLazy(e){return e}'
+            '}'
+        )
+        patched = install.browser_cross_window_reopen_edits(
+            snippet + 'Browser view ID closed during creation'
+        )
+        self.assertEqual(len(patched), 1)
+        code = (snippet.replace(*patched[0])
+            + 'Object.defineProperty(globalThis,"crypto",{configurable:true,value:{randomUUID:()=>"fresh-id"}});'
+            + 'const v={id:"old-id",url:"https://example.com",title:"Page"};'
+            + 'const fresh=new ViewService().getOrCreateLazy(v);'
+            + 'const local=new ViewService([["old-id",{}]]).getOrCreateLazy(v);'
+            + 'if(fresh.id!=="fresh-id"||fresh.url!==v.url||fresh.title!==v.title'
+            + '||local!==v||v.id!=="old-id")process.exit(1);'
+        )
+        result = subprocess.run(
+            ["node", "-e", code], capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
     def test_chatgpt_browser_home_is_opt_in(self):
         self.assertFalse(install.DEFAULT_SETTINGS["browserChatgptHome"])
