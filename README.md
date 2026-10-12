@@ -347,6 +347,8 @@ Both normal and Codex-context generation read commit-writing preferences from `~
 
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
+When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
+
 ### Concurrent PDF OCR and commit generation
 
 On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 11434 do not occupy the commit worker's queue:
