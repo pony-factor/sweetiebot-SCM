@@ -237,7 +237,7 @@ async function main() {
     merged: true, number: 12, repo: 'owner/repo',
     pr: { ...open, state: 'MERGED', isCrossRepository: true }
   }));
-  await handler({ url, number: 12 });
+  assert.deepEqual(await handler({ url, number: 12 }), { state: 'merged' });
   assert.deepEqual(successNotices, ['PR #12 merged into main.']);
   assert.equal(progressOptions.length, 1);
   assert.equal(progressOptions[0].location, 10);
@@ -491,13 +491,13 @@ async function main() {
       pr: { ...open, state: 'MERGED', isCrossRepository: true, title: 'The merged PR' }
     };
   });
-  await closeHandler({ url, number: 12 });
+  assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'queued' });
   assert.equal(handlerClosed.length, 0);
   mergeState = 'cancelled';
-  await closeHandler({ url, number: 12 });
+  assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'cancelled' });
   assert.equal(handlerClosed.length, 0);
   mergeState = 'complete';
-  await closeHandler({ url, number: 12 });
+  assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'merged' });
   assert.deepEqual(handlerClosed, [handlerTab]);
   assert.deepEqual(handlerNotices, ['PR #12 queued for merge.', 'PR #12 merged into main.']);
   assert.deepEqual(handlerWarnings, []);
