@@ -4,18 +4,14 @@
     globalThis.scmToolkitComposerControls = true;
     const style = document.createElement('style');
     style.textContent = `
-      :root[data-codex-window-type="extension"] [data-composer-body] [data-composer-input-layout],
-      :root[data-codex-window-type="extension"] [data-composer-body] [data-rich-text-layout] {
-        min-width: 0 !important; max-width: 100%; }
-      :root[data-codex-window-type="extension"] [data-composer-body] .ProseMirror,
-      :root[data-codex-window-type="extension"] [data-composer-body] .ProseMirror p {
-        white-space: pre-wrap !important; overflow-wrap: anywhere; }
-      :root[data-codex-window-type="extension"] [data-composer-body] [data-composer-input-layout="single-line"] {
-        height: auto !important; max-height: min(25dvh, 7lh); overflow-y: auto !important; }
-      :root[data-codex-window-type="extension"] [data-composer-body] [data-composer-input-layout="single-line"] > * {
-        height: auto !important; }
-      :root[data-codex-window-type="extension"] [data-composer-body] [class*="ComposerLayoutFooter_"][data-composer-layout="single-line"] > [class*="AdaptiveFooterInput_"] {
-        grid-column: 1 / -1; min-width: 0; }
+      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer {
+        display: flex !important; flex-wrap: wrap; column-gap: 4px !important; row-gap: 4px; }
+      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > * {
+        flex: 0 0 auto; }
+      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > :last-child {
+        flex: 1 0 auto; min-width: max-content; }
+      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > [class*="AdaptiveFooterInput_"] {
+        flex-basis: 100%; order: -1; min-width: 0; }
       :root[data-codex-window-type="extension"] [data-composer-body] div:has(> .scm-toolkit-codex-clipboard-button) {
         gap: 4px !important; }
       button[data-composer-navigation-target="run-location"]:not(.scm-toolkit-inline-location) {
@@ -41,6 +37,12 @@
             }
             if (!composer || composer === document.body || composer === document.documentElement) return;
             const access = composer.querySelector('button[data-composer-navigation-target="permissions"]');
+            // Absolute positioning preserves React's menu ownership, but its
+            // width still needs a place in the native footer's layout.
+            const footer = access.closest('[class*="ComposerLayoutFooter_"]');
+            if (footer && !footer.classList.contains('scm-toolkit-composer-footer')) {
+                footer.classList.add('scm-toolkit-composer-footer');
+            }
             // The native utility rail clips its descendants. The inline button
             // sits outside those bounds, so every intervening wrapper must allow
             // painting and hit testing and sit above the composer footer. A
@@ -62,6 +64,7 @@
             if (!location.classList.contains('scm-toolkit-inline-location')) {
                 location.classList.add('scm-toolkit-inline-location');
             }
+            set(access, 'marginInlineEnd', `${location.getBoundingClientRect().width + 8}px`);
             const parent = location.offsetParent;
             if (!parent) return;
             const origin = parent.getBoundingClientRect();
