@@ -196,6 +196,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
     def test_staged_whitespace_toggle_defaults_on_and_can_be_disabled(self):
+        setting = next(setting for setting in configurator.SETTINGS if setting.name == "normalizeStagedWhitespace")
+        self.assertEqual(setting.section, "Source control")
+        self.assertEqual(setting.label, "Normalize line endings and whitespace")
+        self.assertIn("Commit with Codex", setting.description)
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["normalizeStagedWhitespace"])
         self.assertEqual(
             toolkit_settings.SETTING_KEYS["normalizeStagedWhitespace"],

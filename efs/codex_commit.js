@@ -1,6 +1,6 @@
 'use strict';
 
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 
 function generateMessage(script, cwd, context) {
@@ -31,6 +31,16 @@ function generateMessage(script, cwd, context) {
   });
 }
 
+function normalizeStagedWhitespace(script, cwd) {
+  return new Promise((resolve, reject) => {
+    execFile(resolvePythonExecutable(), [script, '--normalize-staged-whitespace'],
+      { cwd, timeout: 30000 }, (error, _stdout, stderr) => {
+        if (error) return reject(new Error(stderr?.trim() || pythonLaunchError(error).message));
+        resolve();
+      });
+  });
+}
+
 function registerCodexCommitCommand(vscode, extensionContext) {
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.commitWithMessage', async (uri, message) => {
     if (typeof message !== 'string' || !message.trim()) throw new Error('A commit message is required.');
@@ -43,6 +53,8 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve merge conflicts before committing.');
     if (!repository.state.indexChanges.length) throw new Error('There are no staged changes to commit.');
+    const script = vscode.Uri.joinPath(extensionContext.extensionUri, 'local_codex_commit.py').fsPath;
+    await normalizeStagedWhitespace(script, root.fsPath);
     const configuration = vscode.workspace.getConfiguration('git', root);
     // Pass the message directly to Git; never publish it to the SCM input.
     await repository.commit(message, {

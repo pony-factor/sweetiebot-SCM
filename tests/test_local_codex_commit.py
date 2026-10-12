@@ -7,6 +7,50 @@ import local_codex_commit
 
 
 class LocalCodexCommitTests(unittest.TestCase):
+    def setUp(self):
+        enabled = patch('ai_commit.staged_whitespace_enabled', return_value=True)
+        normalize = patch('ai_commit.normalize_staged_final_newlines')
+        enabled.start()
+        self.normalize = normalize.start()
+        self.addCleanup(enabled.stop)
+        self.addCleanup(normalize.stop)
+
+    def test_normalizes_before_reading_diff_for_generation(self):
+        calls = []
+        self.normalize.side_effect = lambda: calls.append('normalize')
+        with patch('sys.stdin', io.StringIO('{"context":""}')), \
+             patch('sys.stdout', io.StringIO()), \
+             patch('ai_commit.staged_diff', side_effect=lambda: (calls.append('diff') or ('stat', 'diff', ['file']))), \
+             patch('ai_commit.git_output', return_value='main'), \
+             patch('ai_commit.should_add_default_branch_description', return_value=False), \
+             patch('ai_commit.generate_message', return_value=('Title', '')):
+            local_codex_commit.main()
+        self.assertEqual(calls, ['normalize', 'diff', 'diff'])
+
+    def test_normalization_only_honors_toggle_without_generating(self):
+        with patch('sys.argv', ['local_codex_commit.py', '--normalize-staged-whitespace']), \
+             patch('ai_commit.staged_diff') as diff, \
+             patch('ai_commit.generate_message') as generate:
+            local_codex_commit.main()
+            self.normalize.assert_called_once_with()
+            self.normalize.reset_mock()
+            with patch('ai_commit.staged_whitespace_enabled', return_value=False):
+                local_codex_commit.main()
+            self.normalize.assert_not_called()
+        diff.assert_not_called()
+        generate.assert_not_called()
+
+    def test_disabled_toggle_preserves_formatting_during_generation(self):
+        with patch('sys.stdin', io.StringIO('{"context":""}')), \
+             patch('sys.stdout', io.StringIO()), \
+             patch('ai_commit.staged_whitespace_enabled', return_value=False), \
+             patch('ai_commit.staged_diff', return_value=('stat', 'diff', ['file'])), \
+             patch('ai_commit.git_output', return_value='main'), \
+             patch('ai_commit.should_add_default_branch_description', return_value=False), \
+             patch('ai_commit.generate_message', return_value=('Title', '')):
+            local_codex_commit.main()
+        self.normalize.assert_not_called()
+
     def test_missing_optional_chat_context_uses_staged_diff(self):
         with patch('sys.stdin', io.StringIO('{"context":""}')), \
              patch('sys.stdout', io.StringIO()), \
