@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
+  saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
 } = require('../efs/post_commit_spellcheck_notice');
 const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange } = require('../efs/spellcheck_diff');
 
@@ -135,7 +135,7 @@ test('spellcheck review queues a popup without opening an editor or modifying a 
   });
   assert.equal(f.repo.inputBox.value, 'Do not modify this draft');
   const popup = takeSpellcheckPopup();
-  assert.equal(popup.title, 'Spellcheck suggestions');
+  assert.equal(popup.title, 'Spellchecks Performed');
   assert.match(popup.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
   assert.equal(takeSpellcheckPopup(), undefined);
   assert.deepEqual(invocations[0], {
@@ -186,4 +186,59 @@ test('descriptive titles carry into the preview and empty draft with the actual 
   });
   assert.equal(f.repo.inputBox.value, 'Draft entered while reading config');
   takeSpellcheckPopup();
+});
+
+
+test('in-place edits save only the intended unstaged line and reject stale or unsaved content', async () => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spellcheck-edit-'));
+  const target = path.join(root, 'a.md');
+  let content = 'unchanged\r\nspelling\r\nend\r\n';
+  const diff = 'diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1,3 +1,3 @@\n unchanged\n-speling\n+spelling\n end\n';
+  let saves = 0;
+  const document = {
+    uri: {fsPath: target}, isDirty: false, eol: 2,
+    get lineCount() { return content.split('\r\n').length; },
+    lineAt(line) { return {text: content.split('\r\n')[line], range: {line}}; },
+    async save() { saves++; await fs.writeFile(target, content); return true; }
+  };
+  const vscode = {EndOfLine: {CRLF: 2}, Uri: {file: fsPath => ({fsPath})},
+    WorkspaceEdit: class {replace(uri, range, text) { this.change = {uri, range, text}; }},
+    workspace: {
+      async openTextDocument(uri) { assert.equal(uri.fsPath, target); return document; },
+      async applyEdit(edit) {
+        const lines = content.split('\r\n');
+        lines[edit.change.range.line] = edit.change.text;
+        content = lines.join('\r\n');
+        return true;
+      }
+    }
+  };
+  let preview;
+  try {
+    await fs.writeFile(target, content);
+    await showNotice(vscode, {inputBox: {value: 'Existing draft'}}, {root, paths: ['a.md']}, async () => diff);
+    preview = takeSpellcheckPopup();
+    const row = preview.files[0].rows.find(row => row.kind === 'add');
+    assert(row.editId);
+    assert.equal(preview.files[0].rows.find(row => row.kind === 'remove').editId, undefined);
+    document.isDirty = true;
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'new'), /existing editor changes/);
+    document.isDirty = false;
+    content = content.replace('spelling', 'external change');
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'new'), /line changed/);
+    content = content.replace('external change', 'spelling');
+    const updated = await saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'edited\nsecond line');
+    assert.equal(await fs.readFile(target, 'utf8'), 'unchanged\r\nedited\r\nsecond line\r\nend\r\n');
+    assert.equal(saves, 1);
+    assert.equal(updated.sessionId, preview.sessionId);
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'stale'), /no longer available/);
+    closeSpellcheckPopup(preview.sessionId);
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, updated.files[0].rows.find(row => row.kind === 'add').editId, 'closed'), /no longer available/);
+  } finally {
+    if (preview) closeSpellcheckPopup(preview.sessionId);
+    await fs.rm(root, {recursive: true, force: true});
+  }
 });
