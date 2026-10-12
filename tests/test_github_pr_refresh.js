@@ -6,9 +6,12 @@ const { installPullRequestRefresh, pullRequestFromTreeNode } = require('../efs/g
 async function main() {
   const originalSetInterval = global.setInterval;
   const originalClearInterval = global.clearInterval;
+  const originalNow = Date.now;
+  let now = 1000000;
+  Date.now = () => now;
   const timers = new Map();
   let sequence = 0;
-  global.setInterval = (fn, delay) => { assert.equal(delay, 5000); timers.set(++sequence, fn); return sequence; };
+  global.setInterval = (fn, delay) => { assert.equal(delay, 120000); timers.set(++sequence, fn); return sequence; };
   global.clearInterval = id => timers.delete(id);
   try {
     let visibility, focus, configChanged, enabled = true, calls = 0, resolve, mergeSelected;
@@ -18,7 +21,7 @@ async function main() {
     const view = { visible: false, onDidChangeVisibility: fn => { visibility = fn; return { dispose() {} }; } };
     const vscode = {
       window: { state: { focused: true }, onDidChangeWindowState: fn => { focus = fn; return { dispose() {} }; } },
-      workspace: { getConfiguration: () => ({ get: () => enabled }),
+      workspace: { getConfiguration: () => ({ get: (key, fallback) => key === 'pullRequestAutoRefresh' ? enabled : fallback }),
         onDidChangeConfiguration: fn => { configChanged = fn; return { dispose() {} }; } },
       commands: { registerCommand: (id, handler) => {
         assert(!commands.has(id), `Command ${id} already exists`);
@@ -112,24 +115,30 @@ async function main() {
     assert.equal(timers.size, 0);
     view.visible = true; visibility();
     assert.equal(calls, 1);
+    view.visible = false; visibility();
+    view.visible = true; visibility();
+    assert.equal(calls, 1, 'Visibility changes do not bypass the interval');
     const tick = [...timers.values()][0];
     tick(); assert.equal(calls, 1); // No overlapping refreshes.
     resolve(); await Promise.resolve();
-    tick(); assert.equal(calls, 2);
+    now += 120000; tick(); assert.equal(calls, 2);
     resolve(); await Promise.resolve();
     vscode.window.state.focused = false; focus();
     assert.equal(timers.size, 0);
     tick(); assert.equal(calls, 2);
+    now += 120000;
     vscode.window.state.focused = true; focus();
     assert.equal(calls, 3);
     resolve(); await Promise.resolve();
     enabled = false; configChanged({ affectsConfiguration: () => true });
     assert.equal(timers.size, 0);
+    now += 120000;
     enabled = true; configChanged({ affectsConfiguration: () => true });
     assert.equal(calls, 4);
     resolve(); await Promise.resolve();
     view.visible = false; visibility();
     assert.equal(timers.size, 0);
+    now += 120000;
     view.visible = true; visibility();
     subscriptions.at(-1).dispose();
     assert.equal(timers.size, 0);
@@ -138,6 +147,7 @@ async function main() {
   } finally {
     global.setInterval = originalSetInterval;
     global.clearInterval = originalClearInterval;
+    Date.now = originalNow;
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

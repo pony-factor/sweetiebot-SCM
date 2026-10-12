@@ -33,7 +33,8 @@ const vscode={window:{createOutputChannel(){return {append(chunk){outputLines.pu
  children[0].emit('exit',0);enabled=false;tick();await new Promise(resolve=>setImmediate(resolve));assert.equal(children.length,1);
  assert.equal(refreshed,1);
  enabled=true;tick();await new Promise(resolve=>setImmediate(resolve));assert.equal(children.length,2);
- subscriptions[0].dispose();assert(cleared);assert(children[1].killed);
+ assert.equal(subscriptions.length,2);
+ subscriptions[1].dispose();assert(cleared);assert(children[1].killed);
  tick();await new Promise(resolve=>setImmediate(resolve));assert.equal(children.length,2);
  console.log('Branch maintenance lifecycle passed');
 })().catch(error=>{console.error(error);process.exitCode=1});

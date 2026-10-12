@@ -51,7 +51,8 @@ class Setting:
 
 
 SETTINGS = (
-    Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
+    Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh only while visible and focused; pause after GitHub rate limits.", "GitHub"),
+    Setting("pullRequestRefreshIntervalSeconds", "scm-toolkit.pull-request-refresh-interval-seconds", "Pull-request refresh interval (seconds)", "Default 120 seconds; choose 30–3600. Manual refresh is unaffected.", "GitHub", "integer", minimum=30, maximum=3600),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
     Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "GitHub"),
     Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
@@ -1097,6 +1098,7 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
     for key in ("resultLimit", "maxFiles"):
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
+    payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
     return payload
 
 

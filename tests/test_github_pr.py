@@ -56,6 +56,8 @@ class Panel { PATCHED }
 const assert = require('node:assert/strict');
 const s = {l10n:{t:(template, message)=>template.replace('{0}',message)}};
 const Pe = error => error.message;
+const errors = [];
+globalThis.__sweetiebotGitHubPrRefreshError = message => errors.push(message);
 function format(l) { return REPLACEMENT; }
 for (const message of ['Connect Timeout Error (attempted address: api.github.com:443, timeout: 10000ms)',
                        'request timed out', 'UND_ERR_CONNECT_TIMEOUT']) {
@@ -64,6 +66,8 @@ for (const message of ['Connect Timeout Error (attempted address: api.github.com
 for (const message of ['Bad credentials', 'API rate limit exceeded', 'Not Found']) {
  assert.equal(format({message}), 'Fetching pull requests failed: ' + message);
 }
+assert.equal(errors.length, 6);
+assert(errors.includes('API rate limit exceeded'));
 '''.replace('REPLACEMENT', replacement)
         subprocess.run(['node', '-e', script], check=True)
 
@@ -78,7 +82,7 @@ for (const message of ['Bad credentials', 'API rate limit exceeded', 'Not Found'
         with self.assertRaises(ValueError):
             github_pr.transform_refresh(source + source)
         with self.assertRaises(ValueError):
-            github_pr.transform_refresh(patched.replace('5000', '10000', 1))
+            github_pr.transform_refresh(patched.replace('120000', '10000', 1))
 
     def test_tree_refresh_supports_multiselect_option_in_0168(self):
         source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:cn(),manageCheckboxStateManually:!0});'
