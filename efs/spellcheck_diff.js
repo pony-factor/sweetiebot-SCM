@@ -49,19 +49,44 @@ function parseUnifiedDiff(patch) {
   return files;
 }
 
-function highlightChange(before, after) {
-  let start = 0;
-  while (start < before.length && start < after.length && before[start] === after[start]) start++;
-  let end = 0;
-  while (end < before.length - start && end < after.length - start
-      && before[before.length - 1 - end] === after[after.length - 1 - end]) end++;
-  function render(text) {
-    const finish = text.length - end;
-    return escapeHtml(text.slice(0, start))
-      + (finish > start ? '<span class="changed-token">' + escapeHtml(text.slice(start, finish)) + '</span>' : '')
-      + escapeHtml(text.slice(finish));
+function highlightChange(before, after, segments = false) {
+  const left = Array.from(before), right = Array.from(after);
+  let start = 0, end = 0;
+  while (start < left.length && start < right.length && left[start] === right[start]) start++;
+  while (end < left.length - start && end < right.length - start
+      && left[left.length - 1 - end] === right[right.length - 1 - end]) end++;
+  const a = left.slice(start, left.length - end), b = right.slice(start, right.length - end);
+  const sameA = new Set(), sameB = new Set();
+  // Bound memory for unusually large replacements; ordinary prose uses exact character alignment.
+  if ((a.length + 1) * (b.length + 1) <= 4000000) {
+    const width = b.length + 1;
+    const lcs = new Uint32Array((a.length + 1) * width);
+    for (let i = a.length - 1; i >= 0; i--) {
+      for (let j = b.length - 1; j >= 0; j--) {
+        lcs[i * width + j] = a[i] === b[j] ? 1 + lcs[(i + 1) * width + j + 1]
+          : Math.max(lcs[(i + 1) * width + j], lcs[i * width + j + 1]);
+      }
+    }
+    for (let i = 0, j = 0; i < a.length && j < b.length;) {
+      if (a[i] === b[j]) { sameA.add(i++); sameB.add(j++); }
+      else if (lcs[(i + 1) * width + j] >= lcs[i * width + j + 1]) i++;
+      else j++;
+    }
   }
-  return [render(before), render(after)];
+  function render(text, middle, same) {
+    const parts = [];
+    const append = (value, changed) => {
+      if (!value) return;
+      if (parts.at(-1)?.changed === changed) parts.at(-1).text += value;
+      else parts.push({ text: value, changed });
+    };
+    append(text.slice(0, start).join(''), false);
+    middle.forEach((character, index) => append(character, !same.has(index)));
+    append(end ? text.slice(-end).join('') : '', false);
+    return segments ? parts : parts.map(part => part.changed
+      ? '<span class="changed-token">' + escapeHtml(part.text) + '</span>' : escapeHtml(part.text)).join('');
+  }
+  return [render(left, a, sameA), render(right, b, sameB)];
 }
 
 function renderRows(rows) {
@@ -96,6 +121,24 @@ function renderRows(rows) {
   }).join('');
 }
 
+function spellcheckDiffFiles(patch) {
+  return parseUnifiedDiff(patch).filter(file => file.rows.length).map(file => {
+    const rows = file.rows.map(row => ({ ...row, segments: [{text: row.text, changed: false}] }));
+    for (let i = 0; i < rows.length;) {
+      if (!['add', 'remove'].includes(rows[i].kind)) { i++; continue; }
+      let j = i;
+      while (j < rows.length && ['add', 'remove'].includes(rows[j].kind)) j++;
+      const removed = rows.slice(i, j).filter(row => row.kind === 'remove');
+      const added = rows.slice(i, j).filter(row => row.kind === 'add');
+      for (let k = 0; k < Math.min(removed.length, added.length); k++) {
+        [removed[k].segments, added[k].segments] = highlightChange(removed[k].text, added[k].text, true);
+      }
+      i = j;
+    }
+    return { name: file.name, rows };
+  });
+}
+
 function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
   const files = parseUnifiedDiff(patch);
   const blocks = files.filter(file => file.rows.length).map(file =>
@@ -112,22 +155,21 @@ function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
     + 'h1{font-size:1.15rem;margin:0 0 6px}p{margin:0;color:var(--vscode-descriptionForeground);line-height:1.5}'
     + '.file{margin:16px 20px;border:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border));border-radius:5px;overflow:hidden}'
     + 'h2{font-size:1em;overflow-wrap:anywhere;font-weight:600;margin:0;padding:10px 12px;background:var(--vscode-sideBarSectionHeader-background,var(--vscode-editorWidget-background));border-bottom:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border))}'
-    + '.rows{overflow-x:auto;font:var(--vscode-editor-font-size,12px)/1.6 var(--vscode-editor-font-family,monospace);tab-size:4}'
-    + '.diff-line{display:grid;grid-template-columns:4.2em 4.2em 2em minmax(max-content,1fr);min-width:100%;width:max-content;white-space:pre}'
+    + '.rows{overflow-x:hidden;font:var(--vscode-editor-font-size,12px)/1.6 var(--vscode-editor-font-family,monospace);tab-size:4}'
+    + '.diff-line{display:grid;grid-template-columns:4.2em 4.2em 2em minmax(0,1fr);width:100%}'
     + '.line-number{padding:0 7px;text-align:right;user-select:none;color:var(--vscode-editorLineNumber-foreground);border-right:1px solid var(--vscode-panel-border,var(--vscode-editorGroup-border))}'
-    + '.sign{padding-left:8px;user-select:none}.line-text{padding-right:20px;white-space:pre}'
+    + '.sign{padding-left:8px;user-select:none}.line-text{min-width:0;padding-right:20px;white-space:pre-wrap;overflow-wrap:anywhere}'
     + '.add{background:var(--vscode-diffEditor-insertedLineBackground,rgba(46,160,67,.15))}'
     + '.remove{background:var(--vscode-diffEditor-removedLineBackground,rgba(248,81,73,.15))}'
     + '.add .sign{color:var(--vscode-editorGutter-addedBackground,#3fb950)}'
     + '.remove .sign{color:var(--vscode-editorGutter-deletedBackground,#f85149)}'
     + '.add .changed-token{background:var(--vscode-diffEditor-insertedTextBackground,rgba(46,160,67,.35));border-radius:2px}'
     + '.remove .changed-token{background:var(--vscode-diffEditor-removedTextBackground,rgba(248,81,73,.35));border-radius:2px}'
-    + '.hunk{background:var(--vscode-diffEditor-diagonalFill,transparent);color:var(--vscode-textLink-foreground);padding:4px 12px;white-space:pre}'
+    + '.hunk{background:var(--vscode-diffEditor-diagonalFill,transparent);color:var(--vscode-textLink-foreground);padding:4px 12px;white-space:pre-wrap;overflow-wrap:anywhere}'
     + '.meta{color:var(--vscode-descriptionForeground);padding:0 12px;font-style:italic}'
-    + '</style></head><body><header class="intro"><h1>' + escapeHtml(title || 'Spellcheck suggestions') + '</h1>'
-    + '<p>All proposed edits are unstaged in Source Control. Click outside this preview to close it; review, stage, or discard edits in SCM.</p></header>'
+    + '</style></head><body><header class="intro"><h1>Spellchecks Performed</h1></header>'
     + (blocks || '<p style="padding:20px">There are no remaining unstaged spellcheck changes to display.</p>')
     + '</body></html>';
 }
 
-module.exports = { escapeHtml, parseUnifiedDiff, highlightChange, renderSpellcheckDiff };
+module.exports = { spellcheckDiffFiles, escapeHtml, parseUnifiedDiff, highlightChange, renderSpellcheckDiff };
