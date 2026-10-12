@@ -7,9 +7,15 @@ import ai_commit
 
 
 def main():
+    if sys.argv[1:] == ['--normalize-staged-whitespace']:
+        if ai_commit.staged_whitespace_enabled():
+            ai_commit.normalize_staged_final_newlines()
+        return
     context = json.load(sys.stdin).get('context', '')
     if not isinstance(context, str):
         raise ValueError('The Codex conversation snapshot is invalid.')
+    if ai_commit.staged_whitespace_enabled():
+        ai_commit.normalize_staged_final_newlines()
     stat, diff, files = ai_commit.staged_diff()
     if not stat and not diff:
         raise ValueError('Stage the intended changes before using the local Codex commit button.')

@@ -15,6 +15,7 @@ async function run() {
   let additions = 0;
   const commits = [];
   let commitError;
+  let normalizationError, normalizations = 0;
   const gitSettings = {};
   let pushes = 0;
   const repository = {
@@ -22,6 +23,7 @@ async function run() {
     state: { indexChanges: ['staged'], workingTreeChanges: [{ uri: { fsPath: '/selected/edited file' } }, { uri: { fsPath: '/selected/deleted file' } }], untrackedChanges: [{ uri: { fsPath: '/selected/new file' } }], mergeChanges: [] },
     get inputBox() { throw new Error('The commit backend must not access the message box'); },
     async commit(message, options) {
+      assert.equal(normalizations, commits.length + 1, 'normalize staged files before each commit');
       commits.push({ message, options });
       if (commitError) throw commitError;
     },
@@ -58,7 +60,14 @@ async function run() {
           pythonLaunchError: error => error
         };
       }
-      assert.equal(name, 'child_process'); return { spawn(exe, args, options) {
+      assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
+        assert.equal(exe, '/resolved/python3');
+        assert.deepEqual(Array.from(args), ['/extension/local_codex_commit.py', '--normalize-staged-whitespace']);
+        assert.equal(options.cwd, '/selected');
+        assert.equal(options.timeout, 30000);
+        if (!normalizationError) normalizations++;
+        callback(normalizationError, '', normalizationError ? 'Whitespace cleanup failed' : '');
+      }, spawn(exe, args, options) {
       assert.equal(exe, '/resolved/python3');
       assert.equal(options.cwd, '/selected');
       assert.equal(args[0], '/extension/local_codex_commit.py');
@@ -118,6 +127,11 @@ async function run() {
   await assert.rejects(commit(uri, 'Failed title'), /Hook failed/);
   assert.equal(pushes, 1, 'a failed commit never pushes');
   commitError = undefined;
+  normalizationError = new Error('Cleanup failed');
+  await assert.rejects(commit(uri, 'Failed cleanup'), /Whitespace cleanup failed/);
+  assert.equal(commits.length, 4, 'cleanup failure stops before Git commits');
+  assert.equal(pushes, 1, 'cleanup failure never pushes');
+  normalizationError = undefined;
   await prepare(uri);
   assert.equal(additions, 0, 'existing staged changes leave unstaged changes alone');
   repository.state.indexChanges = [];
