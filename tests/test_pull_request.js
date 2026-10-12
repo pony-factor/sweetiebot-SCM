@@ -416,9 +416,31 @@ async function run() {
   browserAvailable = false;
   await assert.rejects(callback(uri, { branch: 'draft', remote: 'origin', base: 'main' }), /Update VS Code/);
   browserAvailable = true;
-  repository.state.HEAD.name = 'other';
-  await assert.rejects(callback(uri, { branch: 'draft', base: 'main' }), /active branch changed/);
-  repository.state.HEAD.name = 'main';
+  // Checkout changes during the asynchronous startup must not cancel or
+  // redirect a PR launched for the picker-selected branch.
+  const originalStatus = repository.status;
+  repository.state.HEAD.name = 'draft';
+  repository.status = async () => { repository.state.HEAD.name = 'other'; };
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', base: 'main', remote: 'origin' });
+  const switchedConfirmation = calls.find(call => call.id === 'workbench.action.browser.open'
+    && call.args[0].url.startsWith('http://127.0.0.1:')).args[0].url;
+  const draftResponse = await fetch(switchedConfirmation + '/draft', {
+    method: 'POST',
+    headers: { Origin: new URL(switchedConfirmation).origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' })
+  });
+  assert.equal(draftResponse.status, 200);
+  let switchedState;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    switchedState = await (await fetch(switchedConfirmation + '/state')).json();
+    if (switchedState.result) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(switchedState.result?.url, 'https://github.com/owner/repo/pull/1',
+    'A background PR publishes the captured branch after checkout switches');
+  assert.equal(repository.state.HEAD.name, 'other', 'Publication does not switch the worktree back');
+  repository.status = originalStatus;
   await assert.rejects(callback(uri, { branch: 'main', base: 'main' }), /other than/);
   repository.state.HEAD.name = 'draft';
 
