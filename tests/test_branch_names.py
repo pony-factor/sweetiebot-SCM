@@ -458,7 +458,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 294)
+        self.assertEqual(len(names), 293)
         for name in (
             "acacia-pie",
             "captain-hoofbeard",
@@ -471,6 +471,11 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertIn(name, names)
         self.assertNotIn("humdrum", names)
         self.assertFalse(any("unnamed" in name for name in names))
+
+    def test_idw_comics_excludes_twilight_sporkle(self):
+        catalog = branch_names.load_catalog()
+        all_names = [name for pack in catalog["packs"] for name in pack["names"]]
+        self.assertNotIn("twilight-sporkle", all_names)
 
     def test_idw_comics_has_no_cross_pack_slug_collisions_or_character_aliases(self):
         catalog = branch_names.load_catalog()
