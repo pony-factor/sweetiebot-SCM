@@ -186,11 +186,11 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         location: vscode.ProgressLocation.Window,
         title: `Squash-merging PR #${model?.number ?? ''}`, cancellable: false
       }, () => merge(url, undefined, confirmNonMain));
-      if (result.cancelled) return;
+      if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {
         vscode.window.showInformationMessage(`PR #${result.number} queued for merge${base !== 'main' ? ` into \`${base}\`` : ''}.`);
-        return;
+        return { state: 'queued' };
       }
       vscode.window.showInformationMessage(`PR #${result.number} merged into ${base}.`);
       // Close only this merged PR's open overview, even when it is not the
@@ -222,11 +222,13 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       } catch (error) {
         vscode.window.showWarningMessage(`PR #${result.number} merged, but local branch cleanup failed: ${error.message}`);
       }
+      return { state: 'merged' };
     } catch (error) {
       const detail = error.code === 'SWEETIEBOT_MERGE_CONFLICT'
         ? error.message
         : error.stderr?.trim() || error.message;
       vscode.window.showErrorMessage(detail);
+      return { state: 'failed' };
     } finally {
       busy.delete(url);
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});

@@ -140,7 +140,7 @@
       "view/item/context": [
         {
           "command": "sweetiebot.squashMergeTreePullRequest",
-          "when": "view == pr:github && viewItem =~ /pullrequest/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
+          "when": "view == pr:github && viewItem =~ /pullrequest/ && viewItem !~ /sweetiebotMergeBusy/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
         }
       ],

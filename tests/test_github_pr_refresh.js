@@ -107,6 +107,71 @@ async function main() {
     view.selection = [{ url }, { url: 'https://github.com/owner/repo/pull/13' }];
     await mergeSelected();
     assert.equal(merges.at(-1).url, undefined, 'Never guess among multiple selected PRs');
+
+    // A click immediately changes only that PR's row, even before the remote
+    // operation finishes. Duplicate clicks do not dispatch a second merge.
+    const rowCommands = new Map(), rowRefreshes = [], rowSubscriptions = [];
+    let completeMerge;
+    const dispatched = [];
+    const rowOwner = {
+      _register: item => rowSubscriptions.push(item),
+      async getTreeItem() { return { description: 'by @pony', contextValue: 'pullrequest:hasHeadRef', iconPath: 'native-icon' }; },
+      refresh: node => rowRefreshes.push(node)
+    };
+    const rowVscode = {
+      ...vscode,
+      // Keep this isolated test view from replacing the main view's listeners.
+      window: { ...vscode.window, onDidChangeWindowState: () => ({ dispose() {} }) },
+      workspace: { ...vscode.workspace, onDidChangeConfiguration: () => ({ dispose() {} }) },
+      commands: {
+        registerCommand(id, fn) {
+          rowCommands.set(id, fn);
+          return { dispose() { rowCommands.delete(id); } };
+        },
+        executeCommand(id, arg) {
+          if (id === 'sweetiebot.squashMergePullRequest') {
+            dispatched.push(arg);
+            return new Promise(resolve => { completeMerge = resolve; });
+          }
+          if (id === 'pr.refreshList') return Promise.resolve();
+          throw new Error('Unexpected command ' + id);
+        }
+      }
+    };
+    installPullRequestRefresh(rowVscode, {
+      visible: false, onDidChangeVisibility: () => ({ dispose() {} })
+    }, rowOwner);
+    const clicked = { pullRequestModel: { url, number: 12 } };
+    const another = { pullRequestModel: { url: 'https://github.com/owner/repo/pull/13', number: 13 } };
+    const clickMerge = rowCommands.get('sweetiebot.squashMergeTreePullRequest');
+    const first = clickMerge(clicked);
+    await new Promise(setImmediate);
+    const during = await rowOwner.getTreeItem(clicked);
+    assert.match(during.description, /by @pony · ⏳ Squash-merging/);
+    assert.match(during.contextValue, /sweetiebotMergeBusy/);
+    assert.equal(during.iconPath, 'native-icon');
+    assert.equal((await rowOwner.getTreeItem(another)).description, 'by @pony');
+    assert.equal(rowRefreshes.at(-1), clicked);
+    await clickMerge(clicked);
+    assert.deepEqual(dispatched, [url], 'The second click must not dispatch another merge');
+    completeMerge({ state: 'merged' });
+    assert.deepEqual(await first, { state: 'merged' });
+    assert.match((await rowOwner.getTreeItem(clicked)).description, /✅ Merged/);
+    const second = clickMerge(clicked);
+    await new Promise(setImmediate);
+    completeMerge({ state: 'queued' });
+    assert.deepEqual(await second, { state: 'queued' });
+    assert.match((await rowOwner.getTreeItem(clicked)).description, /Merge queued/);
+    assert.doesNotMatch((await rowOwner.getTreeItem(clicked)).description, /✅ Merged/);
+    for (const state of ['cancelled', 'failed']) {
+      const action = clickMerge(clicked);
+      await new Promise(setImmediate);
+      completeMerge({ state });
+      assert.deepEqual(await action, { state });
+      assert.equal((await rowOwner.getTreeItem(clicked)).description, 'by @pony');
+    }
+    assert.equal(dispatched.length, 4);
+    for (const subscription of rowSubscriptions) subscription.dispose();
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
       'sweetiebot.squashMergeTreePullRequest');

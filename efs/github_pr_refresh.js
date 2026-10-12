@@ -84,6 +84,67 @@ function installPullRequestRefresh(vscode, view, owner) {
     return model;
   };
   owner._register(vscode.commands.registerCommand('sweetiebot.resolveSelectedPullRequest', resolve));
+  // The inline PR action runs alongside GitHub's tree provider. Redraw the
+  // clicked row locally instead of forcing an expensive remote list refresh.
+  const rowStates = new Map();
+  const rowTimers = new Map();
+  const mergingUrls = new Set();
+  const stateLabels = {
+    merging: '⏳ Squash-merging…',
+    queued: '⏳ Merge queued',
+    merged: '✅ Merged'
+  };
+  const originalGetTreeItem = owner.getTreeItem;
+  const originalDescriptor = Object.getOwnPropertyDescriptor(owner, 'getTreeItem');
+  const decorateTreeItem = typeof originalGetTreeItem === 'function' ? async function (node) {
+    const item = await originalGetTreeItem.call(this, node);
+    const state = rowStates.get(pullRequestFromTreeNode(node).url);
+    if (!state || !item) return item;
+    const existing = typeof item.description === 'string' ? item.description : '';
+    item.description = existing + (existing ? ' · ' : '') + stateLabels[state];
+    // Hide the inline merge button during an in-flight/confirmed operation.
+    if (typeof item.contextValue === 'string') item.contextValue += ':sweetiebotMergeBusy';
+    return item;
+  } : undefined;
+  if (decorateTreeItem) {
+    owner.getTreeItem = decorateTreeItem;
+    owner._register({ dispose() {
+      if (owner.getTreeItem === decorateTreeItem) {
+        if (originalDescriptor) Object.defineProperty(owner, 'getTreeItem', originalDescriptor);
+        else delete owner.getTreeItem;
+      }
+      for (const timer of rowTimers.values()) clearTimeout(timer);
+      rowTimers.clear();
+      rowStates.clear();
+      mergingUrls.clear();
+    } });
+  }
+  const markMergeRow = (url, node, state) => {
+    if (rowTimers.has(url)) clearTimeout(rowTimers.get(url));
+    rowTimers.delete(url);
+    if (state && decorateTreeItem) rowStates.set(url, state);
+    else rowStates.delete(url);
+    if (node && typeof owner.refresh === 'function') {
+      try { owner.refresh(node); } catch { // Visual feedback must never block a merge.
+      }
+    }
+    // Completed/queued badges persist briefly in case GitHub has not yet
+    // removed the PR from the open list; never keep a stale badge forever.
+    if (state === 'merged' || state === 'queued') {
+      const timer = setTimeout(() => {
+        rowTimers.delete(url);
+        if (rowStates.get(url) === state) {
+          rowStates.delete(url);
+          if (node && typeof owner.refresh === 'function') {
+            try { owner.refresh(node); } catch {}
+          }
+        }
+      }, 15000);
+      timer.unref?.();
+      rowTimers.set(url, timer);
+    }
+  };
+
   // Tree command arguments belong to the extension host that owns the view.
   // Resolve them here before handing a serializable URL to Sweetiebot.
   owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', async node => {
@@ -91,7 +152,21 @@ function installPullRequestRefresh(vscode, view, owner) {
     if (!model.url) {
       return vscode.window.showErrorMessage('Could not identify the clicked pull request. Refresh the GitHub Pull Requests view and try again.');
     }
-    return vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', model.url);
+    if (mergingUrls.has(model.url)) return;
+    mergingUrls.add(model.url);
+    markMergeRow(model.url, node, 'merging');
+    try {
+      const result = await vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', model.url);
+      // A queued merge is not yet merged; cancellations and failures clear the row.
+      const state = ['merged', 'queued'].includes(result?.state) ? result.state : undefined;
+      markMergeRow(model.url, node, state);
+      return result;
+    } catch (error) {
+      markMergeRow(model.url, node);
+      throw error;
+    } finally {
+      mergingUrls.delete(model.url);
+    }
   }));
   let timer;
   let running = false;
