@@ -22,6 +22,7 @@ Current features:
 - optionally hide the outgoing commit count from the built-in Sync action
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly
 - search the active workspace semantically from a `Workspace Search` view inside Source Control by default, or optionally move it to its own Activity Bar container, backed only by local Ollama
+- copy all retained text from the active integrated terminal to the clipboard in one step from its context menu or the Command Palette
 - optionally use ⌘-click on an editor tab's close button to keep that tab and close the others in its group
 - optionally use ChatGPT as the home page for blank Integrated Browser tabs
 - optionally make Source Control Graph **Open File** open the checked-out working-tree file instead of the selected commit snapshot
@@ -36,6 +37,8 @@ Current features:
 - optionally require the Codex Web co-author trailer for web/GitHub-tool commits
 - import a PGP secret key directly into GnuPG without persisting the private material in toolkit settings
 - search repositories through the linked GitHub authentication session instead of maintaining a separate repo allow-list
+
+**Copy Entire Terminal Contents** selects and copies the active integrated terminal's visible output and retained scrollback, then clears the selection. It does not include output already discarded by VS Code's terminal scrollback limit. The command is available by right-clicking inside a terminal or from the Command Palette; it does not clear the terminal or run a shell command.
 
 The patch is intentionally narrow: it does not copy or manage unrelated editor settings.
 
