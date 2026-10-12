@@ -10,6 +10,9 @@ const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
 const DEFAULT_EMAIL = '326443430+codex-pony[bot]@users.noreply.github.com';
 const NOREPLY_EMAIL = /^(?:[1-9]\d*\+)?[a-z\d-]+(?:\[bot\])?@users\.noreply\.github\.com$/i;
+const previews = [];
+function takeSpellcheckPopup() { return previews.shift(); }
+
 const SHA = /^[a-f\d]{40,64}$/i;
 
 function parseNotice(content) {
@@ -108,22 +111,14 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
     if (!repository.inputBox.value?.trim()) repository.inputBox.value = spellcheckMessage(notice.paths, email, notice.model, notice.title);
   }
 
-  // This is a disposable read-only preview, not a modal Keep/Discard decision.
-  // The Git working tree and any existing SCM commit draft remain untouched.
-  const panel = vscode.window.createWebviewPanel(
-    'sweetiebot.spellcheckDiff',
-    notice.title || 'Spellcheck suggestions',
-    vscode.ViewColumn.Beside,
-    { enableScripts: false, retainContextWhenHidden: false }
-  );
-  panel.webview.html = renderSpellcheckDiff(patch, notice.title);
-  panel.onDidChangeViewState(event => {
-    // Dismiss by focusing another editor or Source Control, without changing edits.
-    if (!event.webviewPanel.active) event.webviewPanel.dispose();
-  });
+  previews.push({ title: notice.title || 'Spellcheck suggestions', html: renderSpellcheckDiff(patch, notice.title) });
+
 }
 
 async function registerPostCommitSpellcheckNotice(vscode, extensionContext, dependencies = {}) {
+  extensionContext.subscriptions.push(vscode.commands.registerCommand(
+    'sweetiebot.takeSpellcheckPopup', takeSpellcheckPopup
+  ));
   const extension = vscode.extensions.getExtension('vscode.git');
   if (!extension) return;
   const gitExtension = await extension.activate();
@@ -155,6 +150,6 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
 }
 
 module.exports = {
-  parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
+  takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
   registerPostCommitSpellcheckNotice,
 };

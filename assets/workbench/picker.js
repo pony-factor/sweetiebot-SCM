@@ -728,7 +728,69 @@ function scmToolkitExpireNotifications(notifications) {
     scmToolkitTimedNotificationServices.add(notifications);
 }
 
+// One popup consumer per workbench document, shared by all repository widgets.
+const scmToolkitSpellcheckDocuments = new WeakSet();
+function scmToolkitWatchSpellcheckPopups(doc, commands) {
+    if (scmToolkitSpellcheckDocuments.has(doc)) return;
+    scmToolkitSpellcheckDocuments.add(doc);
+    let busy = false, popup;
+    const poll = async () => {
+        if (busy || popup) return;
+        busy = true;
+        try {
+            const preview = await commands.executeCommand('sweetiebot.takeSpellcheckPopup');
+            if (!preview || typeof preview.html !== 'string') return;
+            const previousFocus = doc.activeElement;
+            const dialog = doc.createElement('dialog');
+            dialog.className = 'scm-toolkit-spellcheck-popup';
+            dialog.setAttribute('aria-label', preview.title || 'Spellcheck suggestions');
+            const close = doc.createElement('button');
+            close.className = 'scm-toolkit-spellcheck-close';
+            close.textContent = 'Close';
+            const frame = doc.createElement('iframe');
+            frame.title = preview.title || 'Spellcheck suggestions';
+            // The escaped preview has no scripts, forms, or navigation capabilities.
+            frame.setAttribute('sandbox', 'allow-same-origin');
+            frame.srcdoc = preview.html;
+            const dismiss = () => dialog.close();
+            close.addEventListener('click', dismiss);
+            dialog.addEventListener('click', event => {
+                if (event.target !== dialog) return;
+                const rect = dialog.getBoundingClientRect();
+                if (event.clientX < rect.left || event.clientX > rect.right
+                    || event.clientY < rect.top || event.clientY > rect.bottom) dismiss();
+            });
+            dialog.addEventListener('close', () => {
+                popup = undefined;
+                dialog.remove();
+                if (previousFocus?.isConnected) previousFocus.focus();
+            }, { once: true });
+            frame.addEventListener('load', () => {
+                const content = frame.contentDocument;
+                if (!content) return;
+                const theme = doc.defaultView.getComputedStyle(doc.querySelector('.monaco-workbench') || doc.documentElement);
+                for (let index = 0; index < theme.length; index++) {
+                    const name = theme[index];
+                    if (name.startsWith('--vscode-')) content.documentElement.style.setProperty(name, theme.getPropertyValue(name));
+                }
+                content.addEventListener('keydown', event => {
+                    if (event.key === 'Escape') { event.preventDefault(); dismiss(); }
+                });
+            });
+            dialog.append(close, frame);
+            doc.body.append(dialog);
+            popup = dialog;
+            dialog.showModal();
+            close.focus();
+        } catch { /* Extension activation or reload may temporarily remove the command. */ }
+        finally { busy = false; }
+    };
+    doc.defaultView.setInterval(poll, 1000);
+    void poll();
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
+    scmToolkitWatchSpellcheckPopups(widget.element.ownerDocument, commands);
     scmToolkitExpireNotifications(notifications);
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);

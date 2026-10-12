@@ -695,3 +695,31 @@
     flex: 1;
     min-width: 0;
 }
+
+.scm-toolkit-spellcheck-popup {
+    width: min(1100px, 90vw);
+    height: min(760px, 85vh);
+    max-width: 90vw;
+    max-height: 85vh;
+    padding: 0;
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+    border-radius: 8px;
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    box-shadow: 0 8px 32px var(--vscode-widget-shadow, #0008);
+    overflow: hidden;
+}
+.scm-toolkit-spellcheck-popup[open] { display: flex; flex-direction: column; }
+.scm-toolkit-spellcheck-popup::backdrop { background: #0006; }
+.scm-toolkit-spellcheck-popup iframe { width: 100%; flex: 1; min-height: 0; border: 0; }
+.scm-toolkit-spellcheck-close {
+    align-self: flex-end;
+    margin: 8px 12px;
+    padding: 4px 12px;
+    border: 0;
+    border-radius: 3px;
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
+    cursor: pointer;
+}
+.scm-toolkit-spellcheck-close:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }

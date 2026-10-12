@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
+  takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
 } = require('../efs/post_commit_spellcheck_notice');
-const { renderSpellcheckDiff, parseUnifiedDiff } = require('../efs/spellcheck_diff');
+const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange } = require('../efs/spellcheck_diff');
 
 const head = 'a'.repeat(40);
 const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });
@@ -125,45 +125,36 @@ test('renders every file and changed line as an escaped, theme-based inline diff
   assert.match(html, /All proposed edits are unstaged in Source Control/);
 });
 
-test('spellcheck review opens a read-only transient panel and keeps SCM edits and drafts', async () => {
+test('spellcheck review queues a popup without opening an editor or modifying a draft', async () => {
   const f = fixture({ draft: 'Do not modify this draft' });
-  let panel, changeState;
-  const args = [];
-  const vscode = {
-    ViewColumn: { Beside: 2 },
-    window: {
-      createWebviewPanel(...options) {
-        args.push(options);
-        panel = {
-          active: true,
-          webview: { html: '' },
-          disposed: false,
-          onDidChangeViewState(handler) { changeState = handler; },
-          dispose() { this.disposed = true; }
-        };
-        return panel;
-      },
-      showInformationMessage() { throw new Error('No Keep/Discard notification is allowed'); }
-    },
-    commands: { executeCommand() { throw new Error('No SCM command should be triggered'); } }
-  };
   const invocations = [];
-  const diff = async (root, argv) => {
+  await showNotice({}, f.repo, { paths: ['notes/report.md', 'notes/second.mdx'], root: '/repo' }, async (root, argv) => {
     invocations.push({ root, argv });
     return patch;
-  };
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md', 'notes/second.mdx'], root: '/repo' }, diff);
+  });
   assert.equal(f.repo.inputBox.value, 'Do not modify this draft');
-  assert.equal(args[0][0], 'sweetiebot.spellcheckDiff');
-  assert.equal(args[0][2], 2);
-  assert.equal(args[0][3].enableScripts, false);
-  assert.match(panel.webview.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
+  const popup = takeSpellcheckPopup();
+  assert.equal(popup.title, 'Spellcheck suggestions');
+  assert.match(popup.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
+  assert.equal(takeSpellcheckPopup(), undefined);
   assert.deepEqual(invocations[0], {
     root: '/repo',
     argv: ['diff', '--no-ext-diff', '--no-color', '--unified=3', '--', 'notes/report.md', 'notes/second.mdx']
   });
-  changeState({ webviewPanel: { active: false, dispose: () => panel.dispose() } });
-  assert.equal(panel.disposed, true);
+});
+
+test('multiple spelling changes preserve unchanged characters between and within words', () => {
+  const [before, after] = highlightChange('A speling error and an errror.', 'A spelling error and an error.');
+  assert.equal(before, 'A speling error and an e<span class="changed-token">r</span>rror.');
+  assert.equal(after, 'A spel<span class="changed-token">l</span>ing error and an error.');
+  assert.deepEqual(highlightChange('😀 <bad>', '😀 <bed>'), [
+    '😀 &lt;b<span class="changed-token">a</span>d&gt;',
+    '😀 &lt;b<span class="changed-token">e</span>d&gt;'
+  ]);
+  const html = renderSpellcheckDiff(patch);
+  assert.match(html, /minmax\(0,1fr\)/);
+  assert.match(html, /white-space:pre-wrap;overflow-wrap:anywhere/);
+  assert.doesNotMatch(html, /width:max-content|minmax\(max-content/);
 });
 
 test('reverted spellcheck edits do not open an empty review window', async () => {
@@ -181,16 +172,11 @@ test('descriptive titles carry into the preview and empty draft with the actual 
   assert.equal(parseNotice(JSON.stringify({...data, title: 'Spellcheck too short'})), null);
   assert.equal(parseNotice(JSON.stringify({...data, title: title + '\nInjected'})), null);
   const f = fixture();
-  let panelTitle, html;
-  const vscode = {ViewColumn: {Beside: 2}, window: {
-    createWebviewPanel(_type, name) {
-      panelTitle = name;
-      return {webview: {set html(value) { html = value; }}, onDidChangeViewState() {}};
-    }
-  }};
+  const vscode = {};
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, f.git);
-  assert.equal(panelTitle, title);
-  assert.match(html, /<h1>Spellcheck Instinet trading and citations<\/h1>/);
+  const popup = takeSpellcheckPopup();
+  assert.equal(popup.title, title);
+  assert.match(popup.html, /<h1>Spellcheck Instinet trading and citations<\/h1>/);
   assert.equal(f.repo.inputBox.value, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
   f.repo.inputBox.value = '';
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, async () => {
@@ -198,4 +184,5 @@ test('descriptive titles carry into the preview and empty draft with the actual 
     return '';
   });
   assert.equal(f.repo.inputBox.value, 'Draft entered while reading config');
+  takeSpellcheckPopup();
 });
