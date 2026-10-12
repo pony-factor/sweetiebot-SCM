@@ -12,8 +12,10 @@ function registerLocalPullRequestCommand(vscode, context) {
     const repository = git.getAPI(1).getRepository(vscode.Uri.from(uri?.rootUri ?? uri));
     if (!repository || repository.rootUri.scheme !== 'file') throw new Error('Select a local Git repository.');
     await repository.status();
-    if (repository.state.HEAD?.name !== options.branch || options.branch === options.base) {
-      throw new Error('The active branch changed; select the PR branch again.');
+    // The picker selected the target before this command began. A background
+    // PR must use that captured branch even if the user checks out another one.
+    if (typeof options?.branch !== 'string' || !options.branch || options.branch === options.base) {
+      throw new Error('Select a branch other than the pull-request base.');
     }
     const remote = repository.state.remotes.find(item => item.name === options.remote);
     const url = githubRepository(remote?.pushUrl || remote?.fetchUrl);
