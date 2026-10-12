@@ -122,7 +122,8 @@ test('renders every file and changed line as an escaped, theme-based inline diff
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.doesNotMatch(html, /Keep edits|Discard.*button|Markdown files have/);
-  assert.match(html, /All proposed edits are unstaged in Source Control/);
+  assert.match(html, /<h1>Spellchecks Performed<\/h1>/);
+  assert.doesNotMatch(html, /All proposed edits/);
 });
 
 test('spellcheck review queues a popup without opening an editor or modifying a draft', async () => {
@@ -176,7 +177,7 @@ test('descriptive titles carry into the preview and empty draft with the actual 
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, f.git);
   const popup = takeSpellcheckPopup();
   assert.equal(popup.title, title);
-  assert.match(popup.html, /<h1>Spellcheck Instinet trading and citations<\/h1>/);
+  assert.match(popup.html, /<h1>Spellchecks Performed<\/h1>/);
   assert.equal(f.repo.inputBox.value, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
   f.repo.inputBox.value = '';
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, async () => {

@@ -743,17 +743,19 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const previousFocus = doc.activeElement;
             const dialog = doc.createElement('dialog');
             dialog.className = 'scm-toolkit-spellcheck-popup';
-            dialog.setAttribute('aria-label', preview.title || 'Spellcheck suggestions');
+            dialog.setAttribute('aria-label', 'Spellchecks Performed');
+            const themeHost = doc.querySelector?.('.monaco-workbench') || doc.documentElement;
+            const theme = doc.defaultView.getComputedStyle?.(themeHost);
+            dialog.style?.setProperty('color', theme?.getPropertyValue('--vscode-editor-foreground').trim() || '#d4d4d4');
+            dialog.style?.setProperty('background-color', theme?.getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e');
             const close = doc.createElement('button');
             close.className = 'scm-toolkit-spellcheck-close';
             close.textContent = 'Close';
             const content = doc.createElement('div');
             content.className = 'scm-toolkit-spellcheck-content';
             const heading = doc.createElement('h1');
-            heading.textContent = preview.title || 'Spellcheck suggestions';
-            const description = doc.createElement('p');
-            description.textContent = 'All proposed edits are unstaged in Source Control. Click outside this preview to close it; review, stage, or discard edits in SCM.';
-            content.append(heading, description);
+            heading.textContent = 'Spellchecks Performed';
+            content.append(heading);
             for (const file of preview.files || []) {
                 const section = doc.createElement('section');
                 section.className = 'file';

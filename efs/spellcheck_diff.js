@@ -167,8 +167,7 @@ function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
     + '.remove .changed-token{background:var(--vscode-diffEditor-removedTextBackground,rgba(248,81,73,.35));border-radius:2px}'
     + '.hunk{background:var(--vscode-diffEditor-diagonalFill,transparent);color:var(--vscode-textLink-foreground);padding:4px 12px;white-space:pre-wrap;overflow-wrap:anywhere}'
     + '.meta{color:var(--vscode-descriptionForeground);padding:0 12px;font-style:italic}'
-    + '</style></head><body><header class="intro"><h1>' + escapeHtml(title || 'Spellcheck suggestions') + '</h1>'
-    + '<p>All proposed edits are unstaged in Source Control. Click outside this preview to close it; review, stage, or discard edits in SCM.</p></header>'
+    + '</style></head><body><header class="intro"><h1>Spellchecks Performed</h1></header>'
     + (blocks || '<p style="padding:20px">There are no remaining unstaged spellcheck changes to display.</p>')
     + '</body></html>';
 }
