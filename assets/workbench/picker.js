@@ -1675,14 +1675,20 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            const result = await commands.executeCommand(
-                onlyEmpty ? 'sweetiebot.deleteEmptyBranch' : 'sweetiebot.deleteBranch',
-                repositoryArgument, {
+            let result;
+            if (onlyEmpty) {
+                result = await commands.executeCommand('sweetiebot.deleteEmptyBranch', repositoryArgument, {
                     branch,
                     defaultBranch: currentDefaultBranch,
                     remote: settings.remote,
-                }
-            );
+                });
+            } else {
+                await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
+                    branch,
+                    defaultBranch: currentDefaultBranch,
+                    remote: settings.remote,
+                });
+            }
             if (onlyEmpty && result) {
                 notifications.info(`Deleted empty branch ${branch}${result.remoteDeleted ? ' locally and on ' + settings.remote : ' locally'}.`);
             }
