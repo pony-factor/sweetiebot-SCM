@@ -159,6 +159,11 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
   if (action === 'accept' && (typeof message !== 'string' || !message.trim() || message.includes('\0'))) {
     throw new Error('Enter a commit message before accepting the spelling changes.');
   }
+  // The Source Control push checkbox controls Git's post-commit command.
+  // Read it when Accept is clicked, not when the preview was first shown.
+  const commitAndPush = action === 'accept'
+    && vscode.workspace?.getConfiguration?.('git', vscode.Uri.file(session.root))
+      ?.get('postCommitCommand', 'none') === 'push';
   session.acting = true;
   try {
     for (const file of session.paths) {
@@ -192,7 +197,25 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
     closeSpellcheckPopup(sessionId);
     // A refresh failure must not turn a completed commit/revert into a retry.
     try { await session.repository.status?.(); } catch { /* Refresh next polling cycle. */ }
-    return {action};
+    if (!commitAndPush) return {action};
+    try {
+      if (!session.branch || typeof session.repository?.push !== 'function') {
+        throw new Error('No active branch or Git push operation is available.');
+      }
+      if (await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
+        throw new Error('The active branch changed before the spelling commit could be pushed.');
+      }
+      // Use the VS Code Git API so its existing push/rejection recovery applies.
+      await session.repository.push();
+      return {action, pushed: true};
+    } catch (error) {
+      // The commit has already succeeded. Close the one-shot preview and report
+      // a push failure without suggesting that Accept can safely be retried.
+      vscode.window?.showErrorMessage?.(
+        'Spellcheck changes were committed locally, but could not be pushed: ' + (error?.message || error)
+      );
+      return {action, pushed: false};
+    }
   } finally { session.acting = false; }
 }
 
