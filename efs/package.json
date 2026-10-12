@@ -19,6 +19,7 @@
     "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.openPullRequestBatchChat",
     "onCommand:sweetiebot.closeAllEditors",
+    "onCommand:sweetiebot.copyTerminalContents",
     "onCommand:sweetiebot.prepareCodexCommit",
     "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
@@ -113,6 +114,11 @@
         "icon": "$(close-all)"
       },
       {
+        "command": "sweetiebot.copyTerminalContents",
+        "title": "Copy Entire Terminal Contents",
+        "icon": "$(copy)"
+      },
+      {
         "command": "sweetiebot.openFileOnGitHub",
         "title": "Open File on GitHub",
         "icon": "$(github)"
@@ -142,6 +148,12 @@
         {
           "command": "sweetiebot.closeAllEditors",
           "group": "navigation@100"
+        }
+      ],
+      "terminal/context": [
+        {
+          "command": "sweetiebot.copyTerminalContents",
+          "group": "1_copy@10"
         }
       ],
       "explorer/context": [
@@ -248,7 +260,7 @@
         "scmToolkit.pullRequestAutoRefresh": {
           "type": "boolean",
           "default": true,
-          "description": "Refresh the GitHub Pull Requests list when visible and focused, and every 5 seconds while active."
+          "description": "Automatically refresh visible and focused GitHub PR lists at the configured interval (120 seconds by default), pausing on rate limits."
         },
         "scmToolkit.pullRequestQuickMerge": {
           "type": "boolean",
@@ -286,6 +298,13 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically publish completed Kefania PR drafts without text confirmation. Pony research finishes independently."
+        },
+        "scmToolkit.pullRequestRefreshIntervalSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "Seconds between automatic PR list refreshes (30–3600). Manual refresh is unaffected."
         }
       }
     }

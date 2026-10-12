@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
+  finishSpellcheckPreview, saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
 } = require('../efs/post_commit_spellcheck_notice');
-const { renderSpellcheckDiff, parseUnifiedDiff } = require('../efs/spellcheck_diff');
+const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange } = require('../efs/spellcheck_diff');
 
 const head = 'a'.repeat(40);
 const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });
@@ -122,48 +122,40 @@ test('renders every file and changed line as an escaped, theme-based inline diff
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.doesNotMatch(html, /Keep edits|Discard.*button|Markdown files have/);
-  assert.match(html, /All proposed edits are unstaged in Source Control/);
+  assert.match(html, /<h1>Spellchecks Performed<\/h1>/);
+  assert.doesNotMatch(html, /All proposed edits/);
 });
 
-test('spellcheck review opens a read-only transient panel and keeps SCM edits and drafts', async () => {
+test('spellcheck review queues a popup without opening an editor or modifying a draft', async () => {
   const f = fixture({ draft: 'Do not modify this draft' });
-  let panel, changeState;
-  const args = [];
-  const vscode = {
-    ViewColumn: { Beside: 2 },
-    window: {
-      createWebviewPanel(...options) {
-        args.push(options);
-        panel = {
-          active: true,
-          webview: { html: '' },
-          disposed: false,
-          onDidChangeViewState(handler) { changeState = handler; },
-          dispose() { this.disposed = true; }
-        };
-        return panel;
-      },
-      showInformationMessage() { throw new Error('No Keep/Discard notification is allowed'); }
-    },
-    commands: { executeCommand() { throw new Error('No SCM command should be triggered'); } }
-  };
   const invocations = [];
-  const diff = async (root, argv) => {
+  await showNotice({}, f.repo, { paths: ['notes/report.md', 'notes/second.mdx'], root: '/repo' }, async (root, argv) => {
     invocations.push({ root, argv });
     return patch;
-  };
-  await showNotice(vscode, f.repo, { paths: ['notes/report.md', 'notes/second.mdx'], root: '/repo' }, diff);
+  });
   assert.equal(f.repo.inputBox.value, 'Do not modify this draft');
-  assert.equal(args[0][0], 'sweetiebot.spellcheckDiff');
-  assert.equal(args[0][2], 2);
-  assert.equal(args[0][3].enableScripts, false);
-  assert.match(panel.webview.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
+  const popup = takeSpellcheckPopup();
+  assert.equal(popup.title, 'Spellchecks Performed');
+  assert.match(popup.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
+  assert.equal(takeSpellcheckPopup(), undefined);
   assert.deepEqual(invocations[0], {
     root: '/repo',
     argv: ['diff', '--no-ext-diff', '--no-color', '--unified=3', '--', 'notes/report.md', 'notes/second.mdx']
   });
-  changeState({ webviewPanel: { active: false, dispose: () => panel.dispose() } });
-  assert.equal(panel.disposed, true);
+});
+
+test('multiple spelling changes preserve unchanged characters between and within words', () => {
+  const [before, after] = highlightChange('A speling error and an errror.', 'A spelling error and an error.');
+  assert.equal(before, 'A speling error and an e<span class="changed-token">r</span>rror.');
+  assert.equal(after, 'A spel<span class="changed-token">l</span>ing error and an error.');
+  assert.deepEqual(highlightChange('😀 <bad>', '😀 <bed>'), [
+    '😀 &lt;b<span class="changed-token">a</span>d&gt;',
+    '😀 &lt;b<span class="changed-token">e</span>d&gt;'
+  ]);
+  const html = renderSpellcheckDiff(patch);
+  assert.match(html, /minmax\(0,1fr\)/);
+  assert.match(html, /white-space:pre-wrap;overflow-wrap:anywhere/);
+  assert.doesNotMatch(html, /width:max-content|minmax\(max-content/);
 });
 
 test('reverted spellcheck edits do not open an empty review window', async () => {
@@ -174,28 +166,130 @@ test('reverted spellcheck edits do not open an empty review window', async () =>
   assert.equal(f.repo.inputBox.value, '');
 });
 
-test('descriptive titles carry into the preview and empty draft with the actual model', async () => {
+test('descriptive titles appear in the proposed commit message without changing the SCM draft', async () => {
   const title = 'Spellcheck Instinet trading and citations';
   const data = {version: 1, head, paths: ['notes/report.md'], model: 'qwen:3b', title};
   assert.equal(parseNotice(JSON.stringify(data)).title, title);
   assert.equal(parseNotice(JSON.stringify({...data, title: 'Spellcheck too short'})), null);
   assert.equal(parseNotice(JSON.stringify({...data, title: title + '\nInjected'})), null);
   const f = fixture();
-  let panelTitle, html;
-  const vscode = {ViewColumn: {Beside: 2}, window: {
-    createWebviewPanel(_type, name) {
-      panelTitle = name;
-      return {webview: {set html(value) { html = value; }}, onDidChangeViewState() {}};
-    }
-  }};
+  const vscode = {};
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, f.git);
-  assert.equal(panelTitle, title);
-  assert.match(html, /<h1>Spellcheck Instinet trading and citations<\/h1>/);
-  assert.equal(f.repo.inputBox.value, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
+  const popup = takeSpellcheckPopup();
+  assert.equal(popup.title, title);
+  assert.match(popup.html, /<h1>Spellchecks Performed<\/h1>/);
+  assert.equal(f.repo.inputBox.value, '');
+  assert.equal(popup.message, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
   f.repo.inputBox.value = '';
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, async () => {
     f.repo.inputBox.value = 'Draft entered while reading config';
     return '';
   });
   assert.equal(f.repo.inputBox.value, 'Draft entered while reading config');
+  takeSpellcheckPopup();
+});
+
+
+test('in-place edits save only the intended unstaged line and reject stale or unsaved content', async () => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spellcheck-edit-'));
+  const target = path.join(root, 'a.md');
+  let content = 'unchanged\r\nspelling\r\nend\r\n';
+  const diff = 'diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1,3 +1,3 @@\n unchanged\n-speling\n+spelling\n end\n';
+  let saves = 0;
+  const document = {
+    uri: {fsPath: target}, isDirty: false, eol: 2,
+    get lineCount() { return content.split('\r\n').length; },
+    lineAt(line) { return {text: content.split('\r\n')[line], range: {line}}; },
+    async save() { saves++; await fs.writeFile(target, content); return true; }
+  };
+  const vscode = {EndOfLine: {CRLF: 2}, Uri: {file: fsPath => ({fsPath})},
+    WorkspaceEdit: class {replace(uri, range, text) { this.change = {uri, range, text}; }},
+    workspace: {
+      async openTextDocument(uri) { assert.equal(uri.fsPath, target); return document; },
+      async applyEdit(edit) {
+        const lines = content.split('\r\n');
+        lines[edit.change.range.line] = edit.change.text;
+        content = lines.join('\r\n');
+        return true;
+      }
+    }
+  };
+  let preview;
+  try {
+    await fs.writeFile(target, content);
+    await showNotice(vscode, {inputBox: {value: 'Existing draft'}}, {root, paths: ['a.md']}, async () => diff);
+    preview = takeSpellcheckPopup();
+    const row = preview.files[0].rows.find(row => row.kind === 'add');
+    assert(row.editId);
+    assert.equal(preview.files[0].rows.find(row => row.kind === 'remove').editId, undefined);
+    document.isDirty = true;
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'new'), /existing editor changes/);
+    document.isDirty = false;
+    content = content.replace('spelling', 'external change');
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'new'), /line changed/);
+    content = content.replace('external change', 'spelling');
+    const updated = await saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'edited\nsecond line');
+    assert.equal(await fs.readFile(target, 'utf8'), 'unchanged\r\nedited\r\nsecond line\r\nend\r\n');
+    assert.equal(saves, 1);
+    assert.equal(updated.sessionId, preview.sessionId);
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, row.editId, 'stale'), /no longer available/);
+    closeSpellcheckPopup(preview.sessionId);
+    await assert.rejects(saveSpellcheckEdit(vscode, preview.sessionId, updated.files[0].rows.find(row => row.kind === 'add').editId, 'closed'), /no longer available/);
+  } finally {
+    if (preview) closeSpellcheckPopup(preview.sessionId);
+    await fs.rm(root, {recursive: true, force: true});
+  }
+});
+
+
+test('Accept commits reviewed files with the displayed message; Revert restores only their working tree', async () => {
+  for (const action of ['accept', 'revert']) {
+    const f = fixture({draft: 'Keep my unrelated draft'});
+    let refreshed = 0;
+    f.repo.status = async () => { refreshed++; };
+    const readDiff = async (_root, args) => args.includes('--cached') ? '' : patch;
+    await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md'], title: 'Spellcheck trading citations and notes'}, readDiff, f.git);
+    const preview = takeSpellcheckPopup();
+    assert.match(preview.message, /^🤖 Spellcheck trading citations and notes/);
+    const message = '🖊️ Correct the revised spelling\n\nExact edited body.\n';
+    const mutations = [];
+    const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}};
+    assert.deepEqual(await finishSpellcheckPreview(vscode, preview.sessionId, action, message, async (root, args) => {
+      mutations.push({root, args});
+    }), {action});
+    assert.deepEqual(mutations, [{root: '/repo', args: action === 'accept'
+      ? ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim', '--message', message, '--', 'notes/report.md']
+      : ['--literal-pathspecs', 'restore', '--worktree', '--', 'notes/report.md']}]);
+    assert.equal(f.repo.inputBox.value, 'Keep my unrelated draft');
+    assert.equal(refreshed, 1);
+    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, action, message), /no longer available/);
+  }
+});
+
+test('Accept and Revert reject changed previews, dirty editors, and staged changes without mutating Git', async () => {
+  for (const problem of ['external', 'head', 'dirty', 'staged', 'empty message']) {
+    const f = fixture();
+    let active = false;
+    const readDiff = async (_root, args) => args.includes('--cached')
+      ? (problem === 'staged' ? 'staged patch' : '')
+      : (active && problem === 'external' ? 'changed patch' : patch);
+    const readGit = async (root, args) => active && problem === 'head' && args.includes('HEAD') ? 'b'.repeat(40) : f.git(root, args);
+    await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, readDiff, readGit);
+    const preview = takeSpellcheckPopup();
+    active = true;
+    const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: problem === 'dirty'
+      ? [{uri: {fsPath: '/repo/notes/report.md'}, isDirty: true}] : []}};
+    let mutated = false;
+    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', problem === 'empty message' ? ' ' : preview.message,
+      async () => { mutated = true; }), /changed|Save the existing|staged changes|Enter a commit/);
+    if (['external', 'head', 'dirty'].includes(problem)) {
+      await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'revert', '', async () => { mutated = true; }));
+    }
+    assert.equal(mutated, false);
+    assert.equal(f.repo.inputBox.value, '');
+    closeSpellcheckPopup(preview.sessionId);
+  }
 });

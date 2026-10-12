@@ -216,8 +216,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           // Consume before writing: a failed request may already have created a PR.
           pendingDrafts.delete(draftId);
           try {
-            await pending.repository.status();
-            if (pending.repository.state.HEAD?.name !== pending.input.head) throw new Error('The active branch changed. Start a new PR chat.');
+            // Publish the captured remote branch even if the user keeps working
+            // on another checkout branch. Kefania verifies expectedHeadSha.
             const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
               title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
               run(pending.repository.rootUri.fsPath, { ...pending.input, preparedDraft: { title, body } }, { botOnly: true }));
@@ -226,7 +226,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
               : `Codex Pony opened PR #${result.number}`);
             return result;
           } catch (error) {
-            await vscode.window.showErrorMessage(error.message);
+            void vscode.window.showErrorMessage(error.message);
+            throw error;
           }
           return;
         }
@@ -306,10 +307,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       try { workflows.push([kind, create()]); }
       catch (error) { localHandoff.reportError(draftId, kind, error.message); }
     };
+    let closeConfirmation;
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async kind => {
+    localHandoff.register(draftId, { pony, onClose: async () => {
+      if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
+      await closeConfirmation();
+    }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async kind => {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();
@@ -334,7 +339,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
-      await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
+      const confirmationWindow = await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
+      closeConfirmation = confirmationWindow.close;
       for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {

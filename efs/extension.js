@@ -11,6 +11,7 @@ const { registerPullRequestCommand } = require('./pull_request');
 const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
+const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
 const { registerBranchMaintenance } = require('./branch_maintenance');
@@ -314,6 +315,7 @@ async function activate(context) {
   registerPullRequestCommand(vscode, context);
   registerLocalPullRequestCommand(vscode, context);
   registerEditorActions(vscode, context);
+  registerTerminalActions(vscode, context);
   registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);
   const index = new SearchIndex(context, settings);

@@ -48,6 +48,7 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
         else { main.state.HEAD.behind = 0; callback(null, '', ''); }
       }
     } };
+    if (name === './lindsey_conflicts') return require('../efs/lindsey_conflicts');
     return require(name);
   },
   Date: { now() { return clock; } },

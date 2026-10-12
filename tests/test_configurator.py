@@ -34,6 +34,20 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_pull_request_refresh_interval_validation(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["pullRequestRefreshIntervalSeconds"], "120")
+        page = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="pullRequestRefreshIntervalSeconds"', page)
+        for bad in ["0", "5", "29", "3601", "Infinity", "12.5", "invalid"]:
+            values["pullRequestRefreshIntervalSeconds"] = [bad]
+            with self.assertRaises(ValueError, msg=bad):
+                configurator.parse_submission(values)
+        values["pullRequestRefreshIntervalSeconds"] = ["600"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["pullRequestRefreshIntervalSeconds"], "600")
+        self.assertEqual(configurator.extension_settings_payload(parsed)["vscodeSettings"]["pullRequestRefreshIntervalSeconds"], 600)
+
     def test_chatgpt_project_url_validation(self):
         values = form_values()
         values["chatgptProjectUrl"] = ["https://chatgpt.com/g/g-p-sample123/project/"]
@@ -196,6 +210,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
     def test_staged_whitespace_toggle_defaults_on_and_can_be_disabled(self):
+        setting = next(setting for setting in configurator.SETTINGS if setting.name == "normalizeStagedWhitespace")
+        self.assertEqual(setting.section, "Source control")
+        self.assertEqual(setting.label, "Normalize line endings and whitespace")
+        self.assertIn("Commit with Codex", setting.description)
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["normalizeStagedWhitespace"])
         self.assertEqual(
             toolkit_settings.SETTING_KEYS["normalizeStagedWhitespace"],

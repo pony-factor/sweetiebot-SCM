@@ -8,6 +8,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
+const { isConflictState, offerConflictRecoveryOptions } = require('./lindsey_conflicts');
+
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
 const POST_COMMIT_GATE = 'sweetiebot-post-commit-push.json';
@@ -670,6 +672,11 @@ function registerBranchCommands(vscode, context) {
         try {
           return await queueRepositoryOperation(repository, attempt);
         } catch (error) {
+          // Conflicts differ from a dirty checkout and must never be stashed.
+          await repository.status();
+          if (isConflictState(repository)) {
+            return await offerConflictRecoveryOptions(vscode, repository);
+          }
           if (!isBlockedByLocalChanges(error)) throw error;
           return await offerBlockedChangesOptions(vscode, repository, command, attempt);
         }

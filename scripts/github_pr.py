@@ -86,9 +86,10 @@ def transform_refresh(source, remove=False):
         notice = notices[0]
         # Keep authentication and other errors intact; shorten only network timeouts.
         edits.append((notice.group(),
-                      '(/connect timeout|connection timeout|timed?\\s*out|UND_ERR_CONNECT_TIMEOUT/i.test('
-                      + notice.group(1) + ')?"⏳ GitHub took too long to respond. Try refreshing.":'
-                      + notice.group() + ')'))
+                      '((sweetiebotError)=>{globalThis.__sweetiebotGitHubPrRefreshError?.(sweetiebotError);'
+                      'return /connect timeout|connection timeout|timed?\\s*out|UND_ERR_CONNECT_TIMEOUT/i.test(sweetiebotError)'
+                      '?"⏳ GitHub took too long to respond. Try refreshing.":'
+                      + notice.group() + '})(' + notice.group(1) + ')'))
     for original, replacement in edits:
         source = source.replace(original, replacement, 1)
     return source + REFRESH_START + '/* edits:' + json.dumps(edits) + ' */' + REFRESH_END

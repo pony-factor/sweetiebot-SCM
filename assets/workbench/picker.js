@@ -728,7 +728,220 @@ function scmToolkitExpireNotifications(notifications) {
     scmToolkitTimedNotificationServices.add(notifications);
 }
 
+// One popup consumer per workbench document, shared by all repository widgets.
+const scmToolkitSpellcheckDocuments = new WeakSet();
+function scmToolkitWatchSpellcheckPopups(doc, commands) {
+    if (scmToolkitSpellcheckDocuments.has(doc)) return;
+    scmToolkitSpellcheckDocuments.add(doc);
+    let busy = false, popup;
+    const poll = async () => {
+        if (busy || popup) return;
+        busy = true;
+        try {
+            let preview = await commands.executeCommand('sweetiebot.takeSpellcheckPopup');
+            if (!preview || typeof preview.html !== 'string') return;
+            const previousFocus = doc.activeElement;
+            const dialog = doc.createElement('dialog');
+            dialog.className = 'scm-toolkit-spellcheck-popup';
+            dialog.setAttribute('aria-label', 'Spellchecks Performed');
+            const themeHost = doc.querySelector?.('.monaco-workbench') || doc.documentElement;
+            const theme = doc.defaultView.getComputedStyle?.(themeHost);
+            dialog.style?.setProperty('color', theme?.getPropertyValue('--vscode-editor-foreground').trim() || '#d4d4d4');
+            dialog.style?.setProperty('background-color', theme?.getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e');
+            const close = doc.createElement('button');
+            close.className = 'scm-toolkit-spellcheck-close';
+            close.textContent = 'Close';
+            const content = doc.createElement('div');
+            content.className = 'scm-toolkit-spellcheck-content';
+            const heading = doc.createElement('h1');
+            heading.textContent = 'Spellchecks Performed';
+            const status = doc.createElement('div');
+            status.className = 'scm-toolkit-spellcheck-status';
+            status.setAttribute('role', 'status');
+            const messageLabel = doc.createElement('label');
+            messageLabel.className = 'scm-toolkit-spellcheck-message-label';
+            messageLabel.textContent = 'Commit message';
+            const message = doc.createElement('textarea');
+            message.className = 'scm-toolkit-spellcheck-message';
+            message.setAttribute('aria-label', 'Commit message');
+            message.rows = 4;
+            message.value = preview.message || '';
+            messageLabel.append(message);
+            const actions = doc.createElement('footer');
+            actions.className = 'scm-toolkit-spellcheck-actions';
+            const revert = doc.createElement('button');
+            revert.className = 'scm-toolkit-spellcheck-revert';
+            revert.textContent = 'Revert';
+            const accept = doc.createElement('button');
+            accept.className = 'scm-toolkit-spellcheck-accept';
+            accept.textContent = 'Accept';
+            actions.append(revert, accept);
+            let activeEdit, currentSave, acting = false;
+            const updateActions = () => {
+                accept.disabled = acting || !message.value.trim();
+                revert.disabled = acting;
+                close.disabled = acting;
+                message.disabled = acting;
+            };
+            message.addEventListener('input', updateActions);
+            updateActions();
+            const renderFiles = () => {
+            const scrollTop = content.scrollTop;
+            content.replaceChildren(heading);
+            for (const file of preview.files || []) {
+                const section = doc.createElement('section');
+                section.className = 'file';
+                const name = doc.createElement('h2');
+                name.textContent = file.name;
+                section.append(name);
+                for (const row of file.rows) {
+                    const line = doc.createElement('div');
+                    line.className = ['hunk', 'meta'].includes(row.kind) ? row.kind : 'diff-line ' + row.kind;
+                    if (['hunk', 'meta'].includes(row.kind)) line.textContent = row.text;
+                    else {
+                        for (const [className, value] of [['line-number', row.oldNumber], ['line-number', row.newNumber], ['sign', row.kind === 'add' ? '+' : row.kind === 'remove' ? '−' : ' ']]) {
+                            const cell = doc.createElement('span');
+                            cell.className = className;
+                            cell.textContent = value == null ? '' : String(value);
+                            line.append(cell);
+                        }
+                        const text = doc.createElement('span');
+                        text.className = 'line-text';
+                        for (const segment of row.segments) {
+                            const token = doc.createElement('span');
+                            if (segment.changed) token.className = 'changed-token';
+                            token.textContent = segment.text;
+                            text.append(token);
+                        }
+                        if (row.editId) {
+                            text.tabIndex = 0;
+                            text.classList.add('editable');
+                            text.title = 'Click to edit this unstaged line';
+                            text.setAttribute('aria-label', 'Edit ' + file.name + ', line ' + row.newNumber);
+                            const begin = () => {
+                                if (activeEdit || currentSave || acting) return;
+                                const editor = doc.createElement('textarea');
+                                editor.className = 'scm-toolkit-spellcheck-line-editor';
+                                editor.value = row.text;
+                                editor.setAttribute('aria-label', 'Edit ' + file.name + ', line ' + row.newNumber);
+                                editor.rows = 1;
+                                editor.spellcheck = false;
+                                text.replaceChildren(editor);
+                                const resize = () => {
+                                    editor.style.height = 'auto';
+                                    editor.style.height = editor.scrollHeight + 'px';
+                                };
+                                const finish = () => {
+                                    if (currentSave) return currentSave;
+                                    if (activeEdit?.editor !== editor) return Promise.resolve(true);
+                                    if (editor.value === row.text) {
+                                        activeEdit = undefined;
+                                        renderFiles();
+                                        return Promise.resolve(true);
+                                    }
+                                    const value = editor.value;
+                                    editor.disabled = true;
+                                    close.disabled = true;
+                                    status.textContent = 'Saving…';
+                                    currentSave = commands.executeCommand('sweetiebot.saveSpellcheckEdit', preview.sessionId, row.editId, value)
+                                        .then(updated => {
+                                            preview = updated;
+                                            activeEdit = undefined;
+                                            status.textContent = 'Saved';
+                                            renderFiles();
+                                            return true;
+                                        }, error => {
+                                            editor.disabled = false;
+                                            status.textContent = error.message || 'Could not save this edit.';
+                                            return false;
+                                        }).finally(() => { currentSave = undefined; updateActions(); });
+                                    return currentSave;
+                                };
+                                activeEdit = {editor, finish};
+                                editor.addEventListener('input', resize);
+                                editor.addEventListener('blur', () => { void finish(); });
+                                editor.addEventListener('keydown', event => {
+                                    if (event.key === 'Escape') {
+                                        event.preventDefault(); event.stopPropagation();
+                                        if (currentSave) return;
+                                        activeEdit = undefined;
+                                        renderFiles();
+                                        close.focus();
+                                    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                                        event.preventDefault();
+                                        void finish();
+                                    }
+                                });
+                                editor.focus();
+                                resize();
+                            };
+                            text.addEventListener('click', begin);
+                            text.addEventListener('keydown', event => {
+                                if (event.key === 'Enter') { event.preventDefault(); begin(); }
+                            });
+                        }
+                        line.append(text);
+                    }
+                    section.append(line);
+                }
+                content.append(section);
+            }
+            content.scrollTop = scrollTop;
+            };
+            renderFiles();
+            const complete = async action => {
+                if (acting) return;
+                acting = true;
+                updateActions();
+                try {
+                    if (currentSave && !await currentSave) return;
+                    if (action === 'accept' && activeEdit && !await activeEdit.finish()) return;
+                    // Revert discards a draft still being typed in the popup.
+                    if (action === 'revert') activeEdit = undefined;
+                    status.textContent = action === 'accept' ? 'Committing…' : 'Reverting…';
+                    await commands.executeCommand('sweetiebot.finishSpellcheckPreview', preview.sessionId, action, message.value);
+                    dialog.close();
+                } catch (error) {
+                    status.textContent = error.message || 'Could not complete the spelling review.';
+                } finally { acting = false; updateActions(); }
+            };
+            revert.addEventListener('mousedown', event => { event.preventDefault(); });
+            revert.addEventListener('click', () => { void complete('revert'); });
+            accept.addEventListener('click', () => { void complete('accept'); });
+            const dismiss = async () => {
+                if (acting) return;
+                if (currentSave && !await currentSave) return;
+                if (activeEdit && !await activeEdit.finish()) return;
+                dialog.close();
+            };
+            dialog.addEventListener('cancel', event => { event.preventDefault(); void dismiss(); });
+            close.addEventListener('click', dismiss);
+            dialog.addEventListener('click', event => {
+                if (event.target !== dialog) return;
+                const rect = dialog.getBoundingClientRect();
+                if (event.clientX < rect.left || event.clientX > rect.right
+                    || event.clientY < rect.top || event.clientY > rect.bottom) dismiss();
+            });
+            dialog.addEventListener('close', () => {
+                popup = undefined;
+                dialog.remove();
+                void commands.executeCommand('sweetiebot.closeSpellcheckPopup', preview.sessionId).catch(() => {});
+                if (previousFocus?.isConnected) previousFocus.focus();
+            }, { once: true });
+            dialog.append(close, status, content, messageLabel, actions);
+            (doc.querySelector?.('.monaco-workbench') || doc.body).append(dialog);
+            popup = dialog;
+            dialog.showModal();
+            close.focus();
+        } catch { /* Extension activation or reload may temporarily remove the command. */ }
+        finally { busy = false; }
+    };
+    doc.defaultView.setInterval(poll, 1000);
+    void poll();
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
+    scmToolkitWatchSpellcheckPopups(widget.element.ownerDocument, commands);
     scmToolkitExpireNotifications(notifications);
     const doc = widget.element.ownerDocument;
     if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);

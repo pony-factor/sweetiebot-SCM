@@ -4,9 +4,10 @@ const assert = require('node:assert/strict');
 const { openCompactKefaniaChat, resizeMacChatWindow } = require('../efs/kefania_chat_window');
 
 function mockVscode({ float = true, browser = true, moveError = false, openError = false } = {}) {
-  const calls = [], warnings = [];
+  const calls = [], warnings = [], closed = [], workspaceTab = { name: 'Workspace' };
+  const group = { tabs: [workspaceTab] };
   return {
-    calls, warnings,
+    calls, warnings, closed, workspaceTab,
     commands: {
       async getCommands() {
         return [...(browser ? ['workbench.action.browser.open'] : []),
@@ -15,10 +16,11 @@ function mockVscode({ float = true, browser = true, moveError = false, openError
       async executeCommand(name, options) {
         calls.push({ name, options });
         if (name === 'workbench.action.browser.open' && openError) throw new Error('Cannot open browser');
+        if (name === 'workbench.action.browser.open') group.tabs.push({ name: 'Kefania confirmation' });
         if (name === 'workbench.action.moveEditorToNewWindow' && moveError) throw new Error('Move failed');
       }
     },
-    window: { async showWarningMessage(message) { warnings.push(message); } }
+    window: { tabGroups: { all:[group], async close(tab) { closed.push(tab); group.tabs=group.tabs.filter(item=>item!==tab); } }, async showWarningMessage(message) { warnings.push(message); } }
   };
 }
 
@@ -33,7 +35,8 @@ async function run() {
       done(null, '', '');
     }
   });
-  assert.deepEqual(floating, { floating: true });
+  assert.equal(floating.floating, true);
+  assert.equal(typeof floating.close, 'function');
   assert.deepEqual(vscode.calls.map(item => item.name), [
     'workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow'
   ]);
@@ -44,6 +47,11 @@ async function run() {
   assert.match(resizeCall.args[1], /size of front window to \{680, 720\}/);
   assert.match(resizeCall.args[1], /count of windows\) < 2/);
   assert.match(resizeCall.args[1], /does not contain "ChatGPT"/);
+  await floating.close();
+  assert.equal(vscode.closed.length, 1, 'Close targets exactly one confirmation tab');
+  assert.equal(vscode.closed[0].name, 'Kefania confirmation');
+  assert.deepEqual(vscode.window.tabGroups.all[0].tabs, [vscode.workspaceTab], 'Workspace tab is preserved');
+  await assert.rejects(floating.close(), /no longer open/, 'Never close an unrelated tab after the confirmation closes');
 
   const otherOS = mockVscode();
   await openCompactKefaniaChat(otherOS, url, {

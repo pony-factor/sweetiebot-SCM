@@ -51,10 +51,10 @@ class Setting:
 
 
 SETTINGS = (
-    Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh when the GitHub Pull Requests list becomes visible and every 5 seconds while the window is focused.", "GitHub"),
+    Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh only while visible and focused; pause after GitHub rate limits.", "GitHub"),
+    Setting("pullRequestRefreshIntervalSeconds", "scm-toolkit.pull-request-refresh-interval-seconds", "Pull-request refresh interval (seconds)", "Default 120 seconds; choose 30–3600. Manual refresh is unaffected.", "GitHub", "integer", minimum=30, maximum=3600),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-    Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "GitHub"),
-    Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
@@ -83,7 +83,7 @@ SETTINGS = (
     Setting("blankStateRefresh", "scm-toolkit.blank-state-refresh", "Refresh blank repositories", "Refresh clean repositories so their first new change appears quickly.", "Source control"),
     Setting("autoPullClean", "scm-toolkit.auto-pull-clean", "Automatically sync", "Fetch remote updates and fast-forward branches when possible. Runs independently of the push-after-committing checkbox.", "Source control"),
     Setting("graphOpenWorkingFile", "scm-toolkit.graph-open-working-file", "Open graph files from working tree", "Make Source Control Graph Open File target the checked-out working-tree file instead of the selected commit snapshot.", "Source control"),
-    Setting("normalizeStagedWhitespace", "scm-toolkit.normalize-staged-whitespace", "Normalize staged whitespace", "Before ordinary commits, remove trailing spaces on added lines and ensure exactly one final newline in eligible staged text files. Also applies to manually typed commit messages. Disable to preserve staged file formatting.", "Source control"),
+    Setting("normalizeStagedWhitespace", "scm-toolkit.normalize-staged-whitespace", "Normalize line endings and whitespace", "Remove trailing spaces on added lines and ensure exactly one final newline in eligible staged text files, preserving LF or CRLF. Applies to ordinary commits and Commit with Codex, including typed messages. Disable to preserve staged file formatting.", "Source control"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
     Setting("browserGlobeNewTab", "scm-toolkit.browser-globe-new-tab", "Globe opens a new browser tab", "Click the title-bar globe to open a new Integrated Browser tab directly. Turn off to show the browser URL or tab picker.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
@@ -116,6 +116,7 @@ SETTINGS = (
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open the configured pull-request drafting chat and publish through the configured Kafania MCP tool.", "Message bar"),
+    Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
@@ -1097,6 +1098,7 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
     for key in ("resultLimit", "maxFiles"):
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
+    payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
     return payload
 
 
