@@ -36,4 +36,7 @@ assert.equal(source.href,'https://example.com/image.png');
 img.onerror();
 assert.equal(stage.children[0].textContent,'View image at its source ↗');
 assert.equal(source.children[1].textContent,'Pony credit');
-console.log('Confirmation Markdown and image fallback checks passed.');
+assert.match(html, /id="close-confirmation"[^>]*hidden/, 'Close action is initially hidden');
+assert.match(html, /el\('close-confirmation'\)\.hidden=!state\.result/, 'Close appears only after publication');
+assert.match(html, /root\+'\/close'/, 'Close action uses the local handoff');
+console.log('Confirmation Markdown, image fallback, and close action checks passed.');
