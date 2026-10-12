@@ -261,7 +261,6 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     const instructions = await readInstructions(repository.rootUri.fsPath);
-    const pony = await readPony(branch);
 
     let source = normalizeConversationSource(options.source);
     let conversationContext = '';
@@ -287,6 +286,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
       return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
     }
+    // Kefania's published comparison is authoritative: an empty branch cannot
+    // produce a PR, so do not open either the draft or independent pony chat.
+    if (evidence?.aheadBy === 0) {
+      await vscode.window.showInformationMessage(
+        `No published commits on ${branch} ahead of ${options.base}. Commit and push changes before creating a pull request.`
+      );
+      return { skipped: true, reason: 'no-commits', repositoryUrl };
+    }
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
       const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
       error.name = 'SweetiebotBrowserUnavailable';
@@ -295,6 +302,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     const projectUrl = await resolveChatgptActionProject(vscode, context);
     if (projectUrl === undefined) return;
+    const pony = await readPony(branch);
     const draftId = randomUUID();
     if (!handoff) throw new Error('The local PR draft handoff is unavailable.');
     const localHandoff = await handoff();
