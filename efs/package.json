@@ -27,6 +27,7 @@
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
     "onCommand:sweetiebot.deleteBranch",
+    "onCommand:sweetiebot.deleteEmptyBranch",
     "onCommand:sweetiebot.autoPullClean",
     "onCommand:sweetiebot.syncBranch",
     "onView:scmToolkit.workspaceSearch",
