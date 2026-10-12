@@ -310,9 +310,8 @@ async function run() {
   await handler();
   assert.equal(errors.length, 0);
   assert.equal(infos.length, 0);
-  assert.equal(browserCalls.length, 2);
+  assert.equal(browserCalls.length, 1);
   assert.equal(browserCalls[0].id, 'workbench.action.browser.open');
-  assert.equal(browserCalls[1].id, 'workbench.action.moveEditorToNewWindow');
   const chat = new URL(browserCalls[0].options.url);
   assert.equal(chat.origin, 'https://chatgpt.com');
   const sentPrompt = chat.searchParams.get('q');
@@ -326,12 +325,14 @@ async function run() {
   const allChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
   assert.match(allChat.searchParams.get('q'), /pull\/41/);
   assert.match(allChat.searchParams.get('q'), /pull\/40/);
+  assert(browserCalls.every(call => call.id === 'workbench.action.browser.open'),
+    'Queue All keeps ChatGPT in the current window');
   assert.equal(submitCalls, 2);
   includeNonMain = true;
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';
   await handler();
-  assert.equal(browserCalls.length, 4, 'Dismissing the non-main confirmation must not open ChatGPT');
+  assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(submitCalls, 2);
   assert.equal(modalWarnings.length, 1);
   assert.match(modalWarnings[0].message, /kefania.*not main/);
@@ -345,7 +346,7 @@ async function run() {
   approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
-  assert.equal(browserCalls.length, 6, 'Cancelling must not submit a merge request');
+  assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
   assert.equal(submitCalls, 3);
   pickerAction = 'first';
 
