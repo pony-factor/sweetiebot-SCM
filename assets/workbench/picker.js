@@ -461,7 +461,7 @@ async function scmToolkitPushWithPullRetry(repository, originalPush, expectedBra
     }
 }
 
-function scmToolkitGuardCommit(repository, commands, configuration, notifications) {
+function scmToolkitGuardCommit(repository, commands, configuration, notifications, settings = {}) {
     if (!repository || typeof repository.commit !== 'function') return;
 
     const wrappedRepositories =
@@ -473,12 +473,37 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
         const originalPush = repository.push;
 
         const wrappedCommit = async function(message, options) {
+            // Blank-message commits generate their title inside Git's wrapper.
+            // Show progress before any asynchronous preflight or model queueing.
+            const generating = settings.aiCommit === true
+                && !String(message ?? '').trim()
+                && !options?.amend;
+            let progress;
+            if (generating) {
+                try {
+                    progress = notifications.notify?.({
+                        severity: 1, message: 'Generating commit message'
+                    });
+                } catch {
+                    // Notification API failures must never block Git.
+                }
+            }
+            const finishProgress = succeeded => {
+                try { progress?.close?.(); } catch { /* Ignore disposed notice. */ }
+                progress = null;
+                if (succeeded && generating) {
+                    try { notifications.info?.('Commit created.'); } catch { /* Git succeeded. */ }
+                }
+            };
             try {
                 const allowed = await commands.executeCommand(
                     'sweetiebot.checkCommitLimits',
                     repository.rootUri
                 );
-                if (allowed === false) return;
+                if (allowed === false) {
+                    finishProgress(false);
+                    return;
+                }
             } catch {
                 // Keep commits usable if the companion extension is temporarily unavailable.
             }
@@ -504,15 +529,19 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 }
 
                 if (!shouldReleasePush) {
-                    return await originalCommit.call(repository, message, options);
+                    const result = await originalCommit.call(repository, message, options);
+                    finishProgress(true);
+                    return result;
                 }
                 await originalCommit.call(repository, message, {
                     ...(options ?? {}), postCommitCommand: null
                 });
+                finishProgress(true);
                 // Preserve the branch being committed and run push/retry in the background.
                 pushTask = scmToolkitPushWithPullRetry(repository, originalPush, selectedBranch)
                     .then(() => true, error => { notifications.error(error); return false; });
             } finally {
+                finishProgress(false);
                 if (commitLease) {
                     const finish = async pushed => {
                         try {
@@ -702,6 +731,8 @@ function scmToolkitExpireNotifications(notifications) {
     // Extension-host notices (including "PR #... merged into main.") may be
     // added directly to the workbench model; info/warn/error also return void.
     // Observe the model so every notice, including ones already open, expires.
+    const keepOpen = message => message === 'Sweetiebot update ready'
+        || message === 'Generating commit message';
     const model = notifications.model;
     if (model && Array.isArray(model.notifications) && typeof model.onDidChangeNotification === 'function') {
         const timers = new WeakMap();
@@ -714,14 +745,14 @@ function scmToolkitExpireNotifications(notifications) {
         };
         const schedule = item => {
             if (!item || typeof item.close !== 'function') return;
-            if (messageOf(item) === 'Sweetiebot update ready') {
+            if (keepOpen(messageOf(item))) {
                 cancel(item);
                 return;
             }
             if (timers.has(item)) return;
             const timeout = setTimeout(() => {
                 timers.delete(item);
-                if (model.notifications.includes(item) && messageOf(item) !== 'Sweetiebot update ready') {
+                if (model.notifications.includes(item) && !keepOpen(messageOf(item))) {
                     item.close();
                 }
             }, 20_000);
@@ -743,7 +774,7 @@ function scmToolkitExpireNotifications(notifications) {
         const text = typeof message === 'string' ? message : message?.value ?? message?.message ?? '';
         if (!handle || (typeof handle !== 'object' && typeof handle !== 'function')
             || typeof handle.close !== 'function'
-            || String(text).trim() === 'Sweetiebot update ready'
+            || keepOpen(String(text).trim())
             || scheduled.has(handle)) return handle;
         scheduled.add(handle);
         const timeout = setTimeout(() => handle.close(), 20_000);
@@ -1931,7 +1962,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                         currentRepositoryArgument,
                         commands,
                         configuration,
-                        notifications
+                        notifications,
+                        settings
                     );
                     if (asyncPushDisposable) {
                         widget.repositoryDisposables.__scmToolkitCommitGuardBound = true;

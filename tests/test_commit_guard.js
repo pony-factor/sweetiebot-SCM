@@ -103,6 +103,82 @@ async function run(allowed, failCommit = false) {
     assert.deepEqual(events.at(-1), ['end', 'token', !pushFails]);
     assert.equal(errors.length, pushFails ? 1 : 0);
   }
+  // Confirm immediate feedback, no premature success, and cancellation cleanup.
+  {
+    const events = [];
+    let allowPreflight, finishCommit;
+    const repository = {
+      rootUri: { fsPath: '/tmp/repo' },
+      async commit() {
+        events.push('git commit');
+        await new Promise(resolve => { finishCommit = resolve; });
+      }
+    };
+    const commands = { async executeCommand(command) {
+      events.push(command);
+      if (command === 'sweetiebot.checkCommitLimits') {
+        return new Promise(resolve => { allowPreflight = resolve; });
+      }
+    } };
+    const notifications = {
+      notify(options) {
+        assert.equal(options.severity, 1);
+        assert.equal(options.message, 'Generating commit message');
+        events.push('progress');
+        return { close() { events.push('closed'); } };
+      },
+      info(message) { events.push(message); }
+    };
+    const context = vm.createContext({
+      repository, commands, notifications, configuration: { getValue() { return 'none'; } }
+    });
+    vm.runInContext(
+      snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications, { aiCommit: true });',
+      context
+    );
+    const committing = repository.commit('', {});
+    assert.deepEqual(events, ['progress', 'sweetiebot.checkCommitLimits'],
+      'Notification must be queued before any asynchronous work');
+    allowPreflight(true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert(events.includes('git commit'), 'The normal commit starts after preflight');
+    assert(!events.includes('Commit created.'), 'Never announce success before Git finishes');
+    finishCommit();
+    await committing;
+    assert.deepEqual(events.slice(-3),
+      ['closed', 'Commit created.', 'sweetiebot.endCommit'],
+      'Completion closes progress and confirms the actual commit');
+
+    const successes = events.filter(event => event === 'Commit created.').length;
+    const rejected = repository.commit('', {});
+    allowPreflight(false);
+    await rejected;
+    assert.equal(events.at(-1), 'closed', 'Canceling preflight closes progress');
+    assert.equal(events.filter(event => event === 'Commit created.').length, successes,
+      'Canceled commits must not report success');
+  }
+  {
+    const events = [];
+    const repository = {
+      rootUri: { fsPath: '/tmp/repo' },
+      async commit() { throw new Error('Hook failed'); }
+    };
+    const commands = { async executeCommand() { return true; } };
+    const notifications = {
+      notify() { events.push('progress'); return { close() { events.push('closed'); } }; },
+      info() { events.push('success'); }
+    };
+    const context = vm.createContext({
+      repository, commands, notifications, configuration: { getValue() { return 'none'; } }
+    });
+    vm.runInContext(
+      snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications, { aiCommit: true });',
+      context
+    );
+    await assert.rejects(repository.commit('', {}), /Hook failed/);
+    assert.deepEqual(events, ['progress', 'closed'],
+      'A failed Git commit must close progress without claiming success');
+  }
   console.log('Commit guard tests passed');
 })().catch(error => {
   console.error(error);
