@@ -34,6 +34,23 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_missing_gpg_does_not_claim_no_keys_exist(self):
+        status = {"gpgAvailable": False, "configured": "0123456789ABCDEF", "enabled": True, "keys": []}
+        with patch.object(configurator, "signing_status", return_value=status), \
+             patch.object(configurator, "load_commit_instructions", return_value=""):
+            controls = configurator._local_setup_controls()
+        self.assertIn("Cannot list OpenPGP keys: GnuPG unavailable", controls)
+        self.assertIn("local OpenPGP keys could not be checked", controls)
+        self.assertNotIn("No local OpenPGP signing keys found", controls)
+
+    def test_configured_key_does_not_imply_signing_enabled(self):
+        status = {"gpgAvailable": True, "configured": "0123456789ABCDEF", "enabled": False, "keys": []}
+        with patch.object(configurator, "signing_status", return_value=status), \
+             patch.object(configurator, "load_commit_instructions", return_value=""):
+            controls = configurator._local_setup_controls()
+        self.assertIn("Git commit signing is disabled.", controls)
+        self.assertIn("A signing key is configured", controls)
+
     def test_chatgpt_project_url_validation(self):
         values = form_values()
         values["chatgptProjectUrl"] = ["https://chatgpt.com/g/g-p-sample123/project/"]

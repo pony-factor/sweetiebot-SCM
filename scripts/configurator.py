@@ -544,15 +544,29 @@ def _local_setup_controls() -> str:
             f'{html.escape(label)}</option>'
         )
     if not options:
-        options.append('<option value="">No local OpenPGP signing keys found</option>')
+        empty_label = (
+            "No local OpenPGP signing keys found"
+            if status.get("gpgAvailable")
+            else "Cannot list OpenPGP keys: GnuPG unavailable"
+        )
+        options.append(f'<option value="">{empty_label}</option>')
 
-    configured_label = (
-        f"Git is configured to sign with {configured[-16:]}."
-        if configured
-        else "Git commit signing is not configured."
-    )
+    signing_format = str(status.get("format") or "openpgp")
+    if not status.get("enabled"):
+        configured_label = "Git commit signing is disabled."
+        if configured:
+            configured_label += f" A signing key is configured: {configured[-16:]}."
+    elif configured:
+        configured_label = f"Git commit signing is enabled with {configured[-16:]} ({signing_format})."
+        if signing_format == "openpgp" and status.get("gpgAvailable") and not any(
+            str(key.get("fingerprint") or "").upper().endswith(configured.removeprefix("0X").rstrip("!"))
+            for key in keys
+        ):
+            configured_label += " The configured key was not found among local OpenPGP keys."
+    else:
+        configured_label = "Git commit signing is enabled, but no signing key is explicitly configured."
     if not status.get("gpgAvailable"):
-        configured_label += " GnuPG was not found on PATH."
+        configured_label += " GnuPG is unavailable; local OpenPGP keys could not be checked."
 
     key_disabled = "" if keys else " disabled"
     generate_disabled = "" if status.get("gpgAvailable") else " disabled"
