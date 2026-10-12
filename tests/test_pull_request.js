@@ -190,6 +190,8 @@ async function run() {
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
   let contextFailure;
+  let aheadBy = 1;
+  const ponyLookups = [];
   let publicationFailure;
   let existingPullRequest;
   const informationMessages = [];
@@ -240,7 +242,7 @@ async function run() {
       assert.equal(options.botOnly, true);
       if (input.contextOnly) {
         if (contextFailure) throw contextFailure;
-        return { aheadBy: 1, headSha: 'a'.repeat(40), files: [],
+        return { aheadBy, headSha: 'a'.repeat(40), files: [],
           ...(existingPullRequest ? { existingPullRequest } : {}) };
       }
       if (publicationFailure) throw publicationFailure;
@@ -253,9 +255,12 @@ async function run() {
       assert.equal(repositoryPath, uri.fsPath);
       return rules;
     },
-    readPony: async branch => branch === 'draft'
-      ? { slug: 'draft', packId: 'test-pack', packLabel: 'Test ponies', packDescription: 'Test only.' }
-      : undefined,
+    readPony: async branch => {
+      ponyLookups.push(branch);
+      return branch === 'draft'
+        ? { slug: 'draft', packId: 'test-pack', packLabel: 'Test ponies', packDescription: 'Test only.' }
+        : undefined;
+    },
     showPony: async pony => { shownPonies.push(pony); }
   });
 
@@ -321,6 +326,18 @@ async function run() {
     'Existing PR must open even without the Integrated Browser');
   browserAvailable = true;
   existingPullRequest = undefined;
+
+  // An unmodified published branch must not launch a PR draft, pony research,
+  // or even the confirmation window. Existing PR reuse is tested above.
+  aheadBy = 0;
+  calls.length = 0;
+  const lookupCount = ponyLookups.length;
+  const noCommits = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.deepEqual(noCommits, { skipped: true, reason: 'no-commits', repositoryUrl: 'https://github.com/owner/repo' });
+  assert.equal(calls.length, 0, 'No browser or workflow may open when there are zero published commits');
+  assert.equal(ponyLookups.length, lookupCount, 'Do not even look up pony metadata for an empty branch');
+  assert.match(informationMessages.at(-1), /No published commits.*Commit and push changes/);
+  aheadBy = 1;
 
   configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
   calls.length = 0;
