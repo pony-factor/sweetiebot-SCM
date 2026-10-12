@@ -184,10 +184,10 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
       ]);
       if (staged.trim()) throw new Error('These files also have staged changes. Unstage them before accepting this preview.');
       // --only includes the reviewed working files while preserving other staged work.
-      await runAction(session.root, ['commit', '--only', '--cleanup=verbatim', '--message', message, '--', ...session.paths]);
+      await runAction(session.root, ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim', '--message', message, '--', ...session.paths]);
     } else {
       // The preview compares with the index, so revert to that same baseline.
-      await runAction(session.root, ['restore', '--worktree', '--', ...session.paths]);
+      await runAction(session.root, ['--literal-pathspecs', 'restore', '--worktree', '--', ...session.paths]);
     }
     closeSpellcheckPopup(sessionId);
     // A refresh failure must not turn a completed commit/revert into a retry.

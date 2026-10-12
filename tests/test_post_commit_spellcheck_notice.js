@@ -261,8 +261,8 @@ test('Accept commits reviewed files with the displayed message; Revert restores 
       mutations.push({root, args});
     }), {action});
     assert.deepEqual(mutations, [{root: '/repo', args: action === 'accept'
-      ? ['commit', '--only', '--cleanup=verbatim', '--message', message, '--', 'notes/report.md']
-      : ['restore', '--worktree', '--', 'notes/report.md']}]);
+      ? ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim', '--message', message, '--', 'notes/report.md']
+      : ['--literal-pathspecs', 'restore', '--worktree', '--', 'notes/report.md']}]);
     assert.equal(f.repo.inputBox.value, 'Keep my unrelated draft');
     assert.equal(refreshed, 1);
     await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, action, message), /no longer available/);
