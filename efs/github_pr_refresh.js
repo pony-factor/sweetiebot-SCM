@@ -125,7 +125,8 @@ function installPullRequestRefresh(vscode, view, owner) {
     if (state && decorateTreeItem) rowStates.set(url, state);
     else rowStates.delete(url);
     if (node && typeof owner.refresh === 'function') {
-      try { owner.refresh(node); } catch { /* Visual feedback must never block a merge. */ }
+      try { owner.refresh(node); } catch { // Visual feedback must never block a merge.
+      }
     }
     // Completed/queued badges persist briefly in case GitHub has not yet
     // removed the PR from the open list; never keep a stale badge forever.
