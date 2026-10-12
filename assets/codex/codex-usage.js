@@ -179,7 +179,7 @@ function scmToolkitKeepUsageFresh(refetch) {
             }
             const degrees = (100 - percent) * 3.6;
             // An embedded Codex webview may not expose the VS Code theme token.
-            // Use the configured hover accent; focusBorder is the normal green in this theme.
+            // Use the configured hover accent rather than the focus-outline color.
             const foreground = percent <= 10
                 ? 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'
                 : 'currentColor';
