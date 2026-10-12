@@ -758,7 +758,33 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const status = doc.createElement('div');
             status.className = 'scm-toolkit-spellcheck-status';
             status.setAttribute('role', 'status');
-            let activeEdit, currentSave;
+            const messageLabel = doc.createElement('label');
+            messageLabel.className = 'scm-toolkit-spellcheck-message-label';
+            messageLabel.textContent = 'Commit message';
+            const message = doc.createElement('textarea');
+            message.className = 'scm-toolkit-spellcheck-message';
+            message.setAttribute('aria-label', 'Commit message');
+            message.rows = 4;
+            message.value = preview.message || '';
+            messageLabel.append(message);
+            const actions = doc.createElement('footer');
+            actions.className = 'scm-toolkit-spellcheck-actions';
+            const revert = doc.createElement('button');
+            revert.className = 'scm-toolkit-spellcheck-revert';
+            revert.textContent = 'Revert';
+            const accept = doc.createElement('button');
+            accept.className = 'scm-toolkit-spellcheck-accept';
+            accept.textContent = 'Accept';
+            actions.append(revert, accept);
+            let activeEdit, currentSave, acting = false;
+            const updateActions = () => {
+                accept.disabled = acting || !message.value.trim();
+                revert.disabled = acting;
+                close.disabled = acting;
+                message.disabled = acting;
+            };
+            message.addEventListener('input', updateActions);
+            updateActions();
             const renderFiles = () => {
             const scrollTop = content.scrollTop;
             content.replaceChildren(heading);
@@ -793,7 +819,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                             text.title = 'Click to edit this unstaged line';
                             text.setAttribute('aria-label', 'Edit ' + file.name + ', line ' + row.newNumber);
                             const begin = () => {
-                                if (activeEdit || currentSave) return;
+                                if (activeEdit || currentSave || acting) return;
                                 const editor = doc.createElement('textarea');
                                 editor.className = 'scm-toolkit-spellcheck-line-editor';
                                 editor.value = row.text;
@@ -828,7 +854,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                                             editor.disabled = false;
                                             status.textContent = error.message || 'Could not save this edit.';
                                             return false;
-                                        }).finally(() => { currentSave = undefined; close.disabled = false; });
+                                        }).finally(() => { currentSave = undefined; updateActions(); });
                                     return currentSave;
                                 };
                                 activeEdit = {editor, finish};
@@ -863,7 +889,27 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             content.scrollTop = scrollTop;
             };
             renderFiles();
+            const complete = async action => {
+                if (acting) return;
+                acting = true;
+                updateActions();
+                try {
+                    if (currentSave && !await currentSave) return;
+                    if (action === 'accept' && activeEdit && !await activeEdit.finish()) return;
+                    // Revert discards a draft still being typed in the popup.
+                    if (action === 'revert') activeEdit = undefined;
+                    status.textContent = action === 'accept' ? 'Committing…' : 'Reverting…';
+                    await commands.executeCommand('sweetiebot.finishSpellcheckPreview', preview.sessionId, action, message.value);
+                    dialog.close();
+                } catch (error) {
+                    status.textContent = error.message || 'Could not complete the spelling review.';
+                } finally { acting = false; updateActions(); }
+            };
+            revert.addEventListener('mousedown', event => { event.preventDefault(); });
+            revert.addEventListener('click', () => { void complete('revert'); });
+            accept.addEventListener('click', () => { void complete('accept'); });
             const dismiss = async () => {
+                if (acting) return;
                 if (currentSave && !await currentSave) return;
                 if (activeEdit && !await activeEdit.finish()) return;
                 dialog.close();
@@ -882,7 +928,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                 void commands.executeCommand('sweetiebot.closeSpellcheckPopup', preview.sessionId).catch(() => {});
                 if (previousFocus?.isConnected) previousFocus.focus();
             }, { once: true });
-            dialog.append(close, status, content);
+            dialog.append(close, status, content, messageLabel, actions);
             (doc.querySelector?.('.monaco-workbench') || doc.body).append(dialog);
             popup = dialog;
             dialog.showModal();

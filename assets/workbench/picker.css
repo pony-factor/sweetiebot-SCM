@@ -769,3 +769,47 @@
 }
 .scm-toolkit-spellcheck-status { padding: 0 20px 8px; color: var(--vscode-descriptionForeground); }
 .scm-toolkit-spellcheck-status:empty { display: none; }
+
+.scm-toolkit-spellcheck-message-label {
+    display: block;
+    flex-shrink: 0;
+    padding: 10px 20px 0;
+    font-size: 12px;
+}
+.scm-toolkit-spellcheck-message {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px;
+    resize: vertical;
+    max-height: 160px;
+    color: var(--vscode-input-foreground, inherit);
+    background: var(--vscode-input-background, #252526);
+    border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, #555));
+    font: inherit;
+}
+.scm-toolkit-spellcheck-actions {
+    display: flex;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 12px 20px;
+}
+.scm-toolkit-spellcheck-actions button {
+    padding: 6px 18px;
+    border-radius: 3px;
+    border: 1px solid var(--vscode-button-border, transparent);
+    cursor: pointer;
+}
+.scm-toolkit-spellcheck-revert {
+    color: var(--vscode-button-secondaryForeground, #fff);
+    background: var(--vscode-button-secondaryBackground, #3a3d41);
+}
+.scm-toolkit-spellcheck-accept {
+    color: var(--vscode-button-foreground, #fff);
+    background: var(--vscode-button-background, #0e639c);
+}
+.scm-toolkit-spellcheck-actions button:disabled { opacity: .5; cursor: default; }
+.scm-toolkit-spellcheck-message:focus-visible, .scm-toolkit-spellcheck-actions button:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: 1px;
+}

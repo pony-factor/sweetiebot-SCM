@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
+  finishSpellcheckPreview, saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
 } = require('../efs/post_commit_spellcheck_notice');
 const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange } = require('../efs/spellcheck_diff');
 
@@ -166,7 +166,7 @@ test('reverted spellcheck edits do not open an empty review window', async () =>
   assert.equal(f.repo.inputBox.value, '');
 });
 
-test('descriptive titles carry into the preview and empty draft with the actual model', async () => {
+test('descriptive titles appear in the proposed commit message without changing the SCM draft', async () => {
   const title = 'Spellcheck Instinet trading and citations';
   const data = {version: 1, head, paths: ['notes/report.md'], model: 'qwen:3b', title};
   assert.equal(parseNotice(JSON.stringify(data)).title, title);
@@ -178,7 +178,8 @@ test('descriptive titles carry into the preview and empty draft with the actual 
   const popup = takeSpellcheckPopup();
   assert.equal(popup.title, title);
   assert.match(popup.html, /<h1>Spellchecks Performed<\/h1>/);
-  assert.equal(f.repo.inputBox.value, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
+  assert.equal(f.repo.inputBox.value, '');
+  assert.equal(popup.message, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
   f.repo.inputBox.value = '';
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, async () => {
     f.repo.inputBox.value = 'Draft entered while reading config';
@@ -240,5 +241,55 @@ test('in-place edits save only the intended unstaged line and reject stale or un
   } finally {
     if (preview) closeSpellcheckPopup(preview.sessionId);
     await fs.rm(root, {recursive: true, force: true});
+  }
+});
+
+
+test('Accept commits reviewed files with the displayed message; Revert restores only their working tree', async () => {
+  for (const action of ['accept', 'revert']) {
+    const f = fixture({draft: 'Keep my unrelated draft'});
+    let refreshed = 0;
+    f.repo.status = async () => { refreshed++; };
+    const readDiff = async (_root, args) => args.includes('--cached') ? '' : patch;
+    await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md'], title: 'Spellcheck trading citations and notes'}, readDiff, f.git);
+    const preview = takeSpellcheckPopup();
+    assert.match(preview.message, /^🤖 Spellcheck trading citations and notes/);
+    const message = '🖊️ Correct the revised spelling\n\nExact edited body.\n';
+    const mutations = [];
+    const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}};
+    assert.deepEqual(await finishSpellcheckPreview(vscode, preview.sessionId, action, message, async (root, args) => {
+      mutations.push({root, args});
+    }), {action});
+    assert.deepEqual(mutations, [{root: '/repo', args: action === 'accept'
+      ? ['commit', '--only', '--cleanup=verbatim', '--message', message, '--', 'notes/report.md']
+      : ['restore', '--worktree', '--', 'notes/report.md']}]);
+    assert.equal(f.repo.inputBox.value, 'Keep my unrelated draft');
+    assert.equal(refreshed, 1);
+    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, action, message), /no longer available/);
+  }
+});
+
+test('Accept and Revert reject changed previews, dirty editors, and staged changes without mutating Git', async () => {
+  for (const problem of ['external', 'head', 'dirty', 'staged', 'empty message']) {
+    const f = fixture();
+    let active = false;
+    const readDiff = async (_root, args) => args.includes('--cached')
+      ? (problem === 'staged' ? 'staged patch' : '')
+      : (active && problem === 'external' ? 'changed patch' : patch);
+    const readGit = async (root, args) => active && problem === 'head' && args.includes('HEAD') ? 'b'.repeat(40) : f.git(root, args);
+    await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, readDiff, readGit);
+    const preview = takeSpellcheckPopup();
+    active = true;
+    const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: problem === 'dirty'
+      ? [{uri: {fsPath: '/repo/notes/report.md'}, isDirty: true}] : []}};
+    let mutated = false;
+    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', problem === 'empty message' ? ' ' : preview.message,
+      async () => { mutated = true; }), /changed|Save the existing|staged changes|Enter a commit/);
+    if (['external', 'head', 'dirty'].includes(problem)) {
+      await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'revert', '', async () => { mutated = true; }));
+    }
+    assert.equal(mutated, false);
+    assert.equal(f.repo.inputBox.value, '');
+    closeSpellcheckPopup(preview.sessionId);
   }
 });
