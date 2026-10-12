@@ -190,6 +190,7 @@ async function run() {
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
   let contextFailure;
+  let publicationFailure;
   let existingPullRequest;
   const informationMessages = [];
   const vscode = {
@@ -206,7 +207,7 @@ async function run() {
       async withProgress(_options, task) { return task(); },
       async showInformationMessage(message) { informationMessages.push(message); },
       async showWarningMessage() {},
-      async showErrorMessage(message) { throw new Error(message); },
+      showErrorMessage() { return new Promise(() => {}); },
     },
     ProgressLocation: { Notification: 1 },
     extensions: {
@@ -242,6 +243,8 @@ async function run() {
         return { aheadBy: 1, headSha: 'a'.repeat(40), files: [],
           ...(existingPullRequest ? { existingPullRequest } : {}) };
       }
+      if (publicationFailure) throw publicationFailure;
+      assert.equal(input.head, 'draft', 'Publish the branch captured before checkout changed');
       assert.equal(input.expectedHeadSha, 'a'.repeat(40));
       assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup', body: 'Keep the verified source reference.' });
       return { url: 'https://github.com/owner/repo/pull/1' };
@@ -294,7 +297,9 @@ async function run() {
   const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
   calls.length = 0;
+  repository.state.HEAD.name = 'main';
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
+  repository.state.HEAD.name = 'draft';
   assert.equal(calls.length, 0, 'Publication stays on the confirmation page');
   calls.length = 0;
   await uriHandler.handleUri({ path: draftPath, query: 'title=Replay&body=Replay' });
@@ -324,6 +329,15 @@ async function run() {
   assert.equal(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
   assert.match(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q'), /"draft"/);
   configuredProject = '';
+
+  const failedPublicationUrl = calls[0].args[0].url;
+  publicationFailure = new Error('Remote head changed');
+  await fetch(failedPublicationUrl + '/draft', { method: 'POST', headers: { Origin: new URL(failedPublicationUrl).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const publicationState = await (await fetch(failedPublicationUrl + '/state')).json();
+  assert.equal(publicationState.publishing, false, 'Unanswered error notifications cannot block completion');
+  assert.equal(publicationState.errors.publish, publicationFailure.message);
+  publicationFailure = undefined;
 
   contextFailure = new Error('Published comparison unavailable');
   calls.length = 0;

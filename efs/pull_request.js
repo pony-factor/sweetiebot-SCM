@@ -216,8 +216,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           // Consume before writing: a failed request may already have created a PR.
           pendingDrafts.delete(draftId);
           try {
-            await pending.repository.status();
-            if (pending.repository.state.HEAD?.name !== pending.input.head) throw new Error('The active branch changed. Start a new PR chat.');
+            // Publish the captured remote branch even if the user keeps working
+            // on another checkout branch. Kefania verifies expectedHeadSha.
             const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
               title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
               run(pending.repository.rootUri.fsPath, { ...pending.input, preparedDraft: { title, body } }, { botOnly: true }));
@@ -226,7 +226,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
               : `Codex Pony opened PR #${result.number}`);
             return result;
           } catch (error) {
-            await vscode.window.showErrorMessage(error.message);
+            void vscode.window.showErrorMessage(error.message);
+            throw error;
           }
           return;
         }
