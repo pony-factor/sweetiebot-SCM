@@ -461,7 +461,7 @@ async function scmToolkitPushWithPullRetry(repository, originalPush, expectedBra
     }
 }
 
-function scmToolkitGuardCommit(repository, commands, configuration, notifications) {
+function scmToolkitGuardCommit(repository, commands, configuration, notifications, settings = {}) {
     if (!repository || typeof repository.commit !== 'function') return;
 
     const wrappedRepositories =
@@ -473,12 +473,37 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
         const originalPush = repository.push;
 
         const wrappedCommit = async function(message, options) {
+            // Blank-message commits generate their title inside Git's wrapper.
+            // Show progress before any asynchronous preflight or model queueing.
+            const generating = settings.aiCommit === true
+                && !String(message ?? '').trim()
+                && !options?.amend;
+            let progress;
+            if (generating) {
+                try {
+                    progress = notifications.notify?.({
+                        severity: 1, message: 'Generating commit message'
+                    });
+                } catch {
+                    // Notification API failures must never block Git.
+                }
+            }
+            const finishProgress = succeeded => {
+                try { progress?.close?.(); } catch { /* Ignore disposed notice. */ }
+                progress = null;
+                if (succeeded && generating) {
+                    try { notifications.info?.('Commit created.'); } catch { /* Git succeeded. */ }
+                }
+            };
             try {
                 const allowed = await commands.executeCommand(
                     'sweetiebot.checkCommitLimits',
                     repository.rootUri
                 );
-                if (allowed === false) return;
+                if (allowed === false) {
+                    finishProgress(false);
+                    return;
+                }
             } catch {
                 // Keep commits usable if the companion extension is temporarily unavailable.
             }
@@ -504,15 +529,19 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 }
 
                 if (!shouldReleasePush) {
-                    return await originalCommit.call(repository, message, options);
+                    const result = await originalCommit.call(repository, message, options);
+                    finishProgress(true);
+                    return result;
                 }
                 await originalCommit.call(repository, message, {
                     ...(options ?? {}), postCommitCommand: null
                 });
+                finishProgress(true);
                 // Preserve the branch being committed and run push/retry in the background.
                 pushTask = scmToolkitPushWithPullRetry(repository, originalPush, selectedBranch)
                     .then(() => true, error => { notifications.error(error); return false; });
             } finally {
+                finishProgress(false);
                 if (commitLease) {
                     const finish = async pushed => {
                         try {
@@ -702,6 +731,8 @@ function scmToolkitExpireNotifications(notifications) {
     // Extension-host notices (including "PR #... merged into main.") may be
     // added directly to the workbench model; info/warn/error also return void.
     // Observe the model so every notice, including ones already open, expires.
+    const keepOpen = message => message === 'Sweetiebot update ready'
+        || message === 'Generating commit message';
     const model = notifications.model;
     if (model && Array.isArray(model.notifications) && typeof model.onDidChangeNotification === 'function') {
         const timers = new WeakMap();
@@ -714,14 +745,14 @@ function scmToolkitExpireNotifications(notifications) {
         };
         const schedule = item => {
             if (!item || typeof item.close !== 'function') return;
-            if (messageOf(item) === 'Sweetiebot update ready') {
+            if (keepOpen(messageOf(item))) {
                 cancel(item);
                 return;
             }
             if (timers.has(item)) return;
             const timeout = setTimeout(() => {
                 timers.delete(item);
-                if (model.notifications.includes(item) && messageOf(item) !== 'Sweetiebot update ready') {
+                if (model.notifications.includes(item) && !keepOpen(messageOf(item))) {
                     item.close();
                 }
             }, 20_000);
@@ -743,7 +774,7 @@ function scmToolkitExpireNotifications(notifications) {
         const text = typeof message === 'string' ? message : message?.value ?? message?.message ?? '';
         if (!handle || (typeof handle !== 'object' && typeof handle !== 'function')
             || typeof handle.close !== 'function'
-            || String(text).trim() === 'Sweetiebot update ready'
+            || keepOpen(String(text).trim())
             || scheduled.has(handle)) return handle;
         scheduled.add(handle);
         const timeout = setTimeout(() => handle.close(), 20_000);
@@ -1143,6 +1174,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let currentRepositoryArgument;
     let currentRepositoryUri;
     let currentDefaultBranch;
+    let currentBranchRevision;
+    let pullRequestEligibilityKey;
+    let pullRequestEligibility;
     let repositoryResolveToken = 0;
     let currentInput;
     let pending = false;
@@ -1398,12 +1432,44 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || !currentDefaultBranch
             || !currentRepositoryUri;
 
+        const key = [currentRepositoryUri?.toString(), branch, currentDefaultBranch,
+            currentBranchRevision, settings.remote].join('|');
+        if (!unavailable && key !== pullRequestEligibilityKey) {
+            pullRequestEligibilityKey = key;
+            pullRequestEligibility = undefined;
+            void commands.executeCommand('sweetiebot.pullRequestEligibility', currentRepositoryUri, {
+                branch,
+                base: currentDefaultBranch,
+                remote: settings.remote,
+            }).then(result => {
+                if (pullRequestEligibilityKey !== key) return;
+                pullRequestEligibility = result;
+                refreshPullRequest();
+            }).catch(error => {
+                if (pullRequestEligibilityKey !== key) return;
+                pullRequestEligibility = { allowed: false, reason: 'unavailable',
+                    message: error.message || String(error) };
+                refreshPullRequest();
+            });
+        }
+
         pullRequestButton.hidden = !settings.mcpPullRequest;
-        pullRequestButton.disabled =
-            pending || deletingBranch || creatingPullRequest || creatingPonyBranch || unavailable;
+        pullRequestButton.disabled = pending || deletingBranch || creatingPullRequest
+            || creatingPonyBranch || unavailable || pullRequestEligibility?.allowed !== true;
+        const previous = pullRequestEligibility?.pullRequest;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
-            : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
+            : !pullRequestEligibility
+                ? 'Checking existing PRs and starting base…'
+                : pullRequestEligibility.reason === 'open-pr'
+                    ? `PR #${previous?.number ?? '?'} is already open; new commits appear there automatically`
+                    : pullRequestEligibility.reason === 'same-starting-base'
+                        ? `PR #${previous?.number ?? '?'} already used this starting base; branch must start from a different commit`
+                        : pullRequestEligibility.reason === 'no-commits'
+                            ? 'No published commits ahead of the base'
+                            : pullRequestEligibility.reason === 'unavailable'
+                                ? `Cannot verify PR eligibility: ${pullRequestEligibility.message}`
+                                : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
 
@@ -1421,6 +1487,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
+            || pullRequestEligibility?.allowed !== true
         ) return;
 
         creatingPullRequest = true;
@@ -1646,7 +1713,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 
-    const deleteBranch = async event => {
+    const deleteBranch = async (event, onlyEmpty = false) => {
         event.stopPropagation();
 
         const branch = currentBranch;
@@ -1675,11 +1742,23 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshBranchControls();
 
         try {
-            await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
-                branch,
-                defaultBranch: currentDefaultBranch,
-                remote: settings.remote,
-            });
+            let result;
+            if (onlyEmpty) {
+                result = await commands.executeCommand('sweetiebot.deleteEmptyBranch', repositoryArgument, {
+                    branch,
+                    defaultBranch: currentDefaultBranch,
+                    remote: settings.remote,
+                });
+            } else {
+                await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
+                    branch,
+                    defaultBranch: currentDefaultBranch,
+                    remote: settings.remote,
+                });
+            }
+            if (onlyEmpty && result) {
+                notifications.info(`Deleted empty branch ${branch}${result.remoteDeleted ? ' locally and on ' + settings.remote : ' locally'}.`);
+            }
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1688,6 +1767,51 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             refreshBranchControls();
         }
     };
+
+    // Right-clicking the branch selector exposes safe deletion of an empty
+    // branch. This does not change the existing trash-button/merged-PR path.
+    let branchContextMenu;
+    const closeBranchContextMenu = () => {
+        branchContextMenu?.remove();
+        branchContextMenu = undefined;
+    };
+    const showBranchContextMenu = event => {
+        if (
+            !settings.branchCleanup || !currentBranch || !currentRepositoryUri
+            || !currentDefaultBranch || currentBranch === currentDefaultBranch
+            || pending || deletingBranch || creatingPullRequest || creatingPonyBranch
+        ) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeBranchContextMenu();
+        const menu = doc.createElement('div');
+        menu.className = 'scm-toolkit-branch-context-menu';
+        menu.setAttribute('role', 'menu');
+        const action = doc.createElement('button');
+        action.type = 'button';
+        action.setAttribute('role', 'menuitem');
+        action.textContent = `Delete empty branch (local + ${settings.remote})…`;
+        action.addEventListener('click', click => {
+            closeBranchContextMenu();
+            void deleteBranch(click, true);
+        });
+        menu.append(action);
+        (doc.body || doc.documentElement).append(menu);
+        const width = 260;
+        menu.style.left = `${Math.max(0, Math.min(event.clientX, doc.defaultView.innerWidth - width))}px`;
+        menu.style.top = `${Math.max(0, Math.min(event.clientY, doc.defaultView.innerHeight - menu.offsetHeight))}px`;
+        branchContextMenu = menu;
+        action.focus();
+    };
+    const dismissBranchContextMenu = event => {
+        if (branchContextMenu && !branchContextMenu.contains(event.target)) closeBranchContextMenu();
+    };
+    const escapeBranchContextMenu = event => {
+        if (event.key === 'Escape') closeBranchContextMenu();
+    };
+    doc.addEventListener('pointerdown', dismissBranchContextMenu, true);
+    doc.addEventListener('keydown', escapeBranchContextMenu);
+    branchButton.addEventListener('contextmenu', showBranchContextMenu);
 
     const openSettings = async event => {
         event.stopPropagation();
@@ -1711,6 +1835,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         dispose() {
             homeButton.removeEventListener('click', returnHome);
             branchButton.removeEventListener('click', openBranchPicker);
+            branchButton.removeEventListener('contextmenu', showBranchContextMenu);
+            doc.removeEventListener('pointerdown', dismissBranchContextMenu, true);
+            doc.removeEventListener('keydown', escapeBranchContextMenu);
+            closeBranchContextMenu();
             syncButton.removeEventListener('click', syncBranch);
             deleteButton.removeEventListener('click', deleteBranch);
             pushCheckbox.removeEventListener('change', changePush);
@@ -1790,6 +1918,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
             currentDefaultBranch = undefined;
+            currentBranchRevision = undefined;
+            pullRequestEligibilityKey = undefined;
+            pullRequestEligibility = undefined;
             const resolutionToken = ++repositoryResolveToken;
             currentInput = undefined;
             homeButton.hidden = true;
@@ -1931,7 +2062,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                         currentRepositoryArgument,
                         commands,
                         configuration,
-                        notifications
+                        notifications,
+                        settings
                     );
                     if (asyncPushDisposable) {
                         widget.repositoryDisposables.__scmToolkitCommitGuardBound = true;
@@ -1963,6 +2095,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 currentBranch = historyItemRef?.id?.startsWith('refs/heads/')
                     ? historyItemRef.name
                     : undefined;
+                currentBranchRevision = historyItemRef?.revision;
                 if (previousBranch && currentBranch && previousBranch !== currentBranch) {
                     void maybePublishBranch(currentBranch);
                 }

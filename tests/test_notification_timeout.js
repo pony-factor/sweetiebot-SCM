@@ -61,6 +61,9 @@ assert.equal(timers.length, 5);
 timers[4].callback();
 assert.equal(markdown.closed, 1);
 assert.equal(update.closed, 0);
+const generating = service.notify({ message: 'Generating commit message' });
+assert.equal(timers.length, 5, 'Active commit generation must not expire after 20 seconds');
+generating.close();
 
 // A GitHub PR merge notification originates in the extension host. Its
 // showInformationMessage call may bypass the service methods wrapped above.
@@ -138,5 +141,10 @@ modelListeners[0]({ kind: 1, item: changedFromUpdate });
 assert.equal(modelTimers.length, 5, 'Notice losing its exemption should expire');
 modelTimers[4].callback();
 assert.equal(changedFromUpdate.closed, 1);
+const activeCommit = makeItem('Generating commit message');
+model.notifications.unshift(activeCommit);
+modelListeners[0]({ kind: 0, item: activeCommit });
+assert.equal(modelTimers.length, 5, 'Model-backed commit progress must stay open');
+activeCommit.close();
 
 console.log('Sweetiebot notification timeout tests passed.');

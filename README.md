@@ -13,6 +13,7 @@ Current features:
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
 - open the PR-number link in the GitHub PR view once per click
 - optionally show a guarded local-branch cleanup button
+- right-click the SCM branch selector to delete an empty topic branch locally and on origin (when published), with confirmation, clean-tree checks, ancestry verification, and an exact-SHA remote lease
 - optionally create a branch from each repository's default branch using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline code completion
 - optionally show a commit button that appends the Codex co-author trailer
@@ -345,6 +346,8 @@ Both normal and Codex-context generation read commit-writing preferences from `~
 `assets/commit-instructions.md` is the shared starter kit: a professional emoji, a brief imperative title, and a fuller description for commits directly to `main`. Personal preferences can be kept in the ignored `assets/commit-instructions.local.md`; copy that file to the default local path or select it with `SCM_TOOLKIT_COMMIT_INSTRUCTIONS` to use it. The installer bundles only the shared starter kit.
 
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
+
+When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
 
 ### Concurrent PDF OCR and commit generation
 
@@ -843,4 +846,4 @@ git config --global scm-toolkit.post-commit-spellcheck true
 
 This toggle is off by default. After a successful automatic staged commit, the local Ollama model reviews changed Markdown prose and proposes conservative spelling, grammar, and ASCII punctuation corrections. When **Commit and push** is checked, the active branch finishes pushing (including any retry) before spellchecking starts. Failed pushes and branch changes skip the spellcheck job without dirtying the working tree. Fenced code, inline code, URLs, Markdown prefixes, and line endings are protected. Unavailable models and unchanged text produce no dialog.
 
-Proposals appear as unstaged edits in Source Control. Choose **Keep edits** to review them or **Discard** to remove untouched proposals. The original commit and index remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
+Proposals open in the **Spellchecks Performed** review popup as unstaged edits. You can edit corrections and the proposed message before choosing **Accept** to commit only the reviewed files, **Revert** to discard their unstaged corrections, or **Close** to leave the edits in place. **Accept** also pushes the active branch when Source Control's **Commit and push** checkbox is checked; otherwise it commits locally. If that push fails, the commit stays local and an error is shown without reopening a stale preview. The original commit and unrelated staged work remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.

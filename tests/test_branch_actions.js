@@ -366,7 +366,7 @@ async function run() {
     };
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
-    assert.equal(context.subscriptions.length, 10);
+    assert.equal(context.subscriptions.length, 11);
     assert.equal(await commands.get('sweetiebot.returnHome')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('sweetiebot.resolveDefaultBranch')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');

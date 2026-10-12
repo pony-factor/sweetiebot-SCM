@@ -32,7 +32,7 @@ function resizeMacChatWindow(exec = execFile) {
 
 // Opening and moving are separate native workbench commands. A failed move
 // must not trigger Kefania's local fallback: ChatGPT may already be open.
-async function openCompactKefaniaChat(vscode, url, { platform = process.platform, exec = execFile, requireFloating = false } = {}) {
+async function openCompactKefaniaChat(vscode, url, { platform = process.platform, exec = execFile, requireFloating = false, floating = true } = {}) {
   const commands = await vscode.commands.getCommands(true);
   if (!commands.includes(BROWSER_COMMAND)) {
     const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
@@ -45,6 +45,7 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
   await vscode.commands.executeCommand(BROWSER_COMMAND, {
     url, openToSide: false, reuseUrlFilter: url
   });
+  if (!floating && !requireFloating) return { floating: false };
   // Close only the browser tab opened for this confirmation; never close the workspace window.
   const opened = vscode.window.tabGroups?.all.flatMap(group => group.tabs).filter(tab => !before.has(tab)) || [];
   const ownedTab = opened.length === 1 ? opened[0] : undefined;

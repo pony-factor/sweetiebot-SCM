@@ -299,7 +299,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;
       const url = chatgptPromptUrl(prompt, projectUrl);
-      await openCompactKefaniaChat(vscode, url);
+      await openCompactKefaniaChat(vscode, url, { floating: false });
       const submission = await submitPrompt();
       if (platform === 'darwin' && submission !== true && !submission?.submitted) {
         const message = submission?.reason === 'focus'
