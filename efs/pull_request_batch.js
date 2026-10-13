@@ -133,6 +133,16 @@ function planStackMerges(pullRequests, repositoryFullName, defaultBranch = 'main
   };
 }
 
+function squashCommitTitle(pr) {
+  const number = Number(pr?.number);
+  if (!Number.isSafeInteger(number) || number < 1) {
+    throw new Error('A squash commit requires a valid pull-request number.');
+  }
+  const title = String(pr?.title || '').trim().replace(/\s*\(#\d+\)\s*$/, '').trim();
+  if (!title) throw new Error('A squash commit requires a pull-request title.');
+  return title + ' (#' + number + ')';
+}
+
 async function pickPullRequests(vscode, pullRequests) {
   const picker = vscode.window.createQuickPick();
   const queueAllButton = {
@@ -183,7 +193,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
   const plan = planStackMerges(pullRequests, repositoryName(repositoryUrl));
   const hasStack = plan.stacked.length > 0 || plan.ordered.some(pr => pr.stack);
   const list = plan.ordered.map(pr =>
-    `- #${pr.number}: ${pr.title} — ${pr.url} (head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)}${pr.stackDepth > 0 ? `; selected parent: #${pr.stackParent}; intended destination: main` : ''}${pr.stack ? '; GitHub stack metadata present' : ''})`
+    `- #${pr.number}: ${pr.title} — ${pr.url} (squash title: ${JSON.stringify(squashCommitTitle(pr))}; head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)}${pr.stackDepth > 0 ? `; selected parent: #${pr.stackParent}; intended destination: main` : ''}${pr.stack ? '; GitHub stack metadata present' : ''})`
   ).join('\n');
   const summary = hasStack
     ? `Squash and merge the following selected pull requests in repository ${repositoryUrl}. Complete selected stacks must land on main in ancestor-first order, with ONE separate squash commit per PR. Unrelated PRs retain their explicitly listed bases:`
@@ -199,7 +209,11 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
       ? 'BRANCH-LINKED BUT NOT GITHUB-NATIVE: Do not mistake a head/base branch-name chain for verified native stack membership. If native stack merge is unavailable, only use manual ancestor-first squash and child-only replay when you can prove each child diff excludes all ancestor changes, safely retarget ONLY selected descendants to main, respect branch protections, and preserve one squash commit per PR. Do not force-push a protected or unselected parent/base branch. If that cannot be verified and performed safely with available tools, STOP that stack; never fall back to merging children into parent branches and calling the result delivered to main.'
       : '',
     'For GitHub-native stacked PRs missing selected lower ancestors, STOP and request a complete prefix: never merge one into an intermediate base or implicitly include its unselected ancestors. PRs outside complete selected stacks and without native stack membership must merge ONLY into their originally listed base branch. Do not silently merge them into main or pull in an unselected dependency. Report blockers or unexpected base changes and continue only with unrelated safe PRs.',
-    'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Use each PR title as its squash-commit title and include the required Codex Web co-author trailer wherever the operation allows explicit commit text. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
+    'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
+    'ATTRIBUTION FOR EVERY SELECTED PR: Before merging, read ALL original PR commits (paginate the commits endpoint) and inspect their Git author and committer names/emails, linked GitHub author/committer accounts, and existing Co-authored-by trailers. Preserve the distinct human contributors who actually authored or committed changes, including a GitHub-linked human behind a bot-opened PR, and preserve genuine existing co-authors. Use original commit-associated or explicitly confirmed GitHub-linked email addresses; never guess a private email or attribute work to an unrelated person. Deduplicate by verified GitHub identity/email, excluding automation accounts. If human attribution cannot be established reliably, STOP the affected PR before merging and report the limitation.',
+    'SQUASH TITLE AND MESSAGE FOR EVERY SELECTED PR: Use the exact squash title shown above for that PR, with its own (#number) suffix exactly once at the END; do not append a different PR number or change the PR title itself. Compose a descriptive squash-commit body, then a blank line, then one Co-authored-by: Name <email> trailer for each distinct verified human contributor not already credited as squash author. Include the exact Co-authored-by: Codex Web <noreply@openai.com> trailer as the last line. For a normal non-stack PR, set the explicit commit_title and commit_message using the GitHub squash merge API with the verified head SHA, or gh pr merge --squash --subject and --body. Supplying a custom commit message bypasses GitHub\'s default automatic co-author text: do not rely on it to preserve credit.',
+    'NATIVE STACK METADATA SAFETY: GitHub-native atomic stack merges may not support custom per-layer squash titles or commit messages. Check support BEFORE submitting the stack. If the chosen operation cannot preserve each layer\'s exact (#number) title and all human co-author trailers, STOP the affected stack; report this limitation rather than silently losing attribution or rewriting main after the merge.',
+    'AFTER EACH COMPLETED MERGE: Fetch the resulting squash commit from its actual destination branch. Verify its first line exactly matches that PR\'s precomputed squash title, its author/co-author credit covers the verified human contributors, and its message includes the required Codex Web trailer. Report any mismatch and its commit URL rather than claiming successful attribution. Queued merges are not complete until their commits can be inspected; never amend or force-push a protected base to repair a merged commit.',
     'Report which PRs actually landed on main versus another branch, which were only queued, and which were blocked. Never collapse multiple selected PRs into a single squash commit or claim an intermediate-branch merge reached main.'
   ].filter(Boolean).join('\n\n');
 }
@@ -280,6 +294,7 @@ module.exports = {
   fetchOpenPullRequests,
   pickPullRequests,
   planStackMerges,
+  squashCommitTitle,
   batchMergePrompt,
   registerPullRequestBatchCommand
 };
