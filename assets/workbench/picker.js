@@ -2245,7 +2245,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands) {
             newItem.className = 'action-item sweetiebot-compact-window-action';
             newItem.setAttribute('role', 'presentation');
             const newAction = doc.createElement('a');
-            newAction.className = 'action-label codicon codicon-new-window';
+            newAction.className = 'action-label codicon codicon-link-external';
             newAction.title = 'Open workspace in new window';
             newAction.setAttribute('aria-label', newAction.title);
             newAction.setAttribute('role', 'button');
