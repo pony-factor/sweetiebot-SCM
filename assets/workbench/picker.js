@@ -2354,7 +2354,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             newItem.setAttribute('role', 'presentation');
             const newAction = doc.createElement('a');
             newAction.className = 'action-label codicon codicon-link-external';
-            newAction.title = 'Open workspace in new window';
+            newAction.title = 'Open independent workspace from main';
             newAction.setAttribute('aria-label', newAction.title);
             newAction.setAttribute('role', 'button');
             newAction.setAttribute('tabindex', '0');
@@ -2364,8 +2364,8 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 state.opening = true;
                 newAction.setAttribute('aria-disabled', 'true');
                 try {
-                    await commands.executeCommand('workbench.action.duplicateWorkspaceInNewWindow');
-                    newAction.title = 'Open workspace in new window';
+                    await commands.executeCommand('sweetiebot.openIndependentWorkspace');
+                    newAction.title = 'Open independent workspace from main';
                 } catch (error) {
                     console.error('Sweetiebot could not open the workspace in a new window', error);
                     newAction.title = 'Could not open workspace in new window; click to retry';
