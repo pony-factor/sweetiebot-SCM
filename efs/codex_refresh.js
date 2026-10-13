@@ -26,6 +26,14 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
     if (!revision || revision === loadedRevision || revision === reloadRevision || disposed || !enabled() || !focused) return;
     reloadRevision = revision;
     void (async () => {
+      const commands = await vscode.commands.getCommands(true);
+      if (commands.includes('sweetiebot.preserveCodexConversation')) {
+        try {
+          await vscode.commands.executeCommand('sweetiebot.preserveCodexConversation');
+        } catch {
+          // No open Codex view: the normal VS Code editor restore still applies.
+        }
+      }
       await beforeReload();
       if (disposed || !enabled() || !focused) {
         reloadRevision = undefined;

@@ -1,4 +1,4 @@
-"""Guarded patches for read-only, window-local Codex conversation snapshots."""
+"""Guarded patches for window-local Codex snapshots and reload restoration."""
 
 import json
 from pathlib import Path

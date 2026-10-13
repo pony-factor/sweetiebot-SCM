@@ -21,6 +21,14 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
 
     provider.handleMessage = function(webview, message) {
         if (message?.type === 'scm-toolkit-context-response') return;
+        if (message?.type === 'scm-toolkit-restore-conversation') {
+            if (uuid.test(message.conversationId ?? '')) {
+                this.postMessageToWebview(webview, {
+                    type: 'navigate-to-route', path: `/local/${message.conversationId}`,
+                });
+            }
+            return;
+        }
         return originalHandleMessage.call(this, webview, message);
     };
     provider.initializeWebview = function(webview, role, onDispose, ...args) {
@@ -29,6 +37,10 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             if (message?.type !== 'scm-toolkit-context-response' || request?.webview !== webview) return;
             pending.delete(message.id);
             clearTimeout(request.timeout);
+            if (request.reloadState) {
+                request.resolve(uuid.test(message.conversationId ?? ''));
+                return;
+            }
             const text = typeof message.text === 'string' ? message.text.trim().slice(-6000) : '';
             if (!text) {
                 request.reject(new Error('Open a Codex conversation with text in this window first.'));
@@ -54,7 +66,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const capture = includeSource => {
+    const capture = (includeSource, reloadState = false) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -64,6 +76,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         const focusedWebview = focusedPanel ? provider.getWebviewForPanel(focusedPanel)
             : provider.focusedView?.kind === 'sidebar' ? provider.sidebarView?.webview : undefined;
         const sidebar = sidebars.find(view => view.visible) ?? provider.sidebarView ?? sidebars[0];
+        if (reloadState && !activePanel && !sidebar?.visible) return Promise.resolve(false);
         const webview = focusedWebview ?? (activePanel ? provider.getWebviewForPanel(activePanel) : sidebar?.webview)
             ?? (panels.length === 1 ? provider.getWebviewForPanel(panels[0]) : undefined);
         if (!webview) throw new Error('Open a Codex conversation in this window first.');
@@ -73,8 +86,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 pending.delete(id);
                 reject(new Error('Codex text capture timed out. Reopen this window after installing the toolkit.'));
             }, 5000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource });
-            webview.postMessage({ type: 'scm-toolkit-context-request', id }).then(sent => {
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, reloadState });
+            webview.postMessage({ type: 'scm-toolkit-context-request', id, reloadState }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -96,6 +109,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         'sweetiebot.readCodexConversation',
         () => capture(true)
     );
+    const reloadCommand = vscode.commands.registerCommand(
+        'sweetiebot.preserveCodexConversation', () => capture(false, true)
+    );
     const legacyTextCommand = vscode.commands.registerCommand(
         'scmToolkit.readCodexContext', () => capture(false)
     );
@@ -106,6 +122,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     return { dispose() {
         textCommand.dispose();
         sourceCommand.dispose();
+        reloadCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
         provider.initializeWebview = originalInitialize;

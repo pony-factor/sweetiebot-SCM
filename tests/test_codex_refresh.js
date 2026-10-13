@@ -46,7 +46,13 @@ const vscode = {
   env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },
   workspace: { getConfiguration() { return { get() { return enabled; } }; },
     onDidChangeConfiguration() { return { dispose() {} }; } },
-  commands: { executeCommand(command) { assert.equal(command, 'workbench.action.reloadWindow'); reloads++; } },
+  commands: {
+    async getCommands() { return ['sweetiebot.preserveCodexConversation']; },
+    executeCommand(command) {
+      if (command === 'sweetiebot.preserveCodexConversation') return;
+      assert.equal(command, 'workbench.action.reloadWindow'); reloads++;
+    }
+  },
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },
   window: { onDidChangeWindowState(fn) { focusChanged = fn; return { dispose() {} }; }, showInformationMessage(message) { notices.push(message); return Promise.resolve(choice); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
   extensions: {
@@ -79,7 +85,7 @@ assert.equal(notices.length, 0, 'reload is withheld until the quiet period elaps
 tick();
 assert.equal(notices.length, 0, 'successful settled repair needs no reload prompt');
 assert.equal(invalidations, 1, 'VS Code extension cache is cleared before the automatic reload');
-await Promise.resolve();
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(stopping, true);
 assert.equal(reloads, 0, 'reload waits for the old settings server to exit');
 releaseServer();
@@ -98,7 +104,7 @@ assert.equal(launches, 4, 'returning to a stale window checks installed updates 
 children.at(-1).callbacks.get('close')(0);
 tick();
 assert.equal(notices.length, 0);
-await Promise.resolve(); releaseServer();
+await new Promise(resolve => setImmediate(resolve)); releaseServer();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 2, 'a stale window automatically reloads after focus and repair');
 // A newly loaded window already has those bytes, even if the installer reports work again.

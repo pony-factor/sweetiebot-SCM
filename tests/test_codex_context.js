@@ -45,6 +45,31 @@ async function run() {
   receive({ data: { type: 'scm-toolkit-context-request', id: 'hidden' } });
   assert.equal(responses[1].text, 'Retained hidden chat');
 
+  let state = { existingCodexState: 'preserved' };
+  const api = {
+    getState: () => state,
+    setState: value => { state = value; },
+    postMessage: message => responses.push(message)
+  };
+  context.scmToolkitRegisterCodexSnapshot(api);
+  receive({ data: { type: 'scm-toolkit-context-request', id: 'reload', reloadState: true } });
+  assert.equal(state.sweetiebotReloadConversation, conversationId);
+  assert.equal(state.existingCodexState, 'preserved');
+  assert.equal(responses.at(-1).text, undefined, 'reload capture never reads conversation text');
+  context.window.location.hash = '';
+  context.scmToolkitRegisterCodexSnapshot(api);
+  receive({ data: { type: 'unrelated' } });
+  const countBeforeReady = responses.length;
+  receive({ data: { type: 'persisted-atom-sync' } });
+  assert.equal(responses.at(-1).type, 'scm-toolkit-restore-conversation');
+  assert.equal(responses.at(-1).conversationId, conversationId);
+  assert.equal(state.sweetiebotReloadConversation, undefined, 'restoration is consumed once');
+  assert.equal(state.existingCodexState, 'preserved');
+  receive({ data: { type: 'persisted-atom-sync' } });
+  assert.equal(responses.length, countBeforeReady + 1, 'later syncs cannot reopen an old chat');
+  receive({ data: { type: 'scm-toolkit-context-request', id: 'home', reloadState: true } });
+  assert.equal(state.sweetiebotReloadConversation, undefined, 'home does not select an arbitrary recent chat');
+
   const registered = new Map();
   let listener;
   const messages = [];
@@ -56,6 +81,10 @@ async function run() {
     editorPanels: new Map(),
     sidebarViews: new Set([{ visible: true, webview }]),
     initializeWebview() {},
+    postMessageToWebview(target, message) {
+      assert.equal(target, webview, 'restore targets the original Codex view');
+      messages.push(message);
+    },
     handleMessage() { throw new Error('Custom snapshot replies must not reach Codex job handling'); }
   };
   const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
@@ -113,6 +142,20 @@ async function run() {
     conversationId
   });
   assert.equal(await hiddenPending, 'Retained conversation', 'Source Control can hide Codex without losing context');
+
+  assert.equal(await registered.get('sweetiebot.preserveCodexConversation')(), false,
+    'a hidden sidebar is not reopened by automatic reload');
+  sidebar.visible = true;
+  const reloadPending = registered.get('sweetiebot.preserveCodexConversation')();
+  assert.equal(messages.at(-1).reloadState, true);
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId });
+  assert.equal(await reloadPending, true, 'an open chat can be preserved without transcript text');
+  provider.handleMessage(webview, { type: 'scm-toolkit-restore-conversation', conversationId });
+  assert.equal(messages.at(-1).type, 'navigate-to-route');
+  assert.equal(messages.at(-1).path, `/local/${conversationId}`);
+  const validMessages = messages.length;
+  provider.handleMessage(webview, { type: 'scm-toolkit-restore-conversation', conversationId: '../../settings' });
+  assert.equal(messages.length, validMessages, 'invalid conversation IDs cannot navigate');
 
   provider.sidebarViews.clear();
   assert.throws(
