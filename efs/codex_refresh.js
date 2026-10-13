@@ -8,32 +8,33 @@ const { invalidateUserExtensionCache } = require('./extension_cache');
 const QUIET_PERIOD_MS = 8000;
 const RETRY_DELAYS_MS = [15000, 60000, 300000];
 
-// Repair the app and the selected Codex extension before offering one reload.
+// Repair the app and the selected Codex extension before automatically reloading.
 // Extension installs can finish after Sweetie Bot starts, so a repair followed
-// by an extension change must be reconciled before showing the notification.
+// by an extension change must be reconciled before reloading the window.
 function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   if (process.platform !== 'darwin' || vscode.env.remoteName) return;
   const output = vscode.window.createOutputChannel('Sweetie Bot app repair');
-  let child, timer, settleTimer, disposed = false, pending = false, offeredRevision;
+  let child, timer, settleTimer, disposed = false, pending = false, reloadRevision;
   let extensionGeneration = 0;
+  let focused = vscode.window.state?.focused ?? true;
   let failures = 0;
   const loadedRevision = runtimeRevision(vscode, context);
   const enabled = () => vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
   const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
 
-  const offerReload = revision => {
-    if (!revision || revision === loadedRevision || revision === offeredRevision || disposed || !enabled()) return;
-    offeredRevision = revision;
-    void vscode.window.showInformationMessage(
-      'Sweetiebot update ready',
-      'Reload Window'
-    ).then(async choice => {
-      if (!disposed && choice === 'Reload Window') {
-        await beforeReload();
-        if (!disposed) return vscode.commands.executeCommand('workbench.action.reloadWindow');
+  const reload = revision => {
+    if (!revision || revision === loadedRevision || revision === reloadRevision || disposed || !enabled() || !focused) return;
+    reloadRevision = revision;
+    void (async () => {
+      await beforeReload();
+      if (disposed || !enabled() || !focused) {
+        reloadRevision = undefined;
+        return;
       }
-    }).catch(error => {
-      offeredRevision = undefined;
+      output.appendLine('Reloading this window to apply Sweetiebot updates.');
+      return vscode.commands.executeCommand('workbench.action.reloadWindow');
+    })().catch(error => {
+      reloadRevision = undefined;
       output.appendLine(error.message);
     });
   };
@@ -80,7 +81,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
         output.appendLine('Repair did not complete. Check the error above; macOS App Management permission or support for this app version may be required.');
       }
       // A new extension version may have landed while Python was running.
-      // In that case, repair the newly selected extension before any prompt.
+      // In that case, repair the newly selected extension before any reload.
       if (pending || extensionGeneration !== generation || selectedCodexPath() !== codexPath) {
         pending = false;
         schedule(QUIET_PERIOD_MS);
@@ -103,13 +104,13 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
           return;
         }
         const revision = runtimeRevision(vscode, context);
-        if (revision !== loadedRevision && revision !== offeredRevision) {
+        if (focused && revision !== loadedRevision && revision !== reloadRevision) {
           // VS Code caches user extension manifests across reloads. Invalidate its
           // disposable scan cache before our single reload, so a changed companion
           // manifest does not trigger a second native reload notification.
           invalidateUserExtensionCache(context, output);
         }
-        offerReload(revision);
+        reload(revision);
       }, QUIET_PERIOD_MS);
     };
     running.stdout.on('data', data => output.append(data.toString()));
@@ -125,6 +126,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
     schedule(QUIET_PERIOD_MS);
   }),
     vscode.window.onDidChangeWindowState(event => {
+      focused = event.focused;
       if (event.focused && enabled() && runtimeRevision(vscode, context) !== loadedRevision) {
         schedule(QUIET_PERIOD_MS);
       }

@@ -289,7 +289,7 @@
           "type": "boolean",
           "default": true,
           "scope": "machine",
-          "description": "Automatically install Sweetie Bot updates from main and restore customizations after VS Code and extension updates. Reload when prompted to apply changes."
+          "description": "Automatically install Sweetie Bot updates from main, restore customizations, and reload stale windows after updates settle. Background windows reload when focused."
         },
         "scmToolkit.messagePlaceholder": {
           "type": "string",
