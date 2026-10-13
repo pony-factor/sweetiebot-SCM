@@ -1545,7 +1545,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         pullRequestButton.hidden = !settings.mcpPullRequest;
         pullRequestButton.disabled = pending || deletingBranch || creatingPullRequest
-            || creatingPonyBranch || unavailable || pullRequestEligibility?.allowed !== true;
+            || creatingPonyBranch || unavailable || !pullRequestEligibility
+            || (pullRequestEligibility.allowed !== true && pullRequestEligibility.reason !== 'unavailable');
+        pullRequestButton.classList.toggle('scm-toolkit-pr-needs-attention', pullRequestEligibility?.reason === 'unavailable');
         const previous = pullRequestEligibility?.pullRequest;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
@@ -1558,7 +1560,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                         : pullRequestEligibility.reason === 'no-commits'
                             ? 'No published commits ahead of the base'
                             : pullRequestEligibility.reason === 'unavailable'
-                                ? `Cannot verify PR eligibility: ${pullRequestEligibility.message}`
+                                ? /Install codex-pony on this repository/.test(pullRequestEligibility.message)
+                                    ? 'New PR needs codex-pony access to this repository. Click for setup and retry.'
+                                    : `New PR is unavailable: ${pullRequestEligibility.message}. Click for details and retry.`
                                 : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
@@ -1577,8 +1581,20 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
-            || pullRequestEligibility?.allowed !== true
         ) return;
+
+        if (pullRequestEligibility?.allowed !== true) {
+            if (pullRequestEligibility?.reason === 'unavailable') {
+                try {
+                    const retry = await commands.executeCommand('sweetiebot.explainPullRequestSetup', pullRequestEligibility.message);
+                    if (retry) {
+                        pullRequestEligibilityKey = undefined;
+                        refreshPullRequest();
+                    }
+                } catch (error) { notifications.error(error); }
+            }
+            return;
+        }
 
         creatingPullRequest = true;
         refreshBranchControls();
