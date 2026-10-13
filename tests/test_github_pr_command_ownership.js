@@ -10,6 +10,8 @@ async function main() {
     const handlers = new Map();
     const subscriptions = [];
     const merged = [];
+    let refreshes = 0;
+    let onRefresh;
     const clicked = {};
     const url = 'https://github.com/owner/repo/pull/13';
     const event = () => ({ dispose() {} });
@@ -22,7 +24,7 @@ async function main() {
         },
         getCommands: async () => [...handlers.keys()],
         executeCommand: async (id, ...args) => {
-          if (id === 'pr.refreshList') return;
+          if (id === 'pr.refreshList') { refreshes++; return onRefresh?.(); }
           assert(handlers.has(id), `Missing command ${id}`);
           return handlers.get(id)(...args);
         }
@@ -73,13 +75,37 @@ async function main() {
     const originalShowError = vscode.window.showErrorMessage;
     const errors = [];
     vscode.window.showErrorMessage = message => errors.push(message);
+    const refreshesBeforeFailure = refreshes;
     await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', {});
+    assert.equal(refreshes, refreshesBeforeFailure + 1, 'Refresh once before reporting an unresolved row');
     assert.equal(merged.length, 4, 'An unresolved clicked row must not use another selection');
+    assert.equal(errors.length, 1, 'Show the error only after retrying');
     assert.match(errors[0], /Could not identify the clicked pull request/);
+    const staleClicked = {};
+    let hydrated = false, lookups = 0;
+    owner.getTreeItem = async node => {
+      assert.equal(node, staleClicked, 'Retry the original click even if selection changes');
+      lookups++;
+      if (!hydrated) throw new Error('stale row');
+      return { url };
+    };
+    onRefresh = () => {
+      hydrated = true;
+      view.selection = [{ url: 'https://github.com/owner/repo/pull/99' }];
+      throw new Error('refresh failed after hydration');
+    };
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', staleClicked);
+    assert.equal(lookups, 2, 'Retry resolution even when refresh rejects');
+    assert.equal(refreshes, refreshesBeforeFailure + 3, 'Retry refresh plus the normal refresh after merging');
+    assert.equal(merged.length, 5);
+    assert.equal(merged.at(-1), url);
+    assert.equal(errors.length, 1, 'A successful retry must not show an error');
+    onRefresh = undefined;
+    view.selection = [clicked];
     owner.getTreeItem = originalGetTreeItem;
     await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest');
     await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', { number: 99 });
-    assert.equal(merged.length, 4, 'Missing and mismatched rows must not merge the selected PR');
+    assert.equal(merged.length, 5, 'Missing and mismatched rows must not merge the selected PR');
     vscode.window.showErrorMessage = originalShowError;
     handlers.set('sweetiebot.squashMergePullRequest', mergeHandler);
     // An optional resolver must never discard or substitute a supplied identity.
@@ -89,7 +115,7 @@ async function main() {
     await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', {
       scheme: 'prnode', query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:13' })
     });
-    assert.deepEqual(merged, Array(7).fill(url));
+    assert.deepEqual(merged, Array(8).fill(url));
     for (const subscription of subscriptions) subscription.dispose();
     assert.equal(handlers.size, 0);
     // Direct arguments still work without the optional GitHub tree patch.

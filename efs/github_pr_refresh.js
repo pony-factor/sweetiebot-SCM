@@ -148,7 +148,14 @@ function installPullRequestRefresh(vscode, view, owner) {
   // Tree command arguments belong to the extension host that owns the view.
   // Resolve them here before handing a serializable URL to Sweetiebot.
   owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', async node => {
-    const model = node ? await resolve(node) : {};
+    let model = node ? await resolve(node) : {};
+    if (node && !model.url) {
+      // A stale row can resolve before GitHub finishes hydrating its model.
+      // Refresh once, then retry the original click rather than the selection.
+      try { await vscode.commands.executeCommand('pr.refreshList'); } catch {}
+      await new Promise(done => setTimeout(done, 250));
+      model = await resolve(node);
+    }
     if (!model.url) {
       return vscode.window.showErrorMessage('Could not identify the clicked pull request. Refresh the GitHub Pull Requests view and try again.');
     }
