@@ -1,4 +1,52 @@
 // Runs inside VS Code's SCM input widget; services and observables are supplied by install.py.
+function scmToolkitDeferActionButtonUpdate(widget, button) {
+    let state = widget.scmToolkitPressState;
+    if (!state) {
+        const container = widget.container;
+        const doc = container.ownerDocument;
+        const view = doc.defaultView;
+        state = widget.scmToolkitPressState = { pressed: false, queued: false };
+        const release = () => {
+            if (!state.pressed) return;
+            // Mouseup is followed by click. Keep the old DOM and its command
+            // listener alive through both events, then apply the latest update.
+            view.clearTimeout(state.timer);
+            state.timer = view.setTimeout(() => {
+                state.pressed = false;
+                if (state.queued) {
+                    state.queued = false;
+                    widget.setButton(state.button);
+                }
+            }, 0);
+        };
+        const press = event => {
+            if (event.button !== 0 || !event.target.closest?.('.monaco-button')) return;
+            view.clearTimeout(state.timer);
+            state.pressed = true;
+        };
+        container.addEventListener('pointerdown', press, true);
+        doc.addEventListener('pointerup', release, true);
+        doc.addEventListener('pointercancel', release, true);
+        view.addEventListener('blur', release);
+        state.dispose = () => {
+            view.clearTimeout(state.timer);
+            container.removeEventListener('pointerdown', press, true);
+            doc.removeEventListener('pointerup', release, true);
+            doc.removeEventListener('pointercancel', release, true);
+            view.removeEventListener('blur', release);
+        };
+    }
+    if (!state.pressed) return false;
+    state.button = button;
+    state.queued = true;
+    return true;
+}
+
+function scmToolkitDisposeActionButton(widget) {
+    widget.scmToolkitPressState?.dispose();
+    widget.scmToolkitPressState = undefined;
+}
+
 function scmToolkitHideOutgoingSyncCount(widget) {
     const root = widget.element.closest('.scm-view');
     const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;

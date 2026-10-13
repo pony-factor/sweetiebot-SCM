@@ -430,6 +430,12 @@ def edits(js=None, settings=None):
 
     changes = [
         (
+            "dispose(){this.disposables?.dispose()}setButton(o){if(this.clear(),!!o){",
+            "dispose(){scmToolkitDisposeActionButton(this);this.disposables?.dispose()}"
+            "setButton(o){if(scmToolkitDeferActionButtonUpdate(this,o))return;"
+            "if(this.clear(),!!o){",
+        ),
+        (
             "this.disposables.add(this.toolbar)}static{this.ValidationTimeouts=",
             "this.disposables.add(this.toolbar);this.scmToolkitControls="
             f"i.invokeFunction(accessor=>scmToolkitCreateControls(this,{observe},"
