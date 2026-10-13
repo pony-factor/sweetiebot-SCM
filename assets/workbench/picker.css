@@ -678,6 +678,11 @@
     -webkit-app-region: no-drag;
 }
 
+/* Reserve the native macOS traffic-light area in the left titlebar. */
+.monaco-workbench.mac:not(.web) .sweetiebot-compact-window-toolbar {
+    margin-left: 80px;
+}
+
 .sweetiebot-compact-window-action {
     -webkit-app-region: no-drag;
 }
