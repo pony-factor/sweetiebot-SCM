@@ -1,0 +1,96 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { openIndependentWorkspace } = require('../efs/new_workspace');
+
+function git(...args) {
+  return execFileSync('git', args, {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
+  }).trim();
+}
+async function makeRepo(root, branch = 'main') {
+  await fs.mkdir(root, { recursive: true });
+  git('init', '-b', branch, root);
+  git('-C', root, 'config', 'user.name', 'Sweetiebot Test');
+  git('-C', root, 'config', 'user.email', 'test@example.invalid');
+  await fs.writeFile(path.join(root, 'tracked.txt'), 'main snapshot\n');
+  git('-C', root, 'add', 'tracked.txt');
+  git('-C', root, 'commit', '-m', 'Initial snapshot');
+}
+function editor(paths) {
+  const calls = [];
+  return {
+    calls,
+    workspace: { workspaceFolders: paths.map((p, i) => ({
+      name: 'Folder ' + (i + 1), uri: { scheme: 'file', fsPath: p }
+    })) },
+    Uri: { file: fsPath => ({ scheme: 'file', fsPath }) },
+    commands: { async executeCommand(...args) { calls.push(args); } }
+  };
+}
+
+(async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-new-workspace-test-'));
+  try {
+    const original = path.join(tmp, 'original');
+    const copies = path.join(tmp, 'copies');
+    await makeRepo(original);
+    git('-C', original, 'switch', '-c', 'topic');
+    await fs.writeFile(path.join(original, 'tracked.txt'), 'topic snapshot\n');
+    git('-C', original, 'commit', '-am', 'Topic snapshot');
+    await fs.writeFile(path.join(original, 'dirty.txt'), 'leave untouched\n');
+
+    const first = editor([original]);
+    const initial = await openIndependentWorkspace(first, { baseDirectory: copies });
+    assert.equal(first.calls[0][0], 'vscode.openFolder');
+    assert.deepEqual(first.calls[0][2], { forceNewWindow: true });
+    const clone = first.calls[0][1].fsPath;
+    assert.equal(clone, initial.target);
+    assert.equal(git('-C', clone, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(clone, 'tracked.txt'), 'utf8'), 'main snapshot\n');
+    assert.equal(git('-C', original, 'branch', '--show-current'), 'topic');
+    assert.equal(await fs.readFile(path.join(original, 'dirty.txt'), 'utf8'), 'leave untouched\n');
+    assert.equal(git('-C', clone, 'remote'), '', 'Never point a clone back at the source checkout');
+    git('-C', clone, 'switch', 'topic');
+
+    git('-C', original, 'switch', 'main');
+    const another = await openIndependentWorkspace(editor([original]), { baseDirectory: copies });
+    assert.equal(git('-C', another.target, 'branch', '--show-current'), 'main');
+    git('-C', another.target, 'switch', 'topic');
+    assert.equal(git('-C', original, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', clone, 'branch', '--show-current'), 'topic');
+
+    const upstream = path.join(tmp, 'upstream.git');
+    git('init', '--bare', upstream);
+    git('-C', original, 'remote', 'add', 'origin', upstream);
+    const withRemote = await openIndependentWorkspace(editor([original]), { baseDirectory: copies });
+    assert.equal(git('-C', withRemote.target, 'remote', 'get-url', 'origin'), upstream);
+
+    const otherRepo = path.join(tmp, 'other');
+    await makeRepo(otherRepo);
+    const combined = await openIndependentWorkspace(editor([original, otherRepo]), { baseDirectory: copies });
+    assert.ok(combined.target.endsWith('.code-workspace'));
+    const data = JSON.parse(await fs.readFile(combined.target, 'utf8'));
+    assert.equal(data.folders.length, 2);
+    assert.equal(git('-C', data.folders[0].path, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', data.folders[1].path, 'branch', '--show-current'), 'main');
+
+    const noMain = path.join(tmp, 'no-main');
+    await makeRepo(noMain, 'development');
+    await assert.rejects(
+      openIndependentWorkspace(editor([noMain]), { baseDirectory: copies }),
+      /has no local main branch/
+    );
+    await assert.rejects(
+      openIndependentWorkspace(editor([path.join(tmp, 'not-a-repo')]), { baseDirectory: copies }),
+      /not inside a local Git repository/
+    );
+    console.log('Independent main workspace checkout and branch isolation checks passed.');
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
