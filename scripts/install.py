@@ -382,6 +382,27 @@ def extension_update_toolbar_edits(js):
     return changes
 
 
+def compact_window_edits(js):
+    # Match the native titlebar layout rather than relying on SCM activation.
+    ident = r"[A-Za-z_$][\w$]*"
+    pattern = re.compile(
+        r"layout\(" + ident + r"," + ident + r"\)\{if\(super\.layout\("
+        + ident + r"," + ident + r"\)," + ident
+        + r"\(this\.configurationService\)\)\{.{0,500}?"
+        + r"this\.nativeHostService\.updateWindowControls"
+    )
+    matches = list(pattern.finditer(js))
+    if len(matches) != 1:
+        raise ValueError("Unsupported VS Code build: native titlebar layout does not match.")
+    original = matches[0].group(0)
+    replacement = original.replace(
+        "{if(",
+        "{scmToolkitMountCompactWindow(this.element.ownerDocument,this.nativeHostService);if(",
+        1,
+    )
+    return [(original, replacement)]
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -444,6 +465,7 @@ def edits(js=None, settings=None):
 
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
+        changes.extend(compact_window_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))

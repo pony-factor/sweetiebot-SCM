@@ -2151,3 +2151,97 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     observer.observe(document, { childList: true, characterData: true, subtree: true });
     document.querySelectorAll(selector).forEach(update);
 })();
+
+// Called by the native titlebar, including auxiliary windows. Browser resizeTo
+// cannot resize the Electron workspace window; use VS Code's native host bridge.
+function scmToolkitMountCompactWindow(doc, nativeHost) {
+    if (doc.__sweetiebotCompactWindow) return;
+    const win = doc.defaultView;
+    if (!win || !nativeHost?.positionWindow) return;
+    const state = { restore: null, busy: false };
+    doc.__sweetiebotCompactWindow = state;
+    const actionId = 'sweetiebot-compact-window-action';
+    const updateAction = action => {
+        const compact = Boolean(state.restore);
+        action.classList.toggle('codicon-screen-normal', !compact);
+        action.classList.toggle('codicon-screen-full', compact);
+        action.setAttribute('aria-pressed', String(compact));
+        action.setAttribute('aria-disabled', String(state.busy));
+        action.title = compact ? 'Restore window size' : 'Compact window';
+        action.setAttribute('aria-label', action.title);
+    };
+    const toggle = async action => {
+        if (state.busy) return;
+        state.busy = true;
+        let failed = false;
+        updateAction(action);
+        try {
+            const previous = {
+                x: win.screenX, y: win.screenY,
+                width: win.outerWidth, height: win.outerHeight
+            };
+            const screen = win.screen;
+            const width = Math.min(560, Math.max(1, screen.availWidth - 64));
+            const height = Math.min(920, Math.max(1, screen.availHeight - 64));
+            const bounds = state.restore || {
+                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
+                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
+                width, height
+            };
+            await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
+            state.restore = state.restore ? null : previous;
+        } catch (error) {
+            console.error('Sweetiebot could not resize the window', error);
+            failed = true;
+        } finally {
+            state.busy = false;
+            updateAction(action);
+            if (failed) {
+                action.title = 'Could not resize window; click to retry';
+                action.setAttribute('aria-label', action.title);
+            }
+        }
+    };
+    const mount = () => {
+        if (doc.getElementById(actionId)) return;
+        const left = doc.querySelector('.part.titlebar .titlebar-left');
+        if (!left) return;
+        let toolbar = left.querySelector('.sweetiebot-compact-window-toolbar');
+        if (!toolbar) {
+            toolbar = doc.createElement('div');
+            toolbar.className = 'monaco-action-bar sweetiebot-compact-window-toolbar';
+            const actions = doc.createElement('ul');
+            actions.className = 'actions-container';
+            toolbar.appendChild(actions);
+            left.appendChild(toolbar);
+        }
+        const actions = toolbar.querySelector('.actions-container');
+        const item = doc.createElement('li');
+        item.id = actionId;
+        item.className = 'action-item sweetiebot-compact-window-action';
+        item.setAttribute('role', 'presentation');
+        const action = doc.createElement('a');
+        action.className = 'action-label codicon';
+        action.setAttribute('role', 'button');
+        action.setAttribute('tabindex', '0');
+        updateAction(action);
+        action.addEventListener('pointerdown', event => event.stopPropagation());
+        action.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            void toggle(action);
+        });
+        action.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            event.stopPropagation();
+            void toggle(action);
+        });
+        item.appendChild(action);
+        actions.prepend(item);
+    };
+    mount();
+    const observer = new win.MutationObserver(mount);
+    observer.observe(doc.body, { childList: true, subtree: true });
+    win.addEventListener('unload', () => observer.disconnect(), { once: true });
+}

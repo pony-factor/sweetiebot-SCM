@@ -669,6 +669,15 @@
     background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground)) !important;
 }
 
+.sweetiebot-compact-window-toolbar {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    position: relative;
+    z-index: 1;
+    -webkit-app-region: no-drag;
+}
+
 .sweetiebot-compact-window-action {
     -webkit-app-region: no-drag;
 }
