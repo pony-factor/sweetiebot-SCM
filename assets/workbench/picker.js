@@ -1562,7 +1562,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         pullRequestButton.hidden = !settings.mcpPullRequest;
         pullRequestButton.disabled = pending || deletingBranch || creatingPullRequest
-            || creatingPonyBranch || unavailable || pullRequestEligibility?.allowed !== true;
+            || creatingPonyBranch || unavailable || !pullRequestEligibility
+            || (pullRequestEligibility.allowed !== true && pullRequestEligibility.reason !== 'unavailable');
+        pullRequestButton.classList.toggle('scm-toolkit-pr-needs-attention', pullRequestEligibility?.reason === 'unavailable');
         const previous = pullRequestEligibility?.pullRequest;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
@@ -1575,7 +1577,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                         : pullRequestEligibility.reason === 'no-commits'
                             ? 'No published commits ahead of the base'
                             : pullRequestEligibility.reason === 'unavailable'
-                                ? `Cannot verify PR eligibility: ${pullRequestEligibility.message}`
+                                ? /Install codex-pony on this repository/.test(pullRequestEligibility.message)
+                                    ? 'New PR needs codex-pony access to this repository. Click for setup and retry.'
+                                    : `New PR is unavailable: ${pullRequestEligibility.message}. Click for details and retry.`
                                 : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
@@ -1594,8 +1598,20 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
-            || pullRequestEligibility?.allowed !== true
         ) return;
+
+        if (pullRequestEligibility?.allowed !== true) {
+            if (pullRequestEligibility?.reason === 'unavailable') {
+                try {
+                    const retry = await commands.executeCommand('sweetiebot.explainPullRequestSetup', pullRequestEligibility.message);
+                    if (retry) {
+                        pullRequestEligibilityKey = undefined;
+                        refreshPullRequest();
+                    }
+                } catch (error) { notifications.error(error); }
+            }
+            return;
+        }
 
         creatingPullRequest = true;
         refreshBranchControls();
@@ -2307,12 +2323,16 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 width: win.outerWidth, height: win.outerHeight
             };
             const screen = win.screen;
-            const width = Math.min(560, Math.max(1, screen.availWidth - 64));
-            const height = Math.min(920, Math.max(1, screen.availHeight - 64));
+            // Fit a square on either display orientation, retaining 32px gutters.
+            const side = Math.min(
+                560,
+                Math.max(1, screen.availWidth - 64),
+                Math.max(1, screen.availHeight - 64)
+            );
             const bounds = state.restore || {
-                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
-                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
-                width, height
+                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - side) / 2),
+                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - side) / 2),
+                width: side, height: side
             };
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
             state.restore = state.restore ? null : previous;
@@ -2372,7 +2392,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             newItem.setAttribute('role', 'presentation');
             const newAction = doc.createElement('a');
             newAction.className = 'action-label codicon codicon-link-external';
-            newAction.title = 'Open workspace in new window';
+            newAction.title = 'Open independent workspace from main';
             newAction.setAttribute('aria-label', newAction.title);
             newAction.setAttribute('role', 'button');
             newAction.setAttribute('tabindex', '0');
@@ -2382,8 +2402,8 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 state.opening = true;
                 newAction.setAttribute('aria-disabled', 'true');
                 try {
-                    await commands.executeCommand('workbench.action.duplicateWorkspaceInNewWindow');
-                    newAction.title = 'Open workspace in new window';
+                    await commands.executeCommand('sweetiebot.openIndependentWorkspace');
+                    newAction.title = 'Open independent workspace from main';
                 } catch (error) {
                     console.error('Sweetiebot could not open the workspace in a new window', error);
                     newAction.title = 'Could not open workspace in new window; click to retry';

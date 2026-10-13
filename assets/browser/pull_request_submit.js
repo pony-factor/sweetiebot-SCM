@@ -1,13 +1,15 @@
-/* Submit only the exact prompt launched by Sweetiebot's PR button. */
+/* Submit only the exact prompt launched by Sweetiebot's PR or merge action. */
 (() => {
   if (window.top !== window) return;
   const launch = new URL(window.location.href);
   const fragment = new URLSearchParams(launch.hash.slice(1));
-  const fragmentLaunch = fragment.get('sweetiebot_pr') === '1';
+  const fragmentLaunch = fragment.get('sweetiebot_pr') === '1' || fragment.get('sweetiebot_merge') === '1';
   const payload = fragmentLaunch ? fragment : launch.searchParams;
+  const prLaunch = payload.get('sweetiebot_pr') === '1';
+  const mergeLaunch = fragmentLaunch && payload.get('sweetiebot_merge') === '1';
   const prompt = payload.get('q');
   if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
-      || payload.get('sweetiebot_pr') !== '1' || !prompt) return;
+      || prLaunch === mergeLaunch || !prompt) return;
   if (encodeURIComponent(prompt).length > 70000) return;
 
   let callback;
@@ -20,7 +22,7 @@
   // Give this action's new tab a blank draft without deleting or replacing the
   // user's shared draft. ChatGPT reads storage in its page world, not preload.
   let composerIsolated = false;
-  if (fragmentLaunch && callback) {
+  if (fragmentLaunch && (callback || mergeLaunch)) {
     const isolateComposerDraft = () => {
       const storage = window.localStorage;
       const keys = new Set(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']);
@@ -92,7 +94,7 @@
   // the local receiver and its auto-publish preference.
   collectResult();
 
-  // Collapse only the PR launch's sidebar once, including delayed hydration.
+  // Collapse only the Sweetiebot launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
   const sidebarDeadline = Date.now() + 60000;
   let sidebarTimer;
@@ -200,6 +202,7 @@
       const clean = new URL(window.location.href);
       clean.searchParams.delete('q');
       clean.searchParams.delete('sweetiebot_pr');
+      clean.searchParams.delete('sweetiebot_merge');
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
       button.click();

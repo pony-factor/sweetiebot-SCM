@@ -10,8 +10,6 @@ const {
   pickPullRequests,
   planStackMerges,
   batchMergePrompt,
-  submitChatPromptWithEnter,
-  classifyChatSubmitError,
   registerPullRequestBatchCommand
 } = require('../efs/pull_request_batch');
 
@@ -197,33 +195,6 @@ async function run() {
   assert.equal(planStackMerges([branchPr(44, 'x', 'y'), branchPr(45, 'y', 'x')],
     'owner/repo').nonMain.length, 2);
 
-  let osascriptCall;
-  const submittedWithEnter = await submitChatPromptWithEnter(
-    (file, args, callback) => {
-      osascriptCall = { file, args };
-      callback(null);
-    },
-    { platform: 'darwin', delayMs: 0 }
-  );
-  assert.deepEqual(submittedWithEnter, { submitted: true });
-  assert.equal(osascriptCall.file, '/usr/bin/osascript');
-  assert.equal(osascriptCall.args[0], '-e');
-  assert.match(osascriptCall.args[1], /frontApp contains "Code"/);
-  assert.match(osascriptCall.args[1], /tell application "System Events"\nset frontApp/);
-  assert.match(osascriptCall.args[1], /key code 36/);
-  assert.match(osascriptCall.args[1], /\nkey code 36\n/);
-  assert(!osascriptCall.args[1].includes('\\n'), 'AppleScript must contain real newlines, not backslash-n text');
-  assert.deepEqual(await submitChatPromptWithEnter(() => {}, { platform: 'linux', delayMs: 0 }), { submitted: false, reason: 'unsupported' });
-  assert.equal(classifyChatSubmitError(new Error('VS Code is not frontmost: Finder')).reason, 'focus');
-  assert.equal(classifyChatSubmitError(new Error('osascript is not allowed assistive access. (-25211)')).reason, 'accessibility');
-  assert.equal(classifyChatSubmitError(new Error('Not authorized to send Apple events. (-1743)')).reason, 'automation');
-  assert.equal(classifyChatSubmitError(new Error('Expected end of line')).reason, 'script');
-  const failedSubmission = await submitChatPromptWithEnter(
-    (_file, _args, callback) => callback(new Error('Expected end of line')),
-    { platform: 'darwin', delayMs: 0 }
-  );
-  assert.equal(failedSubmission.reason, 'script');
-
   let handler;
   const browserCalls = [];
   const errors = [];
@@ -302,11 +273,8 @@ async function run() {
       ];
     }
   });
-  let submitCalls = 0;
-  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => {
-    submitCalls += 1;
-    return true;
-  });
+  // Browser preload owns submission; there is no OS keystroke timer.
+  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl);
   await handler();
   assert.equal(errors.length, 0);
   assert.equal(infos.length, 0);
@@ -314,56 +282,49 @@ async function run() {
   assert.equal(browserCalls[0].id, 'workbench.action.browser.open');
   const chat = new URL(browserCalls[0].options.url);
   assert.equal(chat.origin, 'https://chatgpt.com');
-  const sentPrompt = chat.searchParams.get('q');
+  const mergePromptFromUrl = url => {
+    assert.equal(url.search, '', 'The handoff uses a fragment payload');
+    const fragment = new URLSearchParams(url.hash.slice(1));
+    assert.equal(fragment.get('sweetiebot_merge'), '1');
+    return fragment.get('q');
+  };
+  const sentPrompt = mergePromptFromUrl(chat);
   assert.match(sentPrompt, /pull\/41/);
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
-  assert.equal(submitCalls, 1);
 
   pickerAction = 'all';
   await handler();
   const allChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
-  assert.match(allChat.searchParams.get('q'), /pull\/41/);
-  assert.match(allChat.searchParams.get('q'), /pull\/40/);
+  assert.match(mergePromptFromUrl(allChat), /pull\/41/);
+  assert.match(mergePromptFromUrl(allChat), /pull\/40/);
   assert(browserCalls.every(call => call.id === 'workbench.action.browser.open'),
     'Queue All keeps ChatGPT in the current window');
-  assert.equal(submitCalls, 2);
   includeNonMain = true;
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';
   await handler();
   assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
-  assert.equal(submitCalls, 2);
   assert.equal(modalWarnings.length, 1);
   assert.match(modalWarnings[0].message, /kefania.*not main/);
   assert.equal(modalWarnings[0].options.modal, true);
   approveNonMain = true;
   await handler();
   const alternateChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
-  assert.match(alternateChat.searchParams.get('q'), /base: "kefania"/);
-  assert.equal(submitCalls, 3);
+  assert.match(mergePromptFromUrl(alternateChat), /base: "kefania"/);
   includeNonMain = false;
   approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
   assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
-  assert.equal(submitCalls, 3);
   pickerAction = 'first';
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
   await handler();
   const scopedChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
-  assert.match(scopedChat.searchParams.get('q'), /pull\/41/);
-  assert.equal(submitCalls, 4);
+  assert.match(mergePromptFromUrl(scopedChat), /pull\/41/);
   configuredProject = '';
-
-  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'focus' }), 'darwin');
-  await handler();
-  assert.match(warnings.pop(), /not frontmost/);
-  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, async () => ({ submitted: false, reason: 'script', detail: 'Expected end of line' }), 'darwin');
-  await handler();
-  assert.match(warnings.pop(), /Expected end of line/);
 
   const modalCountBeforeStack = modalWarnings.length;
   includeStack = true;
@@ -373,15 +334,15 @@ async function run() {
     'Complete selected stacks must not trigger the non-main warning');
   const stackChat = new URL(browserCalls.filter(call =>
     call.id === 'workbench.action.browser.open').at(-1).options.url);
-  assert.match(stackChat.searchParams.get('q'), /gh stack merge/);
-  assert(stackChat.searchParams.get('q').indexOf('#41:') <
-    stackChat.searchParams.get('q').indexOf('#43:'));
+  assert.match(mergePromptFromUrl(stackChat), /gh stack merge/);
+  assert(mergePromptFromUrl(stackChat).indexOf('#41:') <
+    mergePromptFromUrl(stackChat).indexOf('#43:'));
   // The bottom member of a native stack also needs asynchronous stack merge.
   pickerAction = 'first';
   await handler();
   const bottomChat = new URL(browserCalls.filter(call =>
     call.id === 'workbench.action.browser.open').at(-1).options.url);
-  assert.match(bottomChat.searchParams.get('q'), /gh stack merge/);
+  assert.match(mergePromptFromUrl(bottomChat), /gh stack merge/);
   const existingBrowserCalls = browserCalls.length;
   pickerAction = 'top';
   await handler();

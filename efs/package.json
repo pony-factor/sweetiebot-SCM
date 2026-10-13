@@ -19,6 +19,7 @@
     "onCommand:sweetiebot.pullRequestEligibility",
     "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.openPullRequestBatchChat",
+    "onCommand:sweetiebot.openIndependentWorkspace",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.copyTerminalContents",
     "onCommand:sweetiebot.prepareCodexCommit",
@@ -111,6 +112,11 @@
         }
       },
       {
+        "command": "sweetiebot.openIndependentWorkspace",
+        "title": "Open Independent Workspace from Main",
+        "icon": "$(git-branch)"
+      },
+      {
         "command": "sweetiebot.closeAllEditors",
         "title": "Close All Editors",
         "icon": "$(close-all)"
@@ -199,7 +205,7 @@
         "scmToolkit.newWorkspaceWindowButton": {
           "type": "boolean",
           "default": true,
-          "description": "Show the title-bar button that opens the same repository folders in a new workspace window."
+          "description": "Show a title-bar button that opens an independent local Git checkout on main in a new window."
         },
         "scmToolkit.codexKeepAwake": {
           "type": "boolean",

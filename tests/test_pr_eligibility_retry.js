@@ -18,7 +18,7 @@ function harness(executeCommand) {
     pullRequestEligibilityKey: undefined, pullRequestEligibility: undefined,
     pullRequestEligibilityRetry: undefined, pullRequestEligibilityRequest: 0,
     pending: false, deletingBranch: false, creatingPullRequest: false, creatingPonyBranch: false,
-    pullRequestButton: { setAttribute() {} }, pullRequestTooltip: {},
+    pullRequestButton: { setAttribute() {}, classList: { toggle() {} } }, pullRequestTooltip: {},
     commands: { executeCommand },
     setTimeout(callback, delay) { assert.equal(delay, 15000); timers.set(++nextTimer, callback); return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
@@ -35,7 +35,7 @@ async function run() {
   });
   context.refresh();
   await tick();
-  assert.equal(context.pullRequestButton.disabled, true);
+  assert.equal(context.pullRequestButton.disabled, false, 'Access failures stay clickable for setup recovery');
   assert.equal(timers.size, 1);
   const retry = [...timers.values()][0];
   timers.clear();
