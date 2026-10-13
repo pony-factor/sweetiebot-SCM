@@ -2154,11 +2154,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
 // Called by the native titlebar, including auxiliary windows. Browser resizeTo
 // cannot resize the Electron workspace window; use VS Code's native host bridge.
-function scmToolkitMountCompactWindow(doc, nativeHost) {
+function scmToolkitMountCompactWindow(doc, nativeHost, commands) {
     if (doc.__sweetiebotCompactWindow) return;
     const win = doc.defaultView;
     if (!win || !nativeHost?.positionWindow) return;
-    const state = { restore: null, busy: false };
+    const state = { restore: null, busy: false, opening: false };
     doc.__sweetiebotCompactWindow = state;
     const actionId = 'sweetiebot-compact-window-action';
     const updateAction = action => {
@@ -2239,6 +2239,49 @@ function scmToolkitMountCompactWindow(doc, nativeHost) {
         });
         item.appendChild(action);
         actions.prepend(item);
+        if (commands?.executeCommand) {
+            const newItem = doc.createElement('li');
+            newItem.id = 'sweetiebot-new-workspace-window-action';
+            newItem.className = 'action-item sweetiebot-compact-window-action';
+            newItem.setAttribute('role', 'presentation');
+            const newAction = doc.createElement('a');
+            newAction.className = 'action-label codicon codicon-new-window';
+            newAction.title = 'Open workspace in new window';
+            newAction.setAttribute('aria-label', newAction.title);
+            newAction.setAttribute('role', 'button');
+            newAction.setAttribute('tabindex', '0');
+            newAction.setAttribute('aria-disabled', String(state.opening));
+            const open = async () => {
+                if (state.opening) return;
+                state.opening = true;
+                newAction.setAttribute('aria-disabled', 'true');
+                try {
+                    await commands.executeCommand('workbench.action.duplicateWorkspaceInNewWindow');
+                    newAction.title = 'Open workspace in new window';
+                } catch (error) {
+                    console.error('Sweetiebot could not open the workspace in a new window', error);
+                    newAction.title = 'Could not open workspace in new window; click to retry';
+                } finally {
+                    state.opening = false;
+                    newAction.setAttribute('aria-disabled', 'false');
+                    newAction.setAttribute('aria-label', newAction.title);
+                }
+            };
+            newAction.addEventListener('pointerdown', event => event.stopPropagation());
+            newAction.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                void open();
+            });
+            newAction.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                event.stopPropagation();
+                void open();
+            });
+            newItem.appendChild(newAction);
+            actions.appendChild(newItem);
+        }
     };
     mount();
     const observer = new win.MutationObserver(mount);
