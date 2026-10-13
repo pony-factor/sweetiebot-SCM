@@ -56,6 +56,7 @@ SETTINGS = {
 def workbench_fixture():
     return "".join(
         [
+            'layout(e,t){if(super.layout(e,t),native(this.configurationService)){this.nativeHostService.updateWindowControls({height:t})}}',
             'cmd=svc("commandService")',
             'notify=svc("notificationService")',
             'config=svc("configurationService")',
