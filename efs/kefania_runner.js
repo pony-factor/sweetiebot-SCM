@@ -22,4 +22,42 @@ async function runKefania(repositoryPath, input, { botOnly = false } = {}) {
     child.stdin.end(JSON.stringify(input));
   });
 }
-module.exports = { runKefania };
+
+/**
+ * Pony profiles are optional local enrichment, not part of PR publication.
+ * Missing/old Kefania installations and read/write failures are cache misses.
+ */
+async function runKefaniaPonyCache(repositoryPath, input) {
+  const runner = path.join(path.dirname(repositoryPath), 'kefania', 'src', 'pony-cache.js');
+  try { await access(runner); } catch { return { hit: false }; }
+  return new Promise(resolve => {
+    let finished = false, output = '';
+    const complete = result => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const child = spawn('node', [runner], {
+      cwd: repositoryPath,
+      env: { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter) },
+      stdio: ['pipe', 'pipe', 'ignore']
+    });
+    const timer = setTimeout(() => { child.kill(); complete({ hit: false }); }, 5000);
+    timer.unref?.();
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (output.length > 100000) { child.kill(); complete({ hit: false }); }
+    });
+    child.stdin.on('error', () => {});
+    child.on('error', () => complete({ hit: false }));
+    child.on('close', code => {
+      if (code !== 0) return complete({ hit: false });
+      try { complete(JSON.parse(output)); }
+      catch { complete({ hit: false }); }
+    });
+    child.stdin.end(JSON.stringify(input));
+  });
+}
+
+module.exports = { runKefania, runKefaniaPonyCache };
