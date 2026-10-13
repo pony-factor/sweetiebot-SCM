@@ -2285,12 +2285,16 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 width: win.outerWidth, height: win.outerHeight
             };
             const screen = win.screen;
-            const width = Math.min(560, Math.max(1, screen.availWidth - 64));
-            const height = Math.min(920, Math.max(1, screen.availHeight - 64));
+            // Fit a square on either display orientation, retaining 32px gutters.
+            const side = Math.min(
+                560,
+                Math.max(1, screen.availWidth - 64),
+                Math.max(1, screen.availHeight - 64)
+            );
             const bounds = state.restore || {
-                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
-                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
-                width, height
+                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - side) / 2),
+                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - side) / 2),
+                width: side, height: side
             };
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
             state.restore = state.restore ? null : previous;

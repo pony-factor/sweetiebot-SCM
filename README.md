@@ -4,6 +4,7 @@ A small source-control UI patch for Visual Studio Code. It keeps the built-in Gi
 
 Current features:
 
+- resize the current VS Code window to a centered square with the compact-window titlebar button, and restore its previous bounds on the next click
 - open independent local Git clones starting on main, with separately switchable branches, using the title-bar button beside Compact Window (copies live under ~/Sweetiebot Workspaces; uncommitted changes are not copied)
 - show the current branch inside the SCM message box and open VS Code's normal branch picker from it
 - switch the branch selector and native Commit button between outlined and accent-filled styles
