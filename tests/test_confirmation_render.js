@@ -37,6 +37,24 @@ assert.equal(inlineNodes.find(node=>node.tag==='strong').textContent,'adult mare
 assert.equal(inlineNodes.find(node=>node.tag==='code').textContent,'*literal*');
 context.renderMarkdown(output,'ordinary_name_part and https://example.com/rock_solid_friendship');
 assert(!output.children[0].children.some(node=>node.tag==='em'),'Underscores in words and URLs remain literal');
+// Image credits commonly use italics and sometimes include a space before a link URL.
+context.renderMarkdown(output,'*Image: Friendship Is Magic episode still (Hasbro/Studio B), preserved by [Twibooru] (https://www.twibooru.org/3559729); not independently created fan art.*');
+const credit=output.children[0].children.find(node=>node.tag==='em');
+assert(credit,'The attribution stays italic');
+const creditLink=credit.children.find(node=>node.tag==='a');
+assert(creditLink,'The source link inside italics is clickable');
+assert.equal(creditLink.textContent,'Twibooru');
+assert.equal(creditLink.href,'https://www.twibooru.org/3559729');
+assert.equal(creditLink.target,'_blank');
+assert.equal(creditLink.rel,'noopener noreferrer');
+context.renderMarkdown(output,'*Source: [Twibooru](https://www.twibooru.org/3559729)* and **[More](https://example.com/more)**');
+const highlighted=output.children[0].children;
+assert(highlighted.find(node=>node.tag==='em').children.some(node=>node.tag==='a'),'Standard links work inside italics');
+assert(highlighted.find(node=>node.tag==='strong').children.some(node=>node.tag==='a'),'Links work inside bold text');
+context.renderMarkdown(output,'*Unsafe [script](javascript:alert(1)) remains plain text; `[literal](https://example.com)` is code.*');
+const unsafe=output.children[0].children.find(node=>node.tag==='em').children;
+assert(!unsafe.some(node=>node.tag==='a'),'Unsafe links are not activated');
+assert.equal(unsafe.find(node=>node.tag==='code').textContent,'[literal](https://example.com)');
 const remainder=context.imageIndex('Profile\n![Pony credit](https://example.com/image.png)\n![Duplicate](https://example.com/image.png)');
 assert(!remainder.includes('!['));
 assert.equal(images.children.length,1);
