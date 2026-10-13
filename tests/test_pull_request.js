@@ -174,6 +174,7 @@ async function run() {
 
   let callback;
   let eligibilityCallback;
+  let setupCallback;
   let uriHandler;
   let browserAvailable = true;
   let codexSnapshot;
@@ -225,6 +226,7 @@ async function run() {
       registerCommand(id, handler) {
         if (id === 'sweetiebot.openPullRequestChat') callback = handler;
         else if (id === 'sweetiebot.pullRequestEligibility') eligibilityCallback = handler;
+        else if (id === 'sweetiebot.explainPullRequestSetup') setupCallback = handler;
         else assert.fail('Unexpected command: ' + id);
         return { dispose() {} };
       },
@@ -310,6 +312,7 @@ async function run() {
   assert.match(openedPrompt, /codex-pony\[bot\]/);
   const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
+  assert.equal(calls[3].args[0].openToSide, true, 'Pony research opens beside the PR draft');
   calls.length = 0;
   repository.state.HEAD.name = 'main';
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
@@ -322,6 +325,18 @@ async function run() {
   assert.equal((await eligibilityCallback(uri, {
     branch: 'draft', base: 'main', remote: 'origin',
   })).allowed, true, 'The button permits a new starting base');
+
+  let warning, warningChoice;
+  const openedSetup = [];
+  vscode.window.showWarningMessage = async (...args) => { warning = args; return warningChoice; };
+  vscode.env = { async openExternal(url) { openedSetup.push(url.value); } };
+  warningChoice = 'Manage app access';
+  assert.equal(await setupCallback('Install codex-pony on this repository before creating a bot PR.'), false);
+  assert.match(warning[0], /include this repository/);
+  assert.deepEqual(openedSetup, ['https://github.com/settings/apps/codex-pony/installations']);
+  warningChoice = 'Retry';
+  assert.equal(await setupCallback('GitHub request failed (HTTP 503).'), true);
+  assert.deepEqual(warning.slice(1), ['Retry'], 'Other failures must not claim the app needs installation');
 
   // Repeated clicks must reuse an open PR for the head even if its base differs.
   existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', head: 'draft', base: 'release' };
@@ -546,6 +561,23 @@ async function run() {
   const beforeDisabledClick = sandbox.recorded.length;
   await click({ stopPropagation() {} });
   assert.equal(sandbox.recorded.length, beforeDisabledClick, 'Disabled New PR must not invoke the drafter');
+  const launchCommand = sandbox.commands.executeCommand;
+  let accessWarnings = 0, refreshedAccess = 0;
+  sandbox.pullRequestEligibility = { allowed: false, reason: 'unavailable', message: 'Install codex-pony on this repository before creating a bot PR.' };
+  sandbox.pullRequestEligibilityKey = 'cached-failure';
+  sandbox.refreshPullRequest = () => { refreshedAccess += 1; };
+  sandbox.commands.executeCommand = async (id, message) => {
+    assert.equal(id, 'sweetiebot.explainPullRequestSetup', 'Missing access must explain setup without launching or publishing');
+    assert.match(message, /Install codex-pony/);
+    accessWarnings += 1;
+    return true;
+  };
+  await click({ stopPropagation() {} });
+  assert.equal(accessWarnings, 1);
+  assert.equal(refreshedAccess, 1);
+  assert.equal(sandbox.pullRequestEligibilityKey, undefined, 'Retry clears the cached failure');
+  assert.equal(sandbox.creatingPullRequest, false);
+  sandbox.commands.executeCommand = launchCommand;
   sandbox.pullRequestEligibility = { allowed: true, reason: 'new-starting-base' };
   sandbox.scmToolkitCheckPullRequestMcp = async () => { throw new Error('Kefania unavailable'); };
   let fallbackLaunches = 0;

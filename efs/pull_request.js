@@ -196,6 +196,20 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const pendingDrafts = new Map();
   context.subscriptions.push({ dispose() { pendingDrafts.clear(); } });
 
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.explainPullRequestSetup', async message => {
+    const needsAccess = /Install codex-pony on this repository/.test(String(message));
+    const choice = await vscode.window.showWarningMessage(
+      needsAccess
+        ? 'New PR needs codex-pony access to this repository. Installing the app on an account alone is not enough: include this repository in its repository access. After setup, click New PR again and choose Retry.'
+        : `New PR could not check repository access: ${String(message || 'Unknown error')}. Retry after resolving the problem.`,
+      ...(needsAccess ? ['Manage app access'] : []), 'Retry'
+    );
+    if (choice === 'Manage app access') {
+      await vscode.env.openExternal(vscode.Uri.parse('https://github.com/settings/apps/codex-pony/installations'));
+    }
+    return choice === 'Retry';
+  }));
+
   // This is a read-only preflight for the New PR button. The backend compares
   // the current fork point with the original starting base of prior PRs.
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.pullRequestEligibility', async (uri, options) => {
@@ -397,7 +411,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {
-          closers.set(kind, await openWorkflow(vscode, workflow.url));
+          closers.set(kind, await openWorkflow(vscode, workflow.url, {
+            openToSide: kind === 'pony' && closers.has('draft'),
+          }));
           const timer = setTimeout(() => localHandoff.reportError(draftId, kind,
             'This workflow did not return a result within 20 minutes. Its chat remains available for review.'), 1200000);
           timer.unref?.();
