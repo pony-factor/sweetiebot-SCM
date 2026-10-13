@@ -166,9 +166,41 @@ async function run() {
   assert.match(prompt, /read ALL original PR commits \(paginate the commits endpoint\)/);
   assert.match(prompt, /linked GitHub author\/committer accounts/);
   assert.match(prompt, /bot-opened PR/);
-  assert.match(prompt, /Deduplicate by verified GitHub identity\/email/);
-  assert.match(prompt, /one Co-authored-by: Name <email> trailer/);
+  assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
+  assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
+  assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  const priorities = [
+    '1. Main/original human Git authors first',
+    '2. Other human contributors',
+    '3. regular Codex',
+    '4. Codex Web',
+    '5. codex-pony[bot]',
+    '6. GitHub Copilot',
+    '7. Ollama',
+    '8. other bots',
+    '9. other AI collaborators'
+  ];
+  let position = -1;
+  for (const tier of priorities) {
+    const next = prompt.indexOf(tier);
+    assert(next > position, 'Co-author tier must appear exactly after its predecessor: ' + tier);
+    position = next;
+  }
+  assert.match(prompt, /Main\/original human Git authors first/);
+  assert.match(prompt, /not.*automatically at the bottom/i);
+  assert.match(prompt, /regular Codex and Codex Web as separate entries/);
+  assert.match(prompt, /both use noreply@openai.com/);
+  assert.match(prompt, /Co-authored-by: Codex <noreply@openai.com>/);
+  assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
+  assert.match(prompt, /Co-authored-by: codex-pony\[bot\] <326443430\+codex-pony\[bot\]@users.noreply.github.com>/);
+  assert.match(prompt, /Co-authored-by: Copilot <175728472\+Copilot@users.noreply.github.com>/);
+  assert.match(prompt, /other Copilot agent identities exist/);
+  assert.match(prompt, /Co-authored-by: Ollama <hello@ollama.com>/);
+  assert.match(prompt, /Do not add these optional entries/);
+  assert.match(prompt, /original human author appears before bots and AI/);
+  assert.match(prompt, /cover the verified original human authors and other evidenced contributors in the requested priority order/);
+  assert.match(prompt, /Codex Web trailer in the Codex Web position/);
   assert.match(prompt, /custom commit message bypasses GitHub's default automatic co-author text/);
   assert.match(prompt, /commit_title and commit_message/);
   assert.match(prompt, /AFTER EACH COMPLETED MERGE/);
@@ -203,6 +235,7 @@ async function run() {
   assert.match(stackPrompt, /Do NOT use gh pr merge/);
   assert.match(stackPrompt, /ONLY selected PRs/);
   assert.match(stackPrompt, /STOP the affected stack/);
+  assert.match(stackPrompt, /complete ordered human\/bot\/AI co-author trailers/);
   assert.match(stackPrompt, /squash title: "Layer 41 \(#41\)"/);
   assert.match(stackPrompt, /squash title: "Layer 42 \(#42\)"/);
   assert.match(stackPrompt, /squash title: "Layer 43 \(#43\)"/);
@@ -315,6 +348,8 @@ async function run() {
   const sentPrompt = mergePromptFromUrl(chat);
   assert.match(sentPrompt, /pull\/41/);
   assert.match(sentPrompt, /squash title: "Selected PR \(#41\)"/);
+  assert.match(sentPrompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(sentPrompt, /Ollama <hello@ollama.com>/);
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
 
