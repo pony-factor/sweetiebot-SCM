@@ -14,7 +14,7 @@ function documentFixture() {
       attrs: {}, events: {}, classList: { toggle() {} },
       setAttribute(key, value) { this.attrs[key] = value; },
       addEventListener(key, fn) { this.events[key] = fn; },
-      appendChild(child) { this.child = child; },
+      appendChild(child) { this.child = child; if (child.id) elements.set(child.id, child); },
       querySelector() { return this.child; },
       prepend(item) { elements.set(item.id, item); }
     }),
@@ -30,6 +30,7 @@ function documentFixture() {
     }
   };
   doc.action = () => elements.get('sweetiebot-compact-window-action').child;
+  doc.newWindowAction = () => elements.get('sweetiebot-new-workspace-window-action').child;
   doc.rebuild = () => { elements.clear(); doc.remount(); };
   return doc;
 }
@@ -67,5 +68,29 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const other = documentFixture();
   ctx.scmToolkitMountCompactWindow(other, native);
   assert.notEqual(doc.__sweetiebotCompactWindow, other.__sweetiebotCompactWindow, 'Each window owns its restore state');
+  const workspace = documentFixture();
+  const commands = [];
+  let openRelease;
+  let openFail = false;
+  ctx.scmToolkitMountCompactWindow(workspace, native, { executeCommand(id) {
+    commands.push(id);
+    if (openFail) return Promise.reject(new Error('open failure'));
+    return new Promise(resolve => { openRelease = resolve; });
+  } });
+  workspace.newWindowAction().events.click(event);
+  workspace.newWindowAction().events.click(event);
+  assert.deepEqual(commands, ['workbench.action.duplicateWorkspaceInNewWindow']);
+  assert.equal(workspace.newWindowAction().attrs['aria-disabled'], 'true');
+  openRelease(); await flush();
+  assert.equal(workspace.newWindowAction().attrs['aria-disabled'], 'false');
+  workspace.rebuild();
+  openFail = true;
+  workspace.newWindowAction().events.keydown({ ...event, key: 'Enter' });
+  await flush();
+  assert.equal(workspace.newWindowAction().title, 'Could not open workspace in new window; click to retry');
+  openFail = false;
+  workspace.newWindowAction().events.keydown({ ...event, key: ' ' });
+  openRelease(); await flush();
+  assert.equal(workspace.newWindowAction().title, 'Open workspace in new window');
   console.log('Compact window native resize, restore, failure, remount, and isolation checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
