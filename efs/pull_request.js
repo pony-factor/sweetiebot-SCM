@@ -411,7 +411,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {
-          closers.set(kind, await openWorkflow(vscode, workflow.url));
+          closers.set(kind, await openWorkflow(vscode, workflow.url, {
+            openToSide: kind === 'pony' && closers.has('draft'),
+          }));
           const timer = setTimeout(() => localHandoff.reportError(draftId, kind,
             'This workflow did not return a result within 20 minutes. Its chat remains available for review.'), 1200000);
           timer.unref?.();

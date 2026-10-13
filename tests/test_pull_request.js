@@ -312,6 +312,7 @@ async function run() {
   assert.match(openedPrompt, /codex-pony\[bot\]/);
   const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
+  assert.equal(calls[3].args[0].openToSide, true, 'Pony research opens beside the PR draft');
   calls.length = 0;
   repository.state.HEAD.name = 'main';
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
