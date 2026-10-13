@@ -691,6 +691,10 @@
     cursor: pointer;
 }
 
+#sweetiebot-new-workspace-window-action > .action-label::before {
+    font-size: 14px !important;
+}
+
 /* Keep the Extensions heading and native actions with the moved view. */
 .extensions-viewlet > .header {
     display: flex;
