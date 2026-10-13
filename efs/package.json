@@ -306,6 +306,16 @@
           "default": "Send",
           "description": "Text shown on the primary commit action when git.postCommitCommand is push."
         },
+        "scmToolkit.incomingSyncLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom label beside the incoming (down-arrow) Sync Changes count. Blank keeps the native display."
+        },
+        "scmToolkit.outgoingSyncLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
+        },
         "scmToolkit.autoPublishPullRequests": {
           "type": "boolean",
           "default": true,

@@ -47,39 +47,81 @@ function scmToolkitDisposeActionButton(widget) {
     widget.scmToolkitPressState = undefined;
 }
 
-function scmToolkitHideOutgoingSyncCount(widget) {
+function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     const root = widget.element.closest('.scm-view');
-    const Observer = widget.element.ownerDocument.defaultView?.MutationObserver;
+    const doc = widget.element.ownerDocument;
+    const Observer = doc.defaultView?.MutationObserver;
     if (!root || !Observer) return;
 
-    const observedRoots = globalThis.__scmToolkitOutgoingSyncRoots ??= new WeakSet();
+    const observedRoots = globalThis.__scmToolkitSyncLabelRoots ??= new WeakMap();
     if (observedRoots.has(root)) return;
-    observedRoots.add(root);
+
+    const configuredName = (key, fallback) => {
+        const value = configuration.getValue(`scmToolkit.${key}`);
+        return String(typeof value === 'string' && value.trim() ? value : (fallback ?? '')).trim();
+    };
 
     const update = () => {
+        const names = {
+            down: configuredName('incomingSyncLabel', settings.incomingSyncLabel),
+            up: configuredName('outgoingSyncLabel', settings.outgoingSyncLabel),
+        };
         for (const action of root.querySelectorAll('.button-container .monaco-button')) {
             if (!action.querySelector('.codicon-sync')) continue;
 
-            for (const upArrow of action.querySelectorAll(
-                '.monaco-button-label > .codicon-arrow-up, '
-                + '.monaco-button-label-short > .codicon-arrow-up'
-            )) {
-                const count = upArrow.previousElementSibling;
-                if (!count || count.classList.contains('codicon')) continue;
+            for (const direction of ['down', 'up']) {
+                for (const arrow of action.querySelectorAll(
+                    `.monaco-button-label > .codicon-arrow-${direction}, `
+                    + `.monaco-button-label-short > .codicon-arrow-${direction}`
+                )) {
+                    const count = arrow.previousElementSibling;
+                    if (!count || count.classList.contains('codicon')) continue;
 
-                const text = count.textContent ?? '';
-                const withoutOutgoingCount = text.replace(/\s*\d+\s*$/, '').trimEnd();
-                if (withoutOutgoingCount === text) continue;
+                    // Insert a separate name so native Git can update its count and icons.
+                    let label = count.previousElementSibling;
+                    if (!label?.classList.contains('scm-toolkit-sync-direction')) label = undefined;
+                    const name = names[direction];
+                    if (name) {
+                        if (!label) {
+                            label = doc.createElement('span');
+                            label.className = 'scm-toolkit-sync-direction';
+                            count.before(label);
+                        }
+                        const display = name + '\u00a0';
+                        if (label.textContent !== display) label.textContent = display;
+                    } else {
+                        label?.remove();
+                    }
 
-                count.textContent = withoutOutgoingCount;
-                count.hidden = withoutOutgoingCount.trim() === '';
+                    // Preserve the existing hide-outgoing-count preference independently.
+                    if (direction === 'up' && settings.hideOutgoingSyncCount) {
+                        const text = count.textContent ?? '';
+                        const withoutCount = text.replace(/\s*\d+\s*$/, '').trimEnd();
+                        if (withoutCount !== text) {
+                            count.textContent = withoutCount;
+                            count.hidden = withoutCount.trim() === '';
+                        }
+                    }
+                }
             }
         }
     };
 
-    update();
     const observer = new Observer(update);
+    observedRoots.set(root, observer);
     observer.observe(root, { subtree: true, childList: true, characterData: true });
+    const disposable = configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.incomingSyncLabel')
+            || event.affectsConfiguration('scmToolkit.outgoingSyncLabel')) update();
+    });
+    widget.disposables.add({
+        dispose() {
+            observer.disconnect();
+            disposable.dispose();
+            observedRoots.delete(root);
+        }
+    });
+    update();
 }
 
 function scmToolkitCustomizeCommitButtonLabel(
@@ -1063,7 +1105,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     scmToolkitWatchSpellcheckPopups(widget.element.ownerDocument, commands);
     scmToolkitExpireNotifications(notifications);
     const doc = widget.element.ownerDocument;
-    if (settings.hideOutgoingSyncCount) scmToolkitHideOutgoingSyncCount(widget);
+    scmToolkitCustomizeSyncLabels(widget, configuration, settings);
     if (settings.commitButtonLabel || settings.commitAndSendButtonLabel) {
         scmToolkitCustomizeCommitButtonLabel(
             widget,
