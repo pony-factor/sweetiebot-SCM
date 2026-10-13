@@ -751,7 +751,7 @@ When the Integrated Browser is already showing a private ChatGPT conversation, S
 
 That source metadata is passed to Kafania. Kafania formats it as a separate pull-request comment and can include a short conversation-intent summary, which is intentionally distinct from the diff-based PR description. Source UUIDs are never invented when neither ChatGPT nor Codex exposes one.
 
-The two repositories are expected to be checked out beside each other so Sweetiebot can read `../kefania/PULL_REQUEST.md`. Opening the drafting chat does not stage, commit, or push local changes.
+Sweetiebot first looks for a sibling `kefania` checkout. It also discovers a shared `pony-factor/kefania` checkout under the same repository collection, beside the Sweetiebot source, or at `~/GitHub/pony-factor/kefania`. The eligibility check, drafting rules, and local publisher use this discovery, so repositories grouped under different owners can share one Kefania checkout. Failed eligibility checks retry after 15 seconds, allowing repaired setup to enable New PR without a branch-head change or window reload. Opening the drafting chat does not stage, commit, or push local changes.
 
 #### Connect a local Kefania server
 
