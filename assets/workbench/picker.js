@@ -2204,8 +2204,18 @@ function scmToolkitMountCompactWindow(doc, nativeHost) {
     };
     const mount = () => {
         if (doc.getElementById(actionId)) return;
-        const actions = doc.querySelector('.part.titlebar .titlebar-right .action-toolbar-container .actions-container');
-        if (!actions) return;
+        const left = doc.querySelector('.part.titlebar .titlebar-left');
+        if (!left) return;
+        let toolbar = left.querySelector('.sweetiebot-compact-window-toolbar');
+        if (!toolbar) {
+            toolbar = doc.createElement('div');
+            toolbar.className = 'monaco-action-bar sweetiebot-compact-window-toolbar';
+            const actions = doc.createElement('ul');
+            actions.className = 'actions-container';
+            toolbar.appendChild(actions);
+            left.appendChild(toolbar);
+        }
+        const actions = toolbar.querySelector('.actions-container');
         const item = doc.createElement('li');
         item.id = actionId;
         item.className = 'action-item sweetiebot-compact-window-action';

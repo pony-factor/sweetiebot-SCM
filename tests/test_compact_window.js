@@ -14,9 +14,14 @@ function documentFixture() {
       attrs: {}, events: {}, classList: { toggle() {} },
       setAttribute(key, value) { this.attrs[key] = value; },
       addEventListener(key, fn) { this.events[key] = fn; },
-      appendChild(child) { this.child = child; }
+      appendChild(child) { this.child = child; },
+      querySelector() { return this.child; },
+      prepend(item) { elements.set(item.id, item); }
     }),
-    querySelector: () => ({ prepend(item) { elements.set(item.id, item); } }),
+    querySelector: selector => {
+      assert.equal(selector, '.part.titlebar .titlebar-left');
+      return { querySelector() { return null; }, appendChild() {} };
+    },
     defaultView: {
       vscodeWindowId: 7, screenX: -1300, screenY: 80, outerWidth: 1000, outerHeight: 760,
       screen: { availLeft: -1440, availTop: 25, availWidth: 1440, availHeight: 875 },
