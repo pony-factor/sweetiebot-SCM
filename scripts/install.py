@@ -382,7 +382,7 @@ def extension_update_toolbar_edits(js):
     return changes
 
 
-def compact_window_edits(js):
+def compact_window_edits(js, command="fe"):
     # Match the native titlebar layout rather than relying on SCM activation.
     ident = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
@@ -397,7 +397,8 @@ def compact_window_edits(js):
     original = matches[0].group(0)
     replacement = original.replace(
         "{if(",
-        "{scmToolkitMountCompactWindow(this.element.ownerDocument,this.nativeHostService);if(",
+        "{this.instantiationService.invokeFunction(accessor=>scmToolkitMountCompactWindow("
+        f"this.element.ownerDocument,this.nativeHostService,accessor.get({command})));if(",
         1,
     )
     return [(original, replacement)]
@@ -465,7 +466,7 @@ def edits(js=None, settings=None):
 
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
-        changes.extend(compact_window_edits(js))
+        changes.extend(compact_window_edits(js, command))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))
