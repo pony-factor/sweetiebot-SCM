@@ -97,6 +97,27 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("Automatically sync", page)
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["autoPullClean"])
 
+    def test_custom_sync_direction_names_round_trip(self):
+        values = form_values()
+        values["incomingSyncLabel"] = ["Remote work"]
+        values["outgoingSyncLabel"] = ["Ship it"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["incomingSyncLabel"], "Remote work")
+        self.assertEqual(parsed["outgoingSyncLabel"], "Ship it")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="incomingSyncLabel" value="Remote work"', page)
+        self.assertIn('name="outgoingSyncLabel" value="Ship it"', page)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertEqual(payload["incomingSyncLabel"], "Remote work")
+        self.assertEqual(payload["outgoingSyncLabel"], "Ship it")
+        values["incomingSyncLabel"] = [""]
+        values["outgoingSyncLabel"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["incomingSyncLabel"], "")
+        self.assertEqual(configurator.parse_submission(values)["outgoingSyncLabel"], "")
+        values["incomingSyncLabel"] = ["bad\nname"]
+        with self.assertRaisesRegex(ValueError, "one line"):
+            configurator.parse_submission(values)
+
     def test_legacy_post_commit_sync_is_replaced_by_unchecked_push(self):
         current = dict(toolkit_settings.DEFAULT_SETTINGS)
         configurator.apply_vscode_settings(current, {"gitSettings": {"postCommitCommand": "sync"}})

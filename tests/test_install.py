@@ -27,6 +27,8 @@ SETTINGS = {
     "autoPublishToggle": True,
     "codexCoauthor": True,
     "hideOutgoingSyncCount": True,
+    "incomingSyncLabel": "",
+    "outgoingSyncLabel": "",
     "blankStateRefresh": True,
     "autoPullClean": True,
     "cmdClickCloseOthers": False,
@@ -210,6 +212,9 @@ class TransformTests(unittest.TestCase):
         self.assertIn("scm-toolkit-auto-publish", css)
         # Two initial dividers plus the factory for additional saved separators.
         self.assertEqual(js.count("className = 'scm-toolkit-divider'"), 3)
+        self.assertIn("scmToolkitCustomizeSyncLabels", js)
+        self.assertIn("settings.incomingSyncLabel", js)
+        self.assertIn("settings.outgoingSyncLabel", js)
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
         self.assertIn("scmToolkitCustomizeMessagePlaceholder", js)
         self.assertIn("settings.commitAndSendButtonLabel", js)

@@ -21,7 +21,7 @@ Current features:
 - optionally open a pull request for the current branch through a configured MCP server
 - recognize built-in pony branch names during PR creation and pass local-only character context to Kafania for a post-publish pony profile
 - show the matched pony as a small local-only **Pony Info** view in Source Control, beside whatever editor or Integrated Browser content is open
-- optionally hide the outgoing commit count from the built-in Sync action
+- optionally hide the outgoing commit count from the built-in Sync action, and set separate incoming/outgoing count labels without changing Git operations
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly
 - search the active workspace semantically from a `Workspace Search` view inside Source Control by default, or optionally move it to its own Activity Bar container, backed only by local Ollama
 - copy all retained text from the active integrated terminal to the clipboard in one step from its context menu or the Command Palette
@@ -186,6 +186,8 @@ git config --global scm-toolkit.branch-cleanup true
 git config --global scm-toolkit.autocomplete-toggle true
 git config --global scm-toolkit.codex-coauthor true
 git config --global scm-toolkit.hide-outgoing-sync-count true
+git config --global scm-toolkit.incoming-sync-label "Incoming"
+git config --global scm-toolkit.outgoing-sync-label "Outgoing"
 git config --global scm-toolkit.blank-state-refresh true
 git config --global scm-toolkit.auto-pull-clean true
 git config --global scm-toolkit.cmd-click-close-others false
@@ -233,6 +235,8 @@ The equivalent `~/.gitconfig` block is:
     autocomplete-toggle = true
     codex-coauthor = true
     hide-outgoing-sync-count = true
+    incoming-sync-label = Incoming
+    outgoing-sync-label = Outgoing
     blank-state-refresh = true
     auto-pull-clean = true
     cmd-click-close-others = false
