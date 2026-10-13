@@ -27,6 +27,12 @@ function chatgptPromptUrl(prompt, configuredProjectUrl = '') {
 
 // Keep long PR instructions out of the HTTP request target. The browser preload
 // reads this fragment and inserts the complete prompt after ChatGPT hydrates.
+// The guarded browser preload submits merge chats when their composer is ready.
+function chatgptMergeUrl(prompt, configuredProjectUrl = '') {
+  const destination = normalizeChatgptProjectUrl(configuredProjectUrl) || 'https://chatgpt.com/';
+  return destination + '#sweetiebot_merge=1&q=' + encodeURIComponent(prompt);
+}
+
 function chatgptPullRequestUrl(prompt, configuredProjectUrl = '', resultUrl = '') {
   const destination = normalizeChatgptProjectUrl(configuredProjectUrl) || 'https://chatgpt.com/';
   return destination + '#sweetiebot_pr=1&q=' + encodeURIComponent(prompt)
@@ -84,4 +90,4 @@ async function resolveChatgptActionProject(vscode, context) {
   return projectUrl;
 }
 
-module.exports = { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, resolveChatgptActionProject };
+module.exports = { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl, resolveChatgptActionProject };
