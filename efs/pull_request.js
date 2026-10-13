@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { runKefania } = require('./kefania_runner');
+const { resolveKefaniaFile } = require('./kefania_paths');
 const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { createDraftHandoff } = require('./draft_handoff');
 const { displayName } = require('./pony_profile');
@@ -30,13 +31,13 @@ function kefaniaRulesPath(repositoryPath) {
 }
 
 async function readKefaniaInstructions(repositoryPath, readFile = fs.readFile) {
-  const rulesPath = kefaniaRulesPath(repositoryPath);
+  const rulesPath = await resolveKefaniaFile(repositoryPath, KEFANIA_RULES_FILE);
   let text;
   try {
     text = await readFile(rulesPath, 'utf8');
   } catch (error) {
     throw new Error(
-      `Kafania pull-request instructions were not found at ${rulesPath}. Keep kefania beside this repository.`
+      `Kafania pull-request instructions could not be read at ${rulesPath}.`
     );
   }
   if (!String(text).trim()) {

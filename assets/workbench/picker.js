@@ -1267,6 +1267,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let currentBranchRevision;
     let pullRequestEligibilityKey;
     let pullRequestEligibility;
+    let pullRequestEligibilityRetry;
+    let pullRequestEligibilityRequest = 0;
     let repositoryResolveToken = 0;
     let currentInput;
     let pending = false;
@@ -1524,7 +1526,14 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         const key = [currentRepositoryUri?.toString(), branch, currentDefaultBranch,
             currentBranchRevision, settings.remote].join('|');
+        if (unavailable) {
+            clearTimeout(pullRequestEligibilityRetry);
+            pullRequestEligibilityRetry = undefined;
+        }
         if (!unavailable && key !== pullRequestEligibilityKey) {
+            clearTimeout(pullRequestEligibilityRetry);
+            pullRequestEligibilityRetry = undefined;
+            const request = ++pullRequestEligibilityRequest;
             pullRequestEligibilityKey = key;
             pullRequestEligibility = undefined;
             void commands.executeCommand('sweetiebot.pullRequestEligibility', currentRepositoryUri, {
@@ -1532,13 +1541,21 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 base: currentDefaultBranch,
                 remote: settings.remote,
             }).then(result => {
-                if (pullRequestEligibilityKey !== key) return;
+                if (pullRequestEligibilityKey !== key || pullRequestEligibilityRequest !== request) return;
                 pullRequestEligibility = result;
                 refreshPullRequest();
             }).catch(error => {
-                if (pullRequestEligibilityKey !== key) return;
+                if (pullRequestEligibilityKey !== key || pullRequestEligibilityRequest !== request) return;
                 pullRequestEligibility = { allowed: false, reason: 'unavailable',
                     message: error.message || String(error) };
+                // Setup can be repaired without moving the branch head. Do not
+                // cache a failed read-only check until the window is reloaded.
+                pullRequestEligibilityRetry = setTimeout(() => {
+                    pullRequestEligibilityRetry = undefined;
+                    if (pullRequestEligibilityKey !== key || pullRequestEligibilityRequest !== request) return;
+                    pullRequestEligibilityKey = undefined;
+                    refreshPullRequest();
+                }, 15000);
                 refreshPullRequest();
             });
         }
@@ -1923,6 +1940,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     settingsButton.addEventListener('click', openSettings);
     widget.disposables.add({
         dispose() {
+            clearTimeout(pullRequestEligibilityRetry);
+            pullRequestEligibilityRequest += 1;
             homeButton.removeEventListener('click', returnHome);
             branchButton.removeEventListener('click', openBranchPicker);
             branchButton.removeEventListener('contextmenu', showBranchContextMenu);
@@ -2009,6 +2028,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentRepositoryUri = undefined;
             currentDefaultBranch = undefined;
             currentBranchRevision = undefined;
+            clearTimeout(pullRequestEligibilityRetry);
+            pullRequestEligibilityRetry = undefined;
+            pullRequestEligibilityRequest += 1;
             pullRequestEligibilityKey = undefined;
             pullRequestEligibility = undefined;
             const resolutionToken = ++repositoryResolveToken;
