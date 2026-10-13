@@ -191,6 +191,16 @@
           "default": false,
           "description": "Automatically publish newly selected local branches to the configured Git remote."
         },
+        "scmToolkit.compactWindowButton": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the compact-window sizing button in the title bar."
+        },
+        "scmToolkit.newWorkspaceWindowButton": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the title-bar button that opens the same repository folders in a new workspace window."
+        },
         "scmToolkit.codexKeepAwake": {
           "type": "boolean",
           "default": true,

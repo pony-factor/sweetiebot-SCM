@@ -31,6 +31,7 @@ function documentFixture() {
   };
   doc.action = () => elements.get('sweetiebot-compact-window-action').child;
   doc.newWindowAction = () => elements.get('sweetiebot-new-workspace-window-action').child;
+  doc.item = id => elements.get(id);
   doc.rebuild = () => { elements.clear(); doc.remount(); };
   return doc;
 }
@@ -72,11 +73,31 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const commands = [];
   let openRelease;
   let openFail = false;
+  const visibility = { compactWindowButton: true, newWorkspaceWindowButton: true };
+  let visibilityChanged;
+  const configuration = {
+    getValue: key => visibility[key.replace('scmToolkit.', '')],
+    onDidChangeConfiguration(callback) { visibilityChanged = callback; return { dispose() {} }; }
+  };
   ctx.scmToolkitMountCompactWindow(workspace, native, { executeCommand(id) {
     commands.push(id);
     if (openFail) return Promise.reject(new Error('open failure'));
     return new Promise(resolve => { openRelease = resolve; });
-  } });
+  } }, configuration);
+  const compactItem = () => workspace.item('sweetiebot-compact-window-action');
+  const newItem = () => workspace.item('sweetiebot-new-workspace-window-action');
+  const refresh = () => visibilityChanged({ affectsConfiguration: () => true });
+  assert.equal(compactItem().hidden, false);
+  assert.equal(newItem().hidden, false);
+  visibility.compactWindowButton = false; refresh();
+  assert.equal(compactItem().hidden, true);
+  assert.equal(newItem().hidden, false, 'Workspace button stays independent');
+  visibility.newWorkspaceWindowButton = false; refresh();
+  assert.equal(newItem().hidden, true);
+  visibility.compactWindowButton = true; refresh();
+  assert.equal(compactItem().hidden, false);
+  assert.equal(newItem().hidden, true, 'Sizing button stays independent');
+  visibility.newWorkspaceWindowButton = true; refresh();
   workspace.newWindowAction().events.click(event);
   workspace.newWindowAction().events.click(event);
   assert.deepEqual(commands, ['workbench.action.duplicateWorkspaceInNewWindow']);

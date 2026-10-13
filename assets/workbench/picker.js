@@ -2202,13 +2202,27 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
 // Called by the native titlebar, including auxiliary windows. Browser resizeTo
 // cannot resize the Electron workspace window; use VS Code's native host bridge.
-function scmToolkitMountCompactWindow(doc, nativeHost, commands) {
+function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, settings = {}) {
     if (doc.__sweetiebotCompactWindow) return;
     const win = doc.defaultView;
     if (!win || !nativeHost?.positionWindow) return;
     const state = { restore: null, busy: false, opening: false };
     doc.__sweetiebotCompactWindow = state;
     const actionId = 'sweetiebot-compact-window-action';
+    const newActionId = 'sweetiebot-new-workspace-window-action';
+    const refreshVisibility = () => {
+        const compact = configuration?.getValue('scmToolkit.compactWindowButton')
+            ?? settings.compactWindowButton ?? true;
+        const newWindow = configuration?.getValue('scmToolkit.newWorkspaceWindowButton')
+            ?? settings.newWorkspaceWindowButton ?? true;
+        const compactItem = doc.getElementById(actionId);
+        const newItem = doc.getElementById(newActionId);
+        if (compactItem) compactItem.hidden = !compact;
+        if (newItem) newItem.hidden = !newWindow;
+        const toolbar = doc.querySelector('.part.titlebar .titlebar-left')
+            ?.querySelector('.sweetiebot-compact-window-toolbar');
+        if (toolbar) toolbar.hidden = !compact && (!newWindow || !commands?.executeCommand);
+    };
     const updateAction = action => {
         const compact = Boolean(state.restore);
         action.classList.toggle('codicon-screen-normal', !compact);
@@ -2289,7 +2303,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands) {
         actions.prepend(item);
         if (commands?.executeCommand) {
             const newItem = doc.createElement('li');
-            newItem.id = 'sweetiebot-new-workspace-window-action';
+            newItem.id = newActionId;
             newItem.className = 'action-item sweetiebot-compact-window-action';
             newItem.setAttribute('role', 'presentation');
             const newAction = doc.createElement('a');
@@ -2330,9 +2344,17 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands) {
             newItem.appendChild(newAction);
             actions.appendChild(newItem);
         }
+        refreshVisibility();
     };
     mount();
     const observer = new win.MutationObserver(mount);
     observer.observe(doc.body, { childList: true, subtree: true });
-    win.addEventListener('unload', () => observer.disconnect(), { once: true });
+    const visibilityListener = configuration?.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.compactWindowButton')
+            || event.affectsConfiguration('scmToolkit.newWorkspaceWindowButton')) refreshVisibility();
+    });
+    win.addEventListener('unload', () => {
+        observer.disconnect();
+        visibilityListener?.dispose();
+    }, { once: true });
 }

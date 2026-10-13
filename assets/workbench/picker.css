@@ -687,6 +687,11 @@
     -webkit-app-region: no-drag;
 }
 
+.sweetiebot-compact-window-toolbar[hidden],
+.sweetiebot-compact-window-action[hidden] {
+    display: none !important;
+}
+
 .sweetiebot-compact-window-action > .action-label {
     cursor: pointer;
 }
