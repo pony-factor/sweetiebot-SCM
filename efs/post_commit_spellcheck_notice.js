@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { renderSpellcheckDiff, spellcheckDiffFiles } = require('./spellcheck_diff');
+const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 
 const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
@@ -152,7 +153,23 @@ async function saveSpellcheckEdit(vscode, sessionId, editId, text) {
   } finally { session.saving = false; }
 }
 
-async function finishSpellcheckPreview(vscode, sessionId, action, message, runAction = gitAction) {
+async function normalizeReviewedWhitespace(root, paths) {
+  const bundled = path.join(__dirname, 'local_codex_commit.py');
+  const script = await fs.access(bundled).then(() => bundled,
+    () => path.join(__dirname, '../scripts/local_codex_commit.py'));
+  await new Promise((resolve, reject) => {
+    const child = execFile(resolvePythonExecutable(), [script, '--normalize-reviewed-whitespace'],
+      {cwd: root, timeout: 30000}, (error, _stdout, stderr) => {
+        if (error) reject(new Error(stderr?.trim() || pythonLaunchError(error).message));
+        else resolve();
+      });
+    child.stdin.on('error', reject);
+    child.stdin.end(JSON.stringify(paths));
+  });
+}
+
+async function finishSpellcheckPreview(vscode, sessionId, action, message, runAction = gitAction,
+  normalize = normalizeReviewedWhitespace) {
   const session = previewSessions.get(sessionId);
   if (!session || !['accept', 'revert'].includes(action)) throw new Error('This spellcheck preview is no longer available.');
   if (session.saving || session.acting) throw new Error('Wait for the current spelling edit to finish.');
@@ -188,6 +205,7 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
         'diff', '--cached', '--no-ext-diff', '--no-color', '--', ...session.paths
       ]);
       if (staged.trim()) throw new Error('These files also have staged changes. Unstage them before accepting this preview.');
+      await normalize(session.root, session.paths);
       // --only includes the reviewed working files while preserving other staged work.
       await runAction(session.root, ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim', '--message', message, '--', ...session.paths]);
     } else {
@@ -199,14 +217,15 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
     try { await session.repository.status?.(); } catch { /* Refresh next polling cycle. */ }
     if (!commitAndPush) return {action};
     try {
-      if (!session.branch || typeof session.repository?.push !== 'function') {
+      if (!session.branch) {
         throw new Error('No active branch or Git push operation is available.');
       }
       if (await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
         throw new Error('The active branch changed before the spelling commit could be pushed.');
       }
-      // Use the VS Code Git API so its existing push/rejection recovery applies.
-      await session.repository.push();
+      // Dispatch the same command as the SCM Push action, including upstream
+      // publication and Sweetiebot's workbench push/rejection recovery.
+      await vscode.commands.executeCommand('git.push', vscode.Uri.file(session.root));
       return {action, pushed: true};
     } catch (error) {
       // The commit has already succeeded. Close the one-shot preview and report
@@ -286,6 +305,6 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
 }
 
 module.exports = {
-  finishSpellcheckPreview, saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
+  normalizeReviewedWhitespace, finishSpellcheckPreview, saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
   registerPostCommitSpellcheckNotice,
 };
