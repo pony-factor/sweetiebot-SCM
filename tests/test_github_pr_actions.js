@@ -73,8 +73,7 @@ async function main() {
       assert.equal(stale.calls.length, 2, 'Changed PR must not submit');
     }
   }
-  assert.match(String((await assert.rejects(squashMergePullRequest(
-    'https://other.example/owner/repo/pull/12', happy.execute))) || ''), /^$/);
+  await assert.rejects(squashMergePullRequest('https://other.example/owner/repo/pull/12', happy.execute));
 
   for (const branch of [open, alternate]) {
     const conflicting = mockMerge({ views: [{ ...branch, mergeable: 'CONFLICTING' }] });
@@ -551,11 +550,19 @@ async function main() {
     if (mergeState === 'cancelled') return { cancelled: true, merged: false };
     if (mergeState === 'error') throw new Error('Unable to merge');
     if (mergeState === 'queued') return { merged: false, number: 12 };
+    if (mergeState === 'pending') return { merged: false, pending: true, number: 12 };
+    if (mergeState === 'enqueued') return { merged: false, enqueued: true, number: 12 };
     return {
       merged: true, number: 12, repo: 'owner/repo', base: 'main',
       pr: { ...open, state: 'MERGED', isCrossRepository: true, title: 'The merged PR' }
     };
   });
+  assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'queued' });
+  assert.equal(handlerClosed.length, 0);
+  mergeState = 'pending';
+  assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'pending' });
+  assert.equal(handlerClosed.length, 0);
+  mergeState = 'enqueued';
   assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'queued' });
   assert.equal(handlerClosed.length, 0);
   mergeState = 'cancelled';
@@ -564,7 +571,9 @@ async function main() {
   mergeState = 'complete';
   assert.deepEqual(await closeHandler({ url, number: 12 }), { state: 'merged' });
   assert.deepEqual(handlerClosed, [handlerTab]);
-  assert.deepEqual(handlerNotices, ['PR #12 queued for merge.', 'PR #12 merged into main.']);
+  assert.deepEqual(handlerNotices, ['PR #12 queued for merge.',
+    'PR #12 asynchronous squash still processing.', 'PR #12 added to merge queue.',
+    'PR #12 merged into main.']);
   assert.deepEqual(handlerWarnings, []);
 
 }
