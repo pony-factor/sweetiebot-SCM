@@ -10,7 +10,11 @@ const run = promisify(execFile);
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 const executeGh = args => run(gh, args, { timeout: 120000 });
 
-async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false) {
+// The asynchronous endpoint is recommended for ordinary PRs as well as stacks.
+// Keep one-off squash merges scoped to the selected PR and let GitHub enforce
+// branch protections and merge-queue requirements.
+async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
+  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000 } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -26,35 +30,79 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     { code: 'SWEETIEBOT_MERGE_CONFLICT' }
   );
   if (pr.mergeable === 'CONFLICTING') throw conflict();
-  if (pr.baseRefName !== 'main') {
-    // Do not merge into a non-main branch unless the user confirms its name.
-    if (!(await confirmNonMain({ repo, number, base: pr.baseRefName }))) {
-      return { merged: false, cancelled: true, repo, number, base: pr.baseRefName };
-    }
-    // A confirmation is only valid for the exact base and head initially displayed.
-    const latest = await read();
-    if (latest.state !== 'OPEN' || latest.isDraft ||
-        latest.baseRefName !== pr.baseRefName || latest.headRefName !== pr.headRefName ||
-        latest.headRefOid !== pr.headRefOid) {
-      throw new Error(`PR #${number} changed since confirmation. Refresh and try again.`);
-    }
-    if (latest.mergeable === 'CONFLICTING') throw conflict();
+  if (pr.baseRefName !== 'main' &&
+      !(await confirmNonMain({ repo, number, base: pr.baseRefName }))) {
+    return { merged: false, cancelled: true, repo, number, base: pr.baseRefName };
   }
+  // Validate the selected destination as well as the head just before invoking
+  // GitHub, including for main-targeted PRs (where there is no confirmation).
+  const latest = await read();
+  if (latest.state !== 'OPEN' || latest.isDraft ||
+      latest.baseRefName !== pr.baseRefName || latest.headRefName !== pr.headRefName ||
+      latest.headRefOid !== pr.headRefOid) {
+    throw new Error(`PR #${number} changed since selection. Refresh and try again.`);
+  }
+  if (latest.mergeable === 'CONFLICTING') throw conflict();
+
+  const endpoint = `repos/${repo}/pulls/${number}/merge-async`;
+  const versionHeader = ['-H', 'X-GitHub-Api-Version: 2026-03-10'];
+  const api = async args => JSON.parse((await execute(['api', ...versionHeader, ...args])).stdout);
+  let outcome;
   try {
-    await execute(['pr', 'merge', number, '--repo', repo, '--squash', '--match-head-commit', pr.headRefOid]);
+    outcome = await api(['--method', 'PUT', endpoint,
+      '-f', `sha=${pr.headRefOid}`, '-f', 'merge_method=squash', '-f', 'merge_action=default']);
   } catch (error) {
-    // Mergeability can change after the first read, or initially be UNKNOWN.
-    const latest = await read().catch(() => undefined);
-    if (latest?.mergeable === 'CONFLICTING') throw conflict();
-    throw error;
+    const detail = `${error.stderr || ''}
+${error.message || ''}`;
+    if (/\bHTTP 409\b/.test(detail)) {
+      // GitHub returns the existing request on a 409. Do not silently inherit
+      // another actor's merge options or a request for a different head SHA.
+      let existing;
+      try { existing = JSON.parse(error.stdout || ''); } catch {}
+      if (existing?.details?.uuid &&
+          existing.details.expected_head_sha === pr.headRefOid &&
+          existing.details.merge_method === 'squash' &&
+          existing.details.merge_action === 'default') {
+        outcome = existing;
+      } else {
+        throw new Error(`PR #${number} already has a different asynchronous merge request. Refresh its status before retrying.`);
+      }
+    } else {
+      const updated = await read().catch(() => undefined);
+      if (updated?.mergeable === 'CONFLICTING') throw conflict();
+      throw error;
+    }
   }
-  const merged = await read();
-  // Merge queues can accept the request without having merged it yet.
-  if (merged.state !== 'MERGED') return { merged: false, repo, number, base: pr.baseRefName };
-  if (merged.headRefOid !== pr.headRefOid || merged.baseRefName !== pr.baseRefName) {
+
+  const requestId = outcome?.details?.uuid;
+  for (let attempt = 0; outcome?.status === 'pending' && attempt < pollAttempts; attempt++) {
+    if (!/^[0-9a-f-]{36}$/i.test(requestId || '')) {
+      throw new Error(`GitHub returned an asynchronous merge without a valid request ID for PR #${number}.`);
+    }
+    await wait(pollIntervalMs);
+    outcome = await api([`${endpoint}/${requestId}`]);
+  }
+  if (outcome?.status === 'failed') {
+    throw new Error(`Unable to merge PR #${number}: ${outcome.details?.message || 'GitHub rejected the asynchronous merge.'}`);
+  }
+  if (!['pending', 'merged', 'enqueued'].includes(outcome?.status)) {
+    throw new Error(`GitHub returned an unexpected asynchronous merge status for PR #${number}.`);
+  }
+
+  // A completed async request may still be followed by a short period of API
+  // propagation. Never delete branches or close the PR tab until its actual
+  // PR state confirms the merge, including for merge-queue requests.
+  const confirmed = await read();
+  if (confirmed.baseRefName !== pr.baseRefName ||
+      confirmed.headRefName !== pr.headRefName || confirmed.headRefOid !== pr.headRefOid) {
     throw new Error('The pull request changed during merging; branch cleanup was skipped.');
   }
-  return { merged: true, repo, number, base: pr.baseRefName, pr: merged };
+  if (confirmed.state === 'MERGED') {
+    return { merged: true, repo, number, base: pr.baseRefName, pr: confirmed };
+  }
+  return { merged: false, repo, number, base: pr.baseRefName,
+    pending: outcome.status === 'pending' || outcome.status === 'merged',
+    enqueued: outcome.status === 'enqueued' };
 }
 
 async function deleteMergedRemoteBranch(result, execute = executeGh) {
@@ -189,8 +237,10 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {
-        vscode.window.showInformationMessage(`PR #${result.number} queued for merge${base !== 'main' ? ` into \`${base}\`` : ''}.`);
-        return { state: 'queued' };
+        const status = result.pending ? 'asynchronous squash still processing'
+          : result.enqueued ? 'added to merge queue' : 'queued for merge';
+        vscode.window.showInformationMessage(`PR #${result.number} ${status}${base !== 'main' ? ` into \`${base}\`` : ''}.`);
+        return { state: result.pending ? 'pending' : 'queued' };
       }
       vscode.window.showInformationMessage(`PR #${result.number} merged into ${base}.`);
       // Close only this merged PR's open overview, even when it is not the
