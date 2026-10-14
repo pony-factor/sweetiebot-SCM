@@ -1,11 +1,8 @@
 'use strict';
 
-const { execFile } = require('child_process');
 const { githubRepository } = require('./pull_request');
 const { openCompactKefaniaChat } = require('./kefania_chat_window');
-const { chatgptPromptUrl, resolveChatgptActionProject } = require('./chatgpt_project');
-
-const CHAT_SUBMIT_DELAY_MS = 3000;
+const { chatgptMergeUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 function repositoryName(repositoryUrl) {
   const normalized = githubRepository(repositoryUrl);
@@ -136,6 +133,16 @@ function planStackMerges(pullRequests, repositoryFullName, defaultBranch = 'main
   };
 }
 
+function squashCommitTitle(pr) {
+  const number = Number(pr?.number);
+  if (!Number.isSafeInteger(number) || number < 1) {
+    throw new Error('A squash commit requires a valid pull-request number.');
+  }
+  const title = String(pr?.title || '').trim().replace(/\s*\(#\d+\)\s*$/, '').trim();
+  if (!title) throw new Error('A squash commit requires a pull-request title.');
+  return title + ' (#' + number + ')';
+}
+
 async function pickPullRequests(vscode, pullRequests) {
   const picker = vscode.window.createQuickPick();
   const queueAllButton = {
@@ -186,7 +193,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
   const plan = planStackMerges(pullRequests, repositoryName(repositoryUrl));
   const hasStack = plan.stacked.length > 0 || plan.ordered.some(pr => pr.stack);
   const list = plan.ordered.map(pr =>
-    `- #${pr.number}: ${pr.title} — ${pr.url} (head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)}${pr.stackDepth > 0 ? `; selected parent: #${pr.stackParent}; intended destination: main` : ''}${pr.stack ? '; GitHub stack metadata present' : ''})`
+    `- #${pr.number}: ${pr.title} — ${pr.url} (squash title: ${JSON.stringify(squashCommitTitle(pr))}; head: ${pr.head || 'unknown'}; base: ${JSON.stringify(pr.base)}${pr.stackDepth > 0 ? `; selected parent: #${pr.stackParent}; intended destination: main` : ''}${pr.stack ? '; GitHub stack metadata present' : ''})`
   ).join('\n');
   const summary = hasStack
     ? `Squash and merge the following selected pull requests in repository ${repositoryUrl}. Complete selected stacks must land on main in ancestor-first order, with ONE separate squash commit per PR. Unrelated PRs retain their explicitly listed bases:`
@@ -202,44 +209,18 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
       ? 'BRANCH-LINKED BUT NOT GITHUB-NATIVE: Do not mistake a head/base branch-name chain for verified native stack membership. If native stack merge is unavailable, only use manual ancestor-first squash and child-only replay when you can prove each child diff excludes all ancestor changes, safely retarget ONLY selected descendants to main, respect branch protections, and preserve one squash commit per PR. Do not force-push a protected or unselected parent/base branch. If that cannot be verified and performed safely with available tools, STOP that stack; never fall back to merging children into parent branches and calling the result delivered to main.'
       : '',
     'For GitHub-native stacked PRs missing selected lower ancestors, STOP and request a complete prefix: never merge one into an intermediate base or implicitly include its unselected ancestors. PRs outside complete selected stacks and without native stack membership must merge ONLY into their originally listed base branch. Do not silently merge them into main or pull in an unselected dependency. Report blockers or unexpected base changes and continue only with unrelated safe PRs.',
-    'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Use each PR title as its squash-commit title and include the required Codex Web co-author trailer wherever the operation allows explicit commit text. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
+    'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
+    'ATTRIBUTION FOR EVERY SELECTED PR: Before merging, read ALL original PR commits (paginate the commits endpoint) and inspect their Git author and committer names/emails, linked GitHub author/committer accounts, and existing Co-authored-by trailers. Preserve original human Git authors, other human committers/co-authors, and evidenced bot/AI collaborators, including contributors behind bot-opened PRs. Distinguish the original Git authors from contributors named only in trailers. Use existing commit-associated or explicitly confirmed GitHub-linked email addresses and names; never guess a private email, invent a contributor, or give credit merely because an account opened the PR. Deduplicate repeated credits for the same person/agent, but keep regular Codex and Codex Web as separate entries when both participated even though both use noreply@openai.com. If attribution cannot be established reliably for an actual original human contributor, STOP the affected PR before merging and report the limitation.',
+    'SQUASH TITLE AND MESSAGE FOR EVERY SELECTED PR: Use the exact squash title shown above for that PR, with its own (#number) suffix exactly once at the END; do not append a different PR number or change the PR title itself. Compose a descriptive squash-commit body, then a blank line, then correctly ordered Co-authored-by: Name <email> trailers. Do not duplicate the actual squash Git author as a co-author. Include the required Co-authored-by: Codex Web <noreply@openai.com> entry at its ordered position, NOT automatically at the bottom. For a normal non-stack PR, set the explicit commit_title and commit_message using the GitHub squash merge API with the verified head SHA, or gh pr merge --squash --subject and --body. Supplying a custom commit message bypasses GitHub\'s default automatic co-author text: do not rely on it to preserve credit.',
+    'CO-AUTHOR ORDER (HIGH TO LOW): 1. Main/original human Git authors first (most substantial/primary first when clear, otherwise original-commit order); 2. Other human contributors such as human committers and existing human co-authors; 3. regular Codex; 4. Codex Web; 5. codex-pony[bot]; 6. GitHub Copilot; 7. Ollama; 8. other bots; 9. other AI collaborators. Within tiers, preserve sensible stable order; the later bot/AI tiers are approximate. Include a tier only when that contributor actually participated, EXCEPT for the always-required Codex Web trailer. Ensure every verified original human author appears before bots and AI, even when the PR itself was opened by codex-pony[bot].',
+    'KNOWN OPTIONAL IDENTITIES: When regular Codex participated, use Co-authored-by: Codex <noreply@openai.com>; separately include Co-authored-by: Codex Web <noreply@openai.com> even when regular Codex is present (do not collapse the two variants). For verified codex-pony[bot] contribution, use its observed GitHub noreply identity Co-authored-by: codex-pony[bot] <326443430+codex-pony[bot]@users.noreply.github.com>. For GitHub Copilot, prefer the GitHub noreply identity actually present in the commits; one known form is Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>, but other Copilot agent identities exist. For evidenced Ollama contributions use Co-authored-by: Ollama <hello@ollama.com>. Do not add these optional entries just because their examples appear here; other bots and AIs keep their actually recorded name and verified email.',
+    'NATIVE STACK METADATA SAFETY: GitHub-native atomic stack merges may not support custom per-layer squash titles or commit messages. Check support BEFORE submitting the stack. If the chosen operation cannot preserve each layer\'s exact (#number) title and complete ordered human/bot/AI co-author trailers, STOP the affected stack; report this limitation rather than silently losing attribution or rewriting main after the merge.',
+    'AFTER EACH COMPLETED MERGE: Fetch the resulting squash commit from its actual destination branch. Verify its first line exactly matches that PR\'s precomputed squash title, that its author plus Co-authored-by trailers cover the verified original human authors and other evidenced contributors in the requested priority order, and that its message includes the required Codex Web trailer in the Codex Web position. Report any mismatch and its commit URL rather than claiming successful attribution. Queued merges are not complete until their commits can be inspected; never amend or force-push a protected base to repair a merged commit.',
     'Report which PRs actually landed on main versus another branch, which were only queued, and which were blocked. Never collapse multiple selected PRs into a single squash commit or claim an intermediate-branch merge reached main.'
   ].filter(Boolean).join('\n\n');
 }
 
-function classifyChatSubmitError(error, stderr = '') {
-  const detail = String(stderr || error?.message || '').trim();
-  let reason = 'script';
-  if (/VS Code is not frontmost/i.test(detail)) reason = 'focus';
-  else if (/assistive access|accessibility|not allowed to send keystrokes|-25211/i.test(detail)) reason = 'accessibility';
-  else if (/not authorized to send Apple events|-1743/i.test(detail)) reason = 'automation';
-  return { submitted: false, reason, detail };
-}
-
-function submitChatPromptWithEnter(execFileImpl = execFile, options = {}) {
-  const platform = options.platform ?? process.platform;
-  const delayMs = options.delayMs ?? CHAT_SUBMIT_DELAY_MS;
-  if (platform !== 'darwin') return Promise.resolve({ submitted: false, reason: 'unsupported' });
-  return new Promise(resolve => {
-    setTimeout(() => {
-      const script = [
-        'tell application "System Events"',
-        'set frontApp to name of first application process whose frontmost is true',
-        'if frontApp contains "Code" then',
-        'key code 36',
-        'else',
-        'error ("VS Code is not frontmost: " & frontApp) number 1001',
-        'end if',
-        'end tell'
-      ].join('\n');
-      execFileImpl('/usr/bin/osascript', ['-e', script], (error, _stdout, stderr) => {
-        resolve(error ? classifyChatSubmitError(error, stderr) : { submitted: true });
-      });
-    }, delayMs);
-  });
-}
-
-function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch, submitPrompt = submitChatPromptWithEnter, platform = process.platform) {
+function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', async () => {
     try {
       if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
@@ -298,19 +279,10 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       });
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;
-      const url = chatgptPromptUrl(prompt, projectUrl);
+      const url = chatgptMergeUrl(prompt, projectUrl);
+      // The browser preload polls for a ready Send button instead of waiting
+      // three seconds and sending Return through macOS accessibility APIs.
       await openCompactKefaniaChat(vscode, url, { floating: false });
-      const submission = await submitPrompt();
-      if (platform === 'darwin' && submission !== true && !submission?.submitted) {
-        const message = submission?.reason === 'focus'
-          ? 'ChatGPT opened, but VS Code was not frontmost when Sweetiebot tried to press Return. Focus VS Code and retry, or submit the prompt manually.'
-          : submission?.reason === 'accessibility'
-            ? 'ChatGPT opened, but macOS denied the Return key event. Check which VS Code process has Accessibility access and restart VS Code after any permission change.'
-            : submission?.reason === 'automation'
-              ? 'ChatGPT opened, but macOS denied automation of System Events. Check System Settings > Privacy & Security > Automation.'
-              : 'ChatGPT opened, but automatic Return failed for a reason other than confirmed Accessibility denial. Submit the prompt manually. ' + String(submission?.detail || '').slice(0, 200);
-        vscode.window.showWarningMessage(message.trim());
-      }
     } catch (error) {
       vscode.window.showErrorMessage(`Unable to prepare pull-request merge chat: ${error.message}`);
     }
@@ -324,8 +296,7 @@ module.exports = {
   fetchOpenPullRequests,
   pickPullRequests,
   planStackMerges,
+  squashCommitTitle,
   batchMergePrompt,
-  submitChatPromptWithEnter,
-  classifyChatSubmitError,
   registerPullRequestBatchCommand
 };

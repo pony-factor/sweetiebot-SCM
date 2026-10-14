@@ -1,7 +1,7 @@
 'use strict';
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { access } = require('node:fs/promises');
+const { resolveKefaniaFile } = require('./kefania_paths');
 const { githubRepository, normalizeConversationSource, readCodexConversation } = require('./pull_request');
 
 function registerLocalPullRequestCommand(vscode, context) {
@@ -20,8 +20,7 @@ function registerLocalPullRequestCommand(vscode, context) {
     const remote = repository.state.remotes.find(item => item.name === options.remote);
     const url = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     if (!url) throw new Error('The selected remote must identify a GitHub repository.');
-    const runner = path.join(path.dirname(repository.rootUri.fsPath), 'kefania', 'src', 'local-pr.js');
-    await access(runner).catch(() => { throw new Error('Keep an updated kefania checkout beside this repository, with npm dependencies installed.'); });
+    const runner = await resolveKefaniaFile(repository.rootUri.fsPath, path.join('src', 'local-pr.js'));
     const source = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
       title: 'Creating new pull request with Kefania instructions', cancellable: false }, async () => {

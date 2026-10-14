@@ -11,6 +11,7 @@ const { registerPullRequestCommand } = require('./pull_request');
 const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
+const { registerNewWorkspaceCommand } = require('./new_workspace');
 const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
@@ -306,6 +307,7 @@ async function activate(context) {
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
+  registerNewWorkspaceCommand(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
   // Hidden panel tabs can still be restored as the active container.

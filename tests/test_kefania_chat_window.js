@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { openCompactKefaniaChat, resizeMacChatWindow } = require('../efs/kefania_chat_window');
 
-function mockVscode({ float = true, browser = true, moveError = false, openError = false } = {}) {
+function mockVscode({ float = true, browser = true, moveError = false, openError = false, recreateOnMove = false, rejectClose = false } = {}) {
   const calls = [], warnings = [], closed = [], workspaceTab = { name: 'Workspace' };
   const group = { tabs: [workspaceTab] };
   return {
@@ -16,11 +16,15 @@ function mockVscode({ float = true, browser = true, moveError = false, openError
       async executeCommand(name, options) {
         calls.push({ name, options });
         if (name === 'workbench.action.browser.open' && openError) throw new Error('Cannot open browser');
-        if (name === 'workbench.action.browser.open') group.tabs.push({ name: 'Kefania confirmation' });
+        if (name === 'workbench.action.browser.open') group.tabs.push({ name: 'Kefania confirmation', label: 'Kefania confirmation' });
+        if (name === 'workbench.action.moveEditorToNewWindow' && recreateOnMove) {
+          group.tabs = group.tabs.filter(tab => tab.name !== 'Kefania confirmation');
+          group.tabs.push({ name: 'Relocated confirmation', label: 'PR #268 · Kefania · 11111111' });
+        }
         if (name === 'workbench.action.moveEditorToNewWindow' && moveError) throw new Error('Move failed');
       }
     },
-    window: { tabGroups: { all:[group], async close(tab) { closed.push(tab); group.tabs=group.tabs.filter(item=>item!==tab); } }, async showWarningMessage(message) { warnings.push(message); } }
+    window: { tabGroups: { all:[group], async close(tab) { if (rejectClose) return false; closed.push(tab); group.tabs=group.tabs.filter(item=>item!==tab); return true; } }, async showWarningMessage(message) { warnings.push(message); } }
   };
 }
 
@@ -52,6 +56,22 @@ async function run() {
   assert.equal(vscode.closed[0].name, 'Kefania confirmation');
   assert.deepEqual(vscode.window.tabGroups.all[0].tabs, [vscode.workspaceTab], 'Workspace tab is preserved');
   await assert.rejects(floating.close(), /no longer open/, 'Never close an unrelated tab after the confirmation closes');
+
+  const relocatedHost = mockVscode({recreateOnMove: true});
+  const relocated = await openCompactKefaniaChat(relocatedHost,
+    'http://127.0.0.1:60847/kefania-draft/11111111-2222-4333-8444-555555555555', {platform: 'linux'});
+  const relocatedTabs = relocatedHost.window.tabGroups.all[0].tabs;
+  const movedIndex = relocatedTabs.findIndex(tab => tab.name === 'Relocated confirmation');
+  // Navigation may rehydrate the browser tab again after the auxiliary move.
+  relocatedTabs[movedIndex] = {name:'Navigated confirmation',label:'PR #268 · Kefania · 11111111'};
+  relocatedTabs.push({ name: 'Other confirmation', label: 'PR #269 · Kefania · 22222222' });
+  await relocated.close();
+  assert.deepEqual(relocatedHost.closed.map(tab => tab.name), ['Navigated confirmation'],
+    'Close resolves the relocated tab, not another browser or confirmation');
+  assert.equal(relocatedHost.window.tabGroups.all[0].tabs.some(tab => tab.name === 'Other confirmation'), true);
+  const failedCloseHost = mockVscode({rejectClose:true});
+  const failedClose = await openCompactKefaniaChat(failedCloseHost, url, {platform:'linux'});
+  await assert.rejects(failedClose.close(), /could not close/, 'An unsuccessful VS Code close is not reported as success');
 
   const otherOS = mockVscode();
   await openCompactKefaniaChat(otherOS, url, {

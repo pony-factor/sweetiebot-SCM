@@ -41,19 +41,30 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
     throw error;
   }
   if (requireFloating && !commands.includes(FLOAT_COMMAND)) throw new Error('Update VS Code to open the Kefania confirmation in a separate window.');
-  const before = new Set(vscode.window.tabGroups?.all.flatMap(group => group.tabs) || []);
+  const openTabs = () => vscode.window.tabGroups?.all.flatMap(group => group.tabs) || [];
+  const before = new Set(openTabs());
   await vscode.commands.executeCommand(BROWSER_COMMAND, {
     url, openToSide: false, reuseUrlFilter: url
   });
   if (!floating && !requireFloating) return { floating: false };
-  // Close only the browser tab opened for this confirmation; never close the workspace window.
-  const opened = vscode.window.tabGroups?.all.flatMap(group => group.tabs).filter(tab => !before.has(tab)) || [];
+  // Moving an editor to an auxiliary window can replace its Tab object. Retain
+  // the unique confirmation URL token to find the relocated tab safely later.
+  const opened = openTabs().filter(tab => !before.has(tab));
   const ownedTab = opened.length === 1 ? opened[0] : undefined;
+  const token = /\/kefania-draft\/([0-9a-f]{8})[0-9a-f-]{28}/i.exec(url)?.[1];
+  let currentTab = ownedTab;
   const closeOwnedTab = async () => {
-    if (!ownedTab || !vscode.window.tabGroups?.all.some(group => group.tabs.includes(ownedTab))) {
-      throw new Error('The Kefania confirmation tab is no longer open.');
+    const tabs = openTabs();
+    let target = tabs.includes(currentTab) ? currentTab : undefined;
+    if (!target && token) {
+      const matches = tabs.filter(tab => typeof tab.label === 'string' &&
+        tab.label.includes('Kefania') && tab.label.includes(token));
+      if (matches.length === 1) target = matches[0];
     }
-    await vscode.window.tabGroups.close(ownedTab, true);
+    if (!target) throw new Error('The Kefania confirmation tab is no longer open.');
+    if (!(await vscode.window.tabGroups.close(target, true))) {
+      throw new Error('VS Code could not close the Kefania confirmation tab.');
+    }
   };
   if (!commands.includes(FLOAT_COMMAND)) {
     await vscode.window.showWarningMessage?.('ChatGPT opened inside the workspace because floating editor windows are unavailable.');
@@ -69,6 +80,9 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
     await vscode.window.showWarningMessage?.('ChatGPT opened, but VS Code could not move the tab into a separate window.');
     return { floating: false };
   }
+  // Refresh the tab reference after the move, before independent chat tabs open.
+  const relocated = openTabs().filter(tab => !before.has(tab));
+  if (relocated.length === 1) currentTab = relocated[0];
   if (platform === 'darwin') await resizeMacChatWindow(exec);
   return { floating: true, close: closeOwnedTab };
 }

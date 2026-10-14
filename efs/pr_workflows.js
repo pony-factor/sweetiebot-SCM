@@ -40,11 +40,11 @@ function boundedLaunch(makePrompt, makeUrl, evidence) {
   }
 }
 
-async function openWorkflow(vscode, url) {
+async function openWorkflow(vscode, url, { openToSide = false } = {}) {
   const before = new Set(vscode.window.tabGroups?.all.flatMap(group => group.tabs) || []);
   // VS Code's URL reuse ignores fragments, so PR/profile launches must always
   // get distinct tabs and a fresh preload rather than reusing a project chat.
-  await vscode.commands.executeCommand('workbench.action.browser.open', { url, openToSide: false });
+  await vscode.commands.executeCommand('workbench.action.browser.open', { url, openToSide });
   const tab = vscode.window.tabGroups?.all.flatMap(group => group.tabs).find(candidate => !before.has(candidate));
   return async () => {
     if (tab && vscode.window.tabGroups.all.some(group => group.tabs.includes(tab))) {

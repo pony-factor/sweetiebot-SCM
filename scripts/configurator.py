@@ -119,7 +119,7 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Open the configured pull-request drafting chat and publish through the configured Kafania MCP tool.", "Message bar"),
+    Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
     Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
@@ -632,6 +632,14 @@ def render_form(
             controls = _pack_controls(current) + controls
         if section == "Source control":
             controls += _local_setup_controls()
+        if section == "Pull requests":
+            controls = (
+                '<div class="setting"><span><strong>Codex Pony repository access</strong>'
+                '<small>New PR requires Codex Pony to be installed on the repository owner’s account or organization, '
+                'with this repository included in its access. Installing it on another account does not grant access here. '
+                '<a href="https://github.com/settings/apps/codex-pony/installations" target="_blank" rel="noopener noreferrer">'
+                'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
+            ) + controls
         status = ""
         if section in {"Ollama", "Workspace Search"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'

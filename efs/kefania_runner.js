@@ -1,11 +1,10 @@
 'use strict';
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { access } = require('node:fs/promises');
+const { resolveKefaniaFile } = require('./kefania_paths');
 
 async function runKefania(repositoryPath, input, { botOnly = false } = {}) {
-  const runner = path.join(path.dirname(repositoryPath), 'kefania', 'src', 'local-pr.js');
-  await access(runner).catch(() => { throw new Error('Keep an updated kefania checkout beside this repository, with npm dependencies installed.'); });
+  const runner = await resolveKefaniaFile(repositoryPath, path.join('src', 'local-pr.js'));
   return new Promise((resolve, reject) => {
     const env = { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter),
       ...(botOnly ? { KEFANIA_GITHUB_AUTH: 'app' } : {}) };
@@ -28,8 +27,9 @@ async function runKefania(repositoryPath, input, { botOnly = false } = {}) {
  * Missing/old Kefania installations and read/write failures are cache misses.
  */
 async function runKefaniaPonyCache(repositoryPath, input) {
-  const runner = path.join(path.dirname(repositoryPath), 'kefania', 'src', 'pony-cache.js');
-  try { await access(runner); } catch { return { hit: false }; }
+  let runner;
+  try { runner = await resolveKefaniaFile(repositoryPath, path.join('src', 'pony-cache.js')); }
+  catch { return { hit: false }; }
   return new Promise(resolve => {
     let finished = false, output = '';
     const complete = result => {

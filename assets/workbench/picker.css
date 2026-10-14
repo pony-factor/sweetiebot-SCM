@@ -381,6 +381,10 @@
     cursor: default;
 }
 
+.scm-view .scm-editor > .scm-toolkit-pull-request.scm-toolkit-pr-needs-attention {
+    color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
 .scm-toolkit-pull-request:hover > .scm-toolkit-tooltip,
 .scm-toolkit-pull-request:focus-visible > .scm-toolkit-tooltip {
     opacity: 1;
