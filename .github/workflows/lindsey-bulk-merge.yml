@@ -1,0 +1,25 @@
+name: Lindsey Bulk Merge
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Lindsey handoff syntax
+        run: |
+          node --check efs/lindsey_bulk_merge.js
+          node --check efs/pull_request_batch.js
+      - name: Run Lindsey handoff and existing bulk-picker regressions
+        run: |
+          node tests/test_lindsey_bulk_merge.js
+          node tests/test_pull_request_batch.js
