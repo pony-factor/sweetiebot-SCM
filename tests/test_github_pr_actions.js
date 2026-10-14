@@ -9,10 +9,10 @@ const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 
 const asyncPath = 'repos/owner/repo/pulls/12/merge-async';
 const requestId = '630b9d5e-3f2a-4f7e-8b0c-2d5f9a8c1e42';
 const pending = { status: 'pending', details: { uuid: requestId } };
-const completed = { status: 'merged', details: { sha: 'c'.repeat(40) } };
+const asyncMergedResponse = { status: 'merged', details: { sha: 'c'.repeat(40) } };
 const mergedPr = { ...open, state: 'MERGED' };
 
-function mockMerge({ views = [open, open, mergedPr], submission = pending, responses = [completed],
+function mockMerge({ views = [open, open, mergedPr], submission = pending, responses = [asyncMergedResponse],
   submissionError } = {}) {
   const calls = [];
   const execute = async args => {
@@ -102,7 +102,7 @@ async function main() {
   assert.equal(queued.calls.filter(args => args[0] === 'api').length, 1);
 
   // A 200 already-merged response still needs a matching PR snapshot.
-  const already = mockMerge({ submission: completed });
+  const already = mockMerge({ submission: asyncMergedResponse });
   assert.equal((await squashMergePullRequest(url, already.execute, undefined, quickPoll)).merged, true);
   const changedAfterMerge = mockMerge({ views: [open, open, { ...mergedPr, headRefOid: 'b'.repeat(40) }] });
   await assert.rejects(squashMergePullRequest(url, changedAfterMerge.execute, undefined, quickPoll),
