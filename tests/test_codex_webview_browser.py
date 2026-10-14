@@ -157,7 +157,11 @@ def run():
             <section id="ordinary-upgrade"><button>Upgrade</button></section>
             <textarea id="composer">continue</textarea></main>""")
         page.add_script_tag(content=(ASSETS / "codex-hide-promotions.js").read_text())
-        assert not page.locator('#upsell').is_visible()
+        page.add_script_tag(content=(ASSETS / "codex-hide-reset-times.js").read_text())
+        assert page.locator('#upsell').is_visible()
+        assert page.locator('#upsell [role="status"]').inner_text() == 'Rated Limited'
+        assert not page.locator('#upsell button').first.is_visible()
+        assert not page.locator('#upsell p').is_visible()
         assert not page.locator('#fast').is_visible()
         for selector in ['main', '#error', '#ordinary-upgrade', '#composer']:
             assert page.locator(selector).is_visible(), selector
@@ -168,10 +172,17 @@ def run():
             card.innerHTML = '<span>You’re out of Codex messages</span><div><button>Upgrade</button><button>Add Credits</button></div>';
             document.querySelector('main').prepend(card);
         }""")
-        page.wait_for_function("getComputedStyle(document.querySelector('#replacement')).display === 'none'")
+        page.wait_for_function("document.querySelector('#replacement [role=status]')?.textContent === 'Rated Limited'")
+        assert page.locator('#replacement').is_visible()
+        assert not page.locator('#replacement button').first.is_visible()
+        page.eval_on_selector('#replacement', """card => {
+            card.innerHTML = '<span>You’re out of Codex messages</span><p>Your rate limit resets at 2:00 AM.</p><div><button>Upgrade</button><button>Add Credits</button></div>';
+        }""")
+        page.wait_for_function("document.querySelector('#replacement [role=status]')?.textContent === 'Rated Limited'")
+        assert page.locator('#replacement').inner_text() == 'Rated Limited'
         assert page.locator('#composer').input_value() == 'continue'
         assert not errors, errors
-        print("PASS: exhausted-message promotions hidden initially and after dynamic insertion")
+        print("PASS: exhausted-message promotions retain Rated Limited initially and after dynamic insertion")
         print("PASS: Chromium usage accent with absent theme token, override and reset")
         print("PASS: headless Chromium computed CSS, header, activity and 75 React-style rewrites")
         browser.close()

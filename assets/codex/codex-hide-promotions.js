@@ -41,11 +41,33 @@
             !card
             || card === document.body
             || card === document.documentElement
-            || card.hasAttribute(hiddenAttribute)
         ) {
             return;
         }
 
+        // An exhausted allowance is still useful status when promotions and
+        // reset times are hidden. Keep the native card with a minimal label.
+        if (signature.title === "You're out of Codex messages") {
+            const marker = 'data-scm-toolkit-rate-limited';
+            for (const child of card.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE && child.textContent.trim()) {
+                    child.textContent = '';
+                } else if (child.nodeType === Node.ELEMENT_NODE && !child.hasAttribute(marker)) {
+                    child.setAttribute('aria-hidden', 'true');
+                    child.style.setProperty('display', 'none', 'important');
+                }
+            }
+            if (!card.querySelector(`[${marker}]`)) {
+                const status = document.createElement('span');
+                status.setAttribute(marker, 'true');
+                status.setAttribute('role', 'status');
+                status.textContent = 'Rated Limited';
+                card.appendChild(status);
+            }
+            return;
+        }
+
+        if (card.hasAttribute(hiddenAttribute)) return;
         card.setAttribute(hiddenAttribute, 'true');
         card.setAttribute('aria-hidden', 'true');
         card.style.setProperty('display', 'none', 'important');
