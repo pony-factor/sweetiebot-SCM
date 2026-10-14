@@ -47,6 +47,13 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const endpoint = `repos/${repo}/pulls/${number}/merge-async`;
   const versionHeader = ['-H', 'X-GitHub-Api-Version: 2026-03-10'];
   const api = async args => JSON.parse((await execute(['api', ...versionHeader, ...args])).stdout);
+  // An async merge of a native stacked PR also includes its open downstack
+  // ancestors. The one-click action is only for one-offs; the bulk workflow
+  // owns intentional stack merges and their attribution checks.
+  const metadata = await api([`repos/${repo}/pulls/${number}`]);
+  if (metadata?.stack) {
+    throw new Error(`PR #${number} belongs to a GitHub-native stack. Use the bulk merge workflow to select the intended layers.`);
+  }
   let outcome;
   try {
     outcome = await api(['--method', 'PUT', endpoint,
