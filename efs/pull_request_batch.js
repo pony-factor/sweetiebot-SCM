@@ -225,9 +225,6 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
 function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', async () => {
     try {
-      if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
-        throw new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
-      }
       const repositories = await workspaceGitHubRepositories(vscode);
       const selectedRepository = await chooseRepository(vscode, repositories);
       if (!selectedRepository) return;
@@ -281,6 +278,9 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         await runBulkMergeWithLindsey(vscode, lindsey,
           repositoryName(selectedRepository.repositoryUrl), selected, session.accessToken);
         return;
+      }
+      if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
+        throw new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
       }
       const prompt = batchMergePrompt({
         repositoryUrl: selectedRepository.repositoryUrl,
