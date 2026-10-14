@@ -4,6 +4,7 @@ const { execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { pullRequestFromTreeNode } = require('./github_pr_refresh');
+const { squashMessage, readCommits } = require('./squash_attribution');
 const { promisify } = require('node:util');
 
 const run = promisify(execFile);
@@ -54,26 +55,21 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (metadata?.stack) {
     throw new Error(`PR #${number} belongs to a GitHub-native stack. Use the bulk merge workflow to select the intended layers.`);
   }
+  if (!pr.title || (metadata?.title && metadata.title !== pr.title)) {
+    throw new Error(`PR #${number} title is unavailable or changed; merge blocked.`);
+  }
+  const squash = squashMessage(pr.title, Number(number), await readCommits(api, repo, number));
   let outcome;
   try {
     outcome = await api(['--method', 'PUT', endpoint,
-      '-f', `sha=${pr.headRefOid}`, '-f', 'merge_method=squash', '-f', 'merge_action=default']);
+      '-f', `sha=${pr.headRefOid}`, '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
+      '-f', `commit_title=${squash.title}`, '-f', `commit_message=${squash.message}`]);
   } catch (error) {
     const detail = `${error.stderr || ''}
 ${error.message || ''}`;
     if (/\bHTTP 409\b/.test(detail)) {
-      // GitHub returns the existing request on a 409. Do not silently inherit
-      // another actor's merge options or a request for a different head SHA.
-      let existing;
-      try { existing = JSON.parse(error.stdout || ''); } catch {}
-      if (existing?.details?.uuid &&
-          existing.details.expected_head_sha === pr.headRefOid &&
-          existing.details.merge_method === 'squash' &&
-          existing.details.merge_action === 'default') {
-        outcome = existing;
-      } else {
-        throw new Error(`PR #${number} already has a different asynchronous merge request. Refresh its status before retrying.`);
-      }
+      // Existing request metadata cannot prove the requested squash authorship.
+      throw new Error(`PR #${number} has an unverified asynchronous merge request. Refusing to adopt its attribution.`);
     } else {
       const updated = await read().catch(() => undefined);
       if (updated?.mergeable === 'CONFLICTING') throw conflict();
@@ -92,7 +88,8 @@ ${error.message || ''}`;
   if (outcome?.status === 'failed') {
     throw new Error(`Unable to merge PR #${number}: ${outcome.details?.message || 'GitHub rejected the asynchronous merge.'}`);
   }
-  if (!['pending', 'merged', 'enqueued'].includes(outcome?.status)) {
+  if (outcome?.status === 'enqueued') throw new Error(`PR #${number} entered a merge queue without verified custom metadata.`);
+  if (!['pending', 'merged'].includes(outcome?.status)) {
     throw new Error(`GitHub returned an unexpected asynchronous merge status for PR #${number}.`);
   }
 

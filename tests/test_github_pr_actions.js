@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../efs/github_pr_actions');
 const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',
-  headRefOid: 'a'.repeat(40), isCrossRepository: false };
+  headRefOid: 'a'.repeat(40), isCrossRepository: false, title: '🐛 Correct caching' };
 
 const asyncPath = 'repos/owner/repo/pulls/12/merge-async';
 const requestId = '630b9d5e-3f2a-4f7e-8b0c-2d5f9a8c1e42';
@@ -18,6 +18,7 @@ function mockMerge({ views = [open, open, mergedPr], submission = pending, respo
   const execute = async args => {
     calls.push(args);
     if (args[0] === 'pr') return { stdout: JSON.stringify(views.length > 1 ? views.shift() : views[0]) };
+    if (args.some(a => typeof a === 'string' && a.includes('/commits?per_page=100&page='))) return { stdout: JSON.stringify([{ commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }]) };
     if (args.includes('repos/owner/repo/pulls/12')) return { stdout: JSON.stringify(stackMetadata) };
     if (args.includes('--method')) {
       if (submissionError) throw submissionError;
@@ -35,12 +36,14 @@ async function main() {
     async () => { throw new Error('Main must not request alternate-base confirmation'); }, quickPoll);
   assert.equal(result.merged, true);
   assert.equal(result.base, 'main');
-  assert.deepEqual(happy.calls[3], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
-    '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
-    '-f', 'merge_method=squash', '-f', 'merge_action=default']);
   assert.deepEqual(happy.calls[4], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
+    '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
+    '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
+    '-f', 'commit_title=🐛 Correct caching (#12)',
+    '-f', `commit_message=Squash reviewed changes from PR #12.\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+  assert.deepEqual(happy.calls[5], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
     `${asyncPath}/${requestId}`]);
-  assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'pr']);
+  assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
 
   for (const invalid of [{ isDraft: true }, { baseRefName: '' }, { state: 'CLOSED' }, { headRefOid: '' }]) {
     const denied = mockMerge({ views: [{ ...open, ...invalid }] });
@@ -61,7 +64,7 @@ async function main() {
   const alternateResult = await squashMergePullRequest(url, approved.execute, async () => true, quickPoll);
   assert.equal(alternateResult.merged, true);
   assert.equal(alternateResult.base, 'kefania');
-  assert.deepEqual(approved.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'pr']);
+  assert.deepEqual(approved.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
 
   // Validate the exact head and destination again after selection, even for main.
   for (const changed of [{ baseRefName: 'another' }, { headRefOid: 'b'.repeat(40) },
@@ -105,10 +108,7 @@ async function main() {
 
   // Queues are terminal for the async request but NOT successful merges.
   const queued = mockMerge({ views: [open, open], submission: { status: 'enqueued', details: {} } });
-  const queuedResult = await squashMergePullRequest(url, queued.execute, undefined, quickPoll);
-  assert.equal(queuedResult.merged, false);
-  assert.equal(queuedResult.enqueued, true);
-  assert.equal(queued.calls.filter(args => args[0] === 'api').length, 2);
+  await assert.rejects(squashMergePullRequest(url, queued.execute, undefined, quickPoll), /queue/);
 
   // A 200 already-merged response still needs a matching PR snapshot.
   const already = mockMerge({ submission: asyncMergedResponse });
@@ -136,7 +136,7 @@ async function main() {
     } })
   });
   const resumed = mockMerge({ submissionError: busyError });
-  assert.equal((await squashMergePullRequest(url, resumed.execute, undefined, quickPoll)).merged, true);
+  await assert.rejects(squashMergePullRequest(url, resumed.execute, undefined, quickPoll), /unverified asynchronous/);
   const wrongError = Object.assign(new Error('Request in progress'), {
     stderr: 'gh: (HTTP 409)',
     stdout: JSON.stringify({ status: 'pending', details: {
@@ -146,7 +146,7 @@ async function main() {
   const blocked = mockMerge({ submissionError: wrongError });
   await assert.rejects(squashMergePullRequest(url, blocked.execute, undefined, quickPoll),
     /different asynchronous merge request/);
-  assert.equal(blocked.calls.filter(args => args[0] === 'api').length, 2);
+  assert.equal(blocked.calls.filter(args => args[0] === 'api').length, 3);
 
   const originalFailure = Object.assign(new Error('Forbidden'), { stderr: 'gh: Forbidden (HTTP 403)' });
   const blockedPermission = mockMerge({ views: [open, open, open], submissionError: originalFailure });
