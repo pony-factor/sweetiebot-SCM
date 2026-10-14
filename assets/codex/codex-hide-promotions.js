@@ -2,10 +2,11 @@
 (() => {
     const signatures = [
         { title: 'Enable Fast mode', action: 'Enable now' },
+        { title: "You're out of Codex messages", action: 'Upgrade' },
     ];
     const hiddenAttribute = 'data-scm-toolkit-hidden-promotion';
 
-    const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
+    const normalize = (value) => (value || '').replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
 
     function matchingSignature(button) {
         const label = normalize(button.textContent);
@@ -15,6 +16,13 @@
     function findPromotionCard(button, signature) {
         let element = button.parentElement;
         for (let depth = 0; element && depth < 10; depth += 1) {
+            // Stop before crossing into a shared conversation/composer wrapper.
+            // An unrelated Upgrade button must not match a neighboring card.
+            if (element.matches('main, [role="main"]')
+                || element.querySelector('textarea, input, [contenteditable="true"]')
+                || Array.from(element.querySelectorAll('button')).filter(
+                    (candidate) => normalize(candidate.textContent) === signature.action
+                ).length > 1) return null;
             const text = normalize(element.textContent);
             if (text.includes(signature.title) && text.includes(signature.action)) {
                 return element;

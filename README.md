@@ -543,7 +543,8 @@ Codex extension updates can replace the patched webview bundle. Automatic app re
 ### Codex promotion hiding
 
 When `codex-hide-promotions` is enabled, the Codex webview suppresses targeted
-promotional cards such as the `Enable Fast mode` / `Enable now` upsell. The
+promotional cards such as the `Enable Fast mode` / `Enable now` upsell and the
+`You're out of Codex messages` upgrade card. The
 filter matches both the promotion title and its action before hiding the nearest
 card, so ordinary Codex warnings, errors, and usage-limit messages are left
 alone.

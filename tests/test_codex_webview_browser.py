@@ -146,7 +146,32 @@ def run():
         assert '255, 185, 0' not in configured_accent, configured_accent
         reset = gradient(50)
         assert '18, 171, 52' not in reset and 'rgb(255, 255, 255)' in reset, reset
+        # Promotion hiding removes the exhausted-messages upsell without hiding
+        # the actual error or composer sharing its outer container.
+        page.set_content("""<main>
+            <p id="error">You've hit your usage limit. Try again later.</p>
+            <section id="upsell"><span>You're out of Codex messages</span>
+                <p>Your rate limit resets. To continue using Codex, add credits or upgrade to Pro today.</p>
+                <div><button>Upgrade</button><button>Add Credits</button></div></section>
+            <section id="fast"><span>Enable Fast mode</span><button>Enable now</button></section>
+            <section id="ordinary-upgrade"><button>Upgrade</button></section>
+            <textarea id="composer">continue</textarea></main>""")
+        page.add_script_tag(content=(ASSETS / "codex-hide-promotions.js").read_text())
+        assert not page.locator('#upsell').is_visible()
+        assert not page.locator('#fast').is_visible()
+        for selector in ['main', '#error', '#ordinary-upgrade', '#composer']:
+            assert page.locator(selector).is_visible(), selector
+        page.evaluate("""() => {
+            document.querySelector('#upsell').remove();
+            const card = document.createElement('section');
+            card.id = 'replacement';
+            card.innerHTML = '<span>You’re out of Codex messages</span><div><button>Upgrade</button><button>Add Credits</button></div>';
+            document.querySelector('main').prepend(card);
+        }""")
+        page.wait_for_function("getComputedStyle(document.querySelector('#replacement')).display === 'none'")
+        assert page.locator('#composer').input_value() == 'continue'
         assert not errors, errors
+        print("PASS: exhausted-message promotions hidden initially and after dynamic insertion")
         print("PASS: Chromium usage accent with absent theme token, override and reset")
         print("PASS: headless Chromium computed CSS, header, activity and 75 React-style rewrites")
         browser.close()
