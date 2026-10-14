@@ -12,7 +12,7 @@ DESCRIPTION_START = '\n/* sweetiebot-github-pr-description:start */\n'
 DESCRIPTION_END = '\n/* sweetiebot-github-pr-description:end */\n'
 DESCRIPTION = re.compile(r'async updateItemNow\(([\w$]+)\)\{var ([\w$]+),([\w$]+),([\w$]+);this\._item=\1,')
 TREE = re.compile(r'([\w$]+)\.window\.createTreeView\("pr:github",\{treeDataProvider:this,showCollapseAll:!0,(?:canSelectMany:[\w$]+\(\),)?manageCheckboxStateManually:!0\}\)')
-REFRESH_COMMAND = re.compile(r'([\w$]+)=>\{this\.prsTreeModel\.forceClearCache\(\),this\.refreshAllQueryResults\(!0\)\}')
+REFRESH_COMMAND = re.compile(r'([\w$]+)=>\{this\.prsTreeModel\.forceClearCache\(\)(?:,this\.refreshAllQueryResults\(!0\))?\}')
 FETCH_NOTICE = re.compile(
     r'[\w$]+\.l10n\.t\("Fetching pull requests failed: \{0\}",([\w$]+\([\w$]+\))\)'
 )

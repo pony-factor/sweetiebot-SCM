@@ -94,6 +94,17 @@ assert(errors.includes('API rate limit exceeded'));
         self.assertEqual(github_pr.transform_refresh(patched), patched)
         self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
 
+    def test_tree_refresh_supports_cache_only_refresh_in_0170(self):
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:ji(),manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache()}')
+        patched = github_pr.transform_refresh(source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        self.assertIn("registerCommand('sweetiebot.squashMergeTreePullRequest'", patched)
+        self.assertIn('a=>{return this.prsTreeModel.forceClearCache()}', patched)
+        self.assertNotIn('this.refreshAllQueryResults', patched)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+
     def test_reversible_idempotent_and_guarded(self):
         for kind, original in [('host', HOST), ('webview', LINK)]:
             source = 'prefix;' + original + ';suffix;'
