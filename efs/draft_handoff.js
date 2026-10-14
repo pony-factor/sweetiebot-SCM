@@ -72,7 +72,7 @@ async function createDraftHandoff(publish) {
         return json(200, await publishDraft(match[1], state));
       }
       json(200, { collected: kind });
-      Promise.resolve().then(() => state.onResult?.(kind)).catch(() => {});
+      Promise.resolve().then(() => state.onResult?.(kind, kind === 'pony' ? state.profile : undefined)).catch(() => {});
       if (kind === 'draft' && state.autoPublish && !state.attempted) void publishDraft(match[1], state).catch(() => {});
     } catch { fail(400, 'Request failed. Check the VS Code notification before retrying publication.'); }
   });
@@ -82,7 +82,7 @@ async function createDraftHandoff(publish) {
   expiry.unref();
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, onResult, onClose, autoPublish = false} = {}) { drafts.set(id, {pony, onResult, onClose, autoPublish, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, autoPublish = false} = {}) { drafts.set(id, {pony, profile, onResult, onClose, autoPublish, errors: {}, expires: Date.now() + 3600000}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { clearTimeout(expiry); drafts.clear(); server.close(); }
   };

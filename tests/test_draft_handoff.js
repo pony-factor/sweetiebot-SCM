@@ -52,6 +52,12 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal(writes,2);
     assert.equal((await fetch(automaticUrl+'/close',{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'})).status,200);
     assert.equal(closes,2,'Auto-published PR can close before pony research finishes');
+    const cachedId='33333333-2222-4333-8444-555555555555';
+    handoff.register(cachedId,{pony:{slug:'bushel'},profile:'Previously sourced character.',autoPublish:false});
+    const cachedState = await (await fetch(handoff.origin+'/kefania-draft/'+cachedId+'/state')).json();
+    assert.equal(cachedState.profile,'Previously sourced character.','Cache hits are visible without a pony callback');
+    assert.equal(cachedState.draft,undefined);
+    assert.equal(writes,2,'A cache hit never publishes a PR');
     console.log('Local browser draft handoff and close checks passed.');
   } finally {handoff.dispose();}
 })().catch(error => {console.error(error);process.exitCode=1;});

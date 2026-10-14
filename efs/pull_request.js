@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { runKefania } = require('./kefania_runner');
+const { runKefania, runKefaniaPonyCache } = require('./kefania_runner');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { createDraftHandoff } = require('./draft_handoff');
@@ -58,6 +58,7 @@ function matchSweetiebotPonyCatalog(branch, catalog) {
     if (!Array.isArray(pack?.names) || !pack.names.includes(lookupSlug)) continue;
     const match = {
       slug,
+      canonicalSlug: lookupSlug,
       packId: String(pack.id || ''),
       packLabel: String(pack.label || ''),
       packDescription: String(pack.description || ''),
@@ -363,6 +364,15 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const projectUrl = await resolveChatgptActionProject(vscode, context);
     if (projectUrl === undefined) return;
     const pony = await readPony(branch);
+    const cachePony = dependencies.cachePony || (input => runKefaniaPonyCache(repository.rootUri.fsPath, input));
+    let cachedProfile;
+    if (pony) {
+      try {
+        const cached = await cachePony({ action: 'get', pony });
+        if (cached?.hit === true && typeof cached.profile === 'string' && cached.profile.trim()
+            && Buffer.byteLength(cached.profile, 'utf8') <= 60000) cachedProfile = cached.profile;
+      } catch { /* Cache failures cannot block PR creation or pony research. */ }
+    }
     const draftId = randomUUID();
     if (!handoff) throw new Error('The local PR draft handoff is unavailable.');
     const localHandoff = await handoff();
@@ -379,13 +389,16 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, onClose: async () => {
+    localHandoff.register(draftId, { pony, profile: cachedProfile, onClose: async () => {
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
       await closeConfirmation();
-    }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async kind => {
+    }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();
+      if (kind === 'pony' && pony && typeof profile === 'string') {
+        void cachePony({ action: 'put', pony, profile }).catch(() => {});
+      }
     } });
     prepare('draft', () => {
       if (evidenceError) throw evidenceError;
@@ -402,7 +415,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       browserDraft: { evidence: boundedEvidence, callback: draftCallback },
       }), prompt => chatgptPullRequestUrl(prompt, projectUrl, draftCallback), evidence);
     });
-    if (pony) prepare('pony', () => boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
+    if (pony && !cachedProfile) prepare('pony', () => boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
       prompt => chatgptPullRequestUrl(prompt, projectUrl, profileCallback)));
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });

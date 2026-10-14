@@ -38,6 +38,7 @@ async function run() {
   assert.equal(celena.source, 'https://mlp.fandom.com/wiki/Sailor_Moon_ponies');
   const legacyCelena = matchSweetiebotPonyCatalog('magical-ponycelena', ponyCatalog);
   assert.equal(legacyCelena.slug, 'magical-ponycelena');
+  assert.equal(legacyCelena.canonicalSlug, 'celena');
   assert.equal(legacyCelena.name, 'Celena');
   assert.equal(legacyCelena.source, celena.source);
   assert.equal((await readSweetiebotPony('magical-ponycelena')).name, 'Celena');
@@ -194,6 +195,8 @@ async function run() {
   let contextFailure;
   let aheadBy = 1;
   const ponyLookups = [];
+  let cachedProfile;
+  const cacheOperations = [];
   let publicationFailure;
   let existingPullRequest;
   let repeatedStartingBase = false;
@@ -272,7 +275,13 @@ async function run() {
         ? { slug: 'draft', packId: 'test-pack', packLabel: 'Test ponies', packDescription: 'Test only.' }
         : undefined;
     },
-    showPony: async pony => { shownPonies.push(pony); }
+    showPony: async input => { shownPonies.push(input); },
+    cachePony: async input => {
+      cacheOperations.push(input);
+      if (input.action === 'get') return cachedProfile ? { hit: true, profile: cachedProfile } : { hit: false };
+      if (input.action === 'put') { cachedProfile = input.profile; return { stored: true }; }
+      return { hit: false };
+    }
   });
 
   await callback({ rootUri: uri }, {
@@ -310,9 +319,29 @@ async function run() {
   assert.match(openedPrompt, /Do not publish through any GitHub connector/);
   assert.match(openedPrompt, /primary sources/);
   assert.match(openedPrompt, /codex-pony\[bot\]/);
+  assert.equal(calls[3].args[0].openToSide, true, 'Pony research opens beside the PR draft');
+  const firstConfirmation = calls[0].args[0].url;
+  const savedProfile = 'Berry Punch — sourced profile with https://example.org/pony';
+  await fetch(firstConfirmation + '/pony', { method: 'POST',
+    headers: { Origin: new URL(firstConfirmation).origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile: savedProfile }) });
+  for (let i = 0; i < 20 && cachedProfile !== savedProfile; i++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(cachedProfile, savedProfile, 'A completed pony lookup is cached separately from its PR');
+  assert(cacheOperations.some(item => item.action === 'put' && item.pony.packId === 'test-pack'));
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
+  assert.deepEqual(calls.map(call => call.id), [
+    'workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow', 'workbench.action.browser.open'
+  ], 'Cache hits omit the independent pony research ChatGPT tab');
+  const cachedConfirmation = calls[0].args[0].url;
+  const cachedState = await (await fetch(cachedConfirmation + '/state')).json();
+  assert.equal(cachedState.profile, savedProfile, 'Cached results immediately appear in the new confirmation');
+  assert.equal(cachedState.draft, undefined, 'PR drafting remains independent');
+  cachedProfile = undefined;
   const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
-  assert.equal(calls[3].args[0].openToSide, true, 'Pony research opens beside the PR draft');
   calls.length = 0;
   repository.state.HEAD.name = 'main';
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
