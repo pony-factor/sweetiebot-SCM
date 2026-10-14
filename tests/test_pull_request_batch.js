@@ -9,6 +9,7 @@ const {
   fetchOpenPullRequests,
   pickPullRequests,
   planStackMerges,
+  squashCommitTitle,
   batchMergePrompt,
   registerPullRequestBatchCommand
 } = require('../efs/pull_request_batch');
@@ -153,6 +154,57 @@ async function run() {
   assert.match(prompt, /Never merge, close, edit, or implicitly include an unselected PR/);
   assert.match(prompt, /force-with-lease/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
+  assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries' }),
+    '🐛 Repair retries (#269)');
+  assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#269)' }),
+    '🐛 Repair retries (#269)', 'Do not repeat an existing PR-number suffix');
+  assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#42)' }),
+    '🐛 Repair retries (#269)', 'Replace a stale PR-number suffix');
+  assert.throws(() => squashCommitTitle({ number: 0, title: 'Invalid' }), /valid pull-request number/);
+  assert.throws(() => squashCommitTitle({ number: 269, title: '' }), /pull-request title/);
+  assert.match(prompt, /squash title: "Newest ready change \(#12\)"/);
+  assert.match(prompt, /read ALL original PR commits \(paginate the commits endpoint\)/);
+  assert.match(prompt, /linked GitHub author\/committer accounts/);
+  assert.match(prompt, /bot-opened PR/);
+  assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
+  assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);
+  assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
+  assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  const priorities = [
+    '1. Main/original human Git authors first',
+    '2. Other human contributors',
+    '3. regular Codex',
+    '4. Codex Web',
+    '5. codex-pony[bot]',
+    '6. GitHub Copilot',
+    '7. Ollama',
+    '8. other bots',
+    '9. other AI collaborators'
+  ];
+  let position = -1;
+  for (const tier of priorities) {
+    const next = prompt.indexOf(tier);
+    assert(next > position, 'Co-author tier must appear exactly after its predecessor: ' + tier);
+    position = next;
+  }
+  assert.match(prompt, /Main\/original human Git authors first/);
+  assert.match(prompt, /not.*automatically at the bottom/i);
+  assert.match(prompt, /regular Codex and Codex Web as separate entries/);
+  assert.match(prompt, /both use noreply@openai.com/);
+  assert.match(prompt, /Co-authored-by: Codex <noreply@openai.com>/);
+  assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
+  assert.match(prompt, /Co-authored-by: codex-pony\[bot\] <326443430\+codex-pony\[bot\]@users.noreply.github.com>/);
+  assert.match(prompt, /Co-authored-by: Copilot <175728472\+Copilot@users.noreply.github.com>/);
+  assert.match(prompt, /other Copilot agent identities exist/);
+  assert.match(prompt, /Co-authored-by: Ollama <hello@ollama.com>/);
+  assert.match(prompt, /Do not add these optional entries/);
+  assert.match(prompt, /original human author appears before bots and AI/);
+  assert.match(prompt, /cover the verified original human authors and other evidenced contributors in the requested priority order/);
+  assert.match(prompt, /Codex Web trailer in the Codex Web position/);
+  assert.match(prompt, /custom commit message bypasses GitHub's default automatic co-author text/);
+  assert.match(prompt, /commit_title and commit_message/);
+  assert.match(prompt, /AFTER EACH COMPLETED MERGE/);
+  assert.match(prompt, /first line exactly matches/);
 
   // Complete stacks reach main with separate squash commits; partial stacks
   // and ambiguous fork/branched/cyclic dependencies must not be assumed.
@@ -182,6 +234,11 @@ async function run() {
   assert.match(stackPrompt, /asynchronous stack-merge REST API/);
   assert.match(stackPrompt, /Do NOT use gh pr merge/);
   assert.match(stackPrompt, /ONLY selected PRs/);
+  assert.match(stackPrompt, /STOP the affected stack/);
+  assert.match(stackPrompt, /complete ordered human\/bot\/AI co-author trailers/);
+  assert.match(stackPrompt, /squash title: "Layer 41 \(#41\)"/);
+  assert.match(stackPrompt, /squash title: "Layer 42 \(#42\)"/);
+  assert.match(stackPrompt, /squash title: "Layer 43 \(#43\)"/);
   assert.deepEqual(planStackMerges([stackPulls[0], stackPulls[1]], 'owner/repo')
     .nonMain.map(pr => pr.number), [43]);
   assert.deepEqual(planStackMerges([
@@ -290,6 +347,9 @@ async function run() {
   };
   const sentPrompt = mergePromptFromUrl(chat);
   assert.match(sentPrompt, /pull\/41/);
+  assert.match(sentPrompt, /squash title: "Selected PR \(#41\)"/);
+  assert.match(sentPrompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(sentPrompt, /Ollama <hello@ollama.com>/);
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
 
