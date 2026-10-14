@@ -30,17 +30,34 @@ async function createDraftHandoff(publish) {
     response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; base-uri 'none'; frame-ancestors 'none'");
     const json = (code, value) => { response.writeHead(code, {'Content-Type':'application/json'}); response.end(JSON.stringify(value)); };
     const fail = (code, error) => json(code, {error});
-    const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close))?$/.exec(request.url);
+    const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close|merge))?$/.exec(request.url);
     if (request.headers.host !== new URL(origin).host || !match) return fail(404, 'Unknown draft.');
     const state = drafts.get(match[1]);
     if (!state || state.expires < Date.now()) return fail(410, 'This confirmation page expired. Start the workflows again.');
     const kind = match[2];
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish });
-      if (kind === 'close') return fail(405, 'Use the Close window button.');
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish });
+      if (kind === 'close' || kind === 'merge') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
     if (request.method !== 'POST' || kind === 'state' || request.headers.origin !== origin || request.headers['content-type'] !== 'application/json') return fail(403, 'Use the local confirmation page.');
+    if (kind === 'merge') {
+      if (!state.result) return fail(409, 'Publish the pull request before merging.');
+      if (state.mergeResult) return json(200, state.mergeResult);
+      if (state.merging) return fail(409, 'Merge already in progress.');
+      if (typeof state.onMerge !== 'function') return fail(503, 'Merging is unavailable in this confirmation window.');
+      state.merging = true;
+      try {
+        const result = await state.onMerge(state.result);
+        if (!result?.merged) throw new Error('GitHub did not confirm the merge. Check the pull request.');
+        state.mergeResult = result;
+        delete state.errors.merge;
+        return json(200, result);
+      } catch (error) {
+        state.errors.merge = error.message || 'Merge failed. Check GitHub.';
+        return fail(409, state.errors.merge);
+      } finally { state.merging = false; }
+    }
     if (kind === 'close') {
       if (!state.result) return fail(409, 'Publish the pull request before closing this window.');
       if (typeof state.onClose !== 'function') return fail(503, 'Cannot close the confirmation window automatically. Use its window controls.');
@@ -82,7 +99,7 @@ async function createDraftHandoff(publish) {
   expiry.unref();
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, autoPublish = false} = {}) { drafts.set(id, {pony, profile, onResult, onClose, autoPublish, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, autoPublish = false} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, autoPublish, errors: {}, expires: Date.now() + 3600000}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { clearTimeout(expiry); drafts.clear(); server.close(); }
   };

@@ -69,6 +69,21 @@ async function run() {
   assert.deepEqual(relocatedHost.closed.map(tab => tab.name), ['Navigated confirmation'],
     'Close resolves the relocated tab, not another browser or confirmation');
   assert.equal(relocatedHost.window.tabGroups.all[0].tabs.some(tab => tab.name === 'Other confirmation'), true);
+  const detachedHost = mockVscode({recreateOnMove:true});
+  const detached = await openCompactKefaniaChat(detachedHost,
+    'http://127.0.0.1:60847/kefania-draft/aaaaaaaa-2222-4333-8444-555555555555',
+    {platform:'darwin',exec(file,args,options,done){
+      if(args[1].includes('AXCloseButton')) {
+        assert.match(args[1], /windowTitle contains "Kefania"/);
+        assert.match(args[1], /windowTitle contains "aaaaaaaa"/);
+        done(null,'closed','');
+      } else done(null,'','');
+    }});
+  detachedHost.window.tabGroups.all[0].tabs = [detachedHost.workspaceTab];
+  await detached.close();
+  assert.deepEqual(detachedHost.window.tabGroups.all[0].tabs,[detachedHost.workspaceTab],
+    'Detached-window fallback must not close workspace tabs');
+
   const failedCloseHost = mockVscode({rejectClose:true});
   const failedClose = await openCompactKefaniaChat(failedCloseHost, url, {platform:'linux'});
   await assert.rejects(failedClose.close(), /could not close/, 'An unsuccessful VS Code close is not reported as success');

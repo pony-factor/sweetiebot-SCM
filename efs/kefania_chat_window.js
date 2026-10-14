@@ -30,6 +30,41 @@ function resizeMacChatWindow(exec = execFile) {
   });
 }
 
+// The extension host may not enumerate tabs belonging to auxiliary windows.
+// This macOS fallback only presses the close control of one VS Code window
+// whose title contains the unique confirmation token; it never targets a
+// generic foreground window or a workspace without that token.
+function closeMacConfirmationWindow(token, exec = execFile) {
+  if (!/^[a-f0-9]{8}$/i.test(token)) return Promise.reject(new Error('Invalid Kefania window token.'));
+  const script = [
+    'tell application "System Events"',
+    'set matchedWindows to {}',
+    'repeat with hostProcess in (application processes whose name is "Code" or name is "Code - Insiders")',
+    'repeat with candidate in (windows of hostProcess)',
+    'set windowTitle to name of candidate',
+    'if windowTitle contains "Kefania" and windowTitle contains "' + token + '" then set end of matchedWindows to candidate',
+    'end repeat',
+    'end repeat',
+    'if (count of matchedWindows) is not 1 then error "No unique Kefania confirmation window"',
+    'set targetWindow to item 1 of matchedWindows',
+    'set closeControl to first button of targetWindow whose subrole is "AXCloseButton"',
+    'perform action "AXPress" of closeControl',
+    'end tell',
+    'return "closed"',
+  ].join('\n');
+  return new Promise((resolve, reject) => {
+    try {
+      exec('/usr/bin/osascript', ['-e', script], { timeout: 3000 }, (error, stdout) => {
+        if (error || String(stdout).trim() !== 'closed') reject(new Error(
+          'Cannot close the Kefania window automatically. Check macOS Accessibility permission for VS Code, or use the window close control.'));
+        else resolve();
+      });
+    } catch {
+      reject(new Error('Cannot close the Kefania window automatically. Use its window close control.'));
+    }
+  });
+}
+
 // Opening and moving are separate native workbench commands. A failed move
 // must not trigger Kefania's local fallback: ChatGPT may already be open.
 async function openCompactKefaniaChat(vscode, url, { platform = process.platform, exec = execFile, requireFloating = false, floating = true } = {}) {
@@ -59,12 +94,16 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
     if (!target && token) {
       const matches = tabs.filter(tab => typeof tab.label === 'string' &&
         tab.label.includes('Kefania') && tab.label.includes(token));
+      if (matches.length > 1) throw new Error('Ambiguous Kefania confirmation tabs; refusing to close another tab.');
       if (matches.length === 1) target = matches[0];
     }
-    if (!target) throw new Error('The Kefania confirmation tab is no longer open.');
-    if (!(await vscode.window.tabGroups.close(target, true))) {
-      throw new Error('VS Code could not close the Kefania confirmation tab.');
+    if (target) {
+      try {
+        if (await vscode.window.tabGroups.close(target, true)) return;
+      } catch { /* The auxiliary window can outlive the original tab reference. */ }
     }
+    if (platform === 'darwin' && token) return closeMacConfirmationWindow(token, exec);
+    throw new Error('VS Code could not close the Kefania confirmation tab. Use the window close control.');
   };
   if (!commands.includes(FLOAT_COMMAND)) {
     await vscode.window.showWarningMessage?.('ChatGPT opened inside the workspace because floating editor windows are unavailable.');
@@ -87,4 +126,4 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
   return { floating: true, close: closeOwnedTab };
 }
 
-module.exports = { openCompactKefaniaChat, resizeMacChatWindow, COMPACT_MACOS_WINDOW };
+module.exports = { openCompactKefaniaChat, resizeMacChatWindow, closeMacConfirmationWindow, COMPACT_MACOS_WINDOW };
