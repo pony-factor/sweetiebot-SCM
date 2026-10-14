@@ -6,93 +6,148 @@ const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',
   headRefOid: 'a'.repeat(40), isCrossRepository: false };
 
-async function main() {
+const asyncPath = 'repos/owner/repo/pulls/12/merge-async';
+const requestId = '630b9d5e-3f2a-4f7e-8b0c-2d5f9a8c1e42';
+const pending = { status: 'pending', details: { uuid: requestId } };
+const completed = { status: 'merged', details: { sha: 'c'.repeat(40) } };
+const mergedPr = { ...open, state: 'MERGED' };
+
+function mockMerge({ views = [open, open, mergedPr], submission = pending, responses = [completed],
+  submissionError } = {}) {
   const calls = [];
   const execute = async args => {
     calls.push(args);
-    return { stdout: JSON.stringify({ ...open, state: calls.length > 1 ? 'MERGED' : 'OPEN' }) };
+    if (args[0] === 'pr') return { stdout: JSON.stringify(views.length > 1 ? views.shift() : views[0]) };
+    if (args.includes('--method')) {
+      if (submissionError) throw submissionError;
+      return { stdout: JSON.stringify(submission) };
+    }
+    return { stdout: JSON.stringify(responses.length > 1 ? responses.shift() : responses[0]) };
   };
-  const result = await squashMergePullRequest(url, execute);
+  return { execute, calls };
+}
+const quickPoll = { wait: async () => {}, pollAttempts: 2 };
+
+async function main() {
+  const happy = mockMerge();
+  const result = await squashMergePullRequest(url, happy.execute,
+    async () => { throw new Error('Main must not request alternate-base confirmation'); }, quickPoll);
   assert.equal(result.merged, true);
-  assert.deepEqual(calls[1], ['pr', 'merge', '12', '--repo', 'owner/repo', '--squash', '--match-head-commit', open.headRefOid]);
+  assert.equal(result.base, 'main');
+  assert.deepEqual(happy.calls[2], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
+    '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
+    '-f', 'merge_method=squash', '-f', 'merge_action=default']);
+  assert.deepEqual(happy.calls[3], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
+    `${asyncPath}/${requestId}`]);
+  assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'pr']);
+
   for (const invalid of [{ isDraft: true }, { baseRefName: '' }, { state: 'CLOSED' }, { headRefOid: '' }]) {
-    let count = 0;
-    await assert.rejects(squashMergePullRequest(url, async () => {
-      count++;
-      return { stdout: JSON.stringify({ ...open, ...invalid }) };
-    }));
-    assert.equal(count, 1);
+    const denied = mockMerge({ views: [{ ...open, ...invalid }] });
+    await assert.rejects(squashMergePullRequest(url, denied.execute));
+    assert.equal(denied.calls.length, 1, 'Invalid PRs never submit a merge');
   }
+
   const alternate = { ...open, baseRefName: 'kefania' };
-  const cancelledCalls = [];
-  const cancelled = await squashMergePullRequest(url, async args => {
-    cancelledCalls.push(args);
-    return { stdout: JSON.stringify(alternate) };
-  }, async target => {
+  const cancelled = mockMerge({ views: [alternate] });
+  const cancelResult = await squashMergePullRequest(url, cancelled.execute, async target => {
     assert.deepEqual(target, { repo: 'owner/repo', number: '12', base: 'kefania' });
     return false;
-  });
-  assert.equal(cancelled.cancelled, true);
-  assert.equal(cancelled.merged, false);
-  assert.equal(cancelledCalls.length, 1, 'Cancellation must not call merge');
-  const alternateCalls = [];
-  let alternateMerged = false;
-  const alternateResult = await squashMergePullRequest(url, async args => {
-    alternateCalls.push(args);
-    if (args[1] === 'merge') { alternateMerged = true; return { stdout: '' }; }
-    return { stdout: JSON.stringify({ ...alternate, state: alternateMerged ? 'MERGED' : 'OPEN' }) };
-  }, async () => true);
+  }, quickPoll);
+  assert.equal(cancelResult.cancelled, true);
+  assert.equal(cancelResult.merged, false);
+  assert.equal(cancelled.calls.length, 1, 'Cancelled base confirmation must not submit');
+  const approved = mockMerge({ views: [alternate, alternate, { ...alternate, state: 'MERGED' }] });
+  const alternateResult = await squashMergePullRequest(url, approved.execute, async () => true, quickPoll);
   assert.equal(alternateResult.merged, true);
   assert.equal(alternateResult.base, 'kefania');
-  assert.deepEqual(alternateCalls.map(args => args[1]), ['view', 'view', 'merge', 'view']);
-  assert.deepEqual(alternateCalls[2], ['pr', 'merge', '12', '--repo', 'owner/repo', '--squash', '--match-head-commit', open.headRefOid]);
+  assert.deepEqual(approved.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'pr']);
 
-  // The modal approval is invalidated if the base, head, or state changes.
-  for (const changed of [{ baseRefName: 'main' }, { headRefOid: 'b'.repeat(40) }, { state: 'CLOSED' }]) {
-    let reads = 0, merges = 0;
-    await assert.rejects(squashMergePullRequest(url, async args => {
-      if (args[1] === 'merge') { merges++; return { stdout: '' }; }
-      return { stdout: JSON.stringify({ ...alternate, ...(++reads === 2 ? changed : {}) }) };
-    }, async () => true), /changed since confirmation/);
-    assert.equal(merges, 0, 'Do not merge a retargeted or changed PR');
+  // Validate the exact head and destination again after selection, even for main.
+  for (const changed of [{ baseRefName: 'another' }, { headRefOid: 'b'.repeat(40) },
+    { headRefName: 'other' }, { state: 'CLOSED' }, { isDraft: true }]) {
+    for (const initial of [open, alternate]) {
+      const stale = mockMerge({ views: [initial, { ...initial, ...changed }] });
+      await assert.rejects(squashMergePullRequest(url, stale.execute, async () => true, quickPoll),
+        /changed since selection/);
+      assert.equal(stale.calls.length, 2, 'Changed PR must not submit');
+    }
   }
-  let conflicts = 0;
-  await assert.rejects(squashMergePullRequest(url, async args => {
-    if (args[1] === 'merge') conflicts++;
-    return { stdout: JSON.stringify({ ...alternate, mergeable: 'CONFLICTING' }) };
-  }, async () => true), /conflicts with \`kefania\`/);
-  assert.equal(conflicts, 0);
-  // A main-targeted merge must not request the alternate-branch approval.
-  let confirmedMain = 0;
-  await squashMergePullRequest(url, async args => {
-    if (args[1] === 'merge') return { stdout: '' };
-    return { stdout: JSON.stringify({ ...open, state: confirmedMain++ ? 'MERGED' : 'OPEN' }) };
-  }, async () => { throw new Error('Main must not ask for confirmation'); });
+  assert.match(String((await assert.rejects(squashMergePullRequest(
+    'https://other.example/owner/repo/pull/12', happy.execute))) || ''), /^$/);
 
-  await assert.rejects(squashMergePullRequest('https://other.example/owner/repo/pull/12', execute));
-  assert.equal((await squashMergePullRequest(url, async () => ({ stdout: JSON.stringify(open) }))).merged, false);
-  await assert.rejects(squashMergePullRequest(url, async args => {
-    if (args[1] === 'merge') throw new Error('Required checks have not passed');
-    return { stdout: JSON.stringify(open) };
-  }), /Required checks/);
-  let conflictCalls = 0;
-  await assert.rejects(squashMergePullRequest(url, async () => {
-    conflictCalls++;
-    return { stdout: JSON.stringify({ ...open, mergeable: 'CONFLICTING' }) };
-  }), /Unable to merge #12: conflicts with `main`/);
-  assert.equal(conflictCalls, 1, 'Do not attempt to merge known conflicts');
-  let racedReads = 0;
-  await assert.rejects(squashMergePullRequest(url, async args => {
-    if (args[1] === 'merge') throw Object.assign(new Error('gh failed'), { stderr: 'not mergeable' });
-    return { stdout: JSON.stringify({ ...open, mergeable: ++racedReads === 1 ? 'UNKNOWN' : 'CONFLICTING' }) };
-  }), /Unable to merge #12: conflicts with `main`/);
-  const originalFailure = Object.assign(new Error('gh failed'), { stderr: 'Required checks have not passed' });
-  let failedReads = 0;
-  await assert.rejects(squashMergePullRequest(url, async args => {
-    if (args[1] === 'merge') throw originalFailure;
-    if (++failedReads > 1) throw new Error('Offline');
-    return { stdout: JSON.stringify(open) };
-  }), error => error === originalFailure);
+  for (const branch of [open, alternate]) {
+    const conflicting = mockMerge({ views: [{ ...branch, mergeable: 'CONFLICTING' }] });
+    await assert.rejects(squashMergePullRequest(url, conflicting.execute, async () => true, quickPoll),
+      /conflicts with/);
+    assert.equal(conflicting.calls.length, 1);
+  }
+  const lateConflict = mockMerge({ views: [open, { ...open, mergeable: 'CONFLICTING' }] });
+  await assert.rejects(squashMergePullRequest(url, lateConflict.execute, undefined, quickPoll),
+    /conflicts with `main`/);
+  assert.equal(lateConflict.calls.length, 2);
+
+  // A 202 request is not a completed merge. Bounded polling must leave
+  // cleanup inactive if GitHub is still processing.
+  const processing = mockMerge({ views: [open, open], responses: [pending] });
+  const processingResult = await squashMergePullRequest(url, processing.execute, undefined, quickPoll);
+  assert.equal(processingResult.merged, false);
+  assert.equal(processingResult.pending, true);
+  assert.equal(processing.calls.filter(args => args[0] === 'api' && !args.includes('--method')).length, 2);
+
+  // Queues are terminal for the async request but NOT successful merges.
+  const queued = mockMerge({ views: [open, open], submission: { status: 'enqueued', details: {} } });
+  const queuedResult = await squashMergePullRequest(url, queued.execute, undefined, quickPoll);
+  assert.equal(queuedResult.merged, false);
+  assert.equal(queuedResult.enqueued, true);
+  assert.equal(queued.calls.filter(args => args[0] === 'api').length, 1);
+
+  // A 200 already-merged response still needs a matching PR snapshot.
+  const already = mockMerge({ submission: completed });
+  assert.equal((await squashMergePullRequest(url, already.execute, undefined, quickPoll)).merged, true);
+  const changedAfterMerge = mockMerge({ views: [open, open, { ...mergedPr, headRefOid: 'b'.repeat(40) }] });
+  await assert.rejects(squashMergePullRequest(url, changedAfterMerge.execute, undefined, quickPoll),
+    /branch cleanup was skipped/);
+
+  const failed = mockMerge({ responses: [{ status: 'failed', details: { message: 'Required checks have not passed' } }] });
+  await assert.rejects(squashMergePullRequest(url, failed.execute, undefined, quickPoll),
+    /Required checks have not passed/);
+  const missingUuid = mockMerge({ submission: { status: 'pending', details: {} } });
+  await assert.rejects(squashMergePullRequest(url, missingUuid.execute, undefined, quickPoll),
+    /without a valid request ID/);
+  const unknown = mockMerge({ submission: { status: 'unexpected' } });
+  await assert.rejects(squashMergePullRequest(url, unknown.execute, undefined, quickPoll),
+    /unexpected asynchronous merge status/);
+
+  // A concurrent request may be resumed only when GitHub confirms the exact
+  // same SHA, squash method, and queue policy.
+  const busyError = Object.assign(new Error('Request in progress'), {
+    stderr: 'gh: Request in progress (HTTP 409)',
+    stdout: JSON.stringify({ status: 'pending', details: {
+      uuid: requestId, expected_head_sha: open.headRefOid, merge_method: 'squash', merge_action: 'default'
+    } })
+  });
+  const resumed = mockMerge({ submissionError: busyError });
+  assert.equal((await squashMergePullRequest(url, resumed.execute, undefined, quickPoll)).merged, true);
+  const wrongError = Object.assign(new Error('Request in progress'), {
+    stderr: 'gh: (HTTP 409)',
+    stdout: JSON.stringify({ status: 'pending', details: {
+      uuid: requestId, expected_head_sha: 'b'.repeat(40), merge_method: 'merge', merge_action: 'default'
+    } })
+  });
+  const blocked = mockMerge({ submissionError: wrongError });
+  await assert.rejects(squashMergePullRequest(url, blocked.execute, undefined, quickPoll),
+    /different asynchronous merge request/);
+  assert.equal(blocked.calls.filter(args => args[0] === 'api').length, 1);
+
+  const originalFailure = Object.assign(new Error('Forbidden'), { stderr: 'gh: Forbidden (HTTP 403)' });
+  const blockedPermission = mockMerge({ views: [open, open, open], submissionError: originalFailure });
+  await assert.rejects(squashMergePullRequest(url, blockedPermission.execute, undefined, quickPoll),
+    error => error === originalFailure);
+  const racedConflict = mockMerge({ views: [open, open, { ...open, mergeable: 'CONFLICTING' }],
+    submissionError: new Error('Merge rejected') });
+  await assert.rejects(squashMergePullRequest(url, racedConflict.execute, undefined, quickPoll),
+    /conflicts with `main`/);
+
   const cleanup = [];
   await deleteMergedRemoteBranch(result, async args => {
     cleanup.push(args);
