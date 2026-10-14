@@ -51,7 +51,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   doc.action().events.click(event);
   doc.action().events.click(event);
   assert.equal(calls.length, 1, 'Double clicks cannot overwrite saved bounds');
-  assert.deepEqual(calls[0], { bounds: { x: -1000, y: 183, width: 560, height: 560 }, options: { targetWindowId: 7 } });
+  assert.deepEqual(calls[0], { bounds: { x: -1020, y: 163, width: 600, height: 600 }, options: { targetWindowId: 7 } });
+  assert.ok(calls[0].bounds.width >= 600, 'Keep VS Code vertical-panel native minimum and resizable columns');
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'true');
   doc.rebuild();
@@ -69,12 +70,30 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const other = documentFixture();
   ctx.scmToolkitMountCompactWindow(other, native);
   assert.notEqual(doc.__sweetiebotCompactWindow, other.__sweetiebotCompactWindow, 'Each window owns its restore state');
-  // A smaller secondary display must reduce both dimensions equally.
+  // A tighter display still receives a centered square with reduced gutters.
+  const narrow = documentFixture();
+  narrow.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 625, availHeight: 650 };
+  ctx.scmToolkitMountCompactWindow(narrow, native);
+  narrow.action().events.click(event);
+  assert.deepEqual(calls.at(-1).bounds, { x: 1933, y: 49, width: 600, height: 600 });
+  release(); await flush();
+  narrow.action().events.click(event);
+  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  release(); await flush();
+
+  // Native VS Code cannot fit its side-panel minimum on a smaller display.
+  // Do not request dimensions it will clamp into a rectangle or scrollable layout.
   const small = documentFixture();
   small.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 450, availHeight: 390 };
   ctx.scmToolkitMountCompactWindow(small, native);
+  const attempted = calls.length;
   small.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1982, y: 56, width: 326, height: 326 });
+  assert.equal(calls.length, attempted, 'Too-small displays leave the native layout alone');
+  assert.equal(small.action().title, 'Display too small for a 600px square window');
+  assert.equal(small.action().attrs['aria-pressed'], 'false');
+  small.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 650, availHeight: 720 };
+  small.action().events.click(event);
+  assert.deepEqual(calls.at(-1).bounds, { x: 1945, y: 84, width: 600, height: 600 });
   release(); await flush();
   small.action().events.click(event);
   assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });

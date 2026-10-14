@@ -2314,6 +2314,13 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     };
     const toggle = async action => {
         if (state.busy) return;
+        // VS Code enforces a 600px minimum width when its panel is on the side.
+        // Do not squeeze or rearrange the user's resizable vertical columns.
+        if (!state.restore && (win.screen.availWidth < 600 || win.screen.availHeight < 600)) {
+            action.title = 'Display too small for a 600px square window';
+            action.setAttribute('aria-label', action.title);
+            return;
+        }
         state.busy = true;
         let failed = false;
         updateAction(action);
@@ -2323,12 +2330,10 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 width: win.outerWidth, height: win.outerHeight
             };
             const screen = win.screen;
-            // Fit a square on either display orientation, retaining 32px gutters.
-            const side = Math.min(
-                560,
-                Math.max(1, screen.availWidth - 64),
-                Math.max(1, screen.availHeight - 64)
-            );
+            // Respect the native 600px minimum for side-mounted panels.
+            // Requesting 560px widens only the native window, making a rectangle.
+            // Center the square; retain 32px gutters wherever the screen allows.
+            const side = 600;
             const bounds = state.restore || {
                 x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - side) / 2),
                 y: (screen.availTop ?? 0) + Math.round((screen.availHeight - side) / 2),
