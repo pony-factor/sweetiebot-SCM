@@ -3,6 +3,7 @@
 const { githubRepository } = require('./pull_request');
 const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { chatgptMergeUrl, resolveChatgptActionProject } = require('./chatgpt_project');
+const { findBulkMergeScript, runBulkMergeWithLindsey } = require('./lindsey_bulk_merge');
 
 function repositoryName(repositoryUrl) {
   const normalized = githubRepository(repositoryUrl);
@@ -85,6 +86,7 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
         title: String(pr.title || `Pull request #${number}`),
         url,
         head: String(pr.head?.ref || ''),
+        headSha: String(pr.head?.sha || ''),
         headRepo: String(pr.head?.repo?.full_name || ''),
         base: String(pr.base.ref),
         baseRepo: fullName,
@@ -143,11 +145,11 @@ function squashCommitTitle(pr) {
   return title + ' (#' + number + ')';
 }
 
-async function pickPullRequests(vscode, pullRequests) {
+async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
   const picker = vscode.window.createQuickPick();
   const queueAllButton = {
     iconPath: new vscode.ThemeIcon('run-all'),
-    tooltip: 'Queue all pull requests in ChatGPT (one click)'
+    tooltip: 'Queue all pull requests in ' + engine + ' (one click)'
   };
   const plan = planStackMerges(pullRequests, pullRequests[0]?.baseRepo);
   picker.items = plan.ordered.map(item => ({
@@ -157,7 +159,7 @@ async function pickPullRequests(vscode, pullRequests) {
     pullRequest: pullRequests.find(pr => pr.number === item.number)
   }));
   picker.canSelectMany = true;
-  picker.title = 'Squash and merge with ChatGPT';
+  picker.title = 'Squash and merge with ' + engine;
   picker.placeholder = 'Select pull requests and press OK, or use Queue All to submit every PR.';
   picker.buttons = [queueAllButton];
 
@@ -237,7 +239,9 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         vscode.window.showInformationMessage('No open, ready-for-review pull requests were found.');
         return;
       }
-      const selected = await pickPullRequests(vscode, pullRequests);
+      const root = selectedRepository.repository.rootUri?.fsPath;
+      const lindsey = root ? findBulkMergeScript(root, vscode.workspace?.workspaceFolders || []) : undefined;
+      const selected = await pickPullRequests(vscode, pullRequests, lindsey ? 'Lindsey' : 'ChatGPT');
       if (selected === undefined) return;
       if (!selected.length) {
         vscode.window.showInformationMessage('Select at least one pull request.');
@@ -273,6 +277,11 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         );
         if (choice !== action) return;
       }
+      if (lindsey) {
+        await runBulkMergeWithLindsey(vscode, lindsey,
+          repositoryName(selectedRepository.repositoryUrl), selected, session.accessToken);
+        return;
+      }
       const prompt = batchMergePrompt({
         repositoryUrl: selectedRepository.repositoryUrl,
         pullRequests: selected
@@ -284,7 +293,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       // three seconds and sending Return through macOS accessibility APIs.
       await openCompactKefaniaChat(vscode, url, { floating: false });
     } catch (error) {
-      vscode.window.showErrorMessage(`Unable to prepare pull-request merge chat: ${error.message}`);
+      vscode.window.showErrorMessage(`Unable to prepare pull-request bulk merge: ${error.message}`);
     }
   }));
 }
