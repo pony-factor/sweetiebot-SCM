@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { displayName } = require('./pony_profile');
 const run = promisify(execFile);
 
 async function repositorySessions(root) {
@@ -16,7 +17,7 @@ async function sessionDirectory(vscode, context) {
   if (workspace?.scheme !== 'file' || !context.globalStorageUri) return undefined;
   const directory = path.dirname(workspace.fsPath);
   if (!path.basename(directory).startsWith('session-') ||
-      path.basename(workspace.fsPath) !== 'Pull Request.code-workspace') return undefined;
+      !workspace.fsPath.endsWith('.code-workspace')) return undefined;
   // Retain recognition of older sessions if the user explicitly trusted one.
   if (path.dirname(directory) === path.join(context.globalStorageUri.fsPath, 'pr-sessions')) return directory;
   for (const folder of vscode.workspace.workspaceFolders || []) {
@@ -40,7 +41,9 @@ async function launchPRSession(vscode, context, root, options) {
     // A saved workspace has its own main window and extension host. Auxiliary
     // browser windows and the draft server are consequently owned by this
     // session, rather than by the repository window that launched New PR.
-    const workspace = path.join(directory, 'Pull Request.code-workspace');
+    const title = `${displayName(options.branch)} (${path.basename(root.fsPath)})`;
+    const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
+    const workspace = path.join(directory, filename + '.code-workspace');
     const config = vscode.workspace.getConfiguration('scmToolkit');
     await fs.writeFile(workspace, JSON.stringify({
       folders: [{ path: root.fsPath }],
@@ -49,7 +52,7 @@ async function launchPRSession(vscode, context, root, options) {
         'scmToolkit.automaticBranchCleanup': false,
         'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
-        'window.title': 'Pull Request — ${rootName}${separator}${appName}',
+        'window.title': title,
       },
     }), { mode: 0o600 });
     await fs.writeFile(path.join(directory, 'request.json'), JSON.stringify({
