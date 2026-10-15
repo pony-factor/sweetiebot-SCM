@@ -2,20 +2,38 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const run = promisify(execFile);
 
-function sessionDirectory(vscode, context) {
+async function repositorySessions(root) {
+  const { stdout } = await run('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, timeout: 10000 });
+  return path.join(stdout.trim(), 'sweetiebot-pr-sessions');
+}
+
+async function sessionDirectory(vscode, context) {
   const workspace = vscode.workspace.workspaceFile;
   if (workspace?.scheme !== 'file' || !context.globalStorageUri) return undefined;
   const directory = path.dirname(workspace.fsPath);
-  const sessions = path.join(context.globalStorageUri.fsPath, 'pr-sessions');
-  if (path.dirname(directory) !== sessions || !path.basename(directory).startsWith('session-') ||
+  if (!path.basename(directory).startsWith('session-') ||
       path.basename(workspace.fsPath) !== 'Pull Request.code-workspace') return undefined;
-  return directory;
+  // Retain recognition of older sessions if the user explicitly trusted one.
+  if (path.dirname(directory) === path.join(context.globalStorageUri.fsPath, 'pr-sessions')) return directory;
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    if (folder.uri.scheme !== 'file') continue;
+    try {
+      if (path.dirname(directory) === await repositorySessions(folder.uri.fsPath)) return directory;
+    } catch { /* A non-Git folder cannot own a PR session. */ }
+  }
 }
 
 async function launchPRSession(vscode, context, root, options) {
-  if (sessionDirectory(vscode, context)) return false;
-  const sessions = path.join(context.globalStorageUri.fsPath, 'pr-sessions');
+  if (await sessionDirectory(vscode, context)) return false;
+  // Workspace trust includes the saved workspace file itself. Global storage
+  // is outside the trusted repository and leaves the new host in Restricted
+  // Mode, where this extension cannot start. Git metadata stays under a normal
+  // trusted checkout and never adds a workspace/request to the working tree.
+  const sessions = await repositorySessions(root.fsPath);
   await fs.mkdir(sessions, { recursive: true, mode: 0o700 });
   const directory = await fs.mkdtemp(path.join(sessions, 'session-'));
   try {
@@ -46,7 +64,7 @@ async function launchPRSession(vscode, context, root, options) {
 }
 
 async function resumePRSession(vscode, context) {
-  const directory = sessionDirectory(vscode, context);
+  const directory = await sessionDirectory(vscode, context);
   if (!directory) return;
   const request = path.join(directory, 'request.json');
   let input;
