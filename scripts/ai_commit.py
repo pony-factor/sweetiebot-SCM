@@ -1361,7 +1361,6 @@ def generate_message(
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
                 return title, description
             if attempt + 1 < MAX_GENERATION_ATTEMPTS:
-                print(f"scm-toolkit: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} returned an invalid summary; retrying", file=sys.stderr)
                 payload["prompt"] += "\nThe previous output was invalid. Summarize the changed content, not just a filename or file count. Describe the specific information or behavior added, removed, or corrected. Use an imperative subject and complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
                 if text_changes and is_filename_only_title(title, files):
                     # Remove path-heavy headers on retry so rough notes are not

@@ -622,6 +622,7 @@ class TitleTests(unittest.TestCase):
 
     def test_retry_accepts_valid_structured_message(self):
         with ExitStack() as stack:
+            output = stack.enter_context(patch("sys.stderr"))
             for name, value in [
                 ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
                 ("configured_models", ("local", "small")), ("recent_subjects", ""), ("staged_file_context", ""),
@@ -635,6 +636,7 @@ class TitleTests(unittest.TestCase):
                              ("📧 Remove duplicate archived emails", "Remove redundant email copies from the archive."))
             self.assertEqual(generate.call_count, 2)
             self.assertEqual(generate.call_args.args[1]["format"]["type"], "object")
+            output.write.assert_not_called()
 
     def test_title_preference_references_standalone_file(self):
         with tempfile.TemporaryDirectory() as tmp:
