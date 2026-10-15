@@ -77,6 +77,9 @@ async function resumePRSession(vscode, context) {
   // second request. Keep the saved workspace so VS Code can restore its chats.
   await fs.unlink(request);
   const root = vscode.Uri.file(input.root);
+  for (const command of ['workbench.action.closeSidebar', 'workbench.action.closeAuxiliaryBar', 'workbench.action.closePanel']) {
+    await vscode.commands.executeCommand(command);
+  }
   try {
     await vscode.commands.executeCommand('sweetiebot.openPullRequestChat', root, input.options);
   } catch (error) {

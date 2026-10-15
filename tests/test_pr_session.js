@@ -45,15 +45,16 @@ const { launchPRSession, resumePRSession, sessionDirectory } = require('../efs/p
     const target = { Uri: { file }, workspace: { workspaceFile: workspaceUri, workspaceFolders: [{ uri: root }] },
       commands: { async executeCommand(...args) { resumed.push(args); } } };
     await resumePRSession(target, context);
-    assert.deepEqual(resumed, [['sweetiebot.openPullRequestChat', root, options]]);
+    const layoutCommands = ['workbench.action.closeSidebar', 'workbench.action.closeAuxiliaryBar', 'workbench.action.closePanel'];
+    assert.deepEqual(resumed, [...layoutCommands.map(command => [command]), ['sweetiebot.openPullRequestChat', root, options]]);
     assert.equal(await launchPRSession(target, context, root, options), false, 'Never recursively open another session');
     await resumePRSession(target, context);
-    assert.equal(resumed.length, 1, 'Restoring a workspace must not repeat a PR request');
+    assert.equal(resumed.length, 4, 'Restoring a workspace must not repeat a PR request');
 
     const foreign = { ...target, workspace: { workspaceFile: file('/elsewhere/session-x/Pull Request.code-workspace') } };
     assert.equal(await sessionDirectory(foreign, context), undefined);
     await resumePRSession(foreign, context);
-    assert.equal(resumed.length, 1);
+    assert.equal(resumed.length, 4);
 
     await fs.writeFile(path.join(path.dirname(workspaceUri.fsPath), 'request.json'), JSON.stringify({ root: root.fsPath, options }));
     const fallbackCalls = [];
@@ -66,7 +67,7 @@ const { launchPRSession, resumePRSession, sessionDirectory } = require('../efs/p
       }
     } } };
     await resumePRSession(unavailable, context);
-    assert.deepEqual(fallbackCalls.map(call => call[0]), ['sweetiebot.openPullRequestChat', 'sweetiebot.createLocalPullRequest']);
+    assert.deepEqual(fallbackCalls.map(call => call[0]), [...layoutCommands, 'sweetiebot.openPullRequestChat', 'sweetiebot.createLocalPullRequest']);
 
     const failed = { ...source, commands: { async executeCommand() { throw new Error('Open failed'); } } };
     const before = await fs.readdir(sessions);

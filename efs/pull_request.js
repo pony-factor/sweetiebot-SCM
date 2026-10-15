@@ -5,7 +5,6 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { runKefania, runKefaniaPonyCache } = require('./kefania_runner');
 const { resolveKefaniaFile } = require('./kefania_paths');
-const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { createDraftHandoff } = require('./draft_handoff');
 const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
@@ -430,8 +429,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
     try {
-      const confirmationWindow = await openCompactKefaniaChat(vscode, confirmationUrl, { requireFloating: true });
-      closeConfirmation = confirmationWindow.close;
+      closeConfirmation = await openWorkflow(vscode, confirmationUrl);
       for (const [kind, workflow] of workflows) {
         if (!workflow) continue;
         try {
