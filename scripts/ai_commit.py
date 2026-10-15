@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -27,6 +28,7 @@ MAX_FILE_CONTEXT_CHARS = int(
     os.environ.get("SCM_TOOLKIT_AI_MAX_FILE_CONTEXT_CHARS", "5000")
 )
 MAX_DIFF_SECTIONS = int(os.environ.get("SCM_TOOLKIT_AI_MAX_DIFF_SECTIONS", "20"))
+MAX_GENERATION_ATTEMPTS = 3
 
 # GitHub blocks regular repository files larger than 100 MiB. Sweetiebot uses
 # that same size as an aggregate auto-split target for blank automatic commits.
@@ -1014,6 +1016,9 @@ def prompt_for_diff(
     # Two characters per token is deliberately conservative for paths and diffs.
     budget = max(3200, (NUM_CTX - 768) * 2)
     custom_instructions = commit_custom_instructions()
+    # Preserve every style preference without taking its space from the patch.
+    # The request below grows the model context to fit the resulting prompt.
+    budget += len(custom_instructions)
     custom_section = ""
     if custom_instructions:
         custom_section = (
@@ -1046,6 +1051,8 @@ Output rules:
 - subject maximum 72 characters; begin the wording with an imperative verb
 - {shape_rules}
 - describe the actual change directly and decisively, with no hedging
+- when text content changes, summarize what the changed text adds, removes, or corrects; a filename alone is not a summary
+- distinguish adding a new file from adding information to an existing file
 - never say 'appears to', 'seems', 'likely', 'probably', or 'the provided text'
 - no explanations of the input, analysis, alternatives, or commentary
 - plain text only in both fields: no markdown, backticks, links, headings, lists, or labels
@@ -1229,6 +1236,46 @@ def has_unsupported_removal_claim(message: str, evidence: str) -> bool:
     return False
 
 
+def has_text_changes(diff: str) -> bool:
+    return any(
+        line.startswith(("+", "-"))
+        and not line.startswith(("+++", "---"))
+        and bool(line[1:].strip())
+        for line in diff.splitlines()
+    )
+
+
+def is_filename_only_title(title: str, files: list[str]) -> bool:
+    wording = re.sub(r"^[^\w]+", "", title).split(maxsplit=1)
+    if len(wording) < 2:
+        return True
+
+    def normalized(value: str) -> str:
+        return " ".join(re.findall(r"\w+", value.lower()))
+
+    subject = normalized(wording[1])
+    generic_words = {
+        "a", "an", "the", "file", "files", "in", "to", "for", "of", "with", "and",
+        "information", "explanation", "content", "note", "notes", "reference", "references",
+        "change", "changes", "update", "updates",
+    }
+    if re.fullmatch(r"(?:(?:the|a|an|\d+) )?(?:staged |changed )?(?:files?|changes?)", subject):
+        return True
+    for path in files:
+        parts = Path(path).parts
+        # Models also flatten/reorder directory names and omit the extension.
+        # That still describes only the path, not the changed content.
+        if set(subject.split()) <= set(normalized(path).split()) | generic_words:
+            return True
+        for start in range(len(parts)):
+            candidate = "/".join(parts[start:])
+            for label in (candidate, str(Path(candidate).with_suffix(""))):
+                name = normalized(label)
+                if subject in {name, "the " + name, name + " file", "file " + name}:
+                    return True
+    return False
+
+
 def generate_message(
     stat: str,
     diff: str,
@@ -1237,6 +1284,10 @@ def generate_message(
     conversation_context: str = "",
     require_model: bool = False,
 ) -> tuple[str, str]:
+    # Text changes need an actual summary. Never silently commit them with a
+    # filename/count fallback when the model is unavailable or rejects the task.
+    text_changes = has_text_changes(diff)
+    require_model = require_model or text_changes
     installed = installed_local_model_names()
     model, low_memory_mode = selected_model(installed)
     primary, low_memory = configured_models()
@@ -1281,8 +1332,20 @@ def generate_message(
                 "num_predict": 256 if include_description else 128,
             },
         }
-        for attempt in range(2):
-            response = ollama_json("/api/generate", payload)
+        for attempt in range(MAX_GENERATION_ATTEMPTS):
+            payload["options"]["num_ctx"] = max(NUM_CTX, (len(payload["prompt"]) + 1) // 2 + 768)
+            try:
+                response = ollama_json("/api/generate", payload)
+                if not isinstance(response, dict):
+                    raise ValueError("Ollama returned a non-object response")
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+                retryable = not isinstance(exc, urllib.error.HTTPError) or exc.code in {408, 429, 500, 502, 503, 504}
+                if not retryable or attempt + 1 == MAX_GENERATION_ATTEMPTS:
+                    raise
+                delay = 2 ** attempt
+                print(f"scm-toolkit: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} failed; retrying in {delay}s", file=sys.stderr)
+                time.sleep(delay)
+                continue
             try:
                 title, description = sanitize_generated_message(
                     str(response.get("response", "")), include_description=include_description,
@@ -1294,12 +1357,34 @@ def generate_message(
             evidence = diff + "\n" + file_context + "\n" + conversation_context
             if (response.get("done_reason") != "length"
                     and valid_generated_message(title, description, include_description)
+                    and not (text_changes and is_filename_only_title(title, files))
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
                 return title, description
-            if attempt == 0:
-                payload["prompt"] += "\nThe previous output was invalid. Use an imperative subject and complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
+            if attempt + 1 < MAX_GENERATION_ATTEMPTS:
+                print(f"scm-toolkit: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} returned an invalid summary; retrying", file=sys.stderr)
+                payload["prompt"] += "\nThe previous output was invalid. Summarize the changed content, not just a filename or file count. Describe the specific information or behavior added, removed, or corrected. Use an imperative subject and complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
+                if text_changes and is_filename_only_title(title, files):
+                    # Remove path-heavy headers on retry so rough notes are not
+                    # overwhelmed by a more polished directory/filename label.
+                    changed_lines = "\n".join(
+                        line for line in diff.splitlines()
+                        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+                    )
+                    payload["prompt"] = prompt_for_diff(
+                        stat, changed_lines, "Text content changes; paths omitted on retry.",
+                        include_description=include_description,
+                        conversation_context=conversation_context,
+                    ) + (
+                        "\nThe previous subject only restated a file path. "
+                        "Do not use a filename or directory name as the topic. Name the specific concepts "
+                        "from the changed lines, not just a filename or file count. Return only the JSON message."
+                    )
+        if require_model:
+            raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {MAX_GENERATION_ATTEMPTS} attempts. Try again or enter an explicit message.")
         print("scm-toolkit: invalid model output; using factual staged-change summary", file=sys.stderr)
         return fallback_message(files, include_description, file_context)
+    except RuntimeError:
+        raise
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         if require_model:
             cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc
@@ -1388,16 +1473,16 @@ def main() -> None:
         split_groups = github_split_groups(files)
         if len(split_groups) > 1:
             raise SystemExit(commit_split_groups(argv, split_groups))
+        title, description = generate_message(
+            stat,
+            diff,
+            files,
+            include_description=should_add_default_branch_description(),
+        )
     except RuntimeError as exc:
         print(f"scm-toolkit: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    title, description = generate_message(
-        stat,
-        diff,
-        files,
-        include_description=should_add_default_branch_description(),
-    )
     message_args = ["-m", title]
     if description:
         message_args.extend(["-m", description])

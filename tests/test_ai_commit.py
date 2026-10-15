@@ -151,6 +151,23 @@ class RoutingTests(unittest.TestCase):
 
 
 class NewlineRoutingTests(unittest.TestCase):
+    def test_failed_summary_stops_before_invoking_git_commit(self):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(sys, "argv", ["wrapper", "commit"]))
+            for name, value in [
+                ("feature_enabled", True), ("staged_whitespace_enabled", False),
+                ("staged_diff", ("1 file", "+Exhibit references", ["notes.md"])),
+                ("github_split_groups", [["notes.md"]]),
+                ("should_add_default_branch_description", False),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(ai_commit, "generate_message", side_effect=RuntimeError("No content-based summary")))
+            execute = stack.enter_context(patch.object(ai_commit.os, "execv"))
+            with self.assertRaises(SystemExit) as error:
+                ai_commit.main()
+            self.assertEqual(error.exception.code, 1)
+            execute.assert_not_called()
+
     @patch.object(ai_commit, "git_config_bool")
     def test_staged_whitespace_normalization_defaults_on(self, config):
         config.return_value = True
@@ -441,6 +458,44 @@ class ManualSpellcheckTests(unittest.TestCase):
 
 
 class TitleTests(unittest.TestCase):
+    def setUp(self):
+        sleeper = patch.object(ai_commit.time, "sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
+
+    def test_transient_failures_retry_then_accept_success(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", "Change totals: 1 modified"),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
+                ai_commit.urllib.error.URLError(ConnectionRefusedError()),
+                TimeoutError(),
+                {"response": '{"subject":"📝 Record DTC exhibit references","description":""}'},
+            ]))
+            self.assertEqual(ai_commit.generate_message("", "+DTC exhibit references", ["notes.md"]),
+                             ("📝 Record DTC exhibit references", ""))
+            self.assertEqual(generate.call_count, 3)
+            self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
+
+    def test_permanent_http_failure_does_not_retry(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            error = ai_commit.urllib.error.HTTPError("http://127.0.0.1:11434/api/generate", 400, "bad request", {}, None)
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
+            with self.assertRaisesRegex(RuntimeError, "HTTP 400"):
+                ai_commit.generate_message("", "+Exhibit references", ["notes.md"])
+            self.assertEqual(generate.call_count, 1)
+            self.sleep.assert_not_called()
+
     def test_required_model_reports_timeout_connection_and_http_failures(self):
         failures = [
             (TimeoutError("timed out"), "timed out after 300 seconds"),
@@ -457,9 +512,10 @@ class TitleTests(unittest.TestCase):
                     ("recent_subjects", ""), ("staged_file_context", ""),
                 ]:
                     stack.enter_context(patch.object(ai_commit, name, return_value=value))
-                stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
+                generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
                 with self.assertRaisesRegex(RuntimeError, expected):
                     ai_commit.generate_message("", "", ["a.py"], require_model=True)
+                self.assertEqual(generate.call_count, 3)
 
     def test_ollama_request_allows_time_queued_behind_ocr(self):
         with patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
@@ -515,6 +571,16 @@ class TitleTests(unittest.TestCase):
         self.assertIn("Updated archive notice", sampled)
         self.assertLess(len(sampled), 250)
 
+    def test_long_style_instructions_leave_room_for_actual_changes(self):
+        instructions = "Emoji preference.\n" * 1000
+        with patch.object(ai_commit, "commit_custom_instructions", return_value=instructions), patch.object(ai_commit, "recent_subjects", return_value=""):
+            prompt = ai_commit.prompt_for_diff(
+                "1 file changed", "+Exhibit 3 redaction\n+Exhibit 5 fee references", "Change totals: 1 modified"
+            )
+        self.assertLessEqual(len(prompt), (ai_commit.NUM_CTX - 768) * 2 + len(instructions))
+        self.assertIn(instructions, prompt)
+        self.assertIn("+Exhibit 3 redaction\n+Exhibit 5 fee references", prompt)
+
     def test_json_response_has_plain_text_and_complete_sentences(self):
         title, body = ai_commit.sanitize_generated_message(
             '{"subject":"📧 **Remove redundant emails**","description":"Remove `duplicate.eml` from the **archive**. Preserve [metadata](https://example.test)."}',
@@ -542,7 +608,7 @@ class TitleTests(unittest.TestCase):
                 generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=bad))
                 self.assertEqual(ai_commit.generate_message("", "", ["a.eml", "b.eml"], include_description=True),
                                  ("📧 Remove 2 archived emails", "Remove 2 email files from the repository."))
-                self.assertEqual(generate.call_count, 2)
+                self.assertEqual(generate.call_count, 3)
 
     def test_removal_claims_require_evidence_from_this_change(self):
         self.assertTrue(ai_commit.has_unsupported_removal_claim("Remove redundant emails.", "deleted file mode 100644"))
@@ -613,7 +679,7 @@ class TitleTests(unittest.TestCase):
                 ai_commit.generate_message("", "", ["parser.py"]),
                 ("🔧 Update parser.py", ""),
             )
-            self.assertEqual(generate.call_count, 2)
+            self.assertEqual(generate.call_count, 3)
 
     def test_generated_sync_titles_are_rejected_for_normal_and_context_commits(self):
         for title in ["🔄 Sync branch to main", "Sync branch with main", "Synchronize repository changes"]:
@@ -628,10 +694,68 @@ class TitleTests(unittest.TestCase):
                         ("ollama_json", {"response": title + "\n\nSync the branch to main."}),
                     ]:
                         stack.enter_context(patch.object(ai_commit, name, return_value=value))
-                    self.assertEqual(
-                        ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True, conversation_context=context, require_model=bool(context)),
-                        ("📝 Update 2 staged files", "Update the 2 staged files."),
-                    )
+                    if context:
+                        with self.assertRaisesRegex(RuntimeError, "after 3 attempts"):
+                            ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True, conversation_context=context, require_model=True)
+                    else:
+                        self.assertEqual(
+                            ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True),
+                            ("📝 Update 2 staged files", "Update the 2 staged files."),
+                        )
+
+    def test_filename_only_title_retries_with_content_instructions(self):
+        path = "comments/transfer-agent-rules/DTCC-DA-ICSD/2026-30.md"
+        diff = "@@ -14,0 +15,2 @@\n+Exhibit 3 is redacted.\n+Exhibit 5 lists items and fines."
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", "Change totals: 1 modified"),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            prompts = []
+            responses = iter([
+                {"response": '{"subject":"📝 Add DTCC-DA-ICSD 2026-30.md","description":""}'},
+                {"response": '{"subject":"📝 Record DTC exhibit redaction and fee references","description":""}'},
+            ])
+            def respond(_endpoint, payload):
+                prompts.append(payload["prompt"])
+                self.assertGreaterEqual(payload["options"]["num_ctx"], (len(payload["prompt"]) + 1) // 2 + 768)
+                return next(responses)
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=respond))
+            self.assertEqual(ai_commit.generate_message("1 file changed", diff, [path]),
+                             ("📝 Record DTC exhibit redaction and fee references", ""))
+            self.assertEqual(generate.call_count, 2)
+            self.assertIn("not just a filename or file count", prompts[1])
+            self.assertIn("+Exhibit 5 lists items and fines.", prompts[1])
+
+    def test_text_changes_never_silently_fall_back(self):
+        for response in [None, {"response": '{"subject":"📝 Add notes.md","description":""}'},
+                         {"response": "invalid"}]:
+            with self.subTest(response=response), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"} if response else set()),
+                    ("selected_model", ("local", False) if response else (None, False)),
+                    ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                    ("staged_file_context", "Change totals: 1 modified"),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=response))
+                fallback = stack.enter_context(patch.object(ai_commit, "fallback_message"))
+                with self.assertRaises(RuntimeError):
+                    ai_commit.generate_message("1 file changed", "+Document DTC exhibit references.", ["notes.md"])
+                fallback.assert_not_called()
+
+    def test_filename_guard_preserves_specific_summaries_and_opaque_changes(self):
+        self.assertTrue(ai_commit.is_filename_only_title(
+            "📝 Add DTCC-DA-ICSD 2026-30 transfer agent rules",
+            ["comments/transfer-agent-rules/DTCC-DA-ICSD/2026-30.md"],
+        ))
+        for title in ["📝 Add notes.md", "📝 Update notes", "📝 Add explanation for notes", "📝 Add 1 staged file"]:
+            self.assertTrue(ai_commit.is_filename_only_title(title, ["notes.md"]))
+        self.assertFalse(ai_commit.is_filename_only_title("📝 Add exhibit references to notes.md", ["notes.md"]))
+        for diff in ["diff --git a/a b/a\n--- a/a\n+++ b/a\n+\n-  ", "Binary files a/a and b/a differ", "rename from a\nrename to b"]:
+            self.assertFalse(ai_commit.has_text_changes(diff))
 
     def test_generated_title_without_emoji_gets_one_and_preserves_description(self):
         with ExitStack() as stack:
