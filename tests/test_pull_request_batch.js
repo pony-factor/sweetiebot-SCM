@@ -168,6 +168,12 @@ async function run() {
   assert.match(prompt, /bot-opened PR/);
   assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
   assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);
+  assert.match(prompt, /compact chronological '- ' bullet list/);
+  assert.match(prompt, /hyphen bullets, not '\*'/);
+  assert.match(prompt, /indented continuation lines directly under its corresponding bullet/);
+  assert.match(prompt, /relocate all such credits into ONE final trailer block/);
+  assert.match(prompt, /conventional GitHub separator ---------/);
+  assert.match(prompt, /only one final trailer block after ---------/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
   assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
   const priorities = [
