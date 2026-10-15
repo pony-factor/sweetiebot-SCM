@@ -30,8 +30,8 @@ const { launchPRSession, resumePRSession, sessionDirectory } = require('../efs/p
     assert.equal(command, 'vscode.openFolder');
     assert.deepEqual(openOptions, { forceNewWindow: true });
     const saved = JSON.parse(await fs.readFile(workspaceUri.fsPath, 'utf8'));
-    assert.equal(path.basename(workspaceUri.fsPath), 'Draft (repository).code-workspace');
-    assert.equal(saved.settings['window.title'], 'Draft (repository)');
+    assert.equal(path.basename(workspaceUri.fsPath), 'Draft PR [repository].code-workspace');
+    assert.equal(saved.settings['window.title'], 'Draft PR [repository]');
     assert.deepEqual(saved.folders, [{ path: root.fsPath }]);
     assert.equal(saved.settings['scmToolkit.autoPublishPullRequests'], false);
     assert.equal(saved.settings['scmToolkit.automaticBranchCleanup'], false);

@@ -41,7 +41,7 @@ async function launchPRSession(vscode, context, root, options) {
     // A saved workspace has its own main window and extension host. Auxiliary
     // browser windows and the draft server are consequently owned by this
     // session, rather than by the repository window that launched New PR.
-    const title = `${displayName(options.branch)} (${path.basename(root.fsPath)})`;
+    const title = `${displayName(options.branch)} PR [${path.basename(root.fsPath)}]`;
     const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
     const workspace = path.join(directory, filename + '.code-workspace');
     const config = vscode.workspace.getConfiguration('scmToolkit');
