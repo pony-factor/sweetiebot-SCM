@@ -122,37 +122,43 @@
                 message(button, 'Could not send clipboard; existing rich draft was preserved');
                 return;
             }
-            const { editor, root } = surface;
-            const draft = readText(editor);
+            const { editor } = surface;
+            const previousText = readText(editor);
             if (!setText(editor, clipboard)) {
-                if (editor.isConnected && readText(editor) === clipboard) setText(editor, draft);
                 message(button, 'Could not insert clipboard text into Codex');
                 return;
             }
 
-            // Let React/ProseMirror consume input and enable the native button.
-            await new Promise(resolve => setTimeout(resolve, 80));
-            const current = findSurface();
-            if (!current || current.editor !== editor || !root.isConnected
-                || readText(editor).trim() !== clipboard.trim()) {
-                message(button, 'Composer changed; clipboard text was not submitted');
+            // Codex may render the text before React enables its native Send
+            // control. Wait for that state instead of giving up after one tick.
+            // A plain-text draft is intentionally replaced, never restored.
+            const normalized = text => text.replace(/\r\n/g, '\n').trim();
+            for (let attempt = 0; attempt < 25; attempt++) {
+                await new Promise(resolve => setTimeout(resolve, 80));
+                const current = findSurface();
+                if (!current || current.editor !== editor || !editor.isConnected) {
+                    message(button, 'Composer changed; clipboard text was not submitted');
+                    return;
+                }
+                if (normalized(readText(editor)) !== normalized(clipboard)) {
+                    // React can briefly restore a stale controlled draft after
+                    // an input event. Retry replacing it once, without ever
+                    // restoring that draft after the clipboard is submitted.
+                    if (attempt < 2 && readText(editor) === previousText
+                        && !hasRichContext(editor) && setText(editor, clipboard)) continue;
+                    message(button, 'Composer changed; clipboard text was not submitted');
+                    return;
+                }
+                const active = isRunning(current.root);
+                const action = chooseAction([...current.root.querySelectorAll('button')], active);
+                if (!action) continue;
+                // Only click the native Send / Queue action; never click Stop
+                // or synthesize Enter, which could change the draft instead.
+                action.click();
+                message(button, active ? 'Queue clipboard prompt' : 'Send clipboard prompt');
                 return;
             }
-            const active = isRunning(current.root);
-            const action = chooseAction([...current.root.querySelectorAll('button')], active);
-            if (!action || action.disabled) {
-                message(button, 'Codex is not ready; clipboard text left in composer');
-                return;
-            }
-            // With a run active, Codex's normal follow-up Send queues the turn
-            // when chatgpt.followUpQueueMode=queue (the native default). Prefer
-            // an explicit Queue action when the extension exposes one.
-            action.click();
-            await new Promise(resolve => setTimeout(resolve, 200));
-            if (draft && editor.isConnected && !readText(editor).trim()) {
-                setText(editor, draft);
-            }
-            message(button, active ? 'Queue clipboard prompt' : 'Send clipboard prompt');
+            message(button, 'Codex is not ready; clipboard text left in composer');
         } catch (error) {
             message(button, 'Clipboard unavailable; allow access and try again');
         } finally {
@@ -202,6 +208,7 @@
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseAction = chooseAction;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseMountTarget = chooseMountTarget;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.findSurface = findSurface;
+        globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.sendClipboard = sendClipboard;
         return;
     }
 

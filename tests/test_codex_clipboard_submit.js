@@ -5,9 +5,24 @@ const vm = require('node:vm');
 
 const hooks = {};
 const document = { body: {}, querySelectorAll: () => [] };
+let clipboardText = '';
+let timeoutTicks = 0;
+let onTimeout = () => {};
+const navigator = { clipboard: { readText: async () => clipboardText } };
 vm.runInNewContext(fs.readFileSync(
     path.join(__dirname, '../assets/codex/codex-clipboard-submit.js'), 'utf8'
-), { globalThis: { __SCM_TOOLKIT_CLIPBOARD_TEST__: hooks }, document });
+), {
+    globalThis: { __SCM_TOOLKIT_CLIPBOARD_TEST__: hooks },
+    document,
+    navigator,
+    Event: class { constructor(type) { this.type = type; } },
+    setTimeout(resolve) {
+        timeoutTicks++;
+        onTimeout();
+        queueMicrotask(resolve);
+    },
+    requestAnimationFrame: () => {},
+});
 
 function button(name, type = 'button', disabled = false) {
     return {
@@ -66,3 +81,75 @@ assert.equal(surfaceWith([disabledSend]).mountTarget, disabledSend);
 assert.equal(surfaceWith([stop]).mountTarget, stop);
 assert.equal(surfaceWith([stop, queue]).mountTarget, queue);
 console.log('Codex clipboard button action-selection checks passed.');
+
+
+// Exercise the actual asynchronous clipboard path, not only action selection.
+// A populated new-chat composer must be replaced and automatically submitted
+// even when React initially leaves Send disabled.
+async function runClipboardChecks() {
+    let nativeClicks = 0;
+    let inputValues = [];
+    const submit = button('Send message', 'submit', true);
+    const editor = {
+        value: 'old text on new-chat page',
+        isConnected: true,
+        getClientRects: () => [1],
+        querySelector: () => null,
+        dispatchEvent(event) {
+            assert.equal(event.type, 'input');
+            inputValues.push(this.value);
+        },
+    };
+    const root = {
+        isConnected: true,
+        parentElement: document.body,
+        querySelectorAll: selector => selector === 'button' ? [submit] : [editor],
+        querySelector: () => null,
+    };
+    editor.parentElement = root;
+    document.querySelectorAll = selector => selector.startsWith('textarea:') ? [editor] : [];
+    submit.click = () => {
+        nativeClicks++;
+        editor.value = ''; // Codex clears its submitted message.
+    };
+    const clipboardButton = {
+        disabled: false,
+        title: '',
+        setAttribute() {},
+    };
+    clipboardText = 'replace me with clipboard text';
+    timeoutTicks = 0;
+    onTimeout = () => { if (timeoutTicks === 4) submit.disabled = false; };
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(nativeClicks, 1, 'automatically clicks Send when it becomes ready');
+    assert.deepEqual(inputValues, [clipboardText], 'overwrites the prefilled draft');
+    assert.equal(editor.value, '', 'does not restore the old draft after sending');
+    assert.equal(clipboardButton.disabled, false);
+
+    // When Send never becomes enabled, do not click an unrelated control
+    // or quietly revert to the prior draft. Leave the clipboard visible.
+    editor.value = 'different existing draft';
+    submit.disabled = true;
+    clipboardText = 'another clipboard message';
+    inputValues = [];
+    timeoutTicks = 0;
+    onTimeout = () => {};
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(timeoutTicks, 25, 'waits for React to enable native Send');
+    assert.equal(nativeClicks, 1, 'never clicks a disabled Send control');
+    assert.equal(editor.value, clipboardText, 'leaves the replacement text for manual submission');
+    assert.match(clipboardButton.title, /not ready/);
+
+    // Preserve rich context (attachments or mentions), which cannot be
+    // safely represented by clipboard plain text.
+    editor.value = 'draft with attachment';
+    editor.querySelector = () => ({});
+    clipboardText = 'must not replace attachment';
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(editor.value, 'draft with attachment');
+    assert.equal(nativeClicks, 1);
+}
+runClipboardChecks().then(() => console.log('Codex clipboard submission checks passed.')).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
