@@ -10,6 +10,7 @@ const { createDraftHandoff } = require('./draft_handoff');
 const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
+const { launchPRSession } = require('./pr_session');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
@@ -295,7 +296,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const git = await extension.activate();
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') throw new Error('Select a local repository to prepare a pull request.');
-    const repository = git.getAPI(1).getRepository(root);
+    const api = git.getAPI(1);
+    const repository = api.getRepository(root) || await api.openRepository?.(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
     // The picker captured this branch at click time. Checkout can change while
@@ -308,17 +310,21 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
 
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
-    const instructions = await readInstructions(repository.rootUri.fsPath);
 
     let source = normalizeConversationSource(options.source);
-    let conversationContext = '';
-    if (!source) {
+    let conversationContext = typeof options.conversationContext === 'string' ? options.conversationContext : '';
+    if (!source && typeof options.conversationContext !== 'string') {
       const codex = await readCodexConversation(vscode);
       source = codex?.source;
       conversationContext = codex?.text || '';
     }
 
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    const launchSession = dependencies.launchPRSession || launchPRSession;
+    if (await launchSession(vscode, context, root, { ...options, source, conversationContext })) {
+      return { launched: true, repositoryUrl, source };
+    }
+    const instructions = await readInstructions(repository.rootUri.fsPath);
     const input = { repository: repositoryUrl.slice('https://github.com/'.length), head: branch, base: options.base, source };
     let evidence, evidenceError;
     try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }

@@ -180,6 +180,8 @@ async function run() {
   let browserAvailable = true;
   let codexSnapshot;
   const calls = [];
+  let launchInSeparateWorkspace = false;
+  const sessionLaunches = [];
   const shownPonies = [];
   const uri = { scheme: 'file', fsPath: '/workspace/project' };
   const repository = {
@@ -245,6 +247,11 @@ async function run() {
     }
   };
   registerPullRequestCommand(vscode, { subscriptions: [] }, {
+    async launchPRSession(_vscode, _context, root, options) {
+      if (!launchInSeparateWorkspace) return false;
+      sessionLaunches.push({ root, options });
+      return true;
+    },
     async runKefania(repositoryPath, input, options) {
       assert.equal(repositoryPath, uri.fsPath);
       assert.equal(options.botOnly, true);
@@ -283,6 +290,17 @@ async function run() {
       return { hit: false };
     }
   });
+
+  launchInSeparateWorkspace = true;
+  const sessionResult = await callback({ rootUri: uri }, {
+    branch: 'draft', remote: 'origin', base: 'main', source: chatSource,
+  });
+  assert.equal(sessionResult.launched, true);
+  assert.equal(sessionLaunches[0].root, uri);
+  assert.equal(sessionLaunches[0].options.branch, 'draft');
+  assert.deepEqual(sessionLaunches[0].options.source, chatSource);
+  assert.equal(calls.length, 0, 'Source host must not own any PR browser or confirmation window');
+  launchInSeparateWorkspace = false;
 
   await callback({ rootUri: uri }, {
     branch: 'draft',
