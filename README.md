@@ -780,7 +780,15 @@ portion covers the named G4 pony roster (excluding explicitly unnamed placeholde
 and non-pony kirin), with major canon G4 non-pony creatures and the main G5 cast
 added separately alongside Tamers12345 continuity names, fanmade characters featured
 Fallout: Equestria characters and major side-story variants. Existing local
-and configured-remote branch names are excluded before the random choice.
+and configured-remote branch names are excluded before selection. The picker
+uses Node.js cryptographically secure `crypto.randomInt()` rather than
+`Math.random()`, with equal odds for every eligible name. It remembers drawn
+names in `.git/sweetiebot-branch-name-history.json` (the common Git directory
+for linked worktrees), avoiding reuse even after branch deletion until every
+currently available name has been drawn. It then starts another cycle and
+avoids repeating the most recent name when multiple choices remain. The local
+history survives VS Code restarts but is not committed or shared between
+separate clones; deleting the history file resets the rotation.
 
 Disable the button without changing the rest of the toolkit:
 

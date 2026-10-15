@@ -9,6 +9,7 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 
 const { isConflictState, offerConflictRecoveryOptions } = require('./lindsey_conflicts');
+const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -464,7 +465,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
   }
 }
 
-async function createBranch(repository, { defaultBranch, remote, names }, random = Math.random) {
+async function createBranch(repository, { defaultBranch, remote, names }, secureRandomInt) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
   if (repository.state.mergeChanges?.length) {
@@ -491,10 +492,16 @@ async function createBranch(repository, { defaultBranch, remote, names }, random
   ]));
   const available = [...new Set(names)].filter(name => !used.has(name));
   if (!available.length) throw new Error('All configured pony branch names are already in use.');
-  const branch = available[Math.floor(random() * available.length)];
+  const history = await loadBranchNameHistory(repository);
+  const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
   await repository.status();
   if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
   await repository.createBranch(branch, true, start);
+  try {
+    await saveBranchNameHistory(history.file, selected);
+  } catch (error) {
+    throw new Error(`Created branch "${branch}", but could not save its name history: ${error.message}`, { cause: error });
+  }
   return branch;
 }
 

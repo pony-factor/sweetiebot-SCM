@@ -140,6 +140,37 @@ async function run() {
     assert(calls.findIndex(call => call[0] === 'merge') < calls.findIndex(call => call[0] === 'refs'));
     assert(!calls.some(call => call[0] === 'push'));
   }
+  {
+    // Create, delete, and recreate branches without repeats across calls and reloads.
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { execFileSync } = require('node:child_process');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-branch-rotation-'));
+    try {
+      execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+      const { repository, calls } = fixture(true);
+      repository.rootUri = { fsPath: root };
+      const names = { ...options, names: ['alpha', 'beta', 'gamma'] };
+      assert.equal(await createBranch(repository, names, () => 0), 'alpha');
+      assert.equal(await createBranch(repository, names, () => 0), 'beta');
+      assert.equal(await createBranch(repository, names, () => 0), 'gamma');
+      assert.equal(await createBranch(repository, names, () => 0), 'alpha',
+        'The history must start a fresh cycle after all names were selected');
+      const historyFile = path.join(root, '.git', 'sweetiebot-branch-name-history.json');
+      assert.deepEqual(JSON.parse(fs.readFileSync(historyFile, 'utf8')).selected, ['alpha']);
+      assert.equal(fs.existsSync(path.join(root, 'sweetiebot-branch-name-history.json')), false,
+        'History belongs in Git metadata, not tracked project files');
+
+      repository.createBranch = async () => { throw new Error('creation failed'); };
+      await assert.rejects(createBranch(repository, names, () => 0), /creation failed/);
+      assert.deepEqual(JSON.parse(fs.readFileSync(historyFile, 'utf8')).selected, ['alpha'],
+        'A failed branch creation must not consume another name');
+      assert.equal(calls.filter(call => call[0] === 'create').length, 4);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
   for (const method of ['fetch', 'merge', 'push']) {
     const { repository, calls } = fixture(true);
     if (method === 'push') repository.merge = async () => { repository.state.HEAD.ahead = 1; };
