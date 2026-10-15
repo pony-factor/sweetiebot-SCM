@@ -40,7 +40,7 @@ async function main() {
     '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
     '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
     '-f', 'commit_title=🐛 Correct caching (#12)',
-    '-f', `commit_message=Squash reviewed changes from PR #12.\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+    '-f', `commit_message=- Change\n\n---------\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Codex Web <noreply@openai.com>`]);
   assert.deepEqual(happy.calls[5], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
     `${asyncPath}/${requestId}`]);
   assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);

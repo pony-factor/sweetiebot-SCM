@@ -10,6 +10,7 @@ function squashMessage(title,num,commits){
  if(typeof title!=='string'||!title.trim()||/[\r\n]/.test(title)||!Number.isSafeInteger(num)||num<1) throw Error('Invalid squash title');
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
+ const summaries=[];
  const add=p=>{if(p&&(!names.has(p.name.toLowerCase())||p.tier<names.get(p.name.toLowerCase()).tier))names.set(p.name.toLowerCase(),p)};
  for(const entry of commits){
    const original=who(entry?.commit?.author?.name,entry?.commit?.author?.email,true);
@@ -17,11 +18,16 @@ function squashMessage(title,num,commits){
    add(original);
    const c=entry?.commit?.committer;
    if(!/^github$/i.test(c?.name||''))add(who(c?.name,c?.email));
-   for(const m of String(entry?.commit?.message||'').matchAll(COAUTHOR))add(who(m[1],m[2]));
+   const message=String(entry?.commit?.message||'').replace(/\r\n?/g,'\n');
+   for(const m of message.matchAll(COAUTHOR))add(who(m[1],m[2]));
+   const [subject,...bodyLines]=message.split('\n');
+   if(!subject.trim())throw Error('Original PR commit subject unavailable');
+   const body=bodyLines.join('\n').replace(COAUTHOR,'').trim();
+   summaries.push('- '+subject.trim()+(body?'\n'+body.split('\n').map(line=>line?'  '+line:'').join('\n'):''));
  }
  add(who('Codex Web','noreply@openai.com'));
  const trailers=[...names.values()].sort((a,b)=>a.tier-b.tier).map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');
- return {title:title.trim().replace(/\s*\(#\d+\)\s*$/,'').trim()+' (#'+num+')',message:'Squash reviewed changes from PR #'+num+'.\n\n'+trailers.join('\n'),trailers};
+ return {title:title.trim().replace(/\s*\(#\d+\)\s*$/,'').trim()+' (#'+num+')',message:summaries.join('\n')+'\n\n---------\n\n'+trailers.join('\n'),trailers};
 }
 async function readCommits(api,repo,num){
  const all=[];
