@@ -568,6 +568,8 @@ class AiWrapperTests(unittest.TestCase):
 
             self.assertTrue(install.sync_ai_wrapper(destination=destination))
             self.assertEqual(destination.read_bytes(), (install.HERE / "ai_commit.py").read_bytes())
+            diagnostics = destination.with_name("sweetiebot_diagnostics.py")
+            self.assertEqual(diagnostics.read_bytes(), (install.HERE / "sweetiebot_diagnostics.py").read_bytes())
             self.assertTrue(destination.stat().st_mode & 0o111)
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
 
@@ -636,6 +638,7 @@ class AiWrapperTests(unittest.TestCase):
                 self.assertTrue(callable(worker.load_core().generate_message))
             install.sync_ai_wrapper(remove=True, destination=destination)
             self.assertFalse(helper.exists())
+            self.assertFalse(destination.with_name("sweetiebot_diagnostics.py").exists())
 
     def test_sync_ai_wrapper_uninstall_removes_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -645,6 +648,7 @@ class AiWrapperTests(unittest.TestCase):
             self.assertTrue(destination.exists())
             install.sync_ai_wrapper(remove=True, destination=destination)
             self.assertFalse(destination.exists())
+            self.assertFalse(destination.with_name("sweetiebot_diagnostics.py").exists())
 
 
     def test_sync_model_picker_installs_executable_copy(self):

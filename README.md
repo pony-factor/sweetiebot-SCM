@@ -30,6 +30,7 @@ Current features:
 - optionally use ChatGPT as the home page for blank Integrated Browser tabs
 - optionally make Source Control Graph **Open File** open the checked-out working-tree file instead of the selected commit snapshot
 - optionally generate a commit subject locally when the normal Commit button is used with a blank message
+- keep a rotating local diagnostics log of failed commit-title attempts, rejected model outputs, and fallbacks
 - preview spelling corrections for manually entered commit subjects before applying them
 - optionally show a clipboard button at the right end of the Codex composer, sending pasted text when idle or using native queued follow-ups while Codex is busy (Codex follow-up mode should be set to `queue`)
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
@@ -65,6 +66,8 @@ The installer modifies the installed VS Code workbench files. VS Code updates ca
 - `tests/`: Python and JavaScript tests.
 
 Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m unittest discover -s tests`.
+
+**Diagnostics:** Sweetiebot records commit-title generation problems in `~/Library/Logs/Sweetiebot/sweetiebot.log` (up to 1 MiB each, with three rotated backups). The same general log is available to future Python components. Events include timestamps, component, model, attempt, error category, HTTP status when applicable, and whether generation retried, stopped, or fell back. Prompts, staged changes, model output, chat context, and exception messages are never recorded. Set `SWEETIEBOT_LOG_FILE` to override the location. Logging is best-effort: permission or disk errors never block committing.
 
 ## Install
 

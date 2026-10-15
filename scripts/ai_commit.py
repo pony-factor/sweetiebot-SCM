@@ -14,6 +14,8 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
+from sweetiebot_diagnostics import log_event
+
 REAL_GIT = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
 GIT_GLOBAL_ARGS: list[str] = []
 OLLAMA_BASE = "http://127.0.0.1:11434"
@@ -993,7 +995,8 @@ def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> d
 def installed_local_model_names() -> set[str]:
     try:
         response = ollama_json("/api/tags", timeout=3)
-    except Exception:
+    except Exception as exc:
+        log_event("commit_title", "model_discovery_failed", error_type=type(exc).__name__)
         return set()
 
     names = set()
@@ -1293,6 +1296,11 @@ def generate_message(
     primary, low_memory = configured_models()
 
     if model is None:
+        log_event(
+            "commit_title", "model_unavailable",
+            model=low_memory if low_memory_mode else primary,
+            reason="model_not_installed", outcome="blocked" if require_model else "fallback",
+        )
         if require_model:
             raise RuntimeError("Install the configured Ollama commit model before generating a commit message.")
         if low_memory_mode:
@@ -1340,6 +1348,13 @@ def generate_message(
                     raise ValueError("Ollama returned a non-object response")
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
                 retryable = not isinstance(exc, urllib.error.HTTPError) or exc.code in {408, 429, 500, 502, 503, 504}
+                log_event(
+                    "commit_title", "request_failed", model=model,
+                    attempt=attempt + 1, attempts=MAX_GENERATION_ATTEMPTS,
+                    error_type=type(exc).__name__,
+                    http_status=exc.code if isinstance(exc, urllib.error.HTTPError) else None,
+                    outcome="retry" if retryable and attempt + 1 < MAX_GENERATION_ATTEMPTS else "stopped",
+                )
                 if not retryable or attempt + 1 == MAX_GENERATION_ATTEMPTS:
                     raise
                 delay = 2 ** attempt
@@ -1360,6 +1375,18 @@ def generate_message(
                     and not (text_changes and is_filename_only_title(title, files))
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
                 return title, description
+            rejection_reason = (
+                "truncated_response" if response.get("done_reason") == "length"
+                else "invalid_message" if not valid_generated_message(title, description, include_description)
+                else "filename_only" if text_changes and is_filename_only_title(title, files)
+                else "unsupported_claim"
+            )
+            log_event(
+                "commit_title", "output_rejected", model=model,
+                attempt=attempt + 1, attempts=MAX_GENERATION_ATTEMPTS,
+                reason=rejection_reason,
+                outcome="retry" if attempt + 1 < MAX_GENERATION_ATTEMPTS else "stopped",
+            )
             if attempt + 1 < MAX_GENERATION_ATTEMPTS:
                 payload["prompt"] += "\nThe previous output was invalid. Summarize the changed content, not just a filename or file count. Describe the specific information or behavior added, removed, or corrected. Use an imperative subject and complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
                 if text_changes and is_filename_only_title(title, files):
@@ -1380,6 +1407,7 @@ def generate_message(
                     )
         if require_model:
             raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {MAX_GENERATION_ATTEMPTS} attempts. Try again or enter an explicit message.")
+        log_event("commit_title", "fallback_used", model=model, reason="invalid_message", outcome="fallback")
         print("scm-toolkit: invalid model output; using factual staged-change summary", file=sys.stderr)
         return fallback_message(files, include_description, file_context)
     except RuntimeError:
@@ -1396,11 +1424,17 @@ def generate_message(
             else:
                 detail = "Ollama returned an invalid response. Try again."
             raise RuntimeError(f"Local Ollama could not generate a commit message. {detail}") from exc
+        log_event("commit_title", "fallback_used", model=model, reason="request_failed", outcome="fallback")
         print(
             f"scm-toolkit: local model unavailable ({exc}); using fallback title",
             file=sys.stderr,
         )
     except Exception as exc:
+        log_event(
+            "commit_title", "generation_failed", model=model,
+            error_type=type(exc).__name__,
+            outcome="blocked" if require_model else "fallback",
+        )
         if require_model:
             raise RuntimeError("Local Ollama could not generate a commit message.") from exc
         print(

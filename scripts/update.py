@@ -66,10 +66,15 @@ def installed_sources_match(candidate, extensions_dir):
         if target.is_symlink() or not target.is_file() or target.read_bytes() != source.read_bytes():
             return False
     wrapper = Path(os.environ.get("SCM_TOOLKIT_AI_WRAPPER_PATH", "~/.local/bin/scm-toolkit-git")).expanduser()
-    for name, target in (("ai_commit.py", wrapper), ("post_commit_spellcheck.py", wrapper.with_name(wrapper.name + "-spellcheck.py"))):
+    for name, target in (
+        ("ai_commit.py", wrapper),
+        ("sweetiebot_diagnostics.py", wrapper.with_name("sweetiebot_diagnostics.py")),
+        ("post_commit_spellcheck.py", wrapper.with_name(wrapper.name + "-spellcheck.py")),
+    ):
         source = candidate / "scripts" / name
         if source.is_file() and (target.is_symlink() or not target.is_file()
-                or not os.access(target, os.X_OK) or target.read_bytes() != source.read_bytes()):
+                or (name != "sweetiebot_diagnostics.py" and not os.access(target, os.X_OK))
+                or target.read_bytes() != source.read_bytes()):
             return False
     legacy = Path.home() / ".local/bin/git-auto-title"
     if (candidate / "scripts/ai_commit.py").is_file() and legacy != wrapper and (legacy.exists() or legacy.is_symlink()):
