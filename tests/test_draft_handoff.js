@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const {createDraftHandoff} = require('../efs/draft_handoff');
 (async () => {
-  let writes = 0, closes = 0;
+  let writes = 0, closes = 0, merges = 0;
   const handoff = await createDraftHandoff(async uri => {
     writes++;
     const values = new URLSearchParams(uri.query);
@@ -12,7 +12,7 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
   });
   try {
     const url = handoff.origin + '/kefania-draft/11111111-2222-4333-8444-555555555555';
-    handoff.register('11111111-2222-4333-8444-555555555555', {pony:{slug:'bushel'},onClose:async()=>{closes++;}});
+    handoff.register('11111111-2222-4333-8444-555555555555', {pony:{slug:'bushel'},onClose:async()=>{closes++;},onMerge:async()=>{merges++;return {merged:true,sha:'a'.repeat(40)}}});
     const page = await fetch(url);
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Publish pull request/);
@@ -31,6 +31,7 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal(rejected.status,403);
     assert.equal(writes,0);
     assert.equal((await post('/close',{})).status,409,'Cannot close before publication');
+    assert.equal((await post('/merge',{})).status,409,'Cannot merge before publication');
     const result = await fetch(url,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body});
     assert.equal(result.status,200);
     assert.equal((await result.json()).number,2);
@@ -40,6 +41,13 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     state = await (await fetch(url+'/state')).json();
     assert.equal(state.profile,'Bushel profile with a source.');
     assert.equal(state.result.number,2);
+    assert.equal((await fetch(url+'/merge')).status,405,'Merge requires an authenticated local POST');
+    const merged=await post('/merge',{});
+    assert.equal(merged.status,200);
+    assert.equal((await merged.json()).merged,true);
+    assert.equal((await post('/merge',{})).status,200,'Repeated requests cannot merge twice');
+    assert.equal(merges,1);
+    assert.equal((await (await fetch(url+'/state')).json()).mergeResult.merged,true);
     assert.equal((await post('/close',{})).status,200);
     assert.equal(closes,1,'Closing the confirmation never publishes again');
     const automaticId='22222222-2222-4333-8444-555555555555';

@@ -7,6 +7,7 @@ const { runKefania, runKefaniaPonyCache } = require('./kefania_runner');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { createDraftHandoff } = require('./draft_handoff');
+const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
@@ -194,6 +195,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
   const run = dependencies.runKefania || runKefania;
+  const merge = dependencies.mergePullRequest || squashMergePullRequest;
   let handoff;
   const pendingDrafts = new Map();
   context.subscriptions.push({ dispose() { pendingDrafts.clear(); } });
@@ -389,7 +391,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, profile: cachedProfile, onClose: async () => {
+    localHandoff.register(draftId, { pony, profile: cachedProfile,
+      onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
+      onClose: async () => {
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
       await closeConfirmation();
     }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {
