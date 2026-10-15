@@ -60,6 +60,7 @@ for (const directory of roots) {
 }
 
 const refresh = fs.readFileSync(path.join(root, 'efs/codex_refresh.js'), 'utf8');
-assert(refresh.includes(`'${message}'`), 'Repair reload notification text changed unexpectedly');
+assert(refresh.includes("output.appendLine('Reloading this window to apply Sweetiebot updates.')"),
+  'Automatic repair should retain its reload diagnostic message');
 assert(!refresh.includes('🤖'), 'Robot belongs in the notification glyph, not its message');
 console.log('Sweetie Bot reload notification robot icon checks passed.');

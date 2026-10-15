@@ -145,7 +145,7 @@ async function main() {
   });
   const blocked = mockMerge({ submissionError: wrongError });
   await assert.rejects(squashMergePullRequest(url, blocked.execute, undefined, quickPoll),
-    /different asynchronous merge request/);
+    /unverified asynchronous merge request/);
   assert.equal(blocked.calls.filter(args => args[0] === 'api').length, 3);
 
   const originalFailure = Object.assign(new Error('Forbidden'), { stderr: 'gh: Forbidden (HTTP 403)' });
