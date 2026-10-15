@@ -17,6 +17,9 @@ const helper = source.slice(0, source.indexOf('function scmToolkitHideOutgoingSy
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     async function setup(patched) {
+      // setContent replaces markup but not the page's global lexical declarations.
+      // Navigate first so each scenario can safely inject a fresh helper script.
+      await page.goto('about:blank');
       await page.setContent('<div id="actions" style="margin:40px"></div>');
       await page.addScriptTag({ content: helper });
       await page.evaluate(patched => {
