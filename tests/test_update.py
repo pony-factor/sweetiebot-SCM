@@ -23,6 +23,16 @@ def archive(entries):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_github_reaction_asset_survives_update_and_bundled_repair(self):
+        asset = Path('assets/github/pr_reaction_hover.js')
+        contents = (Path(update.__file__).resolve().parent.parent / asset).read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            update.extract_sources(archive({asset.as_posix(): contents}), root)
+            self.assertEqual((root / asset).read_text(), contents)
+            bundled = update.source_files(root)
+            self.assertEqual(bundled[Path('codex-customizations') / asset], root / asset)
+
     def test_extract_only_distribution_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

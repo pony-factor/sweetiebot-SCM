@@ -18,6 +18,7 @@ FORMATS = {
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
     "assets/browser": {".js"},
+    "assets/github": {".js"},
 }
 
 
