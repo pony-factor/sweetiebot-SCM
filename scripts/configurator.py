@@ -117,6 +117,7 @@ SETTINGS = (
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Ollama", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
+    Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. Off by default.", "Ollama"),
     Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
