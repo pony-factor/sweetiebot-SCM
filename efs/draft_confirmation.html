@@ -10,19 +10,20 @@
 .image-trigger:hover{filter:none;background:#33283d}
 .image-trigger:focus-visible{outline:2px solid #f5d4ff;outline-offset:-3px}
 .image-trigger img{pointer-events:none}
-.lightbox{position:fixed;inset:0;margin:auto;width:min(1100px,95vw);max-width:95vw;max-height:95vh;padding:0;border:1px solid #6b5278;border-radius:16px;background:#1c1725;color:var(--text);box-shadow:0 25px 80px #000a}
+.lightbox{position:fixed;inset:0;margin:auto;width:95vw;height:95vh;max-width:95vw;max-height:95vh;padding:0;border:1px solid #6b5278;border-radius:16px;background:#1c1725;color:var(--text);box-shadow:0 25px 80px #000a}
+.lightbox[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
 .lightbox::backdrop{background:#08060edb}
 .lightbox-toolbar,.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 18px}
 .lightbox-toolbar{border-bottom:1px solid var(--line)}
 .lightbox-footer{border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
 .lightbox-toolbar button,.lightbox-nav{padding:7px 12px;border:1px solid #6b5278;background:#35263f;color:var(--text);box-shadow:none}
 .lightbox-toolbar button:hover,.lightbox-nav:hover{filter:none;background:#50385d}
-.lightbox-stage{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:220px}
-.lightbox-stage img{width:auto;height:auto;max-width:calc(100% - 100px);max-height:68vh;object-fit:contain;margin:auto}
+.lightbox-stage{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:0;min-width:0}
+.lightbox-stage img{flex:1;min-width:0;width:0;height:100%;object-fit:contain;margin:auto}
 .lightbox-stage .image-error{flex:1}
 .lightbox-nav{flex:0 0 auto;font-size:22px}
 .lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:3px}
-@media(max-width:600px){.lightbox-stage{gap:6px;padding:8px}.lightbox-stage img{max-width:calc(100% - 80px)}.lightbox-nav{padding:5px 8px}}
+@media(max-width:600px){.lightbox-stage{gap:6px;padding:8px}.lightbox-nav{padding:5px 8px}}
 </style>
 <main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft and supporting character research.</p></div></header>
 <div class="layout">
