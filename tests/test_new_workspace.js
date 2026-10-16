@@ -50,6 +50,8 @@ function editor(paths) {
     assert.deepEqual(first.calls[0][2], { forceNewWindow: true });
     const clone = first.calls[0][1].fsPath;
     assert.equal(clone, initial.target);
+    assert.equal(path.basename(clone), 'original', 'No ordinal prefix on the checkout');
+    assert.match(path.basename(initial.directory), /^original-[a-zA-Z0-9_-]+$/, 'Parent uses the repository name');
     assert.equal(git('-C', clone, 'branch', '--show-current'), 'main');
     assert.equal(await fs.readFile(path.join(clone, 'tracked.txt'), 'utf8'), 'main snapshot\n');
     assert.equal(git('-C', original, 'branch', '--show-current'), 'topic');
@@ -76,8 +78,26 @@ function editor(paths) {
     assert.ok(combined.target.endsWith('.code-workspace'));
     const data = JSON.parse(await fs.readFile(combined.target, 'utf8'));
     assert.equal(data.folders.length, 2);
+    assert.match(path.basename(combined.directory), /^original-group-[a-zA-Z0-9_-]+$/);
+    assert.deepEqual(data.folders.map(folder => path.basename(folder.path)), ['original', 'other']);
     assert.equal(git('-C', data.folders[0].path, 'branch', '--show-current'), 'main');
     assert.equal(git('-C', data.folders[1].path, 'branch', '--show-current'), 'main');
+
+    // Two unrelated repositories with the same basename should remain
+    // separate, readable checkouts without numeric prefixes or overwrites.
+    const duplicateOne = path.join(tmp, 'first', 'shared');
+    const duplicateTwo = path.join(tmp, 'second', 'shared');
+    await makeRepo(duplicateOne);
+    await makeRepo(duplicateTwo);
+    const sameName = await openIndependentWorkspace(editor([duplicateOne, duplicateTwo]), {
+      baseDirectory: copies
+    });
+    const namedFolders = JSON.parse(await fs.readFile(sameName.target, 'utf8')).folders;
+    assert.deepEqual(namedFolders.map(folder => path.basename(folder.path)), ['shared', 'shared-2']);
+    assert.equal(git('-C', namedFolders[0].path, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', namedFolders[1].path, 'branch', '--show-current'), 'main');
+    assert.notEqual(namedFolders[0].path, namedFolders[1].path);
+    assert.notEqual(initial.directory, another.directory, 'Repeated launches keep distinct workspaces');
 
     const noMain = path.join(tmp, 'no-main');
     await makeRepo(noMain, 'development');

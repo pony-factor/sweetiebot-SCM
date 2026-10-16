@@ -81,20 +81,35 @@ async function openIndependentWorkspace(vscode, {
   // Reject unsupported folders before creating anything. Reuse one clone
   // for nested workspace folders that belong to the same Git repository.
   const sources = [];
-  const byRoot = new Map();
+  const roots = new Set();
   for (const folder of folders) {
     const item = await describeRepository(folder, git);
     sources.push(item);
-    if (!byRoot.has(item.root)) byRoot.set(item.root, byRoot.size);
+    roots.add(item.root);
   }
 
+  const labelFor = root =>
+    path.basename(root).replace(/[^a-zA-Z0-9._-]/g, '-') || 'repo';
+
+  // Name the persistent workspace for its source repository, rather than
+  // creating an opaque workspace-... folder with 1-repo / 2-repo children.
+  // mkdtemp still guarantees distinct directories across repeated launches.
+  const firstLabel = labelFor(roots.values().next().value);
+  const groupSuffix = roots.size > 1 ? '-group' : '';
   await io.mkdir(baseDirectory, { recursive: true });
-  const directory = await io.mkdtemp(path.join(baseDirectory, 'workspace-'));
+  const directory = await io.mkdtemp(path.join(baseDirectory, firstLabel + groupSuffix + '-'));
   try {
     const destinations = new Map();
-    for (const [root, index] of byRoot) {
-      const label = path.basename(root).replace(/[^a-zA-Z0-9._-]/g, '-') || 'repo';
-      const destination = path.join(directory, String(index + 1) + '-' + label);
+    const usedNames = new Set();
+    for (const root of roots) {
+      const label = labelFor(root);
+      let name = label;
+      let suffix = 2;
+      // Different repositories can share a basename. Suffix only the
+      // duplicates, so the normal names never start with an ordinal number.
+      while (usedNames.has(name)) name = label + '-' + suffix++;
+      usedNames.add(name);
+      const destination = path.join(directory, name);
       // Separate clone rather than another window on the same Git worktree.
       // Do not use --single-branch; later branch switching must work.
       await git(['clone', '--local', '--no-hardlinks', '--branch', 'main', '--', root, destination]);
