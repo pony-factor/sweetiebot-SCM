@@ -74,7 +74,13 @@ def transform(css, settings, remove=False):
         return css
     background, foreground, label, drop = [validate_color(settings.get(key, '')) for key in COLOR_SETTINGS]
     scope = ':root[data-codex-window-type=extension]'
-    rules = []
+    # The unread speech-bubble badge is an SVG circle using the fixed info
+    # palette. Scope this to that badge so other informational icons keep theirs.
+    rules = [
+        f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
+        '{ fill: var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
+        'var(--color-text-info))) !important; }'
+    ]
     if settings.get('codexHideAccessLabel', False):
         # Keep the current mode in the accessibility tree via aria-describedby.
         # The icon is a sibling of the value, so it stays visible and clickable.

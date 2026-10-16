@@ -681,8 +681,13 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         raise ValueError("Incomplete Codex reset-time hiding patch; refusing to overwrite it.")
     if CODEX_HIDE_RESET_START in js:
         before, rest = js.split(CODEX_HIDE_RESET_START, 1)
-        _, after = rest.split(CODEX_HIDE_RESET_END, 1)
+        payload, after = rest.split(CODEX_HIDE_RESET_END, 1)
         js = before + after
+        saved = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
+        for original, replacement in reversed(json.loads(saved[1]) if saved else []):
+            if js.count(replacement) != 1:
+                raise ValueError('Codex reset-time patch changed; refusing to remove unrelated edits.')
+            js = js.replace(replacement, original, 1)
     if CODEX_DICTATION_START in js:
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
