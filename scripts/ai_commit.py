@@ -1221,6 +1221,8 @@ def prompt_for_diff(
 Output rules:
 - {commit_title_preference()}
 - subject maximum 72 characters; begin the wording with an imperative verb
+- start the subject with one change-appropriate emoji, one space, then the imperative wording; for example: 🐛 Fix footnote formatting
+- use the emoji as the change-type marker; never add conventional-commit prefixes such as fix:, feat:, refactor:, or chore:, including scoped variants
 - {shape_rules}
 - describe the actual change directly and decisively, with no hedging
 - when text content changes, summarize what the changed text adds, removes, or corrects; a filename alone is not a summary

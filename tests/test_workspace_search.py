@@ -14,6 +14,23 @@ DEFAULTS = dict(toolkit_settings.DEFAULT_SETTINGS)
 
 
 class WorkspaceSearchInstallerTests(unittest.TestCase):
+    def test_bundled_git_wrapper_can_switch_branches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = workspace_search.source_files()
+            for name in ('ai_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py'):
+                relative = Path(name)
+                (root / name).write_bytes(files[relative].read_bytes())
+            repo = root / 'repo'
+            repo.mkdir()
+            subprocess.run(['/usr/bin/git', 'init', '--quiet', str(repo)], check=True)
+            result = subprocess.run(
+                [sys.executable, str(root / 'ai_commit.py'), 'checkout', '-b', 'branch-switch'],
+                cwd=repo, text=True, capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn('Traceback', result.stderr)
+
     def test_pony_information_has_no_sidebar_view(self):
         for activity_bar in (False, True):
             package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchActivityBar=activity_bar))

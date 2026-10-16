@@ -69,6 +69,7 @@ def installed_sources_match(candidate, extensions_dir):
     wrapper = Path(os.environ.get("SCM_TOOLKIT_AI_WRAPPER_PATH", "~/.local/bin/scm-toolkit-git")).expanduser()
     for name, target in (
         ("ai_commit.py", wrapper),
+        ("sweetiebot_async_commit.py", wrapper.with_name("sweetiebot_async_commit.py")),
         ("sweetiebot_diagnostics.py", wrapper.with_name("sweetiebot_diagnostics.py")),
         ("post_commit_spellcheck.py", wrapper.with_name(wrapper.name + "-spellcheck.py")),
     ):
