@@ -1310,6 +1310,15 @@ def sanitize_generated_message(
         return "", ""
 
     raw_title = plain_commit_text(lines[first])
+    # Local models sometimes prepend a conventional-commit label even when
+    # asked for an imperative subject. Preserve the wording and leading emoji;
+    # the normal validator still checks the remaining subject.
+    raw_title = re.sub(
+        r"^((?:(?:" + EMOJI_PATTERN + r")\s*)*)"
+        r"(?:feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)"
+        r"(?:\([^()\n]+\))?!?:\s*",
+        r"\1", raw_title, flags=re.IGNORECASE,
+    )
     if len(raw_title) > 72:
         return "", ""
     title = sanitize_title(raw_title)

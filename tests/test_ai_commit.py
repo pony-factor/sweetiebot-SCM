@@ -871,6 +871,26 @@ class TitleTests(unittest.TestCase):
             "Explain what changed. Explain why it matters.",
         )
 
+    def test_conventional_label_preserves_imperative_wording(self):
+        for subject, expected in [
+            ("Fix: Improve footnote handling in markdown-copy.js", "Improve footnote handling in markdown-copy.js"),
+            ("🐛 fix(selection): Preserve italic footnotes", "🐛 Preserve italic footnotes"),
+        ]:
+            with self.subTest(subject=subject):
+                title, body = ai_commit.sanitize_generated_message(json.dumps({
+                    "subject": subject, "description": "",
+                }))
+                self.assertEqual(title, expected)
+                self.assertTrue(ai_commit.valid_generated_message(
+                    title if title.startswith("🐛") else "🔧 " + title, body, False,
+                ))
+
+    def test_conventional_label_does_not_bypass_wording_validation(self):
+        title, body = ai_commit.sanitize_generated_message(
+            '{"subject":"fix: footnotes","description":""}'
+        )
+        self.assertFalse(ai_commit.valid_generated_message("🔧 " + title, body, False))
+
     def test_sanitize_title_limits_output(self):
         title = ai_commit.sanitize_title(
             "\""
