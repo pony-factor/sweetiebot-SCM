@@ -266,6 +266,11 @@ class PostCommitRoutingTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_emoji_priority_enforcement_defaults_off(self):
+        with patch.object(ai_commit, "git_config_bool", return_value=False) as config:
+            self.assertFalse(ai_commit.emoji_priority_enabled())
+            config.assert_called_once_with("scm-toolkit.ai-emoji-priority-rules", False)
+
     @patch.object(ai_commit, "git_config_bool", return_value=False)
     def test_ai_commit_can_be_disabled_globally(self, _config):
         self.assertFalse(ai_commit.feature_enabled())
@@ -460,6 +465,9 @@ class ManualSpellcheckTests(unittest.TestCase):
 
 class TitleTests(unittest.TestCase):
     def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
         sleeper = patch.object(ai_commit.time, "sleep")
         self.sleep = sleeper.start()
         self.addCleanup(sleeper.stop)
@@ -866,6 +874,11 @@ class TitleTests(unittest.TestCase):
 
 
 class CommitDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
+
     def test_missing_model_is_logged_without_diff(self):
         with ExitStack() as stack:
             stack.enter_context(patch.object(ai_commit, "installed_local_model_names", return_value=set()))
@@ -920,6 +933,145 @@ class CommitDiagnosticsTests(unittest.TestCase):
             attempts = [call.kwargs for call in events.call_args_list if call.args[1] == "request_failed"]
             self.assertEqual([event["outcome"] for event in attempts], ["retry", "retry", "stopped"])
             self.assertEqual([event["http_status"] for event in attempts], [503, 503, 503])
+
+
+class EmojiPriorityTests(unittest.TestCase):
+    instructions = """When selecting the emoji, follow this priority list:
+- If fixing a bug in code, use 🐛 🐞. Pick one at random. On a branch use the same one.
+- For technical code:
+  - If connecting functions, use 🔩
+  - If tuning parameters, use 🔧
+- If none of these scenarios fit with high confidence, choose 📦 ➕
+
+Describe the staged change.
+"""
+
+    def setUp(self):
+        enabled = patch.object(ai_commit, "emoji_priority_enabled", return_value=True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
+        self.rules = ai_commit.emoji_priority_rules(self.instructions)
+
+    def test_disabled_enforcement_preserves_normal_generation_with_priority_instructions(self):
+        with patch.object(ai_commit, "emoji_priority_enabled", return_value=False), \
+                patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
+                patch.object(ai_commit, "emoji_priority_rules") as parse, \
+                patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
+                patch.object(ai_commit, "select_priority_emoji") as classify:
+            self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
+                             ("🖼️ Update icon.png", ""))
+            parse.assert_not_called()
+            classify.assert_not_called()
+
+    def test_enabled_without_priority_list_preserves_normal_generation(self):
+        with patch.object(ai_commit, "commit_custom_instructions", return_value="Use concise titles."), \
+                patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
+                patch.object(ai_commit, "select_priority_emoji") as classify:
+            self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
+                             ("🖼️ Update icon.png", ""))
+            classify.assert_not_called()
+
+    def test_nested_conditions_and_fallback_remain_ordered(self):
+        self.assertEqual([rule[1] for rule in self.rules], [["🐛", "🐞"], ["🔩"], ["🔧"], ["📦", "➕"]])
+        self.assertIn("For technical code:", self.rules[1][0])
+        self.assertEqual([rule[2] for rule in self.rules], [False, False, False, True])
+
+    def test_explicit_ban_overrides_fallback_choices(self):
+        rules = ai_commit.emoji_priority_rules("Never use ➕ as a commit emoji.\n\n" + self.instructions)
+        self.assertEqual(rules[-1][1], ["📦"])
+
+    def test_priority_rules_prevent_unverified_missing_model_fallback(self):
+        with patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
+                patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
+                patch.object(ai_commit, "fallback_message") as fallback:
+            with self.assertRaisesRegex(RuntimeError, "Install.*model"):
+                ai_commit.generate_message("", "Binary files differ", ["icon.png"])
+            fallback.assert_not_called()
+
+    def test_first_match_stops_evaluation_before_later_rules(self):
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}) as generate, \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            self.assertIn(ai_commit.select_priority_emoji("local", self.rules, "", "", "", ""), ["🐛", "🐞"])
+            self.assertEqual(generate.call_count, 1)
+            self.assertNotIn("Pick one at random", generate.call_args.args[1]["prompt"])
+
+    def test_contextual_choices_follow_the_matching_rule_instead_of_randomizing(self):
+        rules = ai_commit.emoji_priority_rules("Follow this priority list:\n- When writing about freedom, use 🕊️ for policy and 🦅 for code")
+        with patch.object(ai_commit, "ollama_json", side_effect=[
+                {"response": '{"result":"MATCH"}'}, {"response": '{"emoji":"🦅"}'}]), \
+                patch.object(ai_commit, "current_branch", return_value="main"):
+            self.assertEqual(ai_commit.select_priority_emoji("local", rules, "", "+freedom()", "", ""), "🦅")
+
+    def test_classifier_keeps_file_operations_without_raw_codes_or_counts(self):
+        rules = ai_commit.emoji_priority_rules("Follow this priority list:\n- When deleting entire files, use 🗑️")
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}) as generate, \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            ai_commit.select_priority_emoji("local", rules, "1 file changed", "+handler()",
+                                            "Change totals: 1 modified\nM\tapp.py", "")
+            prompt = generate.call_args.args[1]["prompt"]
+            self.assertIn("Modified existing file: app.py", prompt)
+            self.assertNotIn("Change totals", prompt)
+            self.assertNotIn("M\tapp.py", prompt)
+
+    def select(self, matches):
+        responses = [{"response": json.dumps({"result": "MATCH" if matches[str(index)] else "NO_MATCH"})}
+                     for index in range(3)]
+        with patch.object(ai_commit, "ollama_json", side_effect=responses), \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            return ai_commit.select_priority_emoji("local", self.rules, "", "+wire handler", "", "")
+
+    def test_first_matching_rule_wins_even_when_later_rules_match(self):
+        self.assertIn(self.select({"0": True, "1": True, "2": True}), ["🐛", "🐞"])
+        self.assertEqual(self.select({"0": False, "1": True, "2": True}), "🔩")
+
+    def test_fallback_only_when_every_condition_is_false(self):
+        self.assertIn(self.select({"0": False, "1": False, "2": False}), ["📦", "➕"])
+
+    def test_missing_string_and_truncated_classifications_block_instead_of_falling_back(self):
+        for response in [{"response": '{}'},
+                         {"response": '{"result":false}'},
+                         {"response": '{"result":"NO_MATCH"}', "done_reason": "length"}]:
+            with self.subTest(response=response), patch.object(ai_commit, "ollama_json", return_value=response) as generate:
+                with self.assertRaisesRegex(RuntimeError, "verify.*priority"):
+                    ai_commit.select_priority_emoji("local", self.rules, "", "", "", "")
+                self.assertEqual(generate.call_count, 3)
+
+    def test_branch_bug_emoji_reused_from_branch_only(self):
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
+                patch.object(ai_commit, "current_branch", return_value="repair"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                patch.object(ai_commit, "git_output", return_value="🐞 Fix another handler\n") as history:
+            self.assertEqual(ai_commit.select_priority_emoji("local", self.rules, "", "", "", ""), "🐞")
+            history.assert_called_once_with("log", "main..HEAD", "--format=%s")
+
+    def test_generation_replaces_plus_with_first_matching_rule(self):
+        with ExitStack() as stack:
+            for name, value in [("commit_custom_instructions", self.instructions),
+                                ("installed_local_model_names", {"local"}),
+                                ("selected_model", ("local", False)),
+                                ("configured_models", ("local", "small")),
+                                ("staged_file_context", "Change totals: 1 modified"),
+                                ("recent_subjects", "➕ Add a handler")]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
+                {"response": '{"result":"NO_MATCH"}'},
+                {"response": '{"result":"MATCH"}'},
+                {"response": '{"subject":"➕ Add handler wiring","description":""}'},
+            ]))
+            self.assertEqual(ai_commit.generate_message("", "+connect(handler)", ["app.py"]),
+                             ("🔩 Add handler wiring", ""))
+            classification_prompt = generate.call_args_list[0].args[1]["prompt"]
+            self.assertNotIn("➕", classification_prompt)
+            self.assertNotIn("Recent repository subjects", classification_prompt)
 
 
 class InstructionFileTests(unittest.TestCase):
@@ -992,6 +1144,11 @@ class InstructionFileTests(unittest.TestCase):
 
 
 class ArtifactContextTests(unittest.TestCase):
+    def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
+
     def test_artifact_fallbacks(self):
         self.assertEqual(ai_commit.fallback_title(["assets/DASH.PNG"]), "🖼️ Update DASH.PNG")
         self.assertEqual(ai_commit.fallback_title(["docs/report.pdf"]), "🖋️ Update report.pdf")

@@ -251,6 +251,17 @@ class SubmissionTests(unittest.TestCase):
         values["spellcheckManualCommit"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
+    def test_custom_emoji_priority_enforcement_defaults_off_and_can_be_enabled(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["aiEmojiPriorityRules"])
+        values["aiEmojiPriorityRules"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["aiEmojiPriorityRules"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn("Enforce custom emoji priorities", page)
+        self.assertNotIn('name="aiEmojiPriorityRules" value="true" checked', page)
+
     def test_staged_whitespace_toggle_defaults_on_and_can_be_disabled(self):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "normalizeStagedWhitespace")
         self.assertEqual(setting.section, "Source control")
