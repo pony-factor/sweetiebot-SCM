@@ -74,7 +74,7 @@ DEFAULT_SETTINGS = {
     "spellcheckManualCommit": False,
     "postCommitSpellcheck": False,
     "aiDefaultBranchDescription": True,
-    "aiEmojiPriorityRules": False,
+    "aiEmojiPriorityRules": True,
     "aiCommitModel": "qwen2.5-coder:7b",
     "spellcheckModel": "qwen2.5:3b",
     "spellcheckInstructions": "Recognize financial market terminology and proper names, including Instinet. Correct an obvious misspelling only when context identifies the term; do not substitute a different entity.",
