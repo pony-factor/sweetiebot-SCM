@@ -672,14 +672,6 @@
         "princess-skystar",
         "yigrid"
       ],
-      "sources": {
-        "aloe-vera": "https://mlp.fandom.com/wiki/Credits/Season_nine#Deep_Tissue_Memories",
-        "tempest-shadow": "https://mlp.fandom.com/wiki/Tempest_Shadow",
-        "the-headless-horse": "https://mlp.fandom.com/wiki/The_Headless_Horse",
-        "the-olden-pony": "https://mlp.fandom.com/wiki/List_of_ponies/Elders",
-        "fizzlepop-berrytwist": "https://mlp.fandom.com/wiki/Tempest_Shadow",
-        "forward-thinking-friendship-student": "https://mlp-gameloft.fandom.com/wiki/Prank_to_the_Future"
-      },
       "aliases": {
         "athletic-dancerflashdancer": "flashdancer",
         "builder-ponyambrosia": "ambrosia",
@@ -1222,12 +1214,6 @@
         "grampa-gruff",
         "gustave-le-grand"
       ],
-      "sources": {
-        "clean-sweep": "https://mlp.fandom.com/wiki/List_of_ponies/Earth_ponies/Stallions",
-        "mayor-baltimare": "https://mlp.fandom.com/wiki/List_of_ponies/Earth_ponies/Stallions",
-        "dr-whooves": "https://mlp.fandom.com/wiki/Dr._Hooves",
-        "coiffed-waiter-pony": "https://mlp-gameloft.fandom.com/wiki/Coiffed_Waiter_Pony"
-      },
       "aliases": {
         "announcer-ponymadden": "madden",
         "astro-ponyneptunio": "neptunio",
@@ -1381,9 +1367,6 @@
         "winnie-waltz",
         "zipporwhill"
       ],
-      "sources": {
-        "cloudy-daze": "https://mlp.fandom.com/wiki/List_of_ponies/Foals"
-      },
       "images": {
         "honey-drop": [
           {
@@ -1460,9 +1443,6 @@
         "water-spout",
         "frosty-quartz"
       ],
-      "sources": {
-        "button-mash": "https://mlp.fandom.com/wiki/Button_Mash"
-      },
       "aliases": {
         "snide-bullyscore": "score"
       }
@@ -1529,14 +1509,7 @@
         "yakatar",
         "leroy",
         "greta"
-      ],
-      "sources": {
-        "queen-novo": "https://mlp.fandom.com/wiki/Queen_Novo",
-        "capper-dapperpaws": "https://mlp.fandom.com/wiki/Capper",
-        "queen-chrysalis": "https://mlp.fandom.com/wiki/Queen_Chrysalis",
-        "lord-tirek": "https://mlp.fandom.com/wiki/Lord_Tirek",
-        "scorpan": "https://mlp.fandom.com/wiki/Scorpan"
-      }
+      ]
     },
     {
       "id": "g4-pets",
@@ -1570,24 +1543,7 @@
         "firebrand",
         "denise",
         "smoky-jr"
-      ],
-      "sources": {
-        "angel": "https://mlp.fandom.com/wiki/Category:Pets",
-        "constance": "https://mlp.fandom.com/wiki/Constance",
-        "boulder": "https://mlp.fandom.com/wiki/Boulder",
-        "albus": "https://mlp.fandom.com/wiki/List_of_non-pony_characters",
-        "quincy": "https://mlp.fandom.com/wiki/Relationships",
-        "ray": "https://mlp.fandom.com/wiki/Relationships",
-        "hummingway": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "elizabeak": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "henrita": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "judy": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "edgar": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "castor": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "pollux": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "firebrand": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians",
-        "denise": "https://mlp.fandom.com/wiki/List_of_non-pony_characters/Avians"
-      }
+      ]
     },
     {
       "id": "g4-caricatures",
@@ -1613,11 +1569,7 @@
         "plainity",
         "ahuizotl",
         "smooze"
-      ],
-      "sources": {
-        "grogar": "https://mlp.fandom.com/wiki/Grogar",
-        "plainity": "https://mlp.fandom.com/wiki/Friendship_University"
-      }
+      ]
     },
     {
       "id": "idw-comics",
@@ -1919,9 +1871,6 @@
         "king-aspen",
         "princess-amore"
       ],
-      "sources": {
-        "celena": "https://mlp.fandom.com/wiki/Sailor_Moon_ponies"
-      },
       "aliases": {
         "magical-ponycelena": "celena",
         "the-great-and-powerfultwily": "twily"
@@ -1995,26 +1944,7 @@
         "vignette-valencia",
         "kiwi-lollipop",
         "supernova-zap"
-      ],
-      "sources": {
-        "principal-cinch": "https://mlp.fandom.com/wiki/My_Little_Pony_Equestria_Girls_(franchise)",
-        "adagio-dazzle": "https://mlp.fandom.com/wiki/Adagio_Dazzle",
-        "aria-blaze": "https://mlp.fandom.com/wiki/Aria_Blaze",
-        "sonata-dusk": "https://mlp.fandom.com/wiki/Sonata_Dusk",
-        "sour-sweet": "https://mlp.fandom.com/wiki/Shadowbolts",
-        "sunny-flare": "https://mlp.fandom.com/wiki/Shadowbolts",
-        "indigo-zap": "https://mlp.fandom.com/wiki/Shadowbolts",
-        "sugarcoat": "https://mlp.fandom.com/wiki/Shadowbolts",
-        "lemon-zest": "https://mlp.fandom.com/wiki/Shadowbolts",
-        "flash-sentry": "https://mlp.fandom.com/wiki/Flash_Sentry",
-        "juniper-montage": "https://mlp.fandom.com/wiki/Juniper_Montage",
-        "gloriosa-daisy": "https://mlp.fandom.com/wiki/Gloriosa_Daisy",
-        "timber-spruce": "https://mlp.fandom.com/wiki/Timber_Spruce",
-        "wallflower-blush": "https://mlp.fandom.com/wiki/Wallflower_Blush",
-        "vignette-valencia": "https://mlp.fandom.com/wiki/Vignette_Valencia",
-        "kiwi-lollipop": "https://mlp.fandom.com/wiki/Kiwi_Lollipop_and_Supernova_Zap",
-        "supernova-zap": "https://mlp.fandom.com/wiki/Kiwi_Lollipop_and_Supernova_Zap"
-      }
+      ]
     },
     {
       "id": "g5-main",
@@ -2221,14 +2151,7 @@
         "zantorp",
         "zinnea",
         "zoom-zephyrwing"
-      ],
-      "sources": {
-        "arpeggia": "https://g5mlp.fandom.com/wiki/Arpeggia",
-        "tracy-tailspin": "https://g5mlp.fandom.com/wiki/Tracy_Tailspin",
-        "princess-anemone": "https://g5mlp.fandom.com/wiki/Princess_Anemone",
-        "goldie-fortune": "https://g5mlp.fandom.com/wiki/Mini_Figure_ID",
-        "scout-kindheart": "https://g5mlp.fandom.com/wiki/List_of_Ponies/By_Character"
-      }
+      ]
     },
     {
       "id": "tamers12345",
@@ -2249,12 +2172,7 @@
         "bobby-moonbeam",
         "professor-majorchord",
         "astro-novalite"
-      ],
-      "sources": {
-        "fractured": "https://tamers12345.fandom.com/wiki/Tamers12345_My_Little_Pony_Characters",
-        "dazzle-feather": "https://tamers12345.fandom.com/wiki/Tamers12345_My_Little_Pony_Characters",
-        "starsong": "https://tamers12345.fandom.com/wiki/StarSong"
-      }
+      ]
     },
     {
       "id": "princewhateverer",
@@ -2279,14 +2197,7 @@
         "vid",
         "dubstep-growl",
         "io-jayce"
-      ],
-      "sources": {
-        "can-opener": "https://www.vyletpony.com/can-opener",
-        "creekflow": "https://www.vyletpony.com/creekflow",
-        "vid": "https://www.vyletpony.com/top-five-videos-oc",
-        "dubstep-growl": "https://www.vyletpony.com/dubstep-growl",
-        "io-jayce": "https://www.vyletpony.com/io-jayce"
-      }
+      ]
     },
     {
       "id": "lfo",
@@ -2298,14 +2209,7 @@
         "kefania",
         "mobli",
         "lindsey"
-      ],
-      "sources": {
-        "flower": "https://www.patreon.com/posts/flowers-journey-95012323",
-        "sweet-shot": "https://www.castingcall.club/projects/flowers-journey",
-        "kefania": "https://www.castingcall.club/projects/flowers-journey",
-        "mobli": "https://www.patreon.com/the1lfo/posts/flowers-journey-151724312",
-        "lindsey": "https://music.amazon.com/tracks/B0FP6XW5QV"
-      }
+      ]
     },
     {
       "id": "fandom-ocs",
@@ -2329,11 +2233,7 @@
         "ophely",
         "golden-heart",
         "leaf-litter"
-      ],
-      "sources": {
-        "cream-heart": "https://www.fimfiction.net/group/199740/buttons-mom",
-        "leaf-litter": "https://x.com/cheekibat/status/2111134531751493961"
-      }
+      ]
     },
     {
       "id": "mlp-4chan",
@@ -2349,18 +2249,7 @@
         "bijou-butterfly",
         "snowpity",
         "milkmare-of-trottingham"
-      ],
-      "sources": {
-        "anonfilly": "https://fanlore.org/wiki/Anon_%28MLP%29",
-        "tracy-cage": "https://derpibooru.org/images/244955",
-        "frosty-flakes": "https://twibooru.org/3273731",
-        "nasapone": "https://twibooru.org/3351087?q=oc%3Anasapone",
-        "heavy-halbard": "https://www.twibooru.org/3139177",
-        "righty-tighty": "https://twibooru.org/3534513",
-        "bijou-butterfly": "https://www.twibooru.org/3288154",
-        "snowpity": "https://www.twibooru.org/3164902",
-        "milkmare-of-trottingham": "https://knowyourmeme.com/photos/932644-mlp"
-      }
+      ]
     },
     {
       "id": "con-mascots",
@@ -2405,47 +2294,7 @@
         "clipper-ship",
         "treasure-trove",
         "sunkissed"
-      ],
-      "sources": {
-        "harmonic-tune": "https://2025.harmonycon.org/",
-        "harmony-star": "https://2025.harmonycon.org/",
-        "caramel-malt": "https://2025.ponyvilleciderfest.com/about/",
-        "barley-tender": "https://2025.ponyvilleciderfest.com/about/",
-        "fizzy-glitch": "https://2025.ponyvilleciderfest.com/about/",
-        "fair-flyer": "https://marefair.org/news/fair-flyers-photo-album-sweepstakes/",
-        "morning-mimosa": "https://marefair.org/news/fair-flyers-photo-album-sweepstakes/",
-        "matinee": "https://marefair.org/news/fair-flyers-photo-album-sweepstakes/",
-        "soiree": "https://marefair.org/news/fair-flyers-photo-album-sweepstakes/",
-        "fun-raiser": "https://marefair.org/news/fair-flyers-photo-album-sweepstakes/",
-        "front-page": "https://2021.everfreenw.com/about/characters/",
-        "novella": "https://2021.everfreenw.com/about/characters/",
-        "sharp-focus": "https://2021.everfreenw.com/about/characters/",
-        "mocha-sunrise": "https://2021.everfreenw.com/about/characters/",
-        "marina": "https://2021.everfreenw.com/about/characters/",
-        "golden-gates": "https://www.babscon.com/2025/get-involved/casting-call/",
-        "queen-quake": "https://www.babscon.com/2025/get-involved/casting-call/",
-        "andreas": "https://www.babscon.com/2025/get-involved/casting-call/",
-        "silver-span": "https://www.babscon.com/2025/get-involved/casting-call/",
-        "copper-chip": "https://www.babscon.com/2025/get-involved/casting-call/",
-        "foreshock": "https://www.babscon.com/2025/get-involved/casting-call/",
-        "peanut-bucker": "https://trotcon.net/faq",
-        "canni-soda": "https://galacon.eu/team/",
-        "sani-soda": "https://galacon.eu/team/",
-        "wachmann": "https://galacon.eu/team/",
-        "aurora-harmony": "https://galacon.eu/team/",
-        "hoof-work": "https://www.fimfiction.net/blog/725417/whinny-city-pony-con-ill-be-there",
-        "gwen": "https://www.equestriadaily.com/2015/12/mlp-msp-3-mega-update.html",
-        "peponi": "https://ponerpics.org/images/7007071",
-        "gibbous-moon": "https://nightmarenights.org/",
-        "lantern-light": "https://nightmarenights.org/",
-        "carry-on": "https://nightmarenights.org/",
-        "mane-event": "https://archive.bronycon.org/2015/registration.html",
-        "hoof-beatz": "https://archive.bronycon.org/2015/registration.html",
-        "blank-canvas": "https://archive.bronycon.org/2015/registration.html",
-        "clipper-ship": "https://mascots.pone.voyage/",
-        "treasure-trove": "https://mascots.pone.voyage/",
-        "sunkissed": "https://mascots.pone.voyage/"
-      }
+      ]
     },
     {
       "id": "fallout-equestria",
