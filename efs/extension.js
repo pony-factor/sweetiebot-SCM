@@ -14,6 +14,7 @@ const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
 const { registerNewWorkspaceCommand } = require('./new_workspace');
+const { registerIndependentWorkspaceTrustCommand, promptForIndependentWorkspaceTrust } = require('./workspace_trust');
 const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
@@ -317,6 +318,7 @@ async function activate(context) {
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
   registerNewWorkspaceCommand(vscode, context);
+  registerIndependentWorkspaceTrustCommand(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
   // Hidden panel tabs can still be restored as the active container.
@@ -384,6 +386,13 @@ async function activate(context) {
     provider.post({ type: 'results', results: [], warning: '', mode: settings().mode });
     vscode.window.showInformationMessage('Workspace Search index cleared.');
   }));
+
+  // Offer parent-folder trust onboarding once, after the extension has started.
+  // The user must explicitly add the folder in VS Code's native trust editor.
+  setImmediate(() => {
+    void promptForIndependentWorkspaceTrust(vscode, context).catch(error =>
+      console.warn('Sweetiebot independent workspace trust onboarding:', error.message));
+  });
 }
 
 async function deactivate() {
