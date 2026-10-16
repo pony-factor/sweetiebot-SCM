@@ -170,11 +170,12 @@ class SubmissionTests(unittest.TestCase):
             for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
             for key in toolkit_settings.VSCODE_SETTINGS[group]
         }
-        # These two extension-native controls do not belong to the
+        # These extension-native controls do not belong to the
         # Sweetiebot configurator's managed settings.
         self.assertEqual(properties - exposed, {
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
+            "scmToolkit.automaticWorkspaceCleanup",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
