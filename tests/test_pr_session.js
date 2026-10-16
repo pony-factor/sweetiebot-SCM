@@ -9,6 +9,8 @@ const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = r
 
 (async () => {
   const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pr-session-')));
+  const originalHome = os.homedir;
+  os.homedir = () => storage;
   try {
     const calls = [];
     const file = fsPath => ({ scheme: 'file', fsPath });
@@ -36,6 +38,9 @@ const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = r
     assert.equal(saved.settings['scmToolkit.autoPublishPullRequests'], false);
     assert.equal(saved.settings['scmToolkit.automaticBranchCleanup'], false);
     assert.equal(saved.settings['scmToolkit.startCompactPRSession'], true, 'Only the PR workspace opts into compact startup');
+    assert.equal(saved.settings['workbench.browser.dataStorage'], 'workspace');
+    const browserStorage = path.join(storage, 'Library/Application Support/Sweetiebot/browserStorage');
+    assert.equal((await fs.stat(browserStorage)).mode & 0o777, 0o700);
     assert.equal(await sessionDirectory(source, context), undefined);
     assert.equal(path.dirname(path.dirname(workspaceUri.fsPath)), sessions, 'Saved workspace inherits repository trust');
     assert.equal(execFileSync('git', ['-C', root.fsPath, 'status', '--porcelain'], { encoding: 'utf8' }), '', 'Session files never appear in the working tree');
@@ -80,6 +85,7 @@ const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = r
     assert.deepEqual(await fs.readdir(sessions), before, 'Remove only the failed launch');
     console.log('Independent PR workspace launch, restart, ownership, and cleanup checks passed.');
   } finally {
+    os.homedir = originalHome;
     await fs.rm(storage, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
