@@ -6,9 +6,11 @@ const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'ut
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
-  constructor(tag){this.tag=tag;this.children=[];this.textContent='';this.listeners={};this.open=false;this.hidden=false;}
+  constructor(tag){this.tag=tag;this.children=[];this._text='';this.listeners={};this.open=false;this.hidden=false;}
+  get textContent(){return this._text+this.children.map(node=>String(node.textContent??'')).join('');}
+  set textContent(value){this._text=String(value);this.children=[];}
   append(...nodes){this.children.push(...nodes);}
-  replaceChildren(...nodes){this.children=nodes;}
+  replaceChildren(...nodes){this._text='';this.children=nodes;}
   setAttribute(name,value){this[name]=value;}
   addEventListener(name,listener){(this.listeners[name]??=[]).push(listener);}
   fire(name,other={}){const event={target:this,type:name,preventDefault(){this.defaultPrevented=true;},...other};for(const listener of this.listeners[name]||[])listener(event);return event;}

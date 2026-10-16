@@ -20,8 +20,8 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
   assert.equal(calls.length,2);
   for(const [update,message] of [
-    [{state:'closed'},'closed'],
-    [{draft:true},'draft'],
+    [{state:'closed'},'no longer open'],
+    [{draft:true},'ready for review'],
     [{head:{...pr.head,ref:'different'}},'changed'],
     [{base:{...pr.base,ref:'develop'}},'changed'],
     [{head:{...pr.head,repo:{full_name:'different/repo'}}},'changed'],

@@ -88,7 +88,9 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
   const ownedTab = opened.length === 1 ? opened[0] : undefined;
   const token = /\/kefania-draft\/([0-9a-f]{8})[0-9a-f-]{28}/i.exec(url)?.[1];
   let currentTab = ownedTab;
+  let closed = false;
   const closeOwnedTab = async () => {
+    if (closed) throw new Error('Kefania confirmation tab is no longer open.');
     const tabs = openTabs();
     let target = tabs.includes(currentTab) ? currentTab : undefined;
     if (!target && token) {
@@ -99,10 +101,17 @@ async function openCompactKefaniaChat(vscode, url, { platform = process.platform
     }
     if (target) {
       try {
-        if (await vscode.window.tabGroups.close(target, true)) return;
+        if (await vscode.window.tabGroups.close(target, true)) {
+          closed = true;
+          return;
+        }
       } catch { /* The auxiliary window can outlive the original tab reference. */ }
     }
-    if (platform === 'darwin' && token) return closeMacConfirmationWindow(token, exec);
+    if (platform === 'darwin' && token) {
+      await closeMacConfirmationWindow(token, exec);
+      closed = true;
+      return;
+    }
     throw new Error('VS Code could not close the Kefania confirmation tab. Use the window close control.');
   };
   if (!commands.includes(FLOAT_COMMAND)) {
