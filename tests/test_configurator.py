@@ -170,7 +170,13 @@ class SubmissionTests(unittest.TestCase):
             for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
             for key in toolkit_settings.VSCODE_SETTINGS[group]
         }
-        self.assertEqual(properties, exposed)
+        # These two extension-native controls do not belong to the
+        # Sweetiebot configurator's managed settings.
+        self.assertEqual(properties - exposed, {
+            "scmToolkit.startCompactPRSession",
+            "scmToolkit.promptForIndependentWorkspaceTrust",
+        })
+        self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
         for name in controls:
             if name != "branchNameDisabledPacks":
@@ -251,16 +257,16 @@ class SubmissionTests(unittest.TestCase):
         values["spellcheckManualCommit"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
-    def test_custom_emoji_priority_enforcement_defaults_off_and_can_be_enabled(self):
-        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
+    def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")
         values = form_values()
-        self.assertFalse(configurator.parse_submission(values)["aiEmojiPriorityRules"])
-        values["aiEmojiPriorityRules"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["aiEmojiPriorityRules"])
+        values.pop("aiEmojiPriorityRules")
+        self.assertFalse(configurator.parse_submission(values)["aiEmojiPriorityRules"])
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
         self.assertIn("Enforce custom emoji priorities", page)
-        self.assertNotIn('name="aiEmojiPriorityRules" value="true" checked', page)
+        self.assertIn('name="aiEmojiPriorityRules" value="true" checked', page)
 
     def test_staged_whitespace_toggle_defaults_on_and_can_be_disabled(self):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "normalizeStagedWhitespace")

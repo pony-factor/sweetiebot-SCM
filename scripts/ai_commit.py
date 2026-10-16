@@ -1143,7 +1143,7 @@ def emoji_for_change(title: str, files: list[str]) -> str:
     wording = re.sub(EMOJI_PATTERN, "", title).strip().lower()
     if re.match(r"(?:fix|repair|correct|resolve|prevent|restore|guard)\b", wording):
         return "🐛"
-    if re.search(r"\b(?:color|colour|theme|palette|contrast|accent|tint)\b", wording):
+    if re.search(r"\b(?:colou?rs?|theme|palette|contrast|accent|tint)\b", wording):
         return "🎨"
     if re.search(r"\b(?:test|tests|testing|validation|validate|assertion|coverage|regression)\b", wording):
         return "🧪"

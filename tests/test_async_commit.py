@@ -135,8 +135,10 @@ class AsyncCommitTests(unittest.TestCase):
         self.assertEqual([row["outcome"] for row in failures],
                          ["retry", "retry", "stopped"])
         self.assertTrue(all(row["component"] == "commit_title" for row in rows))
-        self.assertEqual(rows[-1]["event"], "async_fallback")
-        self.assertEqual(rows[-1]["reason"], "generation_failed")
+        # The model helper itself now performs the final simple fallback;
+        # it records fallback_used rather than raising to the async worker.
+        self.assertEqual(rows[-1]["event"], "fallback_used")
+        self.assertEqual(rows[-1]["reason"], "request_failed")
         self.assertNotIn("SECRET", (self.root / "sweetiebot.log").read_text())
 
     def test_worker_start_failure_is_logged_and_uses_fallback(self):
