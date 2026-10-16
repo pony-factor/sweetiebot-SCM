@@ -96,6 +96,71 @@ values.incomingSyncLabel = '';
 configurationListener({affectsConfiguration: key => key === 'scmToolkit.incomingSyncLabel'});
 assert.equal(incomingGroup.children.length, 2);
 assert.equal(incomingCount.textContent, '2');
+
+// Simulate the transient spinner Git displays while a commit is being pushed.
+values.outgoingSyncLabel = 'To origin';
+const spinningIcon = new Element('codicon codicon-sync codicon-modifier-spin');
+const nativeCaption = {nodeType: 3, textContent: ' Sync Changes'};
+const fullCount = new Element('', '4');
+const fullArrow = new Element('codicon codicon-arrow-up');
+const fullLabel = group(spinningIcon, nativeCaption, fullCount, fullArrow);
+fullLabel.childNodes = fullLabel.children;
+fullLabel.classList = {contains: name => name === 'monaco-button-label'};
+fullLabel.querySelector = selector => selector === '.codicon-sync' ? spinningIcon : null;
+const compactCount = new Element('', '4');
+const compactArrow = new Element('codicon codicon-arrow-up');
+const compactLabel = group(compactCount, compactArrow);
+compactLabel.classList = {contains: name => name === 'monaco-button-label-short'};
+let showCounts = true;
+const progressAction = {
+  querySelector: selector => {
+    if (selector === '.codicon-sync') return spinningIcon;
+    if (selector === '.monaco-button-label') return fullLabel;
+    if (selector === '.codicon-arrow-up') return showCounts ? fullArrow : null;
+    return null;
+  },
+  querySelectorAll: selector => showCounts && selector.includes('codicon-arrow-up')
+    ? [fullArrow, compactArrow] : []
+};
+const progressRoot = {querySelectorAll: () => [progressAction]};
+const progressWidget = {
+  element: {closest: () => progressRoot, ownerDocument: doc},
+  disposables: {add(item) { this.item = item; }}
+};
+sandbox.scmToolkitCustomizeSyncLabels(progressWidget, configuration, {
+  incomingSyncLabel: '', outgoingSyncLabel: '', hideOutgoingSyncCount: false
+});
+const progressObserver = observer;
+assert.equal(nativeCaption.textContent, ' To origin', 'Push spinner shows outgoing name instead of Sync Changes');
+assert.equal(fullLabel.children.length, 4, 'Full-size spinner must not duplicate the outgoing name');
+assert.equal(compactLabel.children[0].textContent, 'To origin\u00a0', 'Compact spinner keeps direction label');
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' To origin', 'Repeated mutations are idempotent');
+assert.equal(compactLabel.children.length, 3, 'Compact label is not duplicated');
+
+spinningIcon.className = 'codicon codicon-sync';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Sync Changes', 'Native caption returns after push');
+assert.equal(fullLabel.children[2].textContent, 'To origin\u00a0', 'Normal outgoing count label returns');
+
+spinningIcon.className = 'codicon codicon-sync codicon-modifier-spin';
+values.outgoingSyncLabel = 'To remote';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' To remote', 'Spinner picks up live name changes');
+values.outgoingSyncLabel = '';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Sync Changes', 'Clearing custom name restores native caption');
+
+values.outgoingSyncLabel = 'To origin';
+values.postCommitCommand = 'push';
+showCounts = false;
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' To origin', 'Commit-and-push spinner works before counts appear');
+values.postCommitCommand = 'none';
+configurationListener({affectsConfiguration: key => key === 'git.postCommitCommand'});
+assert.equal(nativeCaption.textContent, ' Sync Changes', 'No-count fallback only applies to push configuration');
+progressWidget.disposables.item.dispose();
+
 widget.disposables.item.dispose();
 assert.equal(disposed, true);
 console.log('Custom sync direction label checks passed.');
