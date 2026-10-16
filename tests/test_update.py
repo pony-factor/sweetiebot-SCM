@@ -23,6 +23,24 @@ def archive(entries):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_draft_confirmation_survives_update_and_installer_packaging(self):
+        import build_installer_app
+        import subprocess
+        asset = Path('efs/draft_confirmation.html')
+        module = Path('efs/draft_handoff.js')
+        repo = Path(update.__file__).resolve().parent.parent
+        entries = {path.as_posix(): (repo / path).read_text() for path in (asset, module)}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            update.extract_sources(archive(entries), root)
+            self.assertEqual((root / asset).read_text(), entries[asset.as_posix()])
+            bundled = update.source_files(root)
+            self.assertEqual(bundled[Path('codex-customizations') / asset], root / asset)
+            self.assertIn(asset, build_installer_app.source_files())
+            result = subprocess.run(['node', '-e', 'require(process.argv[1])', str(root / module)],
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_github_reaction_asset_survives_update_and_bundled_repair(self):
         asset = Path('assets/github/pr_reaction_hover.js')
         contents = (Path(update.__file__).resolve().parent.parent / asset).read_text()

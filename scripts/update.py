@@ -14,7 +14,7 @@ from workspace_search import default_extensions_dir, source_files
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
 FORMATS = {
     "scripts": {".py", ".json"},
-    "efs": {".js", ".json", ".svg", ".md"},
+    "efs": {".js", ".json", ".svg", ".md", ".html"},
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
     "assets/browser": {".js"},
