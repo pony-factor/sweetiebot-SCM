@@ -140,6 +140,7 @@
   const stop = () => {
     stopped = true;
     clearTimeout(timer);
+    globalThis.sweetiebotEnsureMaximumThinking?.cancel?.();
     document.removeEventListener('input', onInput, true);
     document.removeEventListener('click', onClick, true);
   };
@@ -197,6 +198,12 @@
         && button.getAttribute('aria-disabled') !== 'true'
         && button.getClientRects().length && !/stop|voice/i.test(label)
         && button.getAttribute('data-testid') !== 'stop-button') {
+      // Do not race Send against model/effort selection or silently submit at
+      // Instant when a selector has not hydrated or could not be confirmed.
+      if (!globalThis.sweetiebotEnsureMaximumThinking?.()) {
+        timer = setTimeout(attempt, 250);
+        return;
+      }
       stop();
       // Remove the launch payload before sending so a reload cannot send it again.
       const clean = new URL(window.location.href);

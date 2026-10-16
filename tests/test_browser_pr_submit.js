@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, hiddenStop = false, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, hiddenStop = false, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -23,6 +23,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   const window = { location: location(url), Storage, localStorage:new Storage() }; window.top = window;
   const history = { state: {}, replaceState(state, title, url) { window.location = location(url); } };
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
+    sweetiebotEnsureMaximumThinking: () => thinkingReady,
     require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
@@ -38,7 +39,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
-  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, clicks: () => clicks,
+  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
     sidebarClicks: () => sidebarClicks, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
@@ -46,6 +47,9 @@ let f = fixture({ disabled: true });
 assert.equal(f.clicks(), 0);
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 1);
 assert.equal(f.window.location.search, ''); f.tick(); assert.equal(f.clicks(), 1);
+f = fixture({ thinkingReady: false });
+f.tick(); assert.equal(f.clicks(), 0, 'Never send before maximum thinking is confirmed');
+f.setThinkingReady(true); f.tick(); assert.equal(f.clicks(), 1);
 f = fixture({ text: '' }); f.tick(); assert.equal(f.clicks(), 0);
 f.composer.innerText = 'Draft\nPR'; f.tick(); assert.equal(f.clicks(), 1);
 f = fixture({ text: 'Different draft' }); f.tick(); assert.equal(f.clicks(), 0);
