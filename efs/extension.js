@@ -9,6 +9,7 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { resumePRSession } = require('./pr_session');
+const { configureWorkspaceBrowserStorage } = require('./browser_storage');
 const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
@@ -298,6 +299,13 @@ function settings() {
 }
 
 async function activate(context) {
+  // Choose native persistent workspace browser storage before opening ChatGPT
+  // tabs; never overwrite explicit user settings or erase existing drafts.
+  try {
+    await configureWorkspaceBrowserStorage(vscode);
+  } catch (error) {
+    console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
+  }
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {

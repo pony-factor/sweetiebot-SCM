@@ -694,22 +694,27 @@ This is **reopening, not live Electron view migration**. Unsent form input, in-m
 ### Integrated Browser ChatGPT home
 
 When `browser-chatgpt-home` is enabled, a blank Integrated Browser tab starts at
-`https://chatgpt.com/`. Explicit URLs continue to win, so commands and extensions
-that open a specific page are unchanged. For a blank ChatGPT home or project
-URL, each newly opened tab also starts with an empty composer rather than
-restoring a draft typed in another tab. Sweetie Bot clears only ChatGPT's
-known shared composer-draft storage entry before the new page loads; it does
-not clear cookies, logins, conversations, or the general browser cache.
-Explicit `?q=` prompts (including PR actions), restored tabs, and unrelated
-websites are unchanged.
+`https://chatgpt.com/`. Explicit URLs, including PR action prompts and restored
+tabs, continue to win. Opening a new tab no longer clears a different tab's
+unsent message.
 
-**Draft caution:** ChatGPT currently stores unsent composer text in shared
-browser storage. Opening a fresh home tab removes that saved draft for other
-tabs too, although text already visible in an open tab remains. Send or copy
-important unsent text before opening a blank ChatGPT tab. If ChatGPT changes
-its draft-storage format, this targeted reset may need an update. The toggle
-is applied by the installer, so rerun `python3 scripts/install.py` and reload
-VS Code after changing it.
+On startup, Sweetiebot prefers VS Code's native
+`workbench.browser.dataStorage: "workspace"` setting when there is no explicit
+user/workspace override. Browser data is **persistent within each VS Code
+workspace**, so ChatGPT drafts created in one repository no longer appear in
+unrelated repository windows. New tabs in the same workspace can restore their
+draft without clearing imports from other repositories. The old global browser
+data remains stored but is not loaded into these workspace-scoped browser views.
+
+This is a browser-wide setting: cookies, logins and site storage are isolated
+as well, so ChatGPT may require a login once per workspace. Existing tabs may
+retain their old browser session until reopened. Independent local clones and
+saved `.code-workspace` files may receive distinct storage identities even
+when they reference the same repository. To opt out, explicitly set
+`workbench.browser.dataStorage` to `global` or `ephemeral` in VS Code Settings;
+Sweetiebot respects explicit choices. The ChatGPT home toggle is still applied
+by the installer: rerun `python3 scripts/install.py` and reload VS Code after
+changing it.
 
 ### Codex co-author commit
 
