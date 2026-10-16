@@ -14,6 +14,29 @@ const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = requi
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
 const POST_COMMIT_GATE = 'sweetiebot-post-commit-push.json';
+const ASYNC_COMMIT_JOURNAL = 'sweetiebot-async-commit.json';
+
+async function asyncCommitPending(repository) {
+  const root = repository.rootUri?.fsPath;
+  if (!root || !existsSync(path.join(root, '.git'))) return false;
+  // A checkout may have a .git directory or a linked-worktree .git file.
+  // If a real checkout's metadata cannot be inspected, fail closed.
+  try {
+    const { stdout } = await promisify(execFile)('git', ['rev-parse', '--absolute-git-dir'], {
+      cwd: root, timeout: 10000
+    });
+    return existsSync(path.join(stdout.trim(), ASYNC_COMMIT_JOURNAL));
+  } catch {
+    return true;
+  }
+}
+
+async function requireFinalizedCommit(repository) {
+  if (await asyncCommitPending(repository)) {
+    throw new Error('A local commit message is still being finalized. Git operations and publishing are paused until it finishes.');
+  }
+}
+
 
 // Store coordination only in .git; never stage or alter the committed worktree.
 async function spellcheckPushGateFile(repository) {
@@ -181,9 +204,9 @@ async function automaticPullDivergence(repository, head, target) {
 async function autoPullClean(repository, { fetch = false, remote } = {}) {
   // A commit and a fast-forward both update HEAD. Never let Sweetiebot move the
   // branch ref while VS Code/Git is building or finalizing a commit.
-  if (commitInProgress(repository)) return false;
+  if (commitInProgress(repository) || await asyncCommitPending(repository)) return false;
   await repository.status();
-  if (commitInProgress(repository)) return false;
+  if (commitInProgress(repository) || await asyncCommitPending(repository)) return false;
   const previous = { ...repository.state.HEAD, upstream: { ...repository.state.HEAD?.upstream } };
   const target = await automaticPullTarget(repository, previous, remote);
   if (!target.remote || !target.name) return false;
@@ -191,7 +214,7 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
     if (repository.state.mergeChanges?.length) return false;
     await repository.fetch({ remote: target.remote, ref: target.name });
     await repository.status();
-    if (commitInProgress(repository)) return false;
+    if (commitInProgress(repository) || await asyncCommitPending(repository)) return false;
     const current = repository.state.HEAD;
     if (current?.name !== previous.name || current?.commit !== previous.commit
         || current?.upstream?.remote !== previous.upstream.remote
@@ -200,7 +223,8 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   const { HEAD: head, mergeChanges = [] } = repository.state;
   const divergence = await automaticPullDivergence(repository, head, target);
   if (!divergence?.behind || divergence.ahead !== 0
-      || mergeChanges.length || commitInProgress(repository)) return false;
+      || mergeChanges.length || commitInProgress(repository)
+      || await asyncCommitPending(repository)) return false;
   if (repository.rootUri?.fsPath) {
     // Let Git carry nonconflicting local edits; never create a merge commit or
     // overwrite a changed path. A failed fast-forward preserves the worktree.
@@ -781,6 +805,7 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
+          if (command !== 'sweetiebot.autoPullClean') await requireFinalizedCommit(repository);
           if (!needsDefaultBranch.has(command)) return action(repository, options);
           const defaultBranch = await resolveDefaultBranch(repository, options?.remote || 'origin');
           return action(repository, { ...options, defaultBranch });
@@ -814,6 +839,7 @@ function registerBranchCommands(vscode, context) {
         'Delete Empty Branch'
       );
       if (choice !== 'Delete Empty Branch') return false;
+      await requireFinalizedCommit(repository);
       return await queueRepositoryOperation(repository, () => deleteEmptyBranch(repository, {
         branch, defaultBranch, remote: options.remote || 'origin'
       }));
