@@ -352,6 +352,8 @@ The normal installer also installs a small companion VS Code extension into `~/.
 
 Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Workspace Search view into its own Activity Bar container. The panel title and container label use `scm-toolkit.workspace-search-label` and default to **EFS**. Rerun `python3 scripts/install.py` and reload VS Code after changing either setting.
 
+Customize the search-box hint separately from the panel title with `scm-toolkit.workspace-search-placeholder` (or **Search box placeholder** under Sweetiebot Settings → Workspace Search). For example, `git config --global scm-toolkit.workspace-search-placeholder SATS` shows **SATS** in the empty search box. The default remains **Search your workspace…**; blank restores that hint. VS Code Settings also exposes `scmToolkit.workspaceSearch.placeholder`. Changes to that setting update the open EFS view without clearing a search.
+
 The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `efs/THIRD_PARTY_NOTICES.md`.
 
 Install the default local embedding model once:

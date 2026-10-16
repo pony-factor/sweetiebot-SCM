@@ -176,6 +176,15 @@ class SubmissionTests(unittest.TestCase):
             if name != "branchNameDisabledPacks":
                 self.assertIn(f'name="{name}"', page)
 
+    def test_search_box_placeholder_round_trips_into_vscode(self):
+        values = form_values()
+        values["workspaceSearchPlaceholder"] = ["SATS"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["workspaceSearchPlaceholder"], "SATS")
+        self.assertEqual(configurator.extension_settings_payload(parsed)["workspaceSearch"]["placeholder"], "SATS")
+        values["workspaceSearchPlaceholder"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["workspaceSearchPlaceholder"], "")
+
     def test_notification_position_round_trips_into_vscode(self):
         current = dict(install.DEFAULT_SETTINGS)
         configurator.apply_vscode_settings(current, {
@@ -417,6 +426,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(parsed["browserChatgptHome"])
         self.assertFalse(parsed["workspaceSearchActivityBar"])
         self.assertEqual(parsed["workspaceSearchLabel"], "EFS")
+        self.assertEqual(parsed["workspaceSearchPlaceholder"], "Search your workspace…")
         self.assertFalse(parsed["workspaceSearchAskOllama"])
         self.assertEqual(parsed["workspaceSearchChatModel"], "")
         self.assertEqual(parsed["branchNameDisabledPacks"], "")
@@ -538,6 +548,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="codexShortModelLabels"', page)
         self.assertIn('name="workspaceSearchActivityBar"', page)
         self.assertIn('name="workspaceSearchLabel"', page)
+        self.assertIn('name="workspaceSearchPlaceholder"', page)
         self.assertIn('name="workspaceSearchAskOllama"', page)
         self.assertIn('name="workspaceSearchChatModel"', page)
         self.assertNotIn('name="aiCommitCustomInstructions"', page)

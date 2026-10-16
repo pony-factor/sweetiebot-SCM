@@ -96,6 +96,7 @@ SETTINGS = (
     Setting("browserHomeUrl", "scm-toolkit.browser-home-url", "Blank browser tab URL", "Destination for new blank browser tabs. Leave blank to use ChatGPT.", "Browser", "browser_url"),
     Setting("workspaceSearchActivityBar", "scm-toolkit.workspace-search-activity-bar", "Standalone Activity Bar", "Move Workspace Search into its own Activity Bar container instead of the Source Control view.", "Workspace Search"),
     Setting("workspaceSearchLabel", "scm-toolkit.workspace-search-label", "Search label", "Label for the Workspace Search panel and its standalone Activity Bar container.", "Workspace Search", "text"),
+    Setting("workspaceSearchPlaceholder", "scm-toolkit.workspace-search-placeholder", "Search box placeholder", "Text shown inside the empty EFS search field, e.g. SATS. Leave blank for the original hint.", "Workspace Search", "optional_text"),
     Setting("workspaceSearchEmbeddingModel", "scm-toolkit.workspace-search-embedding-model", "Search embedding model", "Turns workspace passages into searchable meaning. Choose an embedding model, separate from chat models.", "Workspace Search", "model"),
     Setting("workspaceSearchAskOllama", "scm-toolkit.workspace-search-ask-ollama", "Ask Ollama", "Show the Ask Ollama action in EFS search results.", "Workspace Search"),
     Setting("workspaceSearchChatModel", "scm-toolkit.workspace-search-chat-model", "Ask Ollama chat model", "Ollama chat model used by Ask Ollama. Required when Ask Ollama is enabled.", "Workspace Search", "optional_model"),

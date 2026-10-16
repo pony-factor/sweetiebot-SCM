@@ -93,6 +93,11 @@ async function run() {
   const windowListeners = {};
   const timers = new Map(); let nextTimer = 0; const sent = [];
   const html = provider.html({cspSource: 'test'});
+  assert.match(html, /placeholder="Search your workspace…"/);
+  const customProvider = new sandbox.module.exports.WorkspaceSearchViewProvider({}, () => ({placeholder: 'SATS "targets" & <files>'}));
+  const customHtml = customProvider.html({cspSource: 'test'});
+  assert.match(customHtml, /placeholder="SATS &quot;targets&quot; &amp; &lt;files&gt;"/);
+  assert.match(customHtml, /aria-label="Search your workspace"/);
   assert.match(html, /class="search-input".*id="clear-query".*class="search-button"/);
   assert.match(html, /copy-status\.copied/);
   assert.match(html, /contrastCheckColor/);
@@ -130,6 +135,10 @@ async function run() {
   assert.equal(page.contrastCheckColor('rgb(255, 255, 255)'), '#000');
   assert.equal(page.contrastCheckColor('rgba(0, 0, 0, 0.5)'), '#fff');
   const query = elements.get('query'); const clearQuery = elements.get('clear-query'); const form = elements.get('search'); const idle = elements.get('idle');
+  windowListeners.message({data: {type: 'placeholder', value: 'SATS'}});
+  assert.equal(query.placeholder, 'SATS', 'changing the search hint does not rebuild or clear the view');
+  windowListeners.message({data: {type: 'placeholder', value: ''}});
+  assert.equal(query.placeholder, 'Search your workspace…', 'blank custom hints restore the original');
   assert.equal(idle.hidden, false, 'logo is visible when the search term is empty');
   assert.equal(clearQuery.hidden, true, 'clear control starts hidden');
   query.value = 'app'; query.listeners.input();

@@ -40,12 +40,14 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
     def test_saved_feature_preferences_reach_installed_defaults(self):
         settings = dict(DEFAULTS, autoPublishNewBranches=True, automaticBranchCleanup=False,
                         workspaceSearchAutoReindex=False, workspaceSearchMode="exact",
-                        workspaceSearchResultLimit="35", workspaceSearchMaxFileSizeMB="2.5")
+                        workspaceSearchResultLimit="35", workspaceSearchMaxFileSizeMB="2.5",
+                        workspaceSearchPlaceholder="SATS")
         properties = workspace_search.render_package(settings)["contributes"]["configuration"]["properties"]
         self.assertTrue(properties["scmToolkit.autoPublishNewBranches"]["default"])
         self.assertFalse(properties["scmToolkit.automaticBranchCleanup"]["default"])
         self.assertFalse(properties["scmToolkit.workspaceSearch.autoReindex"]["default"])
         self.assertEqual(properties["scmToolkit.workspaceSearch.mode"]["default"], "exact")
+        self.assertEqual(properties["scmToolkit.workspaceSearch.placeholder"]["default"], "SATS")
         self.assertEqual(properties["scmToolkit.workspaceSearch.resultLimit"]["default"], 35)
         self.assertEqual(properties["scmToolkit.workspaceSearch.maxFileSizeMB"]["default"], 2.5)
 
@@ -116,6 +118,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertNotIn("viewsContainers", package["contributes"])
         self.assertEqual(package["contributes"]["views"]["scm"][0]["name"], "EFS")
         properties = package["contributes"]["configuration"]["properties"]
+        self.assertEqual(DEFAULTS["workspaceSearchPlaceholder"], "Search your workspace…")
         self.assertFalse(DEFAULTS["workspaceSearchAskOllama"])
         self.assertFalse(properties["scmToolkit.workspaceSearch.askOllama"]["default"])
         self.assertEqual(properties["scmToolkit.workspaceSearch.chatModel"]["default"], "")
