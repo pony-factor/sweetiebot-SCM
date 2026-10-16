@@ -330,7 +330,7 @@ class BranchNamePackTests(unittest.TestCase):
         }
         for slug, pack_id in assignments.items():
             self.assertIn(slug, packs[pack_id]["names"])
-            self.assertTrue(packs[pack_id]["sources"].get(slug, "").startswith("https://"))
+            self.assertNotIn("sources", packs[pack_id], "Reference URLs moved to Kefania")
             self.assertEqual(
                 [pack["id"] for pack in catalog["packs"] if slug in pack["names"]],
                 [pack_id],
@@ -536,7 +536,7 @@ class BranchNamePackTests(unittest.TestCase):
         mascots = packs["con-mascots"]
         for slug in ("clipper-ship", "treasure-trove", "sunkissed"):
             self.assertIn(slug, mascots["names"])
-            self.assertEqual(mascots["sources"][slug], "https://mascots.pone.voyage/")
+            self.assertNotIn("sources", mascots, "Convention mascot sources moved to Kefania")
             self.assertEqual(
                 sum(slug in pack["names"] for pack in catalog["packs"]),
                 1,
