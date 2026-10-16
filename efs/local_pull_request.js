@@ -41,9 +41,8 @@ function registerLocalPullRequestCommand(vscode, context) {
       });
     });
     if (result?.url) {
-      await vscode.window.showInformationMessage(result.existing
-        ? `PR #${result.number} already exists; opening it instead.`
-        : `Codex Pony opened PR #${result.number}`);
+      // Opening the result supplies confirmation without a redundant toast
+      // in the independent PR workspace.
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(result.url));
     }
     if (result?.source?.reason && result.source.reason !== 'No originating conversation supplied.') {

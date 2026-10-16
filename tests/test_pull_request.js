@@ -360,9 +360,11 @@ async function run() {
   assert.equal(browserOptions.openToSide, false);
   calls.length = 0;
   repository.state.HEAD.name = 'main';
+  const messagesBeforePublication = informationMessages.length;
   await uriHandler.handleUri({ path: draftPath, query: new URLSearchParams({ title: '🔧 Improve setup', body: 'Keep the verified source reference.' }).toString() });
   repository.state.HEAD.name = 'draft';
   assert.equal(calls.length, 0, 'Publication stays on the confirmation page');
+  assert.equal(informationMessages.length, messagesBeforePublication, 'Publication does not interrupt the independent confirmation window with a success toast');
   calls.length = 0;
   await uriHandler.handleUri({ path: draftPath, query: 'title=Replay&body=Replay' });
   assert.equal(calls.length, 0, 'A consumed draft must never publish twice');

@@ -101,7 +101,7 @@ assert.match(html, /id="close-confirmation"[^>]*hidden/, 'Close action initially
 assert.match(html, /el\('close-confirmation'\)\.hidden=!state\.result/, 'Close appears after publication');
 assert.match(html, /root\+'\/close'/, 'Close action uses local handoff');
 assert.match(html, /grid-template-columns:minmax\(0,2fr\) minmax\(0,3fr\)/, 'Pony takes 60% of wide confirmation layout');
-assert.match(html, /\.close-confirmation\{[^}]*width:auto/, 'Close action does not fill the PR card');
+assert.match(html, /\.close-confirmation\{[^}]*position:fixed;top:16px;right:16px[^}]*width:36px;height:36px/, 'Close action is a square in the top-right corner');
 assert.doesNotMatch(html, /PR drafting and pony research finish independently\./, 'Redundant footer is removed');
 assert.match(html, /Pull request published\. Review the details and supporting character research\./, 'Published subtitle uses professional status copy');
 assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');

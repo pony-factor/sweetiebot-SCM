@@ -265,9 +265,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
             const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
               title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
               run(pending.repository.rootUri.fsPath, { ...pending.input, preparedDraft: { title, body } }, { botOnly: true }));
-            void vscode.window.showInformationMessage(result.existing
-              ? `PR #${result.number} already exists; opening it instead.`
-              : `Codex Pony opened PR #${result.number}`);
+            // The independent confirmation window displays the publication
+            // result. A toast here interrupts that same window, not the
+            // original workspace that launched the session.
             return result;
           } catch (error) {
             void vscode.window.showErrorMessage(error.message);

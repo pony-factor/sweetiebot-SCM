@@ -11,6 +11,7 @@ let submittedInput, spawnOptions, registerLocalPullRequestCommand;
 const originalLoad = Module._load;
 Module._load = function(specifier, ...args) {
   if (specifier === 'node:child_process') return {
+    ...originalLoad.call(this, specifier, ...args),
     spawn(program, argv, options) {
       spawnOptions = { program, argv, options };
       const child = new EventEmitter();
@@ -75,7 +76,7 @@ async function run() {
     },
     window: {
       withProgress(_options, action) { return action(); },
-      async showInformationMessage() {}
+      async showInformationMessage() { assert.fail('Publication must not show a redundant success toast'); }
     },
     ProgressLocation: { Notification: 1 },
     commands: {
