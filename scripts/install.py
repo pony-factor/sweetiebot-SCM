@@ -680,8 +680,13 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         raise ValueError("Incomplete Codex reset-time hiding patch; refusing to overwrite it.")
     if CODEX_HIDE_RESET_START in js:
         before, rest = js.split(CODEX_HIDE_RESET_START, 1)
-        _, after = rest.split(CODEX_HIDE_RESET_END, 1)
+        payload, after = rest.split(CODEX_HIDE_RESET_END, 1)
         js = before + after
+        saved = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
+        for original, replacement in reversed(json.loads(saved[1]) if saved else []):
+            if js.count(replacement) != 1:
+                raise ValueError('Codex reset-time patch changed; refusing to remove unrelated edits.')
+            js = js.replace(replacement, original, 1)
     if CODEX_DICTATION_START in js:
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
@@ -722,8 +727,29 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         )
 
     if not remove and hide_reset_times:
+        # Let React render its existing no-reset message. Rewriting its text
+        # after every render leaves a visible clock and fights reconciliation.
+        edits = []
+        anchor = 'localConversation.usageLimit.upgrade.noReset'
+        if anchor in js:
+            start = js.index(anchor)
+            identifier = r'[A-Za-z_$][\w$]*'
+            matches = list(re.finditer(
+                rf'(?P<display>{identifier})=(?P<reset>{identifier})==null\?null:'
+                rf'{identifier}\({identifier},(?P=reset)\)',
+                js[max(0, start - 3000):start],
+            ))
+            if len(matches) != 1:
+                raise ValueError('Unsupported Codex build: transcript reset-time anchor does not match.')
+            original = matches[0][0]
+            replacement = f'{matches[0]["display"]}=null/* scm-toolkit-hide-transcript-reset */'
+            if js.count(original) != 1:
+                raise ValueError('Unsupported Codex build: transcript reset-time anchor is ambiguous.')
+            edits.append((original, replacement))
+            js = js.replace(original, replacement, 1)
         js += (
             CODEX_HIDE_RESET_START
+            + '/* edits:' + json.dumps(edits) + ' */\n'
             + (CODEX_ASSETS / "codex-hide-reset-times.js").read_text()
             + CODEX_HIDE_RESET_END
         )

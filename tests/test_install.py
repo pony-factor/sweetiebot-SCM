@@ -759,6 +759,15 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched, remove=True), original)
         self.assertEqual(install.transform_codex(patched, enabled=True), patched)
 
+        # Hide the value before React renders it, including repeated renders;
+        # leave the native no-reset branch in charge of the complete message.
+        hidden = install.transform_codex(patched, hide_reset_times=True)
+        self.assertIn('u=null/* scm-toolkit-hide-transcript-reset */;', hidden)
+        self.assertNotIn('usageLimit.upgradeOrAddCredits.countdown', hidden)
+        self.assertEqual(install.transform_codex(hidden, hide_reset_times=True), hidden)
+        self.assertEqual(install.transform_codex(hidden, remove=True), original)
+        self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
+
     def test_legacy_countdown_metadata_can_still_be_removed(self):
         original = self.fixture()
         before, after = install.codex_countdown_edit(original)
