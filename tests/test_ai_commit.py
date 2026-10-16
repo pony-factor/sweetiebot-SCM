@@ -864,6 +864,64 @@ class TitleTests(unittest.TestCase):
         )
 
 
+
+class CommitDiagnosticsTests(unittest.TestCase):
+    def test_missing_model_is_logged_without_diff(self):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(ai_commit, "installed_local_model_names", return_value=set()))
+            stack.enter_context(patch.object(ai_commit, "selected_model", return_value=(None, False)))
+            stack.enter_context(patch.object(ai_commit, "configured_models", return_value=("primary", "small")))
+            events = stack.enter_context(patch.object(ai_commit, "log_event"))
+            with self.assertRaises(RuntimeError):
+                ai_commit.generate_message("private stat", "+private text", ["notes.md"])
+            events.assert_called_once_with(
+                "commit_title", "model_unavailable", model="primary",
+                reason="model_not_installed", outcome="blocked",
+            )
+
+    def test_rejected_output_is_logged_without_model_response(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+                ("ollama_json", {"response": '{"subject":"Fix","description":""}'}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            events = stack.enter_context(patch.object(ai_commit, "log_event"))
+            ai_commit.generate_message("", "", ["parser.py"])
+            self.assertEqual(
+                [call.args[1] for call in events.call_args_list],
+                ["output_rejected", "output_rejected", "output_rejected", "fallback_used"],
+            )
+            self.assertEqual(events.call_args_list[0].kwargs["reason"], "invalid_message")
+            self.assertNotIn("response", str(events.call_args_list))
+
+    def test_request_errors_are_logged_with_retry_status(self):
+        from urllib.error import HTTPError
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(
+                ai_commit, "ollama_json", side_effect=HTTPError("http://localhost", 503, "busy", None, None)
+            ))
+            stack.enter_context(patch.object(ai_commit.time, "sleep"))
+            events = stack.enter_context(patch.object(ai_commit, "log_event"))
+            with self.assertRaisesRegex(RuntimeError, "could not generate"):
+                ai_commit.generate_message("one file", "+secret text", ["notes.md"])
+            attempts = [call.kwargs for call in events.call_args_list if call.args[1] == "request_failed"]
+            self.assertEqual([event["outcome"] for event in attempts], ["retry", "retry", "stopped"])
+            self.assertEqual([event["http_status"] for event in attempts], [503, 503, 503])
+
+
 class InstructionFileTests(unittest.TestCase):
     def test_standalone_commit_instructions_are_read_directly(self):
         with tempfile.TemporaryDirectory() as tmp:
