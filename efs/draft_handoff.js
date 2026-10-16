@@ -4,11 +4,13 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const MAX_REQUEST_BYTES = 100000;
-const page = readFileSync(join(__dirname, 'draft_confirmation.html'), 'utf8');
 
 // Each independent workflow returns through a same-origin local intake page.
 // Collecting a result never calls the publisher; only the confirmation button does.
 async function createDraftHandoff(publish) {
+  // Load the PR-only asset when starting a handoff so an incomplete install
+  // cannot prevent unrelated SCM commands from registering during activation.
+  const page = readFileSync(join(__dirname, 'draft_confirmation.html'), 'utf8');
   const drafts = new Map();
   async function publishDraft(id, state) {
     if (state.result) return state.result;
