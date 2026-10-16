@@ -1,10 +1,10 @@
 'use strict';
 
 const path = require('node:path');
-const os = require('node:os');
 const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { independentWorkspaceParent } = require('./workspace_trust');
 
 const OPEN_WORKSPACE_COMMAND = 'sweetiebot.openIndependentWorkspace';
 const execFileAsync = promisify(execFile);
@@ -73,7 +73,7 @@ async function copyRemotes(source, destination, git) {
 async function openIndependentWorkspace(vscode, {
   git = runGit,
   io = fs,
-  baseDirectory = path.join(os.homedir(), 'Sweetiebot Workspaces')
+  baseDirectory = independentWorkspaceParent()
 } = {}) {
   const folders = vscode.workspace.workspaceFolders || [];
   if (!folders.length) throw new Error('Open a local Git workspace first.');
@@ -123,11 +123,21 @@ async function openIndependentWorkspace(vscode, {
     }));
     const target = targets.length === 1
       ? targets[0].path : path.join(directory, 'workspace.code-workspace');
+    let workspaceFileContents = null;
     if (targets.length > 1) {
-      await io.writeFile(target, JSON.stringify({
+      workspaceFileContents = JSON.stringify({
         folders: targets.map(folder => ({ path: folder.path, name: folder.name }))
-      }, null, 2) + '\n', 'utf8');
+      }, null, 2) + '\n';
+      await io.writeFile(target, workspaceFileContents, 'utf8');
     }
+    // Keep the original multi-root workspace file byte-for-byte: later edits
+    // by the user must disqualify the entire group from automatic deletion.
+    await io.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1,
+      kind: 'independent-clone',
+      repositories: [...destinations.values()].map(destination => path.basename(destination)),
+      workspaceFileContents
+    }, null, 2) + '\n', { mode: 0o600 });
     await vscode.commands.executeCommand(
       'vscode.openFolder', vscode.Uri.file(target), { forceNewWindow: true }
     );

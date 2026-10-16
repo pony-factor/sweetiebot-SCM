@@ -5,7 +5,7 @@ A small source-control UI patch for Visual Studio Code. It keeps the built-in Gi
 Current features:
 
 - resize the current VS Code window to a centered 600 × 600 square with the compact-window titlebar button, matching VS Code's native minimum width for side-mounted panels so resizable vertical columns remain intact without window-level horizontal overflow; restore the previous bounds on the next click (displays smaller than 600 pixels in either dimension are left unchanged)
-- open independent local Git clones starting on main, with separately switchable branches, using the title-bar button beside Compact Window (copies live under ~/Sweetiebot Workspaces, with repository-based folder names instead of numeric prefixes; uncommitted changes are not copied)
+- open independent local Git clones starting on main, with separately switchable branches, using the title-bar button beside Compact Window (copies live under ~/Library/Application Support/Sweetiebot/Workspaces, with repository-based folder names instead of numeric prefixes; uncommitted changes are not copied)
 - show the current branch inside the SCM message box and open VS Code's normal branch picker from it
 - switch the branch selector and native Commit button between outlined and accent-filled styles
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
@@ -48,7 +48,7 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 
 ### Independent workspace trust (first run)
 
-Sweetiebot creates independent clones under `~/Sweetiebot Workspaces` (each new
+Sweetiebot creates independent clones under `~/Library/Application Support/Sweetiebot/Workspaces` (each new
 window gets a separate Git working directory). VS Code's Workspace Trust may
 otherwise start these windows in **Restricted Mode**, disabling extensions,
 tasks, and other features. On the first Sweetiebot extension startup after
@@ -76,13 +76,45 @@ repository separately, simply leave the parent untrusted.
 
 The **Open Independent Workspace from Main** button keeps each checkout in a
 persistent folder named for the repository, such as
-`~/Sweetiebot Workspaces/sweetiebot-SCM-<unique>/sweetiebot-SCM`, rather than
+`~/Library/Application Support/Sweetiebot/Workspaces/sweetiebot-SCM-<unique>/sweetiebot-SCM`, rather than
 `workspace-<unique>/1-sweetiebot-SCM`. A multi-root workspace uses a
 `<first-repository>-group-<unique>` parent, with one named checkout per distinct
 Git repository. When multiple roots share the same name, later ones receive a
 suffix (for example, `shared` and `shared-2`) to prevent overwrites.
 The unique workspace suffix keeps repeated launches independent. Existing
-workspaces are not renamed or deleted.
+workspaces under the old `~/Sweetiebot Workspaces` directory are not renamed,
+migrated, or deleted by this change. The new folder is per-user and lives
+under macOS Application Support, not Caches.
+
+### Automatic merged-workspace cleanup
+
+Sweetiebot checks its **own newly created independent clones** at startup and
+every ten minutes. `scmToolkit.automaticWorkspaceCleanup` (on by default)
+controls this separately from automatic branch cleanup. A checkout is never
+deleted merely for being old, or because a remote branch disappeared.
+
+The normal merged-branch cleanup stores evidence of PRs that it verified were
+merged into `main` at the exact recorded head commit. Workspace cleanup
+revalidates that evidence with authenticated GitHub CLI (`gh`), checks that no
+PR for the branch is open, and requires **all** repositories in a multi-root
+workspace to pass. Each repository must be on `main`, have no extra local
+branches, stash, modified, untracked or ignored files, and no unpublished or
+otherwise unrecognized commits in its reflog. A successful fresh fetch must
+confirm that local `main` is already reachable from `origin/main`.
+
+Workspace cleanup also requires a Sweetiebot provenance manifest, evidence
+that Sweetiebot successfully activated in the workspace, and at least an hour
+since its last activity heartbeat. A live extension-host process always
+protects the workspace. Missing/ambiguous evidence, network errors, unfamiliar
+files, or any unmerged/new work stop deletion. The cleanup process never
+manages user-selected folders or older workspaces created without its
+manifest. The active-workspace safeguard is conservative but cannot detect
+every conceivable editor process outside Sweetiebot; do not treat these clones
+as permanent storage after their work has merged.
+
+Successful deletions and errors appear in the **Sweetiebot Workspace Cleanup**
+output channel. No automatic migration or cleanup is performed on the old
+`~/Sweetiebot Workspaces` directory.
 
 
 ## Requirements

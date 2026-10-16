@@ -253,7 +253,63 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
         )
         if result.returncode == 0:
             pruned.append((name_with_owner, branch, number))
+            record_managed_workspace_merge(repo, name_with_owner, branch,
+                                           expected_oid, number, default_branch)
     return pruned
+
+
+def record_managed_workspace_merge(repo, repository, branch, oid, number, default_branch):
+    """Retain verified PR evidence outside an independent clone's working tree.
+
+    A later workspace scan must revalidate the PR with GitHub before deletion.
+    This is bookkeeping, not evidence that deleting a workspace is safe.
+    """
+    if default_branch != "main":
+        return
+    root = Path(repo).resolve()
+    group = root.parent
+    base = Path.home() / "Library/Application Support/Sweetiebot/Workspaces"
+    if group.parent != base or group.is_symlink() or root.is_symlink():
+        return
+    try:
+        manifest = json.loads((group / ".sweetiebot-workspace.json").read_text())
+        if (manifest.get("version") != 1
+                or manifest.get("kind") != "independent-clone"
+                or root.name not in manifest.get("repositories", [])):
+            return
+        evidence_dir = group / ".sweetiebot-merged"
+        if evidence_dir.is_symlink():
+            return
+        evidence_dir.mkdir(mode=0o700, exist_ok=True)
+        target = evidence_dir / (root.name + ".json")
+        if target.is_symlink():
+            return
+        data = json.loads(target.read_text()) if target.exists() else {"merges": []}
+        merges = data.get("merges", [])
+        if not isinstance(merges, list) or len(merges) >= 100:
+            return
+        record = dict(repository=repository, branch=branch, oid=oid,
+                      number=number, base=default_branch)
+        if record not in merges:
+            merges.append(record)
+        # Same-directory temporary file plus replacement avoids partial JSON
+        # if the extension host is interrupted mid-write.
+        import tempfile
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                              dir=evidence_dir, prefix=".proof-",
+                                              delete=False) as stream:
+                temporary = Path(stream.name)
+                os.chmod(stream.name, 0o600)
+                json.dump({"merges": merges}, stream)
+                stream.write("\n")
+            os.replace(temporary, target)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        print(f"Could not record merged workspace PR for {repo}: {error}", file=sys.stderr)
 
 
 def main():

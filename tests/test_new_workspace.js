@@ -50,6 +50,9 @@ function editor(paths) {
     assert.deepEqual(first.calls[0][2], { forceNewWindow: true });
     const clone = first.calls[0][1].fsPath;
     assert.equal(clone, initial.target);
+    const manifest = JSON.parse(await fs.readFile(path.join(initial.directory, '.sweetiebot-workspace.json'), 'utf8'));
+    assert.deepEqual(manifest.repositories, ['original']);
+    assert.equal(manifest.kind, 'independent-clone');
     assert.equal(path.basename(clone), 'original', 'No ordinal prefix on the checkout');
     assert.match(path.basename(initial.directory), /^original-[a-zA-Z0-9_-]+$/, 'Parent uses the repository name');
     assert.equal(git('-C', clone, 'branch', '--show-current'), 'main');

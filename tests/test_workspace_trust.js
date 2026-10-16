@@ -50,7 +50,7 @@ function fixture({ enabled = true, seen = false, selection = 'Not Now' } = {}) {
 
 (async () => {
   const baseDirectory = '/tmp/sweetiebot-trust-tests/Workspace Clones';
-  assert.equal(independentWorkspaceParent(), path.join(os.homedir(), 'Sweetiebot Workspaces'));
+  assert.equal(independentWorkspaceParent(), path.join(os.homedir(), 'Library', 'Application Support', 'Sweetiebot', 'Workspaces'));
 
   const first = fixture({ selection: 'Not Now' });
   assert.equal(await showIndependentWorkspaceTrustSetup(first.vscode, first.context, {

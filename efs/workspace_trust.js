@@ -5,12 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 
 const TRUST_SETUP_COMMAND = 'sweetiebot.configureIndependentWorkspaceTrust';
-const TRUST_SETUP_SEEN_KEY = 'scmToolkit.independentWorkspaceTrustSetupSeen.v1';
+const TRUST_SETUP_SEEN_KEY = 'scmToolkit.independentWorkspaceTrustSetupSeen.v2';
 const MANAGE_TRUST = 'Manage Workspace Trust';
 let firstRunInFlight;
 
 function independentWorkspaceParent() {
-  return path.join(os.homedir(), 'Sweetiebot Workspaces');
+  return path.join(os.homedir(), 'Library', 'Application Support', 'Sweetiebot', 'Workspaces');
 }
 
 // VS Code deliberately owns the trust database. Extensions have no supported
