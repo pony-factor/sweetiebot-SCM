@@ -8,6 +8,7 @@ START = '\n/* scm-toolkit-codex-colors:start */\n'
 END = '/* scm-toolkit-codex-colors:end */\n'
 COLOR_SETTINGS = (
     "codexSendBackground",
+    "codexNewChatDotColor",
     "codexSendForeground",
     "codexComposerLabelColor",
     "codexDropAccent",
@@ -72,14 +73,18 @@ def transform(css, settings, remove=False):
         css = before + after
     if remove:
         return css
-    background, foreground, label, drop = [validate_color(settings.get(key, '')) for key in COLOR_SETTINGS]
+    background, dot, foreground, label, drop = [validate_color(settings.get(key, '')) for key in COLOR_SETTINGS]
     scope = ':root[data-codex-window-type=extension]'
-    # The unread speech-bubble badge is an SVG circle using the fixed info
-    # palette. Scope this to that badge so other informational icons keep theirs.
+    # The New Chat unread dot can be customized independently. If unset,
+    # follow the Send button background and finally the VS Code theme.
+    # Match only this specific SVG circle so other badges keep their colors.
+    dot_color = dot or background or (
+        'var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
+        'var(--color-text-info)))'
+    )
     rules = [
         f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
-        '{ fill: var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
-        'var(--color-text-info))) !important; }'
+        f'{{ fill: {dot_color} !important; }}'
     ]
     if settings.get('codexHideAccessLabel', False):
         # Keep the current mode in the accessibility tree via aria-describedby.
