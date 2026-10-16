@@ -78,11 +78,27 @@ async function eligibleGroup(io, group, baseDirectory, now, alive) {
          entry.name === 'workspace.code-workspace') && !entry.isFile()) return null;
   }
   for (const name of names) if (!await isPlainDirectory(io, path.join(group, name))) return null;
+  // .code-workspace files are not part of Git status. Preserve user edits.
+  if (names.length > 1) {
+    if (typeof manifest.workspaceFileContents !== 'string' ||
+        await io.readFile(path.join(group, 'workspace.code-workspace'), 'utf8')
+          !== manifest.workspaceFileContents) return null;
+  } else if (entries.some(entry => entry.name === 'workspace.code-workspace')) return null;
+  // Only our own per-repository proof files may live in the proof directory.
+  if (entries.some(entry => entry.name === PROOFS)) {
+    const proofs = await io.readdir(path.join(group, PROOFS), { withFileTypes: true });
+    if (proofs.some(entry => !entry.isFile() ||
+        !names.some(name => entry.name === name + '.json'))) return null;
+  }
   return names;
 }
 
 async function mergedEvidence(io, group, name, run) {
-  const proof = await jsonFile(io, path.join(group, PROOFS, name + '.json'));
+  const proofFile = path.join(group, PROOFS, name + '.json');
+  let proofStat;
+  try { proofStat = await io.lstat(proofFile); } catch { return null; }
+  if (!proofStat.isFile()) return null;
+  const proof = await jsonFile(io, proofFile);
   if (!proof || !Array.isArray(proof.merges) || !proof.merges.length || proof.merges.length > 100) return null;
   const verified = [];
   for (const merge of proof.merges) {
@@ -173,6 +189,14 @@ async function pruneManagedWorkspaces({
           safe = false; break;
         }
         if (!safe || !await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) continue;
+        // Recheck the worktrees after remote access and immediately before
+        // the destructive operation; abort if a user has begun writing.
+        for (const name of names) {
+          const dirty = await run('git',
+            ['status', '--porcelain', '--ignored', '--untracked-files=all'], path.join(group, name));
+          if (dirty !== '') { safe = false; break; }
+        }
+        if (!safe) continue;
         if (!dryRun) await io.rm(group, { recursive: true, force: false });
         pruned.push(group);
         log((dryRun ? 'Would prune ' : 'Pruned ') + group);
