@@ -34,6 +34,15 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_spellcheck_line_break_preference_can_be_toggled(self):
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["spellcheckPreserveLineBreaks"])
+        page = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="spellcheckPreserveLineBreaks"', page)
+        self.assertIn("Preserve intentional line breaks", page)
+        values.pop("spellcheckPreserveLineBreaks")
+        self.assertFalse(configurator.parse_submission(values)["spellcheckPreserveLineBreaks"])
+
     def test_commit_coauthor_identity_can_be_changed_safely(self):
         values = form_values()
         self.assertEqual(configurator.parse_submission(values)["codexCoauthorName"], "Codex")

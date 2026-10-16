@@ -210,10 +210,43 @@ def normalize_smart_punctuation(text: str) -> str:
     return "".join(pieces)
 
 
-def safe_correction(original: str, corrected: str) -> bool:
+def line_boundaries_preserved(original: str, corrected: str) -> bool:
+    """Reject suggestions that move words across author-chosen newline boundaries.
+
+    Equal words are exact anchors; same-length replacements are treated as
+    possible spelling corrections and must stay on their original lines too.
+    This is deliberately conservative, while still allowing insertions and
+    deletions within a line.
+    """
+    def words_with_lines(text: str) -> list[tuple[str, int]]:
+        return [
+            (match.group(0), line_number)
+            for line_number, line in enumerate(text.split("\n"))
+            for match in re.finditer(r"\w+", line)
+        ]
+
+    before = words_with_lines(original)
+    after = words_with_lines(corrected)
+    matcher = difflib.SequenceMatcher(
+        None, [word for word, _ in before], [word for word, _ in after], autojunk=False
+    )
+    for operation, before_start, before_end, after_start, after_end in matcher.get_opcodes():
+        if operation != "equal" and not (
+            operation == "replace" and before_end - before_start == after_end - after_start
+        ):
+            continue
+        for offset in range(before_end - before_start):
+            if before[before_start + offset][1] != after[after_start + offset][1]:
+                return False
+    return True
+
+
+def safe_correction(original: str, corrected: str, preserve_line_breaks: bool = True) -> bool:
     original_lines = original.split("\n")
     corrected_lines = corrected.split("\n")
     if len(original_lines) != len(corrected_lines):
+        return False
+    if preserve_line_breaks and not line_boundaries_preserved(original, corrected):
         return False
     if protected_tokens(original) != protected_tokens(corrected):
         return False
@@ -227,8 +260,14 @@ def safe_correction(original: str, corrected: str) -> bool:
     return difflib.SequenceMatcher(None, original, corrected).ratio() >= 0.72
 
 
-def spellcheck_prompt(path: str, target: str, before: str, after: str, instructions: str = DEFAULT_INSTRUCTIONS) -> str:
+def spellcheck_prompt(path: str, target: str, before: str, after: str, instructions: str = DEFAULT_INSTRUCTIONS, preserve_line_breaks: bool = True) -> str:
     line_count = len(target.split("\n"))
+    line_break_rule = (
+        "Keep every original newline in its position relative to the words. Do not move "
+        "words between lines, even if the number of lines stays the same."
+        if preserve_line_breaks else
+        "Keep the same total number of lines. Existing line wrapping may change."
+    )
     return f"""You are a spellcheck-only editor. Correct only the TARGET Markdown text.
 
 Allowed changes:
@@ -238,7 +277,8 @@ Allowed changes:
 - replace smart punctuation with plain ASCII punctuation, for example Alpine’s -> Alpine's
 
 Do not rewrite, restyle, summarize, change meaning, alter facts, or make editorial improvements.
-Preserve Markdown syntax, URLs, inline code, citations, capitalization choices, and line breaks.
+Preserve Markdown syntax, URLs, inline code, citations, and capitalization choices.
+{line_break_rule}
 Use plain ASCII punctuation in prose, except use an en dash for numeric ranges, such as pages 12952–12953. Preserve every number, date, citation, and identifier. Do not introduce em dashes, curly quotes, or ellipsis characters.
 Additional terminology guidance (subject to the preservation rules above):
 {instructions}
@@ -263,11 +303,14 @@ def request_correction(core: ModuleType, model: str, path: str, target: str, bef
     try:
         read_config = getattr(core, "git_config_string", lambda key, default: default)
         instructions = read_config("scm-toolkit.spellcheck-instructions", DEFAULT_INSTRUCTIONS)
+        preserve_line_breaks = getattr(core, "git_config_bool", lambda key, default: default)(
+            "scm-toolkit.spellcheck-preserve-line-breaks", True
+        )
         response = core.ollama_json(
             "/api/generate",
             {
                 "model": model,
-                "prompt": spellcheck_prompt(path, target, before, after, instructions[:4000]),
+                "prompt": spellcheck_prompt(path, target, before, after, instructions[:4000], preserve_line_breaks),
                 "stream": False,
                 "format": "json",
                 "options": {
@@ -282,7 +325,7 @@ def request_correction(core: ModuleType, model: str, path: str, target: str, bef
         if not isinstance(corrected, str):
             return None
         corrected = normalize_smart_punctuation(corrected)
-        if not safe_correction(target, corrected):
+        if not safe_correction(target, corrected, preserve_line_breaks):
             return None
         return corrected
     except Exception:

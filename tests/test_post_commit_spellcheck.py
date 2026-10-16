@@ -36,6 +36,34 @@ class CorrectionTests(unittest.TestCase):
         self.assertFalse(worker.safe_correction(original, corrected.replace("12953", "12954")))
         self.assertEqual(worker.normalize_smart_punctuation("Use `Alpine’s` here."), "Use `Alpine’s` here.")
 
+    def test_preserve_intentional_line_breaks_option(self):
+        original = "Alpha teh sentence.\nThe next paragraph."
+        corrected = "Alpha the\nsentence. The next paragraph."
+        self.assertFalse(worker.safe_correction(original, corrected))
+        self.assertTrue(worker.safe_correction(original, corrected, preserve_line_breaks=False))
+        self.assertIsNone(worker.request_correction(self.core(corrected), "model", "note.md", original, "", ""))
+
+        prompts = []
+        core = SimpleNamespace(
+            git_config_bool=lambda key, default: False,
+            ollama_json=lambda endpoint, payload: prompts.append(payload["prompt"])
+            or {"response": json.dumps({"text": corrected})},
+        )
+        self.assertEqual(worker.request_correction(core, "model", "note.md", original, "", ""), corrected)
+        self.assertIn("Existing line wrapping may change", prompts[0])
+        self.assertIn("Do not move words between lines", worker.spellcheck_prompt("note.md", original, "", ""))
+
+    def test_spelling_at_line_boundaries_still_allowed(self):
+        original = "Alpha teh\nbravo sentnce."
+        corrected = "Alpha the\nbravo sentence."
+        self.assertTrue(worker.safe_correction(original, corrected))
+        self.assertEqual(worker.request_correction(self.core(corrected), "model", "note.md", original, "", ""), corrected)
+
+        # A word moved and corrected simultaneously must still be rejected.
+        moved = "Alpha\nthe bravo sentence."
+        self.assertFalse(worker.safe_correction(original, moved))
+        self.assertTrue(worker.safe_correction(original, moved, preserve_line_breaks=False))
+
     def test_custom_terminology_is_in_prompt(self):
         prompts = []
         core = SimpleNamespace(
