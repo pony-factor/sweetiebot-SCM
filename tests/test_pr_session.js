@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { launchPRSession, resumePRSession, sessionDirectory } = require('../efs/pr_session');
+const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = require('../efs/pr_session');
 
 (async () => {
   const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pr-session-')));
@@ -50,6 +50,10 @@ const { launchPRSession, resumePRSession, sessionDirectory } = require('../efs/p
     assert.equal(await launchPRSession(target, context, root, options), false, 'Never recursively open another session');
     await resumePRSession(target, context);
     assert.equal(resumed.length, 4, 'Restoring a workspace must not repeat a PR request');
+    const closeCommands = [];
+    assert.equal(await closePRSession({ ...target, commands: { async executeCommand(command) { closeCommands.push(command); } } }, context), true);
+    assert.deepEqual(closeCommands, ['workbench.action.switchToMainWindow', 'workbench.action.closeWindow'], 'Close the session workspace, including its auxiliary windows');
+    assert.equal(await closePRSession(source, context), false, 'Never close the originating repository workspace');
 
     const foreign = { ...target, workspace: { workspaceFile: file('/elsewhere/session-x/Pull Request.code-workspace') } };
     assert.equal(await sessionDirectory(foreign, context), undefined);
