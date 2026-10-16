@@ -428,6 +428,39 @@ class TransformTests(unittest.TestCase):
             install.browser_globe_new_tab_edits(action + action)
 
 
+    def test_browser_globe_homepage_does_not_focus_address_picker(self):
+        action = ('id:Fc.OpenOrList,title:O(1,"Browser"),icon:L.globe}'
+                  'async run(o){let e=o.get(cd),t=o.get(be);'
+                  'if(e.getContextualBrowserViews().size>0){'
+                  'await t.executeCommand(Fc.QuickOpen);return}'
+                  'await t.executeCommand(Fc.Open)}')
+        original = workbench_fixture() + action + browser_resolver_fixture()
+        for requested_url in ("https://chatgpt.com/", "https://example.com/chat", ""):
+            with self.subTest(url=requested_url):
+                enabled = dict(
+                    SETTINGS, browserGlobeNewTab=True, browserChatgptHome=True,
+                    browserHomeUrl=requested_url,
+                )
+                patched = install.transform(original, "base-css", settings=enabled)
+                destination = requested_url or "https://chatgpt.com/"
+                # URL-bearing Open skips the native NewTab URL picker.
+                self.assertIn(
+                    f'async run(o){{return o.get(be).executeCommand(Fc.Open,{json.dumps(destination)});',
+                    patched[0],
+                )
+                self.assertNotIn(
+                    'async run(o){return o.get(be).executeCommand(Fc.NewTab);',
+                    patched[0],
+                )
+                self.assertIn(
+                    f',url:options?.viewState?.url||{json.dumps(destination)}',
+                    patched[0],
+                )
+                self.assertEqual(
+                    install.transform(*patched, remove=True, settings=enabled),
+                    (original, "base-css"),
+                )
+
     def test_cross_window_browser_views_reopen_without_reusing_foreign_ids(self):
         original = workbench_fixture() + browser_cross_window_fixture()
         patched, css = install.transform(original, "base-css", settings=SETTINGS)
