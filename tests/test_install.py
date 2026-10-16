@@ -759,14 +759,25 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched, remove=True), original)
         self.assertEqual(install.transform_codex(patched, enabled=True), patched)
 
-        # Hide the value before React renders it, including repeated renders;
-        # leave the native no-reset branch in charge of the complete message.
+        # Reset-time hiding must preserve the native transcript formatter.
         hidden = install.transform_codex(patched, hide_reset_times=True)
-        self.assertIn('u=null/* scm-toolkit-hide-transcript-reset */;', hidden)
+        self.assertIn('u=e==null?null:format(r,e);', hidden)
         self.assertNotIn('usageLimit.upgradeOrAddCredits.countdown', hidden)
         self.assertEqual(install.transform_codex(hidden, hide_reset_times=True), hidden)
         self.assertEqual(install.transform_codex(hidden, remove=True), original)
         self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
+
+    def test_previous_transcript_reset_edit_is_restored(self):
+        original = 'u=e==null?null:format(r,e);'
+        replacement = 'u=null/* scm-toolkit-hide-transcript-reset */'
+        installed = original.replace(original[:-1], replacement)
+        installed += install.CODEX_HIDE_RESET_START
+        installed += '/* edits:' + json.dumps([[original[:-1], replacement]]) + ' */\n'
+        installed += install.CODEX_HIDE_RESET_END
+        self.assertEqual(install.transform_codex(installed, remove=True), original)
+        repaired = install.transform_codex(installed, hide_reset_times=True)
+        self.assertTrue(repaired.startswith(original))
+        self.assertEqual(install.transform_codex(repaired, remove=True), original)
 
     def test_legacy_countdown_metadata_can_still_be_removed(self):
         original = self.fixture()
