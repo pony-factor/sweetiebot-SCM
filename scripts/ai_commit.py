@@ -1337,7 +1337,7 @@ def generate_message(
             "options": {
                 "num_ctx": NUM_CTX,
                 "temperature": 0,
-                "num_predict": 256 if include_description else 128,
+                "num_predict": 512 if include_description else 256,
             },
         }
         for attempt in range(MAX_GENERATION_ATTEMPTS):
