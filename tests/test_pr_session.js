@@ -35,6 +35,7 @@ const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = r
     assert.deepEqual(saved.folders, [{ path: root.fsPath }]);
     assert.equal(saved.settings['scmToolkit.autoPublishPullRequests'], false);
     assert.equal(saved.settings['scmToolkit.automaticBranchCleanup'], false);
+    assert.equal(saved.settings['scmToolkit.startCompactPRSession'], true, 'Only the PR workspace opts into compact startup');
     assert.equal(await sessionDirectory(source, context), undefined);
     assert.equal(path.dirname(path.dirname(workspaceUri.fsPath)), sessions, 'Saved workspace inherits repository trust');
     assert.equal(execFileSync('git', ['-C', root.fsPath, 'status', '--porcelain'], { encoding: 'utf8' }), '', 'Session files never appear in the working tree');

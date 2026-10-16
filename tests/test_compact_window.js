@@ -48,6 +48,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     return new Promise(resolve => { release = resolve; });
   } };
   ctx.scmToolkitMountCompactWindow(doc, native);
+  assert.equal(calls.length, 0, 'Regular windows do not automatically compact');
   doc.action().events.click(event);
   doc.action().events.click(event);
   assert.equal(calls.length, 1, 'Double clicks cannot overwrite saved bounds');
@@ -67,6 +68,55 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'false');
+  // Dedicated PR workspaces start square, and their title-bar button still restores size.
+  const session = documentFixture();
+  const sessionCalls = [];
+  const sessionNative = { async positionWindow(bounds, options) {
+    sessionCalls.push(JSON.parse(JSON.stringify({ bounds, options })));
+  } };
+  let autoCompact = true;
+  let changed;
+  const sessionConfiguration = {
+    getValue(key) { return key === 'scmToolkit.startCompactPRSession' ? autoCompact : true; },
+    onDidChangeConfiguration(callback) { changed = callback; return { dispose() {} }; },
+  };
+  ctx.scmToolkitMountCompactWindow(session, sessionNative, null, sessionConfiguration);
+  await flush();
+  assert.deepEqual(sessionCalls, [{
+    bounds: { x: -1020, y: 163, width: 600, height: 600 },
+    options: { targetWindowId: 7 }
+  }]);
+  assert.equal(session.action().attrs['aria-pressed'], 'true');
+  session.rebuild();
+  assert.equal(sessionCalls.length, 1, 'Title-bar remount does not resize a second time');
+  session.action().events.click(event);
+  await flush();
+  assert.deepEqual(sessionCalls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.equal(session.action().attrs['aria-pressed'], 'false');
+  autoCompact = false;
+  changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
+  autoCompact = true;
+  changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
+  await flush();
+  assert.equal(sessionCalls.length, 2, 'Setting changes never reapply automatic compaction');
+
+  // Workspace configuration may arrive after the workbench mounts.
+  const late = documentFixture();
+  let lateEnabled = false;
+  let lateChanged;
+  const lateConfiguration = {
+    getValue(key) { return key === 'scmToolkit.startCompactPRSession' ? lateEnabled : true; },
+    onDidChangeConfiguration(callback) { lateChanged = callback; return { dispose() {} }; },
+  };
+  ctx.scmToolkitMountCompactWindow(late, sessionNative, null, lateConfiguration);
+  assert.equal(sessionCalls.length, 2, 'No resize before the session setting arrives');
+  lateEnabled = true;
+  lateChanged({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
+  await flush();
+  assert.equal(sessionCalls.length, 3, 'Late session setting applies compact layout once');
+  assert.equal(sessionCalls.at(-1).bounds.width, 600);
+  assert.equal(sessionCalls.at(-1).bounds.height, 600);
+
   const other = documentFixture();
   ctx.scmToolkitMountCompactWindow(other, native);
   assert.notEqual(doc.__sweetiebotCompactWindow, other.__sweetiebotCompactWindow, 'Each window owns its restore state');

@@ -203,6 +203,12 @@
           "default": false,
           "description": "Automatically publish newly selected local branches to the configured Git remote."
         },
+        "scmToolkit.startCompactPRSession": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Open a dedicated pull-request session window in the compact 600px square layout."
+        },
         "scmToolkit.compactWindowButton": {
           "type": "boolean",
           "default": true,

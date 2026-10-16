@@ -2299,7 +2299,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     if (doc.__sweetiebotCompactWindow) return;
     const win = doc.defaultView;
     if (!win || !nativeHost?.positionWindow) return;
-    const state = { restore: null, busy: false, opening: false };
+    const state = { restore: null, busy: false, opening: false, autoCompactStarted: false };
     doc.__sweetiebotCompactWindow = state;
     const actionId = 'sweetiebot-compact-window-action';
     const newActionId = 'sweetiebot-new-workspace-window-action';
@@ -2365,6 +2365,13 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 action.setAttribute('aria-label', action.title);
             }
         }
+    };
+    const startCompactIfRequested = action => {
+        if (state.autoCompactStarted ||
+            configuration?.getValue('scmToolkit.startCompactPRSession') !== true) return;
+        state.autoCompactStarted = true;
+        // Share the button's native square resize and restore behavior.
+        void toggle(action);
     };
     const mount = () => {
         if (doc.getElementById(actionId)) return;
@@ -2447,6 +2454,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             actions.appendChild(newItem);
         }
         refreshVisibility();
+        startCompactIfRequested(action);
     };
     mount();
     const observer = new win.MutationObserver(mount);
@@ -2454,6 +2462,10 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     const visibilityListener = configuration?.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('scmToolkit.compactWindowButton')
             || event.affectsConfiguration('scmToolkit.newWorkspaceWindowButton')) refreshVisibility();
+        if (event.affectsConfiguration('scmToolkit.startCompactPRSession')) {
+            const action = doc.getElementById(actionId)?.querySelector('a');
+            if (action) startCompactIfRequested(action);
+        }
     });
     win.addEventListener('unload', () => {
         observer.disconnect();
