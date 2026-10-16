@@ -252,6 +252,11 @@
           "default": "",
           "description": "Ollama chat model used by Ask Ollama. Required when Ask Ollama is enabled."
         },
+        "scmToolkit.workspaceSearch.placeholder": {
+          "type": "string",
+          "default": "Search your workspace…",
+          "description": "Hint shown in the empty EFS search box; set to SATS or any custom text. Leave blank to restore the original hint."
+        },
         "scmToolkit.workspaceSearch.ollamaUrl": {
           "type": "string",
           "default": "http://127.0.0.1:11434",

@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "notificationPosition": "bottom-left",
     "workspaceSearchActivityBar": False,
     "workspaceSearchLabel": "EFS",
+    "workspaceSearchPlaceholder": "Search your workspace…",
     "workspaceSearchAskOllama": False,
     "workspaceSearchChatModel": "",
     "workspaceSearchEmbeddingModel": "qwen3-embedding:0.6b",
@@ -213,6 +214,7 @@ SETTING_KEYS = {
     "notificationPosition": "scm-toolkit.notification-position",
     "workspaceSearchActivityBar": "scm-toolkit.workspace-search-activity-bar",
     "workspaceSearchLabel": "scm-toolkit.workspace-search-label",
+    "workspaceSearchPlaceholder": "scm-toolkit.workspace-search-placeholder",
     "workspaceSearchAskOllama": "scm-toolkit.workspace-search-ask-ollama",
     "workspaceSearchChatModel": "scm-toolkit.workspace-search-chat-model",
     "workspaceSearchEmbeddingModel": "scm-toolkit.workspace-search-embedding-model",
@@ -300,6 +302,7 @@ VSCODE_SETTINGS = {
     "workspaceSearch": {
         "embeddingModel": "workspaceSearchEmbeddingModel",
         "chatModel": "workspaceSearchChatModel",
+        "placeholder": "workspaceSearchPlaceholder",
         "askOllama": "workspaceSearchAskOllama",
         "ollamaUrl": "workspaceSearchOllamaUrl",
         "mode": "workspaceSearchMode",

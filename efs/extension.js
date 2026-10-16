@@ -291,6 +291,7 @@ function settings() {
     embeddingModel: cfg.get('embeddingModel', 'qwen3-embedding:0.6b'),
     askOllama: cfg.get('askOllama', false),
     chatModel: cfg.get('chatModel', '').trim(),
+    placeholder: cfg.get('placeholder', 'Search your workspace…'),
     ollamaUrl: cfg.get('ollamaUrl', 'http://127.0.0.1:11434'),
     mode: cfg.get('mode', 'hybrid'),
     resultLimit: cfg.get('resultLimit', 100),
@@ -352,6 +353,11 @@ async function activate(context) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration(`${CONFIG_ROOT}.placeholder`)) {
+      provider.post({ type: 'placeholder', value: settings().placeholder });
+    }
+  }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openSettings', () => {
     return openSettings(context);
   }));
