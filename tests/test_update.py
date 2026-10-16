@@ -86,6 +86,26 @@ class UpdateTests(unittest.TestCase):
                     result = update.prepare_update(root)
                 self.assertEqual(result is not None, supports_updates)
 
+    def test_pr_release_cannot_reinstall_a_bootstrap_that_drops_html(self):
+        for broken in ('update.py', 'workspace_search.py', 'asset', None):
+            with self.subTest(broken=broken), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'upstream.git').mkdir()
+                payload = {
+                    'scripts/install.py': 'installer', 'scripts/repair.py': 'repair',
+                    'scripts/update.py': 'FORMATS = {"efs": {".js", ".html"}}',
+                    'scripts/workspace_search.py': 'FORMATS = {"efs": {".js", ".html"}}',
+                    'efs/draft_handoff.js': 'handoff',
+                    'efs/draft_confirmation.html': '<html>confirmation</html>',
+                }
+                if broken == 'asset':
+                    del payload['efs/draft_confirmation.html']
+                elif broken:
+                    payload['scripts/' + broken] = 'FORMATS = {"efs": {".js"}}'
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                    result = update.prepare_update(root)
+                self.assertEqual(result is not None, broken is None)
+
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
