@@ -58,6 +58,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary = Path(destination) if destination is not None else ai_wrapper_path()
     primary_files = [
         (HERE / "ai_commit.py", primary),
+        (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),
         (
             HERE / "post_commit_spellcheck.py",

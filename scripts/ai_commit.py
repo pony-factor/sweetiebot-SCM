@@ -247,8 +247,8 @@ def selected_model(installed: set[str]) -> tuple[str | None, bool]:
     return None, False
 
 
-def commit_index(argv: list[str]) -> int | None:
-    """Find a commit subcommand without treating global option values as commands."""
+def git_command_index(argv: list[str]) -> tuple[int, str] | None:
+    """Find the Git subcommand without treating global option values as commands."""
     value_options = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
     flag_options = {
         "--no-pager",
@@ -280,8 +280,15 @@ def commit_index(argv: list[str]) -> int | None:
         elif arg.startswith(("-C", "-c")) and len(arg) > 2:
             index += 1
         else:
-            return index if arg == "commit" else None
+            return index, arg
     return None
+
+
+def commit_index(argv: list[str]) -> int | None:
+    found = git_command_index(argv)
+    return found[0] if found and found[1] == "commit" else None
+
+
 
 
 def has_explicit_message_or_special_mode(args: list[str]) -> bool:
@@ -1448,6 +1455,7 @@ def generate_message(
     include_description: bool = False,
     conversation_context: str = "",
     require_model: bool = False,
+    file_context_override: str | None = None,
 ) -> tuple[str, str]:
     # Simple messages are the default fallback even for text and custom emoji rules.
     # Disable the fallback in Ollama settings to expose model failures for debugging.
@@ -1484,7 +1492,7 @@ def generate_message(
         print(f"scm-toolkit: {detail}", file=sys.stderr)
         return fallback_message(files, include_description)
 
-    file_context = staged_file_context(files)
+    file_context = staged_file_context(files) if file_context_override is None else file_context_override
     try:
         priority_emoji = select_priority_emoji(
             model, priority_rules, stat, diff, file_context, conversation_context,
@@ -1655,12 +1663,34 @@ def main() -> None:
         subject = sys.stdin.read()
         print(json.dumps({"subject": spellcheck_subject(subject)}, ensure_ascii=False))
         return
+    if len(argv) == 3 and argv[0] == "--sweetiebot-finalize":
+        # The installed Git wrapper is a script, not an importable ai_commit.py.
+        sys.modules.setdefault("ai_commit", sys.modules[__name__])
+        from sweetiebot_async_commit import run_worker
+        run_worker(REAL_GIT, argv[1], argv[2])
+        return
 
-    index = commit_index(argv)
-    if index is None:
+    found = git_command_index(argv)
+    if found is None:
         os.execv(REAL_GIT, [REAL_GIT, *argv])
+    index, subcommand = found
 
     GIT_GLOBAL_ARGS = argv[:index]
+    if subcommand in {"commit", "push", "pull", "merge", "rebase", "reset",
+                      "switch", "checkout", "cherry-pick"}:
+        # The installed wrapper is a script named scm-toolkit-git. Its local
+        # recovery path still needs to import the running commit module.
+        sys.modules.setdefault("ai_commit", sys.modules.get(__name__, sys.modules["__main__"]))
+        # A push, another commit, or a ref-changing operation must wait until
+        # the provisional commit has been atomically rewritten.
+        from sweetiebot_async_commit import wait_for_completion
+        try:
+            wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
+        except RuntimeError as exc:
+            print(f"scm-toolkit: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+    if subcommand != "commit":
+        os.execv(REAL_GIT, [REAL_GIT, *argv])
     commit_args = argv[index + 1 :]
 
     manual_staged_commit = has_manual_staged_message(commit_args)
@@ -1691,6 +1721,23 @@ def main() -> None:
         split_groups = github_split_groups(files)
         if len(split_groups) > 1:
             raise SystemExit(commit_split_groups(argv, split_groups))
+        use_async = (
+            git_config_bool("scm-toolkit.ai-commit-async", False)
+            and not git_config_bool("scm-toolkit.post-commit-spellcheck", False)
+            and git_output("config", "--type=bool", "--get", "commit.gpgsign").strip() != "true"
+            and not any(arg == "-S" or arg.startswith(("-S", "--gpg-sign")) for arg in commit_args)
+            and bool(current_branch())
+        )
+        if use_async:
+            # Only automatically generated ordinary staged commits use the
+            # placeholder. Explicit messages and special modes remain intact.
+            sys.modules.setdefault("ai_commit", sys.modules[__name__])
+            from sweetiebot_async_commit import begin
+            raise SystemExit(begin(
+                REAL_GIT, GIT_GLOBAL_ARGS, commit_args, stat, diff, files,
+                should_add_default_branch_description(), staged_file_context(files),
+                os.path.abspath(__file__),
+            ))
         title, description = generate_message(
             stat,
             diff,

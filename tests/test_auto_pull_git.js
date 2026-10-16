@@ -41,6 +41,14 @@ async function run() {
     },
     async fetch({ remote, ref }) { git(local, 'fetch', remote, ref); }
   };
+  const pendingJournal = path.join(git(local, 'rev-parse', '--absolute-git-dir'),
+    'sweetiebot-async-commit.json');
+  fs.writeFileSync(pendingJournal, '{"state":"pending"}', 'utf8');
+  const pendingHead = git(local, 'rev-parse', 'HEAD');
+  assert.equal(await autoPullClean(repository, { fetch: true }), false,
+    'Pending local commit title prevents a direct-Git auto-pull');
+  assert.equal(git(local, 'rev-parse', 'HEAD'), pendingHead);
+  fs.unlinkSync(pendingJournal);
   assert.equal(await autoPullClean(repository, { fetch: true }), true);
   assert.equal(git(local, 'rev-parse', 'HEAD'), git(other, 'rev-parse', 'HEAD'));
   assert.notEqual(git(local, 'rev-parse', 'HEAD'), git(local, 'rev-parse', 'origin/main'),

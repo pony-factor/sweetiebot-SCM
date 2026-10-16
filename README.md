@@ -69,6 +69,8 @@ Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m un
 
 **Diagnostics:** Sweetiebot records commit-title generation problems in `~/Library/Logs/Sweetiebot/sweetiebot.log` (up to 1 MiB each, with three rotated backups). The same general log is available to future Python components. Events include timestamps, component, model, attempt, error category, HTTP status when applicable, and whether generation retried, stopped, or fell back. Prompts, staged changes, model output, chat context, and exception messages are never recorded. Set `SWEETIEBOT_LOG_FILE` to override the location. Logging is best-effort: permission or disk errors never block committing.
 
+**Background commit generation uses this same log.** It preserves the regular Ollama request-failure and rejected-output events (including attempt counts), and records asynchronous worker-start failures, crashed-worker recovery, fallback selection, blocked Git operations, and commit-finalization errors under the existing `commit_title` component. These events contain operational categories only; no prompts, diffs, generated messages, exception strings, or repository paths are added to diagnostics.
+
 ## Install
 
 On macOS, double-click **Install Sweetie Bot.command** in a repository checkout to build a fresh, locally signed **Sweetiebot Installer.app** from the current source files and launch it. The app bundle is generated locally and ignored by Git, rather than keeping signed binaries and duplicate source files in the repository. You can move the generated app to Applications for future use. To rebuild that app with later changes, update your checkout and run the launcher again. Close and reopen your VS Code windows afterward. Once installed, Sweetie Bot automatically restores supported customizations after VS Code and extension updates.
@@ -200,6 +202,7 @@ git config --global scm-toolkit.cmd-click-close-others false
 git config --global scm-toolkit.browser-chatgpt-home true
 git config --global scm-toolkit.graph-open-working-file true
 git config --global scm-toolkit.ai-commit true
+git config --global scm-toolkit.ai-commit-async false
 git config --global scm-toolkit.ai-default-branch-description true
 git config --global scm-toolkit.ai-commit-model qwen2.5-coder:7b
 git config --global scm-toolkit.ai-commit-low-memory-model qwen2.5-coder:3b
@@ -361,6 +364,11 @@ Both normal and Codex-context generation read commit-writing preferences from `~
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
+
+**Asynchronous local commit finalization (opt-in):** Turn on **Finalize commit messages in background** in Sweetiebot settings → Ollama, or set `git config --global scm-toolkit.ai-commit-async true`. An ordinary blank-message commit first records its staged tree locally with a temporary `💭 Generate local commit message` subject. The Git command returns immediately and a detached local worker prepares the final title and optional default-branch description using the *captured* diff. The worker replaces the provisional commit object with the final message, preserving the exact tree and Git author/committer identity and timestamps, without staging any further work. An optional auto-push starts as usual in the background but the installed Git wrapper blocks **every push** until finalization completes. It also queues additional commits and ref-changing Git commands until the pending message is finalized; file editing and staging remain available.
+
+If Ollama cannot produce a valid message after three attempts, the background job uses Sweetiebot's existing deterministic, factual fallback title and description. Pending job data and its crash-recovery journal live only under the repository's Git directory. The next wrapped push/commit can finish a stopped worker using that fallback. When the branch has changed unexpectedly or the worker cannot safely rewrite an unusual commit, push fails closed and the temporary commit stays local for manual recovery. This protection applies to Git commands run through the configured Sweetiebot Git wrapper; invoking an unrelated Git executable bypasses it. To avoid changing signed commits or the post-commit Markdown spellcheck flow, commits requesting Git signatures and repositories with automatic post-commit spellcheck enabled continue using synchronous generation. Install/reinstall the toolkit after updating so the Git wrapper has its companion async worker.
+
 
 ### Concurrent PDF OCR and commit generation
 

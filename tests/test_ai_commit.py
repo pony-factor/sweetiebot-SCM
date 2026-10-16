@@ -83,6 +83,11 @@ class GithubSplitTests(unittest.TestCase):
 class RoutingTests(unittest.TestCase):
     def test_finds_commit_after_global_option(self):
         self.assertEqual(ai_commit.commit_index(["-C", "/tmp/repo", "commit"]), 2)
+    def test_finds_push_and_branch_changes_after_global_options(self):
+        self.assertEqual(ai_commit.git_command_index(["-C", "/tmp/repo", "push", "origin"]), (2, "push"))
+        self.assertEqual(ai_commit.git_command_index(["--no-pager", "switch", "topic"]), (1, "switch"))
+        self.assertIsNone(ai_commit.commit_index(["-C", "/tmp/repo", "push", "origin"]))
+
 
     def test_preserves_explicit_message(self):
         self.assertTrue(ai_commit.has_explicit_message_or_special_mode(["-m", "Manual"]))
