@@ -46,6 +46,32 @@ Current features:
 
 The patch is intentionally narrow: it does not copy or manage unrelated editor settings.
 
+### Independent workspace trust (first run)
+
+Sweetiebot creates independent clones under `~/Sweetiebot Workspaces` (each new
+window gets a separate Git working directory). VS Code's Workspace Trust may
+otherwise start these windows in **Restricted Mode**, disabling extensions,
+tasks, and other features. On the first Sweetiebot extension startup after
+this feature is installed, an optional one-time dialog explains how to trust
+the **parent** directory in VS Code instead of approving every clone.
+
+Choose **Manage Workspace Trust** to create the parent directory if needed,
+copy its full path to your clipboard, and open VS Code's native **Workspaces:
+Manage Workspace Trust** editor. Add the copied path under **Trusted Folders &
+Workspaces** yourself. This grants trust to all existing and future folders
+beneath the parent, so only do this if every repository you put there is
+trusted. Sweetiebot does not alter VS Code's trust database, disable Workspace
+Trust, or automatically approve the dialog. Selecting **Not Now** leaves the
+normal Restricted Mode protections in place for new clones.
+
+To suppress the first-run prompt, set
+`scmToolkit.promptForIndependentWorkspaceTrust` to `false` in VS Code Settings.
+The prompt appears at most once per extension installation profile; enable or
+disable of the setting does not automatically revoke prior folder trust.
+To run the setup again at any time, use the Command Palette action
+**Configure Independent Workspace Trust**. If you prefer to trust each cloned
+repository separately, simply leave the parent untrusted.
+
 ## Requirements
 
 - macOS
