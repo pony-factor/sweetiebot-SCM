@@ -1283,6 +1283,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let pullRequestEligibilityRetry;
     let pullRequestEligibilityRequest = 0;
     let repositoryResolveToken = 0;
+    let defaultBranchRetry;
     let currentInput;
     let pending = false;
     let deletingBranch = false;
@@ -1969,6 +1970,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     settingsButton.addEventListener('click', openSettings);
     widget.disposables.add({
         dispose() {
+            clearTimeout(defaultBranchRetry);
+            repositoryResolveToken += 1;
             clearTimeout(pullRequestEligibilityRetry);
             pullRequestEligibilityRequest += 1;
             homeButton.removeEventListener('click', returnHome);
@@ -2056,6 +2059,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
             currentDefaultBranch = undefined;
+            clearTimeout(defaultBranchRetry);
+            defaultBranchRetry = undefined;
             currentBranchRevision = undefined;
             clearTimeout(pullRequestEligibilityRetry);
             pullRequestEligibilityRetry = undefined;
@@ -2094,16 +2099,25 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             settingsButton.hidden = false;
             const provider = input.repository.provider;
             currentRepositoryUri = provider.rootUri;
-            void commands.executeCommand('sweetiebot.resolveDefaultBranch', provider.rootUri, {
-                remote: settings.remote
-            }).then(branch => {
-                if (repositoryResolveToken !== resolutionToken) return;
-                currentDefaultBranch = branch;
-                refreshBranchControls();
-                widget.layout();
-            }).catch(error => {
-                if (repositoryResolveToken === resolutionToken) notifications.error(error);
-            });
+            const resolveBase = async () => {
+                try {
+                    const branch = await commands.executeCommand('sweetiebot.resolveDefaultBranch', provider.rootUri, {
+                        remote: settings.remote
+                    });
+                    if (repositoryResolveToken !== resolutionToken) return;
+                    if (typeof branch !== 'string' || !branch.trim()) {
+                        throw new Error('The default branch is not available yet. Retrying…');
+                    }
+                    currentDefaultBranch = branch;
+                    refreshBranchControls();
+                    widget.layout();
+                } catch (error) {
+                    if (repositoryResolveToken !== resolutionToken) return;
+                    notifications.error(error);
+                    defaultBranchRetry = setTimeout(resolveBase, 15000);
+                }
+            };
+            void resolveBase();
 
             if (settings.commitAndPush) {
                 pushControl.hidden = false;
