@@ -8,6 +8,7 @@ const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
+const { resumePRSession } = require('./pr_session');
 const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
@@ -319,6 +320,12 @@ async function activate(context) {
   registerBranchCommands(vscode, context);
   registerCodexCommitCommand(vscode, context);
   registerPullRequestCommand(vscode, context);
+  // Schedule after activation completes so command execution never waits on
+  // the activation promise that is currently registering its own handler.
+  setImmediate(() => {
+    void resumePRSession(vscode, context).catch(error =>
+      vscode.window.showErrorMessage('Could not start the pull-request session: ' + error.message));
+  });
   registerLocalPullRequestCommand(vscode, context);
   registerEditorActions(vscode, context);
   registerTerminalActions(vscode, context);

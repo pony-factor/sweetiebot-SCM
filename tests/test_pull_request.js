@@ -180,6 +180,8 @@ async function run() {
   let browserAvailable = true;
   let codexSnapshot;
   const calls = [];
+  let launchInSeparateWorkspace = false;
+  const sessionLaunches = [];
   const shownPonies = [];
   const uri = { scheme: 'file', fsPath: '/workspace/project' };
   const repository = {
@@ -245,6 +247,11 @@ async function run() {
     }
   };
   registerPullRequestCommand(vscode, { subscriptions: [] }, {
+    async launchPRSession(_vscode, _context, root, options) {
+      if (!launchInSeparateWorkspace) return false;
+      sessionLaunches.push({ root, options });
+      return true;
+    },
     async runKefania(repositoryPath, input, options) {
       assert.equal(repositoryPath, uri.fsPath);
       assert.equal(options.botOnly, true);
@@ -284,6 +291,17 @@ async function run() {
     }
   });
 
+  launchInSeparateWorkspace = true;
+  const sessionResult = await callback({ rootUri: uri }, {
+    branch: 'draft', remote: 'origin', base: 'main', source: chatSource,
+  });
+  assert.equal(sessionResult.launched, true);
+  assert.equal(sessionLaunches[0].root, uri);
+  assert.equal(sessionLaunches[0].options.branch, 'draft');
+  assert.deepEqual(sessionLaunches[0].options.source, chatSource);
+  assert.equal(calls.length, 0, 'Source host must not own any PR browser or confirmation window');
+  launchInSeparateWorkspace = false;
+
   await callback({ rootUri: uri }, {
     branch: 'draft',
     remote: 'origin',
@@ -293,12 +311,10 @@ async function run() {
     source: chatSource
   });
   assert.equal(shownPonies.length, 0, 'Pony information appears only in the confirmation window');
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
-  assert.equal(calls[1].id, 'workbench.action.moveEditorToNewWindow');
   assert.equal(calls[2].id, 'workbench.action.browser.open');
-  assert.equal(calls[3].id, 'workbench.action.browser.open');
-  const browserOptions = calls[2].args[0];
+  const browserOptions = calls[1].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
   assert.equal(url.search, '', 'PR prompt must not enter the HTTP request target');
@@ -308,7 +324,7 @@ async function run() {
   assert(openedPrompt.includes(rules));
   assert(openedPrompt.includes(chatSource.uuid));
   assert(!openedPrompt.includes('test-pack'), 'PR drafting must not receive pony metadata');
-  const profileUrl = new URL(calls[3].args[0].url);
+  const profileUrl = new URL(calls[2].args[0].url);
   const profilePrompt = new URLSearchParams(profileUrl.hash.slice(1)).get('q');
   assert(profilePrompt.includes('test-pack'));
   assert(!profilePrompt.includes('headSha'), 'Pony research must not receive repository evidence');
@@ -319,7 +335,7 @@ async function run() {
   assert.match(openedPrompt, /Do not publish through any GitHub connector/);
   assert.match(openedPrompt, /primary sources/);
   assert.match(openedPrompt, /codex-pony\[bot\]/);
-  assert.equal(calls[3].args[0].openToSide, true, 'Pony research opens beside the PR draft');
+  assert.equal(calls[2].args[0].openToSide, true, 'Pony research opens beside the PR draft');
   const firstConfirmation = calls[0].args[0].url;
   const savedProfile = 'Berry Punch — sourced profile with https://example.org/pony';
   await fetch(firstConfirmation + '/pony', { method: 'POST',
@@ -333,7 +349,7 @@ async function run() {
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.deepEqual(calls.map(call => call.id), [
-    'workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow', 'workbench.action.browser.open'
+    'workbench.action.browser.open', 'workbench.action.browser.open'
   ], 'Cache hits omit the independent pony research ChatGPT tab');
   const cachedConfirmation = calls[0].args[0].url;
   const cachedState = await (await fetch(cachedConfirmation + '/state')).json();
@@ -411,9 +427,9 @@ async function run() {
   configuredProject = 'https://chatgpt.com/g/g-p-test123/project';
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
-  assert.equal(new URL(calls[2].args[0].url).pathname, '/g/g-p-test123/project');
-  assert.equal(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
-  assert.match(new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q'), /"draft"/);
+  assert.equal(new URL(calls[1].args[0].url).pathname, '/g/g-p-test123/project');
+  assert.equal(new URLSearchParams(new URL(calls[1].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
+  assert.match(new URLSearchParams(new URL(calls[1].args[0].url).hash.slice(1)).get('q'), /"draft"/);
   configuredProject = '';
 
   const failedPublicationUrl = calls[0].args[0].url;
@@ -428,8 +444,8 @@ async function run() {
   contextFailure = new Error('Published comparison unavailable');
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
-  assert.equal(calls.length, 3, 'Pony research and confirmation still open when PR preparation fails');
-  const independentPrompt = new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q');
+  assert.equal(calls.length, 2, 'Pony research and confirmation still open when PR preparation fails');
+  const independentPrompt = new URLSearchParams(new URL(calls[1].args[0].url).hash.slice(1)).get('q');
   assert(independentPrompt.includes('test-pack'));
   const failedState = await (await fetch(calls[0].args[0].url + '/state')).json();
   assert.equal(failedState.errors.draft, contextFailure.message);
