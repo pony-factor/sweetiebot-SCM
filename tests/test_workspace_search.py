@@ -234,6 +234,35 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
 
+    def test_python_bytecode_caches_do_not_reinstall_extension(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = workspace_search.extension_destination(root)
+            workspace_search.sync_extension(extensions_dir=root, settings=DEFAULTS)
+            cache = destination / '__pycache__'
+            cache.mkdir()
+            (cache / 'configurator.cpython-313.pyc').write_bytes(b'generated')
+            (destination / 'configurator.pyo').write_bytes(b'generated')
+            self.assertTrue(workspace_search.destination_matches(destination, settings=DEFAULTS))
+            self.assertFalse(workspace_search.sync_extension(
+                check=True, extensions_dir=root, settings=DEFAULTS
+            ))
+            self.assertTrue(cache.exists(), 'a no-op check must preserve generated files')
+
+            (destination / 'configurator.py').write_text('# stale managed code')
+            self.assertFalse(workspace_search.destination_matches(destination, settings=DEFAULTS))
+            self.assertTrue(workspace_search.sync_extension(
+                check=True, extensions_dir=root, settings=DEFAULTS
+            ))
+            self.assertTrue(workspace_search.sync_extension(
+                extensions_dir=root, settings=DEFAULTS
+            ))
+            self.assertTrue(workspace_search.destination_matches(destination, settings=DEFAULTS))
+
+    def test_settings_server_does_not_write_python_bytecode(self):
+        extension = (workspace_search.SOURCE / 'extension.js').read_text()
+        self.assertIn("PYTHONDONTWRITEBYTECODE: '1'", extension)
+
     def test_setting_change_marks_extension_for_update(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

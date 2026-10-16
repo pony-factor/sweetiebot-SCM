@@ -128,6 +128,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   ], {
     // This server survives extension repairs; its cwd must not be a replaceable install folder.
     cwd: os.homedir(),
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   configuratorProcess = child;
