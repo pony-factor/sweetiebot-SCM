@@ -56,6 +56,8 @@ assert.equal(sessions.size, 1);
         original = '"vscode:browserView:preloadReady";'
         installed = browser_pr.transform(original)
         self.assertIn("sweetiebot_pr", installed)
+        self.assertLess(installed.index('globalThis.sweetiebotEnsureMaximumThinking ='),
+                        installed.index('/* Submit only the exact prompt'))
         self.assertNotIn("sweetiebot_fresh", installed)
         self.assertEqual(browser_pr.transform(installed), installed)
         self.assertEqual(browser_pr.transform(installed, remove=True), original)
