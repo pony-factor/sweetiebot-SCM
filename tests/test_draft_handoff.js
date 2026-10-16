@@ -1,7 +1,22 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {createDraftHandoff} = require('../efs/draft_handoff');
 (async () => {
+  const incompleteInstall = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-handoff-'));
+  try {
+    const modulePath = path.join(incompleteInstall, 'draft_handoff.js');
+    fs.copyFileSync(require.resolve('../efs/draft_handoff'), modulePath);
+    let installed;
+    assert.doesNotThrow(() => { installed = require(modulePath); },
+      'A missing PR page must not prevent SCM extension modules from loading');
+    await assert.rejects(installed.createDraftHandoff(() => {}), {code: 'ENOENT'},
+      'Report the missing asset only when the PR handoff is requested');
+  } finally {
+    fs.rmSync(incompleteInstall, {recursive: true, force: true});
+  }
   let writes = 0, closes = 0, merges = 0;
   const handoff = await createDraftHandoff(async uri => {
     writes++;

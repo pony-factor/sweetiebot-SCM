@@ -14,7 +14,7 @@ from workspace_search import default_extensions_dir, source_files
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
 FORMATS = {
     "scripts": {".py", ".json"},
-    "efs": {".js", ".json", ".svg", ".md"},
+    "efs": {".js", ".json", ".svg", ".md", ".html"},
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
     "assets/browser": {".js"},
@@ -103,6 +103,17 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     if not all((candidate / "scripts" / name).is_file()
                for name in ("update.py", "repair.py", "install.py")):
         return None
+    # Older releases load this HTML during extension activation but omit it
+    # from update archives and bundled repair sources. Do not replace a working
+    # bootstrap with one that will remove the asset on its next repair.
+    if (candidate / "efs/draft_handoff.js").is_file():
+        packaging = (candidate / "scripts" / name for name in
+                     ("update.py", "workspace_search.py"))
+        if (not (candidate / "efs/draft_confirmation.html").is_file()
+                or any(not source.is_file() or '".html"' not in source.read_text()
+                       for source in packaging)):
+            print('Published release omits PR HTML from automatic repair; keeping the installed sources.', flush=True)
+            return None
     if (not force and marker.exists() and marker.read_text().strip() == revision
             and installed_sources_match(candidate, extensions_dir or default_extensions_dir())):
         return None

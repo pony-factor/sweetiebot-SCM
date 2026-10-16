@@ -19,7 +19,7 @@ FORMATS = (
     ("assets/workbench", {".js", ".css"}),
     ("assets/codex", {".js", ".css"}),
     ("assets/browser", {".js"}),
-    ("efs", {".js", ".json", ".svg", ".md"}),
+    ("efs", {".js", ".json", ".svg", ".md", ".html"}),
 )
 
 

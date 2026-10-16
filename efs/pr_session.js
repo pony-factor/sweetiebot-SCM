@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { displayName } = require('./pony_profile');
@@ -35,6 +36,10 @@ async function launchPRSession(vscode, context, root, options) {
   // Mode, where this extension cannot start. Git metadata stays under a normal
   // trusted checkout and never adds a workspace/request to the working tree.
   const sessions = await repositorySessions(root.fsPath);
+  // Electron owns the encrypted browser data; never read or copy credentials.
+  // All dedicated PR workspaces use this same persistent profile.
+  await fs.mkdir(path.join(os.homedir(), 'Library', 'Application Support', 'Sweetiebot', 'browserStorage'),
+    { recursive: true, mode: 0o700 });
   await fs.mkdir(sessions, { recursive: true, mode: 0o700 });
   const directory = await fs.mkdtemp(path.join(sessions, 'session-'));
   try {
@@ -51,6 +56,7 @@ async function launchPRSession(vscode, context, root, options) {
         'scmToolkit.openPanelOnStartup': false,
         'scmToolkit.automaticBranchCleanup': false,
         'scmToolkit.startCompactPRSession': true,
+        'workbench.browser.dataStorage': 'workspace',
         'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
         'window.title': title,

@@ -757,7 +757,12 @@ unrelated repository windows. New tabs in the same workspace can restore their
 draft without clearing imports from other repositories. The old global browser
 data remains stored but is not loaded into these workspace-scoped browser views.
 
-This is a browser-wide setting: cookies, logins and site storage are isolated
+Dedicated New PR windows share a persistent browser profile at
+`~/Library/Application Support/Sweetiebot/browserStorage`. Signing into ChatGPT
+there carries across PR windows and application restarts. Each PR keeps its
+own workspace and tabs; temporary and agent browser sessions remain isolated.
+
+For ordinary repository windows, this is a browser-wide setting: cookies, logins and site storage are isolated
 as well, so ChatGPT may require a login once per workspace. Existing tabs may
 retain their old browser session until reopened. Independent local clones and
 saved `.code-workspace` files may receive distinct storage identities even

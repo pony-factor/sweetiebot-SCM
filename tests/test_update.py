@@ -23,6 +23,24 @@ def archive(entries):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_draft_confirmation_survives_update_and_installer_packaging(self):
+        import build_installer_app
+        import subprocess
+        asset = Path('efs/draft_confirmation.html')
+        module = Path('efs/draft_handoff.js')
+        repo = Path(update.__file__).resolve().parent.parent
+        entries = {path.as_posix(): (repo / path).read_text() for path in (asset, module)}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            update.extract_sources(archive(entries), root)
+            self.assertEqual((root / asset).read_text(), entries[asset.as_posix()])
+            bundled = update.source_files(root)
+            self.assertEqual(bundled[Path('codex-customizations') / asset], root / asset)
+            self.assertIn(asset, build_installer_app.source_files())
+            result = subprocess.run(['node', '-e', 'require(process.argv[1])', str(root / module)],
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_github_reaction_asset_survives_update_and_bundled_repair(self):
         asset = Path('assets/github/pr_reaction_hover.js')
         contents = (Path(update.__file__).resolve().parent.parent / asset).read_text()
@@ -67,6 +85,26 @@ class UpdateTests(unittest.TestCase):
                 with patch.object(update, 'git', side_effect=[b'', b'', b'abc\n', archive(payload)]):
                     result = update.prepare_update(root)
                 self.assertEqual(result is not None, supports_updates)
+
+    def test_pr_release_cannot_reinstall_a_bootstrap_that_drops_html(self):
+        for broken in ('update.py', 'workspace_search.py', 'asset', None):
+            with self.subTest(broken=broken), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'upstream.git').mkdir()
+                payload = {
+                    'scripts/install.py': 'installer', 'scripts/repair.py': 'repair',
+                    'scripts/update.py': 'FORMATS = {"efs": {".js", ".html"}}',
+                    'scripts/workspace_search.py': 'FORMATS = {"efs": {".js", ".html"}}',
+                    'efs/draft_handoff.js': 'handoff',
+                    'efs/draft_confirmation.html': '<html>confirmation</html>',
+                }
+                if broken == 'asset':
+                    del payload['efs/draft_confirmation.html']
+                elif broken:
+                    payload['scripts/' + broken] = 'FORMATS = {"efs": {".js"}}'
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                    result = update.prepare_update(root)
+                self.assertEqual(result is not None, broken is None)
 
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
