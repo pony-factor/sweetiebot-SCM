@@ -147,6 +147,11 @@ def feature_enabled() -> bool:
     return git_config_bool("scm-toolkit.ai-commit", True)
 
 
+def commit_fallback_enabled() -> bool:
+    """Allow a simple commit summary when Ollama cannot produce a valid one."""
+    return git_config_bool("scm-toolkit.ai-commit-fallback", True)
+
+
 def staged_whitespace_enabled() -> bool:
     return git_config_bool("scm-toolkit.normalize-staged-whitespace", True)
 
@@ -1444,11 +1449,11 @@ def generate_message(
     conversation_context: str = "",
     require_model: bool = False,
 ) -> tuple[str, str]:
-    # Text changes need an actual summary. Never silently commit them with a
-    # filename/count fallback when the model is unavailable or rejects the task.
+    # Simple messages are the default fallback even for text and custom emoji rules.
+    # Disable the fallback in Ollama settings to expose model failures for debugging.
     text_changes = has_text_changes(diff)
     priority_rules = emoji_priority_rules(commit_custom_instructions()) if emoji_priority_enabled() else []
-    require_model = require_model or text_changes or bool(priority_rules)
+    require_model = require_model or not commit_fallback_enabled()
     installed = installed_local_model_names()
     model, low_memory_mode = selected_model(installed)
     primary, low_memory = configured_models()
@@ -1461,6 +1466,11 @@ def generate_message(
         )
         if require_model:
             raise RuntimeError("Install the configured Ollama commit model before generating a commit message.")
+        log_event(
+            "commit_title", "fallback_used",
+            model=low_memory if low_memory_mode else primary,
+            reason="model_not_installed", outcome="fallback",
+        )
         if low_memory_mode:
             detail = (
                 f"low-memory model {low_memory} is not installed locally; "
@@ -1511,15 +1521,14 @@ def generate_message(
                 if not isinstance(response, dict):
                     raise ValueError("Ollama returned a non-object response")
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-                retryable = not isinstance(exc, urllib.error.HTTPError) or exc.code in {408, 429, 500, 502, 503, 504}
                 log_event(
                     "commit_title", "request_failed", model=model,
                     attempt=attempt + 1, attempts=MAX_GENERATION_ATTEMPTS,
                     error_type=type(exc).__name__,
                     http_status=exc.code if isinstance(exc, urllib.error.HTTPError) else None,
-                    outcome="retry" if retryable and attempt + 1 < MAX_GENERATION_ATTEMPTS else "stopped",
+                    outcome="retry" if attempt + 1 < MAX_GENERATION_ATTEMPTS else "stopped",
                 )
-                if not retryable or attempt + 1 == MAX_GENERATION_ATTEMPTS:
+                if attempt + 1 == MAX_GENERATION_ATTEMPTS:
                     raise
                 delay = 2 ** attempt
                 print(f"scm-toolkit: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} failed; retrying in {delay}s", file=sys.stderr)
@@ -1578,8 +1587,16 @@ def generate_message(
         log_event("commit_title", "fallback_used", model=model, reason="invalid_message", outcome="fallback")
         print("scm-toolkit: invalid model output; using factual staged-change summary", file=sys.stderr)
         return fallback_message(files, include_description, file_context)
-    except RuntimeError:
-        raise
+    except RuntimeError as exc:
+        if require_model:
+            raise
+        log_event(
+            "commit_title", "fallback_used", model=model,
+            reason="priority_validation_failed", error_type=type(exc).__name__,
+            outcome="fallback",
+        )
+        print("scm-toolkit: priority validation failed; using simple staged-change summary", file=sys.stderr)
+        return fallback_message(files, include_description, file_context)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         if require_model:
             cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc

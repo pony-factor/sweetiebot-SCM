@@ -112,7 +112,7 @@ class LocalCodexCommitTests(unittest.TestCase):
              patch('ai_commit.generate_message', return_value=('Fix button', 'Explain change.')) as generate:
             local_codex_commit.main()
         generate.assert_called_once_with(
-            *staged, include_description=True, conversation_context='Current chat', require_model=True
+            *staged, include_description=True, conversation_context='Current chat'
         )
         self.assertEqual(json.loads(output.getvalue())['message'], 'Fix button\n\nExplain change.')
 

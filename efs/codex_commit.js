@@ -10,8 +10,8 @@ function generateMessage(script, cwd, context) {
     });
     let stdout = '';
     let stderr = '';
-    // Allow both 300-second Ollama attempts, including time queued behind OCR.
-    const timeout = setTimeout(() => { child.kill(); reject(new Error('Local commit-message generation timed out. Ollama may be busy with OCR or another model. Let that work finish, then try again.')); }, 630000);
+    // Allow three 300-second Ollama attempts plus retry backoff and overhead.
+    const timeout = setTimeout(() => { child.kill(); reject(new Error('Local commit-message generation timed out. Ollama may be busy with OCR or another model.')); }, 960000);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => { stdout += data; });
