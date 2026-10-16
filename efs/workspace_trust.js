@@ -10,7 +10,7 @@ const MANAGE_TRUST = 'Manage Workspace Trust';
 let firstRunInFlight;
 
 function independentWorkspaceParent() {
-  return path.join(os.homedir(), 'Sweetiebot Workspaces');
+  return path.join(os.homedir(), 'Library', 'Application Support', 'Sweetiebot', 'Workspaces');
 }
 
 // VS Code deliberately owns the trust database. Extensions have no supported
