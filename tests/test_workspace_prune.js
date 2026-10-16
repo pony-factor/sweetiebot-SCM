@@ -32,6 +32,7 @@ function fixture({
     [path.join(GROUP, '.sweetiebot-merged'), 'dir']
   ]);
   if (!missingProof) nodes.set(path.join(GROUP, '.sweetiebot-merged', 'pony.json'), 'file');
+  else data.delete(path.join(GROUP, '.sweetiebot-merged', 'pony.json'));
   if (activated) nodes.set(path.join(GROUP, '.sweetiebot-activated'), 'file');
   if (active) nodes.set(path.join(GROUP, '.sweetiebot-session-999-test.json'), 'file');
   if (extra) nodes.set(path.join(GROUP, 'private-note.txt'), 'file');
