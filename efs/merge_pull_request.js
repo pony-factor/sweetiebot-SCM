@@ -1,6 +1,7 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
+const { existsSync } = require('node:fs');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
@@ -12,7 +13,9 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
   return new Promise((resolve, reject) => {
     const args = ['api', '--hostname', 'github.com', '--method', method, endpoint];
     if (body !== undefined) args.push('--input', '-');
-    const child = spawnProcess(process.env.KEFANIA_GH_COMMAND || 'gh', args,
+    const command = process.env.KEFANIA_GH_COMMAND ||
+      ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
+    const child = spawnProcess(command, args,
       { stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '', stderr = '', settled = false;
     const finish = (error, result) => {
