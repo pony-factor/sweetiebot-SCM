@@ -15,16 +15,24 @@ const PROOFS = '.sweetiebot-merged';
 const SESSION_PREFIX = '.sweetiebot-session-';
 
 async function command(binary, args, cwd) {
-  try {
-    const result = await execFileAsync(binary, args, {
-      cwd, timeout: 60000, env: {
-        ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1'
-      }
-    });
-    return result.stdout.trim();
-  } catch {
-    return null; // Authentication, network, Git, or timeout failures never authorize deletion.
+  // macOS GUI-launched VS Code may omit Homebrew paths from its environment.
+  // Resolve the same fixed tool locations as the existing Python PR pruner.
+  for (const executable of [binary, '/opt/homebrew/bin/' + binary,
+    '/usr/local/bin/' + binary, '/usr/bin/' + binary]) {
+    try {
+      const result = await execFileAsync(executable, args, {
+        cwd, timeout: 60000, env: {
+          ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1'
+        }
+      });
+      return result.stdout.trim();
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      // Authentication, network, Git, or timeout failures never authorize deletion.
+      return null;
+    }
   }
+  return null;
 }
 
 function isAlive(pid) {
