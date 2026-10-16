@@ -1221,6 +1221,8 @@ def prompt_for_diff(
 Output rules:
 - {commit_title_preference()}
 - subject maximum 72 characters; begin the wording with an imperative verb
+- start the subject with one change-appropriate emoji, one space, then the imperative wording; for example: 🐛 Fix footnote formatting
+- use the emoji as the change-type marker; never add conventional-commit prefixes such as fix:, feat:, refactor:, or chore:, including scoped variants
 - {shape_rules}
 - describe the actual change directly and decisively, with no hedging
 - when text content changes, summarize what the changed text adds, removes, or corrects; a filename alone is not a summary
@@ -1310,6 +1312,15 @@ def sanitize_generated_message(
         return "", ""
 
     raw_title = plain_commit_text(lines[first])
+    # Local models sometimes prepend a conventional-commit label even when
+    # asked for an imperative subject. Preserve the wording and leading emoji;
+    # the normal validator still checks the remaining subject.
+    raw_title = re.sub(
+        r"^((?:(?:" + EMOJI_PATTERN + r")\s*)*)"
+        r"(?:feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)"
+        r"(?:\([^()\n]+\))?!?:\s*",
+        r"\1", raw_title, flags=re.IGNORECASE,
+    )
     if len(raw_title) > 72:
         return "", ""
     title = sanitize_title(raw_title)

@@ -79,6 +79,7 @@ class UpdateTests(unittest.TestCase):
                 'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                 'scripts/repair.py': 'repair', 'scripts/codex_composer.py': 'new placeholders',
                 'scripts/ai_commit.py': 'current Git wrapper',
+                'scripts/sweetiebot_async_commit.py': 'current async helper',
                 'scripts/post_commit_spellcheck.py': 'current spellcheck helper',
                 'efs/post_commit_spellcheck_notice.js': 'current notice handler',
                 'efs/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
@@ -106,6 +107,10 @@ class UpdateTests(unittest.TestCase):
             helper.write_text(payload['scripts/post_commit_spellcheck.py'])
             wrapper.chmod(0o755)
             helper.chmod(0o755)
+            async_helper = wrapper.with_name('sweetiebot_async_commit.py')
+            self.assertIsNotNone(prepare())
+            async_helper.write_text(payload['scripts/sweetiebot_async_commit.py'])
+            async_helper.chmod(0o755)
             self.assertIsNone(prepare())
             legacy = root / '.local/bin/git-auto-title'
             legacy.parent.mkdir(parents=True)
@@ -116,7 +121,7 @@ class UpdateTests(unittest.TestCase):
             self.assertIsNotNone(prepare())
             legacy.with_name(legacy.name + '-spellcheck.py').symlink_to(helper)
             self.assertIsNone(prepare())
-            for target in [destination / 'post_commit_spellcheck_notice.js', destination / 'ai_commit.py', wrapper, helper]:
+            for target in [destination / 'post_commit_spellcheck_notice.js', destination / 'ai_commit.py', wrapper, helper, async_helper]:
                 expected = target.read_bytes()
                 target.write_text('stale runtime')
                 self.assertIsNotNone(prepare())
