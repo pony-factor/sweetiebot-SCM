@@ -5,7 +5,6 @@ from difflib import SequenceMatcher
 import json
 import os
 import re
-import secrets
 import subprocess
 import sys
 import tempfile
@@ -961,7 +960,7 @@ def commit_instructions_path() -> Path:
 
 
 def emoji_priority_enabled() -> bool:
-    return git_config_bool("scm-toolkit.ai-emoji-priority-rules", False)
+    return git_config_bool("scm-toolkit.ai-emoji-priority-rules", True)
 
 
 def commit_instructions() -> str:
@@ -1128,12 +1127,43 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
             except (ValueError, TypeError, AttributeError, OSError, urllib.error.URLError):
                 pass
         raise RuntimeError("Could not verify the emoji assigned by the matching priority rule. Try again or enter an explicit message.")
-    return secrets.choice(choices)
+    # For equivalent choices use the first permitted emoji, never randomness.
+    # Branch-specific bug emoji reuse is handled above.
+    return choices[0]
 
 
 def apply_priority_emoji(title: str, emoji: str) -> str:
-    wording = re.sub(r"^(?:" + EMOJI_PATTERN + r"\s*)+", "", title).strip()
+    # Ollama supplies wording, never a trusted emoji (including embedded ones).
+    wording = re.sub(r"\s+", " ", re.sub(EMOJI_PATTERN, "", title)).strip()
     return sanitize_title(f"{emoji} {wording}") if wording else ""
+
+
+def emoji_for_change(title: str, files: list[str]) -> str:
+    """Deterministic semantic emoji when no configured priority rule applies."""
+    wording = re.sub(EMOJI_PATTERN, "", title).strip().lower()
+    if re.match(r"(?:fix|repair|correct|resolve|prevent|restore|guard)\b", wording):
+        return "🐛"
+    if re.search(r"\b(?:colou?rs?|theme|palette|contrast|accent|tint)\b", wording):
+        return "🎨"
+    if re.search(r"\b(?:test|tests|testing|validation|validate|assertion|coverage|regression)\b", wording):
+        return "🧪"
+    if re.search(r"\b(?:image|images|artwork|graphic|icon|icons)\b", wording):
+        return "🖼️"
+    if re.search(r"\b(?:soroban|smart contract)\b", wording):
+        return "🧮"
+    if re.search(r"\b(?:stellar dex|decentralized exchange)\b", wording):
+        return "💱"
+    if re.match(r"(?:refactor|restructure)\b", wording):
+        return "🏗️"
+    if re.search(r"\b(?:layout|styling|appearance|interface|button|window|frontend)\b", wording):
+        return "🖌️"
+    if re.search(r"\b(?:package|dependency|dependencies)\b", wording):
+        return "🧰"
+    if re.search(r"\b(?:configuration|configure|settings)\b", wording):
+        return "⚙️"
+    if re.match(r"(?:connect|wire|integrate)\b", wording):
+        return "🔩"
+    return fallback_emoji(files)
 
 
 def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> dict:
@@ -1230,6 +1260,7 @@ Output rules:
 - never say 'appears to', 'seems', 'likely', 'probably', or 'the provided text'
 - no explanations of the input, analysis, alternatives, or commentary
 - plain text only in both fields: no markdown, backticks, links, headings, lists, or labels
+- do not add emoji to descriptions; subject emoji is assigned independently
 - do not invent contents, motivation, outcomes, or validation absent from the evidence
 - deletions establish removal only; do not call files duplicate, redundant, obsolete, unnecessary, or no longer needed without evidence
 - for a plain deletion, say what was removed; do not invent a cleanup reason
@@ -1277,6 +1308,8 @@ def sanitize_description(text: str) -> str:
         flags=re.IGNORECASE,
     )
     cleaned = plain_commit_text(cleaned)
+    # Commit descriptions must not inherit unrelated model-selected emojis.
+    cleaned = re.sub(r"\s+", " ", re.sub(EMOJI_PATTERN, "", cleaned)).strip()
     # Keep complete sentences only. Never turn a cut-off clause into a sentence
     # by appending punctuation, or cut a sentence to meet a character limit.
     sentences = re.split(r"(?<=[.!?])\s+", cleaned)
@@ -1559,10 +1592,11 @@ def generate_message(
                 )
             except (ValueError, TypeError):
                 title, description = "", ""
-            if priority_emoji:
-                title = apply_priority_emoji(title, priority_emoji)
-            if not re.match(r"^[\U0001F300-\U0001FAFF\u2600-\u27BF]", title):
-                title = f"{fallback_emoji(files)} {title}" if title else ""
+            if title:
+                # Enforce an explicit priority rule or a verified change-type
+                # choice. A model-generated emoji is never accepted as-is.
+                title = apply_priority_emoji(
+                    title, priority_emoji or emoji_for_change(title, files))
             evidence = diff + "\n" + file_context + "\n" + conversation_context
             if (response.get("done_reason") != "length"
                     and valid_generated_message(title, description, include_description)

@@ -271,10 +271,10 @@ class PostCommitRoutingTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
-    def test_emoji_priority_enforcement_defaults_off(self):
-        with patch.object(ai_commit, "git_config_bool", return_value=False) as config:
-            self.assertFalse(ai_commit.emoji_priority_enabled())
-            config.assert_called_once_with("scm-toolkit.ai-emoji-priority-rules", False)
+    def test_emoji_priority_enforcement_defaults_on(self):
+        with patch.object(ai_commit, "git_config_bool", return_value=True) as config:
+            self.assertTrue(ai_commit.emoji_priority_enabled())
+            config.assert_called_once_with("scm-toolkit.ai-emoji-priority-rules", True)
 
     @patch.object(ai_commit, "git_config_bool", return_value=False)
     def test_ai_commit_can_be_disabled_globally(self, _config):
@@ -828,6 +828,37 @@ class TitleTests(unittest.TestCase):
         for diff in ["diff --git a/a b/a\n--- a/a\n+++ b/a\n+\n-  ", "Binary files a/a and b/a differ", "rename from a\nrename to b"]:
             self.assertFalse(ai_commit.has_text_changes(diff))
 
+    def test_unrelated_model_emojis_are_replaced_by_change_type(self):
+        cases = [
+            ("🏆 Refine badge colors", "🎨 Refine badge colors"),
+            ("🗳️ Fix reset handling", "🐛 Fix reset handling"),
+            ("📱 Add patch validation coverage", "🧪 Add patch validation coverage"),
+            ("🏆 Refactor helper blocks", "🏗️ Refactor helper blocks"),
+            ("📱 Update handler logic", "🔧 Update handler logic"),
+        ]
+        for subject, expected in cases:
+            with self.subTest(subject=subject), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("staged_file_context", ""),
+                    ("recent_subjects", ""),
+                    ("ollama_json", {"response": json.dumps({"subject": subject, "description": ""})}),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                self.assertEqual(
+                    ai_commit.generate_message("", "+Update handler behavior", ["src/handler.py"]),
+                    (expected, ""),
+                )
+
+    def test_extra_model_emojis_cannot_appear_in_subject_or_body(self):
+        self.assertEqual(ai_commit.apply_priority_emoji("🏆 Fix 🗳️ handler", "🐛"), "🐛 Fix handler")
+        self.assertEqual(
+            ai_commit.sanitize_description("Body: 🏆 Improve the implementation. 🗳️ Preserve the behavior."),
+            "Improve the implementation. Preserve the behavior.",
+        )
+
     def test_generated_title_without_emoji_gets_one_and_preserves_description(self):
         with ExitStack() as stack:
             for name, value in [
@@ -1106,7 +1137,17 @@ Describe the staged change.
         self.assertEqual(self.select({"0": False, "1": True, "2": True}), "🔩")
 
     def test_fallback_only_when_every_condition_is_false(self):
-        self.assertIn(self.select({"0": False, "1": False, "2": False}), ["📦", "➕"])
+        self.assertEqual(self.select({"0": False, "1": False, "2": False}), "📦")
+
+    def test_equivalent_choices_never_use_random_selection(self):
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            selections = [
+                ai_commit.select_priority_emoji("local", self.rules, "", "+fix a bug", "", "")
+                for _ in range(5)
+            ]
+        self.assertEqual(selections, ["🐛"] * 5)
 
     def test_missing_string_and_truncated_classifications_block_instead_of_falling_back(self):
         for response in [{"response": '{}'},
