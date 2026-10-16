@@ -490,7 +490,7 @@ class TitleTests(unittest.TestCase):
             self.assertEqual(generate.call_count, 3)
             self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
 
-    def test_permanent_http_failure_does_not_retry(self):
+    def test_http_failure_retries_three_times_then_falls_back(self):
         with ExitStack() as stack:
             for name, value in [
                 ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
@@ -500,10 +500,12 @@ class TitleTests(unittest.TestCase):
                 stack.enter_context(patch.object(ai_commit, name, return_value=value))
             error = ai_commit.urllib.error.HTTPError("http://127.0.0.1:11434/api/generate", 400, "bad request", {}, None)
             generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
-            with self.assertRaisesRegex(RuntimeError, "HTTP 400"):
-                ai_commit.generate_message("", "+Exhibit references", ["notes.md"])
-            self.assertEqual(generate.call_count, 1)
-            self.sleep.assert_not_called()
+            self.assertEqual(
+                ai_commit.generate_message("", "+Exhibit references", ["notes.md"]),
+                ("📝 Update notes.md", ""),
+            )
+            self.assertEqual(generate.call_count, 3)
+            self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
 
     def test_required_model_reports_timeout_connection_and_http_failures(self):
         failures = [
@@ -777,7 +779,7 @@ class TitleTests(unittest.TestCase):
             self.assertIn("not just a filename or file count", prompts[1])
             self.assertIn("+Exhibit 5 lists items and fines.", prompts[1])
 
-    def test_text_changes_never_silently_fall_back(self):
+    def test_text_changes_use_simple_fallback_after_failed_generation(self):
         for response in [None, {"response": '{"subject":"📝 Add notes.md","description":""}'},
                          {"response": "invalid"}]:
             with self.subTest(response=response), ExitStack() as stack:
@@ -788,11 +790,27 @@ class TitleTests(unittest.TestCase):
                     ("staged_file_context", "Change totals: 1 modified"),
                 ]:
                     stack.enter_context(patch.object(ai_commit, name, return_value=value))
-                stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=response))
-                fallback = stack.enter_context(patch.object(ai_commit, "fallback_message"))
-                with self.assertRaises(RuntimeError):
-                    ai_commit.generate_message("1 file changed", "+Document DTC exhibit references.", ["notes.md"])
-                fallback.assert_not_called()
+                generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=response))
+                self.assertEqual(
+                    ai_commit.generate_message("1 file changed", "+Document DTC exhibit references.", ["notes.md"]),
+                    ("📝 Update notes.md", ""),
+                )
+                self.assertEqual(generate.call_count, 3 if response else 0)
+
+    def test_disabling_fallback_blocks_invalid_generated_titles(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+                ("commit_fallback_enabled", False),
+                ("ollama_json", {"response": '{"subject":"Fix","description":""}'}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            fallback = stack.enter_context(patch.object(ai_commit, "fallback_message"))
+            with self.assertRaisesRegex(RuntimeError, "after 3 attempts"):
+                ai_commit.generate_message("", "+Document facts.", ["notes.md"])
+            fallback.assert_not_called()
 
     def test_filename_guard_preserves_specific_summaries_and_opaque_changes(self):
         self.assertTrue(ai_commit.is_filename_only_title(
@@ -871,6 +889,13 @@ class TitleTests(unittest.TestCase):
             "📝 Update README.md",
         )
 
+    def test_fallback_setting_is_enabled_by_default_and_can_be_disabled(self):
+        with patch.object(ai_commit, "git_config_bool", side_effect=lambda _key, default: default) as setting:
+            self.assertTrue(ai_commit.commit_fallback_enabled())
+        setting.assert_called_once_with("scm-toolkit.ai-commit-fallback", True)
+        with patch.object(ai_commit, "git_config_bool", return_value=False):
+            self.assertFalse(ai_commit.commit_fallback_enabled())
+
 
 
 class CommitDiagnosticsTests(unittest.TestCase):
@@ -885,12 +910,17 @@ class CommitDiagnosticsTests(unittest.TestCase):
             stack.enter_context(patch.object(ai_commit, "selected_model", return_value=(None, False)))
             stack.enter_context(patch.object(ai_commit, "configured_models", return_value=("primary", "small")))
             events = stack.enter_context(patch.object(ai_commit, "log_event"))
-            with self.assertRaises(RuntimeError):
-                ai_commit.generate_message("private stat", "+private text", ["notes.md"])
-            events.assert_called_once_with(
-                "commit_title", "model_unavailable", model="primary",
-                reason="model_not_installed", outcome="blocked",
+            self.assertEqual(
+                ai_commit.generate_message("private stat", "+private text", ["notes.md"]),
+                ("📝 Update notes.md", ""),
             )
+            self.assertEqual(
+                [call.args[1] for call in events.call_args_list],
+                ["model_unavailable", "fallback_used"],
+            )
+            self.assertEqual(events.call_args_list[0].kwargs["outcome"], "fallback")
+            self.assertEqual(events.call_args_list[1].kwargs["reason"], "model_not_installed")
+            self.assertNotIn("private text", str(events.call_args_list))
 
     def test_rejected_output_is_logged_without_model_response(self):
         with ExitStack() as stack:
@@ -928,11 +958,15 @@ class CommitDiagnosticsTests(unittest.TestCase):
             ))
             stack.enter_context(patch.object(ai_commit.time, "sleep"))
             events = stack.enter_context(patch.object(ai_commit, "log_event"))
-            with self.assertRaisesRegex(RuntimeError, "could not generate"):
-                ai_commit.generate_message("one file", "+secret text", ["notes.md"])
+            self.assertEqual(
+                ai_commit.generate_message("one file", "+secret text", ["notes.md"]),
+                ("📝 Update notes.md", ""),
+            )
             attempts = [call.kwargs for call in events.call_args_list if call.args[1] == "request_failed"]
             self.assertEqual([event["outcome"] for event in attempts], ["retry", "retry", "stopped"])
             self.assertEqual([event["http_status"] for event in attempts], [503, 503, 503])
+            self.assertEqual(events.call_args_list[-1].args[1], "fallback_used")
+            self.assertNotIn("secret text", str(events.call_args_list))
 
 
 class EmojiPriorityTests(unittest.TestCase):
@@ -984,15 +1018,28 @@ Describe the staged change.
         rules = ai_commit.emoji_priority_rules("Never use ➕ as a commit emoji.\n\n" + self.instructions)
         self.assertEqual(rules[-1][1], ["📦"])
 
-    def test_priority_rules_prevent_unverified_missing_model_fallback(self):
+    def test_priority_rules_allow_missing_model_fallback_unless_strict(self):
         with patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
                 patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
                 patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")):
+            self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
+                             ("🖼️ Update icon.png", ""))
+            with patch.object(ai_commit, "commit_fallback_enabled", return_value=False):
+                with self.assertRaisesRegex(RuntimeError, "Install.*model"):
+                    ai_commit.generate_message("", "Binary files differ", ["icon.png"])
+
+    def test_priority_classifier_failure_uses_simple_message(self):
+        with patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
+                patch.object(ai_commit, "installed_local_model_names", return_value={"local"}), \
+                patch.object(ai_commit, "selected_model", return_value=("local", False)), \
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
-                patch.object(ai_commit, "fallback_message") as fallback:
-            with self.assertRaisesRegex(RuntimeError, "Install.*model"):
-                ai_commit.generate_message("", "Binary files differ", ["icon.png"])
-            fallback.assert_not_called()
+                patch.object(ai_commit, "staged_file_context", return_value=""), \
+                patch.object(ai_commit, "select_priority_emoji", side_effect=RuntimeError("Cannot classify")), \
+                patch.object(ai_commit, "log_event") as logs:
+            self.assertEqual(ai_commit.generate_message("", "+Update handler", ["app.py"]),
+                             ("🔧 Update app.py", ""))
+            self.assertEqual(logs.call_args_list[-1].kwargs["reason"], "priority_validation_failed")
 
     def test_first_match_stops_evaluation_before_later_rules(self):
         with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}) as generate, \

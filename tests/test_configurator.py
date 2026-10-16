@@ -285,6 +285,18 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="normalizeStagedWhitespace" value="true"', page)
         self.assertNotIn('name="normalizeStagedWhitespace" value="true" checked', page)
 
+    def test_ai_commit_fallback_toggle_defaults_on_and_supports_strict_debugging(self):
+        setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
+        self.assertEqual(setting.section, "Ollama")
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["aiCommitFallback"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="aiCommitFallback" value="true" checked', page)
+        values.pop("aiCommitFallback")
+        self.assertFalse(configurator.parse_submission(values)["aiCommitFallback"])
+
     def test_post_commit_spellcheck_toggle_defaults_off_and_saves_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["postCommitSpellcheck"])

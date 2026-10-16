@@ -58,7 +58,6 @@ def main():
         stat, diff, files,
         include_description=ai_commit.should_add_default_branch_description(),
         conversation_context=context[-6000:],
-        require_model=True,
     )
     if ai_commit.staged_diff() != (stat, diff, files) or repository_state != (
         ai_commit.git_output('rev-parse', 'HEAD'),
