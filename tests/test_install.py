@@ -26,6 +26,8 @@ SETTINGS = {
     "autocompleteToggle": True,
     "autoPublishToggle": True,
     "codexCoauthor": True,
+    "codexCoauthorName": "Codex",
+    "codexCoauthorEmail": "noreply@openai.com",
     "hideOutgoingSyncCount": True,
     "incomingSyncLabel": "",
     "outgoingSyncLabel": "",

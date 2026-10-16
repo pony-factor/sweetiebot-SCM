@@ -75,7 +75,9 @@ SETTINGS = (
     Setting("hideSCMProgress", "scm-toolkit.hide-scm-progress", "Hide Source Control progress bar", "Hide the progress animation during Git operations and background refreshes.", "Source control"),
     Setting("inlineSuggestions", "scm-toolkit.inline-suggestions", "Inline suggestions", "Enable inline suggestions, including in the commit-message editor.", "Source control"),
     Setting("postCommitAction", "scm-toolkit.post-commit-action", "Push after committing", "Checked pushes after committing; unchecked does nothing.", "Message bar", "push_checkbox"),
-    Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Codex co-author button", "Show the attributed commit action.", "Message bar"),
+    Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Co-author commit button", "Show the attributed commit action.", "Message bar"),
+    Setting("codexCoauthorName", "scm-toolkit.codex-coauthor-name", "Commit co-author name", "Display name written into the Co-authored-by trailer; defaults to Codex.", "Message bar", "coauthor_name"),
+    Setting("codexCoauthorEmail", "scm-toolkit.codex-coauthor-email", "Commit co-author email", "Email in the Co-authored-by trailer. To link a GitHub account, enter an address associated with that account.", "Message bar", "coauthor_email"),
     Setting("codexCommitContext", "scm-toolkit.codex-commit-context", "Local commit messages from Codex text", "When the co-author commit message is blank, use this window's current conversation and staged changes with local Ollama. Codex keeps running.", "Source control"),
     Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Prevent idle sleep on macOS while Codex tasks are running. The display can still turn off. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
     Setting("codexWindowLabel", "scm-toolkit.codex-window-label", "Codex window label", "Rename the Codex sidebar and its Activity Bar / secondary sidebar title, e.g. CelestAI. Use Codex to restore its original label; apply with app repair and reload VS Code.", "Codex", "text"),
@@ -272,6 +274,19 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
         if setting.kind == "select":
             if value not in setting.choices:
                 raise ValueError(f"Choose a valid {setting.label.lower()}.")
+            parsed[setting.name] = value
+            continue
+        if setting.kind == "coauthor_name":
+            if not value or len(value) > 100 or any(
+                ord(char) < 32 or ord(char) == 127 or char in "<>\u2028\u2029"
+                for char in value
+            ):
+                raise ValueError("Commit co-author name must be a single line (1–100 characters) without angle brackets.")
+            parsed[setting.name] = value
+            continue
+        if setting.kind == "coauthor_email":
+            if len(value) > 254 or not re.fullmatch(r"[^\s<>@]+@[^\s<>@]+", value):
+                raise ValueError("Commit co-author email must be a single valid name@domain address.")
             parsed[setting.name] = value
             continue
         if setting.kind == "optional_text":

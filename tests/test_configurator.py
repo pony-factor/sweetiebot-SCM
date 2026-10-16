@@ -34,6 +34,27 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_commit_coauthor_identity_can_be_changed_safely(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["codexCoauthorName"], "Codex")
+        self.assertEqual(configurator.parse_submission(values)["codexCoauthorEmail"], "noreply@openai.com")
+        values["codexCoauthorName"] = ["Contributor Bot"]
+        values["codexCoauthorEmail"] = ["123+bot[bot]@users.noreply.github.com"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["codexCoauthorName"], "Contributor Bot")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="codexCoauthorName" value="Contributor Bot"', page)
+        self.assertIn('name="codexCoauthorEmail" value="123+bot[bot]@users.noreply.github.com"', page)
+        for bad in ("", "Bad <Name>", "Bad\\nCo-authored-by: Intruder <x@y>", "N" * 101):
+            values["codexCoauthorName"] = [bad]
+            with self.assertRaisesRegex(ValueError, "co-author name"):
+                configurator.parse_submission(values)
+        values["codexCoauthorName"] = ["Contributor Bot"]
+        for bad in ("", "no-at-sign", "a@b\\nCo-authored-by: Intruder <x@y>", "a <a@b>"):
+            values["codexCoauthorEmail"] = [bad]
+            with self.assertRaisesRegex(ValueError, "co-author email"):
+                configurator.parse_submission(values)
+
     def test_pull_request_refresh_interval_validation(self):
         values = form_values()
         self.assertEqual(configurator.parse_submission(values)["pullRequestRefreshIntervalSeconds"], "120")

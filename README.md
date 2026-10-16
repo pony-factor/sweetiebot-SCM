@@ -18,7 +18,7 @@ Current features:
 - right-click the SCM branch selector to delete an empty topic branch locally and on origin (when published), with confirmation, clean-tree checks, ancestry verification, and an exact-SHA remote lease
 - optionally create a branch from each repository's default branch using configurable built-in, imported, and custom name packs, syncing first when there are no uncommitted changes
 - optionally show a quick toggle for VS Code inline code completion
-- optionally show a commit button that appends the Codex co-author trailer
+- optionally show a commit button that appends a configurable co-author name and email (Codex by default)
 - optionally open a pull request for the current branch through a configured MCP server
 - recognize built-in pony branch names during PR creation and pass local-only character context to Kafania for a post-publish pony profile
 - show the matched pony as a small local-only **Pony Info** view in Source Control, beside whatever editor or Integrated Browser content is open
@@ -186,6 +186,8 @@ git config --global scm-toolkit.commit-and-push true
 git config --global scm-toolkit.branch-cleanup true
 git config --global scm-toolkit.autocomplete-toggle true
 git config --global scm-toolkit.codex-coauthor true
+git config --global scm-toolkit.codex-coauthor-name "Codex"
+git config --global scm-toolkit.codex-coauthor-email "noreply@openai.com"
 git config --global scm-toolkit.hide-outgoing-sync-count true
 git config --global scm-toolkit.incoming-sync-label "Incoming"
 git config --global scm-toolkit.outgoing-sync-label "Outgoing"
@@ -235,6 +237,8 @@ The equivalent `~/.gitconfig` block is:
     branch-cleanup = true
     autocomplete-toggle = true
     codex-coauthor = true
+    codex-coauthor-name = Codex
+    codex-coauthor-email = noreply@openai.com
     hide-outgoing-sync-count = true
     incoming-sync-label = Incoming
     outgoing-sync-label = Outgoing
@@ -722,16 +726,23 @@ installer after enabling the setting and reopen the VS Code window once to load
 the snapshot bridge. Subsequent button presses leave Codex running.
 
 When `codex-coauthor` is enabled, an account button appears in the SCM message row.
-It appends this trailer to the current message and then runs VS Code's normal
-`git.commit` command:
+The **Message bar** settings let you change the **Commit co-author name** and
+**Commit co-author email** independently. The button appends the configured
+`Co-authored-by` trailer to the current message, then commits to the selected
+repository. With the default name and email, it appends:
 
 ```text
 Co-authored-by: Codex <noreply@openai.com>
 ```
 
-The trailer is added after a blank line and is not duplicated if it is already
-present. If the commit fails and VS Code leaves the message untouched, the toolkit
-restores the original message.
+To use a different co-author, set `scm-toolkit.codex-coauthor-name` and
+`scm-toolkit.codex-coauthor-email` in Sweetie Bot's Message bar settings or
+with `git config --global`. The email should belong to the intended GitHub
+account for linked attribution; changing these fields does not change the Git
+commit's primary author. The trailer is added after a blank line and is not
+duplicated if it is already present. Invalid names or emails stop the attributed
+commit rather than allowing injected commit-message lines. This applies to both
+manual messages and locally generated blank-message commits.
 
 ### ChatGPT project context for GitHub PR actions
 

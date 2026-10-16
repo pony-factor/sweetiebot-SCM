@@ -486,14 +486,27 @@ function scmToolkitEnableBlankStateRefresh(
 
 const SCM_TOOLKIT_CODEX_COAUTHOR = 'Co-authored-by: Codex <noreply@openai.com>';
 
-function scmToolkitWithCodexCoauthor(message) {
+function scmToolkitCoauthorTrailer(settings = {}) {
+    const name = settings.codexCoauthorName ?? 'Codex';
+    const email = settings.codexCoauthorEmail ?? 'noreply@openai.com';
+    if (typeof name !== 'string' || !name.trim() || name.length > 100
+        || /[\x00-\x1f\x7f<>\u2028\u2029]/.test(name)
+        || typeof email !== 'string' || email.length > 254
+        || !/^[^\s<>@]+@[^\s<>@]+$/.test(email)) {
+        throw new Error('Invalid co-author name or email in Sweetie Bot settings.');
+    }
+    if (name === 'Codex' && email === 'noreply@openai.com') return SCM_TOOLKIT_CODEX_COAUTHOR;
+    return `Co-authored-by: ${name} <${email}>`;
+}
+
+function scmToolkitWithCodexCoauthor(message, settings = {}) {
     const base = message.trimEnd();
     if (!base) return '';
-
+    const trailer = scmToolkitCoauthorTrailer(settings);
     const alreadyAttributed = base.split(/\r?\n/).some(
-        line => line.trim() === SCM_TOOLKIT_CODEX_COAUTHOR
+        line => line.trim() === trailer
     );
-    return alreadyAttributed ? base : `${base}\n\n${SCM_TOOLKIT_CODEX_COAUTHOR}`;
+    return alreadyAttributed ? base : `${base}\n\n${trailer}`;
 }
 
 // Named G4 pony entries from the full MLP pony roster. Explicitly unnamed placeholders,
@@ -1192,8 +1205,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     codexButton.type = 'button';
     codexButton.className = 'scm-toolkit-codex-coauthor codicon codicon-account';
     codexButton.hidden = true;
-    codexButton.title = 'Commit with Codex co-author';
-    codexButton.setAttribute('aria-label', 'Commit with Codex co-author');
+    codexButton.title = `Commit with ${settings.codexCoauthorName || 'Codex'} co-author`;
+    codexButton.setAttribute('aria-label', codexButton.title);
 
     const autoPublishButton = doc.createElement('button');
     autoPublishButton.type = 'button';
@@ -1505,7 +1518,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             }
             await commands.executeCommand(
                 'sweetiebot.commitWithMessage', repositoryUri,
-                scmToolkitWithCodexCoauthor(message)
+                scmToolkitWithCodexCoauthor(message, settings)
             );
         } catch (error) {
             notifications.error(error);
