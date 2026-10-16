@@ -1,10 +1,10 @@
 'use strict';
 
 const path = require('node:path');
-const os = require('node:os');
 const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { independentWorkspaceParent } = require('./workspace_trust');
 
 const OPEN_WORKSPACE_COMMAND = 'sweetiebot.openIndependentWorkspace';
 const execFileAsync = promisify(execFile);
@@ -73,7 +73,7 @@ async function copyRemotes(source, destination, git) {
 async function openIndependentWorkspace(vscode, {
   git = runGit,
   io = fs,
-  baseDirectory = path.join(os.homedir(), 'Sweetiebot Workspaces')
+  baseDirectory = independentWorkspaceParent()
 } = {}) {
   const folders = vscode.workspace.workspaceFolders || [];
   if (!folders.length) throw new Error('Open a local Git workspace first.');
@@ -116,6 +116,14 @@ async function openIndependentWorkspace(vscode, {
       await copyRemotes(root, destination, git);
       destinations.set(root, destination);
     }
+
+    // Metadata lives outside each checkout, so it cannot dirty Git status.
+    // Only workspaces carrying this explicit provenance can ever be auto-pruned.
+    await io.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1,
+      kind: 'independent-clone',
+      repositories: [...destinations.values()].map(destination => path.basename(destination))
+    }, null, 2) + '\n', { mode: 0o600 });
 
     const targets = sources.map(source => ({
       path: path.join(destinations.get(source.root), source.relative),
