@@ -375,16 +375,24 @@ class SubmissionTests(unittest.TestCase):
         values = form_values()
         values['codexSendBackground'] = ['#43AF49']
         values['codexComposerLabelColor'] = ['#43AF49']
+        values['codexNewChatDotColor'] = ['#AABBCC']
         parsed = configurator.parse_submission(values)
         self.assertEqual(parsed['codexSendBackground'], '#43AF49')
         self.assertEqual(parsed['codexComposerLabelColor'], '#43AF49')
+        self.assertEqual(parsed['codexNewChatDotColor'], '#AABBCC')
+        self.assertEqual(toolkit_settings.SETTING_KEYS['codexNewChatDotColor'],
+                         'scm-toolkit.codex-new-chat-dot-color')
+        page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
+        self.assertIn('name="codexNewChatDotColor" value="#AABBCC"', page)
         self.assertEqual(parsed['codexSendForeground'], '')
 
     def test_rejects_invalid_composer_color(self):
-        values = form_values()
-        values['codexSendBackground'] = ['#fff;display:none']
-        with self.assertRaisesRegex(ValueError, 'hexadecimal'):
-            configurator.parse_submission(values)
+        for name in ('codexSendBackground', 'codexNewChatDotColor'):
+            with self.subTest(name=name):
+                values = form_values()
+                values[name] = ['#fff;display:none']
+                with self.assertRaisesRegex(ValueError, 'hexadecimal'):
+                    configurator.parse_submission(values)
 
     def test_parses_checked_and_unchecked_switches(self):
         values = form_values()
