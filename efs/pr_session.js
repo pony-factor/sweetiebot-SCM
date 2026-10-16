@@ -50,6 +50,7 @@ async function launchPRSession(vscode, context, root, options) {
       settings: {
         'scmToolkit.openPanelOnStartup': false,
         'scmToolkit.automaticBranchCleanup': false,
+        'scmToolkit.startCompactPRSession': true,
         'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
         'window.title': title,
