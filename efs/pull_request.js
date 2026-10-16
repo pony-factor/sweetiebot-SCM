@@ -9,7 +9,7 @@ const { createDraftHandoff } = require('./draft_handoff');
 const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
-const { launchPRSession } = require('./pr_session');
+const { launchPRSession, closePRSession } = require('./pr_session');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
@@ -399,6 +399,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     localHandoff.register(draftId, { pony, profile: cachedProfile,
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
       onClose: async () => {
+      if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
       await closeConfirmation();
     }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {

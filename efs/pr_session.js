@@ -88,4 +88,13 @@ async function resumePRSession(vscode, context) {
   }
 }
 
-module.exports = { sessionDirectory, launchPRSession, resumePRSession };
+async function closePRSession(vscode, context) {
+  // Only the dedicated session may close its workspace. The originating
+  // repository window must never be closed by the confirmation control.
+  if (!await sessionDirectory(vscode, context)) return false;
+  await vscode.commands.executeCommand('workbench.action.switchToMainWindow');
+  await vscode.commands.executeCommand('workbench.action.closeWindow');
+  return true;
+}
+
+module.exports = { sessionDirectory, launchPRSession, resumePRSession, closePRSession };
