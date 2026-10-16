@@ -19,6 +19,8 @@ const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
 const { registerBranchMaintenance } = require('./branch_maintenance');
+const { registerWorkspaceCleanup } = require('./workspace_prune');
+const { registerManagedWindowActivity, stopManagedWindowActivity } = require('./workspace_activity');
 const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
 const { registerCommitLimitCommand } = require('./commit_limits');
@@ -319,6 +321,9 @@ async function activate(context) {
   registerLegacyCommandAliases(vscode, context);
   registerNewWorkspaceCommand(vscode, context);
   registerIndependentWorkspaceTrustCommand(vscode, context);
+  // Register an active-window marker before any independent clone is eligible
+  // for background pruning. Restricted Mode cannot create the marker.
+  await registerManagedWindowActivity(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
   // Hidden panel tabs can still be restored as the active container.
@@ -341,6 +346,7 @@ async function activate(context) {
   registerTerminalActions(vscode, context);
   registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);
+  registerWorkspaceCleanup(vscode, context);
   const index = new SearchIndex(context, settings);
   const provider = new WorkspaceSearchViewProvider(index, settings);
   context.subscriptions.push(
@@ -396,6 +402,7 @@ async function activate(context) {
 }
 
 async function deactivate() {
+  await stopManagedWindowActivity();
   await stopSettingsServer();
 }
 
