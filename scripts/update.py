@@ -12,6 +12,7 @@ from pathlib import Path
 from workspace_search import default_extensions_dir, source_files
 
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
+THINKING_ASSET = Path('assets/browser/maximize_thinking.js')
 FORMATS = {
     "scripts": {".py", ".json"},
     "efs": {".js", ".json", ".svg", ".md", ".html"},
@@ -114,6 +115,13 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
                        for source in packaging)):
             print('Published release omits PR HTML from automatic repair; keeping the installed sources.', flush=True)
             return None
+    # A locally installed PR preview can be ahead of published main. Retain
+    # its pre-Send thinking guard until the release contains that capability;
+    # an explicit installer update may still replace the preview.
+    if (not force and (Path(__file__).resolve().parent.parent / THINKING_ASSET).is_file()
+            and not (candidate / THINKING_ASSET).is_file()):
+        print('Published release predates maximum thinking; keeping the installed preview.', flush=True)
+        return None
     if (not force and marker.exists() and marker.read_text().strip() == revision
             and installed_sources_match(candidate, extensions_dir or default_extensions_dir())):
         return None

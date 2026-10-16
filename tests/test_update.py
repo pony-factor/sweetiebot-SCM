@@ -78,7 +78,8 @@ class UpdateTests(unittest.TestCase):
         for supports_updates in (False, True):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                payload = {'scripts/install.py': 'installer'}
+                payload = {'scripts/install.py': 'installer',
+                           update.THINKING_ASSET.as_posix(): 'thinking guard'}
                 if supports_updates:
                     payload['scripts/update.py'] = 'updater'
                     payload['scripts/repair.py'] = 'repair'
@@ -97,6 +98,7 @@ class UpdateTests(unittest.TestCase):
                     'scripts/workspace_search.py': 'FORMATS = {"efs": {".js", ".html"}}',
                     'efs/draft_handoff.js': 'handoff',
                     'efs/draft_confirmation.html': '<html>confirmation</html>',
+                    update.THINKING_ASSET.as_posix(): 'thinking guard',
                 }
                 if broken == 'asset':
                     del payload['efs/draft_confirmation.html']
@@ -105,6 +107,17 @@ class UpdateTests(unittest.TestCase):
                 with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
                     result = update.prepare_update(root)
                 self.assertEqual(result is not None, broken is None)
+
+    def test_automatic_update_cannot_drop_the_installed_thinking_guard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'upstream.git').mkdir()
+            payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
+                       'scripts/repair.py': 'repair'}
+            for force in (False, True):
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                    result = update.prepare_update(root, force=force)
+                self.assertEqual(result is not None, force)
 
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -116,6 +129,7 @@ class UpdateTests(unittest.TestCase):
             payload = {
                 'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                 'scripts/repair.py': 'repair', 'scripts/codex_composer.py': 'new placeholders',
+                update.THINKING_ASSET.as_posix(): 'thinking guard',
                 'scripts/ai_commit.py': 'current Git wrapper',
                 'scripts/sweetiebot_async_commit.py': 'current async helper',
                 'scripts/post_commit_spellcheck.py': 'current spellcheck helper',

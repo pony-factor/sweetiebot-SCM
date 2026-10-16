@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/maximize_thinking.js'), 'utf8');
 
-function fixture({slider = false, blocked = false, generic = false} = {}) {
+function fixture({slider = false, blocked = false, generic = false, modelLabel = false} = {}) {
   let now = 0, opened, current = 0;
   const status = new Map();
   const element = (text, attrs = {}) => ({textContent: text, isConnected: true,
@@ -47,7 +47,7 @@ function fixture({slider = false, blocked = false, generic = false} = {}) {
     controls.push(trigger);
     return {trigger, options};
   }
-  const effort = addControl('Thinking effort', slider ? ['Instant'] : ['Instant', 'High', 'Maximum'], slider);
+  const effort = addControl(modelLabel ? 'Select ChatGPT model' : 'Thinking effort', slider ? [modelLabel ? '6 Instant' : 'Instant'] : ['Instant', 'High', 'Maximum'], slider);
   const time = addControl('Thinking time', ['Standard', 'Extended', 'Heavy']);
   const composer = {parentElement: {append(node) {status.set(node.id, node);}}};
   const context = {Date: {now: () => now},
@@ -77,6 +77,11 @@ let ready = false;
 for (let i = 0; i < 30 && !ready; i++) ready = slider.tick();
 assert.equal(ready, true);
 assert.equal(slider.current(), 3, 'Use aria-valuemax rather than a hard-coded High setting');
+const numericModel = fixture({slider: true, modelLabel: true});
+ready = false;
+for (let i = 0; i < 30 && !ready; i++) ready = numericModel.tick();
+assert.equal(ready, true, 'Recognize the actual Select ChatGPT model / 6 Instant trigger');
+assert.equal(numericModel.current(), 3);
 const blocked = fixture({blocked: true});
 for (let i = 0; i < 100; i++) assert.equal(blocked.tick(), false, 'Never confirm an ignored selection');
 blocked.ensure.cancel();

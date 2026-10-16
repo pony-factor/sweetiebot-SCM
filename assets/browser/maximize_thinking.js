@@ -24,10 +24,13 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
     clone?.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove());
     const content = text(clone?.textContent ?? element.innerText ?? element.textContent);
     const name = label(element);
+    const modelSelector = /^(select chatgpt model|select model)$/i.test(name);
     if (!/\b(thinking|reasoning|effort)\b/i.test(name + ' ' + content)
+        && !modelSelector
         && !Object.hasOwn(ranks, content.toLowerCase())
         && !Object.hasOwn(ranks, name.toLowerCase())) return '';
-    return (content.match(levels) || name.match(levels))?.[1].toLowerCase() || '';
+    return (content.match(levels) || name.match(levels))?.[1].toLowerCase()
+      || (modelSelector ? 'model' : '');
   };
   const key = (element, value) => {
     for (const type of ['keydown', 'keyup']) element.dispatchEvent(new KeyboardEvent(type,
