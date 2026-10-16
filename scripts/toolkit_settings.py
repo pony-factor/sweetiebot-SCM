@@ -74,7 +74,7 @@ DEFAULT_SETTINGS = {
     "normalizeStagedWhitespace": True,
     "spellcheckManualCommit": False,
     "postCommitSpellcheck": False,
-    "spellcheckPreserveLineBreaks": True,
+    "spellcheckPreserveLineBreaks": False,
     "aiDefaultBranchDescription": True,
     "aiEmojiPriorityRules": True,
     "aiCommitModel": "qwen2.5-coder:7b",

@@ -42,6 +42,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("Preserve intentional line breaks", page)
         values.pop("spellcheckPreserveLineBreaks")
         self.assertFalse(configurator.parse_submission(values)["spellcheckPreserveLineBreaks"])
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["spellcheckPreserveLineBreaks"])
 
     def test_commit_coauthor_identity_can_be_changed_safely(self):
         values = form_values()

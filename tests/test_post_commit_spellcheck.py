@@ -36,33 +36,53 @@ class CorrectionTests(unittest.TestCase):
         self.assertFalse(worker.safe_correction(original, corrected.replace("12953", "12954")))
         self.assertEqual(worker.normalize_smart_punctuation("Use `Alpine’s` here."), "Use `Alpine’s` here.")
 
-    def test_preserve_intentional_line_breaks_option(self):
-        original = "Alpha teh sentence.\nThe next paragraph."
-        corrected = "Alpha the\nsentence. The next paragraph."
-        self.assertFalse(worker.safe_correction(original, corrected))
-        self.assertTrue(worker.safe_correction(original, corrected, preserve_line_breaks=False))
-        self.assertIsNone(worker.request_correction(self.core(corrected), "model", "note.md", original, "", ""))
+    def test_compact_mode_joins_related_lines_but_can_be_switched_off(self):
+        original = "A teh [first](https://example.com/a)\n[second](https://example.com/b) follows."
+        joined = "A the [first](https://example.com/a) [second](https://example.com/b) follows."
+        self.assertTrue(worker.safe_correction(original, joined))
+        self.assertFalse(worker.safe_correction(original, joined, preserve_line_breaks=True))
+        self.assertEqual(worker.request_correction(self.core(joined), "model", "note.md", original, "", ""), joined)
 
         prompts = []
-        core = SimpleNamespace(
-            git_config_bool=lambda key, default: False,
+        strict_core = SimpleNamespace(
+            git_config_bool=lambda key, default: True,
             ollama_json=lambda endpoint, payload: prompts.append(payload["prompt"])
-            or {"response": json.dumps({"text": corrected})},
+            or {"response": json.dumps({"text": joined})},
         )
-        self.assertEqual(worker.request_correction(core, "model", "note.md", original, "", ""), corrected)
-        self.assertIn("Existing line wrapping may change", prompts[0])
-        self.assertIn("Do not move words between lines", worker.spellcheck_prompt("note.md", original, "", ""))
+        self.assertIsNone(worker.request_correction(strict_core, "model", "note.md", original, "", ""))
+        self.assertIn("Do not move words between lines", prompts[0])
+        self.assertIn("adjacent Markdown links together", worker.spellcheck_prompt("note.md", original, "", ""))
+
+    def test_compact_mode_never_inserts_new_breaks_or_moves_wraps_arbitrarily(self):
+        original = "A teh sentence.\nSome more prose."
+        moved = "A the\nsentence. Some more prose."
+        self.assertFalse(worker.safe_correction(original, moved))
+        self.assertFalse(worker.safe_correction(original, "A the\nsentence.\nSome more prose."))
+        self.assertTrue(worker.safe_correction(original, "A the sentence. Some more prose."))
+        self.assertTrue(worker.safe_correction(original, "A the sentence.\nSome more prose."))
+
+    def test_markdown_blocks_and_hard_breaks_are_not_compacted(self):
+        cases = [
+            ("First.\n\nSecond.", "First. Second."),
+            ("# Heading\nThe text.", "# Heading The text."),
+            ("- First item\n- Second item", "- First item - Second item"),
+            ("A table | cell\nNext | cell", "A table | cell Next | cell"),
+            ("An explicit hard break  \nNext line.", "An explicit hard break Next line."),
+            ("Paragraph.\n> Blockquote", "Paragraph. > Blockquote"),
+        ]
+        for original, corrected in cases:
+            with self.subTest(original=original):
+                self.assertFalse(worker.safe_correction(original, corrected))
 
     def test_spelling_at_line_boundaries_still_allowed(self):
         original = "Alpha teh\nbravo sentnce."
         corrected = "Alpha the\nbravo sentence."
         self.assertTrue(worker.safe_correction(original, corrected))
+        self.assertTrue(worker.safe_correction(original, corrected, preserve_line_breaks=True))
         self.assertEqual(worker.request_correction(self.core(corrected), "model", "note.md", original, "", ""), corrected)
-
-        # A word moved and corrected simultaneously must still be rejected.
-        moved = "Alpha\nthe bravo sentence."
-        self.assertFalse(worker.safe_correction(original, moved))
-        self.assertTrue(worker.safe_correction(original, moved, preserve_line_breaks=False))
+        joined = "Alpha the bravo sentence."
+        self.assertTrue(worker.safe_correction(original, joined))
+        self.assertFalse(worker.safe_correction(original, joined, preserve_line_breaks=True))
 
     def test_custom_terminology_is_in_prompt(self):
         prompts = []
@@ -95,6 +115,42 @@ class CorrectionTests(unittest.TestCase):
                 proposal = worker.spellcheck_file(self.core("A the sentence."), "model", [], "note.md")
             self.assertEqual(proposal[1], b"Unchanged typo\r\nA the sentence.\r\n")
             self.assertEqual(path.read_bytes(), proposal[0])
+
+    def test_compacted_lines_reconstruct_file_and_preserve_crlf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "note.md"
+            path.write_bytes(b"[One](https://example.com/a)\r\n[Two](https://example.com/b)\r\n")
+            result = subprocess.CompletedProcess([], 0, stdout=str(root).encode())
+            joined = "[One](https://example.com/a) [Two](https://example.com/b)"
+            with patch.object(worker, "git_run", return_value=result), patch.object(
+                worker, "changed_line_ranges", return_value=[(1, 2)]
+            ):
+                proposal = worker.spellcheck_file(self.core(joined), "model", [], "note.md")
+            self.assertIsNotNone(proposal)
+            self.assertEqual(proposal[1], (joined + "\r\n").encode())
+            self.assertEqual(path.read_bytes(), proposal[0])
+
+    def test_compacted_chunks_keep_later_edits_at_correct_offsets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "note.md"
+            original = ("[One](https://example.com/a)\n[Two](https://example.com/b)\n"
+                        "# Heading\nThe teh\nsentence.\n")
+            path.write_text(original)
+            first = "[One](https://example.com/a) [Two](https://example.com/b)"
+            def correction(endpoint, payload):
+                target = payload["prompt"]
+                return {"response": json.dumps({"text": first if "TARGET:\n[One]" in target else "The the sentence."})}
+
+            core = SimpleNamespace(ollama_json=correction)
+            result = subprocess.CompletedProcess([], 0, stdout=str(root).encode())
+            with patch.object(worker, "git_run", return_value=result), patch.object(
+                worker, "changed_line_ranges", return_value=[(1, 2), (4, 5)]
+            ):
+                proposal = worker.spellcheck_file(core, "model", [], "note.md")
+            self.assertIsNotNone(proposal)
+            self.assertEqual(proposal[1].decode(), first + "\n# Heading\nThe the sentence.\n")
 
     def test_symlink_and_outside_paths_are_skipped(self):
         with tempfile.TemporaryDirectory() as directory:
