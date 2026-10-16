@@ -137,6 +137,7 @@ SETTINGS = (
     Setting("codexInlineLocation", "scm-toolkit.codex-inline-location", "Computer and usage beside access", "Move the native computer and usage control beside the access icon.", "Codex"),
     Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Place a clipboard action beside the Codex send control. Submit when idle, or use native queued follow-ups while a task is running.", "Codex"),
     Setting("codexSendBackground", "scm-toolkit.codex-send-background", "Send button background", "Hex color for the Codex send button. Leave blank to use the theme.", "Codex", "color"),
+    Setting("codexNewChatDotColor", "scm-toolkit.codex-new-chat-dot-color", "New Chat notification dot", "Hex color for the unread dot on the Codex New Chat icon. Leave blank to follow the Send button background, or the theme if that is unset.", "Codex", "color"),
     Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexComposerLabelColor", "scm-toolkit.codex-composer-label-color", "Composer control color", "Hex color for Full access, Work locally, and the + add-context control. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),

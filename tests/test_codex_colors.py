@@ -21,7 +21,8 @@ class CodexColorTests(unittest.TestCase):
 
     def test_scoped_colors_are_idempotent_and_removable(self):
         original = 'base stylesheet\n'
-        settings = dict(zip(codex_colors.COLOR_SETTINGS, ['#43AF49', '#ffffff', '#43AF49']))
+        settings = {'codexSendBackground': '#43AF49', 'codexSendForeground': '#ffffff',
+                    'codexComposerLabelColor': '#43AF49'}
         patched = codex_colors.transform(original, settings)
         self.assertEqual(codex_colors.transform(patched, settings), patched)
         self.assertEqual(codex_colors.transform(patched, {}, remove=True), original)
@@ -30,6 +31,32 @@ class CodexColorTests(unittest.TestCase):
         self.assertIn('[data-composer-navigation-target="run-location"]', patched)
         self.assertIn('[data-composer-navigation-target="add-context"]', patched)
         self.assertNotIn('--vscode-foreground:', patched)
+
+    def test_new_chat_dot_follows_send_button_or_uses_explicit_color(self):
+        selector = 'svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"]'
+        theme = ('var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
+                 'var(--color-text-info)))')
+        for settings, expected in (
+            ({}, theme),
+            ({'codexSendBackground': '#43AF49'}, '#43AF49'),
+            ({'codexSendBackground': '#43AF49', 'codexNewChatDotColor': '#ABCDEF'}, '#ABCDEF'),
+            ({'codexNewChatDotColor': '#ABCDEF'}, '#ABCDEF'),
+        ):
+            with self.subTest(settings=settings):
+                patched = codex_colors.transform('base', settings)
+                dot_rule = next(line for line in patched.splitlines() if selector in line)
+                self.assertIn(f'fill: {expected} !important;', dot_rule)
+                self.assertEqual(patched.count(selector), 1)
+                self.assertEqual(codex_colors.transform(patched, settings), patched)
+                self.assertEqual(codex_colors.transform(patched, {}, remove=True), 'base')
+        distinct = codex_colors.transform('base', {
+            'codexSendBackground': '#43AF49', 'codexNewChatDotColor': '#ABCDEF',
+        })
+        self.assertIn('button.bg-composer-primary { background-color: #43AF49', distinct)
+
+    def test_new_chat_dot_rejects_invalid_hex(self):
+        with self.assertRaisesRegex(ValueError, 'hexadecimal'):
+            codex_colors.transform('base', {'codexNewChatDotColor': 'red'})
 
     def test_blank_colors_restore_the_theme(self):
         patched = codex_colors.transform('base', {'codexSendBackground': '#43af49'})

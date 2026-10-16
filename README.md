@@ -527,15 +527,19 @@ the permission icon instead of text such as **Full access**. It defaults to off
 and preserves the access menu and the current mode for screen readers. The Git
 setting is `scm-toolkit.codex-hide-access-label`.
 
-The send button and composer labels have separate color controls in the local
-configurator's **Codex** section. Set `scm-toolkit.codex-send-background` for the
-button background, `scm-toolkit.codex-send-foreground` for its icon, and
-`scm-toolkit.codex-composer-label-color` for the **Full access**, **Work locally**,
-and **+** add-context controls. Use a hexadecimal color such as Studio green `#43AF49`; blank values
-restore the theme. All three settings default to blank.
+The send button, New Chat unread dot, and composer labels have separate color
+controls in the local configurator's **Codex → Customization** section. Set
+`scm-toolkit.codex-send-background` for the Send button background,
+`scm-toolkit.codex-new-chat-dot-color` for the notification dot on New Chat,
+`scm-toolkit.codex-send-foreground` for the Send icon, and
+`scm-toolkit.codex-composer-label-color` for **Full access**, **Work locally**,
+and the **+** add-context control. Use a hexadecimal color such as Studio green
+`#43AF49`. All four settings default to blank. The New Chat dot follows the
+Send button background when its own color is blank; when both are blank, it uses
+the existing VS Code theme fallback. Other blank values restore the theme.
 
 Run `python3 scripts/install.py` after changing them and reopen the VS Code window.
-These overrides apply only to the Codex composer controls, independently of
+These overrides apply only to the selected Codex controls, independently of
 VS Code's general foreground color. Codex extension updates can replace the
 stylesheet; automatic app repair restores supported customizations after updates.
 
