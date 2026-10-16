@@ -278,6 +278,8 @@ def record_managed_workspace_merge(repo, repository, branch, oid, number, defaul
                 or root.name not in manifest.get("repositories", [])):
             return
         evidence_dir = group / ".sweetiebot-merged"
+        if evidence_dir.is_symlink():
+            return
         evidence_dir.mkdir(mode=0o700, exist_ok=True)
         target = evidence_dir / (root.name + ".json")
         if target.is_symlink():
