@@ -460,6 +460,9 @@ class ManualSpellcheckTests(unittest.TestCase):
 
 class TitleTests(unittest.TestCase):
     def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
         sleeper = patch.object(ai_commit.time, "sleep")
         self.sleep = sleeper.start()
         self.addCleanup(sleeper.stop)
@@ -866,6 +869,11 @@ class TitleTests(unittest.TestCase):
 
 
 class CommitDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
+
     def test_missing_model_is_logged_without_diff(self):
         with ExitStack() as stack:
             stack.enter_context(patch.object(ai_commit, "installed_local_model_names", return_value=set()))
