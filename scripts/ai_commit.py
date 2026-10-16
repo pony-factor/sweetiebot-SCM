@@ -976,6 +976,10 @@ EMOJI_PATTERN = r"[\U0001F300-\U0001FAFF\u2600-\u27BF][\ufe0e\ufe0f]?(?:\u200d[\
 def emoji_priority_rules(instructions: str) -> list[tuple[str, list[str], bool]]:
     """Read ordered bullets, retaining the conditions of nested groups."""
     rules = []
+    forbidden = set()
+    for line in instructions.splitlines():
+        if re.match(r"\s*(?:never use|do not use|don't use)\s+", line, re.I):
+            forbidden.update(re.findall(EMOJI_PATTERN, line))
     parents: list[tuple[int, str]] = []
     active = False
     for line in instructions.splitlines():
@@ -995,6 +999,9 @@ def emoji_priority_rules(instructions: str) -> list[tuple[str, list[str], bool]]
             parents.append((indent, text))
             continue
         condition = " ".join([parent[1] for parent in parents] + [text])
+        emojis = [emoji for emoji in emojis if emoji not in forbidden]
+        if not emojis:
+            raise RuntimeError("An emoji priority rule has no permitted emoji. Update the commit instructions.")
         fallback = bool(re.search(r"none of (?:these|the above)|otherwise|fallback", condition, re.I))
         rules.append((condition, list(dict.fromkeys(emojis)), fallback))
     return rules
