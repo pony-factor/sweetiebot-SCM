@@ -36,6 +36,7 @@ def form_values():
 class SubmissionTests(unittest.TestCase):
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
+        values["spellcheckPreserveLineBreaks"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["spellcheckPreserveLineBreaks"])
         page = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
         self.assertIn('name="spellcheckPreserveLineBreaks"', page)
@@ -180,11 +181,12 @@ class SubmissionTests(unittest.TestCase):
             for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
             for key in toolkit_settings.VSCODE_SETTINGS[group]
         }
-        # These two extension-native controls do not belong to the
+        # These extension-native controls do not belong to the
         # Sweetiebot configurator's managed settings.
         self.assertEqual(properties - exposed, {
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
+            "scmToolkit.automaticWorkspaceCleanup",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")

@@ -217,7 +217,8 @@ def protected_markdown_boundary(left: str, right: str) -> bool:
     if left.endswith(("  ", "\\")) or markdown_prefix(left) or markdown_prefix(right):
         return True
     for line in (left, right):
-        if (line.startswith(("    ", "\t", "|", "<"))
+        if (re.search(r"\s\|\s", line)
+                or line.startswith(("    ", "\t", "|", "<"))
                 or re.match(r"^\s*(?:[-*_]\s*){3,}$", line)
                 or re.match(r"^\s*\[[^]]+\]:\s", line)
                 or re.match(r"^\s*\[\^[^]]+\]:\s", line)):
