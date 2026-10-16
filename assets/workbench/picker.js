@@ -61,6 +61,42 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         return String(typeof value === 'string' && value.trim() ? value : (fallback ?? '')).trim();
     };
 
+    // Git renders an animated sync button while pushing after a commit.
+    // Keep the user's outgoing name in its visible caption, not just by the count.
+    const nativeSyncCaptions = new WeakMap();
+    const customizeSyncProgressCaption = (action, outgoingName) => {
+        const longLabel = action.querySelector('.monaco-button-label');
+        const icon = longLabel?.querySelector('.codicon-sync');
+        if (!icon) return false;
+
+        const spinning = icon.classList.contains('codicon-modifier-spin');
+        const hasOutgoing = Boolean(action.querySelector('.codicon-arrow-up'));
+        const hasIncoming = Boolean(action.querySelector('.codicon-arrow-down'));
+        // A commit-and-push can briefly show no ahead count during the push.
+        const pushWithoutCounts = !hasIncoming && !hasOutgoing
+            && configuration.getValue('git.postCommitCommand') === 'push';
+        const rename = spinning && Boolean(outgoingName) && (hasOutgoing || pushWithoutCounts);
+
+        for (const node of longLabel.childNodes) {
+            if (node.nodeType !== 3 && node.nodeType !== 1) continue;
+            if (node.nodeType === 1
+                && (node.classList.contains('codicon')
+                    || node.classList.contains('scm-toolkit-sync-direction')
+                    || node.children.length)) continue;
+
+            const original = nativeSyncCaptions.get(node) ?? (node.textContent ?? '');
+            if (!/\p{L}/u.test(original)) continue;
+            if (!nativeSyncCaptions.has(node)) nativeSyncCaptions.set(node, original);
+
+            const whitespace = original.match(/^\s*/)[0];
+            const countSuffix = original.match(/\s+\d+\s*$/)?.[0] ?? '';
+            const display = rename ? whitespace + outgoingName + countSuffix : original;
+            if (node.textContent !== display) node.textContent = display;
+            return rename;
+        }
+        return false;
+    };
+
     const update = () => {
         const names = {
             down: configuredName('incomingSyncLabel', settings.incomingSyncLabel),
@@ -68,6 +104,7 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         };
         for (const action of root.querySelectorAll('.button-container .monaco-button')) {
             if (!action.querySelector('.codicon-sync')) continue;
+            const hasOutgoingProgressCaption = customizeSyncProgressCaption(action, names.up);
 
             for (const direction of ['down', 'up']) {
                 for (const arrow of action.querySelectorAll(
@@ -80,7 +117,11 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
                     // Insert a separate name so native Git can update its count and icons.
                     let label = count.previousElementSibling;
                     if (!label?.classList.contains('scm-toolkit-sync-direction')) label = undefined;
-                    const name = names[direction];
+                    // The full-width progress caption already displays the outgoing name.
+                    // Keep the count label in the compact version, but avoid duplication.
+                    const inLongLabel = arrow.parentElement?.classList.contains('monaco-button-label');
+                    const name = direction === 'up' && inLongLabel && hasOutgoingProgressCaption
+                        ? '' : names[direction];
                     if (name) {
                         if (!label) {
                             label = doc.createElement('span');
@@ -112,7 +153,8 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     observer.observe(root, { subtree: true, childList: true, characterData: true });
     const disposable = configuration.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('scmToolkit.incomingSyncLabel')
-            || event.affectsConfiguration('scmToolkit.outgoingSyncLabel')) update();
+            || event.affectsConfiguration('scmToolkit.outgoingSyncLabel')
+            || event.affectsConfiguration('git.postCommitCommand')) update();
     });
     widget.disposables.add({
         dispose() {
