@@ -44,7 +44,6 @@ SMART_PUNCTUATION = str.maketrans(
         "\u201c": '"',
         "\u201d": '"',
         "\u201f": '"',
-        "\u2013": "-",
         "\u2014": "-",
         "\u2026": "...",
     }
@@ -201,12 +200,12 @@ def markdown_prefix(line: str) -> str:
 
 
 def normalize_smart_punctuation(text: str) -> str:
-    # Leave URLs and inline code byte-for-byte intact. Numeric ranges are the
-    # deliberate exception to ASCII punctuation; dates and identifiers are not.
+    # Preserve existing en dashes and leave URLs and inline code intact.
+    # Normalize only unambiguous numeric ranges; not dates or identifiers.
     pieces = re.split(r"(https?://[^\s)>]+|`[^`\n]+`)", text)
     for index in range(0, len(pieces), 2):
         prose = pieces[index].translate(SMART_PUNCTUATION)
-        pieces[index] = re.sub(r"(?<![\w./-])(\d+(?:\.\d+)?)[ \t]*-[ \t]*(\d+(?:\.\d+)?)(?![\w./-])", r"\1–\2", prose)
+        pieces[index] = re.sub(r"(?<![\w./-])(\d+(?:\.\d+)?)[ \t]*-[ \t]*(\d+(?:\.\d+)?)(?![\w/-]|\.[\w])", r"\1–\2", prose)
     return "".join(pieces)
 
 
@@ -235,11 +234,11 @@ Allowed changes:
 - spelling and obvious typographical errors
 - accidental duplicated or missing small words
 - clear punctuation or grammar mistakes
-- replace smart punctuation with plain ASCII punctuation, for example Alpine’s -> Alpine's
+- normalize quotation marks and other smart punctuation to plain ASCII, for example Alpine’s -> Alpine's; preserve en dashes
 
 Do not rewrite, restyle, summarize, change meaning, alter facts, or make editorial improvements.
 Preserve Markdown syntax, URLs, inline code, citations, capitalization choices, and line breaks.
-Use plain ASCII punctuation in prose, except use an en dash for numeric ranges, such as pages 12952–12953. Preserve every number, date, citation, and identifier. Do not introduce em dashes, curly quotes, or ellipsis characters.
+Use plain ASCII punctuation in prose, except always use U+2013 en dashes for numeric ranges (including page citations and ranges followed by periods, such as pages 2413–2559.). Never replace an existing en dash in a range with a hyphen. Preserve every number, date, citation, and identifier. Do not introduce em dashes, curly quotes, or ellipsis characters.
 Additional terminology guidance (subject to the preservation rules above):
 {instructions}
 Return exactly {line_count} target line(s), with no added or removed lines.

@@ -36,6 +36,21 @@ class CorrectionTests(unittest.TestCase):
         self.assertFalse(worker.safe_correction(original, corrected.replace("12953", "12954")))
         self.assertEqual(worker.normalize_smart_punctuation("Use `Alpine’s` here."), "Use `Alpine’s` here.")
 
+    def test_en_dashes_survive_periods_and_markdown_emphasis(self):
+        for original, model_output, expected in [
+            ("Pages 2413–2559.", "Pages 2413–2559.", "Pages 2413–2559."),
+            ("Pages 2413–2559.", "Pages 2413-2559.", "Pages 2413–2559."),
+            ("**Study, pages 2413–2559.**", "**Study, pages 2413-2559.**", "**Study, pages 2413–2559.**"),
+            ("Pages 2413-2559.", "Pages 2413-2559.", "Pages 2413–2559."),
+        ]:
+            with self.subTest(original=original, model_output=model_output):
+                self.assertEqual(worker.normalize_smart_punctuation(model_output), expected)
+                self.assertEqual(worker.request_correction(
+                    self.core(model_output), "model", "note.md", original, "", ""
+                ), expected)
+        text = "2026-10-11, S7-2026-25, `2413-2559.`, https://example.com/2413-2559."
+        self.assertEqual(worker.normalize_smart_punctuation(text), text)
+
     def test_custom_terminology_is_in_prompt(self):
         prompts = []
         core = SimpleNamespace(
