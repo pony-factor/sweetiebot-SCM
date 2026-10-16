@@ -1208,7 +1208,7 @@ def valid_generated_message(title: str, description: str, include_description: b
         "enable", "enforce", "expand", "export", "extract", "fix", "handle", "hide",
         "honor", "implement", "import", "improve", "include", "index", "install", "keep", "limit", "migrate",
         "merge", "move", "normalize", "optimize", "organize", "parse", "persist", "prepare", "preserve",
-        "prevent", "publish", "record", "reduce", "refresh", "refactor", "remove",
+        "prevent", "publish", "record", "reduce", "refresh", "refactor", "refine", "remove",
         "rename", "render", "reorganize", "repair", "replace", "resolve", "restore",
         "retain", "revert", "save", "secure", "show", "simplify", "sort", "split",
         "streamline", "strip", "support", "track", "trim", "update", "use", "validate", "verify", "wire",
@@ -1361,7 +1361,7 @@ def generate_message(
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
                 return title, description
             if attempt + 1 < MAX_GENERATION_ATTEMPTS:
-                payload["prompt"] += "\nThe previous output was invalid. Summarize the changed content, not just a filename or file count. Describe the specific information or behavior added, removed, or corrected. Use an imperative subject and complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
+                payload["prompt"] += "\nThe previous output was invalid. Summarize the changed content, not just a filename or file count. Describe the specific information or behavior added, removed, or corrected. Begin the subject wording with Add, Fix, Update, Remove, Improve, Preserve, or Refine. Use complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
                 if text_changes and is_filename_only_title(title, files):
                     # Remove path-heavy headers on retry so rough notes are not
                     # overwhelmed by a more polished directory/filename label.

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -637,6 +638,43 @@ class TitleTests(unittest.TestCase):
             self.assertEqual(generate.call_count, 2)
             self.assertEqual(generate.call_args.args[1]["format"]["type"], "object")
             output.write.assert_not_called()
+
+    def test_refine_heading_summary_is_accepted_without_retry(self):
+        title = "🔧 Refine heading detection in tag-ocr-pdf.py"
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value={
+                "response": json.dumps({"subject": title, "description": ""}), "done_reason": "stop",
+            }))
+            self.assertEqual(ai_commit.generate_message(
+                "1 file changed", "+Promote only paragraphs matching recognized headings.",
+                ["tag-ocr-pdf.py"], require_model=True,
+            ), (title, ""))
+            self.assertEqual(generate.call_count, 1)
+
+    def test_invalid_summary_retry_names_accepted_imperative_verbs(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            prompts = []
+            responses = iter(["Strengthen heading detection", "Improve heading detection"])
+            def respond(_endpoint, payload):
+                prompts.append(payload["prompt"])
+                return {"response": json.dumps({"subject": next(responses), "description": ""})}
+            stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=respond))
+            self.assertEqual(ai_commit.generate_message(
+                "1 file changed", "+Match recognized headings exactly.", ["tag-ocr-pdf.py"],
+            ), ("🔧 Improve heading detection", ""))
+            self.assertIn("Begin the subject wording with Add, Fix, Update", prompts[1])
 
     def test_title_preference_references_standalone_file(self):
         with tempfile.TemporaryDirectory() as tmp:
