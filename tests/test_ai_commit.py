@@ -950,7 +950,9 @@ Describe the staged change.
         self.assertEqual([rule[2] for rule in self.rules], [False, False, False, True])
 
     def select(self, matches):
-        with patch.object(ai_commit, "ollama_json", return_value={"response": json.dumps(matches)}), \
+        responses = [{"response": json.dumps({"result": "MATCH" if matches[str(index)] else "NO_MATCH"})}
+                     for index in range(3)]
+        with patch.object(ai_commit, "ollama_json", side_effect=responses), \
                 patch.object(ai_commit, "current_branch", return_value="main"), \
                 patch.object(ai_commit, "configured_default_branch", return_value="main"):
             return ai_commit.select_priority_emoji("local", self.rules, "", "+wire handler", "", "")
@@ -963,16 +965,16 @@ Describe the staged change.
         self.assertIn(self.select({"0": False, "1": False, "2": False}), ["📦", "➕"])
 
     def test_missing_string_and_truncated_classifications_block_instead_of_falling_back(self):
-        for response in [{"response": '{"0":false}'},
-                         {"response": '{"0":"false","1":false,"2":false}'},
-                         {"response": '{"0":false,"1":false,"2":false}', "done_reason": "length"}]:
+        for response in [{"response": '{}'},
+                         {"response": '{"result":false}'},
+                         {"response": '{"result":"NO_MATCH"}', "done_reason": "length"}]:
             with self.subTest(response=response), patch.object(ai_commit, "ollama_json", return_value=response) as generate:
                 with self.assertRaisesRegex(RuntimeError, "verify.*priority"):
                     ai_commit.select_priority_emoji("local", self.rules, "", "", "", "")
                 self.assertEqual(generate.call_count, 3)
 
     def test_branch_bug_emoji_reused_from_branch_only(self):
-        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"0":true,"1":true,"2":false}'}), \
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
                 patch.object(ai_commit, "current_branch", return_value="repair"), \
                 patch.object(ai_commit, "configured_default_branch", return_value="main"), \
                 patch.object(ai_commit, "git_output", return_value="🐞 Fix another handler\n") as history:
@@ -989,7 +991,8 @@ Describe the staged change.
                                 ("recent_subjects", "➕ Add a handler")]:
                 stack.enter_context(patch.object(ai_commit, name, return_value=value))
             generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
-                {"response": '{"0":false,"1":true,"2":true}'},
+                {"response": '{"result":"NO_MATCH"}'},
+                {"response": '{"result":"MATCH"}'},
                 {"response": '{"subject":"➕ Add handler wiring","description":""}'},
             ]))
             self.assertEqual(ai_commit.generate_message("", "+connect(handler)", ["app.py"]),
