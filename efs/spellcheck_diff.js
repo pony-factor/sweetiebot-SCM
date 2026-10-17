@@ -180,6 +180,8 @@ function spellcheckDiffFiles(patch) {
       const added = rows.slice(i, j).filter(row => row.kind === 'add');
       for (let k = 0; k < Math.min(removed.length, added.length); k++) {
         [removed[k].segments, added[k].segments] = highlightChange(removed[k].text, added[k].text, true);
+        // Preserve the full original line for a one-click, line-level revert.
+        added[k].originalText = removed[k].text;
         added[k].changes = spellcheckChangeSpans(removed[k].text, added[k].text);
       }
       i = j;
