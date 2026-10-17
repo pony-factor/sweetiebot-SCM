@@ -450,6 +450,10 @@ captured with the job, and only the finalized commit is published.
 When nothing is staged, the background path stages the working changes first,
 respecting Git's tracked-only smart commit setting. Existing staged selections
 stay separate from unstaged work unless you explicitly choose Commit All.
+You can keep committing while earlier titles generate. Each click creates its
+own local placeholder; the worker finalizes messages in commit order and updates
+the queued descendants' parent links without changing their contents. Pushes
+publish only commits whose messages and ancestors are finalized.
 
 On macOS, the first queued job installs a per-user login agent that retries every
 minute. Interrupted generation and offline pushes resume after login, even if VS
@@ -460,7 +464,8 @@ repository is open. Push rejection preserves the local commit and retries; it
 never force-pushes or automatically merges remote changes. Jobs and their private
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
-blocks overlapping commits and branch changes through Sweetiebot. Special commit
+allows more Sweetiebot commits while blocking direct pushes and branch changes.
+Terminal commits through the Git wrapper wait until the queue finishes. Special commit
 modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
 worker again. Install the updated toolkit and reload the workspace to use this

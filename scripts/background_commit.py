@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import secrets
+from contextlib import contextmanager
 
 import ai_commit as core
 from sweetiebot_async_commit import write_journal as _write_journal, read_journal, PLACEHOLDER, alive
@@ -17,6 +18,80 @@ from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
+TRANSACTION = 'sweetiebot-background-finalization.json'
+
+
+@contextmanager
+def repository_lock(meta):
+    with (Path(meta) / (MARKER + '.lock')).open('a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def queue_entries(marker):
+    owner = read_journal(marker)
+    return owner.get('jobs', [owner]) if owner else []
+
+
+def save_queue(marker, entries):
+    # Keep completed descendants until earlier push retries finish, so the
+    # queue still describes the complete local commit chain.
+    while entries:
+        job = read_journal(Path(entries[0]['directory']) / 'job.json')
+        if not job or job['phase'] not in ('done', 'cancelled'):
+            break
+        entries = entries[1:]
+    if entries:
+        write_journal(marker, {**entries[0], 'jobs': entries})
+    else:
+        marker.unlink(missing_ok=True)
+
+
+def recover_finalization(meta):
+    """Replay the ref move and all descendant checkpoints after a crash."""
+    file = Path(meta) / TRANSACTION
+    transaction = read_journal(file)
+    if not transaction:
+        # Upgrade the previous single-job checkpoint if its CAS already landed.
+        entries = queue_entries(Path(meta) / MARKER)
+        if len(entries) == 1:
+            journal = Path(entries[0]['directory']) / 'job.json'
+            job = read_journal(journal)
+            if job and job.get('replacement_sha') and state() == (job['branch'], job['replacement_sha']):
+                job.update(sha=job.pop('replacement_sha'), provisional=False, phase='committed')
+                write_journal(journal, job)
+        return
+    branch, actual = state()
+    if branch != transaction['branch'] or actual not in (transaction['before'], transaction['after']):
+        raise RuntimeError('The branch changed during message finalization; recovery was paused.')
+    if actual != transaction['after']:
+        git('update-ref', '-m', 'sweetiebot: finalize queued commit messages',
+            branch, transaction['after'], transaction['before'])
+    for update in transaction['updates']:
+        journal = Path(update['directory']) / 'job.json'
+        job = read_journal(journal)
+        job.update(update['values'])
+        job.pop('replacement_sha', None)
+        write_journal(journal, job)
+    file.unlink()
+
+
+def captured_chain(marker):
+    entries = queue_entries(marker)
+    jobs = [read_journal(Path(entry['directory']) / 'job.json') for entry in entries]
+    branch, actual = state()
+    if not jobs or any(not job or not job.get('sha') or job['branch'] != branch for job in jobs):
+        raise RuntimeError('A queued local commit is incomplete or its branch changed.')
+    previous = jobs[0]['parent']
+    for job in jobs:
+        if (job['parent'] != previous
+                or git('show', '-s', '--format=%P', job['sha']) != previous
+                or git('show', '-s', '--format=%T', job['sha']) != job['tree']):
+            raise RuntimeError('The queued commit chain changed; background work was paused.')
+        previous = job['sha']
+    if actual != previous:
+        raise RuntimeError('The branch advanced outside the queued commits; background work was paused.')
+    return entries, jobs
 
 
 def write_journal(path, value):
@@ -90,8 +165,10 @@ def enqueue(request, start=True):
         fcntl.flock(lock, fcntl.LOCK_EX)
         if (meta / 'sweetiebot-async-commit.json').exists():
             raise RuntimeError('Wait for the existing commit message to finish before queuing another commit.')
-        if marker.exists():
-            raise RuntimeError('A background commit is already queued for this repository.')
+        recover_finalization(meta)
+        entries = queue_entries(marker)
+        if entries:
+            captured_chain(marker)
         branch, parent = state()
         if any((meta / name).exists() for name in
                ('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply')):
@@ -138,7 +215,8 @@ def enqueue(request, start=True):
                    phase='preparing', enqueue_pid=os.getpid())
         write_journal(directory / 'job.json', job)
         git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
-        write_journal(marker, {'id': job['id'], 'directory': str(directory)})
+        entries.append({'id': job['id'], 'directory': str(directory)})
+        save_queue(marker, entries)
         # Finish Git's local commit before acknowledging the click. Only message
         # generation and publication belong in the detached worker.
         work(directory, commit_only=True)
@@ -165,31 +243,49 @@ def matches_commit(job, sha):
                  or git('reflog', '-1', '--format=%gs').startswith('sweetiebot-background:' + job['id'] + ':')))
 
 
+def rewritten_commit(job, parent, message):
+    fields = git('show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI', job['sha']).split('\x00')
+    env = os.environ.copy()
+    for prefix, values in (('AUTHOR', fields[:3]), ('COMMITTER', fields[3:])):
+        for key, value in zip(('NAME', 'EMAIL', 'DATE'), values):
+            env['GIT_' + prefix + '_' + key] = value
+    args = ['commit-tree', job['tree']]
+    if parent:
+        args += ['-p', parent]
+    if job['sign']:
+        args.append('-S')
+    return git(*args, input=message + '\n', env=env)
+
+
 def finalize_message(directory, job):
-    """Replace only the captured local commit, preserving identity and the index."""
-    file = directory / 'job.json'
-    if not job.get('replacement_sha'):
-        fields = git('show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI', job['sha']).split('\x00')
-        env = os.environ.copy()
-        for prefix, values in (('AUTHOR', fields[:3]), ('COMMITTER', fields[3:])):
-            for key, value in zip(('NAME', 'EMAIL', 'DATE'), values):
-                env['GIT_' + prefix + '_' + key] = value
-        args = ['commit-tree', job['tree']]
-        if job['parent']:
-            args += ['-p', job['parent']]
-        if job['sign']:
-            args.append('-S')
-        replacement = git(*args, input=job['message'] + '\n', env=env)
-        job['replacement_sha'] = replacement
-        write_journal(file, job)
-    branch, actual = state()
-    if branch != job['branch'] or actual not in (job['sha'], job['replacement_sha']):
-        raise RuntimeError('The branch advanced; message finalization was paused.')
-    if actual != job['replacement_sha']:
-        git('update-ref', '-m', 'sweetiebot: finalize commit message', job['branch'],
-            job['replacement_sha'], job['sha'])
-    job.update(sha=job['replacement_sha'], phase='committed', provisional=False)
-    write_journal(file, job)
+    """Finalize one message and reparent its queued descendants atomically."""
+    meta = Path(job['gitdir'])
+    with repository_lock(meta):
+        recover_finalization(meta)
+        current = read_journal(directory / 'job.json')
+        if not current.get('provisional'):
+            job.update(current)
+            return
+        marker = meta / MARKER
+        entries, jobs = captured_chain(marker)
+        position = next(i for i, item in enumerate(jobs) if item['id'] == job['id'])
+        if any(item.get('provisional') for item in jobs[:position]):
+            raise RuntimeError('An earlier queued commit message must finish first.')
+        before = jobs[-1]['sha']
+        parent = current['parent']
+        updates = []
+        for entry, item in zip(entries[position:], jobs[position:]):
+            message = current['message'] if item['id'] == job['id'] else git('show', '-s', '--format=%B', item['sha'])
+            sha = rewritten_commit(item, parent, message)
+            values = {'sha': sha, 'parent': parent}
+            if item['id'] == job['id']:
+                values.update(provisional=False, phase='committed')
+            updates.append({'directory': entry['directory'], 'values': values})
+            parent = sha
+        write_journal(meta / TRANSACTION, dict(branch=current['branch'], before=before,
+                                             after=parent, updates=updates))
+        recover_finalization(meta)
+        job.update(read_journal(directory / 'job.json'))
 
 
 def captured_diff(job):
@@ -209,15 +305,14 @@ def work(directory, commit_only=False):
             return
         file = directory / 'job.json'
         job = read_journal(file)
-        if not job or job['phase'] in ('blocked', 'cancelled'):
+        if not job or job['phase'] == 'cancelled':
             return
         if job['phase'] == 'preparing' and not commit_only and alive(job.get('enqueue_pid')):
             return  # The click handler owns the initial local commit.
         if job['phase'] == 'done':
             marker = Path(job['gitdir']) / MARKER
-            owner = read_journal(marker)
-            if owner and owner['id'] == job['id']:
-                marker.unlink(missing_ok=True)
+            with repository_lock(job['gitdir']):
+                save_queue(marker, queue_entries(marker))
             return
         previous_cwd = os.getcwd()
         previous_env = os.environ.copy()
@@ -226,11 +321,22 @@ def work(directory, commit_only=False):
             marker = Path(job['gitdir']) / MARKER
             if git('rev-parse', '--absolute-git-dir') != job['gitdir']:
                 raise RuntimeError('Repository metadata changed.')
-            owner = read_journal(marker)
-            if not owner and job['phase'] in ('preparing', 'queued'):
+            entries = queue_entries(marker)
+            if not entries and job['phase'] in ('preparing', 'queued'):
                 return
-            if not owner or owner['id'] != job['id']:
+            if not any(entry['id'] == job['id'] for entry in entries):
                 raise RuntimeError('The background commit no longer owns this repository.')
+            if job['phase'] == 'blocked':
+                # An already-running older worker can finish generation after
+                # another placeholder was queued. Recover only a verified chain.
+                if not job.get('provisional') or 'branch advanced' not in job.get('error', '').lower():
+                    return
+                with repository_lock(job['gitdir']):
+                    captured_chain(marker)
+                    generated = not job['message'].startswith((PLACEHOLDER, '💭 Generate local commit message ['))
+                    job['phase'] = 'finalizing' if generated else 'committed'
+                    job.pop('error', None)
+                    write_journal(file, job)
             if job['phase'] == 'preparing':
                 job['phase'] = 'queued'
                 write_journal(file, job)
@@ -273,10 +379,15 @@ def work(directory, commit_only=False):
                 write_journal(file, job)
             if commit_only:
                 return
+            with repository_lock(job['gitdir']):
+                recover_finalization(job['gitdir'])
+                _, pending = captured_chain(marker)
+                job = read_journal(file)
+                position = next(i for i, item in enumerate(pending) if item['id'] == job['id'])
+                if any(item.get('provisional') for item in pending[:position]):
+                    return
             if job.get('provisional'):
                 if not job.get('replacement_sha') and job['phase'] != 'finalizing':
-                    if state() != (job['branch'], job['sha']):
-                        raise RuntimeError('The branch advanced; message finalization was paused.')
                     job['phase'] = 'generating'
                     write_journal(file, job)
                     stat, diff, files = captured_diff(job)
@@ -290,8 +401,8 @@ def work(directory, commit_only=False):
                 job['phase'] = 'finalizing'
                 write_journal(file, job)
                 finalize_message(directory, job)
-            if state() != (job['branch'], job['sha']):
-                raise RuntimeError('The branch changed after committing; push was paused.')
+            with repository_lock(job['gitdir']):
+                captured_chain(marker)
             if job['push']:
                 job['phase'] = 'pushing'
                 write_journal(file, job)
@@ -300,16 +411,22 @@ def work(directory, commit_only=False):
                 result = git('-c', 'credential.interactive=false', 'push', job['remote'],
                              job['sha'] + ':' + job['destination'], check=False, timeout=120, env=env)
                 if result.returncode:
-                    # Network/auth failures remain durable and retry next minute/login.
-                    log_event('background_commit', 'push_pending', outcome='retry')
-                    return
+                    # A later finalized job may already have published this one.
+                    published = git('ls-remote', job['remote'], job['destination'], check=False, timeout=30)
+                    tip = published.stdout.split()[0] if published.returncode == 0 and published.stdout.strip() else ''
+                    included = tip and git('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode == 0
+                    if not included:
+                        log_event('background_commit', 'push_pending', outcome='retry')
+                        return
                 if not job.get('tracking'):
                     short = job['branch'][len('refs/heads/'):]
-                    git('config', 'branch.' + short + '.remote', job['remote'])
-                    git('config', 'branch.' + short + '.merge', job['destination'])
+                    with repository_lock(job['gitdir']):
+                        git('config', 'branch.' + short + '.remote', job['remote'])
+                        git('config', 'branch.' + short + '.merge', job['destination'])
             job.update(phase='done', context='')
             write_journal(file, job)
-            marker.unlink(missing_ok=True)
+            with repository_lock(job['gitdir']):
+                save_queue(marker, queue_entries(marker))
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
             log_event('background_commit', 'completed', outcome='success')
             # Existing spellcheck guards refuse edits when users have moved on.
@@ -336,10 +453,10 @@ def work(directory, commit_only=False):
 
 def control(action):
     marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
-    owner = read_journal(marker)
-    if not owner:
+    entries = queue_entries(marker)
+    if not entries:
         return
-    directory = Path(owner['directory'])
+    directory = Path(entries[0]['directory'])
     with (directory / 'worker.lock').open('a+b') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -347,9 +464,22 @@ def control(action):
             raise RuntimeError('The background worker is active; try again after it finishes.')
         job = read_journal(directory / 'job.json')
         if action == 'cancel':
+            if job.get('provisional'):
+                # Removing an unresolved ancestor would release placeholders to
+                # push. Give it a local fallback message before cancelling push.
+                _, _, files = captured_diff(job)
+                title, description = core.fallback_message(files, False)
+                job['message'] = title + ('\n\n' + description if description else '')
+                suffix = git('show', '-s', '--format=%B', job['sha']).partition('\n')[2].strip()
+                if suffix:
+                    job['message'] += '\n\n' + suffix
+                job['phase'] = 'finalizing'
+                write_journal(directory / 'job.json', job)
+                finalize_message(directory, job)
             job.update(phase='cancelled', context='')
             write_journal(directory / 'job.json', job)
-            marker.unlink(missing_ok=True)
+            with repository_lock(job['gitdir']):
+                save_queue(marker, queue_entries(marker))
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
         elif job['phase'] == 'blocked':
             job['phase'] = ('finalizing' if job.get('replacement_sha') else
@@ -359,8 +489,15 @@ def control(action):
 
 
 def resume():
+    repositories = set()
     for file in jobs_home().glob('*/job.json'):
-        work(file.parent)
+        job = read_journal(file)
+        meta = job['gitdir']
+        if meta in repositories:
+            continue
+        repositories.add(meta)
+        for entry in queue_entries(Path(meta) / MARKER):
+            work(Path(entry['directory']))
 
 
 def wait_for_background(real_git, global_args):
@@ -369,8 +506,8 @@ def wait_for_background(real_git, global_args):
     if result.returncode:
         return
     marker = Path(result.stdout.strip()) / MARKER
-    job = read_journal(marker)
-    if job and os.environ.get('SWEETIEBOT_BACKGROUND_JOB') != job['id']:
+    entries = queue_entries(marker)
+    if entries and not any(os.environ.get('SWEETIEBOT_BACKGROUND_JOB') == entry['id'] for entry in entries):
         raise RuntimeError('A background Commit & Push is pending. Let it finish before changing the branch or committing again.')
 
 

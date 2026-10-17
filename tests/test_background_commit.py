@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -76,14 +77,14 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_finalization_resumes_after_ref_update_before_checkpoint(self):
         directory = self.queue(message='')
-        finalize = worker.finalize_message
-        def interrupted(directory, job):
-            before = dict(job)
-            finalize(directory, job)
-            before.update(phase='finalizing', message=job['message'], replacement_sha=job['replacement_sha'])
-            worker.write_journal(directory / 'job.json', before)
+        recover = worker.recover_finalization
+        def interrupted(meta):
+            transaction = worker.read_journal(Path(meta) / worker.TRANSACTION)
+            if not transaction:
+                return recover(meta)
+            self.git('update-ref', transaction['branch'], transaction['after'], transaction['before'])
             raise OSError('Interrupted before checkpoint')
-        with patch.object(worker.core, 'generate_message', return_value=('🧪 Recover final title', '')), patch.object(worker, 'finalize_message', side_effect=interrupted):
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Recover final title', '')), patch.object(worker, 'recover_finalization', side_effect=interrupted):
             worker.work(directory)
         sha = self.git('rev-parse', 'HEAD')
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Already generated')):
@@ -205,11 +206,74 @@ class BackgroundCommitTests(unittest.TestCase):
             self.assertIn('background Commit & Push is pending', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
-    def test_second_request_is_refused_without_changing_snapshot(self):
-        directory = self.queue()
-        with self.assertRaisesRegex(RuntimeError, 'already queued'):
-            self.queue()
-        self.assertEqual(self.job(directory)['tree'], self.git('write-tree'))
+    def test_multiple_placeholders_finalize_in_order_and_preserve_later_staging(self):
+        directories = []
+        for n in range(3):
+            (self.repo / 'story.txt').write_text(f'Captured change {n}\n')
+            self.git('add', 'story.txt')
+            directories.append(self.queue(message='', push=True))
+            self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+        original = [self.job(directory) for directory in directories]
+        identities = [self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI', job['sha']) for job in original]
+        (self.repo / 'story.txt').write_text('Later staged work\n')
+        self.git('add', 'story.txt')
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Earlier title pending')):
+            worker.work(directories[2])
+        self.assertEqual(self.job(directories[2])['phase'], 'committed')
+        for n, directory in enumerate(directories):
+            with patch.object(worker.core, 'generate_message', return_value=(f'🧪 Final title {n}', '')):
+                worker.work(directory)
+            self.assertEqual(self.job(directory)['phase'], 'done')
+            remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
+            self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote_tip))
+            self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change 2')
+            self.assertEqual(self.git('show', ':story.txt'), 'Later staged work')
+        self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
+        for n, directory in enumerate(directories):
+            job = self.job(directory)
+            self.assertEqual(self.git('show', '-s', '--format=%s', job['sha']), f'🧪 Final title {n}')
+            self.assertEqual(self.git('show', '-s', '--format=%T', job['sha']), original[n]['tree'])
+            self.assertEqual(self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI', job['sha']), identities[n])
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_enqueue_during_generation_returns_before_the_model_finishes(self):
+        first = self.queue(message='')
+        started, release = self.root / 'started', self.root / 'release'
+        script = '''
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import background_commit as worker
+def generate(*args, **kwargs):
+    Path(sys.argv[3]).touch()
+    deadline = time.monotonic() + 15
+    while not Path(sys.argv[4]).exists():
+        if time.monotonic() > deadline: raise RuntimeError('Test release timed out')
+        time.sleep(.02)
+    return '🧪 First final title', ''
+worker.core.generate_message = generate
+worker.work(Path(sys.argv[2]))
+'''
+        child = subprocess.Popen([sys.executable, '-c', script, str(Path(worker.__file__).parent), str(first), str(started), str(release)])
+        try:
+            deadline = time.monotonic() + 10
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(.02)
+            self.assertTrue(started.exists())
+            (self.repo / 'story.txt').write_text('Second captured change\n')
+            self.git('add', 'story.txt')
+            second = self.queue(message='')
+            self.assertIsNone(child.poll(), 'the model remains busy while another commit is accepted')
+            self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+            release.touch()
+            self.assertEqual(child.wait(timeout=10), 0)
+            with patch.object(worker.core, 'generate_message', return_value=('🧪 Second final title', '')):
+                worker.work(second)
+            self.assertEqual(self.job(second)['phase'], 'done')
+            self.assertEqual(self.git('log', '--reverse', '--format=%s'), '🧪 First final title\n🧪 Second final title')
+        finally:
+            release.touch()
+            child.wait(timeout=15)
 
     def test_parallel_worker_cannot_duplicate_commit(self):
         directory = self.queue(push=True)
@@ -217,6 +281,88 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual([child.wait(timeout=15) for child in children], [0, 0, 0])
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
+
+    def test_partial_descendant_checkpoint_is_recovered_before_another_enqueue(self):
+        first = self.queue(message='')
+        (self.repo / 'story.txt').write_text('Second snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='')
+        recover = worker.recover_finalization
+        def interrupted(meta):
+            transaction = worker.read_journal(Path(meta) / worker.TRANSACTION)
+            if not transaction:
+                return recover(meta)
+            self.git('update-ref', transaction['branch'], transaction['after'], transaction['before'])
+            update = transaction['updates'][0]
+            journal = Path(update['directory']) / 'job.json'
+            job = worker.read_journal(journal)
+            job.update(update['values'])
+            worker.write_journal(journal, job)
+            raise OSError('Interrupted between descendant checkpoints')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Recovered ancestor', '')), patch.object(worker, 'recover_finalization', side_effect=interrupted):
+            worker.work(first)
+        self.assertTrue((self.repo / '.git' / worker.TRANSACTION).exists())
+        (self.repo / 'story.txt').write_text('Third snapshot\n')
+        self.git('add', 'story.txt')
+        third = self.queue(message='')
+        self.assertFalse((self.repo / '.git' / worker.TRANSACTION).exists())
+        self.assertEqual(self.git('rev-parse', 'HEAD~2'), self.job(first)['sha'])
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Recovered descendant', '')):
+            worker.resume()
+        self.assertEqual([self.job(directory)['phase'] for directory in (first, second, third)], ['done'] * 3)
+        self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s'))
+
+    def test_offline_earlier_push_does_not_block_later_title_or_push(self):
+        first = self.queue(message='', push=True)
+        (self.repo / 'story.txt').write_text('Second snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        (self.root / 'remote').rename(self.root / 'offline')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 First final title', '')):
+            worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'pushing')
+        (self.root / 'offline').rename(self.root / 'remote')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Second final title', '')):
+            worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'done')
+        worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'done')
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+        remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
+        self.assertEqual(remote_tip, self.git('rev-parse', 'HEAD'))
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote_tip))
+
+    def test_inflight_older_worker_can_recover_after_a_new_placeholder(self):
+        first = self.queue(message='')
+        (self.repo / 'story.txt').write_text('Second snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='')
+        job = self.job(first)
+        job.update(phase='blocked', message='🧪 Preserve already generated title',
+                   error='The branch advanced; message finalization was paused.')
+        worker.write_journal(first / 'job.json', job)
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Reuse completed generation')):
+            worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'done')
+        self.assertEqual(self.git('log', '-1', '--format=%s', self.job(first)['sha']), '🧪 Preserve already generated title')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish second title', '')):
+            worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'done')
+
+    def test_cancelling_an_ancestor_finalizes_it_locally_before_releasing_descendants(self):
+        first = self.queue(message='', push=True)
+        (self.repo / 'story.txt').write_text('Second snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        with patch.object(worker.core, 'fallback_message', return_value=('🧪 Retain cancelled local snapshot', '')):
+            worker.control('cancel')
+        self.assertEqual(self.job(first)['phase'], 'cancelled')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish descendant', '')):
+            worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'done')
+        self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '2')
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s'))
 
     def test_cancel_preserves_staging_and_releases_gate(self):
         directory = self.queue()
