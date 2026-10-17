@@ -44,10 +44,16 @@ function normalizeStagedWhitespace(script, cwd) {
 function registerCodexCommitCommand(vscode, extensionContext) {
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.commitWithMessage', async (uri, message) => {
     if (typeof message !== 'string' || !message.trim()) throw new Error('A commit message is required.');
+    const root = vscode.Uri.from(uri?.rootUri ?? uri);
+    // Manual attribution shares the queue while earlier titles are pending.
+    // Keep the exact supplied message, including its co-author trailer.
+    const queued = await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
+      message, onlyIfPending: true
+    });
+    if (queued?.queued || queued?.cancelled) return;
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
-    const root = vscode.Uri.from(uri?.rootUri ?? uri);
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();

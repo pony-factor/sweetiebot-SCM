@@ -222,6 +222,24 @@ class BackgroundCommitTests(unittest.TestCase):
             self.assertIn('background Commit & Push is pending', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
+    def test_manual_coauthor_commit_queues_behind_generated_title(self):
+        first = self.queue(message='', push=True)
+        (self.repo / 'story.txt').write_text('Manual attributed change\n')
+        self.git('add', 'story.txt')
+        message = '🧪 Preserve manual subject\n\nCo-authored-by: Codex <noreply@openai.com>'
+        second = self.queue(message=message, push=True)
+        worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'committed')
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish earlier title', '')):
+            worker.work(first)
+        worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'done')
+        self.assertEqual(self.git('log', '-1', '--format=%B'), message)
+        remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
+        self.assertEqual(remote, self.git('rev-parse', 'HEAD'))
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote))
+
     def test_multiple_placeholders_finalize_in_order_and_preserve_later_staging(self):
         directories = []
         for n in range(3):
@@ -442,6 +460,15 @@ worker.work(directory)
         job.update(phase='blocked', message='🧪 Preserve already generated title',
                    error='The branch advanced; message finalization was paused.')
         worker.write_journal(first / 'job.json', job)
+        status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+        self.assertTrue(status['recoverable'])
+        self.assertEqual(status['phase'], 'recovering')
+        self.assertIn(first.name, status['titleJobs'])
+        # An unqueued branch move must still surface the real conflict.
+        self.git('update-ref', 'refs/heads/main', job['sha'])
+        status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+        self.assertFalse(status.get('recoverable', False))
+        self.git('update-ref', 'refs/heads/main', self.job(second)['sha'])
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Reuse completed generation')):
             worker.work(first)
         self.assertEqual(self.job(first)['phase'], 'done')

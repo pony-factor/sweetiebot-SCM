@@ -19,6 +19,8 @@ async function run() {
   let normalizationError, normalizations = 0;
   const gitSettings = {};
   let pushes = 0;
+  let pendingCommit = false;
+  const queued = [];
   const repository = {
     rootUri: { fsPath: '/selected' },
     state: { indexChanges: ['staged'], workingTreeChanges: [{ uri: { fsPath: '/selected/edited file' } }, { uri: { fsPath: '/selected/deleted file' } }], untrackedChanges: [{ uri: { fsPath: '/selected/new file' } }], mergeChanges: [] },
@@ -89,7 +91,12 @@ async function run() {
         if (discoveryError) throw discoveryError;
         return bridgeInstalled ? ['sweetiebot.readCodexContext'] : [];
       },
-      async executeCommand(id, root) {
+      async executeCommand(id, root, options) {
+        if (id === 'sweetiebot.queueCommit') {
+          assert.equal(options.onlyIfPending, true);
+          if (pendingCommit) queued.push(options);
+          return { queued: pendingCommit };
+        }
         if (id === 'git.push') {
           assert.equal(root.fsPath, '/selected');
           pushes++;
@@ -109,6 +116,15 @@ async function run() {
   };
   sandbox.module.exports.registerCodexCommitCommand(vscode, { subscriptions: [], extensionUri: { fsPath: '/extension' } });
   const commit = commands.get('sweetiebot.commitWithMessage');
+  pendingCommit = true;
+  const manualMessage = '🧪 Record manual change\n\nCo-authored-by: Codex <noreply@openai.com>';
+  await commit({ fsPath: '/selected' }, manualMessage);
+  assert.equal(queued[0].message, manualMessage, 'preserve the manual subject and attribution exactly');
+  assert.equal(commits.length, 0, 'pending commits use the queue instead of blocked direct Git');
+  assert.equal(normalizations, 0, 'the queue owns preparation when a job is pending');
+  assert.equal(pushes, 0, 'publication stays ordered behind pending title generation');
+  pendingCommit = false;
+
   const prepare = commands.get('sweetiebot.prepareCodexCommit');
   const uri = { scheme: 'file', fsPath: '/selected' };
   await commit(uri, 'Generated title');

@@ -611,10 +611,24 @@ if __name__ == '__main__':
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
             status = {key: job[key] for key in ('id', 'phase', 'error') if key in job} if job else {}
+            recoverable = False
+            if (job and job.get('provisional') and job['phase'] == 'blocked'
+                    and 'branch advanced' in job.get('error', '').lower()):
+                try:
+                    with repository_lock(marker.parent):
+                        captured_chain(marker)
+                    recoverable = True
+                except RuntimeError:
+                    pass
+            if recoverable:
+                status['phase'] = 'recovering'
+                status['recoverable'] = True
             status['titleJobs'] = []
             for entry in queue_entries(marker):
                 item = read_journal(Path(entry['directory']) / 'job.json')
-                if item and item.get('provisional') and item['phase'] not in ('blocked', 'done', 'cancelled'):
+                if (item and item.get('provisional')
+                        and (item['phase'] not in ('blocked', 'done', 'cancelled')
+                             or (recoverable and item['id'] == job['id']))):
                     status['titleJobs'].append(item['id'])
             print(json.dumps(status))
         else:

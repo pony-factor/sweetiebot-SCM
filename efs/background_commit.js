@@ -28,13 +28,25 @@ function enqueue(script, cwd, request) {
   });
 }
 
+function readStatus(script, cwd) {
+  return new Promise(resolve => {
+    execFile(resolvePythonExecutable(), [script, '--status'], { cwd, timeout: 10000 },
+      (error, stdout) => {
+        try { resolve(error ? null : JSON.parse(stdout)); } catch { resolve(null); }
+      });
+  });
+}
+
 function registerBackgroundCommit(vscode, context) {
   const script = vscode.Uri.joinPath(context.extensionUri, 'background_commit.py').fsPath;
-  const start = spawn(resolvePythonExecutable(), [script, '--resume'], {
-    detached: true, stdio: 'ignore'
-  });
-  start.on('error', () => {});
-  start.unref();
+  const resume = () => {
+    const child = spawn(resolvePythonExecutable(), [script, '--resume'], {
+      detached: true, stdio: 'ignore'
+    });
+    child.on('error', () => {});
+    child.unref();
+  };
+  resume();
   const control = (root, action) => {
     seen.delete(root);
     const child = spawn(resolvePythonExecutable(), [script, '--' + action], {
@@ -76,12 +88,7 @@ function registerBackgroundCommit(vscode, context) {
       for (const repository of git.getAPI(1).repositories || []) {
         const root = repository.rootUri.fsPath;
         const revision = generationRevision.get(root);
-        const status = await new Promise(resolve => {
-          execFile(resolvePythonExecutable(), [script, '--status'], { cwd: root, timeout: 10000 },
-            (error, stdout) => {
-              try { resolve(error ? null : JSON.parse(stdout)); } catch { resolve(null); }
-            });
-        });
+        const status = await readStatus(script, root);
         if (!status) continue;
         if (revision === generationRevision.get(root)) {
           if (status.titleJobs?.length) showGeneration(root);
@@ -89,7 +96,10 @@ function registerBackgroundCommit(vscode, context) {
         }
         const previous = seen.get(root);
         seen.set(root, status.id ? status : undefined);
-        if (status.phase === 'blocked' && previous?.phase !== 'blocked') {
+        if (status.recoverable) {
+          if (!previous?.recoverable || previous.id !== status.id) resume();
+        } else if (status.phase === 'blocked'
+            && (previous?.phase !== 'blocked' || previous?.recoverable || previous?.id !== status.id)) {
           void vscode.window.showErrorMessage('Background commit paused: ' + status.error,
             'Retry background job', 'Cancel background job').then(choice => {
               if (choice === 'Retry background job') control(root, 'retry');
@@ -112,6 +122,11 @@ function registerBackgroundCommit(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queueCommit', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') throw new Error('Background commits need a local repository.');
+    if (options.onlyIfPending) {
+      const status = await readStatus(script, root.fsPath);
+      if (!status) throw new Error('Could not check the background commit queue.');
+      if (!status.id) return { queued: false };
+    }
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The Git extension is unavailable.');
     const git = await extension.activate();
