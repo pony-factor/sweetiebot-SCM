@@ -30,6 +30,24 @@ function enqueue(script, cwd, request) {
 
 function registerBackgroundCommit(vscode, context) {
   const script = vscode.Uri.joinPath(context.extensionUri, 'background_commit.py').fsPath;
+  const start = spawn(resolvePythonExecutable(), [script, '--resume'], {
+    detached: true, stdio: 'ignore'
+  });
+  start.on('error', () => {});
+  start.unref();
+  const control = (root, action) => {
+    seen.delete(root);
+    const child = spawn(resolvePythonExecutable(), [script, '--' + action], {
+      cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe']
+    });
+    let stderr = '';
+    child.stderr.on('data', data => { stderr += data; });
+    child.on('error', error => { void vscode.window.showErrorMessage(pythonLaunchError(error).message); });
+    child.on('close', code => {
+      if (code) void vscode.window.showErrorMessage(stderr.trim() || 'Could not update background job.');
+    });
+    child.unref();
+  };
   let scanning = false;
   const seen = new Map();
   const scan = async () => {
@@ -51,7 +69,11 @@ function registerBackgroundCommit(vscode, context) {
         const previous = seen.get(root);
         seen.set(root, status.id ? status : undefined);
         if (status.phase === 'blocked' && previous?.phase !== 'blocked') {
-          void vscode.window.showErrorMessage('Background commit paused: ' + status.error);
+          void vscode.window.showErrorMessage('Background commit paused: ' + status.error,
+            'Retry background job', 'Cancel background job').then(choice => {
+              if (choice === 'Retry background job') control(root, 'retry');
+              if (choice === 'Cancel background job') control(root, 'cancel');
+            });
         } else if (status.phase === 'pushing' && previous?.phase !== 'pushing') {
           void vscode.window.showInformationMessage('Background commit saved locally; push is pending and will retry automatically.');
         } else if (previous?.id && !status.id) {
@@ -64,7 +86,7 @@ function registerBackgroundCommit(vscode, context) {
   const timer = setInterval(() => { void scan().catch(() => {}); }, 10000);
   context.subscriptions.push({ dispose() { clearInterval(timer); } });
   void scan().catch(() => {});
-  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queueCommit' , async (uri, options = {}) => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queueCommit', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') throw new Error('Background commits need a local repository.');
     const extension = vscode.extensions.getExtension('vscode.git');

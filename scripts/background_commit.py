@@ -89,6 +89,8 @@ def enqueue(request, start=True):
     marker = meta / MARKER
     with (meta / (MARKER + '.lock')).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        if (meta / 'sweetiebot-async-commit.json').exists():
+            raise RuntimeError('Wait for the existing commit message to finish before queuing another commit.')
         if marker.exists():
             raise RuntimeError('A background commit is already queued for this repository.')
         branch, parent = state()
@@ -103,6 +105,12 @@ def enqueue(request, start=True):
             raise ValueError('Invalid background commit request.')
         if trailer and ('\n' in trailer or not trailer.startswith('Co-authored-by: ')):
             raise ValueError('Invalid co-author trailer.')
+        if not message.strip():
+            if not core.feature_enabled():
+                raise RuntimeError('Enter a commit message; automatic commit titles are disabled.')
+            files = [name for name in core.git_output('diff', '--cached', '--name-only', '-z').split('\x00') if name]
+            if len(core.github_split_groups(files)) > 1:
+                return {'queued': False}  # Preserve the existing oversized-commit splitter.
         if core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
         tree = git('write-tree')
@@ -128,6 +136,7 @@ def enqueue(request, start=True):
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
                    phase='preparing')
         write_journal(directory / 'job.json', job)
+        git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
         write_journal(marker, {'id': job['id'], 'directory': str(directory)})
         job['phase'] = 'queued'
         write_journal(directory / 'job.json', job)
@@ -159,7 +168,7 @@ def work(directory):
             return
         file = directory / 'job.json'
         job = read_journal(file)
-        if not job or job['phase'] == 'blocked':
+        if not job or job['phase'] in ('blocked', 'cancelled'):
             return
         if job['phase'] == 'done':
             marker = Path(job['gitdir']) / MARKER
@@ -239,6 +248,7 @@ def work(directory):
             job.update(phase='done', context='')
             write_journal(file, job)
             marker.unlink(missing_ok=True)
+            git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
             log_event('background_commit', 'completed', outcome='success')
             # Existing spellcheck guards refuse edits when users have moved on.
             if core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
@@ -260,6 +270,29 @@ def work(directory):
             os.chdir(previous_cwd)
             os.environ.clear()
             os.environ.update(previous_env)
+
+
+def control(action):
+    marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
+    owner = read_journal(marker)
+    if not owner:
+        return
+    directory = Path(owner['directory'])
+    with (directory / 'worker.lock').open('a+b') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('The background worker is active; try again after it finishes.')
+        job = read_journal(directory / 'job.json')
+        if action == 'cancel':
+            job.update(phase='cancelled', context='')
+            write_journal(directory / 'job.json', job)
+            marker.unlink(missing_ok=True)
+            git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
+        elif job['phase'] == 'blocked':
+            job['phase'] = 'committed' if job.get('sha') else 'committing' if job['message'] else 'queued'
+            job.pop('error', None)
+            write_journal(directory / 'job.json', job)
 
 
 def resume():
@@ -284,6 +317,10 @@ if __name__ == '__main__':
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--resume']:
             resume()
+        elif sys.argv[1:] in (['--retry'], ['--cancel']):
+            control(sys.argv[1][2:])
+            if sys.argv[1] == '--retry':
+                resume()
         elif sys.argv[1:] == ['--status']:
             marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
             pending = read_journal(marker)

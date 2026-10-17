@@ -455,7 +455,7 @@ never force-pushes or automatically merges remote changes. Jobs and their privat
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
 blocks overlapping commits and branch changes through Sweetiebot. Special commit
-modes such as amend keep the normal Git flow. On other systems a detached worker
+modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
 worker again. Install the updated toolkit and reload the workspace to use this
 flow. Older terminal-only asynchronous finalization remains available below.

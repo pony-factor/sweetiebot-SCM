@@ -142,6 +142,55 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
+    def test_cancel_preserves_staging_and_releases_gate(self):
+        directory = self.queue()
+        tree = self.git('write-tree')
+        worker.control('cancel')
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'cancelled')
+        self.assertEqual(self.git('write-tree'), tree)
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+        self.assertEqual(self.git('for-each-ref', 'refs/sweetiebot/jobs'), '')
+
+    def test_restart_cleans_marker_after_completed_checkpoint(self):
+        directory = self.queue()
+        worker.work(directory)
+        marker = self.repo / '.git' / worker.MARKER
+        worker.write_journal(marker, {'id': directory.name, 'directory': str(directory)})
+        worker.work(directory)
+        self.assertFalse(marker.exists())
+        self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
+
+    def test_restart_recovers_preparing_checkpoint(self):
+        directory = self.queue()
+        job = self.job(directory)
+        job['phase'] = 'preparing'
+        worker.write_journal(directory / 'job.json', job)
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+
+    def test_snapshot_is_protected_from_git_gc(self):
+        directory = self.queue()
+        tree = self.job(directory)['tree']
+        self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/jobs/' + directory.name), tree)
+        (self.repo / 'story.txt').write_text('Newer staged version\n')
+        self.git('add', 'story.txt')
+        self.git('gc', '--prune=now')
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change')
+
+    def test_login_agent_runs_without_vscode_and_retries_periodically(self):
+        import plistlib
+        with patch.object(worker.sys, 'platform', 'darwin'), patch.object(Path, 'home', return_value=self.root), patch.object(worker.subprocess, 'run') as run:
+            run.return_value.returncode = 1
+            worker.install_agent(Path('/stable/runtime/background_commit.py'))
+        agent = self.root / 'Library/LaunchAgents' / (worker.LABEL + '.plist')
+        data = plistlib.loads(agent.read_bytes())
+        self.assertTrue(data['RunAtLoad'])
+        self.assertEqual(data['StartInterval'], 60)
+        self.assertEqual(data['ProgramArguments'][1:], ['/stable/runtime/background_commit.py', '--resume'])
+
 
 if __name__ == '__main__':
     unittest.main()

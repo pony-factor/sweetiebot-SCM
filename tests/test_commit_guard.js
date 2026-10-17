@@ -181,6 +181,31 @@ async function run(allowed, failCommit = false) {
     assert.deepEqual(events, ['progress', 'closed'],
       'A failed Git commit must close progress without claiming success');
   }
+  {
+    let nativeCommits = 0, nativePushes = 0;
+    const requests = [];
+    const repository = {
+      rootUri: { fsPath: '/tmp/repo' },
+      async commit() { nativeCommits++; }, async push() { nativePushes++; }
+    };
+    const context = vm.createContext({ repository,
+      commands: { async executeCommand(id, root, request) {
+        if (id === 'sweetiebot.checkCommitLimits') return true;
+        assert.equal(id, 'sweetiebot.queueCommit');
+        requests.push(request);
+        return { queued: true };
+      } },
+      configuration: { getValue() { return 'push'; } },
+      notifications: { notify() { return { close() {} }; } }
+    });
+    vm.runInContext(snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications, { aiCommit: true });', context);
+    await repository.commit('', {});
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].push, true);
+    assert.equal(requests[0].message, '');
+    assert.equal(nativeCommits, 0, 'the saved worker owns the commit');
+    assert.equal(nativePushes, 0, 'the saved worker owns publication');
+  }
   console.log('Commit guard tests passed');
 })().catch(error => {
   console.error(error);
