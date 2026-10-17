@@ -19,6 +19,7 @@ const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
 const { registerBranchMaintenance } = require('./branch_maintenance');
+const { registerCloudRepoSync } = require('./cloud_repo_sync');
 const { registerWorkspaceCleanup } = require('./workspace_prune');
 const { registerManagedWindowActivity, stopManagedWindowActivity } = require('./workspace_activity');
 const { registerPushRecovery } = require('./push_recovery');
@@ -107,6 +108,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
+      cloudRepositorySync: scm.get('cloudRepositorySync', false),
       codexKeepAwake: scm.get('codexKeepAwake', true),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
@@ -351,6 +353,7 @@ async function activate(context) {
   registerTerminalActions(vscode, context);
   registerOpenFileOnGitHub(vscode, context);
   registerBranchMaintenance(vscode, context);
+  registerCloudRepoSync(vscode, context);
   registerWorkspaceCleanup(vscode, context);
   const index = new SearchIndex(context, settings);
   const provider = new WorkspaceSearchViewProvider(index, settings);
