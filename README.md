@@ -783,6 +783,12 @@ When `browser-chatgpt-home` is enabled, a blank Integrated Browser tab starts at
 tabs, continue to win. Opening a new tab no longer clears a different tab's
 unsent message.
 
+With both `browser-globe-new-tab` and `browser-chatgpt-home` enabled,
+the title-bar globe opens a new tab at the configured homepage directly,
+without leaving the address-bar picker focused over the website. With the
+homepage toggle off, the globe still opens a normal blank tab with the URL
+picker. Other New Tab actions retain their native focus behavior.
+
 On startup, Sweetiebot prefers VS Code's native
 `workbench.browser.dataStorage: "workspace"` setting when there is no explicit
 user/workspace override. Browser data is **persistent within each VS Code
