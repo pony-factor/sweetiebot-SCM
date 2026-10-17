@@ -263,6 +263,7 @@ class PostCommitRoutingTests(unittest.TestCase):
                     ("git_config_bool", True), ("load_post_commit_spellcheck", worker),
                 ]:
                     stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                stack.enter_context(patch("background_commit.wait_for_background"))
                 stack.enter_context(patch.object(ai_commit.subprocess, "run", return_value=SimpleNamespace(returncode=returncode)))
                 with self.assertRaises(SystemExit) as exit_result:
                     ai_commit.main()

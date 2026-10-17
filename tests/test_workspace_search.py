@@ -18,7 +18,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             files = workspace_search.source_files()
-            for name in ('ai_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py'):
+            for name in ('ai_commit.py', 'background_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py'):
                 relative = Path(name)
                 (root / name).write_bytes(files[relative].read_bytes())
             repo = root / 'repo'
