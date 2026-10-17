@@ -496,7 +496,13 @@ def resume():
         if meta in repositories:
             continue
         repositories.add(meta)
-        for entry in queue_entries(Path(meta) / MARKER):
+        visited = set()
+        while True:
+            entry = next((item for item in queue_entries(Path(meta) / MARKER)
+                          if item['id'] not in visited), None)
+            if not entry:
+                break
+            visited.add(entry['id'])
             work(Path(entry['directory']))
 
 

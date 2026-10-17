@@ -244,7 +244,12 @@ import sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import background_commit as worker
+calls = 0
 def generate(*args, **kwargs):
+    global calls
+    calls += 1
+    if calls > 1:
+        return '🧪 Second final title', ''
     Path(sys.argv[3]).touch()
     deadline = time.monotonic() + 15
     while not Path(sys.argv[4]).exists():
@@ -252,7 +257,7 @@ def generate(*args, **kwargs):
         time.sleep(.02)
     return '🧪 First final title', ''
 worker.core.generate_message = generate
-worker.work(Path(sys.argv[2]))
+worker.resume()
 '''
         child = subprocess.Popen([sys.executable, '-c', script, str(Path(worker.__file__).parent), str(first), str(started), str(release)])
         try:
@@ -267,9 +272,7 @@ worker.work(Path(sys.argv[2]))
             self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
             release.touch()
             self.assertEqual(child.wait(timeout=10), 0)
-            with patch.object(worker.core, 'generate_message', return_value=('🧪 Second final title', '')):
-                worker.work(second)
-            self.assertEqual(self.job(second)['phase'], 'done')
+            self.assertEqual(self.job(second)['phase'], 'done', 'the same worker drains jobs added during generation')
             self.assertEqual(self.git('log', '--reverse', '--format=%s'), '🧪 First final title\n🧪 Second final title')
         finally:
             release.touch()
