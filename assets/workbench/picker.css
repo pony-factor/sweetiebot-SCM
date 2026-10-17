@@ -864,7 +864,7 @@
     .scm-toolkit-spellcheck-close { margin: 4px 8px; padding: 4px 8px; }
     .scm-toolkit-spellcheck-content { padding: 0 8px 8px; }
     .scm-toolkit-spellcheck-content .file { margin: 8px 0; }
-    .scm-toolkit-spellcheck-content .diff-line { grid-template-columns: 2em 2em 1.2em minmax(0, 1fr); }
+    .scm-toolkit-spellcheck-content .diff-line { grid-template-columns: 2em 2em 1.2em 1.5em minmax(0, 1fr); }
     .scm-toolkit-spellcheck-content .line-number { padding: 0 3px; }
     .scm-toolkit-spellcheck-content .sign { padding-left: 3px; }
     .scm-toolkit-spellcheck-status { padding: 0 8px 4px; }

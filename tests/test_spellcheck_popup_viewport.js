@@ -21,7 +21,7 @@ test('spellcheck modal fits and remains usable in very narrow and short workbenc
                 <h1>Spellchecks Performed</h1>
                 <section class="file"><h2>notes.md</h2>
                   <div class="diff-line add"><span class="line-number">1</span><span class="line-number">1</span>
-                    <span class="sign">+</span><span class="line-text">A spelling suggestion</span></div>
+                    <span class="sign">+</span><span class="scm-toolkit-spellcheck-line-actions"></span><span class="line-text">A spelling suggestion</span></div>
                 </section>
               </div>
               <label class="scm-toolkit-spellcheck-message-label">Commit message
