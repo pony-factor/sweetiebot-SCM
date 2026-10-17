@@ -52,22 +52,22 @@ Sweetiebot creates independent clones under `~/Library/Application Support/Sweet
 window gets a separate Git working directory). VS Code's Workspace Trust may
 otherwise start these windows in **Restricted Mode**, disabling extensions,
 tasks, and other features. On the first Sweetiebot extension startup after
-this feature is installed, an optional one-time dialog explains how to trust
-the **parent** directory in VS Code instead of approving every clone.
+this feature is installed, VS Code's native trust dialog offers to trust
+the **parent** directory instead of approving every clone.
 
-Choose **Manage Workspace Trust** to create the parent directory if needed,
-copy its full path to your clipboard, and open VS Code's native **Workspaces:
-Manage Workspace Trust** editor. Add the copied path under **Trusted Folders &
-Workspaces** yourself. This grants trust to all existing and future folders
-beneath the parent, so only do this if every repository you put there is
-trusted. Sweetiebot does not alter VS Code's trust database, disable Workspace
-Trust, or automatically approve the dialog. Selecting **Not Now** leaves the
-normal Restricted Mode protections in place for new clones.
+The dialog displays the parent path directly. Approve it to trust all existing
+and future repositories beneath that folder, or cancel to keep Restricted Mode.
+No copying paths or adding folders manually is required. Only approve if every
+repository you put there is trusted. VS Code records trust after your approval;
+Sweetiebot never disables Workspace Trust or automatically approves the dialog.
 
 To suppress the first-run prompt, set
 `scmToolkit.promptForIndependentWorkspaceTrust` to `false` in VS Code Settings.
-The prompt appears at most once per extension installation profile; enable or
-disable of the setting does not automatically revoke prior folder trust.
+The first-run prompt appears once per extension installation profile. Each new
+untrusted Sweetiebot clone also offers the guide once, even if the first-run
+guide was previously dismissed. In Restricted Mode, only the trust guide runs;
+Git operations, indexing, and background services start after trust is granted.
+Changing this setting does not revoke prior folder trust.
 To run the setup again at any time, use the Command Palette action
 **Configure Independent Workspace Trust**. If you prefer to trust each cloned
 repository separately, simply leave the parent untrusted.
