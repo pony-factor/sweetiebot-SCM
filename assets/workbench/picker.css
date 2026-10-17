@@ -605,6 +605,7 @@
 .notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-queued .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-branch-squash-synced .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
     font-size: 14px;
@@ -629,6 +630,9 @@
 }
 .notification-list-item.scm-toolkit-pr-queued .notification-list-item-icon.codicon-info::before {
     content: '⏳';
+}
+.notification-list-item.scm-toolkit-branch-squash-synced .notification-list-item-icon.codicon-info::before {
+    content: '🔄';
 }
 
 /* Dim the whole action, including its outline and Settings, consistently. */

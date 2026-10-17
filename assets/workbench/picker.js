@@ -1898,7 +1898,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 remote: settings.remote,
                 strategy: event.altKey ? 'merge' : 'squash',
             });
-            if (result) notifications.info(`Synced ${branch} with ${currentDefaultBranch} (${event.altKey ? 'merge' : 'single commit'}).`);
+            if (result) {
+                notifications.info(event.altKey
+                    ? `Synced ${branch} with ${currentDefaultBranch} (merge).`
+                    : `Squash Synced '${branch}' with '${currentDefaultBranch}'`);
+            }
         } catch (error) {
             // Leave merge conflicts untouched and keep the sync message for the manual commit.
             notifications.error(error);
@@ -2432,6 +2436,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             /^PR #[1-9]\d* merged into main\.$/.test(text));
         row.classList.toggle('scm-toolkit-pr-queued',
             /^PR #[1-9]\d* queued for merge\.$/.test(text));
+        row.classList.toggle('scm-toolkit-branch-squash-synced',
+            /^Squash Synced '.+' with '.+'$/.test(text));
         row.classList.toggle('scm-toolkit-operation-failed',
             /^(?:Git (?:could not complete the operation:|is locked|stopped because|refused because|could not authenticate|rejected the update|could not find|cannot complete|reported)|This folder is not a Git repository\.|Unable to squash-merge pull request:|Unable to merge #\d+:|(?:Failed|Unable) to (?:auto[- ]?merge|merge) (?:PR\b|pull request\b)|(?:Auto[- ]?merge|Automatic merge) (?:failed|failure)\b)/i.test(text));
     };
