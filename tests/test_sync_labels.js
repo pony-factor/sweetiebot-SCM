@@ -37,7 +37,8 @@ class Element {
 }
 
 function group(...nodes) {
-  const parent = {children: nodes};
+  // Match a real DOM parent: injected labels inspect parentElement.classList.
+  const parent = {children: nodes, classList: {contains: () => false}};
   for (const node of nodes) node.parentElement = parent;
   return parent;
 }
