@@ -63,6 +63,8 @@ def workbench_fixture():
             'dispose(){this.disposables?.dispose()}setButton(o){if(this.clear(),!!o){',
             'layout(e,t){if(super.layout(e,t),native(this.configurationService)){this.nativeHostService.updateWindowControls({height:t})}}',
             'cmd=svc("commandService")',
+            'registry.registerCommand("noop",()=>{});',
+            'paths=svc("pathService");requests=svc("workspaceTrustRequestService");',
             'notify=svc("notificationService")',
             'config=svc("configurationService")',
             'mcp=svc("IMcpService")',

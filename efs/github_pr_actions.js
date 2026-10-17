@@ -60,6 +60,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   }
   const squash = squashMessage(pr.title, Number(number), await readCommits(api, repo, number));
   let outcome;
+  let resumed = false;
   try {
     outcome = await api(['--method', 'PUT', endpoint,
       '-f', `sha=${pr.headRefOid}`, '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
@@ -68,8 +69,19 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     const detail = `${error.stderr || ''}
 ${error.message || ''}`;
     if (/\bHTTP 409\b/.test(detail)) {
-      // Existing request metadata cannot prove the requested squash authorship.
-      throw new Error(`PR #${number} has an unverified asynchronous merge request. Refusing to adopt its attribution.`);
+      // GitHub returns the existing request in stdout, even though gh exits
+      // nonzero. Matching options allow read-only status polling, not an
+      // assumption that the earlier request preserves our commit metadata.
+      try { outcome = JSON.parse(error.stdout); } catch {}
+      const existing = outcome?.details;
+      if (outcome?.status !== 'pending' ||
+          !/^[0-9a-f-]{36}$/i.test(existing?.uuid || '') ||
+          existing.expected_head_sha !== pr.headRefOid ||
+          existing.merge_method !== 'squash' || existing.merge_action !== 'direct_merge' ||
+          existing.bypass_rules !== false) {
+        throw new Error(`PR #${number} has a different or unverifiable asynchronous merge request. Its merge options were preserved; inspect the request on GitHub.`);
+      }
+      resumed = true;
     } else {
       const updated = await read().catch(() => undefined);
       if (updated?.mergeable === 'CONFLICTING') throw conflict();
@@ -102,6 +114,20 @@ ${error.message || ''}`;
     throw new Error('The pull request changed during merging; branch cleanup was skipped.');
   }
   if (confirmed.state === 'MERGED') {
+    if (resumed) {
+      // A 409 does not include commit_title/commit_message. Verify the actual
+      // commit before claiming success or allowing destructive branch cleanup.
+      const merged = await api([`repos/${repo}/pulls/${number}`]);
+      const sha = merged?.merge_commit_sha;
+      if (!merged?.merged || !/^[0-9a-f]{40}$/i.test(sha || '')) {
+        throw new Error(`PR #${number} merged, but its squash commit could not be verified. Branch cleanup was skipped.`);
+      }
+      const commit = await api([`repos/${repo}/git/commits/${sha}`]);
+      const expected = `${squash.title}\n\n${squash.message}`;
+      if (commit?.message?.replace(/\r\n/g, '\n').trimEnd() !== expected.trimEnd()) {
+        throw new Error(`PR #${number} merged, but its squash title or contributor attribution differs from the requested metadata. Branch cleanup was skipped.`);
+      }
+    }
     return { merged: true, repo, number, base: pr.baseRefName, pr: confirmed };
   }
   return { merged: false, repo, number, base: pr.baseRefName,

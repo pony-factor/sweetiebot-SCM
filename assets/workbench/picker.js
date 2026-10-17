@@ -9,6 +9,20 @@ function scmToolkitIsPRSingleRoot(workspace, roots) {
 }
 
 // Runs inside VS Code's SCM input widget; services and observables are supplied by install.py.
+function scmToolkitRequestIndependentWorkspaceTrust(localUserHome, requests) {
+    // Derive the only permitted target inside the workbench. Command arguments
+    // cannot redirect this request to a different folder or grant trust silently.
+    const uri = localUserHome.with({
+        path: localUserHome.path.replace(/\/$/, '') + '/Library/Application Support/Sweetiebot/Workspaces'
+    });
+    return requests.requestResourcesTrust({
+        uri,
+        message: 'Sweetiebot uses this parent folder for independent workspaces. ' +
+            'Trusting it enables extensions, terminals, and tasks for ALL existing and future repositories inside it. ' +
+            'Only approve if you trust every repository placed here.'
+    });
+}
+
 function scmToolkitDeferActionButtonUpdate(widget, button) {
     let state = widget.scmToolkitPressState;
     if (!state) {
@@ -1398,6 +1412,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         ponyBranchButton
     );
 
+    const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
+        settings, event => openBranchPicker(event));
+
     let currentCommand;
     let currentBranch;
     let currentRepositoryArgument;
@@ -1893,6 +1910,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
 
     const refreshBranchControls = () => {
+        branchStrip.update(currentRepositoryUri, currentBranch, currentDefaultBranch,
+            Boolean(currentCommand?.id));
         homeButton.hidden = branchButton.hidden;
         const homeDescription = `Home: switch to ${currentDefaultBranch || 'the default branch'}`;
         homeButton.title = homeDescription;
@@ -2106,6 +2125,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             doc.removeEventListener('pointerdown', dismissBranchContextMenu, true);
             doc.removeEventListener('keydown', escapeBranchContextMenu);
             closeBranchContextMenu();
+            branchStrip.dispose();
             syncButton.removeEventListener('click', syncBranch);
             deleteButton.removeEventListener('click', deleteBranch);
             pushCheckbox.removeEventListener('change', changePush);
@@ -2185,6 +2205,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
             currentDefaultBranch = undefined;
+            branchStrip.update(undefined, undefined, undefined, false);
             clearTimeout(defaultBranchRetry);
             defaultBranchRetry = undefined;
             currentBranchRevision = undefined;

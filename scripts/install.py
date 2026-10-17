@@ -411,6 +411,23 @@ def compact_window_edits(js, command="fe", configuration="Xe"):
     return [(original, replacement)]
 
 
+def workspace_trust_edits(js):
+    ident = r"[A-Za-z_$][\w$]*"
+    def unique(pattern):
+        matches = re.findall(pattern, js)
+        if len(matches) != 1:
+            raise ValueError("Unsupported VS Code build: workspace trust API does not match.")
+        return matches[0]
+    registry = unique(r'(' + ident + r')\.registerCommand\("noop",\(\)=>\{\}\)')
+    paths = unique(r'(' + ident + r')=\w+\("pathService"\)')
+    requests = unique(r'(' + ident + r')=\w+\("workspaceTrustRequestService"\)')
+    original = registry + '.registerCommand("noop",()=>{});'
+    replacement = original + registry + '.registerCommand("sweetiebot.requestIndependentWorkspaceTrust",'
+    replacement += ('accessor=>scmToolkitRequestIndependentWorkspaceTrust('
+                    f'accessor.get({paths}).localUserHome,accessor.get({requests})));')
+    return [(original, replacement)]
+
+
 def pr_workspace_explorer_edits(js):
     """Use a repository-root Explorer only for one-folder Sweetiebot PR workspaces.
 
@@ -513,6 +530,7 @@ def edits(js=None, settings=None):
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
+        changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
@@ -851,10 +869,13 @@ def transform(js, css, remove=False, settings=None):
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
         + "\n"
+        + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
+        + "\n"
         + (WORKBENCH_ASSETS / "message_bar.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
+    toolkit_css += "\n" + (WORKBENCH_ASSETS / "branch_strip.css").read_text()
     if settings.get("hideSCMProgress", True):
         toolkit_css += "\n" + (WORKBENCH_ASSETS / "hide_progress.css").read_text()
     if not settings["filledButtons"]:
