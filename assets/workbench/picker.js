@@ -2517,6 +2517,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 // Called by the native titlebar, including auxiliary windows. Browser resizeTo
 // cannot resize the Electron workspace window; use VS Code's native host bridge.
 function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, settings = {}) {
+    // The SCM input widget may never mount in a tiny or hidden Source Control view.
+    // The titlebar is always present, so watch for spelling reviews independently.
+    if (commands?.executeCommand) scmToolkitWatchSpellcheckPopups(doc, commands);
     if (doc.__sweetiebotCompactWindow) return;
     const win = doc.defaultView;
     if (!win || !nativeHost?.positionWindow) return;
