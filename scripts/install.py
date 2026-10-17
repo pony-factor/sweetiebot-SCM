@@ -881,12 +881,14 @@ BACKGROUND_GIT_END = '/* sweetiebot-background-commit:end */'
 
 
 def transform_git_background(source, remove=False):
-    if source.count(BACKGROUND_GIT_START) != source.count(BACKGROUND_GIT_END) or source.count(BACKGROUND_GIT_START) > 1:
-        raise ValueError('Incomplete background Git commit patch.')
-    if BACKGROUND_GIT_START in source:
-        before, remainder = source.split(BACKGROUND_GIT_START, 1)
-        _, after = remainder.split(BACKGROUND_GIT_END, 1)
-        source = before + after
+    for start, end in ((BACKGROUND_GIT_START, BACKGROUND_GIT_END),
+                       ('/* sweetiebot-background-push:start */', '/* sweetiebot-background-push:end */')):
+        if source.count(start) != source.count(end) or source.count(start) > 1:
+            raise ValueError('Incomplete background Git patch.')
+        if start in source:
+            before, remainder = source.split(start, 1)
+            _, after = remainder.split(end, 1)
+            source = before + after
     if remove:
         return source
     ident = r'[A-Za-z_$][\w$]*'
@@ -911,7 +913,19 @@ def transform_git_background(source, remove=False):
         + '});if(sweetiebotResult?.queued||sweetiebotResult?.cancelled){'
         + 'if(sweetiebotResult.queued)this.inputBox.value=await this.getInputTemplate();return}}'
         + BACKGROUND_GIT_END)
-    return source[:offset] + injection + source[offset:]
+    source = source[:offset] + injection + source[offset:]
+    push = re.search(rf'async _push\(({ident}),({ident}),({ident})=!1,({ident})=!1,({ident}),({ident})=!1\)\{{', source)
+    if push:
+        remote, branch, upstream, tags, force, all_tags = push.groups()
+        handoff = ('/* sweetiebot-background-push:start */'
+            + f'if(!{tags}&&!{force}&&!{all_tags})'
+            + '{let sweetiebotPush=await '
+            + f'{vscode}.commands.executeCommand("sweetiebot.queuePush",{vscode}.Uri.file(this.root),'
+            + '{' + f'remote:{remote},branch:{branch}'
+            + '});if(sweetiebotPush?.queued)return;}'
+            + '/* sweetiebot-background-push:end */')
+        source = source[:push.end()] + handoff + source[push.end():]
+    return source
 
 
 def remove_legacy_branch_picker(js, css):

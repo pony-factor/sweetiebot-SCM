@@ -216,11 +216,32 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_wrapper_blocks_other_operations_while_job_is_pending(self):
         directory = self.queue()
-        for command in ('commit', 'push', 'checkout', 'reset'):
+        for command in ('commit', 'checkout', 'reset'):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('background Commit & Push is pending', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
+
+    def test_manual_push_is_durable_and_waits_for_generation(self):
+        directory = self.queue(message='', push=False)
+        provisional = self.git('rev-parse', 'HEAD')
+        self.assertEqual(worker.request_push({'remote': 'origin', 'branch': 'main'}, start=False), {'queued': True})
+        self.assertTrue(self.job(directory)['push'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), provisional)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Send finalized commit', '')):
+            worker.work(directory)
+        remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
+        self.assertEqual(remote, self.git('rev-parse', 'HEAD'))
+        self.assertNotEqual(remote, provisional)
+        self.assertEqual(self.git('log', '-1', '--format=%s', remote), '🧪 Send finalized commit')
+
+    def test_manual_push_rejects_a_different_destination(self):
+        directory = self.queue(message='')
+        for request in ({'remote': 'other'}, {'branch': 'other'}):
+            with self.assertRaisesRegex(RuntimeError, 'different push'):
+                worker.request_push(request, start=False)
+        self.assertFalse(self.job(directory)['push'])
 
     def test_manual_coauthor_commit_queues_behind_generated_title(self):
         first = self.queue(message='', push=True)

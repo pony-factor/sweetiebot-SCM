@@ -421,7 +421,9 @@ def work(directory, commit_only=False):
                 finalize_message(directory, job)
             with repository_lock(job['gitdir']):
                 captured_chain(marker)
-            if job['push']:
+                job = read_journal(file)
+            pushed = job['push']
+            if pushed:
                 job['phase'] = 'pushing'
                 write_journal(file, job)
                 env = os.environ.copy()
@@ -441,9 +443,13 @@ def work(directory, commit_only=False):
                     with repository_lock(job['gitdir']):
                         git('config', 'branch.' + short + '.remote', job['remote'])
                         git('config', 'branch.' + short + '.merge', job['destination'])
-            job.update(phase='done', context='')
-            write_journal(file, job)
             with repository_lock(job['gitdir']):
+                current = read_journal(file)
+                if current['push'] and not pushed:
+                    return  # A manual push arrived while this worker was finishing.
+                job.update(current)
+                job.update(phase='done', context='')
+                write_journal(file, job)
                 save_queue(marker, queue_entries(marker))
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
             log_event('background_commit', 'completed', outcome='success')
@@ -583,6 +589,43 @@ def resume(parallel=True):
             work(Path(entry['directory']))
 
 
+def request_push(request, start=True):
+    """Persist a manual push behind pending titles; never publish placeholders."""
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    with repository_lock(meta):
+        marker = meta / MARKER
+        if not queue_entries(marker):
+            return {'queued': False}
+        recover_finalization(meta)
+        entries, jobs = captured_chain(marker)
+        branch = jobs[-1]['branch']
+        requested_branch = request.get('branch')
+        if requested_branch and requested_branch not in (branch, branch.removeprefix('refs/heads/'), 'HEAD'):
+            raise RuntimeError('Pending commit messages belong to a different push branch.')
+        remote = request.get('remote')
+        if remote and any(job['remote'] != remote for job in jobs):
+            raise RuntimeError('Pending commit messages use a different push remote.')
+        for entry, job in zip(entries, jobs):
+            if job['phase'] in ('done', 'cancelled'):
+                continue
+            job['push'] = True
+            write_journal(Path(entry['directory']) / 'job.json', job)
+    if start:
+        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--resume'],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+    return {'queued': True}
+
+
+def queue_plain_push(args):
+    # Only defer the ordinary push supported by the durable queue. Preserve
+    # specialized pushes (tags, deletes, force, alternate refspecs) as guarded.
+    positional = [arg for arg in args if arg not in ('-u', '--set-upstream')]
+    if any(arg.startswith('-') for arg in positional) or len(positional) > 2:
+        return False
+    return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+
+
 def wait_for_background(real_git, global_args):
     result = subprocess.run([real_git, *global_args, 'rev-parse', '--absolute-git-dir'],
                             capture_output=True, text=True)
@@ -598,6 +641,8 @@ if __name__ == '__main__':
     try:
         if sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
+        elif sys.argv[1:] == ['--request-push']:
+            print(json.dumps(request_push(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--resume']:
             resume()
         elif len(sys.argv) == 3 and sys.argv[1] == '--work':

@@ -2450,6 +2450,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const text = message?.textContent.trim() ?? '';
         row.classList.toggle('scm-toolkit-generating-commit',
             /^Generating commit message(?: asynchronously)?(?: ✨)?$/.test(text));
+        row.classList.toggle('scm-toolkit-push-waiting',
+            text === 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
         row.classList.toggle('scm-toolkit-making-pr',
             text === 'Creating new pull request with Kefania instructions');
         row.classList.toggle('scm-toolkit-pr-opened',

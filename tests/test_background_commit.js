@@ -31,6 +31,11 @@ async function run() {
         child.stderr = new PassThrough();
         child.stdin = new EventEmitter();
         child.stdin.end = input => {
+          if (args.includes('--request-push')) {
+            child.stdout.emit('data', JSON.stringify({ queued: !!status.id }));
+            child.emit('close', 0);
+            return;
+          }
           assert(args.includes('--enqueue'));
           assert(repository.state.indexChanges.length, 'prepare before enqueueing');
           jobs.push(JSON.parse(input)); events.push('enqueue');
@@ -68,6 +73,13 @@ async function run() {
     }
   };
   sandbox.module.exports.registerBackgroundCommit(vscode, { extensionUri: root, subscriptions: [] });
+  const push = commands.get('sweetiebot.queuePush');
+  assert.equal((await push(root)).queued, false);
+  assert.deepEqual(notices, [], 'ordinary pushes do not create a waiting notice');
+  status = { id: 'older', phase: 'generating' };
+  assert.equal((await push(root)).queued, true);
+  assert.equal(notices.pop(), 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
+  status = {};
   const commit = commands.get('sweetiebot.queueCommit');
   const notQueued = await commit(root, { message: 'Manual', onlyIfPending: true });
   assert.equal(notQueued.queued, false);

@@ -3,9 +3,9 @@
 const { spawn, execFile } = require('node:child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 
-function enqueue(script, cwd, request) {
+function enqueue(script, cwd, request, action = '--enqueue') {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolvePythonExecutable(), [script, '--enqueue'], {
+    const child = spawn(resolvePythonExecutable(), [script, action], {
       cwd, stdio: ['pipe', 'pipe', 'pipe']
     });
     let stdout = '', stderr = '';
@@ -119,6 +119,16 @@ function registerBackgroundCommit(vscode, context) {
     for (const root of generation.keys()) closeGeneration(root);
   } });
   void scan().catch(() => {});
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queuePush', async (uri, options = {}) => {
+    const root = vscode.Uri.from(uri?.rootUri ?? uri);
+    if (root.scheme !== 'file') return { queued: false };
+    const result = await enqueue(script, root.fsPath, options, '--request-push');
+    if (result.queued) {
+      void vscode.window.showInformationMessage(
+        'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
+    }
+    return result;
+  }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queueCommit', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') throw new Error('Background commits need a local repository.');

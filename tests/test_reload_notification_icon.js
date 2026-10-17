@@ -48,10 +48,15 @@ for (const directory of roots) {
     }
   });
   assert(classes.has('scm-toolkit-reload-ready'), `Robot icon class not added in ${directory}`);
+  currentMessage = 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-push-waiting'), 'Early pushes use the robot notification marker');
+  assert.match(css, /\.notification-list-item\.scm-toolkit-push-waiting \.notification-list-item-icon\.codicon-info::before,[\s\S]*?content: '🤖';/);
   currentMessage = 'PR #12 merged into main.';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-pr-merged'), `Merge icon class not added in ${directory}`);
   assert(!classes.has('scm-toolkit-reload-ready'), `Reused notification retained robot icon in ${directory}`);
+  assert(!classes.has('scm-toolkit-push-waiting'), 'Unrelated notifications clear the push marker');
   currentMessage = 'PR #12 queued for merge.';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-pr-queued'), `Queue icon class not added in ${directory}`);
