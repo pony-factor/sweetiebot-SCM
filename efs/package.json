@@ -72,7 +72,9 @@
     "onCommand:sweetiebot.checkCommitLimits",
     "onCommand:scmToolkit.checkCommitLimits",
     "onCommand:sweetiebot.endCommit",
-    "onCommand:scmToolkit.endCommit"
+    "onCommand:scmToolkit.endCommit",
+    "onCommand:sweetiebot.codexDraft.read",
+    "onCommand:sweetiebot.codexDraft.write"
   ],
   "contributes": {
     "views": {

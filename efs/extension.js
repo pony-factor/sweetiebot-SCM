@@ -22,6 +22,7 @@ const { registerWorkspaceCleanup } = require('./workspace_prune');
 const { registerManagedWindowActivity, stopManagedWindowActivity } = require('./workspace_activity');
 const { registerPushRecovery } = require('./push_recovery');
 const { registerCodexRefresh } = require('./codex_refresh');
+const { registerCodexDraftCommands } = require('./codex_drafts');
 const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
 const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
@@ -310,6 +311,7 @@ async function activate(context) {
   } catch (error) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
+  registerCodexDraftCommands(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
