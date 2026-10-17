@@ -96,7 +96,11 @@ function registerBackgroundCommit(vscode, context) {
     if (!repository) throw new Error('The selected repository is unavailable.');
     await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
-    if (!repository.state.indexChanges.length) throw new Error('Stage the intended changes before queuing a commit.');
+    if (!repository.state.indexChanges.length || options.all) {
+      await vscode.commands.executeCommand('sweetiebot.prepareCodexCommit', root, { all: options.all });
+      await repository.status();
+    }
+    if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
     if (await vscode.commands.executeCommand('sweetiebot.checkCommitLimits', root) === false) return { cancelled: true };
     let snapshot = '';
     if (options.codex && !String(options.message ?? '').trim()) {

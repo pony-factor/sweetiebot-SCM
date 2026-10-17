@@ -447,6 +447,9 @@ placeholder with the generated message while preserving its tree, author,
 committer, timestamps, and trailers; later editing and staging remain separate.
 Explicit messages are committed immediately as supplied. The Push checkbox is
 captured with the job, and only the finalized commit is published.
+When nothing is staged, the background path stages the working changes first,
+respecting Git's tracked-only smart commit setting. Existing staged selections
+stay separate from unstaged work unless you explicitly choose Commit All.
 
 On macOS, the first queued job installs a per-user login agent that retries every
 minute. Interrupted generation and offline pushes resume after login, even if VS

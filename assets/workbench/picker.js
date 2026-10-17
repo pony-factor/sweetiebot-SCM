@@ -684,12 +684,12 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 || (requestedPostCommitCommand === undefined && configuredPostCommitCommand === 'push')
             );
             if (configuration.getValue('scmToolkit.durableBackgroundCommits') === true
-                && !options?.amend && !options?.all && !options?.empty
+                && !options?.amend && !options?.empty
                 && (String(message ?? '').trim() || settings.aiCommit === true)) {
                 let queued;
                 try {
                     queued = await commands.executeCommand('sweetiebot.queueCommit', repository.rootUri, {
-                        message: String(message ?? ''), push: shouldReleasePush,
+                        message: String(message ?? ''), push: shouldReleasePush, all: options?.all,
                         sign: options?.signCommit, signoff: options?.signoff
                     });
                 } catch (error) {

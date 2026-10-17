@@ -205,6 +205,10 @@ async function run(allowed, failCommit = false) {
     assert.equal(requests[0].message, '');
     assert.equal(nativeCommits, 0, 'the saved worker owns the commit');
     assert.equal(nativePushes, 0, 'the saved worker owns publication');
+    await repository.commit('', { all: true });
+    assert.equal(requests.length, 2, 'smart Commit All also uses the immediate placeholder worker');
+    assert.equal(requests[1].all, true);
+    assert.equal(nativeCommits, 0);
   }
   console.log('Commit guard tests passed');
 })().catch(error => {

@@ -178,6 +178,16 @@ tick();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 3, 'an extension update automatically reloads after recovery');
 retryContext.subscriptions.at(-1).dispose();
+paused = true;
+const pausedContext = { ...context, subscriptions: [] };
+const launchesBeforePause = launches;
+sandbox.module.exports.registerCodexRefresh(vscode, pausedContext);
+assert.equal(timers.size, 0, 'the shared pause flag suppresses startup repair even when the profile enables it');
+changed();
+focusChanged({ focused: true });
+assert.equal(timers.size, 0, 'paused profiles cannot schedule repairs on update or focus');
+assert.equal(launches, launchesBeforePause);
+pausedContext.subscriptions.at(-1).dispose();
 console.log('Codex update repair lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

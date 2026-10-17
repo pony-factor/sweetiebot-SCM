@@ -902,11 +902,11 @@ def transform_git_background(source, remove=False):
     vscode = api[1]
     offset = source.index('{let ', match.start()) + 1
     injection = (BACKGROUND_GIT_START
-        + f'if({vscode}.workspace.getConfiguration("scmToolkit",{vscode}.Uri.file(this.root)).get("durableBackgroundCommits",false)&&!{options}.amend&&!{options}.all&&!{options}.empty&&!this.rebaseCommit)'
+        + f'if({vscode}.workspace.getConfiguration("scmToolkit",{vscode}.Uri.file(this.root)).get("durableBackgroundCommits",false)&&!{options}.amend&&!{options}.empty&&!this.rebaseCommit)'
         + '{let sweetiebotResult=await '
         + f'{vscode}.commands.executeCommand("sweetiebot.queueCommit",{vscode}.Uri.file(this.root),'
         + '{'
-        + f'message:{message}??"",push:{options}.postCommitCommand===void 0?void 0:({options}.postCommitCommand==="push"||{options}.postCommitCommand==="git.push"),'
+        + f'message:{message}??"",all:{options}.all,push:{options}.postCommitCommand===void 0?void 0:({options}.postCommitCommand==="push"||{options}.postCommitCommand==="git.push"),'
         + f'sign:{options}.signCommit,signoff:{options}.signoff,noVerify:{options}.noVerify'
         + '});if(sweetiebotResult?.queued||sweetiebotResult?.cancelled){'
         + 'if(sweetiebotResult.queued)this.inputBox.value=await this.getInputTemplate();return}}'

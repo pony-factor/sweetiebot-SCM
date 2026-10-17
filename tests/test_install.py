@@ -118,6 +118,8 @@ class TransformTests(unittest.TestCase):
         original = 'class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}}'
         installed = install.transform_git_background(original)
         self.assertIn('durableBackgroundCommits', installed)
+        self.assertIn('all:t.all', installed)
+        self.assertNotIn('!t.all', installed)
         self.assertEqual(install.transform_git_background(installed), installed)
         self.assertEqual(install.transform_git_background(installed, remove=True), original)
         script = """
