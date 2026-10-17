@@ -29,6 +29,7 @@
     "onCommand:sweetiebot.configureIndependentWorkspaceTrust",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.copyTerminalContents",
+    "onCommand:sweetiebot.commit",
     "onCommand:sweetiebot.prepareCodexCommit",
     "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
@@ -89,6 +90,12 @@
       ]
     },
     "commands": [
+      {
+        "command": "sweetiebot.commit",
+        "title": "Commit (Same as Source Control Button)",
+        "category": "Sweetiebot",
+        "icon": "$(check)"
+      },
       {
         "command": "sweetiebot.openSettings",
         "title": "Open Sweetiebot SCM Settings",
@@ -195,6 +202,12 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "sweetiebot.commit",
+        "key": "f6"
+      }
+    ],
     "configuration": {
       "title": "Sweetiebot SCM",
       "properties": {
