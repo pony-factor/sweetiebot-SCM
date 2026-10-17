@@ -370,12 +370,21 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     const projectUrl = await resolveChatgptActionProject(vscode, context);
     if (projectUrl === undefined) return;
-    const pony = await readPony(branch);
+    let pony = await readPony(branch);
     const cachePony = dependencies.cachePony || (input => runKefaniaPonyCache(repository.rootUri.fsPath, input));
     let cachedProfile;
     if (pony) {
       try {
         const cached = await cachePony({ action: 'get', pony });
+        // Kafania is the sole owner of catalog references. A reference-only
+        // cache miss still passes its source pages to independent pony research.
+        if (Array.isArray(cached?.sources)) {
+          const references = cached.sources.slice(0, 30).flatMap(item => {
+            if (!item || typeof item.url !== 'string' || !/^https:\/\//i.test(item.url)) return [];
+            return [{ url: item.url, ...(typeof item.label === 'string' ? { label: item.label } : {}) }];
+          });
+          if (references.length) pony = { ...pony, references };
+        }
         if (cached?.hit === true && typeof cached.profile === 'string' && cached.profile.trim()
             && Buffer.byteLength(cached.profile, 'utf8') <= 60000) cachedProfile = cached.profile;
       } catch { /* Cache failures cannot block PR creation or pony research. */ }

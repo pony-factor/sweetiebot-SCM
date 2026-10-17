@@ -35,7 +35,8 @@ async function run() {
   assert.equal(berryPunch.packLabel, 'G4 mares');
   const celena = matchSweetiebotPonyCatalog('celena', ponyCatalog);
   assert.equal(celena.packId, 'idw-comics');
-  assert.equal(celena.source, 'https://mlp.fandom.com/wiki/Sailor_Moon_ponies');
+  assert.equal(celena.source, undefined, 'Built-in source URLs now live in Kefania');
+  assert(ponyCatalog.packs.every(pack => !pack.sources), 'Migrated catalog sources must not remain duplicated');
   const legacyCelena = matchSweetiebotPonyCatalog('magical-ponycelena', ponyCatalog);
   assert.equal(legacyCelena.slug, 'magical-ponycelena');
   assert.equal(legacyCelena.canonicalSlug, 'celena');
@@ -198,6 +199,10 @@ async function run() {
   let aheadBy = 1;
   const ponyLookups = [];
   let cachedProfile;
+  const referencePages = [
+    { url: 'https://x.com/cheekibat/status/2111134531751493961', label: 'Character source' },
+    { url: 'https://x.com/cheekibat/status/2111066237820133658', label: 'Artwork and context' },
+  ];
   const cacheOperations = [];
   let publicationFailure;
   let existingPullRequest;
@@ -285,7 +290,9 @@ async function run() {
     showPony: async input => { shownPonies.push(input); },
     cachePony: async input => {
       cacheOperations.push(input);
-      if (input.action === 'get') return cachedProfile ? { hit: true, profile: cachedProfile } : { hit: false };
+      if (input.action === 'get') return cachedProfile
+        ? { hit: true, profile: cachedProfile, sources: referencePages }
+        : { hit: false, sources: referencePages };
       if (input.action === 'put') { cachedProfile = input.profile; return { stored: true }; }
       return { hit: false };
     }
@@ -327,6 +334,8 @@ async function run() {
   const profileUrl = new URL(calls[2].args[0].url);
   const profilePrompt = new URLSearchParams(profileUrl.hash.slice(1)).get('q');
   assert(profilePrompt.includes('test-pack'));
+  assert(profilePrompt.includes(referencePages[0].url));
+  assert(profilePrompt.includes(referencePages[1].url), 'Source-only cache misses retain both context pages');
   assert(!profilePrompt.includes('headSha'), 'Pony research must not receive repository evidence');
   assert.match(profilePrompt, /independently/);
   assert.equal(new URLSearchParams(profileUrl.hash.slice(1)).get('return_to').endsWith('/pony'), true);
@@ -345,7 +354,8 @@ async function run() {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   assert.equal(cachedProfile, savedProfile, 'A completed pony lookup is cached separately from its PR');
-  assert(cacheOperations.some(item => item.action === 'put' && item.pony.packId === 'test-pack'));
+  assert(cacheOperations.some(item => item.action === 'put' && item.pony.packId === 'test-pack'
+    && item.pony.references?.length === 2), 'Collected profile retains its indexed references');
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.deepEqual(calls.map(call => call.id), [
