@@ -105,6 +105,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       outgoingSyncLabel: scm.get('outgoingSyncLabel', ''),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
+      automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
       codexKeepAwake: scm.get('codexKeepAwake', true),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
