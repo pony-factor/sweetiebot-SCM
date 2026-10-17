@@ -235,7 +235,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Offer a one-time first-run guide to trust the ~/Sweetiebot Workspaces parent in VS Code. Trust is never granted automatically; use Configure Independent Workspace Trust to reopen the guide."
+          "description": "Offer VS Code's native trust dialog for the Sweetiebot Workspaces parent folder. Approval covers all existing and future clones. Use Configure Independent Workspace Trust to reopen it."
         },
         "scmToolkit.codexKeepAwake": {
           "type": "boolean",

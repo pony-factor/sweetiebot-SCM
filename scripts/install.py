@@ -411,6 +411,23 @@ def compact_window_edits(js, command="fe", configuration="Xe"):
     return [(original, replacement)]
 
 
+def workspace_trust_edits(js):
+    ident = r"[A-Za-z_$][\w$]*"
+    def unique(pattern):
+        matches = re.findall(pattern, js)
+        if len(matches) != 1:
+            raise ValueError("Unsupported VS Code build: workspace trust API does not match.")
+        return matches[0]
+    registry = unique(r'(' + ident + r')\.registerCommand\("noop",\(\)=>\{\}\)')
+    paths = unique(r'(' + ident + r')=\w+\("pathService"\)')
+    requests = unique(r'(' + ident + r')=\w+\("workspaceTrustRequestService"\)')
+    original = registry + '.registerCommand("noop",()=>{});'
+    replacement = original + registry + '.registerCommand("sweetiebot.requestIndependentWorkspaceTrust",'
+    replacement += ('accessor=>scmToolkitRequestIndependentWorkspaceTrust('
+                    f'accessor.get({paths}).localUserHome,accessor.get({requests})));')
+    return [(original, replacement)]
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -483,6 +500,7 @@ def edits(js=None, settings=None):
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
+        changes.extend(workspace_trust_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))

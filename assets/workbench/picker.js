@@ -1,4 +1,18 @@
 // Runs inside VS Code's SCM input widget; services and observables are supplied by install.py.
+function scmToolkitRequestIndependentWorkspaceTrust(localUserHome, requests) {
+    // Derive the only permitted target inside the workbench. Command arguments
+    // cannot redirect this request to a different folder or grant trust silently.
+    const uri = localUserHome.with({
+        path: localUserHome.path.replace(/\/$/, '') + '/Library/Application Support/Sweetiebot/Workspaces'
+    });
+    return requests.requestResourcesTrust({
+        uri,
+        message: 'Sweetiebot uses this parent folder for independent workspaces. ' +
+            'Trusting it enables extensions, terminals, and tasks for ALL existing and future repositories inside it. ' +
+            'Only approve if you trust every repository placed here.'
+    });
+}
+
 function scmToolkitDeferActionButtonUpdate(widget, button) {
     let state = widget.scmToolkitPressState;
     if (!state) {
