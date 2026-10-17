@@ -91,6 +91,7 @@ function installPullRequestRefresh(vscode, view, owner) {
   const mergingUrls = new Set();
   const stateLabels = {
     merging: '⏳ Squash-merging…',
+    pending: '⏳ GitHub is processing the merge',
     queued: '⏳ Merge queued',
     merged: '✅ Merged'
   };
@@ -130,7 +131,7 @@ function installPullRequestRefresh(vscode, view, owner) {
     }
     // Completed/queued badges persist briefly in case GitHub has not yet
     // removed the PR from the open list; never keep a stale badge forever.
-    if (state === 'merged' || state === 'queued') {
+    if (state === 'merged' || state === 'queued' || state === 'pending') {
       const timer = setTimeout(() => {
         rowTimers.delete(url);
         if (rowStates.get(url) === state) {
@@ -165,7 +166,7 @@ function installPullRequestRefresh(vscode, view, owner) {
     try {
       const result = await vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', model.url);
       // A queued merge is not yet merged; cancellations and failures clear the row.
-      const state = ['merged', 'queued'].includes(result?.state) ? result.state : undefined;
+      const state = ['merged', 'queued', 'pending'].includes(result?.state) ? result.state : undefined;
       markMergeRow(model.url, node, state);
       return result;
     } catch (error) {

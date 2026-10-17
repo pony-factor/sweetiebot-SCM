@@ -163,6 +163,11 @@ async function main() {
     assert.deepEqual(await second, { state: 'queued' });
     assert.match((await rowOwner.getTreeItem(clicked)).description, /Merge queued/);
     assert.doesNotMatch((await rowOwner.getTreeItem(clicked)).description, /✅ Merged/);
+    const retryPending = clickMerge(clicked);
+    await new Promise(setImmediate);
+    completeMerge({ state: 'pending' });
+    assert.deepEqual(await retryPending, { state: 'pending' });
+    assert.match((await rowOwner.getTreeItem(clicked)).description, /GitHub is processing the merge/);
     for (const state of ['cancelled', 'failed']) {
       const action = clickMerge(clicked);
       await new Promise(setImmediate);
@@ -170,7 +175,7 @@ async function main() {
       assert.deepEqual(await action, { state });
       assert.equal((await rowOwner.getTreeItem(clicked)).description, 'by @pony');
     }
-    assert.equal(dispatched.length, 4);
+    assert.equal(dispatched.length, 5);
     for (const subscription of rowSubscriptions) subscription.dispose();
     const manifest = require('../efs/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
