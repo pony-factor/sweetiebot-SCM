@@ -49,6 +49,83 @@ class BackgroundCommitTests(unittest.TestCase):
     def job(self, directory):
         return json.loads((directory / 'job.json').read_text())
 
+    def test_placeholder_clears_staging_before_generation_and_push(self):
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):
+            directory = self.queue(message='', push=True, signoff=True)
+        provisional = self.git('rev-parse', 'HEAD')
+        identity = self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI')
+        self.assertIn(worker.PLACEHOLDER, self.git('log', '-1', '--format=%s'))
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        remote = '--git-dir=' + str(self.root / 'remote')
+        self.assertEqual(self.git(remote, 'for-each-ref'), '')
+        (self.repo / 'story.txt').write_text('Later staged change\n')
+        self.git('add', 'story.txt')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Apply final title', 'Explanation')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertNotEqual(self.git('rev-parse', 'HEAD'), provisional)
+        self.assertEqual(self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI'), identity)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), '🧪 Apply final title')
+        self.assertIn('Signed-off-by: Test Author', self.git('log', '-1', '--format=%B'))
+        self.assertEqual(self.git('show', ':story.txt'), 'Later staged change')
+        self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change')
+        self.assertEqual(self.git(remote, 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
+
+    def test_finalization_resumes_after_ref_update_before_checkpoint(self):
+        directory = self.queue(message='')
+        finalize = worker.finalize_message
+        def interrupted(directory, job):
+            before = dict(job)
+            finalize(directory, job)
+            before.update(phase='finalizing', message=job['message'], replacement_sha=job['replacement_sha'])
+            worker.write_journal(directory / 'job.json', before)
+            raise OSError('Interrupted before checkpoint')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Recover final title', '')), patch.object(worker, 'finalize_message', side_effect=interrupted):
+            worker.work(directory)
+        sha = self.git('rev-parse', 'HEAD')
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Already generated')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
+        self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
+
+    def test_finalization_preserves_existing_parent_and_unstaged_edits(self):
+        self.git('commit', '-q', '-m', 'Initial history')
+        parent = self.git('rev-parse', 'HEAD')
+        (self.repo / 'story.txt').write_text('Captured second change\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='')
+        (self.repo / 'story.txt').write_text('New unstaged work\n')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finalize second change', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), parent)
+        self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '2')
+        self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured second change')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+        self.assertEqual((self.repo / 'story.txt').read_text(), 'New unstaged work\n')
+
+    def test_external_commit_blocks_placeholder_replacement(self):
+        directory = self.queue(message='', push=True)
+        self.git('commit', '-q', '--allow-empty', '-m', 'Later external commit')
+        sha = self.git('rev-parse', 'HEAD')
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Branch advanced')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
+    def test_rejected_placeholder_keeps_staged_changes(self):
+        hook = self.repo / '.git' / 'hooks' / 'pre-commit'
+        hook.write_text('#!/bin/sh\nexit 1\n')
+        hook.chmod(0o755)
+        with self.assertRaisesRegex(RuntimeError, 'Git commit failed'):
+            self.queue(message='')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), 'story.txt')
+        result = subprocess.run(['/usr/bin/git', 'rev-parse', '--verify', 'HEAD'], capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+
     def test_captured_tree_and_later_staging_survive_detached_process(self):
         directory = self.queue(push=True)
         captured = self.git('write-tree')
@@ -78,11 +155,8 @@ class BackgroundCommitTests(unittest.TestCase):
         directory = self.queue(push=True, signoff=True)
         job = self.job(directory)
         job['phase'] = 'committing'
+        job.pop('sha')  # Crash after Git updates HEAD, before the journal checkpoint.
         worker.write_journal(directory / 'job.json', job)
-        with patch.dict(os.environ, {'GIT_INDEX_FILE': str(directory / 'index'),
-                                    'GIT_REFLOG_ACTION': 'sweetiebot-background:' + job['id']}):
-            self.git('read-tree', job['tree'])
-            self.git('commit', '-q', '--signoff', '-m', job['message'])
         sha = self.git('rev-parse', 'HEAD')
         worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'done')
@@ -93,7 +167,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.git('symbolic-ref', 'HEAD', 'refs/heads/other')
         worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'blocked')
-        self.assertNotEqual(subprocess.run(['/usr/bin/git', 'rev-parse', '--verify', 'HEAD'], capture_output=True).returncode, 0)
+        self.assertTrue(self.job(directory).get('sha'))
         refs = subprocess.run(['/usr/bin/git', '--git-dir=' + str(self.root / 'remote'), 'show-ref'], capture_output=True)
         self.assertEqual(refs.returncode, 1)
 
@@ -127,7 +201,7 @@ class BackgroundCommitTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('background Commit & Push is pending', result.stderr)
-        self.assertEqual(self.job(directory)['phase'], 'queued')
+        self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_second_request_is_refused_without_changing_snapshot(self):
         directory = self.queue()
@@ -165,6 +239,7 @@ class BackgroundCommitTests(unittest.TestCase):
         directory = self.queue()
         job = self.job(directory)
         job['phase'] = 'preparing'
+        job['enqueue_pid'] = 0
         worker.write_journal(directory / 'job.json', job)
         worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'done')

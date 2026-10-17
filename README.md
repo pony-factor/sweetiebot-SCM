@@ -439,11 +439,14 @@ Without a dedicated title preference, titles default to one professional emoji f
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
 
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
-Codex co-author button save a job before starting local message generation. You
-can close the workspace or quit VS Code after the queued notification. The worker
-commits the staged tree captured at the click; later editing and staging remain
-separate. The Push checkbox is captured with the job, and publication uses the
-exact completed commit. Existing commits are never amended by this workflow.
+Codex co-author button immediately commit the staged tree locally. Blank-message
+commits use a temporary `💭 Generate local commit message` subject, so committed
+changes leave Staged before title generation starts. You can close the workspace
+or quit VS Code after the saved notification. The worker replaces that local
+placeholder with the generated message while preserving its tree, author,
+committer, timestamps, and trailers; later editing and staging remain separate.
+Explicit messages are committed immediately as supplied. The Push checkbox is
+captured with the job, and only the finalized commit is published.
 
 On macOS, the first queued job installs a per-user login agent that retries every
 minute. Interrupted generation and offline pushes resume after login, even if VS
@@ -1039,7 +1042,7 @@ Place the Lindsey repository beside the active repository, add it to the VS Code
 
 By default, **Durable background Commit and Push** is now **off**. Ordinary staged Commit and Codex-attributed commits use the earlier direct Git/Ollama workflow, generating a message immediately within the normal commit action and then committing. For Codex context, the direct path reads the existing conversation snapshot and uses `local_codex_commit.py`; manually provided text is committed with the configured trailer. The custom commit instructions (`~/.config/sweetiebot/commit-instructions.md`), priority emoji enforcement, normal/low-memory models, co-author, Git signing and normal push checkbox keep their existing behavior. Generated descriptions on `main` remain enabled according to **Default-branch descriptions**.
 
-Turn on **Durable background Commit and Push** in Settings → Source control to enable the restartable staged-tree queue (PR #322) for ordinary Commit, native Git commits and the Codex co-author button. It captures the staged tree at click time and can finish after VS Code closes, with retry and recovery; a queued commit is not an immediate local Git commit. Disabling the setting does not discard existing queued jobs; the worker continues to recover them. The separate legacy **Legacy provisional commit finalization** toggle remains off by default and is only for the older placeholder-commit mode in the Git wrapper. **Detailed AI commit descriptions on all branches** is a second, independent opt-in style control, adding explanatory bodies on topic branches without changing user instructions or the ordered emoji rules. Settings applied through the gear page update global Git configuration; changes to native Git interception may require the toolkit to update and reload.
+Turn on **Durable background Commit and Push** in Settings → Source control for ordinary Commit, native Git commits and the Codex co-author button. It creates a local placeholder commit at click time, clears the committed changes from Staged, and applies the generated message afterward, with retry and recovery even after VS Code closes. Disabling the setting does not discard existing jobs; the worker continues to recover them. The separate **Legacy provisional commit finalization** toggle remains off by default and is only for the older Git-wrapper mode. **Detailed AI commit descriptions on all branches** is a second, independent opt-in style control, adding explanatory bodies on topic branches without changing user instructions or the ordered emoji rules. Settings applied through the gear page update global Git configuration; changes to native Git interception may require the toolkit to update and reload.
 
 
 ### Eight-hour GitHub main mirror (opt-in)

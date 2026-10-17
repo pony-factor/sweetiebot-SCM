@@ -195,7 +195,7 @@ async function run(allowed, failCommit = false) {
         requests.push(request);
         return { queued: true };
       } },
-      configuration: { getValue() { return 'push'; } },
+      configuration: { getValue(key) { return key === 'scmToolkit.durableBackgroundCommits' ? true : 'push'; } },
       notifications: { notify() { return { close() {} }; } }
     });
     vm.runInContext(snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications, { aiCommit: true });', context);

@@ -117,7 +117,10 @@ function registerBackgroundCommit(vscode, context) {
       noVerify: options.noVerify === true,
       remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
     });
-    if (result.queued) void vscode.window.showInformationMessage('Commit queued in the background. You can close VS Code.');
+    if (result.queued) {
+      await repository.status();
+      void vscode.window.showInformationMessage('Commit saved locally. Message finalization and any push continue in the background.');
+    }
     return result;
   }));
 }

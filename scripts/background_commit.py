@@ -12,7 +12,7 @@ import tempfile
 import uuid
 
 import ai_commit as core
-from sweetiebot_async_commit import write_journal as _write_journal, read_journal
+from sweetiebot_async_commit import write_journal as _write_journal, read_journal, PLACEHOLDER, alive
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
@@ -135,10 +135,16 @@ def enqueue(request, start=True):
                    push=push, remote=remote, destination=destination, tracking=tracking,
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
                    no_verify=request.get('noVerify') is True,
-                   phase='queued')
+                   phase='preparing', enqueue_pid=os.getpid())
         write_journal(directory / 'job.json', job)
         git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
         write_journal(marker, {'id': job['id'], 'directory': str(directory)})
+        # Finish Git's local commit before acknowledging the click. Only message
+        # generation and publication belong in the detached worker.
+        work(directory, commit_only=True)
+        job = read_journal(directory / 'job.json')
+        if job['phase'] == 'blocked' or not job.get('sha'):
+            raise RuntimeError(job.get('error', 'Could not create the local commit.'))
     if start:
         try:
             subprocess.Popen([sys.executable, str(script), '--resume'], stdin=subprocess.DEVNULL,
@@ -159,7 +165,43 @@ def matches_commit(job, sha):
                  or git('reflog', '-1', '--format=%gs').startswith('sweetiebot-background:' + job['id'] + ':')))
 
 
-def work(directory):
+def finalize_message(directory, job):
+    """Replace only the captured local commit, preserving identity and the index."""
+    file = directory / 'job.json'
+    if not job.get('replacement_sha'):
+        fields = git('show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI', job['sha']).split('\x00')
+        env = os.environ.copy()
+        for prefix, values in (('AUTHOR', fields[:3]), ('COMMITTER', fields[3:])):
+            for key, value in zip(('NAME', 'EMAIL', 'DATE'), values):
+                env['GIT_' + prefix + '_' + key] = value
+        args = ['commit-tree', job['tree']]
+        if job['parent']:
+            args += ['-p', job['parent']]
+        if job['sign']:
+            args.append('-S')
+        replacement = git(*args, input=job['message'] + '\n', env=env)
+        job['replacement_sha'] = replacement
+        write_journal(file, job)
+    branch, actual = state()
+    if branch != job['branch'] or actual not in (job['sha'], job['replacement_sha']):
+        raise RuntimeError('The branch advanced; message finalization was paused.')
+    if actual != job['replacement_sha']:
+        git('update-ref', '-m', 'sweetiebot: finalize commit message', job['branch'],
+            job['replacement_sha'], job['sha'])
+    job.update(sha=job['replacement_sha'], phase='committed', provisional=False)
+    write_journal(file, job)
+
+
+def captured_diff(job):
+    base = job['parent'] or git('hash-object', '-w', '-t', 'tree', '--stdin', input='')
+    args = ['diff', '--no-ext-diff', '--no-color']
+    stat = git(*args, '--stat', base, job['tree'])
+    diff = git(*args, '--unified=2', base, job['tree'])
+    files = git(*args, '--name-only', '-z', base, job['tree']).split('\x00')
+    return stat, diff, [name for name in files if name]
+
+
+def work(directory, commit_only=False):
     with (directory / 'worker.lock').open('a+b') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -169,6 +211,8 @@ def work(directory):
         job = read_journal(file)
         if not job or job['phase'] in ('blocked', 'cancelled'):
             return
+        if job['phase'] == 'preparing' and not commit_only and alive(job.get('enqueue_pid')):
+            return  # The click handler owns the initial local commit.
         if job['phase'] == 'done':
             marker = Path(job['gitdir']) / MARKER
             owner = read_journal(marker)
@@ -201,17 +245,12 @@ def work(directory):
             if job['phase'] == 'committing' and matches_commit(job, actual):
                 job.update(sha=actual, phase='committed')
                 write_journal(file, job)
-            if job['phase'] in ('queued', 'generating', 'committing'):
+            if job['phase'] in ('queued', 'generating', 'committing') and not job.get('sha'):
                 if actual != job['parent']:
                     raise RuntimeError('The branch advanced; background commit was paused.')
                 if not job['message'].strip():
-                    job['phase'] = 'generating'
-                    write_journal(file, job)
-                    stat, diff, files = core.staged_diff()
-                    title, description = core.generate_message(stat, diff, files,
-                        include_description=core.should_add_default_branch_description(),
-                        conversation_context=job['context'])
-                    job['message'] = title + ('\n\n' + description if description else '')
+                    job['provisional'] = True
+                    job['message'] = PLACEHOLDER + ' [' + job['id'] + ']'
                 if job['trailer'] and job['trailer'] not in job['message'].splitlines():
                     job['message'] += '\n\n' + job['trailer']
                 if state() != (job['branch'], job['parent']):
@@ -232,6 +271,25 @@ def work(directory):
                     raise RuntimeError('A hook changed the captured tree; push was paused.')
                 job.update(sha=sha, phase='committed')
                 write_journal(file, job)
+            if commit_only:
+                return
+            if job.get('provisional'):
+                if not job.get('replacement_sha') and job['phase'] != 'finalizing':
+                    if state() != (job['branch'], job['sha']):
+                        raise RuntimeError('The branch advanced; message finalization was paused.')
+                    job['phase'] = 'generating'
+                    write_journal(file, job)
+                    stat, diff, files = captured_diff(job)
+                    title, description = core.generate_message(stat, diff, files,
+                        include_description=core.should_add_default_branch_description(),
+                        conversation_context=job['context'])
+                    suffix = git('show', '-s', '--format=%B', job['sha']).partition('\n')[2].strip()
+                    job['message'] = title + ('\n\n' + description if description else '')
+                    if suffix:
+                        job['message'] += '\n\n' + suffix
+                job['phase'] = 'finalizing'
+                write_journal(file, job)
+                finalize_message(directory, job)
             if state() != (job['branch'], job['sha']):
                 raise RuntimeError('The branch changed after committing; push was paused.')
             if job['push']:
@@ -294,7 +352,8 @@ def control(action):
             marker.unlink(missing_ok=True)
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
         elif job['phase'] == 'blocked':
-            job['phase'] = 'committed' if job.get('sha') else 'committing' if job['message'] else 'queued'
+            job['phase'] = ('finalizing' if job.get('replacement_sha') else
+                            'committed' if job.get('sha') else 'committing' if job['message'] else 'queued')
             job.pop('error', None)
             write_journal(directory / 'job.json', job)
 
