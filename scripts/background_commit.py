@@ -610,7 +610,13 @@ if __name__ == '__main__':
             marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
-            print(json.dumps({key: job[key] for key in ('id', 'phase', 'error') if key in job} if job else {}))
+            status = {key: job[key] for key in ('id', 'phase', 'error') if key in job} if job else {}
+            status['titleJobs'] = []
+            for entry in queue_entries(marker):
+                item = read_journal(Path(entry['directory']) / 'job.json')
+                if item and item.get('provisional') and item['phase'] not in ('blocked', 'done', 'cancelled'):
+                    status['titleJobs'].append(item['id'])
+            print(json.dumps(status))
         else:
             raise ValueError('Unknown background commit action.')
     except Exception as error:
