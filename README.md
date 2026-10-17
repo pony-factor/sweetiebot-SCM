@@ -821,6 +821,23 @@ storage, explicitly set `workbench.browser.dataStorage` to `ephemeral` in VS Cod
 Settings. The ChatGPT home toggle is still applied by the installer: rerun
 `python3 scripts/install.py` and reload VS Code after changing it.
 
+### Codex starting-draft isolation
+
+Codex's VS Code sidebar is separate from the Integrated Browser's ChatGPT login.
+Codex historically saves the unsent `new-conversation` composer draft in a
+user-global persisted atom, which can reappear in unrelated repository windows.
+Sweetiebot now stores **only that starting draft** under a stable key derived
+from the VS Code workspace folder URI(s). Reopening the same checkout restores
+its draft without exposing another checkout's text. Independent clones have
+their own drafts; separate windows for the same checkout share one draft key.
+Existing local conversation drafts (`local:...`), Codex account authentication,
+selected projects, prompt history, and all other persisted state stay native.
+
+The Codex webview patch also masks any old global starting draft during startup
+without deleting the original stored value, so older shared drafts are not
+silently assigned to an arbitrary repository. Fully reload VS Code after
+installing; live Codex extension updates can change the guarded patch anchors.
+
 ### Codex co-author commit
 
 Enable `scm-toolkit.codex-commit-context` to generate blank co-author commit

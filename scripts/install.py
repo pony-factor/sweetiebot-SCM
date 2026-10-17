@@ -11,6 +11,7 @@ import codex_label
 import codex_composer
 import codex_usage
 import codex_context
+import codex_drafts
 import codex_keep_awake
 import codex_image_drop
 import codex_recent_chats
@@ -1133,6 +1134,21 @@ def main():
         paths.append(path)
         old.append(context_old)
         new.append(context_new)
+
+    # Draft isolation runs even when read-only Codex commit context is disabled.
+    # Compose with the context patch rather than overwriting its webview edits.
+    for draft_path, draft_old, draft_new in codex_drafts.patch_files(
+        args.codex_extension, enabled=not args.uninstall
+    ):
+        if draft_path in paths:
+            index = paths.index(draft_path)
+            transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
+                         else codex_drafts.transform_webview)
+            new[index] = transform(new[index], enabled=not args.uninstall)
+        else:
+            paths.append(draft_path)
+            old.append(draft_old)
+            new.append(draft_new)
 
     startup_patch = codex_startup.patch_file(args.codex_extension, remove=args.uninstall)
     if startup_patch is not None:
