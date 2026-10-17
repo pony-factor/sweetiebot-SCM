@@ -47,7 +47,7 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 history.replaceState(null, '', location.pathname);
 const el = id => document.getElementById(id);
 let lastProfile, lastBody;
-let imageSources=[],currentImage=-1,focusBeforeLightbox;
+let imageSources=[],currentImage=-1,focusBeforeLightbox,imageGeneration=0;
 const lightbox=el('image-lightbox');
 function safeLink(url){try{const value=new URL(url);return ['https:','http:'].includes(value.protocol)&&!value.username&&!value.password?value.href:null}catch{return null}}
 function imageSourcePage(url){
@@ -105,9 +105,26 @@ function stepImage(delta){
 }
 function imageIndex(profile){
   if(lightbox.open)lightbox.close();
+  const generation=++imageGeneration;
   el('images').replaceChildren();
   imageSources=[];
-  const seen=new Set();
+  const seen=new Set(),candidates=[];
+  const displayLoaded=()=>{
+    if(generation!==imageGeneration)return;
+    const selected=imageSources[currentImage];
+    const loaded=candidates.filter(item=>item.loaded);
+    imageSources=loaded.map(item=>item.source);
+    el('images').replaceChildren(...loaded.map(item=>item.figure));
+    if(lightbox.open&&selected){
+      currentImage=imageSources.indexOf(selected);
+      if(currentImage<0)lightbox.close();
+      else{
+        el('lightbox-caption').textContent=selected.label+' · '+(currentImage+1)+' of '+imageSources.length;
+        el('lightbox-prev').hidden=imageSources.length<2;
+        el('lightbox-next').hidden=imageSources.length<2;
+      }
+    }
+  };
   return profile.replace(/\[!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)|!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,(whole,linkedLabel,linkedUrl,page,label,url)=>{
     label=linkedLabel??label;
     url=linkedUrl||url;
@@ -116,31 +133,34 @@ function imageIndex(profile){
     seen.add(safe);
     const captionText=label||'Character image';
     const sourceUrl=safeLink(page||'')||imageSourcePage(safe);
-    const index=imageSources.push({url:safe,source:sourceUrl,label:captionText})-1;
+    const source={url:safe,source:sourceUrl,label:captionText};
     const figure=document.createElement('figure'),stage=document.createElement('div'),trigger=document.createElement('button'),img=document.createElement('img'),caption=document.createElement('figcaption');
+    const candidate={source,figure,loaded:false};
+    candidates.push(candidate);
     stage.className='image-stage';
     trigger.type='button';
     trigger.className='image-trigger';
     trigger.setAttribute('aria-label','Enlarge '+captionText);
-    trigger.addEventListener('click',()=>showImage(index));
-    img.src=safe;
+    trigger.addEventListener('click',()=>showImage(imageSources.indexOf(source)));
     img.alt=captionText;
     img.referrerPolicy='no-referrer';
     img.decoding='async';
     caption.textContent=captionText;
+    img.onload=()=>{
+      if(generation!==imageGeneration||!img.naturalWidth||candidate.loaded)return;
+      candidate.loaded=true;
+      displayLoaded();
+    };
     img.onerror=()=>{
-      const source=document.createElement('a');
-      source.href=sourceUrl;
-      source.target='_blank';
-      source.rel='noopener noreferrer';
-      source.className='image-error';
-      source.textContent='View image at its source ↗';
-      figure.replaceChildren(source,caption);
+      if(generation!==imageGeneration||!candidate.loaded)return;
+      candidate.loaded=false;
+      displayLoaded();
     };
     stage.append(img);
     trigger.append(stage);
     figure.append(trigger,caption);
-    el('images').append(figure);
+    // An artwork card becomes visible only after the browser loads real image data.
+    img.src=safe;
     return '';
   });
 }
