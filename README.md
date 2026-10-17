@@ -436,7 +436,7 @@ Both normal and Codex-context generation read commit-writing preferences from `~
 
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
-When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
+When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly when the title is applied. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message
@@ -451,7 +451,8 @@ When nothing is staged, the background path stages the working changes first,
 respecting Git's tracked-only smart commit setting. Existing staged selections
 stay separate from unstaged work unless you explicitly choose Commit All.
 You can keep committing while earlier titles generate. Each click creates its
-own local placeholder; the worker finalizes messages in commit order and updates
+own local placeholder; up to four titles generate in parallel, then the worker
+applies them in commit order and updates
 the queued descendants' parent links without changing their contents. Pushes
 publish only commits whose messages and ancestors are finalized.
 
@@ -484,7 +485,7 @@ On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 1
 python3 scripts/ollama_concurrency.py
 ```
 
-This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. Each worker processes one request at a time; different workers can run concurrently when both models fit in memory. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows four simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
 
 Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
 
