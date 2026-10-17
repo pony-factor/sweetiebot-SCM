@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 
 async function run() {
   const children = [], calls = [], errors = [], updates = [];
+  let managedActivityStops = 0;
   const state = new Map();
   const workspaceState = new Map();
   let available = true, failOpen = false;
@@ -16,6 +17,7 @@ async function run() {
         get(key, fallback) {
           if (root === 'scmToolkit' && key === 'openPanelOnStartup') return false;
           if (root === 'scmToolkit' && key === 'autoPublishNewBranches') return true;
+          if (root === 'scmToolkit' && key === 'automaticWorkspaceCleanup') return true;
           if (root === 'scmToolkit' && key === 'messagePlaceholder') return 'Commit here';
           if (root === 'scmToolkit' && key === 'commitButtonLabel') return 'Commit';
           if (root === 'scmToolkit' && key === 'commitAndSendButtonLabel') return 'Commit + Push';
@@ -42,6 +44,9 @@ async function run() {
     require(name) {
       if (name === 'vscode') return vscode;
       if (name === 'node:os') return { homedir: () => '/stable-home' };
+      if (name === './workspace_activity') {
+        return { stopManagedWindowActivity: async () => { managedActivityStops++; } };
+      }
       if (name === './python_runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
@@ -57,6 +62,7 @@ async function run() {
         const current = JSON.parse(args[3]);
         assert.equal(current.vscodeSettings.openPanelOnStartup, false);
         assert.equal(current.vscodeSettings.autoPublishNewBranches, true);
+        assert.equal(current.vscodeSettings.automaticWorkspaceCleanup, true);
         assert.equal(current.vscodeSettings.messagePlaceholder, 'Commit here');
         assert.equal(current.vscodeSettings.commitButtonLabel, 'Commit');
         assert.equal(current.vscodeSettings.commitAndSendButtonLabel, 'Commit + Push');
@@ -126,6 +132,7 @@ async function run() {
     vscodeSettings: {
       openPanelOnStartup: true,
       autoPublishNewBranches: true,
+      automaticWorkspaceCleanup: false,
       messagePlaceholder: 'Type a commit message',
       commitButtonLabel: 'Save',
       commitAndSendButtonLabel: 'Save + Push',
@@ -142,6 +149,7 @@ async function run() {
     })),
     {root: 'scmToolkit', key: 'openPanelOnStartup', value: true, target: 1},
     {root: 'scmToolkit', key: 'autoPublishNewBranches', value: true, target: 1},
+    {root: 'scmToolkit', key: 'automaticWorkspaceCleanup', value: false, target: 1},
     {root: 'scmToolkit', key: 'messagePlaceholder', value: 'Type a commit message', target: 1},
     {root: 'scmToolkit', key: 'commitButtonLabel', value: 'Save', target: 1},
     {root: 'scmToolkit', key: 'commitAndSendButtonLabel', value: 'Save + Push', target: 1},
@@ -172,6 +180,7 @@ async function run() {
   assert.equal(children[2].killed, true, 'Closing the extension must stop its server');
   children[2].emit('exit', 0);
   await shutdown;
+  assert.equal(managedActivityStops, 1, 'Closing the extension must stop managed workspace activity');
   assert.equal(errors.length, 0);
   console.log('Settings native browser checks passed.');
 }
