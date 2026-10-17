@@ -86,6 +86,14 @@ def workbench_fixture():
 
 
 
+def pr_explorer_fixture():
+    return (
+        'let root=roots[0];'
+        'if(this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER||roots[0].error)root=roots;'
+        'this.configurationService.getValue().explorer.expandSingleFolderWorkspaces;'
+    )
+
+
 def browser_cross_window_fixture():
     # Mimics the minified public API next to its model-creation exception.
     return (
@@ -594,6 +602,36 @@ class TransformTests(unittest.TestCase):
     def test_incomplete_installation_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Incomplete toolkit installation"):
             install.transform(workbench_fixture() + install.START, "base-css", settings=SETTINGS)
+
+
+    def test_pr_explorer_removes_only_saved_single_root_node(self):
+        original = workbench_fixture() + pr_explorer_fixture()
+        patched = install.transform(original, "base-css", settings=SETTINGS)
+        self.assertIn(
+            'this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER'
+            '&&!scmToolkitIsPRSingleRoot(this.contextService.getWorkspace(),roots)',
+            patched[0],
+        )
+        self.assertIn('scmToolkitIsPRSingleRoot(workspace, roots)', patched[0])
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(
+            install.transform(*patched, remove=True, settings=SETTINGS),
+            (original, "base-css"),
+        )
+
+    def test_pr_explorer_rejects_ambiguous_or_changed_native_anchor(self):
+        source = workbench_fixture() + pr_explorer_fixture()
+        with self.assertRaisesRegex(ValueError, "Explorer single-root input anchor"):
+            install.pr_workspace_explorer_edits(source + pr_explorer_fixture())
+        with self.assertRaisesRegex(ValueError, "Explorer single-root input anchor"):
+            install.pr_workspace_explorer_edits(
+                source.replace(
+                    'this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER',
+                    'this.contextService.getWorkbenchState()===WorkbenchState.FOLDER',
+                ).replace('roots[0].error', 'roots[0].different')
+            )
+        self.assertEqual(install.pr_workspace_explorer_edits(workbench_fixture()), [])
+
 
 
 class AiWrapperTests(unittest.TestCase):

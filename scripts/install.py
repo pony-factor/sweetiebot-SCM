@@ -430,6 +430,36 @@ def workspace_trust_edits(js):
     return [(original, replacement)]
 
 
+def pr_workspace_explorer_edits(js):
+    """Use a repository-root Explorer only for one-folder Sweetiebot PR workspaces.
+
+    This alters the tree input, not the workbench's saved workspace identity.
+    """
+    marker = "explorer.expandSingleFolderWorkspaces"
+    if marker not in js:
+        return []  # Synthetic fixtures and older builds without this feature.
+    ident = r"[A-Za-z_$][\w$]*"
+    pattern = re.compile(
+        rf"(?P<state>this\.contextService\.getWorkbenchState\(\)!=={ident}\.FOLDER)"
+        rf"\|\|(?P<roots>{ident})\[0\]\.error"
+    )
+    matches = [
+        match for match in pattern.finditer(js)
+        if 0 <= js.find(marker, match.end()) - match.end() < 16000
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Unsupported VS Code build: Explorer single-root input anchor does not match."
+        )
+    match = matches[0]
+    roots = match.group("roots")
+    replacement = (
+        f"({match.group('state')}&&!scmToolkitIsPRSingleRoot("
+        f"this.contextService.getWorkspace(),{roots}))||{roots}[0].error"
+    )
+    return [(match.group(0), replacement)]
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -503,6 +533,7 @@ def edits(js=None, settings=None):
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
+        changes.extend(pr_workspace_explorer_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))
@@ -734,7 +765,14 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         before, rest = js.split(CODEX_LIMIT_START, 1)
         payload, after = rest.split(CODEX_LIMIT_END, 1)
         js = before + after
-        match = re.search(r'^/\* edits:(.*?) \*/    if js.count(CODEX_HIDE_RESET_START) != js.count(CODEX_HIDE_RESET_END) or js.count(CODEX_HIDE_RESET_START) > 1:
+        match = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
+        if match is None:
+            raise ValueError("Codex limit-controls metadata missing.")
+        for original, replacement in reversed(json.loads(match[1])):
+            if js.count(replacement) != 1:
+                raise ValueError("Codex limit-controls patch changed; refusing to remove unrelated edits.")
+            js = js.replace(replacement, original, 1)
+    if js.count(CODEX_HIDE_RESET_START) != js.count(CODEX_HIDE_RESET_END) or js.count(CODEX_HIDE_RESET_START) > 1:
         raise ValueError("Incomplete Codex reset-time hiding patch; refusing to overwrite it.")
     if CODEX_HIDE_RESET_START in js:
         before, rest = js.split(CODEX_HIDE_RESET_START, 1)
@@ -1198,538 +1236,6 @@ def main():
                 args.codex_only
                 or CODEX_START in codex_old
                 or CODEX_LIMIT_START in codex_old
-                or CODEX_PROMOTIONS_START in codex_old
-                or CODEX_TIMESTAMPS_START in codex_old
-                or CODEX_DICTATION_START in codex_old
-                or CODEX_LABELS_START in codex_old
-                or CODEX_WINDOW_LABEL_START in codex_old
-            ):
-                raise
-            print(f"Warning: {error} Skipping optional Codex customizations.")
-        else:
-            if existing_index is not None:
-                new[existing_index] = codex_new
-            else:
-                paths.append(codex_path)
-                old.append(codex_old)
-                new.append(codex_new)
-
-    if (
-        old == list(new)
-        and not wrapper_changed
-        and not model_picker_changed
-        and not workspace_search_changed
-        and not legacy_changed
-    ):
-        if not args.check and not args.repair:
-            invalidate_extension_cache(args.app)
-        action = "not installed" if args.uninstall else "already up to date"
-        print(f"SCM toolkit is {action} for VS Code {version}.")
-        return
-
-    if not args.check:
-        if not args.codex_only:
-            workspace_search.remove_legacy_extensions()
-        if old != list(new):
-            if old != [path.read_text() for path in paths]:
-                raise RuntimeError("VS Code changed during validation; retry the command.")
-            write_pair(paths, new, old)
-        if not args.codex_only:
-            sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
-            workspace_search.sync_extension(remove=args.uninstall, settings=settings)
-        if not args.codex_only and not args.repair:
-            sync_model_picker(
-                enabled=settings["aiModelPicker"],
-                remove=args.uninstall,
-                destination=model_picker_path,
-            )
-        if workspace_search_changed or any(
-            path.name == 'package.json' and previous != updated
-            for path, previous, updated in zip(paths, old, new)
-        ) or not args.repair:
-            invalidate_extension_cache(args.app)
-
-    if not args.check and not args.uninstall and not args.codex_only:
-        persist_message_bar_layout(settings)
-    action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
-    target = "Codex customizations" if args.codex_only else "SCM toolkit"
-    print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
-    if not args.codex_only and not args.repair:
-        if args.uninstall:
-            print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")
-        else:
-            print(f"AI commit wrapper: {wrapper_path}")
-            if settings["aiModelPicker"]:
-                print(f"AI model picker: {model_picker_path}")
-            else:
-                print("AI model picker: disabled by scm-toolkit.ai-model-picker")
-            print(f"Workspace Search extension: {workspace_search.extension_destination()}")
-            print(
-                "Set VS Code git.path to that absolute path and "
-                "git.useEditorAsCommitInput to true."
-            )
-
-
-if __name__ == "__main__":
-    main()
-, payload, re.MULTILINE)
-        if match is None:
-            raise ValueError("Codex limit-controls metadata missing.")
-        for original, replacement in reversed(json.loads(match[1])):
-            if js.count(replacement) != 1:
-                raise ValueError("Codex limit-controls patch changed; refusing to remove unrelated edits.")
-            js = js.replace(replacement, original, 1)
-    if js.count(CODEX_HIDE_RESET_START) != js.count(CODEX_HIDE_RESET_END) or js.count(CODEX_HIDE_RESET_START) > 1:
-        raise ValueError("Incomplete Codex reset-time hiding patch; refusing to overwrite it.")
-    if CODEX_HIDE_RESET_START in js:
-        before, rest = js.split(CODEX_HIDE_RESET_START, 1)
-        payload, after = rest.split(CODEX_HIDE_RESET_END, 1)
-        js = before + after
-        saved = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
-        for original, replacement in reversed(json.loads(saved[1]) if saved else []):
-            if js.count(replacement) != 1:
-                raise ValueError('Codex reset-time patch changed; refusing to remove unrelated edits.')
-            js = js.replace(replacement, original, 1)
-    if CODEX_DICTATION_START in js:
-        js = strip_codex_dictation_payload(js)
-    if CODEX_TIMESTAMPS_START in js:
-        js = strip_codex_timestamps_payload(js)
-    if CODEX_PROMOTIONS_START in js:
-        js = strip_codex_promotions_payload(js)
-
-    installed = CODEX_START in js
-    if installed:
-        payload = js.split(CODEX_START, 1)[1].split(CODEX_END, 1)[0]
-        saved = re.search(r"^/\* edit:(.*?) \*/$", payload, re.MULTILINE)
-        if saved is None:
-            raise ValueError("Installed Codex countdown patch is missing its edit metadata.")
-        metadata = json.loads(saved.group(1))
-        edits = metadata["edits"] if isinstance(metadata, dict) else [metadata]
-        js = strip_codex_payload(js)
-        for original, replacement in reversed(edits):
-            if js.count(replacement) != 1:
-                raise ValueError(
-                    "Installed Codex countdown patch changed; refusing to remove unrelated edits."
-                )
-            js = js.replace(replacement, original, 1)
-
-    if not remove and enabled:
-        edits = codex_countdown_edits(js)
-        for original, replacement in edits:
-            if js.count(original) != 1:
-                raise ValueError("Unsupported Codex extension build: reset-time anchor is ambiguous.")
-            js = js.replace(original, replacement, 1)
-        js = (
-            js
-            + CODEX_START
-            + "/* edit:"
-            + json.dumps({"edits": edits})
-            + " */\n"
-            + (CODEX_ASSETS / "codex-countdown.js").read_text()
-            + CODEX_END
-        )
-
-    if not remove and hide_reset_times:
-        js += (
-            CODEX_HIDE_RESET_START
-            + (CODEX_ASSETS / "codex-hide-reset-times.js").read_text()
-            + CODEX_HIDE_RESET_END
-        )
-
-    if not remove and hide_promotions:
-        js += (
-            CODEX_PROMOTIONS_START
-            + (CODEX_ASSETS / "codex-hide-promotions.js").read_text()
-            + CODEX_PROMOTIONS_END
-        )
-
-    if not remove and hide_timestamps:
-        js += (
-            CODEX_TIMESTAMPS_START
-            + (CODEX_ASSETS / "codex-hide-chat-timestamps.js").read_text()
-            + CODEX_TIMESTAMPS_END
-        )
-
-    if not remove and hide_dictation:
-        js += (
-            CODEX_DICTATION_START
-            + (CODEX_ASSETS / "codex-hide-dictation.js").read_text()
-            + CODEX_DICTATION_END
-        )
-
-    if not remove and short_model_labels:
-        js += CODEX_LABELS_START + (CODEX_ASSETS / "codex-short-model-labels.js").read_text() + CODEX_LABELS_END
-
-    if not remove and window_label != "Codex":
-        # Use the manifest's already-validated, single-line custom label.
-        label = codex_label._validate_label(window_label)
-        script = (CODEX_ASSETS / "codex-window-label.js").read_text().replace(
-            "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", json.dumps(label, ensure_ascii=True)
-        )
-        js += CODEX_WINDOW_LABEL_START + script + CODEX_WINDOW_LABEL_END
-
-    return js
-
-def transform(js, css, remove=False, settings=None):
-    installed = START in js
-    if installed != (START in css):
-        raise ValueError("Incomplete toolkit installation; refusing to overwrite it.")
-
-    if installed:
-        payload = js.split(START, 1)[1].split(END, 1)[0]
-        saved = re.search(r"^/\* edits:(.*?) \*/$", payload, re.MULTILINE)
-        previous = json.loads(saved.group(1)) if saved else edits()
-        js, css = strip_payload(js), strip_payload(css)
-
-        for edit in previous:
-            original, replacement, expected_count = unpack_edit(edit)
-            if js.count(replacement) != expected_count:
-                raise ValueError(
-                    "Installed toolkit patch changed; refusing to remove unrelated edits."
-                )
-            js = js.replace(replacement, original, expected_count)
-
-    if remove:
-        return js, css
-
-    settings = load_settings() if settings is None else settings
-    runtime_settings = resolve_runtime_settings(settings)
-    changes = edits(js, settings=settings)
-    for edit in changes:
-        original, replacement, expected_count = unpack_edit(edit)
-        if js.count(original) != expected_count:
-            raise ValueError("Unsupported VS Code build: SCM widget anchor does not match.")
-        js = js.replace(original, replacement, expected_count)
-
-    js += (
-        START
-        + "const scmToolkitSettings = "
-        + json.dumps(runtime_settings, separators=(",", ":"))
-        + ";\n"
-        + "/* edits:"
-        + json.dumps(changes)
-        + " */\n"
-        + (WORKBENCH_ASSETS / "picker.js").read_text()
-        + "\n"
-        + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
-        + "\n"
-        + (WORKBENCH_ASSETS / "message_bar.js").read_text()
-        + END
-    )
-    toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
-    toolkit_css += "\n" + (WORKBENCH_ASSETS / "branch_strip.css").read_text()
-    if settings.get("hideSCMProgress", True):
-        toolkit_css += "\n" + (WORKBENCH_ASSETS / "hide_progress.css").read_text()
-    if not settings["filledButtons"]:
-        toolkit_css += "\n" + (WORKBENCH_ASSETS / "outlined_buttons.css").read_text()
-    css += START + toolkit_css + END
-    return js, css
-
-
-def application_paths(app_path):
-    app = app_path / "Contents/Resources/app"
-    package = app / "package.json"
-    version = json.loads(package.read_text())["version"]
-    workbench = app / "out/vs/workbench"
-    return version, [
-        workbench / "workbench.desktop.main.js",
-        workbench / "workbench.desktop.main.css",
-    ]
-
-
-def codex_bundle_matches(text):
-    if codex_recent_chats.START in text or (codex_recent_chats.ANCHOR in text and 'defaultMessage:' in text):
-        return True
-    if CODEX_START in text or CODEX_PROMOTIONS_START in text or CODEX_TIMESTAMPS_START in text or CODEX_DICTATION_START in text:
-        return True
-
-    if CODEX_WINDOW_LABEL_START in text:
-        return True
-    if CODEX_LABELS_START in text or ('data-selected-reasoning-effort' in text and 'data-composer-navigation-target' in text):
-        return True
-
-    # Discover by feature, independently of compiler output and patch support.
-    # Translation dictionaries contain the same IDs, but no defaultMessage.
-    if ("You’re out of Codex messages" in text
-            or ('codex.rateLimitUpsellBanner.dismiss' in text
-                and ('defaultMessage:' in text or '.reset_at' in text))
-            or ('dragCounterRef:' in text and re.search(r'addEventListener\([`\"\']dragenter[`\"\']', text))):
-        return True
-
-    return "Enable Fast mode" in text
-
-
-def codex_bundle_paths(extension_path=None):
-    if extension_path is None:
-        extensions = Path.home() / ".vscode/extensions"
-        candidates = sorted(extensions.glob("openai.chatgpt-*"), reverse=True)
-    else:
-        candidates = [extension_path]
-
-    matches = []
-    for candidate in candidates:
-        assets = candidate / "webview/assets"
-        if not assets.is_dir():
-            continue
-        for path in assets.glob("*.js"):
-            text = path.read_text()
-            if codex_bundle_matches(text) or codex_image_drop.START in text:
-                matches.append(path)
-    return sorted(matches)
-
-
-def codex_bundle_path(extension_path=None):
-    paths = codex_bundle_paths(extension_path)
-    # Compatibility for callers needing one bundle: prefer the usage UI.
-    return max(paths, key=lambda path: 'codex.rateLimitUpsellBanner.dismiss' in path.read_text(), default=None)
-
-def write_pair(paths, new_contents, old_contents):
-    written = []
-    try:
-        for path, content, original in zip(paths, new_contents, old_contents):
-            written.append((path, original))
-            path.write_text(content)
-    except OSError:
-        for path, original in written:
-            try:
-                path.write_text(original)
-            except OSError:
-                pass
-        raise
-
-
-def invalidate_extension_cache(app):
-    """Discard only VS Code's manifest scan so the next reload sees new labels."""
-    try:
-        product = json.loads((app / 'Contents/Resources/app/product.json').read_text())
-        name = product.get('nameShort')
-        if not isinstance(name, str) or not name or Path(name).name != name or name in ('.', '..'):
-            return
-        cache = Path.home() / 'Library/Application Support' / name / 'CachedExtensions/user'
-        if not cache.is_symlink() and cache.is_file():
-            cache.unlink()
-    except (OSError, ValueError) as error:
-        print(f'Could not reset the VS Code extension manifest cache ({type(error).__name__}); another reload may be needed.')
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--app",
-        type=Path,
-        default=Path("/Applications/Visual Studio Code.app"),
-        help="Path to the Visual Studio Code application bundle",
-    )
-    parser.add_argument("--uninstall", action="store_true", help="Remove the toolkit patch")
-    parser.add_argument("--check", action="store_true", help="Validate without writing")
-    parser.add_argument(
-        "--configure",
-        action="store_true",
-        help="Configure in a local browser before installing",
-    )
-    parser.add_argument(
-        "--codex-only",
-        action="store_true",
-        help="Only install or remove optional Codex webview customizations",
-    )
-    parser.add_argument(
-        "--codex-extension",
-        type=Path,
-        help="Path to an OpenAI Codex VS Code extension directory",
-    )
-    parser.add_argument("--repair", action="store_true", help="Repair app patches and refresh companion tools")
-    args = parser.parse_args()
-    if args.repair and (args.uninstall or args.configure or args.codex_only):
-        parser.error("--repair cannot be combined with --uninstall, --configure, or --codex-only")
-
-    if args.configure and (args.uninstall or args.check or args.codex_only):
-        parser.error("--configure cannot be combined with --uninstall, --check, or --codex-only")
-
-    settings = load_settings()
-    if args.configure:
-        from configurator import run_configurator
-
-        if not run_configurator(settings, action_label="Save and install"):
-            print("Installation cancelled; no toolkit settings were changed.")
-            return
-        settings = load_settings()
-    version, workbench_paths = application_paths(args.app)
-    legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
-    paths = [] if args.codex_only else workbench_paths
-    old = [path.read_text() for path in paths]
-    new = (
-        []
-        if args.codex_only
-        else list(transform(*old, remove=args.uninstall, settings=settings))
-    )
-    wrapper_path = ai_wrapper_path()
-    wrapper_changed = (
-        False
-        if args.codex_only
-        else sync_ai_wrapper(
-            remove=args.uninstall, check=True, destination=wrapper_path
-        )
-    )
-    model_picker_path = ai_model_picker_path()
-    model_picker_changed = (
-        False
-        if args.codex_only or args.repair
-        else sync_model_picker(
-            enabled=settings["aiModelPicker"],
-            remove=args.uninstall,
-            check=True,
-            destination=model_picker_path,
-        )
-    )
-    workspace_search_changed = (
-        False
-        if args.codex_only
-        else workspace_search.sync_extension(
-            remove=args.uninstall,
-            check=True,
-            settings=settings,
-        )
-    )
-
-    if not args.codex_only:
-        for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
-            paths.append(browser_path)
-            old.append(browser_old)
-            new.append(browser_new)
-        for github_path, github_old, github_new in github_pr.patch_files(remove=args.uninstall):
-            paths.append(github_path)
-            old.append(github_old)
-            new.append(github_new)
-
-    label_patch = codex_label.patch_file(
-        args.codex_extension,
-        label=settings["codexWindowLabel"],
-        remove=args.uninstall,
-    )
-    if label_patch is not None:
-        label_path, label_old, label_new = label_patch
-        paths.append(label_path)
-        old.append(label_old)
-        new.append(label_new)
-
-    color_path = codex_colors.stylesheet_path(args.codex_extension)
-    if color_path is not None:
-        color_old = color_path.read_text()
-        color_new = codex_colors.transform(color_old, settings, remove=args.uninstall)
-        paths.append(color_path)
-        old.append(color_old)
-        new.append(color_new)
-    elif any(settings.get(key) for key in codex_colors.APPEARANCE_SETTINGS):
-        raise ValueError("The installed Codex composer stylesheet could not be identified.")
-
-    for path, context_old, context_new in codex_context.patch_files(
-        args.codex_extension, enabled=settings.get("codexCommitContext", False) and not args.uninstall
-    ):
-        paths.append(path)
-        old.append(context_old)
-        new.append(context_new)
-
-    startup_patch = codex_startup.patch_file(args.codex_extension, remove=args.uninstall)
-    if startup_patch is not None:
-        startup_path, startup_old, startup_new = startup_patch
-        if startup_path in paths:
-            index = paths.index(startup_path)
-            new[index] = codex_startup.transform(new[index], remove=args.uninstall)
-        else:
-            paths.append(startup_path)
-            old.append(startup_old)
-            new.append(startup_new)
-
-    codex_paths = codex_bundle_paths(args.codex_extension)
-    try:
-        awake_patch = codex_keep_awake.patch_file(
-            args.codex_extension, enabled=settings.get("codexKeepAwake", True), remove=args.uninstall
-        )
-    except ValueError as error:
-        if args.codex_only or not str(error).startswith('Unsupported Codex build:'):
-            raise
-        print(f"Warning: {error} Skipping optional Codex keep-awake customization.")
-        awake_patch = None
-    if awake_patch is not None:
-        awake_path, awake_old, awake_new = awake_patch
-        if awake_path in paths:
-            index = paths.index(awake_path)
-            new[index] = codex_keep_awake.transform(
-                new[index], settings.get("codexKeepAwake", True), args.uninstall
-            )
-        else:
-            paths.append(awake_path)
-            old.append(awake_old)
-            new.append(awake_new)
-    usage_pie = settings.get("codexUsagePieIndicator", False)
-    hide_reset_times = settings.get("codexHideUsageResetTimes", False)
-    for usage_path, usage_old, usage_new in codex_usage.patch_files(
-        args.codex_extension,
-        enabled=(settings["codexUsageResetCountdown"] or usage_pie or hide_reset_times) and not args.uninstall,
-        hide_reset_times=hide_reset_times,
-        pie_indicator=usage_pie,
-        reset_countdown=settings["codexUsageResetCountdown"] and not hide_reset_times,
-    ):
-        paths.append(usage_path)
-        old.append(usage_old)
-        new.append(usage_new)
-
-    # Clean the legacy source edits while retaining the requested native-control placement.
-    inline_location = settings["codexInlineLocation"] and not args.uninstall
-    clipboard_submit = settings["codexClipboardSubmit"] and not args.uninstall
-    for composer_path, composer_old, composer_new in codex_composer.patch_files(
-        args.codex_extension, inline=inline_location, paste_button=clipboard_submit
-    ):
-        if composer_path in paths:
-            index = paths.index(composer_path)
-            new[index] = codex_composer.transform_layout(new[index], inline_location, clipboard_submit)
-        else:
-            paths.append(composer_path)
-            old.append(composer_old)
-            new.append(composer_new)
-
-        index = paths.index(composer_path)
-        new[index] = codex_composer.transform_placeholders(
-            new[index], {} if args.uninstall else settings
-        )
-
-    should_find_codex = (
-        settings["codexUsageResetCountdown"]
-        or hide_reset_times
-        or settings["codexHidePromotions"]
-        or settings["codexHideChatTimestamps"]
-        or settings["codexHideDictation"]
-        or settings["codexShortModelLabels"]
-        or settings["codexWindowLabel"] != "Codex"
-        or args.uninstall
-    )
-    if not codex_paths and should_find_codex:
-        message = "OpenAI Codex extension webview bundle was not found or is unsupported."
-        if args.codex_only:
-            raise ValueError(message)
-        print(f"Warning: {message} Skipping optional Codex customizations.")
-    for codex_path in codex_paths:
-        existing_index = paths.index(codex_path) if codex_path in paths else None
-        codex_old = new[existing_index] if existing_index is not None else codex_path.read_text()
-        try:
-            codex_new = transform_codex(
-                codex_old,
-                enabled=settings["codexUsageResetCountdown"] and not hide_reset_times and (
-                    CODEX_START in codex_old or 'codex.rateLimitUpsellBanner.dismiss' in codex_old
-                    or 'You’re out of Codex messages' in codex_old
-                ),
-                hide_reset_times=hide_reset_times,
-                hide_promotions=settings["codexHidePromotions"],
-                hide_timestamps=settings["codexHideChatTimestamps"],
-                hide_dictation=settings["codexHideDictation"],
-                short_model_labels=settings["codexShortModelLabels"],
-                window_label=settings["codexWindowLabel"],
-                remove=args.uninstall,
-            )
-        except ValueError as error:
-            if (
-                args.codex_only
-                or CODEX_START in codex_old
                 or CODEX_PROMOTIONS_START in codex_old
                 or CODEX_TIMESTAMPS_START in codex_old
                 or CODEX_DICTATION_START in codex_old
