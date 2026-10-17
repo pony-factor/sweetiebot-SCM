@@ -428,6 +428,36 @@ def workspace_trust_edits(js):
     return [(original, replacement)]
 
 
+def pr_workspace_explorer_edits(js):
+    """Use a repository-root Explorer only for one-folder Sweetiebot PR workspaces.
+
+    This alters the tree input, not the workbench's saved workspace identity.
+    """
+    marker = "explorer.expandSingleFolderWorkspaces"
+    if marker not in js:
+        return []  # Synthetic fixtures and older builds without this feature.
+    ident = r"[A-Za-z_$][\w$]*"
+    pattern = re.compile(
+        rf"(?P<state>this\.contextService\.getWorkbenchState\(\)!=={ident}\.FOLDER)"
+        rf"\|\|(?P<roots>{ident})\[0\]\.error"
+    )
+    matches = [
+        match for match in pattern.finditer(js)
+        if 0 <= js.find(marker, match.end()) - match.end() < 16000
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Unsupported VS Code build: Explorer single-root input anchor does not match."
+        )
+    match = matches[0]
+    roots = match.group("roots")
+    replacement = (
+        f"({match.group('state')}&&!scmToolkitIsPRSingleRoot("
+        f"this.contextService.getWorkspace(),{roots}))||{roots}[0].error"
+    )
+    return [(match.group(0), replacement)]
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -501,6 +531,7 @@ def edits(js=None, settings=None):
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
+        changes.extend(pr_workspace_explorer_edits(js))
 
     if js is not None and settings and settings.get("browserChatgptHome"):
         changes.extend(browser_chatgpt_home_edits(js, settings.get("browserHomeUrl", "https://chatgpt.com/")))
