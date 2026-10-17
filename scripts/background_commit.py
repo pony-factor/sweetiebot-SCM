@@ -335,6 +335,7 @@ def work(directory, commit_only=False):
                     return
                 with repository_lock(job['gitdir']):
                     captured_chain(marker)
+                    job = read_journal(file)
                     generated = not job['message'].startswith((PLACEHOLDER, '💭 Generate local commit message ['))
                     job['phase'] = 'finalizing' if generated else 'committed'
                     job.pop('error', None)

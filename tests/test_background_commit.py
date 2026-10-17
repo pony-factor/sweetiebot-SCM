@@ -286,6 +286,87 @@ worker.resume(parallel=False)
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
+    def check_parallel_generation(self, second_finishes_first):
+        first = self.queue(message='', push=True)
+        (self.repo / 'story.txt').write_text('Second parallel snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        original_second = self.job(second)['sha']
+        (self.repo / 'story.txt').write_text('Later staged work\n')
+        self.git('add', 'story.txt')
+        signals = self.root / 'signals'
+        signals.mkdir()
+        script = '''
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import background_commit as worker
+directory, signals = Path(sys.argv[2]), Path(sys.argv[3])
+def generate(*args, **kwargs):
+    with (signals / (directory.name + '.calls')).open('a') as output: output.write('generate\\n')
+    (signals / (directory.name + '.started')).touch()
+    deadline = time.monotonic() + 20
+    while not (signals / (directory.name + '.release')).exists():
+        if time.monotonic() > deadline: raise RuntimeError('Parallel test timed out')
+        time.sleep(.02)
+    return ('🧪 First parallel title' if directory.name == sys.argv[4] else '🧪 Second parallel title'), ''
+worker.core.generate_message = generate
+worker.work(directory)
+'''
+        children, errors = [], []
+        def launch(directory):
+            child = subprocess.Popen([sys.executable, '-c', script, str(Path(worker.__file__).parent), str(directory), str(signals), first.name])
+            children.append(child)
+            return child
+        def coordinate():
+            try:
+                worker.drain_parallel(str(self.repo / '.git'))
+            except BaseException as exc:
+                errors.append(exc)
+        def wait_until(predicate):
+            deadline = time.monotonic() + 15
+            while not predicate() and time.monotonic() < deadline:
+                time.sleep(.02)
+            self.assertTrue(predicate())
+        with patch.object(worker, 'launch_job', side_effect=launch):
+            coordinator = threading.Thread(target=coordinate)
+            coordinator.start()
+            try:
+                wait_until(lambda: all((signals / (directory.name + '.started')).exists() for directory in (first, second)))
+                # Both model requests entered generation before either finished.
+                early, late = (second, first) if second_finishes_first else (first, second)
+                (signals / (early.name + '.release')).touch()
+                if second_finishes_first:
+                    wait_until(lambda: self.job(second)['phase'] == 'ready')
+                    self.assertEqual(self.git('rev-parse', 'HEAD'), original_second)
+                    self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+                else:
+                    wait_until(lambda: self.job(first)['phase'] == 'done')
+                    self.assertNotEqual(self.job(second)['sha'], original_second, 'reparent a descendant while its model request is running')
+                (signals / (late.name + '.release')).touch()
+                coordinator.join(timeout=15)
+                self.assertFalse(coordinator.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual([self.job(directory)['phase'] for directory in (first, second)], ['done', 'done'])
+                self.assertEqual(self.git('log', '--reverse', '--format=%s'), '🧪 First parallel title\n🧪 Second parallel title')
+                self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Second parallel snapshot')
+                self.assertEqual(self.git('show', ':story.txt'), 'Later staged work')
+                self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
+                for directory in (first, second):
+                    self.assertEqual((signals / (directory.name + '.calls')).read_text(), 'generate\n', 'reuse ready results rather than generating again')
+            finally:
+                for directory in (first, second):
+                    (signals / (directory.name + '.release')).touch()
+                coordinator.join(timeout=20)
+                for child in children:
+                    child.wait(timeout=10)
+
+    def test_parallel_generation_applies_out_of_order_results_in_commit_order(self):
+        self.check_parallel_generation(second_finishes_first=True)
+
+    def test_parallel_generation_preserves_reparenting_during_an_active_request(self):
+        self.check_parallel_generation(second_finishes_first=False)
+
     def test_partial_descendant_checkpoint_is_recovered_before_another_enqueue(self):
         first = self.queue(message='')
         (self.repo / 'story.txt').write_text('Second snapshot\n')
