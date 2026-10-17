@@ -76,6 +76,8 @@ class AsyncCommitTests(unittest.TestCase):
         identities = self.git("log", "-1", "--format=%an|%ae|%at|%cn|%ce|%ct").stdout.strip()
         tree = self.git("rev-parse", "HEAD^{tree}").stdout.strip()
         self.assertIn(asynchronous.PLACEHOLDER, self.title())
+        self.assertRegex(job['id'], r'^[0-9a-f]{16}$')
+        self.assertEqual(self.title(), 'placeholder_' + job['id'])
 
         # Work continues while the model works. The worker must not include it.
         (self.root / "story.md").write_text("Subsequent staged story\n", encoding="utf-8")

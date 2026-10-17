@@ -113,11 +113,23 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_native_push_handoff_is_reversible(self):
+        original = ('class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
+                    'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));}'
+                    'async _push(e,t,r=!1,n=!1,o,a=!1){return this.repository.push(e,t,r,n,o,a)}}')
+        installed = install.transform_git_background(original)
+        self.assertIn('sweetiebot.queuePush', installed)
+        self.assertIn('if(!n&&!o&&!a)', installed)
+        self.assertEqual(install.transform_git_background(installed), installed)
+        self.assertEqual(install.transform_git_background(installed, remove=True), original)
+
     def test_native_commit_handoff_captures_both_push_command_names(self):
         import subprocess
         original = 'class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}}'
         installed = install.transform_git_background(original)
         self.assertIn('durableBackgroundCommits', installed)
+        self.assertIn('all:t.all', installed)
+        self.assertNotIn('!t.all', installed)
         self.assertEqual(install.transform_git_background(installed), installed)
         self.assertEqual(install.transform_git_background(installed, remove=True), original)
         script = """

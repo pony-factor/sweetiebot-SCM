@@ -10,11 +10,15 @@ async function run() {
   const state = new Map();
   const workspaceState = new Map();
   let available = true, failOpen = false;
+  let extensionAutoUpdate = 'off';
   const vscode = {
     ConfigurationTarget: { Global: 1 },
     workspace: { getConfiguration(root) {
       return {
         get(key, fallback) {
+          if (root === 'update' && key === 'mode') return 'start';
+          if (root === 'extensions' && key === 'autoUpdate') return extensionAutoUpdate;
+          if (root === 'extensions' && key === 'autoCheckUpdates') return false;
           if (root === 'scmToolkit' && key === 'openPanelOnStartup') return false;
           if (root === 'scmToolkit' && key === 'autoPublishNewBranches') return true;
           if (root === 'scmToolkit' && key === 'automaticWorkspaceCleanup') return true;
@@ -68,6 +72,9 @@ async function run() {
         assert.equal(current.vscodeSettings.commitAndSendButtonLabel, 'Commit + Push');
         assert.equal(current.vscodeSettings.incomingSyncLabel, 'From origin');
         assert.equal(current.vscodeSettings.outgoingSyncLabel, 'To origin');
+        assert.equal(current.appUpdateSettings.mode, 'start');
+        assert.equal(current.extensionUpdateSettings.autoUpdate, ![false, 'off'].includes(extensionAutoUpdate));
+        assert.equal(current.extensionUpdateSettings.autoCheckUpdates, false);
         assert.equal(current.workspaceSearch.resultLimit, 35);
         assert.equal(current.editorSettings['inlineSuggest.enabled'], true);
         assert.equal(current.gitSettings.postCommitCommand, 'none');
@@ -139,6 +146,8 @@ async function run() {
       incomingSyncLabel: 'Pulled',
       outgoingSyncLabel: 'Pushed'
     },
+    appUpdateSettings: {mode: 'manual'},
+    extensionUpdateSettings: {autoCheckUpdates: true, autoUpdate: true},
     editorSettings: {'inlineSuggest.enabled': false},
     gitSettings: {postCommitCommand: 'push'}
   }) + '\n');
@@ -155,10 +164,26 @@ async function run() {
     {root: 'scmToolkit', key: 'commitAndSendButtonLabel', value: 'Save + Push', target: 1},
     {root: 'scmToolkit', key: 'incomingSyncLabel', value: 'Pulled', target: 1},
     {root: 'scmToolkit', key: 'outgoingSyncLabel', value: 'Pushed', target: 1},
+    {root: 'update', key: 'mode', value: 'manual', target: 1},
+    {root: 'extensions', key: 'autoCheckUpdates', value: true, target: 1},
+    {root: 'extensions', key: 'autoUpdate', value: 'on', target: 1},
     {root: 'editor', key: 'inlineSuggest.enabled', value: false, target: 1},
     {root: 'git', key: 'postCommitCommand', value: 'push', target: 1}
   ]);
   assert.equal(calls.length, 2, 'Saving settings must apply them without reopening the browser');
+  updates.length = 0;
+  extensionAutoUpdate = false;
+  children[0].stdout.emit('data', JSON.stringify({extensionUpdateSettings: {autoUpdate: true}}) + '\n');
+  await tick();
+  assert.deepEqual(updates, [{root: 'extensions', key: 'autoUpdate', value: true, target: 1}],
+    'older VS Code versions keep their boolean representation');
+  updates.length = 0;
+  extensionAutoUpdate = 'onlyEnabledExtensions';
+  children[0].stdout.emit('data', JSON.stringify({extensionUpdateSettings: {autoUpdate: true}}) + '\n');
+  await tick();
+  assert.deepEqual(updates, [{root: 'extensions', key: 'autoUpdate', value: 'onlyEnabledExtensions', target: 1}],
+    'saving another setting preserves a legacy enabled-extensions-only choice');
+
   children[0].exitCode = 0;
   children[0].emit('exit', 0);
   await open();

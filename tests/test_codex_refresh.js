@@ -7,7 +7,7 @@ const vm = require('node:vm');
 async function run() {
 const timers = new Map();
 const intervals = new Map();
-let enabled = true, installed = true;
+let enabled = true, installed = true, paused = false;
 let revision = 'initial';
 let releaseServer, stopping = false, reloads = 0;
 const notices = [];
@@ -29,6 +29,8 @@ const sandbox = vm.createContext({
   clearTimeout(id) { timers.delete(id); },
   require(name) {
     if (name === 'path') return path;
+    if (name === 'os') return { homedir() { return '/test-home'; } };
+    if (name === 'fs') return { existsSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); return paused; } };
     if (name === './runtime_revision') return { runtimeRevision() { return revision; } };
     if (name === './extension_cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
     if (name === './reload_guard') return require('../efs/reload_guard');
@@ -176,6 +178,16 @@ tick();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 3, 'an extension update automatically reloads after recovery');
 retryContext.subscriptions.at(-1).dispose();
+paused = true;
+const pausedContext = { ...context, subscriptions: [] };
+const launchesBeforePause = launches;
+sandbox.module.exports.registerCodexRefresh(vscode, pausedContext);
+assert.equal(timers.size, 0, 'the shared pause flag suppresses startup repair even when the profile enables it');
+changed();
+focusChanged({ focused: true });
+assert.equal(timers.size, 0, 'paused profiles cannot schedule repairs on update or focus');
+assert.equal(launches, launchesBeforePause);
+pausedContext.subscriptions.at(-1).dispose();
 console.log('Codex update repair lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

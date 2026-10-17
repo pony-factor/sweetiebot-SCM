@@ -147,9 +147,10 @@ async function run(allowed, failCommit = false) {
     assert(!events.includes('Commit created.'), 'Never announce success before Git finishes');
     finishCommit();
     await committing;
-    assert.deepEqual(events.slice(-3),
-      ['closed', 'Commit created.', 'sweetiebot.endCommit'],
-      'Completion closes progress and confirms the actual commit');
+    assert.deepEqual(events.slice(-2),
+      ['closed', 'sweetiebot.endCommit'],
+      'Completion closes progress quietly');
+    assert(!events.includes('Commit created.'));
 
     const successes = events.filter(event => event === 'Commit created.').length;
     const rejected = repository.commit('', {});
@@ -195,7 +196,7 @@ async function run(allowed, failCommit = false) {
         requests.push(request);
         return { queued: true };
       } },
-      configuration: { getValue() { return 'push'; } },
+      configuration: { getValue(key) { return key === 'scmToolkit.durableBackgroundCommits' ? true : 'push'; } },
       notifications: { notify() { return { close() {} }; } }
     });
     vm.runInContext(snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications, { aiCommit: true });', context);
@@ -205,6 +206,10 @@ async function run(allowed, failCommit = false) {
     assert.equal(requests[0].message, '');
     assert.equal(nativeCommits, 0, 'the saved worker owns the commit');
     assert.equal(nativePushes, 0, 'the saved worker owns publication');
+    await repository.commit('', { all: true });
+    assert.equal(requests.length, 2, 'smart Commit All also uses the immediate placeholder worker');
+    assert.equal(requests[1].all, true);
+    assert.equal(nativeCommits, 0);
   }
   console.log('Commit guard tests passed');
 })().catch(error => {
