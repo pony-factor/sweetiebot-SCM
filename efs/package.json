@@ -209,6 +209,12 @@
           "scope": "application",
           "description": "Opt in to mirror accessible GitHub repositories whose default branch is main every 8 hours, only when clean. Uses isolated Sweetiebot storage."
         },
+        "scmToolkit.durableBackgroundCommits": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Opt in to restartable background Commit and Push with staged-tree snapshots and recovery. Off uses the earlier direct commit workflow."
+        },
         "scmToolkit.automaticWorkspaceCleanup": {
           "type": "boolean",
           "default": true,

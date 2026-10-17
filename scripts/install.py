@@ -902,7 +902,7 @@ def transform_git_background(source, remove=False):
     vscode = api[1]
     offset = source.index('{let ', match.start()) + 1
     injection = (BACKGROUND_GIT_START
-        + f'if(!{options}.amend&&!{options}.all&&!{options}.empty&&!this.rebaseCommit)'
+        + f'if({vscode}.workspace.getConfiguration("scmToolkit",{vscode}.Uri.file(this.root)).get("durableBackgroundCommits",false)&&!{options}.amend&&!{options}.all&&!{options}.empty&&!this.rebaseCommit)'
         + '{let sweetiebotResult=await '
         + f'{vscode}.commands.executeCommand("sweetiebot.queueCommit",{vscode}.Uri.file(this.root),'
         + '{'

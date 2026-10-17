@@ -683,7 +683,8 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 (requestedPostCommitCommand === 'push' || requestedPostCommitCommand === 'git.push')
                 || (requestedPostCommitCommand === undefined && configuredPostCommitCommand === 'push')
             );
-            if (!options?.amend && !options?.all && !options?.empty
+            if (configuration.getValue('scmToolkit.durableBackgroundCommits') === true
+                && !options?.amend && !options?.all && !options?.empty
                 && (String(message ?? '').trim() || settings.aiCommit === true)) {
                 let queued;
                 try {
@@ -1667,11 +1668,26 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
 
         try {
-            await commands.executeCommand('sweetiebot.queueCommit', repositoryUri, {
-                message: originalMessage, codex: true,
-                trailer: scmToolkitCoauthorTrailer(settings),
-                push: configuration.getValue('git.postCommitCommand') === 'push'
-            });
+            if (configuration.getValue('scmToolkit.durableBackgroundCommits') === true) {
+                await commands.executeCommand('sweetiebot.queueCommit', repositoryUri, {
+                    message: originalMessage, codex: true,
+                    trailer: scmToolkitCoauthorTrailer(settings),
+                    push: configuration.getValue('git.postCommitCommand') === 'push'
+                });
+            } else {
+                // The original direct workflow: generate locally now and commit normally.
+                // Use the same Ollama prompt, custom instructions and emoji rules as queued jobs.
+                let message = originalMessage;
+                if (!message.trim()) {
+                    message = await commands.executeCommand('sweetiebot.generateCodexCommitMessage', repositoryUri);
+                }
+                if (typeof message !== 'string' || !message.trim()) {
+                    throw new Error('Local commit generation did not return a message.');
+                }
+                await commands.executeCommand('sweetiebot.commitWithMessage', repositoryUri,
+                    scmToolkitWithCodexCoauthor(message, settings));
+                if (input.value === originalMessage) input.setValue('');
+            }
         } catch (error) {
             notifications.error(error);
         } finally {
