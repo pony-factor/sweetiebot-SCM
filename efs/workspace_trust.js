@@ -21,10 +21,20 @@ async function showIndependentWorkspaceTrustSetup(vscode, context, {
   if (!manual) {
     const enabled = vscode.workspace.getConfiguration('scmToolkit')
       .get('promptForIndependentWorkspaceTrust', true);
-    if (!enabled || context.globalState.get(TRUST_SETUP_SEEN_KEY, false)) return false;
+    const untrustedClone = vscode.workspace.isTrusted === false &&
+      (vscode.workspace.workspaceFolders || []).some(({ uri }) => {
+        if (uri.scheme !== 'file') return false;
+        const relative = path.relative(baseDirectory, uri.fsPath);
+        return relative !== '' && relative !== '..' &&
+          !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+      });
+    // A dismissed first-run guide must not suppress help in a new restricted
+    // clone. Remember that clone's dismissal separately to avoid reload nagging.
+    const state = untrustedClone ? context.workspaceState : context.globalState;
+    if (!enabled || state.get(TRUST_SETUP_SEEN_KEY, false)) return false;
     // Mark before displaying the dialog, so a second activating window does
     // not intentionally re-prompt after the first one has shown it.
-    await context.globalState.update(TRUST_SETUP_SEEN_KEY, true);
+    await state.update(TRUST_SETUP_SEEN_KEY, true);
   }
 
   const selection = await vscode.window.showInformationMessage(

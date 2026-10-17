@@ -66,8 +66,11 @@ normal Restricted Mode protections in place for new clones.
 
 To suppress the first-run prompt, set
 `scmToolkit.promptForIndependentWorkspaceTrust` to `false` in VS Code Settings.
-The prompt appears at most once per extension installation profile; enable or
-disable of the setting does not automatically revoke prior folder trust.
+The first-run prompt appears once per extension installation profile. Each new
+untrusted Sweetiebot clone also offers the guide once, even if the first-run
+guide was previously dismissed. In Restricted Mode, only the trust guide runs;
+Git operations, indexing, and background services start after trust is granted.
+Changing this setting does not revoke prior folder trust.
 To run the setup again at any time, use the Command Palette action
 **Configure Independent Workspace Trust**. If you prefer to trust each cloned
 repository separately, simply leave the parent untrusted.

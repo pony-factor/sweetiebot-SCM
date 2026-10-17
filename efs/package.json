@@ -11,7 +11,13 @@
     "Other",
     "Machine Learning"
   ],
-  "main": "./extension.js",
+  "main": "./trust_activation.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Only the workspace trust guide is available in Restricted Mode. Git operations, indexing, and background services require workspace trust."
+    }
+  },
   "activationEvents": [
     "onCommand:sweetiebot.returnHome",
     "onCommand:sweetiebot.resolveDefaultBranch",

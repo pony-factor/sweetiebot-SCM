@@ -14,6 +14,10 @@ function fixture({ enabled = true, seen = false, selection = 'Not Now' } = {}) {
   const values = new Map([[TRUST_SETUP_SEEN_KEY, seen]]);
   const context = {
     subscriptions: [],
+    workspaceState: {
+      get(key, fallback) { return values.has('workspace:' + key) ? values.get('workspace:' + key) : fallback; },
+      async update(key, value) { values.set('workspace:' + key, value); }
+    },
     globalState: {
       get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
       async update(key, value) { calls.updates.push([key, value]); values.set(key, value); }
@@ -73,6 +77,20 @@ function fixture({ enabled = true, seen = false, selection = 'Not Now' } = {}) {
   }), false);
   assert.deepEqual(disabled.calls.prompts, []);
   assert.deepEqual(disabled.calls.updates, []);
+
+  const restricted = fixture({ seen: true });
+  restricted.vscode.workspace.isTrusted = false;
+  restricted.vscode.workspace.workspaceFolders = [{ uri: {
+    scheme: 'file', fsPath: path.join(baseDirectory, 'new-clone')
+  } }];
+  await showIndependentWorkspaceTrustSetup(restricted.vscode, restricted.context, { baseDirectory });
+  assert.equal(restricted.calls.prompts.length, 1, 'A prior global dismissal cannot hide the guide in a new restricted clone');
+  await showIndependentWorkspaceTrustSetup(restricted.vscode, restricted.context, { baseDirectory });
+  assert.equal(restricted.calls.prompts.length, 1, 'Reloading the same clone respects its dismissal');
+  restricted.vscode.workspace.workspaceFolders[0].uri.fsPath = baseDirectory + '-other/clone';
+  restricted.values.delete('workspace:' + TRUST_SETUP_SEEN_KEY);
+  await showIndependentWorkspaceTrustSetup(restricted.vscode, restricted.context, { baseDirectory });
+  assert.equal(restricted.calls.prompts.length, 1, 'Sibling directories are not managed clones');
 
   const approved = fixture({ selection: 'Manage Workspace Trust' });
   assert.equal(await showIndependentWorkspaceTrustSetup(approved.vscode, approved.context, {
