@@ -41,4 +41,51 @@ assert.equal(added.length, 1);
 source.textContent = '0 resets available';
 context.scmToolkitSyncResetShortcut(root);
 assert.equal(added[0].removed, true);
-console.log('Codex reset credit control checks passed.');
+
+// The short provider toast can become a tiny sticker without changing real usage cards.
+const notice = {
+    textContent: 'Rate Limited', dataset: {}, style: {}, isConnected: true, attrs: {},
+    parentElement: null, matches: () => false,
+    querySelector: () => ({}), querySelectorAll: () => [],
+    setAttribute(name, value) { this.attrs[name] = value; },
+    replaceChildren(child) { this.child = child; this.textContent = child.alt; },
+};
+const label = {
+    textContent: 'Rate Limited', parentElement: notice, closest: () => null,
+    querySelector: () => null, querySelectorAll: () => [], matches: () => false,
+};
+let imageEvents = {};
+const imageRoot = {
+    querySelectorAll() { return [label]; },
+    createElement(tag) {
+        assert.equal(tag, 'img');
+        return {style: {}, addEventListener(event, callback) { imageEvents[event] = callback; }};
+    },
+};
+context.scmToolkitSyncRateLimitPony(imageRoot);
+assert.equal(notice.dataset.scmToolkitRateLimitPonyPending, 'true');
+assert.equal(notice.child, undefined);
+context.scmToolkitSyncRateLimitPony(imageRoot);
+assert.equal(notice.child, undefined); // No duplicate image before load.
+assert.equal(typeof imageEvents.load, 'function');
+imageEvents.load();
+assert.equal(notice.child.src, 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png');
+assert.match(notice.child.alt, /Twilight Sparkle/);
+assert.equal(notice.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
+assert.equal(notice.style.border, '0');
+assert.equal(context.scmToolkitSmallRateLimitNotice(imageRoot), null);
+const unsupported = {
+    ...notice, textContent: 'Your rate limit resets in 2h', dataset: {}, child: null,
+};
+label.parentElement = unsupported;
+label.textContent = 'Your rate limit resets in 2h';
+assert.equal(context.scmToolkitSmallRateLimitNotice(imageRoot), null);
+label.textContent = 'Rate Limited';
+unsupported.textContent = 'Rate Limited';
+imageEvents = {};
+context.scmToolkitSyncRateLimitPony(imageRoot);
+imageEvents.error();
+assert.equal(unsupported.child, null); // Failed remote image retains original text.
+assert.equal(unsupported.textContent, 'Rate Limited');
+
+console.log('Codex reset credit control and Twilight sticker checks passed.');
