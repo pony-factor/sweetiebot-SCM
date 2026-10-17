@@ -79,7 +79,8 @@ class UpdateTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 payload = {'scripts/install.py': 'installer',
-                           update.THINKING_ASSET.as_posix(): 'thinking guard'}
+                           update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
+                    update.THINKING_ASSET.as_posix(): 'thinking guard'}
                 if supports_updates:
                     payload['scripts/update.py'] = 'updater'
                     payload['scripts/repair.py'] = 'repair'
@@ -98,6 +99,7 @@ class UpdateTests(unittest.TestCase):
                     'scripts/workspace_search.py': 'FORMATS = {"efs": {".js", ".html"}}',
                     'efs/draft_handoff.js': 'handoff',
                     'efs/draft_confirmation.html': '<html>confirmation</html>',
+                    update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
                     update.THINKING_ASSET.as_posix(): 'thinking guard',
                 }
                 if broken == 'asset':
@@ -119,6 +121,18 @@ class UpdateTests(unittest.TestCase):
                     result = update.prepare_update(root, force=force)
                 self.assertEqual(result is not None, force)
 
+    def test_automatic_update_preserves_shared_browser_sign_ins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'upstream.git').mkdir()
+            payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
+                       'scripts/repair.py': 'repair',
+                       update.THINKING_ASSET.as_posix(): 'thinking guard'}
+            for force in (False, True):
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                    result = update.prepare_update(root, force=force)
+                self.assertEqual(result is not None, force)
+
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -129,7 +143,8 @@ class UpdateTests(unittest.TestCase):
             payload = {
                 'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                 'scripts/repair.py': 'repair', 'scripts/codex_composer.py': 'new placeholders',
-                update.THINKING_ASSET.as_posix(): 'thinking guard',
+                update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
+                    update.THINKING_ASSET.as_posix(): 'thinking guard',
                 'scripts/ai_commit.py': 'current Git wrapper',
                 'scripts/sweetiebot_async_commit.py': 'current async helper',
                 'scripts/post_commit_spellcheck.py': 'current spellcheck helper',

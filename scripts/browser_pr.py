@@ -12,6 +12,7 @@ BACKGROUND_END = '/* sweetiebot-browser-background:end */'
 BACKGROUND_ANCHOR = 'this.setupEventListeners()}static{this.MAX_CONSOLE_LOG_ENTRIES='
 STORAGE_START = '/* sweetiebot-pr-storage:start */'
 STORAGE_END = '/* sweetiebot-pr-storage:end */'
+SHARED_BROWSER_PROFILE = 2
 
 
 def transform_storage(source, remove=False):
@@ -39,13 +40,13 @@ def transform_storage(source, remove=False):
     if not session or len(matches) != 1 or session[8] != matches[0][1]:
         raise ValueError('Unsupported Integrated Browser persistent session lifecycle.')
     match = matches[0]
-    cls, options, window = match[1], match[3], match[4]
+    cls, options = match[1], match[3]
     join, electron = session[5], session[7]
-    # Only trusted workspace-scoped PR sessions share this profile. Ephemeral
-    # and agent sessions retain VS Code's isolation and network protections.
+    # Ordinary repository and PR windows share the same persistent profile.
+    # Ephemeral and agent sessions retain their isolation and network protections.
     insertion = (
         STORAGE_START
-        + f'if({options}.scope==="workspace"&&/\\/sweetiebot-pr-sessions\\/session-[^/]+\\/[^/]+\\.code-workspace$/.test({window}.openedWorkspace?.configPath?.path??""))'
+        + f'if({options}.scope==="workspace"||{options}.scope==="global")'
         + '{let sweetiebotPath='
         + f'{join}(this.environmentMainService.userHome,"Library","Application Support","Sweetiebot","browserStorage"),'
         + f'sweetiebotSession={electron}.fromPath(sweetiebotPath.fsPath);'

@@ -791,26 +791,22 @@ picker. Other New Tab actions retain their native focus behavior.
 
 On startup, Sweetiebot prefers VS Code's native
 `workbench.browser.dataStorage: "workspace"` setting when there is no explicit
-user/workspace override. Browser data is **persistent within each VS Code
-workspace**, so ChatGPT drafts created in one repository no longer appear in
-unrelated repository windows. New tabs in the same workspace can restore their
-draft without clearing imports from other repositories. The old global browser
-data remains stored but is not loaded into these workspace-scoped browser views.
+user/workspace override. The native browser patch routes both `workspace` and
+`global` storage to one persistent profile at
+`~/Library/Application Support/Sweetiebot/browserStorage` for all repository
+and New PR windows. Signing into ChatGPT in that profile carries across GitHub
+folders, independent clones, saved workspaces, and application restarts.
+Cookies and site storage, including ChatGPT drafts, are shared across those
+windows. Each PR keeps its own workspace and tabs.
 
-Dedicated New PR windows share a persistent browser profile at
-`~/Library/Application Support/Sweetiebot/browserStorage`. Signing into ChatGPT
-there carries across PR windows and application restarts. Each PR keeps its
-own workspace and tabs; temporary and agent browser sessions remain isolated.
-
-For ordinary repository windows, this is a browser-wide setting: cookies, logins and site storage are isolated
-as well, so ChatGPT may require a login once per workspace. Existing tabs may
-retain their old browser session until reopened. Independent local clones and
-saved `.code-workspace` files may receive distinct storage identities even
-when they reference the same repository. To opt out, explicitly set
-`workbench.browser.dataStorage` to `global` or `ephemeral` in VS Code Settings;
-Sweetiebot respects explicit choices. The ChatGPT home toggle is still applied
-by the installer: rerun `python3 scripts/install.py` and reload VS Code after
-changing it.
+Fully quit and reopen VS Code after first installing this native patch; reloading
+a window does not restart the main process that selects browser sessions.
+Sign in once in the shared profile if needed. Previous workspace and global
+profiles remain stored separately; their logins are not migrated automatically.
+Temporary and agent browser sessions remain isolated. To use temporary browser
+storage, explicitly set `workbench.browser.dataStorage` to `ephemeral` in VS Code
+Settings. The ChatGPT home toggle is still applied by the installer: rerun
+`python3 scripts/install.py` and reload VS Code after changing it.
 
 ### Codex co-author commit
 
