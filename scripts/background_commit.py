@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import plistlib
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -109,7 +108,7 @@ def enqueue(request, start=True):
             if not core.feature_enabled():
                 raise RuntimeError('Enter a commit message; automatic commit titles are disabled.')
             files = [name for name in core.git_output('diff', '--cached', '--name-only', '-z').split('\x00') if name]
-            if len(core.github_split_groups(files)) > 1:
+            if not trailer and len(core.github_split_groups(files)) > 1:
                 return {'queued': False}  # Preserve the existing oversized-commit splitter.
         if core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
@@ -119,11 +118,12 @@ def enqueue(request, start=True):
             raise RuntimeError('Stage the intended changes before queuing a commit.')
         upstream = git('for-each-ref', '--format=%(upstream:remotename)|%(upstream:remoteref)', branch)
         remote, _, destination = upstream.partition('|')
+        tracking = bool(remote and destination)
         remote = remote or request.get('remote', 'origin')
         destination = destination or branch
         push = request.get('push') is True
         if push and (not isinstance(remote, str) or remote.startswith('-')
-                     or not git('remote', 'get-url', remote, check=False).returncode == 0):
+                     or git('remote', 'get-url', remote, check=False).returncode != 0):
             raise RuntimeError('Configure the push remote before queuing Commit & Push.')
         script = runtime()
         if start:
@@ -132,14 +132,12 @@ def enqueue(request, start=True):
         directory.mkdir(mode=0o700)
         job = dict(id=directory.name, root=root, gitdir=str(meta), branch=branch, parent=parent,
                    tree=tree, message=message, context=context[-6000:], trailer=trailer,
-                   push=push, remote=remote, destination=destination,
+                   push=push, remote=remote, destination=destination, tracking=tracking,
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
-                   phase='preparing')
+                   phase='queued')
         write_journal(directory / 'job.json', job)
         git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
         write_journal(marker, {'id': job['id'], 'directory': str(directory)})
-        job['phase'] = 'queued'
-        write_journal(directory / 'job.json', job)
     if start:
         try:
             subprocess.Popen([sys.executable, str(script), '--resume'], stdin=subprocess.DEVNULL,
@@ -184,7 +182,7 @@ def work(directory):
             if git('rev-parse', '--absolute-git-dir') != job['gitdir']:
                 raise RuntimeError('Repository metadata changed.')
             owner = read_journal(marker)
-            if not owner and job['phase'] == 'preparing':
+            if not owner and job['phase'] in ('preparing', 'queued'):
                 return
             if not owner or owner['id'] != job['id']:
                 raise RuntimeError('The background commit no longer owns this repository.')
@@ -245,6 +243,10 @@ def work(directory):
                     # Network/auth failures remain durable and retry next minute/login.
                     log_event('background_commit', 'push_pending', outcome='retry')
                     return
+                if not job.get('tracking'):
+                    short = job['branch'][len('refs/heads/'):]
+                    git('config', 'branch.' + short + '.remote', job['remote'])
+                    git('config', 'branch.' + short + '.merge', job['destination'])
             job.update(phase='done', context='')
             write_journal(file, job)
             marker.unlink(missing_ok=True)

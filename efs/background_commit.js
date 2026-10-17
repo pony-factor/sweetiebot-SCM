@@ -115,7 +115,7 @@ function registerBackgroundCommit(vscode, context) {
       signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
       remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
     });
-    void vscode.window.showInformationMessage('Commit queued in the background. You can close VS Code.');
+    if (result.queued) void vscode.window.showInformationMessage('Commit queued in the background. You can close VS Code.');
     return result;
   }));
 }

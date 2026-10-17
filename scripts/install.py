@@ -780,6 +780,32 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
 
     return js
 
+def remove_legacy_branch_picker(js, css):
+    # The predecessor picker owns the same widget hooks. Leaving its saved
+    # anchors in comments can make a new install patch metadata instead of code.
+    start, end = '/* studio-scm-branch-picker:start */', '/* studio-scm-branch-picker:end */'
+    for source in (js, css):
+        if source.count(start) != source.count(end) or source.count(start) > 1:
+            raise ValueError('Incomplete legacy Studio branch picker patch.')
+    if start not in js:
+        return js, css
+    before, rest = js.split(start, 1)
+    payload, after = rest.split(end, 1)
+    saved = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
+    if not saved:
+        raise ValueError('Legacy Studio branch picker is missing its edit metadata.')
+    js = before + after
+    for original, replacement in reversed(json.loads(saved.group(1))):
+        if js.count(replacement) != 1:
+            raise ValueError('Legacy Studio branch picker changed; refusing unrelated edits.')
+        js = js.replace(replacement, original, 1)
+    if start in css:
+        before, rest = css.split(start, 1)
+        _, after = rest.split(end, 1)
+        css = before + after
+    return js, css
+
+
 def transform(js, css, remove=False, settings=None):
     installed = START in js
     if installed != (START in css):
@@ -798,6 +824,8 @@ def transform(js, css, remove=False, settings=None):
                     "Installed toolkit patch changed; refusing to remove unrelated edits."
                 )
             js = js.replace(replacement, original, expected_count)
+
+    js, css = remove_legacy_branch_picker(js, css)
 
     if remove:
         return js, css

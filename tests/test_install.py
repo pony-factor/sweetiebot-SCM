@@ -103,6 +103,19 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_legacy_picker_hooks_are_replaced_in_code_not_saved_metadata(self):
+        original = workbench_fixture()
+        anchor = 'this.disposables.add(this.toolbar)}static{this.ValidationTimeouts='
+        replacement = 'this.disposables.add(this.toolbar);this.studioBranchPicker=legacy()}static{this.ValidationTimeouts='
+        legacy = original.replace(anchor, replacement) + '\n/* studio-scm-branch-picker:start */\n/* edits:' + json.dumps([[anchor, replacement]]) + ' */\nfunction legacy(){}\n/* studio-scm-branch-picker:end */'
+        legacy_css = 'base-css/* studio-scm-branch-picker:start */.studio{}/* studio-scm-branch-picker:end */'
+        installed, css = install.transform(legacy, legacy_css, settings=SETTINGS)
+        runtime = installed.split(install.START)[0]
+        self.assertIn('this.scmToolkitControls=', runtime)
+        self.assertNotIn('studioBranchPicker', installed)
+        self.assertNotIn('.studio{}', css)
+        self.assertEqual(install.transform(installed, css, settings=SETTINGS), (installed, css))
+
     def test_progress_animation_can_be_restored_from_gear_settings(self):
         _, css = install.transform(workbench_fixture(), "base-css", settings=dict(SETTINGS, hideSCMProgress=False))
         self.assertNotIn(".monaco-progress-container", css)
