@@ -600,6 +600,19 @@ JSON restoration metadata into a JavaScript comment. The old metadata could be
 interpreted as a function call when another customization followed it, causing
 the webview to show **ChatGPT hit a snag** even after the composer repair.
 
+### Compact Codex rate-limit notices
+
+Repeated transcript notices without a usable reset time are shortened to
+**Rate limited**, rather than duplicating the upgrade/credit warning already
+shown in Codex's main limit card. Messages with an actual reset time retain it.
+
+A right-aligned **Use credits** shortcut appears on the main limit card
+when Codex itself renders an available banked-reset control (for example,
+**1 reset available** or **Full reset**). The shortcut activates Codex's
+native usage/reset confirmation flow; Sweetie Bot never redeems a reset
+automatically or treats purchased usage credits as banked resets. If the
+native eligibility control is not present, no shortcut is shown.
+
 ### Hide Codex reset times
 
 The independent **Hide Codex reset times** toggle suppresses absolute reset dates,

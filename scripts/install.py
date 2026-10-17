@@ -30,6 +30,8 @@ CODEX_START = '\n/* scm-toolkit-codex-countdown:start */\n'
 CODEX_END = '\n/* scm-toolkit-codex-countdown:end */\n'
 CODEX_HIDE_RESET_START = '\n/* scm-toolkit-codex-hide-reset-times:start */\n'
 CODEX_HIDE_RESET_END = '\n/* scm-toolkit-codex-hide-reset-times:end */\n'
+CODEX_LIMIT_START = '\n/* scm-toolkit-codex-limit-controls:start */\n'
+CODEX_LIMIT_END = '\n/* scm-toolkit-codex-limit-controls:end */\n'
 CODEX_PROMOTIONS_START = '\n/* scm-toolkit-codex-promotions:start */\n'
 CODEX_PROMOTIONS_END = '\n/* scm-toolkit-codex-promotions:end */\n'
 CODEX_TIMESTAMPS_START = '\n/* scm-toolkit-codex-timestamps:start */\n'
@@ -676,6 +678,26 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
+def codex_transcript_compact_edits(js):
+    """Only compact transcript usage-limit notices without a reset time."""
+    pattern = re.compile(
+        r'id:`(?P<id>localConversation\.usageLimit\.[A-Za-z.]+)`,'
+        r'defaultMessage:`(?P<message>[^`]*)`'
+    )
+    edits = []
+    for match in pattern.finditer(js):
+        key, message = match['id'], match['message']
+        if '{resetDate}' in message:
+            continue
+        if '.noReset' not in key and not re.search(
+            r'\b(?:usage limit|try again later|rate limit)\b', message, re.I
+        ):
+            continue
+        edits.append((match.group(0),
+            f'id:`{key}.scmShort`,defaultMessage:`Rate limited`'))
+    return edits
+
+
 def strip_codex_dictation_payload(text):
     if CODEX_DICTATION_START not in text:
         return text
@@ -737,6 +759,19 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         js = before + after
     js = codex_image_drop.transform(js, remove=remove)
     js = codex_recent_chats.transform(js, remove=remove)
+    if js.count(CODEX_LIMIT_START) != js.count(CODEX_LIMIT_END) or js.count(CODEX_LIMIT_START) > 1:
+        raise ValueError("Incomplete Codex limit-controls patch.")
+    if CODEX_LIMIT_START in js:
+        before, rest = js.split(CODEX_LIMIT_START, 1)
+        payload, after = rest.split(CODEX_LIMIT_END, 1)
+        js = before + after
+        match = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
+        if match is None:
+            raise ValueError("Codex limit-controls metadata missing.")
+        for original, replacement in reversed(json.loads(match[1])):
+            if js.count(replacement) != 1:
+                raise ValueError("Codex limit-controls patch changed; refusing to remove unrelated edits.")
+            js = js.replace(replacement, original, 1)
     if js.count(CODEX_HIDE_RESET_START) != js.count(CODEX_HIDE_RESET_END) or js.count(CODEX_HIDE_RESET_START) > 1:
         raise ValueError("Incomplete Codex reset-time hiding patch; refusing to overwrite it.")
     if CODEX_HIDE_RESET_START in js:
@@ -786,6 +821,16 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + (CODEX_ASSETS / "codex-countdown.js").read_text()
             + CODEX_END
         )
+
+    if not remove and ('localConversation.usageLimit.' in js or 'codex.rateLimitUpsellBanner.dismiss' in js):
+        edits = codex_transcript_compact_edits(js)
+        for original, replacement in edits:
+            if js.count(original) != 1:
+                raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
+            js = js.replace(original, replacement, 1)
+        js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
+               + (CODEX_ASSETS / "codex-rate-limit-controls.js").read_text()
+               + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:
         js += (
@@ -896,6 +941,8 @@ def application_paths(app_path):
 
 
 def codex_bundle_matches(text):
+    if CODEX_LIMIT_START in text or ('localConversation.usageLimit.' in text and 'defaultMessage:' in text):
+        return True
     if codex_recent_chats.START in text or (codex_recent_chats.ANCHOR in text and 'defaultMessage:' in text):
         return True
     if CODEX_START in text or CODEX_PROMOTIONS_START in text or CODEX_TIMESTAMPS_START in text or CODEX_DICTATION_START in text:
@@ -1188,6 +1235,7 @@ def main():
             if (
                 args.codex_only
                 or CODEX_START in codex_old
+                or CODEX_LIMIT_START in codex_old
                 or CODEX_PROMOTIONS_START in codex_old
                 or CODEX_TIMESTAMPS_START in codex_old
                 or CODEX_DICTATION_START in codex_old

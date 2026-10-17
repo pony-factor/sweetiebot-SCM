@@ -844,6 +844,29 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(hidden, remove=True), original)
         self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
 
+    def test_rate_limited_transcript_compaction_preserves_timed_messages(self):
+        no_reset = (
+            "(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`,"
+            "defaultMessage:`You've hit your usage limit. Upgrade your plan or "
+            "add credits to continue, or try again later.`});"
+        )
+        timed = (
+            "(0,J.jsx)(Message,{id:`localConversation.usageLimit.retry`,"
+            "defaultMessage:`Try again at {resetDate}.`});"
+        )
+        original = no_reset + timed
+        patched = install.transform_codex(original)
+        self.assertIn("localConversation.usageLimit.upgrade.noReset.scmShort", patched)
+        self.assertIn("defaultMessage:`Rate limited`", patched)
+        self.assertIn("defaultMessage:`Try again at {resetDate}.`", patched)
+        self.assertIn("scmToolkitSyncResetShortcut", patched)
+        self.assertEqual(install.transform_codex(patched), patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_transcript_compaction_never_targets_unrelated_messages(self):
+        original = "(0,J.jsx)(Message,{id:`other.noReset`,defaultMessage:`Try again later.`});"
+        self.assertEqual(install.transform_codex(original), original)
+
     def test_previous_transcript_reset_edit_is_restored(self):
         original = 'u=e==null?null:format(r,e);'
         replacement = 'u=null/* scm-toolkit-hide-transcript-reset */'
