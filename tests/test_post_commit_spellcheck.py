@@ -36,6 +36,30 @@ class CorrectionTests(unittest.TestCase):
         self.assertFalse(worker.safe_correction(original, corrected.replace("12953", "12954")))
         self.assertEqual(worker.normalize_smart_punctuation("Use `Alpine’s` here."), "Use `Alpine’s` here.")
 
+    def test_preserves_quotation_mark_style(self):
+        cases = [
+            ('- transition after 55 years is "too little, too late"',
+             "- transition after 55 years is 'too little, too late'"),
+            ("The 'draft' is available.", 'The "draft" is available.'),
+            ('Use "first" and \'second\'.', "Use 'first' and \"second\"."),
+            ('We called it “the first” draft.', "We called it 'the first' draft."),
+            ('She said "teh result" was good.', "She said 'the result' was good."),
+        ]
+        for original, corrected in cases:
+            with self.subTest(original=original):
+                self.assertIsNone(worker.request_correction(
+                    self.core(corrected), "model", "note.md", original, "", ""
+                ))
+
+    def test_spelling_inside_quotes_and_apostrophe_corrections_are_allowed(self):
+        original = 'She called it "teh best" even though it isnt.'
+        corrected = 'She called it "the best" even though it isn\'t.'
+        self.assertEqual(worker.request_correction(
+            self.core(corrected), "model", "note.md", original, "", ""
+        ), corrected)
+        prompt = worker.spellcheck_prompt("note.md", original, "", "")
+        self.assertIn("keep double-quoted text in double quotes", prompt)
+
     def test_custom_terminology_is_in_prompt(self):
         prompts = []
         core = SimpleNamespace(
