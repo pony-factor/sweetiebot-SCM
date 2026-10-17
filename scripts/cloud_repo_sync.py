@@ -62,7 +62,7 @@ def update(path, url):
     if not marker.is_file():
         return "unmanaged"
     remote = git(path, "remote", "get-url", "origin", check=False)
-    if remote.returncode or remote.stdout.strip().removesuffix(".git") != url:
+    if remote.returncode or remote.stdout.strip().removesuffix(".git") != url.removesuffix(".git"):
         return "foreign-origin"
     branch = git(path, "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
     if branch.returncode or branch.stdout.strip() != "main":
