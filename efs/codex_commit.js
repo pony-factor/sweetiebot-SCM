@@ -44,10 +44,16 @@ function normalizeStagedWhitespace(script, cwd) {
 function registerCodexCommitCommand(vscode, extensionContext) {
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.commitWithMessage', async (uri, message) => {
     if (typeof message !== 'string' || !message.trim()) throw new Error('A commit message is required.');
+    const root = vscode.Uri.from(uri?.rootUri ?? uri);
+    // Manual attribution shares the queue while earlier titles are pending.
+    // Keep the exact supplied message, including its co-author trailer.
+    const queued = await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
+      message, onlyIfPending: true
+    });
+    if (queued?.queued || queued?.cancelled) return;
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
-    const root = vscode.Uri.from(uri?.rootUri ?? uri);
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
@@ -67,7 +73,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
       await vscode.commands.executeCommand('git.push', root);
     }
   }));
-  extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.prepareCodexCommit', async uri => {
+  extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.prepareCodexCommit', async (uri, options = {}) => {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
@@ -75,15 +81,21 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve merge conflicts before committing.');
-    if (repository.state.indexChanges.length) return;
+    const all = options.all === true || options.all === 'tracked';
+    if (repository.state.indexChanges.length && !all) return;
     if (!repository.state.workingTreeChanges.length && !repository.state.untrackedChanges.length) {
+      if (repository.state.indexChanges.length) return;
       throw new Error('There are no changes to commit.');
     }
     // The Git API makes paths relative to the root, which becomes an invalid
     // empty pathspec when the root itself is passed. Stage the changed files.
-    const paths = [...repository.state.workingTreeChanges, ...repository.state.untrackedChanges]
+    const configuration = vscode.workspace.getConfiguration('git', repository.rootUri);
+    const trackedOnly = options.all === 'tracked'
+      || (!all && configuration.get('smartCommitChanges', 'all') === 'tracked');
+    const paths = [...repository.state.workingTreeChanges, ...(trackedOnly ? [] : repository.state.untrackedChanges)]
+      .filter(change => !trackedOnly || change.status !== 7 /* Git Status.UNTRACKED */)
       .map(change => change.uri.fsPath);
-    await repository.add([...new Set(paths)]);
+    if (paths.length) await repository.add([...new Set(paths)]);
     await repository.status();
     if (!repository.state.indexChanges.length) throw new Error('No changes were staged.');
   }));

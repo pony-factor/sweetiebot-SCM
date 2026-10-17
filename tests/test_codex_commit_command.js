@@ -13,11 +13,14 @@ async function run() {
   let expectedContext = '';
   const commands = new Map();
   let additions = 0;
+  let expectedPaths = ['/selected/edited file', '/selected/deleted file', '/selected/new file'];
   const commits = [];
   let commitError;
   let normalizationError, normalizations = 0;
   const gitSettings = {};
   let pushes = 0;
+  let pendingCommit = false;
+  const queued = [];
   const repository = {
     rootUri: { fsPath: '/selected' },
     state: { indexChanges: ['staged'], workingTreeChanges: [{ uri: { fsPath: '/selected/edited file' } }, { uri: { fsPath: '/selected/deleted file' } }], untrackedChanges: [{ uri: { fsPath: '/selected/new file' } }], mergeChanges: [] },
@@ -29,7 +32,7 @@ async function run() {
     },
     async status() {},
     async add(paths) {
-      assert.deepEqual(Array.from(paths), ['/selected/edited file', '/selected/deleted file', '/selected/new file']);
+      assert.deepEqual(Array.from(paths), expectedPaths);
       for (const file of paths) {
         assert.notEqual(path.relative(this.rootUri.fsPath, file), '', 'Git receives nonempty relative pathspecs');
       }
@@ -88,7 +91,12 @@ async function run() {
         if (discoveryError) throw discoveryError;
         return bridgeInstalled ? ['sweetiebot.readCodexContext'] : [];
       },
-      async executeCommand(id, root) {
+      async executeCommand(id, root, options) {
+        if (id === 'sweetiebot.queueCommit') {
+          assert.equal(options.onlyIfPending, true);
+          if (pendingCommit) queued.push(options);
+          return { queued: pendingCommit };
+        }
         if (id === 'git.push') {
           assert.equal(root.fsPath, '/selected');
           pushes++;
@@ -108,6 +116,15 @@ async function run() {
   };
   sandbox.module.exports.registerCodexCommitCommand(vscode, { subscriptions: [], extensionUri: { fsPath: '/extension' } });
   const commit = commands.get('sweetiebot.commitWithMessage');
+  pendingCommit = true;
+  const manualMessage = '🧪 Record manual change\n\nCo-authored-by: Codex <noreply@openai.com>';
+  await commit({ fsPath: '/selected' }, manualMessage);
+  assert.equal(queued[0].message, manualMessage, 'preserve the manual subject and attribution exactly');
+  assert.equal(commits.length, 0, 'pending commits use the queue instead of blocked direct Git');
+  assert.equal(normalizations, 0, 'the queue owns preparation when a job is pending');
+  assert.equal(pushes, 0, 'publication stays ordered behind pending title generation');
+  pendingCommit = false;
+
   const prepare = commands.get('sweetiebot.prepareCodexCommit');
   const uri = { scheme: 'file', fsPath: '/selected' };
   await commit(uri, 'Generated title');
@@ -175,6 +192,24 @@ async function run() {
   discoveryError = new Error('Command discovery failed');
   assert.equal(await command(uri), 'Fix generation', 'bridge discovery is optional');
   assert.equal(additions, 1, 'message generation does not stage additional changes');
+  repository.state.mergeChanges = [];
+  repository.state.indexChanges = [];
+  repository.state.workingTreeChanges = [
+    { uri: { fsPath: '/selected/edited file' }, status: 5 },
+    { uri: { fsPath: '/selected/deleted file' }, status: 6 },
+    { uri: { fsPath: '/selected/new file' }, status: 7 }
+  ];
+  repository.state.untrackedChanges = [{ uri: { fsPath: '/selected/new file' }, status: 7 }];
+  gitSettings.smartCommitChanges = 'tracked';
+  expectedPaths = ['/selected/edited file', '/selected/deleted file'];
+  await prepare(uri);
+  assert.equal(additions, 2, 'tracked smart commits exclude new files from either Git group');
+  expectedPaths = ['/selected/edited file', '/selected/deleted file', '/selected/new file'];
+  await prepare(uri, { all: true });
+  assert.equal(additions, 3, 'explicit Commit All includes working changes even when some files are staged');
+  expectedPaths = ['/selected/edited file', '/selected/deleted file'];
+  await prepare(uri, { all: 'tracked' });
+  assert.equal(additions, 4, 'explicit tracked mode preserves untracked files');
   console.log('Local Codex commit command checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

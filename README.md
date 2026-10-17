@@ -237,6 +237,8 @@ python3 scripts/configure.py
 
 It opens an app-like settings page in the default browser, prefilled with the current Git configuration. The page includes every toolkit switch plus the Ollama model choices and low-memory threshold. Changes save automatically to global Git config after you edit a setting, with an inline status showing whether the latest values were saved. A dedicated **Startup** section exposes **Open Sweetie Bot on startup**; when opened through VS Code, that checkbox also updates the real `scmToolkit.openPanelOnStartup` global user setting. The **Branch names** section lets you toggle individual packs, add custom names, and paste third-party packs as JSON. If Ollama is running on `127.0.0.1:11434`, locally installed models appear as suggestions; model tags can still be entered manually when it is offline. PGP secret-key import remains tied to the final action instead of autosaving private key material while it is being entered.
 
+The **Updates** section controls VS Code's native app update mode, extension update checks, and automatic extension updates. When opened through the extension, it reads your current VS Code preferences and saves changes back to those same global preferences. VS Code's normal update and startup notices continue to work; release-note preferences are preserved.
+
 After installation, the gear at the right end of the Source Control message row opens the same local settings page directly. The companion extension starts the loopback configurator and opens it in VS Code’s native Integrated Browser in the current window. Clicking the gear again focuses the existing settings tab. This requires a VS Code version with the Integrated Browser; older versions show an update message. The repository checkout and manual URL entry are not required.
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
@@ -438,14 +440,25 @@ Both normal and Codex-context generation read commit-writing preferences from `~
 
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
-When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
+When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly when the title is applied. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
-Codex co-author button save a job before starting local message generation. You
-can close the workspace or quit VS Code after the queued notification. The worker
-commits the staged tree captured at the click; later editing and staging remain
-separate. The Push checkbox is captured with the job, and publication uses the
-exact completed commit. Existing commits are never amended by this workflow.
+Codex co-author button immediately commit the staged tree locally. Blank-message
+commits use a temporary `placeholder_<16 hex digits>` subject, so committed
+changes leave Staged before title generation starts. You can close the workspace
+or quit VS Code after the saved notification. The worker replaces that local
+placeholder with the generated message while preserving its tree, author,
+committer, timestamps, and trailers; later editing and staging remain separate.
+Explicit messages are committed immediately as supplied. The Push checkbox is
+captured with the job, and only the finalized commit is published.
+When nothing is staged, the background path stages the working changes first,
+respecting Git's tracked-only smart commit setting. Existing staged selections
+stay separate from unstaged work unless you explicitly choose Commit All.
+You can keep committing while earlier titles generate. Each click creates its
+own local placeholder; up to four titles generate in parallel, then the worker
+applies them in commit order and updates
+the queued descendants' parent links without changing their contents. Pushes
+publish only commits whose messages and ancestors are finalized.
 
 On macOS, the first queued job installs a per-user login agent that retries every
 minute. Interrupted generation and offline pushes resume after login, even if VS
@@ -456,13 +469,14 @@ repository is open. Push rejection preserves the local commit and retries; it
 never force-pushes or automatically merges remote changes. Jobs and their private
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
-blocks overlapping commits and branch changes through Sweetiebot. Special commit
+allows more Sweetiebot commits while blocking direct pushes and branch changes.
+Terminal commits through the Git wrapper wait until the queue finishes. Special commit
 modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
 worker again. Install the updated toolkit and reload the workspace to use this
 flow. Older terminal-only asynchronous finalization remains available below.
 
-**Asynchronous local commit finalization (opt-in):** Turn on **Finalize commit messages in background** in Sweetiebot settings → Ollama, or set `git config --global scm-toolkit.ai-commit-async true`. An ordinary blank-message commit first records its staged tree locally with a temporary `💭 Generate local commit message` subject. The Git command returns immediately and a detached local worker prepares the final title and optional default-branch description using the *captured* diff. The worker replaces the provisional commit object with the final message, preserving the exact tree and Git author/committer identity and timestamps, without staging any further work. An optional auto-push starts as usual in the background but the installed Git wrapper blocks **every push** until finalization completes. It also queues additional commits and ref-changing Git commands until the pending message is finalized; file editing and staging remain available.
+**Asynchronous local commit finalization (opt-in):** Turn on **Finalize commit messages in background** in Sweetiebot settings → Ollama, or set `git config --global scm-toolkit.ai-commit-async true`. An ordinary blank-message commit first records its staged tree locally with a temporary `placeholder_<16 hex digits>` subject. The Git command returns immediately and a detached local worker prepares the final title and optional default-branch description using the *captured* diff. The worker replaces the provisional commit object with the final message, preserving the exact tree and Git author/committer identity and timestamps, without staging any further work. An optional auto-push starts as usual in the background but the installed Git wrapper blocks **every push** until finalization completes. It also queues additional commits and ref-changing Git commands until the pending message is finalized; file editing and staging remain available.
 
 If Ollama cannot produce a valid message after three attempts, the background job uses Sweetiebot's existing deterministic, factual fallback title and description. Pending job data and its crash-recovery journal live only under the repository's Git directory. The next wrapped push/commit can finish a stopped worker using that fallback. When the branch has changed unexpectedly or the worker cannot safely rewrite an unusual commit, push fails closed and the temporary commit stays local for manual recovery. This protection applies to Git commands run through the configured Sweetiebot Git wrapper; invoking an unrelated Git executable bypasses it. To avoid changing signed commits or the post-commit Markdown spellcheck flow, commits requesting Git signatures and repositories with automatic post-commit spellcheck enabled continue using synchronous generation. Install/reinstall the toolkit after updating so the Git wrapper has its companion async worker.
 
@@ -475,7 +489,7 @@ On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 1
 python3 scripts/ollama_concurrency.py
 ```
 
-This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. Each worker processes one request at a time; different workers can run concurrently when both models fit in memory. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows four simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
 
 Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
 
@@ -1041,7 +1055,7 @@ Place the Lindsey repository beside the active repository, add it to the VS Code
 
 By default, **Durable background Commit and Push** is now **off**. Ordinary staged Commit and Codex-attributed commits use the earlier direct Git/Ollama workflow, generating a message immediately within the normal commit action and then committing. For Codex context, the direct path reads the existing conversation snapshot and uses `local_codex_commit.py`; manually provided text is committed with the configured trailer. The custom commit instructions (`~/.config/sweetiebot/commit-instructions.md`), priority emoji enforcement, normal/low-memory models, co-author, Git signing and normal push checkbox keep their existing behavior. Generated descriptions on `main` remain enabled according to **Default-branch descriptions**.
 
-Turn on **Durable background Commit and Push** in Settings → Source control to enable the restartable staged-tree queue (PR #322) for ordinary Commit, native Git commits and the Codex co-author button. It captures the staged tree at click time and can finish after VS Code closes, with retry and recovery; a queued commit is not an immediate local Git commit. Disabling the setting does not discard existing queued jobs; the worker continues to recover them. The separate legacy **Legacy provisional commit finalization** toggle remains off by default and is only for the older placeholder-commit mode in the Git wrapper. **Detailed AI commit descriptions on all branches** is a second, independent opt-in style control, adding explanatory bodies on topic branches without changing user instructions or the ordered emoji rules. Settings applied through the gear page update global Git configuration; changes to native Git interception may require the toolkit to update and reload.
+Turn on **Durable background Commit and Push** in Settings → Source control for ordinary Commit, native Git commits and the Codex co-author button. It creates a local placeholder commit at click time, clears the committed changes from Staged, and applies the generated message afterward, with retry and recovery even after VS Code closes. Disabling the setting does not discard existing jobs; the worker continues to recover them. The separate **Legacy provisional commit finalization** toggle remains off by default and is only for the older Git-wrapper mode. **Detailed AI commit descriptions on all branches** is a second, independent opt-in style control, adding explanatory bodies on topic branches without changing user instructions or the ordered emoji rules. Settings applied through the gear page update global Git configuration; changes to native Git interception may require the toolkit to update and reload.
 
 
 ### Eight-hour GitHub main mirror (opt-in)

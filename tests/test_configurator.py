@@ -112,6 +112,26 @@ class SubmissionTests(unittest.TestCase):
         self.assertNotIn("Button options", page)
         self.assertIn('data-message-bar-zone="hidden"><div class="message-bar-item message-bar-push"', page)
 
+    def test_native_update_controls_preserve_vscode_startup_preferences(self):
+        current = dict(toolkit_settings.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {
+            "appUpdateSettings": {"mode": "start"},
+            "extensionUpdateSettings": {"autoCheckUpdates": False, "autoUpdate": False},
+        })
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="nativeAppUpdateMode"', page)
+        self.assertIn('name="nativeExtensionAutoCheckUpdates"', page)
+        self.assertIn('name="nativeExtensionAutoUpdate"', page)
+        payload = configurator.extension_settings_payload(current)
+        self.assertEqual(payload["appUpdateSettings"], {"mode": "start"})
+        self.assertEqual(payload["extensionUpdateSettings"], {"autoCheckUpdates": False, "autoUpdate": False})
+        self.assertNotIn("showReleaseNotes", payload["appUpdateSettings"])
+        self.assertTrue(current["automaticAppRepair"])
+        for mode in ("default", "start", "manual", "none"):
+            values = form_values()
+            values["nativeAppUpdateMode"] = [mode]
+            self.assertEqual(configurator.parse_submission(values)["nativeAppUpdateMode"], mode)
+
     def test_push_checkbox_and_automatic_sync_are_independent(self):
         values = form_values()
         values.pop("postCommitAction")

@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('assets/workbench/picker.js', 'utf8');
-const ctx = vm.createContext({ console: { error() {} } });
+const watched = [];
+const ctx = vm.createContext({
+  console: { error() {} },
+  scmToolkitWatchSpellcheckPopups(doc, commands) { watched.push({doc, commands}); }
+});
 vm.runInContext(source.slice(source.indexOf('function scmToolkitMountCompactWindow(')), ctx);
 function documentFixture() {
   const elements = new Map();
@@ -148,6 +152,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   small.action().events.click(event);
   assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
   release(); await flush();
+  // The workbench's titlebar still installs the popup consumer when the SCM
+  // widget is absent and compact-window resizing is unavailable.
+  const withoutSCM = documentFixture();
+  const spellcheckCommands = {executeCommand() {}};
+  ctx.scmToolkitMountCompactWindow(withoutSCM, undefined, spellcheckCommands);
+  assert.equal(watched.at(-1).doc, withoutSCM);
+  assert.equal(watched.at(-1).commands, spellcheckCommands);
+  assert.equal(withoutSCM.__sweetiebotCompactWindow, undefined);
   const workspace = documentFixture();
   const commands = [];
   let openRelease;

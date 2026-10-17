@@ -20,7 +20,7 @@ import time
 
 from sweetiebot_diagnostics import log_event
 
-PLACEHOLDER = "💭 Generate local commit message"
+PLACEHOLDER = "placeholder_"
 JOURNAL = "sweetiebot-async-commit.json"
 LOCK = "sweetiebot-async-commit.lock"
 WAIT_SECONDS = 1200
@@ -164,7 +164,8 @@ def finalize(real_git, global_args, job_id, title, description):
         if current_branch(real_git, global_args) != job["branch"] or head(real_git, global_args) != job["sha"]:
             raise RuntimeError("Branch advanced while a commit was pending; push remains blocked")
         headers, previous_message = commit_metadata(real_git, global_args, job["sha"])
-        if not previous_message.splitlines()[0].startswith(PLACEHOLDER + " [" + job_id + "]"):
+        if not previous_message.splitlines()[0].startswith((
+                PLACEHOLDER + job_id, "💭 Generate local commit message [" + job_id + "]")):
             raise RuntimeError("The pending commit does not match its durable journal")
         message = title.strip()
         if description.strip():
@@ -275,13 +276,13 @@ def begin(real_git, global_args, commit_args, stat, diff, files,
         except RuntimeError:
             previous_head = ""  # Initial root commit.
         job = {
-            "id": secrets.token_hex(12), "sha": "", "previous_head": previous_head,
+            "id": secrets.token_hex(8), "sha": "", "previous_head": previous_head,
             "branch": branch, "stat": stat, "diff": diff, "files": files,
             "file_context": file_context, "include_description": include_description,
             "global_args": global_args, "pid": 0, "created_at": time.time(),
         }
         write_journal(journal, job)
-        placeholder = PLACEHOLDER + " [" + job["id"] + "]"
+        placeholder = PLACEHOLDER + job["id"]
         try:
             result = command(real_git, global_args, "commit", *commit_args,
                              "-m", placeholder)

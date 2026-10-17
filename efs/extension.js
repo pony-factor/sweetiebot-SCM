@@ -116,6 +116,13 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
       chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },
+    appUpdateSettings: {
+      mode: vscode.workspace.getConfiguration('update').get('mode', 'default')
+    },
+    extensionUpdateSettings: {
+      autoCheckUpdates: vscode.workspace.getConfiguration('extensions').get('autoCheckUpdates', true),
+      autoUpdate: ![false, 'off'].includes(vscode.workspace.getConfiguration('extensions').get('autoUpdate', 'on'))
+    },
     editorSettings: {
       'inlineSuggest.enabled': vscode.workspace.getConfiguration('editor').get('inlineSuggest.enabled', true)
     },
@@ -163,15 +170,24 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
           ));
         }
         for (const [group, root] of [
+          ['appUpdateSettings', 'update'],
+          ['extensionUpdateSettings', 'extensions'],
           ['workbenchNotificationSettings', 'workbench.notifications'],
           ['editorSettings', 'editor'],
           ['gitSettings', 'git']
         ]) {
           if (!message[group]) continue;
           const cfg = vscode.workspace.getConfiguration(root);
-          settingUpdates.push(...Object.entries(message[group]).map(([key, value]) =>
-            cfg.update(key, value, vscode.ConfigurationTarget.Global)
-          ));
+          settingUpdates.push(...Object.entries(message[group]).map(([key, value]) => {
+            // New VS Code versions use on/off; older versions use booleans.
+            let settingValue = value;
+            if (root === 'extensions' && key === 'autoUpdate') {
+              const current = cfg.get(key, 'on');
+              if (current === 'on' || current === 'off') settingValue = value ? 'on' : 'off';
+              else if (current === 'onlyEnabledExtensions' && value) settingValue = current;
+            }
+            return cfg.update(key, settingValue, vscode.ConfigurationTarget.Global);
+          }));
         }
         if (settingUpdates.length) {
           void Promise.all(settingUpdates).catch(error =>

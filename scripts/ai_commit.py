@@ -1730,8 +1730,11 @@ def main() -> None:
         # A push, another commit, or a ref-changing operation must wait until
         # the provisional commit has been atomically rewritten.
         from sweetiebot_async_commit import wait_for_completion
-        from background_commit import wait_for_background
+        from background_commit import wait_for_background, queue_plain_push
         try:
+            if subcommand == "push" and queue_plain_push(argv[index + 1:]):
+                print("🤖 Commit message generation is in progress. Your changes will be pushed as soon as it completes.")
+                return
             wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS)
             wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
         except RuntimeError as exc:
