@@ -113,6 +113,39 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_native_commit_handoff_captures_both_push_command_names(self):
+        import subprocess
+        original = 'class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}}'
+        installed = install.transform_git_background(original)
+        self.assertEqual(install.transform_git_background(installed), installed)
+        self.assertEqual(install.transform_git_background(installed, remove=True), original)
+        script = """
+const assert = require('node:assert/strict');
+const requests=[];
+const api={Uri:{file:x=>x}, workspace:{getConfiguration(){}}, commands:{async executeCommand(id,root,options){requests.push(options);return {queued:true}}}};
+SOURCE
+(async()=>{for(const push of ['push','git.push']){
+ const repo=new Repository();repo.root='/test';repo.inputBox={};repo.getInputTemplate=async()=>'';
+ await repo.commit('Captured',{postCommitCommand:push});assert.equal(requests.at(-1).push,true);
+}const repo=new Repository();repo.root='/test';repo.inputBox={};repo.getInputTemplate=async()=>'';repo.indexGroup={resourceStates:[]};
+assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(requests.length,2);
+})().catch(e=>{console.error(e);process.exitCode=1});
+""".replace('SOURCE', installed)
+        subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+    def test_legacy_picker_hooks_are_replaced_in_code_not_saved_metadata(self):
+        original = workbench_fixture()
+        anchor = 'this.disposables.add(this.toolbar)}static{this.ValidationTimeouts='
+        replacement = 'this.disposables.add(this.toolbar);this.studioBranchPicker=legacy()}static{this.ValidationTimeouts='
+        legacy = original.replace(anchor, replacement) + '\n/* studio-scm-branch-picker:start */\n/* edits:' + json.dumps([[anchor, replacement]]) + ' */\nfunction legacy(){}\n/* studio-scm-branch-picker:end */'
+        legacy_css = 'base-css/* studio-scm-branch-picker:start */.studio{}/* studio-scm-branch-picker:end */'
+        installed, css = install.transform(legacy, legacy_css, settings=SETTINGS)
+        runtime = installed.split(install.START)[0]
+        self.assertIn('this.scmToolkitControls=', runtime)
+        self.assertNotIn('studioBranchPicker', installed)
+        self.assertNotIn('.studio{}', css)
+        self.assertEqual(install.transform(installed, css, settings=SETTINGS), (installed, css))
+
     def test_progress_animation_can_be_restored_from_gear_settings(self):
         _, css = install.transform(workbench_fixture(), "base-css", settings=dict(SETTINGS, hideSCMProgress=False))
         self.assertNotIn(".monaco-progress-container", css)
@@ -247,7 +280,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("Co-authored-by: Codex <noreply@openai.com>", js)
         self.assertIn("currentInput?.repository.provider.acceptInputCommand", js)
         self.assertIn("currentCommitCommand?.id", js)
-        self.assertIn("'sweetiebot.commitWithMessage', repositoryUri,", js)
+        self.assertIn("'sweetiebot.queueCommit', repositoryUri,", js)
         self.assertNotIn("commands.executeCommand('git.commit', currentRepositoryArgument)", js)
         self.assertIn("scmToolkitGuardCommit(", js)
         self.assertIn("'sweetiebot.checkCommitLimits'", js)

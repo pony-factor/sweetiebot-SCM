@@ -62,6 +62,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary_files = [
         (HERE / "ai_commit.py", primary),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
+        (HERE / "background_commit.py", primary.with_name("background_commit.py")),
         (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),
         (
             HERE / "post_commit_spellcheck.py",
@@ -874,6 +875,70 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
 
     return js
 
+BACKGROUND_GIT_START = '/* sweetiebot-background-commit:start */'
+BACKGROUND_GIT_END = '/* sweetiebot-background-commit:end */'
+
+
+def transform_git_background(source, remove=False):
+    if source.count(BACKGROUND_GIT_START) != source.count(BACKGROUND_GIT_END) or source.count(BACKGROUND_GIT_START) > 1:
+        raise ValueError('Incomplete background Git commit patch.')
+    if BACKGROUND_GIT_START in source:
+        before, remainder = source.split(BACKGROUND_GIT_START, 1)
+        _, after = remainder.split(BACKGROUND_GIT_END, 1)
+        source = before + after
+    if remove:
+        return source
+    ident = r'[A-Za-z_$][\w$]*'
+    pattern = re.compile(rf'async commit\(({ident}),({ident})=Object.create\(null\)\)\{{let ({ident})=\[\.\.\.this.indexGroup.resourceStates.map\(')
+    matches = list(pattern.finditer(source))
+    if len(matches) != 1:
+        raise ValueError('Unsupported native Git staged commit lifecycle.')
+    match = matches[0]
+    message, options = match[1], match[2]
+    api = re.search(rf'({ident})\.workspace.getConfiguration\("git",\1\.Uri.file\(this.root\)\)', source[match.end():match.end()+1800])
+    if not api:
+        raise ValueError('Unsupported native Git configuration API.')
+    vscode = api[1]
+    offset = source.index('{let ', match.start()) + 1
+    injection = (BACKGROUND_GIT_START
+        + f'if(!{options}.amend&&!{options}.all&&!{options}.empty&&!this.rebaseCommit)'
+        + '{let sweetiebotResult=await '
+        + f'{vscode}.commands.executeCommand("sweetiebot.queueCommit",{vscode}.Uri.file(this.root),'
+        + '{'
+        + f'message:{message}??"",push:{options}.postCommitCommand===void 0?void 0:({options}.postCommitCommand==="push"||{options}.postCommitCommand==="git.push"),'
+        + f'sign:{options}.signCommit,signoff:{options}.signoff,noVerify:{options}.noVerify'
+        + '});if(sweetiebotResult?.queued||sweetiebotResult?.cancelled){'
+        + 'if(sweetiebotResult.queued)this.inputBox.value=await this.getInputTemplate();return}}'
+        + BACKGROUND_GIT_END)
+    return source[:offset] + injection + source[offset:]
+
+
+def remove_legacy_branch_picker(js, css):
+    # The predecessor picker owns the same widget hooks. Leaving its saved
+    # anchors in comments can make a new install patch metadata instead of code.
+    start, end = '/* studio-scm-branch-picker:start */', '/* studio-scm-branch-picker:end */'
+    for source in (js, css):
+        if source.count(start) != source.count(end) or source.count(start) > 1:
+            raise ValueError('Incomplete legacy Studio branch picker patch.')
+    if start not in js:
+        return js, css
+    before, rest = js.split(start, 1)
+    payload, after = rest.split(end, 1)
+    saved = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
+    if not saved:
+        raise ValueError('Legacy Studio branch picker is missing its edit metadata.')
+    js = before + after
+    for original, replacement in reversed(json.loads(saved.group(1))):
+        if js.count(replacement) != 1:
+            raise ValueError('Legacy Studio branch picker changed; refusing unrelated edits.')
+        js = js.replace(replacement, original, 1)
+    if start in css:
+        before, rest = css.split(start, 1)
+        _, after = rest.split(end, 1)
+        css = before + after
+    return js, css
+
+
 def transform(js, css, remove=False, settings=None):
     installed = START in js
     if installed != (START in css):
@@ -892,6 +957,8 @@ def transform(js, css, remove=False, settings=None):
                     "Installed toolkit patch changed; refusing to remove unrelated edits."
                 )
             js = js.replace(replacement, original, expected_count)
+
+    js, css = remove_legacy_branch_picker(js, css)
 
     if remove:
         return js, css
@@ -1098,6 +1165,11 @@ def main():
     )
 
     if not args.codex_only:
+        git_extension = args.app / 'Contents/Resources/app/extensions/git/dist/main.js'
+        git_old = git_extension.read_text()
+        paths.append(git_extension)
+        old.append(git_old)
+        new.append(transform_git_background(git_old, remove=args.uninstall))
         for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
             paths.append(browser_path)
             old.append(browser_old)

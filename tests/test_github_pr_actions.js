@@ -152,6 +152,28 @@ async function main() {
   assert.equal(stillPending.calls.filter(args => args.includes('--method')).length, 1,
     'A retry only submits once and then polls the existing request');
 
+  {
+    const clean = { ...open, mergeable: 'MERGEABLE' };
+    const stalled = mockMerge({ views: [clean, clean, clean, mergedPr], submissionError: matchingError, responses: [pending] });
+    let recovered = false;
+    const originals = [{ commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }];
+    const expected = squashMessage(open.title, 12, originals);
+    const execute = async args => {
+      if (args.includes('repos/owner/repo/pulls/12/merge')) {
+        assert(args.includes('sha=' + open.headRefOid));
+        assert(args.includes('commit_title=' + expected.title));
+        assert(args.includes('commit_message=' + expected.message));
+        recovered = true; return { stdout: JSON.stringify({ merged: true }) };
+      }
+      if (recovered && args.includes('repos/owner/repo/pulls/12')) return { stdout: JSON.stringify({ merged: true, merge_commit_sha: 'c'.repeat(40) }) };
+      if (args.includes('repos/owner/repo/git/commits/' + 'c'.repeat(40))) return { stdout: JSON.stringify({ message: expected.title + '\n\n' + expected.message }) };
+      return stalled.execute(args);
+    };
+    const result = await squashMergePullRequest(url, execute, undefined, quickPoll);
+    assert.equal(recovered, true);
+    assert.equal(result.merged, true, 'a stalled matching request can recover without changing merge metadata');
+  }
+
   const resumed = mockMerge({ submissionError: matchingError });
   const commitArgs = ['repos/owner/repo/pulls/12/commits?per_page=100&page=1'];
   const originals = JSON.parse((await resumed.execute(['api', ...commitArgs])).stdout);

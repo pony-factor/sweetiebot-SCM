@@ -108,16 +108,41 @@ ${error.message || ''}`;
   // A completed async request may still be followed by a short period of API
   // propagation. Never delete branches or close the PR tab until its actual
   // PR state confirms the merge, including for merge-queue requests.
-  const confirmed = await read();
+  let confirmed = await read();
   if (confirmed.baseRefName !== pr.baseRefName ||
       confirmed.headRefName !== pr.headRefName || confirmed.headRefOid !== pr.headRefOid) {
     throw new Error('The pull request changed during merging; branch cleanup was skipped.');
+  }
+  // An old async request can remain pending while GitHub reports a clean PR.
+  // The synchronous single-PR endpoint uses the same SHA and exact metadata;
+  // it cannot include downstack PRs or bypass repository protections.
+  if (resumed && outcome.status === 'pending' && confirmed.state === 'OPEN'
+      && confirmed.mergeable === 'MERGEABLE') {
+    if (confirmed.title !== pr.title) throw new Error('The PR title changed; merge recovery was skipped.');
+    try {
+      await api(['--method', 'PUT', `repos/${repo}/pulls/${number}/merge`,
+        '-f', `sha=${pr.headRefOid}`, '-f', 'merge_method=squash',
+        '-f', `commit_title=${squash.title}`, '-f', `commit_message=${squash.message}`]);
+    } catch {
+      // A racing async completion or a still-pending GitHub lock is resolved
+      // by reading the PR; never infer success from an attempted recovery.
+    }
+    confirmed = await read();
+    if (confirmed.baseRefName !== pr.baseRefName || confirmed.headRefName !== pr.headRefName
+        || confirmed.headRefOid !== pr.headRefOid) {
+      throw new Error('The PR changed during merge recovery; branch cleanup was skipped.');
+    }
   }
   if (confirmed.state === 'MERGED') {
     if (resumed) {
       // A 409 does not include commit_title/commit_message. Verify the actual
       // commit before claiming success or allowing destructive branch cleanup.
-      const merged = await api([`repos/${repo}/pulls/${number}`]);
+      let merged = await api([`repos/${repo}/pulls/${number}`]);
+      // PR state and the REST merge commit can briefly propagate separately.
+      for (let attempt = 0; attempt < 4 && (!merged?.merged || !merged?.merge_commit_sha); attempt++) {
+        await wait(500);
+        merged = await api([`repos/${repo}/pulls/${number}`]);
+      }
       const sha = merged?.merge_commit_sha;
       if (!merged?.merged || !/^[0-9a-f]{40}$/i.test(sha || '')) {
         throw new Error(`PR #${number} merged, but its squash commit could not be verified. Branch cleanup was skipped.`);
