@@ -22,7 +22,9 @@ class Element {
   get previousElementSibling() {
     if (!this.parentElement) return null;
     const siblings = this.parentElement.children;
-    return siblings[siblings.indexOf(this) - 1] || null;
+    // Like the DOM, previousElementSibling skips intervening text nodes.
+    return siblings.slice(0, siblings.indexOf(this)).reverse()
+      .find(node => node instanceof Element) || null;
   }
   before(node) {
     const children = this.parentElement.children;
@@ -37,7 +39,8 @@ class Element {
 }
 
 function group(...nodes) {
-  const parent = {children: nodes};
+  // Match a real DOM parent: injected labels inspect parentElement.classList.
+  const parent = {children: nodes, classList: {contains: () => false}};
   for (const node of nodes) node.parentElement = parent;
   return parent;
 }
