@@ -89,6 +89,54 @@ function highlightChange(before, after, segments = false) {
   return [render(left, a, sameA), render(right, b, sameB)];
 }
 
+// Return independent word/punctuation corrections with offsets into the proposed line.
+// Exact unchanged tokens anchor the alignment, so reverting one edit cannot
+// accidentally replace the other spelling changes on that line.
+function spellcheckChangeSpans(before, after) {
+  if (before === after) return [];
+  const tokens = text => [...text.matchAll(/\s+|[\p{L}\p{N}]+|[^\p{L}\p{N}\s]+/gu)]
+    .map(match => ({text: match[0], start: match.index, end: match.index + match[0].length}));
+  const old = tokens(before), next = tokens(after);
+  const wholeLine = () => [{start: 0, end: after.length, before, after}];
+  // Protect the viewer from quadratic work on unusually long Markdown lines.
+  if ((old.length + 1) * (next.length + 1) > 200000) return wholeLine();
+  const lcs = Array.from({length: old.length + 1}, () => new Uint32Array(next.length + 1));
+  for (let i = old.length - 1; i >= 0; i--) {
+    for (let j = next.length - 1; j >= 0; j--) {
+      lcs[i][j] = old[i].text === next[j].text ? 1 + lcs[i + 1][j + 1]
+        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const matches = [];
+  for (let i = 0, j = 0; i < old.length && j < next.length;) {
+    if (old[i].text === next[j].text) { matches.push([i++, j++]); }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
+    else j++;
+  }
+  matches.push([old.length, next.length]);
+  const changes = [];
+  function addRange(a, b, c, e) {
+    if (a === b && c === e) return;
+    const start = c < e ? next[c].start : (next[c]?.start ?? after.length);
+    const end = c < e ? next[e - 1].end : start;
+    const beforeText = a < b ? before.slice(old[a].start, old[b - 1].end) : '';
+    const afterText = after.slice(start, end);
+    if (beforeText !== afterText) changes.push({start, end, before: beforeText, after: afterText});
+  }
+  let oldStart = 0, nextStart = 0;
+  for (const [oldEnd, nextEnd] of matches) {
+    // Neighboring one-token substitutions can be undone separately too.
+    if (oldEnd - oldStart === nextEnd - nextStart && oldEnd - oldStart > 1) {
+      for (let k = 0; k < oldEnd - oldStart; k++) {
+        addRange(oldStart + k, oldStart + k + 1, nextStart + k, nextStart + k + 1);
+      }
+    } else addRange(oldStart, oldEnd, nextStart, nextEnd);
+    oldStart = oldEnd + 1;
+    nextStart = nextEnd + 1;
+  }
+  return changes.length ? changes : wholeLine();
+}
+
 function renderRows(rows) {
   const highlights = new Map();
   for (let i = 0; i < rows.length;) {
@@ -132,6 +180,7 @@ function spellcheckDiffFiles(patch) {
       const added = rows.slice(i, j).filter(row => row.kind === 'add');
       for (let k = 0; k < Math.min(removed.length, added.length); k++) {
         [removed[k].segments, added[k].segments] = highlightChange(removed[k].text, added[k].text, true);
+        added[k].changes = spellcheckChangeSpans(removed[k].text, added[k].text);
       }
       i = j;
     }
@@ -172,4 +221,4 @@ function renderSpellcheckDiff(patch, title = 'Spellcheck suggestions') {
     + '</body></html>';
 }
 
-module.exports = { spellcheckDiffFiles, escapeHtml, parseUnifiedDiff, highlightChange, renderSpellcheckDiff };
+module.exports = { spellcheckDiffFiles, spellcheckChangeSpans, escapeHtml, parseUnifiedDiff, highlightChange, renderSpellcheckDiff };

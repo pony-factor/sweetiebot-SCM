@@ -258,7 +258,7 @@ def source_control_label_edits(js, label):
     return edits
 
 
-def browser_globe_new_tab_edits(js):
+def browser_globe_new_tab_edits(js, home_url=None):
     ident = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
         rf"id:(?P<commands>{ident})\.OpenOrList,.*?"
@@ -273,10 +273,18 @@ def browser_globe_new_tab_edits(js):
     match = matches[0]
     original = match.group(0)
     start = f'async run({match.group("accessor")}){{'
+    # VS Code's native NewTab action unconditionally opens the URL picker,
+    # even when our browser resolver assigns a homepage. Opening with an
+    # explicit URL avoids that picker and lets the loaded page receive focus.
+    command = "Open" if home_url is not None else "NewTab"
+    destination = (
+        f',{json.dumps(home_url or "https://chatgpt.com/")}'
+        if home_url is not None else ""
+    )
     replacement = original.replace(
         start,
         start + f'return {match.group("accessor")}.get({match.group("service")})'
-        f'.executeCommand({match.group("commands")}.NewTab);',
+        f'.executeCommand({match.group("commands")}.{command}{destination});',
         1,
     )
     return [(original, replacement)]
@@ -467,7 +475,10 @@ def edits(js=None, settings=None):
         changes.extend(graph_open_working_file_edits(js))
 
     if js is not None and settings and settings.get("browserGlobeNewTab"):
-        changes.extend(browser_globe_new_tab_edits(js))
+        home_url = None
+        if settings.get("browserChatgptHome"):
+            home_url = settings.get("browserHomeUrl", "https://chatgpt.com/")
+        changes.extend(browser_globe_new_tab_edits(js, home_url))
 
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))

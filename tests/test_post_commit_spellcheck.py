@@ -36,6 +36,45 @@ class CorrectionTests(unittest.TestCase):
         self.assertFalse(worker.safe_correction(original, corrected.replace("12953", "12954")))
         self.assertEqual(worker.normalize_smart_punctuation("Use `Alpine’s` here."), "Use `Alpine’s` here.")
 
+    def test_en_dashes_survive_periods_and_markdown_emphasis(self):
+        for original, model_output, expected in [
+            ("Pages 2413–2559.", "Pages 2413–2559.", "Pages 2413–2559."),
+            ("Pages 2413–2559.", "Pages 2413-2559.", "Pages 2413–2559."),
+            ("**Study, pages 2413–2559.**", "**Study, pages 2413-2559.**", "**Study, pages 2413–2559.**"),
+            ("Pages 2413-2559.", "Pages 2413-2559.", "Pages 2413–2559."),
+        ]:
+            with self.subTest(original=original, model_output=model_output):
+                self.assertEqual(worker.normalize_smart_punctuation(model_output), expected)
+                self.assertEqual(worker.request_correction(
+                    self.core(model_output), "model", "note.md", original, "", ""
+                ), expected)
+        text = "2026-10-11, S7-2026-25, `2413-2559.`, https://example.com/2413-2559."
+        self.assertEqual(worker.normalize_smart_punctuation(text), text)
+
+    def test_preserves_quotation_mark_style(self):
+        cases = [
+            ('- transition after 55 years is "too little, too late"',
+             "- transition after 55 years is 'too little, too late'"),
+            ("The 'draft' is available.", 'The "draft" is available.'),
+            ('Use "first" and \'second\'.', "Use 'first' and \"second\"."),
+            ('We called it “the first” draft.', "We called it 'the first' draft."),
+            ('She said "teh result" was good.', "She said 'the result' was good."),
+        ]
+        for original, corrected in cases:
+            with self.subTest(original=original):
+                self.assertIsNone(worker.request_correction(
+                    self.core(corrected), "model", "note.md", original, "", ""
+                ))
+
+    def test_spelling_inside_quotes_and_apostrophe_corrections_are_allowed(self):
+        original = 'She called it "teh best" even though it isnt.'
+        corrected = 'She called it "the best" even though it isn\'t.'
+        self.assertEqual(worker.request_correction(
+            self.core(corrected), "model", "note.md", original, "", ""
+        ), corrected)
+        prompt = worker.spellcheck_prompt("note.md", original, "", "")
+        self.assertIn("keep double-quoted text in double quotes", prompt)
+
     def test_compact_mode_joins_related_lines_but_can_be_switched_off(self):
         original = "A teh [first](https://example.com/a)\n[second](https://example.com/b) follows."
         joined = "A the [first](https://example.com/a) [second](https://example.com/b) follows."
@@ -92,7 +131,7 @@ class CorrectionTests(unittest.TestCase):
         )
         self.assertEqual(worker.request_correction(core, "model", "note.md", "Instinet trading.", "", ""), "Instinet trading.")
         self.assertIn("Instinet is a financial market name.", prompts[0])
-        self.assertIn("en dash for numeric ranges", prompts[0])
+        self.assertIn("en dashes for numeric ranges", prompts[0])
 
     def test_descriptive_title_and_invalid_output_fallback(self):
         proposals = {"note.md": (b"Instnet trading.", b"Instinet trading.")}

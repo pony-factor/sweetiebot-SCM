@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -67,6 +68,36 @@ class RepairTests(unittest.TestCase):
         self.assertIn(Path('codex-customizations/scripts/update.py'), sources)
         for name in ('github_pr_refresh.js', 'github_pr_actions.js', 'package.json'):
             self.assertIn(Path('codex-customizations/efs') / name, sources)
+
+    def test_remote_update_check_is_shared_between_windows(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', return_value=None) as prepare, \
+                patch.object(repair.os, 'execv') as execute:
+            repair.repair(['--app', '/Custom/Code.app'])
+            repair.repair(['--app', '/Custom/Code.app'])
+            cache = Path(directory) / 'Library/Caches/dev.ponyfactor.sweetiebot'
+            prepare.assert_called_once_with(cache)
+            self.assertEqual(execute.call_count, 2, 'each window can still repair local files')
+            self.assertTrue((cache / 'last-remote-check').is_file())
+
+            # Once the shared hourly check expires, any window may fetch again.
+            os.utime(cache / 'last-remote-check', (0, 0))
+            repair.repair(['--app', '/Custom/Code.app'])
+            self.assertEqual(prepare.call_count, 2)
+
+    def test_failed_remote_check_uses_shared_short_backoff(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', side_effect=OSError('offline')) as prepare, \
+                patch.object(repair.os, 'execv') as execute:
+            repair.repair([])
+            repair.repair([])
+            cache = Path(directory) / 'Library/Caches/dev.ponyfactor.sweetiebot'
+            self.assertEqual(prepare.call_count, 1)
+            self.assertEqual(execute.call_count, 2, 'offline repairs still run in every window')
+            self.assertFalse((cache / 'last-remote-check').exists())
+            os.utime(cache / 'last-remote-failure', (0, 0))
+            repair.repair([])
+            self.assertEqual(prepare.call_count, 2, 'failed update checks must retry after backoff')
 
     def test_busy_lock_skips_repair(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
