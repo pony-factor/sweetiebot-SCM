@@ -50,6 +50,12 @@ class WorkerTests(unittest.TestCase):
                 worker.install(home, '/opt/homebrew/bin/ollama')
                 self.assertEqual(len(run.call_args_list), 2, 'unchanged parallel settings do not restart the service')
 
+    def test_bootstrap_retries_while_launchd_finishes_removing_the_old_service(self):
+        with patch.object(worker.subprocess, 'run', side_effect=[SimpleNamespace(returncode=5), SimpleNamespace(returncode=0)]) as run, patch.object(worker.time, 'sleep') as sleep:
+            worker.bootstrap(Path('/test/worker.plist'))
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(.25)
+
 
 if __name__ == "__main__":
     unittest.main()

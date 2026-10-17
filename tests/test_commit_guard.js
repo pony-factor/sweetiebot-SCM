@@ -147,9 +147,10 @@ async function run(allowed, failCommit = false) {
     assert(!events.includes('Commit created.'), 'Never announce success before Git finishes');
     finishCommit();
     await committing;
-    assert.deepEqual(events.slice(-3),
-      ['closed', 'Commit created.', 'sweetiebot.endCommit'],
-      'Completion closes progress and confirms the actual commit');
+    assert.deepEqual(events.slice(-2),
+      ['closed', 'sweetiebot.endCommit'],
+      'Completion closes progress quietly');
+    assert(!events.includes('Commit created.'));
 
     const successes = events.filter(event => event === 'Commit created.').length;
     const rejected = repository.commit('', {});

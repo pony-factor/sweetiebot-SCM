@@ -64,6 +64,9 @@ assert.equal(update.closed, 0);
 const generating = service.notify({ message: 'Generating commit message' });
 assert.equal(timers.length, 5, 'Active commit generation must not expire after 20 seconds');
 generating.close();
+const asynchronous = service.notify({ message: 'Generating commit message asynchronously' });
+assert.equal(timers.length, 5, 'Background generation must not expire while Ollama is working');
+asynchronous.close();
 
 // A GitHub PR merge notification originates in the extension host. Its
 // showInformationMessage call may bypass the service methods wrapped above.

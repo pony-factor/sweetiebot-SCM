@@ -7,18 +7,22 @@ const { PassThrough } = require('node:stream');
 
 async function run() {
   const commands = new Map(), preparations = [], jobs = [], events = [];
+  let poll;
+  let status = {};
+  const notices = [], progress = [], completed = [];
   const root = { scheme: 'file', fsPath: '/repo' };
   const repository = {
+    rootUri: root,
     state: { indexChanges: [], mergeChanges: [] },
     async status() {},
   };
   const sandbox = vm.createContext({
     module: { exports: {} }, setTimeout, clearTimeout,
-    setInterval() { return 1; }, clearInterval() {},
+    setInterval(callback) { poll = callback; return 1; }, clearInterval() {},
     require(name) {
       if (name === './python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
       assert.equal(name, 'node:child_process');
-      return { spawn(_exe, args) {
+      return { execFile(_exe, _args, _options, callback) { callback(null, JSON.stringify(status)); }, spawn(_exe, args) {
         const child = new EventEmitter();
         child.unref = () => {};
         child.stdout = new PassThrough();
@@ -28,7 +32,7 @@ async function run() {
           assert(args.includes('--enqueue'));
           assert(repository.state.indexChanges.length, 'prepare before enqueueing');
           jobs.push(JSON.parse(input)); events.push('enqueue');
-          child.stdout.emit('data', JSON.stringify({ queued: true }));
+          child.stdout.emit('data', JSON.stringify({ queued: true, id: String(jobs.length) }));
           child.emit('close', 0);
         };
         return child;
@@ -38,9 +42,17 @@ async function run() {
   vm.runInContext(fs.readFileSync(require.resolve('../efs/background_commit'), 'utf8'), sandbox);
   const vscode = {
     Uri: { from: uri => uri, joinPath: (_uri, name) => ({ fsPath: '/extension/' + name }) },
-    extensions: { getExtension: () => ({ async activate() { return { getAPI: () => ({ repositories: [], getRepository: () => repository }) }; } }) },
+    extensions: { getExtension: () => ({ async activate() { return { getAPI: () => ({ repositories: [repository], getRepository: () => repository }) }; } }) },
     workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
-    window: { showInformationMessage() {} },
+    ProgressLocation: { Notification: 15 },
+    window: {
+      showInformationMessage(message) { notices.push(message); },
+      async withProgress(options, task) {
+        progress.push(options);
+        await task();
+        completed.push(options);
+      }
+    },
     commands: {
       registerCommand(id, handler) { commands.set(id, handler); return { dispose() {} }; },
       async executeCommand(id, uri, options) {
@@ -63,6 +75,25 @@ async function run() {
   repository.state.mergeChanges = ['conflict'];
   await assert.rejects(commit(root), /Resolve conflicts/);
   assert.equal(jobs.length, 3, 'conflicts never stage or enqueue');
-  console.log('Background smart commit command checks passed.');
+  repository.state.mergeChanges = [];
+  await commit(root);
+  await commit(root);
+  assert.equal(progress.length, 1, 'parallel title jobs share the original generation box');
+  assert.equal(progress[0].title, 'Generating commit message asynchronously');
+  assert.equal(completed.length, 0, 'enqueue acknowledgement does not close generation');
+  status = { id: '1', phase: 'pushing', titleJobs: ['5'] };
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(completed.length, 0, 'later generation stays visible while an earlier push is pending');
+  status = { id: '1', phase: 'pushing', titleJobs: [] };
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(completed.length, 1, 'title application closes progress without waiting for push');
+  status = {};
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(notices, ['Push is pending and will retry automatically.'],
+    'no local-save or completion notifications');
+  console.log('Background smart commit and notification lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

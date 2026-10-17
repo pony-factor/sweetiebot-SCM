@@ -51,6 +51,21 @@ class BackgroundCommitTests(unittest.TestCase):
     def job(self, directory):
         return json.loads((directory / 'job.json').read_text())
 
+    def test_status_tracks_title_jobs_independently_of_pending_push(self):
+        first = self.queue(push=True)
+        (self.repo / 'story.txt').write_text('Second change\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='')
+        command = [sys.executable, worker.__file__, '--status']
+        status = json.loads(subprocess.check_output(command, text=True))
+        self.assertEqual(status['id'], first.name)
+        self.assertEqual(status['titleJobs'], [second.name])
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Apply final title', 'Explanation')):
+            worker.work(second)
+        status = json.loads(subprocess.check_output(command, text=True))
+        self.assertEqual(status['id'], first.name)
+        self.assertEqual(status['titleJobs'], [])
+
     def test_placeholder_clears_staging_before_generation_and_push(self):
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):
             directory = self.queue(message='', push=True, signoff=True)
