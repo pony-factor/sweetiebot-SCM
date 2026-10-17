@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../efs/github_pr_actions');
+const { squashMessage } = require('../efs/squash_attribution');
 const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',
   headRefOid: 'a'.repeat(40), isCrossRepository: false, title: '🐛 Correct caching' };
@@ -135,8 +136,59 @@ async function main() {
       uuid: requestId, expected_head_sha: open.headRefOid, merge_method: 'squash', merge_action: 'default'
     } })
   });
-  const resumed = mockMerge({ submissionError: busyError });
-  await assert.rejects(squashMergePullRequest(url, resumed.execute, undefined, quickPoll), /unverified asynchronous/);
+  const wrongPolicy = mockMerge({ submissionError: busyError });
+  await assert.rejects(squashMergePullRequest(url, wrongPolicy.execute, undefined, quickPoll), /unverifiable asynchronous/);
+  const matchingError = Object.assign(new Error('Request in progress'), {
+    stderr: 'gh: HTTP 409',
+    stdout: JSON.stringify({ status: 'pending', details: {
+      uuid: requestId, expected_head_sha: open.headRefOid, merge_method: 'squash',
+      merge_action: 'direct_merge', bypass_rules: false
+    } })
+  });
+  const stillPending = mockMerge({ views: [open, open], submissionError: matchingError, responses: [pending] });
+  const existingResult = await squashMergePullRequest(url, stillPending.execute, undefined, quickPoll);
+  assert.equal(existingResult.pending, true, 'A matching existing request is processing, not an attribution failure');
+  assert.equal(existingResult.merged, false, 'Pending retries cannot trigger cleanup');
+  assert.equal(stillPending.calls.filter(args => args.includes('--method')).length, 1,
+    'A retry only submits once and then polls the existing request');
+
+  const resumed = mockMerge({ submissionError: matchingError });
+  const commitArgs = ['repos/owner/repo/pulls/12/commits?per_page=100&page=1'];
+  const originals = JSON.parse((await resumed.execute(['api', ...commitArgs])).stdout);
+  const message = squashMessage(open.title, 12, originals);
+  const resumeExecute = async (args, actualMessage = `${message.title}\n\n${message.message}`) => {
+    if (args.includes('repos/owner/repo/pulls/12') && resumed.calls.some(call => call.includes('--method'))) {
+      return { stdout: JSON.stringify({ merged: true, merge_commit_sha: 'c'.repeat(40) }) };
+    }
+    if (args.includes('repos/owner/repo/git/commits/' + 'c'.repeat(40))) {
+      return { stdout: JSON.stringify({ message: actualMessage }) };
+    }
+    return resumed.execute(args);
+  };
+  assert.equal((await squashMergePullRequest(url, resumeExecute, undefined, quickPoll)).merged, true);
+  for (const invalidMessage of [message.title + '\n\nMissing contributors', 'Wrong title\n\n' + message.message]) {
+    const mismatch = mockMerge({ submissionError: matchingError });
+    await assert.rejects(squashMergePullRequest(url, async args => {
+      if (args.includes('repos/owner/repo/pulls/12') && mismatch.calls.some(call => call.includes('--method'))) {
+        return { stdout: JSON.stringify({ merged: true, merge_commit_sha: 'c'.repeat(40) }) };
+      }
+      if (args.includes('repos/owner/repo/git/commits/' + 'c'.repeat(40))) {
+        return { stdout: JSON.stringify({ message: invalidMessage }) };
+      }
+      return mismatch.execute(args);
+    }, undefined, quickPoll), /contributor attribution differs.*cleanup was skipped/);
+  }
+  for (const override of [{ expected_head_sha: 'b'.repeat(40) }, { merge_method: 'merge' },
+    { merge_action: 'default' }, { bypass_rules: true }, { bypass_rules: undefined }, { uuid: 'invalid' }]) {
+    const body = JSON.parse(matchingError.stdout);
+    Object.assign(body.details, override);
+    const incompatible = mockMerge({ submissionError: Object.assign(new Error('409'), {
+      stderr: 'gh: HTTP 409', stdout: JSON.stringify(body)
+    }) });
+    await assert.rejects(squashMergePullRequest(url, incompatible.execute, undefined, quickPoll),
+      /different or unverifiable/);
+    assert.equal(incompatible.calls.some(args => args.includes(`${asyncPath}/${requestId}`)), false);
+  }
   const wrongError = Object.assign(new Error('Request in progress'), {
     stderr: 'gh: (HTTP 409)',
     stdout: JSON.stringify({ status: 'pending', details: {
@@ -145,7 +197,7 @@ async function main() {
   });
   const blocked = mockMerge({ submissionError: wrongError });
   await assert.rejects(squashMergePullRequest(url, blocked.execute, undefined, quickPoll),
-    /unverified asynchronous merge request/);
+    /unverifiable asynchronous merge request/);
   assert.equal(blocked.calls.filter(args => args[0] === 'api').length, 3);
 
   const originalFailure = Object.assign(new Error('Forbidden'), { stderr: 'gh: Forbidden (HTTP 403)' });
