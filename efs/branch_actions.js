@@ -25,7 +25,8 @@ async function asyncCommitPending(repository) {
     const { stdout } = await promisify(execFile)('git', ['rev-parse', '--absolute-git-dir'], {
       cwd: root, timeout: 10000
     });
-    return existsSync(path.join(stdout.trim(), ASYNC_COMMIT_JOURNAL));
+    return existsSync(path.join(stdout.trim(), ASYNC_COMMIT_JOURNAL))
+      || existsSync(path.join(stdout.trim(), 'sweetiebot-background-commit.json'));
   } catch {
     return true;
   }

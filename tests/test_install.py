@@ -237,7 +237,7 @@ class TransformTests(unittest.TestCase):
         self.assertIn("Co-authored-by: Codex <noreply@openai.com>", js)
         self.assertIn("currentInput?.repository.provider.acceptInputCommand", js)
         self.assertIn("currentCommitCommand?.id", js)
-        self.assertIn("'sweetiebot.commitWithMessage', repositoryUri,", js)
+        self.assertIn("'sweetiebot.queueCommit', repositoryUri,", js)
         self.assertNotIn("commands.executeCommand('git.commit', currentRepositoryArgument)", js)
         self.assertIn("scmToolkitGuardCommit(", js)
         self.assertIn("'sweetiebot.checkCommitLimits'", js)

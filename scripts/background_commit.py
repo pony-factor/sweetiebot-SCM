@@ -13,11 +13,20 @@ import tempfile
 import uuid
 
 import ai_commit as core
-from sweetiebot_async_commit import write_journal, read_journal
+from sweetiebot_async_commit import write_journal as _write_journal, read_journal
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
+
+
+def write_journal(path, value):
+    _write_journal(path, value)
+    descriptor = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def jobs_home():
@@ -117,13 +126,19 @@ def enqueue(request, start=True):
                    tree=tree, message=message, context=context[-6000:], trailer=trailer,
                    push=push, remote=remote, destination=destination,
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
-                   phase='queued')
+                   phase='preparing')
         write_journal(directory / 'job.json', job)
         write_journal(marker, {'id': job['id'], 'directory': str(directory)})
+        job['phase'] = 'queued'
+        write_journal(directory / 'job.json', job)
     if start:
-        subprocess.Popen([sys.executable, str(script), '--resume'], stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True, close_fds=True)
+        try:
+            subprocess.Popen([sys.executable, str(script), '--resume'], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True, close_fds=True)
+        except OSError:
+            # The registered agent will pick up the already accepted job.
+            log_event('background_commit', 'worker_start_pending', outcome='retry')
     return {'queued': True, 'id': job['id']}
 
 
@@ -132,7 +147,8 @@ def matches_commit(job, sha):
         return False
     return (git('show', '-s', '--format=%T', sha) == job['tree']
             and git('show', '-s', '--format=%P', sha) == job['parent']
-            and git('show', '-s', '--format=%B', sha).strip() == job['message'].strip())
+            and (git('show', '-s', '--format=%B', sha).strip() == job['message'].strip()
+                 or git('reflog', '-1', '--format=%gs').startswith('sweetiebot-background:' + job['id'] + ':')))
 
 
 def work(directory):
@@ -143,7 +159,13 @@ def work(directory):
             return
         file = directory / 'job.json'
         job = read_journal(file)
-        if not job or job['phase'] in ('done', 'blocked'):
+        if not job or job['phase'] == 'blocked':
+            return
+        if job['phase'] == 'done':
+            marker = Path(job['gitdir']) / MARKER
+            owner = read_journal(marker)
+            if owner and owner['id'] == job['id']:
+                marker.unlink(missing_ok=True)
             return
         previous_cwd = os.getcwd()
         previous_env = os.environ.copy()
@@ -153,8 +175,13 @@ def work(directory):
             if git('rev-parse', '--absolute-git-dir') != job['gitdir']:
                 raise RuntimeError('Repository metadata changed.')
             owner = read_journal(marker)
+            if not owner and job['phase'] == 'preparing':
+                return
             if not owner or owner['id'] != job['id']:
                 raise RuntimeError('The background commit no longer owns this repository.')
+            if job['phase'] == 'preparing':
+                job['phase'] = 'queued'
+                write_journal(file, job)
             os.environ['SWEETIEBOT_BACKGROUND_JOB'] = job['id']
             os.environ['GIT_TERMINAL_PROMPT'] = '0'
             # A private index preserves the click-time tree while users keep staging.
@@ -186,12 +213,13 @@ def work(directory):
                 args = ['-c', 'credential.interactive=false', 'commit', '-m', job['message']]
                 if job['sign']: args.append('-S')
                 if job['signoff']: args.append('--signoff')
+                os.environ['GIT_REFLOG_ACTION'] = 'sweetiebot-background:' + job['id']
                 result = git(*args, check=False)
                 if result.returncode:
                     raise RuntimeError('Background Git commit failed; inspect Git hooks or signing.')
                 sha = git('rev-parse', 'HEAD')
                 # Capture the actual message too (hooks/signoff may add trailers).
-                if git('show', '-s', '--format=%T', sha) != job['tree']:
+                if state()[0] != job['branch'] or not matches_commit(job, sha):
                     raise RuntimeError('A hook changed the captured tree; push was paused.')
                 job.update(sha=sha, phase='committed')
                 write_journal(file, job)
@@ -222,6 +250,9 @@ def work(directory):
         except (OSError, subprocess.TimeoutExpired):
             log_event('background_commit', 'interrupted', outcome='retry')
         except Exception as exc:
+            if job['phase'] == 'generating':
+                log_event('background_commit', 'generation_pending', error_type=type(exc).__name__, outcome='retry')
+                return
             job.update(phase='blocked', error=str(exc), context='')
             write_journal(file, job)
             log_event('background_commit', 'blocked', error_type=type(exc).__name__, outcome='blocked')
@@ -253,6 +284,11 @@ if __name__ == '__main__':
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--resume']:
             resume()
+        elif sys.argv[1:] == ['--status']:
+            marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
+            pending = read_journal(marker)
+            job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
+            print(json.dumps({key: job[key] for key in ('id', 'phase', 'error') if key in job} if job else {}))
         else:
             raise ValueError('Unknown background commit action.')
     except Exception as error:

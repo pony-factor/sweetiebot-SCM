@@ -659,6 +659,23 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 requestedPostCommitCommand === 'push'
                 || (requestedPostCommitCommand === undefined && configuredPostCommitCommand === 'push')
             );
+            if (!options?.amend && !options?.all && !options?.empty
+                && (String(message ?? '').trim() || settings.aiCommit === true)) {
+                let queued;
+                try {
+                    queued = await commands.executeCommand('sweetiebot.queueCommit', repository.rootUri, {
+                        message: String(message ?? ''), push: shouldReleasePush,
+                        sign: options?.signCommit, signoff: options?.signoff
+                    });
+                } catch (error) {
+                    finishProgress(false);
+                    throw error;
+                }
+                if (queued?.queued) {
+                    finishProgress(false);
+                    return;
+                }
+            }
             const selectedBranch = repository.HEAD?.name;
             let commitLease = false;
             let gateToken = null;
@@ -1623,20 +1640,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
 
         try {
-            await commands.executeCommand('sweetiebot.prepareCodexCommit', repositoryUri);
-            const message = originalMessage.trim() ? originalMessage : await commands.executeCommand(
-                'sweetiebot.generateCodexCommitMessage', repositoryUri
-            );
-            if (currentInput !== input || input.value !== originalMessage) {
-                throw new Error('The selected repository or commit message changed during local generation. Try again.');
-            }
-            if (typeof message !== 'string' || !message.trim()) {
-                throw new Error('Local Ollama returned an empty commit message.');
-            }
-            await commands.executeCommand(
-                'sweetiebot.commitWithMessage', repositoryUri,
-                scmToolkitWithCodexCoauthor(message, settings)
-            );
+            await commands.executeCommand('sweetiebot.queueCommit', repositoryUri, {
+                message: originalMessage, codex: true,
+                trailer: scmToolkitCoauthorTrailer(settings),
+                push: configuration.getValue('git.postCommitCommand') === 'push'
+            });
         } catch (error) {
             notifications.error(error);
         } finally {

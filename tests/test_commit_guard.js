@@ -24,6 +24,7 @@ async function run(allowed, failCommit = false) {
   };
   const commands = {
     async executeCommand(command) {
+      if (command === 'sweetiebot.queueCommit') return undefined;
       calls.push(command);
       if (command === 'sweetiebot.checkCommitLimits') return allowed;
       if (command === 'sweetiebot.beginCommit' || command === 'sweetiebot.endCommit') return undefined;
@@ -76,6 +77,7 @@ async function run(allowed, failCommit = false) {
       }
     };
     const commands = { async executeCommand(command, uri, options) {
+      if (command === 'sweetiebot.queueCommit') return undefined;
       if (command === 'sweetiebot.checkCommitLimits') return true;
       if (command === 'sweetiebot.beginCommit') {
         events.push('begin');

@@ -438,6 +438,28 @@ Without a dedicated title preference, titles default to one professional emoji f
 
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Only a completed Git commit produces a **Commit created.** confirmation; optional pushes still run independently.
 
+**Durable background Commit and Push:** Ordinary staged Commit actions and the
+Codex co-author button save a job before starting local message generation. You
+can close the workspace or quit VS Code after the queued notification. The worker
+commits the staged tree captured at the click; later editing and staging remain
+separate. The Push checkbox is captured with the job, and publication uses the
+exact completed commit. Existing commits are never amended by this workflow.
+
+On macOS, the first queued job installs a per-user login agent that retries every
+minute. Interrupted generation and offline pushes resume after login, even if VS
+Code stays closed. The computer must be awake and the user logged in; signing or
+remote authentication must be available without a prompt. Conflicts, branch
+changes, and hook/signing failures pause safely and are reported when the
+repository is open. Push rejection preserves the local commit and retries; it
+never force-pushes or automatically merges remote changes. Jobs and their private
+index snapshots live outside the working tree under
+`~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
+blocks overlapping commits and branch changes through Sweetiebot. Special commit
+modes such as amend keep the normal Git flow. On other systems a detached worker
+continues after VS Code closes, but automatic recovery requires launching the
+worker again. Install the updated toolkit and reload the workspace to use this
+flow. Older terminal-only asynchronous finalization remains available below.
+
 **Asynchronous local commit finalization (opt-in):** Turn on **Finalize commit messages in background** in Sweetiebot settings → Ollama, or set `git config --global scm-toolkit.ai-commit-async true`. An ordinary blank-message commit first records its staged tree locally with a temporary `💭 Generate local commit message` subject. The Git command returns immediately and a detached local worker prepares the final title and optional default-branch description using the *captured* diff. The worker replaces the provisional commit object with the final message, preserving the exact tree and Git author/committer identity and timestamps, without staging any further work. An optional auto-push starts as usual in the background but the installed Git wrapper blocks **every push** until finalization completes. It also queues additional commits and ref-changing Git commands until the pending message is finalized; file editing and staging remain available.
 
 If Ollama cannot produce a valid message after three attempts, the background job uses Sweetiebot's existing deterministic, factual fallback title and description. Pending job data and its crash-recovery journal live only under the repository's Git directory. The next wrapped push/commit can finish a stopped worker using that fallback. When the branch has changed unexpectedly or the worker cannot safely rewrite an unusual commit, push fails closed and the temporary commit stays local for manual recovery. This protection applies to Git commands run through the configured Sweetiebot Git wrapper; invoking an unrelated Git executable bypasses it. To avoid changing signed commits or the post-commit Markdown spellcheck flow, commits requesting Git signatures and repositories with automatic post-commit spellcheck enabled continue using synchronous generation. Install/reinstall the toolkit after updating so the Git wrapper has its companion async worker.
