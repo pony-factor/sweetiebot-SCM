@@ -220,6 +220,7 @@ test('individual Undo restores only the selected correction and invalidates stal
     preview = takeSpellcheckPopup();
     const add = preview.files[0].rows.find(row => row.kind === 'add');
     assert.equal(add.changes.length, 2);
+    assert.equal(add.originalText, baseline, 'whole-line revert retains both original typos');
     const firstId = add.changes[0].changeId;
     document.isDirty = true;
     await assert.rejects(undoSpellcheckChange(vscode, preview.sessionId, firstId), /existing editor changes/);
@@ -227,6 +228,7 @@ test('individual Undo restores only the selected correction and invalidates stal
     const afterFirst = await undoSpellcheckChange(vscode, preview.sessionId, firstId);
     assert.equal(line(), 'A speling error and an error.');
     assert.equal(afterFirst.files[0].rows.find(row => row.kind === 'add').changes.length, 1);
+    assert.equal(afterFirst.files[0].rows.find(row => row.kind === 'add').originalText, baseline);
     await assert.rejects(undoSpellcheckChange(vscode, preview.sessionId, firstId), /no longer available/);
     const lastId = afterFirst.files[0].rows.find(row => row.kind === 'add').changes[0].changeId;
     const afterLast = await undoSpellcheckChange(vscode, preview.sessionId, lastId);

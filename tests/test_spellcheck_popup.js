@@ -35,6 +35,7 @@ test('popup renders safe text, consumes once per document, and restores focus on
     + 'diff --git a/b.md b/b.md\n--- a/b.md\n+++ b/b.md\n@@ -1 +1 @@\n-speling\n+spelling\n';
   const preview = {sessionId: 'session', title: 'Spellcheck suggestions', message: '🤖 Spellcheck trading citations and notes', html: '', files: spellcheckDiffFiles(patch)};
   preview.files[0].rows.find(row => row.kind === 'add').editId = 'line';
+  preview.files[1].rows.find(row => row.kind === 'add').editId = 'line-b';
   preview.files[0].rows.find(row => row.kind === 'add').changes = [
     {start: 0, end: 10, before: '<speling>', after: '<spelling>', changeId: 'change-a'}
   ];
@@ -57,6 +58,12 @@ test('popup renders safe text, consumes once per document, and restores focus on
   assert.equal(dialog.open, true);
   assert.equal(elements.some(node => node.tag === 'iframe'), false);
   assert(elements.some(node => node.className === 'changed-token' && node.textContent === '<spelling>'));
+  const inlineArrow = elements.find(node => node.className === 'scm-toolkit-spellcheck-undo');
+  assert.equal(inlineArrow.textContent, '↶');
+  assert.match(inlineArrow.attributes['aria-label'], /^Revert correction/);
+  const wholeLineArrow = elements.find(node => node.className === 'scm-toolkit-spellcheck-revert-line');
+  assert.equal(wholeLineArrow.textContent, '↶');
+  assert.match(wholeLineArrow.attributes['aria-label'], /^Revert all corrections/);
   const editable = elements.find(node => node.tabIndex === 0);
   assert(editable);
   editable.events.click();
@@ -82,6 +89,12 @@ test('popup renders safe text, consumes once per document, and restores focus on
   const newToggle = latestToggle('a.md');
   newToggle.events.click();
   assert.equal(newToggle.textContent.startsWith('▾'), true);
+  const revertLine = elements.filter(node => node.className === 'scm-toolkit-spellcheck-revert-line'
+    && node.title.includes('a.md')).at(-1);
+  revertLine.events.click({stopPropagation() {}});
+  await new Promise(setImmediate);
+  assert.deepEqual(saved.at(-1), ['session', 'line', '<speling>']);
+  assert(elements.some(node => node.textContent === 'Line reverted'));
   const message = elements.find(node => node.className === 'scm-toolkit-spellcheck-message');
   assert.equal(message.value, preview.message);
   message.value = '🖊️ Use my revised commit message';

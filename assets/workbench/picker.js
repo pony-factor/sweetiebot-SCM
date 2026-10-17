@@ -1089,6 +1089,36 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                             cell.textContent = value == null ? '' : String(value);
                             line.append(cell);
                         }
+                        const lineActions = doc.createElement('span');
+                        lineActions.className = 'scm-toolkit-spellcheck-line-actions';
+                        if (row.editId && typeof row.originalText === 'string' && row.originalText !== row.text) {
+                            const revertLine = doc.createElement('button');
+                            revertLine.className = 'scm-toolkit-spellcheck-revert-line';
+                            revertLine.type = 'button';
+                            revertLine.textContent = '↶';
+                            revertLine.title = 'Revert entire line in ' + file.name + ', line ' + row.newNumber;
+                            revertLine.setAttribute('aria-label', 'Revert all corrections in '
+                                + file.name + ', line ' + row.newNumber);
+                            revertLine.addEventListener('click', event => {
+                                event.stopPropagation();
+                                if (activeEdit || currentSave || acting) return;
+                                status.textContent = 'Reverting line…';
+                                // Keep the same stale-diff and dirty-editor protections as manual edits.
+                                currentSave = commands.executeCommand('sweetiebot.saveSpellcheckEdit',
+                                    preview.sessionId, row.editId, row.originalText).then(updated => {
+                                    preview = updated;
+                                    status.textContent = 'Line reverted';
+                                    renderFiles();
+                                    return true;
+                                }, error => {
+                                    status.textContent = error.message || 'Could not revert this line.';
+                                    return false;
+                                }).finally(() => { currentSave = undefined; updateActions(); });
+                                updateActions();
+                            });
+                            lineActions.append(revertLine);
+                        }
+                        line.append(lineActions);
                         const text = doc.createElement('span');
                         text.className = 'line-text';
                         if (row.changes?.some(change => change.changeId)) {
@@ -1111,9 +1141,9 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                                 const undo = doc.createElement('button');
                                 undo.className = 'scm-toolkit-spellcheck-undo';
                                 undo.type = 'button';
-                                undo.textContent = 'Undo';
+                                undo.textContent = '↶';
                                 undo.title = 'Restore ' + JSON.stringify(change.before) + ' instead of ' + JSON.stringify(change.after);
-                                undo.setAttribute('aria-label', 'Undo correction in ' + file.name
+                                undo.setAttribute('aria-label', 'Revert correction in ' + file.name
                                     + ', line ' + row.newNumber + ': ' + change.after + ' to ' + change.before);
                                 undo.addEventListener('click', event => {
                                     event.stopPropagation();
