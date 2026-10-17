@@ -177,6 +177,7 @@ async function run() {
   assert.equal(children[2].spawnArgs.at(-1), '--token=-synthetic-test-token',
     'Tokens beginning with a dash must remain an option value');
   const shutdown = sandbox.module.exports.deactivate();
+  await tick(); // Managed workspace cleanup runs before the settings-server shutdown.
   assert.equal(children[2].killed, true, 'Closing the extension must stop its server');
   children[2].emit('exit', 0);
   await shutdown;
