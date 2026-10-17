@@ -1,8 +1,7 @@
 'use strict';
 
-// Local VS Code workspaces default to global Integrated Browser storage,
-// exposing one repo's unsent ChatGPT draft to other repository windows.
-// Prefer persistent workspace sessions without deleting any cached data.
+// Use persistent browser sessions. The native patch routes both workspace
+// and global sessions to Sweetiebot's shared profile across repositories.
 async function configureWorkspaceBrowserStorage(vscode) {
   const config = vscode.workspace.getConfiguration('workbench.browser');
   const selection = config.inspect?.('dataStorage');

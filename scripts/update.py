@@ -13,6 +13,8 @@ from workspace_search import default_extensions_dir, source_files
 
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
 THINKING_ASSET = Path('assets/browser/maximize_thinking.js')
+SHARED_PROFILE_SOURCE = Path('scripts/browser_pr.py')
+SHARED_PROFILE_MARKER = 'SHARED_BROWSER_PROFILE = 2'
 FORMATS = {
     "scripts": {".py", ".json"},
     "efs": {".js", ".json", ".svg", ".md", ".html"},
@@ -121,6 +123,14 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     if (not force and (Path(__file__).resolve().parent.parent / THINKING_ASSET).is_file()
             and not (candidate / THINKING_ASSET).is_file()):
         print('Published release predates maximum thinking; keeping the installed preview.', flush=True)
+        return None
+    local_profile = Path(__file__).resolve().parent.parent / SHARED_PROFILE_SOURCE
+    published_profile = candidate / SHARED_PROFILE_SOURCE
+    if (not force and local_profile.is_file()
+            and SHARED_PROFILE_MARKER in local_profile.read_text()
+            and (not published_profile.is_file()
+                 or SHARED_PROFILE_MARKER not in published_profile.read_text())):
+        print('Published release predates shared browser sign-ins; keeping the installed preview.', flush=True)
         return None
     if (not force and marker.exists() and marker.read_text().strip() == revision
             and installed_sources_match(candidate, extensions_dir or default_extensions_dir())):

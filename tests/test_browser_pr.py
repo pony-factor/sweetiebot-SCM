@@ -22,7 +22,7 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 browser_pr.transform_storage(source)
 
-    def test_pr_windows_share_one_path_without_reusing_other_sessions(self):
+    def test_repo_and_pr_windows_share_one_path_without_reusing_isolated_sessions(self):
         installed = browser_pr.transform_storage(self.STORAGE_FIXTURE)
         injected = installed.split(browser_pr.STORAGE_START)[1].split(browser_pr.STORAGE_END)[0]
         script = r'''
@@ -43,11 +43,12 @@ const first = resolve.call(host, {scope:'workspace'}, windowFor('one'));
 const second = resolve.call(host, {scope:'workspace'}, windowFor('two'));
 assert.equal(first, second);
 assert.equal(first.session.path, '/Users/test/Library/Application Support/Sweetiebot/browserStorage');
-for (const scope of ['ephemeral', 'agent', 'global'])
+for (const scope of ['ephemeral', 'agent'])
   assert.equal(resolve.call(host, {scope}, windowFor('three')), 'isolated');
 for (const window of [{}, {openedWorkspace:{id:'repo'}},
   {openedWorkspace:{configPath:{path:'/repo/ordinary.code-workspace'}}}])
-  assert.equal(resolve.call(host, {scope:'workspace'}, window), 'isolated');
+  for (const scope of ['workspace', 'global'])
+    assert.equal(resolve.call(host, {scope}, window), first);
 assert.equal(sessions.size, 1);
 '''.replace('INJECTION', json.dumps(injected))
         subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
