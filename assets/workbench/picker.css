@@ -728,10 +728,14 @@
 }
 
 .scm-toolkit-spellcheck-popup {
-    width: min(1100px, 90vw);
-    height: min(760px, 85vh);
-    max-width: 90vw;
-    max-height: 85vh;
+    box-sizing: border-box;
+    width: min(1100px, calc(100vw - 16px));
+    height: min(760px, calc(100vh - 16px));
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    min-width: 0;
+    min-height: 0;
+    margin: auto;
     padding: 0;
     border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
     border-radius: 8px;
@@ -852,6 +856,30 @@
     outline-offset: 1px;
 }
 
+
+
+/* Keep the review reachable even when a compact workbench has no room for
+   the regular diff table or the full-height commit-message editor. */
+@media (max-width: 480px) {
+    .scm-toolkit-spellcheck-close { margin: 4px 8px; padding: 4px 8px; }
+    .scm-toolkit-spellcheck-content { padding: 0 8px 8px; }
+    .scm-toolkit-spellcheck-content .file { margin: 8px 0; }
+    .scm-toolkit-spellcheck-content .diff-line { grid-template-columns: 2em 2em 1.2em minmax(0, 1fr); }
+    .scm-toolkit-spellcheck-content .line-number { padding: 0 3px; }
+    .scm-toolkit-spellcheck-content .sign { padding-left: 3px; }
+    .scm-toolkit-spellcheck-status { padding: 0 8px 4px; }
+    .scm-toolkit-spellcheck-message-label { padding: 6px 8px 0; }
+    .scm-toolkit-spellcheck-actions { gap: 8px; padding: 8px; }
+    .scm-toolkit-spellcheck-actions button { flex: 1; min-width: 0; padding: 6px 8px; }
+}
+@media (max-height: 440px) {
+    /* Let the dialog itself scroll: do not clip Close, Revert or Accept when
+       its fixed controls exceed the available viewport height. */
+    .scm-toolkit-spellcheck-popup { overflow-x: hidden; overflow-y: auto; }
+    .scm-toolkit-spellcheck-content { flex: 0 0 auto; max-height: min(200px, 36vh); }
+    .scm-toolkit-spellcheck-message-label { padding-top: 4px; }
+    .scm-toolkit-spellcheck-message { max-height: 80px; }
+}
 
 /* Context action for a branch that has no commits beyond the default branch. */
 .scm-toolkit-branch-context-menu {
