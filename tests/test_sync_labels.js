@@ -22,7 +22,9 @@ class Element {
   get previousElementSibling() {
     if (!this.parentElement) return null;
     const siblings = this.parentElement.children;
-    return siblings[siblings.indexOf(this) - 1] || null;
+    // Like the DOM, previousElementSibling skips intervening text nodes.
+    return siblings.slice(0, siblings.indexOf(this)).reverse()
+      .find(node => node instanceof Element) || null;
   }
   before(node) {
     const children = this.parentElement.children;
