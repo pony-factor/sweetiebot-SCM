@@ -194,6 +194,21 @@ class SubmissionTests(unittest.TestCase):
             if name != "branchNameDisabledPacks":
                 self.assertIn(f'name="{name}"', page)
 
+    def test_automatic_workspace_cleanup_round_trips_into_vscode(self):
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["automaticWorkspaceCleanup"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="automaticWorkspaceCleanup" value="true" checked', page)
+
+        values.pop("automaticWorkspaceCleanup")
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["automaticWorkspaceCleanup"])
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertFalse(payload["vscodeSettings"]["automaticWorkspaceCleanup"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertFalse(current["automaticWorkspaceCleanup"])
+
     def test_search_box_placeholder_round_trips_into_vscode(self):
         values = form_values()
         values["workspaceSearchPlaceholder"] = ["SATS"]
