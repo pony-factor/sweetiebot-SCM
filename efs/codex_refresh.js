@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { runtimeRevision } = require('./runtime_revision');
 const { invalidateUserExtensionCache } = require('./extension_cache');
+const { reloadBlockReason, rememberAutomaticReload } = require('./reload_guard');
 
 const QUIET_PERIOD_MS = 8000;
 const RETRY_DELAYS_MS = [15000, 60000, 300000];
@@ -18,12 +19,26 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   let extensionGeneration = 0;
   let focused = vscode.window.state?.focused ?? true;
   let failures = 0;
+  let reloadLoopReported = false;
   const loadedRevision = runtimeRevision(vscode, context);
   const enabled = () => vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
   const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
 
+  const reportReloadBlock = reason => {
+    if (reloadLoopReported) return;
+    reloadLoopReported = true;
+    const message = `Sweetie Bot paused automatic reloads (${reason}). Check Output → Sweetie Bot app repair and reload manually if needed.`;
+    output.appendLine(message);
+    void vscode.window.showWarningMessage?.(message);
+  };
+
   const reload = revision => {
     if (!revision || revision === loadedRevision || revision === reloadRevision || disposed || !enabled() || !focused) return;
+    const blocked = reloadBlockReason(context, revision);
+    if (blocked) {
+      reportReloadBlock(blocked);
+      return;
+    }
     reloadRevision = revision;
     void (async () => {
       await beforeReload();
@@ -31,6 +46,22 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
         reloadRevision = undefined;
         return;
       }
+      // Files may change while the settings server stops; avoid reloading
+      // for a revision that has already been superseded.
+      if (runtimeRevision(vscode, context) !== revision) {
+        reloadRevision = undefined;
+        schedule(QUIET_PERIOD_MS);
+        return;
+      }
+      const newerBlock = reloadBlockReason(context, revision);
+      if (newerBlock) {
+        reloadRevision = undefined;
+        reportReloadBlock(newerBlock);
+        return;
+      }
+      // Persist before reload: the next activation loses in-memory state.
+      await rememberAutomaticReload(context, revision);
+      invalidateUserExtensionCache(context, output);
       output.appendLine('Reloading this window to apply Sweetiebot updates.');
       return vscode.commands.executeCommand('workbench.action.reloadWindow');
     })().catch(error => {
@@ -103,14 +134,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
           schedule(QUIET_PERIOD_MS);
           return;
         }
-        const revision = runtimeRevision(vscode, context);
-        if (focused && revision !== loadedRevision && revision !== reloadRevision) {
-          // VS Code caches user extension manifests across reloads. Invalidate its
-          // disposable scan cache before our single reload, so a changed companion
-          // manifest does not trigger a second native reload notification.
-          invalidateUserExtensionCache(context, output);
-        }
-        reload(revision);
+        reload(runtimeRevision(vscode, context));
       }, QUIET_PERIOD_MS);
     };
     running.stdout.on('data', data => output.append(data.toString()));
