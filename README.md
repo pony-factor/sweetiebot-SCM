@@ -166,9 +166,9 @@ git clone https://github.com/pony-factor/sweetiebot-SCM.git
 cd sweetiebot-SCM
 ```
 
-Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour. It downloads the canonical source files into an isolated cache, regenerates the installed companion-extension and tool payloads, and restores customizations using your saved settings. It does not require, download, rebuild, or re-sign the generated installer app for background updates. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair automatically reloads a stale window after the updates settle. Background windows wait until you focus them. Windows already running the current version do not reload. Before that reload, Sweetie Bot invalidates VS Code's disposable user-extension manifest scan cache when installed files change, so the first reload reads the updated companion extension instead of presenting a second **Extensions have been modified on disk** prompt. It does not alter the installed extensions registry or suppress warnings for unrelated extension changes. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
+Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour, with a shared per-user check timestamp so opening other repository windows within the same hour does not repeat the download. A failed remote check uses a shorter five-minute shared backoff; local repair still runs on each window startup. It downloads the canonical source files into an isolated cache, regenerates the installed companion-extension and tool payloads, and restores customizations using your saved settings. It does not require, download, rebuild, or re-sign the generated installer app for background updates. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair automatically reloads a stale window after the updates settle. Background windows wait until you focus them. Windows already running the current version do not reload. Before that reload, Sweetie Bot invalidates VS Code's disposable user-extension manifest scan cache when installed files change, so the first reload reads the updated companion extension instead of presenting a second **Extensions have been modified on disk** prompt. It does not alter the installed extensions registry or suppress warnings for unrelated extension changes. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
 
-Updates and repairs are serialized across windows. Routine repair skips companion-extension installation; a new toolkit revision updates it too. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require a compatible Sweetie Bot release, which is fetched automatically once published to `main`.
+Updates and repairs are serialized across windows. The Python settings server suppresses bytecode generation, and any existing `__pycache__` / `.pyc` files are ignored when checking whether installed extension sources match, preventing unnecessary reinstalls and reload loops. Routine repair skips companion-extension installation; a new toolkit revision updates it too. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require a compatible Sweetie Bot release, which is fetched automatically once published to `main`.
 
 The locally built and signed installer app includes the update bootstrap for first-time installation. Existing installations with this bootstrap update themselves; you do not need to retain or rerun the installer. Older installations need the bootstrap installed once, using **Install Sweetie Bot.command** or the direct Python installer.
 
@@ -783,28 +783,30 @@ When `browser-chatgpt-home` is enabled, a blank Integrated Browser tab starts at
 tabs, continue to win. Opening a new tab no longer clears a different tab's
 unsent message.
 
+With both `browser-globe-new-tab` and `browser-chatgpt-home` enabled,
+the title-bar globe opens a new tab at the configured homepage directly,
+without leaving the address-bar picker focused over the website. With the
+homepage toggle off, the globe still opens a normal blank tab with the URL
+picker. Other New Tab actions retain their native focus behavior.
+
 On startup, Sweetiebot prefers VS Code's native
 `workbench.browser.dataStorage: "workspace"` setting when there is no explicit
-user/workspace override. Browser data is **persistent within each VS Code
-workspace**, so ChatGPT drafts created in one repository no longer appear in
-unrelated repository windows. New tabs in the same workspace can restore their
-draft without clearing imports from other repositories. The old global browser
-data remains stored but is not loaded into these workspace-scoped browser views.
+user/workspace override. The native browser patch routes both `workspace` and
+`global` storage to one persistent profile at
+`~/Library/Application Support/Sweetiebot/browserStorage` for all repository
+and New PR windows. Signing into ChatGPT in that profile carries across GitHub
+folders, independent clones, saved workspaces, and application restarts.
+Cookies and site storage, including ChatGPT drafts, are shared across those
+windows. Each PR keeps its own workspace and tabs.
 
-Dedicated New PR windows share a persistent browser profile at
-`~/Library/Application Support/Sweetiebot/browserStorage`. Signing into ChatGPT
-there carries across PR windows and application restarts. Each PR keeps its
-own workspace and tabs; temporary and agent browser sessions remain isolated.
-
-For ordinary repository windows, this is a browser-wide setting: cookies, logins and site storage are isolated
-as well, so ChatGPT may require a login once per workspace. Existing tabs may
-retain their old browser session until reopened. Independent local clones and
-saved `.code-workspace` files may receive distinct storage identities even
-when they reference the same repository. To opt out, explicitly set
-`workbench.browser.dataStorage` to `global` or `ephemeral` in VS Code Settings;
-Sweetiebot respects explicit choices. The ChatGPT home toggle is still applied
-by the installer: rerun `python3 scripts/install.py` and reload VS Code after
-changing it.
+Fully quit and reopen VS Code after first installing this native patch; reloading
+a window does not restart the main process that selects browser sessions.
+Sign in once in the shared profile if needed. Previous workspace and global
+profiles remain stored separately; their logins are not migrated automatically.
+Temporary and agent browser sessions remain isolated. To use temporary browser
+storage, explicitly set `workbench.browser.dataStorage` to `ephemeral` in VS Code
+Settings. The ChatGPT home toggle is still applied by the installer: rerun
+`python3 scripts/install.py` and reload VS Code after changing it.
 
 ### Codex co-author commit
 
@@ -970,7 +972,7 @@ git config --global scm-toolkit.post-commit-spellcheck true
 
 This toggle is off by default. After a successful automatic staged commit, the local Ollama model reviews changed Markdown prose and proposes conservative spelling, grammar, and ASCII punctuation corrections. When **Commit and push** is checked, the active branch finishes pushing (including any retry) before spellchecking starts. Failed pushes and branch changes skip the spellcheck job without dirtying the working tree. Fenced code, inline code, URLs, Markdown prefixes, and line endings are protected. Unavailable models and unchanged text produce no dialog.
 
-Proposals open in the **Spellchecks Performed** review popup as unstaged edits. You can edit corrections and the proposed message before choosing **Accept** to commit only the reviewed files, **Revert** to discard their unstaged corrections, or **Close** to leave the edits in place. **Accept** also pushes the active branch when Source Control's **Commit and push** checkbox is checked; otherwise it commits locally. If that push fails, the commit stays local and an error is shown without reopening a stale preview. The original commit and unrelated staged work remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
+Proposals open in the **Spellchecks Performed** review popup as unstaged edits. Use **Undo** beside an individual highlighted correction to restore just that change (including when several typos occur on one line); click a file heading to collapse or expand its diff while reviewing other files. Collapsed sections stay collapsed as corrections are refreshed. You can also edit corrections and the proposed message before choosing **Accept** to commit only the reviewed files, **Revert** to discard their unstaged corrections, or **Close** to leave the edits in place. **Accept** also pushes the active branch when Source Control's **Commit and push** checkbox is checked; otherwise it commits locally. If that push fails, the commit stays local and an error is shown without reopening a stale preview. The original commit and unrelated staged work remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
 
 ### Lindsey-backed bulk merges
 

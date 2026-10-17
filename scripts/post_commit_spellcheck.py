@@ -214,6 +214,16 @@ def safe_correction(original: str, corrected: str) -> bool:
     corrected_lines = corrected.split("\n")
     if len(original_lines) != len(corrected_lines):
         return False
+    # ASCII normalization is allowed, but replacing the author's quotation
+    # marks with another delimiter is a style rewrite, not a spellcheck.
+    ascii_original = normalize_smart_punctuation(original)
+    if ascii_original.count('"') != corrected.count('"'):
+        return False
+    for opcode, start, end, _, _ in difflib.SequenceMatcher(
+        None, ascii_original, corrected, autojunk=False
+    ).get_opcodes():
+        if opcode != "equal" and '"' in ascii_original[start:end]:
+            return False
     if protected_tokens(original) != protected_tokens(corrected):
         return False
     if re.findall(r"\d+(?:\.\d+)?", original) != re.findall(r"\d+(?:\.\d+)?", corrected):
@@ -235,6 +245,7 @@ Allowed changes:
 - accidental duplicated or missing small words
 - clear punctuation or grammar mistakes
 - normalize quotation marks and other smart punctuation to plain ASCII, for example Alpine’s -> Alpine's; preserve en dashes
+- preserve the author's existing quotation-mark style: keep double-quoted text in double quotes and single-quoted text in single quotes; never switch between them for style
 
 Do not rewrite, restyle, summarize, change meaning, alter facts, or make editorial improvements.
 Preserve Markdown syntax, URLs, inline code, citations, capitalization choices, and line breaks.
