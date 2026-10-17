@@ -209,11 +209,92 @@ def normalize_smart_punctuation(text: str) -> str:
     return "".join(pieces)
 
 
-def safe_correction(original: str, corrected: str) -> bool:
+def protected_markdown_boundary(left: str, right: str) -> bool:
+    """Do not collapse Markdown blocks or explicit hard line breaks."""
+    if not left.strip() or not right.strip():
+        return True
+    if left.endswith(("  ", "\\")) or markdown_prefix(left) or markdown_prefix(right):
+        return True
+    for line in (left, right):
+        if (re.search(r"\s\|\s", line)
+                or line.startswith(("    ", "\t", "|", "<"))
+                or re.match(r"^\s*(?:[-*_]\s*){3,}$", line)
+                or re.match(r"^\s*\[[^]]+\]:\s", line)
+                or re.match(r"^\s*\[\^[^]]+\]:\s", line)):
+            return True
+    return False
+
+
+def line_boundaries_preserved(original: str, corrected: str, preserve_line_breaks: bool) -> bool:
+    """Reject reflow that splits a line, crosses paragraphs, or breaks Markdown."""
+    def words_with_lines(text: str) -> list[tuple[str, int, int]]:
+        output = []
+        paragraph = 0
+        for line_number, line in enumerate(text.split("\n")):
+            if not line.strip():
+                paragraph += 1
+            for match in re.finditer(r"\w+", line):
+                output.append((match.group(0), line_number, paragraph))
+        return output
+
+    before = words_with_lines(original)
+    after = words_with_lines(corrected)
+    matcher = difflib.SequenceMatcher(
+        None, [word for word, _, _ in before], [word for word, _, _ in after], autojunk=False
+    )
+    mapped_lines: dict[int, set[int]] = {}
+    previous_line = -1
+    same_line_count = len(original.split("\n")) == len(corrected.split("\n"))
+    for operation, before_start, before_end, after_start, after_end in matcher.get_opcodes():
+        if operation != "equal" and not (
+            operation == "replace" and before_end - before_start == after_end - after_start
+        ):
+            continue
+        for offset in range(before_end - before_start):
+            _, source_line, source_paragraph = before[before_start + offset]
+            _, destination_line, destination_paragraph = after[after_start + offset]
+            if source_paragraph != destination_paragraph or destination_line < previous_line:
+                return False
+            if (preserve_line_breaks or same_line_count) and source_line != destination_line:
+                return False
+            previous_line = destination_line
+            mapped_lines.setdefault(source_line, set()).add(destination_line)
+
+    if any(len(lines) > 1 for lines in mapped_lines.values()):
+        return False
+    if preserve_line_breaks:
+        return True
+
+    original_lines = original.split("\n")
+    for index in range(len(original_lines) - 1):
+        if not protected_markdown_boundary(original_lines[index], original_lines[index + 1]):
+            continue
+        left = mapped_lines.get(index)
+        right = mapped_lines.get(index + 1)
+        if left and right and max(left) >= min(right):
+            return False
+    return True
+
+
+def safe_correction(original: str, corrected: str, preserve_line_breaks: bool = False) -> bool:
     original_lines = original.split("\n")
     corrected_lines = corrected.split("\n")
-    if len(original_lines) != len(corrected_lines):
+    if preserve_line_breaks and len(original_lines) != len(corrected_lines):
         return False
+    if not preserve_line_breaks:
+        # Compact mode may remove discretionary wraps, never introduce new ones.
+        if len(corrected_lines) > len(original_lines):
+            return False
+        if original.count("\n\n") != corrected.count("\n\n"):
+            return False
+        original_prefixes = [markdown_prefix(line) for line in original_lines if markdown_prefix(line)]
+        corrected_prefixes = [markdown_prefix(line) for line in corrected_lines if markdown_prefix(line)]
+        if original_prefixes != corrected_prefixes:
+            return False
+        original_hard_breaks = sum(line.endswith(("  ", "\\")) for line in original_lines)
+        corrected_hard_breaks = sum(line.endswith(("  ", "\\")) for line in corrected_lines)
+        if original_hard_breaks != corrected_hard_breaks:
+            return False
     # ASCII normalization is allowed, but replacing the author's quotation
     # marks with another delimiter is a style rewrite, not a spellcheck.
     ascii_original = normalize_smart_punctuation(original)
@@ -228,16 +309,29 @@ def safe_correction(original: str, corrected: str) -> bool:
         return False
     if re.findall(r"\d+(?:\.\d+)?", original) != re.findall(r"\d+(?:\.\d+)?", corrected):
         return False
-    for before, after in zip(original_lines, corrected_lines):
-        if markdown_prefix(before) != markdown_prefix(after):
-            return False
+    if preserve_line_breaks:
+        for before, after in zip(original_lines, corrected_lines):
+            if markdown_prefix(before) != markdown_prefix(after):
+                return False
+    if not line_boundaries_preserved(original, corrected, preserve_line_breaks):
+        return False
     if original == corrected:
         return True
     return difflib.SequenceMatcher(None, original, corrected).ratio() >= 0.72
 
-
-def spellcheck_prompt(path: str, target: str, before: str, after: str, instructions: str = DEFAULT_INSTRUCTIONS) -> str:
+def spellcheck_prompt(path: str, target: str, before: str, after: str, instructions: str = DEFAULT_INSTRUCTIONS, preserve_line_breaks: bool = False) -> str:
     line_count = len(target.split("\n"))
+    line_break_rule = (
+        "Keep every original newline in its position relative to the words. Do not move "
+        "words between lines, even if the number of lines stays the same."
+        if preserve_line_breaks else
+        "Prefer keeping related prose and adjacent Markdown links together rather than "
+        "putting each link or clause on its own line. You may remove unnecessary soft "
+        "line breaks, reducing the number of lines. Do not add new line breaks, merge "
+        "separate paragraphs, or join headings, list items, table rows, citations, "
+        "code blocks, and explicit Markdown hard breaks. Do not force entire paragraphs "
+        "onto one line merely for the sake of compactness."
+    )
     return f"""You are a spellcheck-only editor. Correct only the TARGET Markdown text.
 
 Allowed changes:
@@ -248,11 +342,12 @@ Allowed changes:
 - preserve the author's existing quotation-mark style: keep double-quoted text in double quotes and single-quoted text in single quotes; never switch between them for style
 
 Do not rewrite, restyle, summarize, change meaning, alter facts, or make editorial improvements.
-Preserve Markdown syntax, URLs, inline code, citations, capitalization choices, and line breaks.
+Preserve Markdown syntax, URLs, inline code, citations, and capitalization choices.
+{line_break_rule}
 Use plain ASCII punctuation in prose, except always use U+2013 en dashes for numeric ranges (including page citations and ranges followed by periods, such as pages 2413–2559.). Never replace an existing en dash in a range with a hyphen. Preserve every number, date, citation, and identifier. Do not introduce em dashes, curly quotes, or ellipsis characters.
 Additional terminology guidance (subject to the preservation rules above):
 {instructions}
-Return exactly {line_count} target line(s), with no added or removed lines.
+{f"Return exactly {line_count} target line(s), with no added or removed lines." if preserve_line_breaks else "Return at most " + str(line_count) + " target lines, with no new lines inserted; remove only unnecessary soft line breaks."}
 The BEFORE and AFTER text is context only and must not be returned or changed.
 Return JSON only in this exact shape: {{"text":"corrected target text"}}.
 
@@ -273,11 +368,14 @@ def request_correction(core: ModuleType, model: str, path: str, target: str, bef
     try:
         read_config = getattr(core, "git_config_string", lambda key, default: default)
         instructions = read_config("scm-toolkit.spellcheck-instructions", DEFAULT_INSTRUCTIONS)
+        preserve_line_breaks = getattr(core, "git_config_bool", lambda key, default: default)(
+            "scm-toolkit.spellcheck-preserve-line-breaks", False
+        )
         response = core.ollama_json(
             "/api/generate",
             {
                 "model": model,
-                "prompt": spellcheck_prompt(path, target, before, after, instructions[:4000]),
+                "prompt": spellcheck_prompt(path, target, before, after, instructions[:4000], preserve_line_breaks),
                 "stream": False,
                 "format": "json",
                 "options": {
@@ -292,7 +390,7 @@ def request_correction(core: ModuleType, model: str, path: str, target: str, bef
         if not isinstance(corrected, str):
             return None
         corrected = normalize_smart_punctuation(corrected)
-        if not safe_correction(target, corrected):
+        if not safe_correction(target, corrected, preserve_line_breaks):
             return None
         return corrected
     except Exception:
@@ -322,6 +420,7 @@ def spellcheck_file(core: ModuleType, model: str, global_args: list[str], path: 
 
     updated = list(lines)
     changed = False
+    line_delta = 0
     for start, end in ranges:
         for chunk_start, chunk_end in chunk_range(lines, start, end):
             original_bodies = [split_line(lines[number - 1])[0] for number in range(chunk_start, chunk_end + 1)]
@@ -340,10 +439,25 @@ def spellcheck_file(core: ModuleType, model: str, global_args: list[str], path: 
             if corrected is None or corrected == target:
                 continue
             corrected_lines = corrected.split("\n")
-            for offset, corrected_body in enumerate(corrected_lines):
-                index = chunk_start - 1 + offset
-                _, ending = split_line(lines[index])
-                updated[index] = corrected_body + ending
+            original_chunk = lines[chunk_start - 1:chunk_end]
+            if len(corrected_lines) == len(original_chunk):
+                replacement = [
+                    body + split_line(original_chunk[index])[1]
+                    for index, body in enumerate(corrected_lines)
+                ]
+            else:
+                # Keep the original file's LF/CRLF convention and final-newline
+                # state, even when soft line breaks have been removed.
+                ending = next((split_line(line)[1] for line in original_chunk if split_line(line)[1]), "\n")
+                final_ending = split_line(original_chunk[-1])[1]
+                replacement = [
+                    body + (final_ending if index == len(corrected_lines) - 1 else ending)
+                    for index, body in enumerate(corrected_lines)
+                ]
+            offset_start = chunk_start - 1 + line_delta
+            offset_end = chunk_end + line_delta
+            updated[offset_start:offset_end] = replacement
+            line_delta += len(replacement) - len(original_chunk)
             changed = True
 
     if not changed:
