@@ -53,6 +53,8 @@ class BackgroundCommitTests(unittest.TestCase):
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):
             directory = self.queue(message='', push=True, signoff=True)
         provisional = self.git('rev-parse', 'HEAD')
+        self.assertRegex(directory.name, r'^[0-9a-f]{16}$')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'placeholder_' + directory.name)
         identity = self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI')
         self.assertIn(worker.PLACEHOLDER, self.git('log', '-1', '--format=%s'))
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')

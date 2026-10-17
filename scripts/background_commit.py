@@ -9,7 +9,7 @@ import plistlib
 import subprocess
 import sys
 import tempfile
-import uuid
+import secrets
 
 import ai_commit as core
 from sweetiebot_async_commit import write_journal as _write_journal, read_journal, PLACEHOLDER, alive
@@ -128,7 +128,7 @@ def enqueue(request, start=True):
         script = runtime()
         if start:
             install_agent(script)
-        directory = jobs_home() / uuid.uuid4().hex
+        directory = jobs_home() / secrets.token_hex(8)
         directory.mkdir(mode=0o700)
         job = dict(id=directory.name, root=root, gitdir=str(meta), branch=branch, parent=parent,
                    tree=tree, message=message, context=context[-6000:], trailer=trailer,
@@ -250,7 +250,7 @@ def work(directory, commit_only=False):
                     raise RuntimeError('The branch advanced; background commit was paused.')
                 if not job['message'].strip():
                     job['provisional'] = True
-                    job['message'] = PLACEHOLDER + ' [' + job['id'] + ']'
+                    job['message'] = PLACEHOLDER + job['id']
                 if job['trailer'] and job['trailer'] not in job['message'].splitlines():
                     job['message'] += '\n\n' + job['trailer']
                 if state() != (job['branch'], job['parent']):
