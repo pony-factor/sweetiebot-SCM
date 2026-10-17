@@ -91,6 +91,76 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change')
         self.assertEqual(self.git(remote, 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
 
+    def enable_test_gpg_signing(self):
+        """Create an ephemeral local GPG identity without touching user keys."""
+        import shutil
+        gpg = shutil.which('gpg')
+        if not gpg:
+            self.skipTest('GPG is unavailable')
+        home = self.root / 'gnupg'
+        home.mkdir(mode=0o700)
+        os.environ['GNUPGHOME'] = str(home)
+        subprocess.run([gpg, '--batch', '--pinentry-mode', 'loopback',
+                        '--passphrase', '', '--quick-generate-key',
+                        'Test Author <test@example.invalid>', 'ed25519', 'sign', '0'],
+                       check=True, capture_output=True, text=True, timeout=60)
+        self.git('config', 'gpg.program', gpg)
+        self.git('config', 'user.signingkey', 'test@example.invalid')
+        self.git('config', 'commit.gpgsign', 'true')
+
+    def assert_signed(self, revision):
+        headers = self.git('cat-file', '-p', revision).partition('\n\n')[0]
+        self.assertTrue(any(line.startswith('gpgsig ') for line in headers.splitlines()))
+        self.git('verify-commit', revision)
+
+    def test_default_git_gpg_signing_survives_generated_title_and_push(self):
+        self.enable_test_gpg_signing()
+        directory = self.queue(message='', push=True)
+        provisional = self.git('rev-parse', 'HEAD')
+        self.assertFalse(self.job(directory)['sign'], 'No explicit sign flag was passed')
+        self.assert_signed('HEAD')
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Keep the local GPG signature', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertNotEqual(self.git('rev-parse', 'HEAD'), provisional)
+        self.assert_signed('HEAD')
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
+
+    def test_signed_descendants_are_resigned_when_earlier_title_changes(self):
+        self.enable_test_gpg_signing()
+        first = self.queue(message='')
+        (self.repo / 'story.txt').write_text('Second signed snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='🧪 Keep a signed descendant')
+        previous_tip = self.git('rev-parse', 'HEAD')
+        self.assert_signed('HEAD')
+        # Signing follows the captured commits, not a later configuration change.
+        self.git('config', 'commit.gpgsign', 'false')
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Finalize the signed ancestor', '')):
+            worker.work(first)
+        self.assertNotEqual(self.git('rev-parse', 'HEAD'), previous_tip)
+        self.assert_signed('HEAD^')
+        self.assert_signed('HEAD')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), '🧪 Keep a signed descendant')
+        worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'done')
+
+    def test_failed_gpg_resigning_keeps_original_commit_and_blocks_push(self):
+        self.enable_test_gpg_signing()
+        directory = self.queue(message='', push=True)
+        original = self.git('rev-parse', 'HEAD')
+        self.git('config', 'gpg.program', str(self.root / 'missing-gpg'))
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Do not publish unsigned history', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'for-each-ref'), '')
+
     def test_finalization_resumes_after_ref_update_before_checkpoint(self):
         directory = self.queue(message='')
         recover = worker.recover_finalization

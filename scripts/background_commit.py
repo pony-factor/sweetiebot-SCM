@@ -245,6 +245,18 @@ def matches_commit(job, sha):
                  or git('reflog', '-1', '--format=%gs').startswith('sweetiebot-background:' + job['id'] + ':')))
 
 
+def commit_has_signature(sha):
+    """Inspect the existing commit, not just explicit VS Code signing flags.
+
+    Git's commit-tree does not inherit commit.gpgsign like git commit does.
+    An unsigned rewrite must never replace a locally signed provisional commit,
+    or a signed descendant that needs a different parent.
+    """
+    headers = git('cat-file', '-p', sha).partition('\n\n')[0]
+    return any(line.startswith(('gpgsig ', 'gpgsig-sha256 '))
+               for line in headers.splitlines())
+
+
 def rewritten_commit(job, parent, message):
     fields = git('show', '-s', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI', job['sha']).split('\x00')
     env = os.environ.copy()
@@ -254,9 +266,16 @@ def rewritten_commit(job, parent, message):
     args = ['commit-tree', job['tree']]
     if parent:
         args += ['-p', parent]
-    if job['sign']:
+    # The initial git commit honors commit.gpgsign and can be signed even when
+    # the VS Code request did not include an explicit sign flag. Re-sign the
+    # replacement (and every rewritten descendant) using local Git settings.
+    signed = job['sign'] or commit_has_signature(job['sha'])
+    if signed:
         args.append('-S')
-    return git(*args, input=message + '\n', env=env)
+    replacement = git(*args, input=message + '\n', env=env)
+    if signed and not commit_has_signature(replacement):
+        raise RuntimeError('Git returned an unsigned replacement for a signed commit.')
+    return replacement
 
 
 def finalize_message(directory, job):
