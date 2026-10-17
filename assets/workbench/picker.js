@@ -993,8 +993,9 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             accept.textContent = 'Accept';
             actions.append(revert, accept);
             let activeEdit, currentSave, acting = false;
+            const collapsedFiles = new Set();
             const updateActions = () => {
-                accept.disabled = acting || !message.value.trim();
+                accept.disabled = acting || !!currentSave || !message.value.trim() || !(preview.files || []).length;
                 revert.disabled = acting;
                 close.disabled = acting;
                 message.disabled = acting;
@@ -1004,12 +1005,38 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const renderFiles = () => {
             const scrollTop = content.scrollTop;
             content.replaceChildren(heading);
+            if (!(preview.files || []).length) {
+                const empty = doc.createElement('p');
+                empty.textContent = 'No remaining spellcheck corrections to review.';
+                content.append(empty);
+            }
             for (const file of preview.files || []) {
                 const section = doc.createElement('section');
                 section.className = 'file';
                 const name = doc.createElement('h2');
-                name.textContent = file.name;
-                section.append(name);
+                const toggle = doc.createElement('button');
+                toggle.className = 'scm-toolkit-spellcheck-file-toggle';
+                const corrections = file.rows.reduce((sum, row) => sum + (row.changes?.length || 0), 0);
+                const count = corrections || file.rows.filter(row => row.kind === 'add' || row.kind === 'remove').length;
+                const summary = count + (count === 1 ? ' change' : ' changes');
+                const rowsContainer = doc.createElement('div');
+                rowsContainer.className = 'rows';
+                const updateToggle = () => {
+                    const collapsed = collapsedFiles.has(file.name);
+                    toggle.textContent = (collapsed ? '▸ ' : '▾ ') + file.name + ' (' + summary + ')';
+                    toggle.setAttribute('aria-expanded', String(!collapsed));
+                    toggle.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + file.name);
+                    rowsContainer.hidden = collapsed;
+                };
+                toggle.addEventListener('click', () => {
+                    if (activeEdit || currentSave || acting) return;
+                    if (collapsedFiles.has(file.name)) collapsedFiles.delete(file.name);
+                    else collapsedFiles.add(file.name);
+                    updateToggle();
+                });
+                updateToggle();
+                name.append(toggle);
+                section.append(name, rowsContainer);
                 for (const row of file.rows) {
                     const line = doc.createElement('div');
                     line.className = ['hunk', 'meta'].includes(row.kind) ? row.kind : 'diff-line ' + row.kind;
@@ -1023,11 +1050,58 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                         }
                         const text = doc.createElement('span');
                         text.className = 'line-text';
-                        for (const segment of row.segments) {
-                            const token = doc.createElement('span');
-                            if (segment.changed) token.className = 'changed-token';
-                            token.textContent = segment.text;
-                            text.append(token);
+                        if (row.changes?.some(change => change.changeId)) {
+                            const appendText = (value, changed = false) => {
+                                if (!value) return;
+                                const token = doc.createElement('span');
+                                if (changed) token.className = 'changed-token';
+                                token.textContent = value;
+                                text.append(token);
+                            };
+                            let offset = 0;
+                            for (const change of row.changes) {
+                                appendText(row.text.slice(offset, change.start));
+                                const correction = doc.createElement('span');
+                                correction.className = 'scm-toolkit-spellcheck-correction';
+                                const changed = doc.createElement('span');
+                                changed.className = 'changed-token';
+                                changed.textContent = row.text.slice(change.start, change.end);
+                                correction.append(changed);
+                                const undo = doc.createElement('button');
+                                undo.className = 'scm-toolkit-spellcheck-undo';
+                                undo.type = 'button';
+                                undo.textContent = 'Undo';
+                                undo.title = 'Restore ' + JSON.stringify(change.before) + ' instead of ' + JSON.stringify(change.after);
+                                undo.setAttribute('aria-label', 'Undo correction in ' + file.name
+                                    + ', line ' + row.newNumber + ': ' + change.after + ' to ' + change.before);
+                                undo.addEventListener('click', event => {
+                                    event.stopPropagation();
+                                    if (activeEdit || currentSave || acting) return;
+                                    status.textContent = 'Undoing…';
+                                    currentSave = commands.executeCommand('sweetiebot.undoSpellcheckChange',
+                                        preview.sessionId, change.changeId).then(updated => {
+                                        preview = updated;
+                                        status.textContent = 'Correction undone';
+                                        renderFiles();
+                                        return true;
+                                    }, error => {
+                                        status.textContent = error.message || 'Could not undo this correction.';
+                                        return false;
+                                    }).finally(() => { currentSave = undefined; updateActions(); });
+                                    updateActions();
+                                });
+                                correction.append(undo);
+                                text.append(correction);
+                                offset = change.end;
+                            }
+                            appendText(row.text.slice(offset));
+                        } else {
+                            for (const segment of row.segments) {
+                                const token = doc.createElement('span');
+                                if (segment.changed) token.className = 'changed-token';
+                                token.textContent = segment.text;
+                                text.append(token);
+                            }
                         }
                         if (row.editId) {
                             text.tabIndex = 0;
@@ -1098,7 +1172,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                         }
                         line.append(text);
                     }
-                    section.append(line);
+                    rowsContainer.append(line);
                 }
                 content.append(section);
             }

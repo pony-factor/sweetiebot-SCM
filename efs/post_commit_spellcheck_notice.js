@@ -107,6 +107,7 @@ async function gitDiff(cwd, args) {
 function editablePreview(session, patch) {
   session.patch = patch;
   session.edits = new Map();
+  session.changes = new Map();
   const files = spellcheckDiffFiles(patch);
   for (const file of files) {
     if (!session.paths.includes(file.name)) continue;
@@ -115,6 +116,11 @@ function editablePreview(session, patch) {
       const editId = randomUUID();
       session.edits.set(editId, { file: file.name, line: row.newNumber - 1, expected: row.text });
       row.editId = editId;
+      for (const change of row.changes || []) {
+        const changeId = randomUUID();
+        session.changes.set(changeId, {editId, expected: row.text, ...change});
+        change.changeId = changeId;
+      }
     }
   }
   return { sessionId: session.id, title: session.title, message: session.message, html: renderSpellcheckDiff(patch, session.title), files };
@@ -136,6 +142,10 @@ async function saveSpellcheckEdit(vscode, sessionId, editId, text) {
     if (relative.startsWith('..' + path.sep) || relative === '..' || path.isAbsolute(relative)) {
       throw new Error('The preview file is outside this repository.');
     }
+    const current = await session.readDiff(session.root, [
+      'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...session.paths
+    ]);
+    if (current !== session.patch) throw new Error('The files changed outside this preview. Reopen the diff before editing.');
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
     if (document.isDirty) throw new Error('Save the existing editor changes before editing this preview.');
     if (edit.line >= document.lineCount || document.lineAt(edit.line).text !== edit.expected) {
@@ -151,6 +161,17 @@ async function saveSpellcheckEdit(vscode, sessionId, editId, text) {
     ]);
     return editablePreview(session, patch);
   } finally { session.saving = false; }
+}
+
+// Undo precisely one correction using the original text and offsets supplied by
+// the trusted server-side diff; never require users to retype/crop the old line.
+async function undoSpellcheckChange(vscode, sessionId, changeId) {
+  const session = previewSessions.get(sessionId);
+  const change = session?.changes.get(changeId);
+  if (!change) throw new Error('This spellcheck correction is no longer available.');
+  const replacement = change.expected.slice(0, change.start) + change.before
+    + change.expected.slice(change.end);
+  return saveSpellcheckEdit(vscode, sessionId, change.editId, replacement);
 }
 
 async function normalizeReviewedWhitespace(root, paths) {
@@ -269,6 +290,8 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
   extensionContext.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.saveSpellcheckEdit', (sessionId, editId, text) =>
       saveSpellcheckEdit(vscode, sessionId, editId, text)),
+    vscode.commands.registerCommand('sweetiebot.undoSpellcheckChange', (sessionId, changeId) =>
+      undoSpellcheckChange(vscode, sessionId, changeId)),
     vscode.commands.registerCommand('sweetiebot.closeSpellcheckPopup', closeSpellcheckPopup),
     vscode.commands.registerCommand('sweetiebot.finishSpellcheckPreview', (sessionId, action, message) =>
       finishSpellcheckPreview(vscode, sessionId, action, message)),
@@ -305,6 +328,6 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
 }
 
 module.exports = {
-  normalizeReviewedWhitespace, finishSpellcheckPreview, saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
+  normalizeReviewedWhitespace, finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
   registerPostCommitSpellcheckNotice,
 };

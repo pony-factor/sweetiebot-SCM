@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  finishSpellcheckPreview, saveSpellcheckEdit, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
+  finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
 } = require('../efs/post_commit_spellcheck_notice');
-const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange } = require('../efs/spellcheck_diff');
+const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange, spellcheckChangeSpans } = require('../efs/spellcheck_diff');
 
 const head = 'a'.repeat(40);
 const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });
@@ -156,6 +156,87 @@ test('multiple spelling changes preserve unchanged characters between and within
   assert.match(html, /minmax\(0,1fr\)/);
   assert.match(html, /white-space:pre-wrap;overflow-wrap:anywhere/);
   assert.doesNotMatch(html, /width:max-content|minmax\(max-content/);
+});
+
+
+test('spellcheck change spans isolate separate typos in a shared line', () => {
+  const before = 'A speling error and an errror.';
+  const after = 'A spelling error and an error.';
+  const spans = spellcheckChangeSpans(before, after);
+  assert.deepEqual(spans.map(({before, after}) => [before, after]),
+    [['speling', 'spelling'], ['errror', 'error']]);
+  for (const span of spans) {
+    assert.equal(after.slice(span.start, span.end), span.after);
+  }
+  assert.equal(spellcheckChangeSpans('unchanged', 'unchanged').length, 0);
+  assert.deepEqual(spellcheckChangeSpans('same-name', 'same–name')
+    .map(({before, after}) => [before, after]), [['-', '–']]);
+});
+
+test('individual Undo restores only the selected correction and invalidates stale buttons', async () => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spellcheck-undo-'));
+  const target = path.join(root, 'note.md');
+  const baseline = 'A speling error and an errror.';
+  let content = 'unchanged\nA spelling error and an error.\nending\n';
+  const line = () => content.split('\n')[1];
+  const readDiff = async () => line() === baseline ? '' : [
+    'diff --git a/note.md b/note.md',
+    '--- a/note.md',
+    '+++ b/note.md',
+    '@@ -1,3 +1,3 @@',
+    ' unchanged',
+    '-' + baseline,
+    '+' + line(),
+    ' ending',
+    ''
+  ].join('\n');
+  const document = {
+    uri: {fsPath: target}, isDirty: false, eol: 1,
+    get lineCount() { return content.split('\n').length; },
+    lineAt(number) { return {text: content.split('\n')[number], range: {line: number}}; },
+    async save() { await fs.writeFile(target, content); return true; }
+  };
+  const vscode = {
+    EndOfLine: {CRLF: 2},
+    Uri: {file: fsPath => ({fsPath})},
+    WorkspaceEdit: class {replace(uri, range, text) { this.change = {uri, range, text}; }},
+    workspace: {
+      async openTextDocument() { return document; },
+      async applyEdit(edit) {
+        const lines = content.split('\n');
+        lines[edit.change.range.line] = edit.change.text;
+        content = lines.join('\n');
+        return true;
+      }
+    }
+  };
+  let preview;
+  try {
+    await fs.writeFile(target, content);
+    await showNotice(vscode, {inputBox: {value: ''}}, {root, paths: ['note.md']}, readDiff);
+    preview = takeSpellcheckPopup();
+    const add = preview.files[0].rows.find(row => row.kind === 'add');
+    assert.equal(add.changes.length, 2);
+    const firstId = add.changes[0].changeId;
+    document.isDirty = true;
+    await assert.rejects(undoSpellcheckChange(vscode, preview.sessionId, firstId), /existing editor changes/);
+    document.isDirty = false;
+    const afterFirst = await undoSpellcheckChange(vscode, preview.sessionId, firstId);
+    assert.equal(line(), 'A speling error and an error.');
+    assert.equal(afterFirst.files[0].rows.find(row => row.kind === 'add').changes.length, 1);
+    await assert.rejects(undoSpellcheckChange(vscode, preview.sessionId, firstId), /no longer available/);
+    const lastId = afterFirst.files[0].rows.find(row => row.kind === 'add').changes[0].changeId;
+    const afterLast = await undoSpellcheckChange(vscode, preview.sessionId, lastId);
+    assert.equal(line(), baseline);
+    assert.deepEqual(afterLast.files, []);
+    assert.equal(await fs.readFile(target, 'utf8'), 'unchanged\n' + baseline + '\nending\n');
+  } finally {
+    if (preview) closeSpellcheckPopup(preview.sessionId);
+    await fs.rm(root, {recursive: true, force: true});
+  }
 });
 
 test('reverted spellcheck edits do not open an empty review window', async () => {
