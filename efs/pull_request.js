@@ -416,7 +416,17 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       timers.delete(kind);
       await closers.get(kind)?.();
       if (kind === 'pony' && pony && typeof profile === 'string') {
-        void cachePony({ action: 'put', pony, profile }).catch(() => {});
+        // A save must never block or contaminate independent PR publication,
+        // but failures to commit or push should not disappear silently.
+        void Promise.resolve().then(() => cachePony({ action: 'put', pony, profile }))
+          .then(saved => {
+            if (saved?.publicationError) {
+              void vscode.window.showWarningMessage(
+                `Pony profile saved in Kafania but not pushed: ${saved.publicationError}`);
+            }
+          }).catch(error => {
+            void vscode.window.showWarningMessage(`Could not save the pony profile in Kafania: ${error.message}`);
+          });
       }
     } });
     prepare('draft', () => {
