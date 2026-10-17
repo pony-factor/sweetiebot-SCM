@@ -884,6 +884,7 @@
     outline: none;
 }
 
-.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon {
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon,
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before {
     animation: none !important;
 }
