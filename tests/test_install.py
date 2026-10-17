@@ -86,14 +86,6 @@ def workbench_fixture():
 
 
 
-def pr_explorer_fixture():
-    return (
-        'let root=roots[0];'
-        'if(this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER||roots[0].error)root=roots;'
-        'this.configurationService.getValue().explorer.expandSingleFolderWorkspaces;'
-    )
-
-
 def browser_cross_window_fixture():
     # Mimics the minified public API next to its model-creation exception.
     return (
@@ -604,36 +596,6 @@ class TransformTests(unittest.TestCase):
             install.transform(workbench_fixture() + install.START, "base-css", settings=SETTINGS)
 
 
-    def test_pr_explorer_removes_only_saved_single_root_node(self):
-        original = workbench_fixture() + pr_explorer_fixture()
-        patched = install.transform(original, "base-css", settings=SETTINGS)
-        self.assertIn(
-            'this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER'
-            '&&!scmToolkitIsPRSingleRoot(this.contextService.getWorkspace(),roots)',
-            patched[0],
-        )
-        self.assertIn('scmToolkitIsPRSingleRoot(workspace, roots)', patched[0])
-        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
-        self.assertEqual(
-            install.transform(*patched, remove=True, settings=SETTINGS),
-            (original, "base-css"),
-        )
-
-    def test_pr_explorer_rejects_ambiguous_or_changed_native_anchor(self):
-        source = workbench_fixture() + pr_explorer_fixture()
-        with self.assertRaisesRegex(ValueError, "Explorer single-root input anchor"):
-            install.pr_workspace_explorer_edits(source + pr_explorer_fixture())
-        with self.assertRaisesRegex(ValueError, "Explorer single-root input anchor"):
-            install.pr_workspace_explorer_edits(
-                source.replace(
-                    'this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER',
-                    'this.contextService.getWorkbenchState()===WorkbenchState.FOLDER',
-                ).replace('roots[0].error', 'roots[0].different')
-            )
-        self.assertEqual(install.pr_workspace_explorer_edits(workbench_fixture()), [])
-
-
-
 class AiWrapperTests(unittest.TestCase):
     def test_sync_ai_wrapper_installs_executable_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -843,6 +805,29 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(hidden, hide_reset_times=True), hidden)
         self.assertEqual(install.transform_codex(hidden, remove=True), original)
         self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
+
+    def test_rate_limited_transcript_compaction_preserves_timed_messages(self):
+        no_reset = (
+            "(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`,"
+            "defaultMessage:`You've hit your usage limit. Upgrade your plan or "
+            "add credits to continue, or try again later.`});"
+        )
+        timed = (
+            "(0,J.jsx)(Message,{id:`localConversation.usageLimit.retry`,"
+            "defaultMessage:`Try again at {resetDate}.`});"
+        )
+        original = no_reset + timed
+        patched = install.transform_codex(original)
+        self.assertIn("localConversation.usageLimit.upgrade.noReset.scmShort", patched)
+        self.assertIn("defaultMessage:`Rate limited`", patched)
+        self.assertIn("defaultMessage:`Try again at {resetDate}.`", patched)
+        self.assertIn("scmToolkitSyncResetShortcut", patched)
+        self.assertEqual(install.transform_codex(patched), patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_transcript_compaction_never_targets_unrelated_messages(self):
+        original = "(0,J.jsx)(Message,{id:`other.noReset`,defaultMessage:`Try again later.`});"
+        self.assertEqual(install.transform_codex(original), original)
 
     def test_previous_transcript_reset_edit_is_restored(self):
         original = 'u=e==null?null:format(r,e);'
