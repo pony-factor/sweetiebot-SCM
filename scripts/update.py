@@ -74,6 +74,7 @@ def installed_sources_match(candidate, extensions_dir):
         ("ai_commit.py", wrapper),
         ("sweetiebot_async_commit.py", wrapper.with_name("sweetiebot_async_commit.py")),
         ("background_commit.py", wrapper.with_name("background_commit.py")),
+        ("cloud_repo_sync.py", wrapper.with_name("cloud_repo_sync.py")),
         ("sweetiebot_diagnostics.py", wrapper.with_name("sweetiebot_diagnostics.py")),
         ("post_commit_spellcheck.py", wrapper.with_name(wrapper.name + "-spellcheck.py")),
     ):
