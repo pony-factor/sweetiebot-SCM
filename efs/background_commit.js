@@ -50,6 +50,22 @@ function registerBackgroundCommit(vscode, context) {
   };
   let scanning = false;
   const seen = new Map();
+  const generation = new Map();
+  const generationRevision = new Map();
+  const showGeneration = root => {
+    if (generation.has(root)) return;
+    let finish;
+    const pending = new Promise(resolve => { finish = resolve; });
+    generation.set(root, finish);
+    void vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: 'Generating commit message asynchronously', cancellable: false
+    }, () => pending).catch(() => {});
+  };
+  const closeGeneration = root => {
+    generation.get(root)?.();
+    generation.delete(root);
+  };
   const scan = async () => {
     if (scanning) return;
     scanning = true;
@@ -59,6 +75,7 @@ function registerBackgroundCommit(vscode, context) {
       const git = await extension.activate();
       for (const repository of git.getAPI(1).repositories || []) {
         const root = repository.rootUri.fsPath;
+        const revision = generationRevision.get(root);
         const status = await new Promise(resolve => {
           execFile(resolvePythonExecutable(), [script, '--status'], { cwd: root, timeout: 10000 },
             (error, stdout) => {
@@ -66,6 +83,10 @@ function registerBackgroundCommit(vscode, context) {
             });
         });
         if (!status) continue;
+        if (revision === generationRevision.get(root)) {
+          if (status.titleJobs?.length) showGeneration(root);
+          else closeGeneration(root);
+        }
         const previous = seen.get(root);
         seen.set(root, status.id ? status : undefined);
         if (status.phase === 'blocked' && previous?.phase !== 'blocked') {
@@ -75,16 +96,18 @@ function registerBackgroundCommit(vscode, context) {
               if (choice === 'Cancel background job') control(root, 'cancel');
             });
         } else if (status.phase === 'pushing' && previous?.phase !== 'pushing') {
-          void vscode.window.showInformationMessage('Background commit saved locally; push is pending and will retry automatically.');
+          void vscode.window.showInformationMessage('Push is pending and will retry automatically.');
         } else if (previous?.id && !status.id) {
           await repository.status();
-          void vscode.window.showInformationMessage('Background commit completed.');
         }
       }
     } finally { scanning = false; }
   };
   const timer = setInterval(() => { void scan().catch(() => {}); }, 10000);
-  context.subscriptions.push({ dispose() { clearInterval(timer); } });
+  context.subscriptions.push({ dispose() {
+    clearInterval(timer);
+    for (const root of generation.keys()) closeGeneration(root);
+  } });
   void scan().catch(() => {});
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queueCommit', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
@@ -123,7 +146,8 @@ function registerBackgroundCommit(vscode, context) {
     });
     if (result.queued) {
       await repository.status();
-      void vscode.window.showInformationMessage('Commit saved locally. Message finalization and any push continue in the background.');
+      generationRevision.set(root.fsPath, (generationRevision.get(root.fsPath) || 0) + 1);
+      if (!String(options.message ?? '').trim()) showGeneration(root.fsPath);
     }
     return result;
   }));
