@@ -159,6 +159,19 @@ async function run() {
   assert.match(prompt, /Conversation context for the optional intent summary only/);
   assert.match(prompt, /Local Sweetiebot pony profile/);
   assert(prompt.includes('berry-punch'));
+  assert.match(prompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
+  assert.match(prompt, /Keep each reference as a complete raw HTTPS URL/);
+  const browserPrompt = pullRequestPrompt({
+    branch: 'draft', repositoryPath: '/repo', repositoryUrl: 'https://github.com/owner/repo',
+    base: 'main', instructions: rules,
+    browserDraft: { evidence: { files: [] }, callback: 'http://127.0.0.1:1234/kefania-draft/test' },
+  });
+  assert.match(browserPrompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
+  assert.match(browserPrompt, /Keep each reference as a complete raw HTTPS URL/);
+  assert(browserPrompt.indexOf(rules) < browserPrompt.indexOf('Place every GitHub pull-request'),
+    'Cross-reference placement overrides older canonical layout instructions');
+  assert(!browserPrompt.includes('Weave each GitHub reference into the same sentence'),
+    'The browser instructions should not retain the older paragraph-placement wording');
   assert.match(prompt, /local chat context only/);
   assert(!prompt.includes('2d5481b8-54dc-48c6-87e5-b67927d630bd'));
 
