@@ -29,7 +29,7 @@ def service_definition(binary: str, home: Path) -> dict:
             "OLLAMA_HOST": "127.0.0.1:11435",
             "OLLAMA_MODELS": str(home / ".ollama/models"),
             "OLLAMA_MAX_LOADED_MODELS": "1",
-            "OLLAMA_NUM_PARALLEL": "1",
+            "OLLAMA_NUM_PARALLEL": "4",
             "OLLAMA_CONTEXT_LENGTH": "4096",
             "OLLAMA_FLASH_ATTENTION": "1",
             "OLLAMA_KV_CACHE_TYPE": "q8_0",
@@ -61,19 +61,31 @@ def install(home: Path | None = None, binary: str | None = None) -> None:
     registered = subprocess.run(
         ["/bin/launchctl", "print", service], capture_output=True, check=False,
     ).returncode == 0
+    definition = service_definition(binary, home)
+    if agent.is_symlink():
+        raise RuntimeError("Refusing to replace a symlinked LaunchAgent.")
+    if registered and agent.is_file():
+        previous = plistlib.loads(agent.read_bytes())
+        if previous.get('EnvironmentVariables', {}).get('OLLAMA_NUM_PARALLEL') != '4':
+            if previous.get('Label') != LABEL or previous.get('ProgramArguments') != definition['ProgramArguments']:
+                raise RuntimeError('The dedicated commit service changed; refusing to replace it.')
+            agent.write_bytes(plistlib.dumps(definition))
+            agent.chmod(0o600)
+            subprocess.run(['/bin/launchctl', 'bootout', service], check=True, capture_output=True)
+            subprocess.run(['/bin/launchctl', 'bootstrap', f'gui/{os.getuid()}', str(agent)], check=True, capture_output=True)
     if not registered:
         if ready():
             raise RuntimeError("Port 11435 is already in use; refusing to replace its service.")
         if agent.is_symlink():
             raise RuntimeError("Refusing to replace a symlinked LaunchAgent.")
         agent.parent.mkdir(parents=True, exist_ok=True)
-        agent.write_bytes(plistlib.dumps(service_definition(binary, home)))
+        agent.write_bytes(plistlib.dumps(definition))
         agent.chmod(0o600)
         subprocess.run(
             ["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", str(agent)],
             check=True, capture_output=True,
         )
-    # Never restart the shared OCR service or an already registered worker.
+    # Only a concurrency change restarts the dedicated commit service.
     for _ in range(30):
         if ready():
             subprocess.run(

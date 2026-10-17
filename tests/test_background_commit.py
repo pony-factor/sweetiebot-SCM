@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -217,9 +218,9 @@ class BackgroundCommitTests(unittest.TestCase):
         identities = [self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI', job['sha']) for job in original]
         (self.repo / 'story.txt').write_text('Later staged work\n')
         self.git('add', 'story.txt')
-        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Earlier title pending')):
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Final title 2', '')):
             worker.work(directories[2])
-        self.assertEqual(self.job(directories[2])['phase'], 'committed')
+        self.assertEqual(self.job(directories[2])['phase'], 'ready')
         for n, directory in enumerate(directories):
             with patch.object(worker.core, 'generate_message', return_value=(f'🧪 Final title {n}', '')):
                 worker.work(directory)
@@ -257,7 +258,7 @@ def generate(*args, **kwargs):
         time.sleep(.02)
     return '🧪 First final title', ''
 worker.core.generate_message = generate
-worker.resume()
+worker.resume(parallel=False)
 '''
         child = subprocess.Popen([sys.executable, '-c', script, str(Path(worker.__file__).parent), str(first), str(started), str(release)])
         try:
@@ -311,7 +312,7 @@ worker.resume()
         self.assertFalse((self.repo / '.git' / worker.TRANSACTION).exists())
         self.assertEqual(self.git('rev-parse', 'HEAD~2'), self.job(first)['sha'])
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Recovered descendant', '')):
-            worker.resume()
+            worker.resume(parallel=False)
         self.assertEqual([self.job(directory)['phase'] for directory in (first, second, third)], ['done'] * 3)
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
         self.assertNotIn('placeholder_', self.git('log', '--format=%s'))

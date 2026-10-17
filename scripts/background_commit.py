@@ -10,7 +10,8 @@ import subprocess
 import sys
 import tempfile
 import secrets
-from contextlib import contextmanager
+import time
+from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
 from sweetiebot_async_commit import write_journal as _write_journal, read_journal, PLACEHOLDER, alive
@@ -19,6 +20,7 @@ from sweetiebot_diagnostics import log_event
 MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
+PARALLEL_JOBS = 4
 
 
 @contextmanager
@@ -383,21 +385,36 @@ def work(directory, commit_only=False):
                 recover_finalization(job['gitdir'])
                 _, pending = captured_chain(marker)
                 job = read_journal(file)
-                position = next(i for i, item in enumerate(pending) if item['id'] == job['id'])
-                if any(item.get('provisional') for item in pending[:position]):
-                    return
             if job.get('provisional'):
-                if not job.get('replacement_sha') and job['phase'] != 'finalizing':
-                    job['phase'] = 'generating'
-                    write_journal(file, job)
+                if not job.get('replacement_sha') and job['phase'] not in ('ready', 'finalizing'):
+                    with repository_lock(job['gitdir']):
+                        recover_finalization(job['gitdir'])
+                        job = read_journal(file)
+                        job['phase'] = 'generating'
+                        write_journal(file, job)
                     stat, diff, files = captured_diff(job)
                     title, description = core.generate_message(stat, diff, files,
                         include_description=core.should_add_default_branch_description(),
                         conversation_context=job['context'])
-                    suffix = git('show', '-s', '--format=%B', job['sha']).partition('\n')[2].strip()
-                    job['message'] = title + ('\n\n' + description if description else '')
-                    if suffix:
-                        job['message'] += '\n\n' + suffix
+                    with repository_lock(job['gitdir']):
+                        recover_finalization(job['gitdir'])
+                        # Earlier titles can reparent this commit while Ollama
+                        # works. Save only the generated message onto fresh state.
+                        job = read_journal(file)
+                        suffix = git('show', '-s', '--format=%B', job['sha']).partition('\n')[2].strip()
+                        job['message'] = title + ('\n\n' + description if description else '')
+                        if suffix:
+                            job['message'] += '\n\n' + suffix
+                        job['phase'] = 'ready'
+                        write_journal(file, job)
+            with repository_lock(job['gitdir']):
+                recover_finalization(job['gitdir'])
+                _, pending = captured_chain(marker)
+                job = read_journal(file)
+                position = next(i for i, item in enumerate(pending) if item['id'] == job['id'])
+                if any(item.get('provisional') for item in pending[:position]):
+                    return
+            if job.get('provisional'):
                 job['phase'] = 'finalizing'
                 write_journal(file, job)
                 finalize_message(directory, job)
@@ -442,8 +459,10 @@ def work(directory, commit_only=False):
             if job['phase'] == 'generating':
                 log_event('background_commit', 'generation_pending', error_type=type(exc).__name__, outcome='retry')
                 return
-            job.update(phase='blocked', error=str(exc), context='')
-            write_journal(file, job)
+            with nullcontext() if commit_only else repository_lock(job['gitdir']):
+                current = read_journal(file)
+                current.update(phase='blocked', error=str(exc), context='')
+                write_journal(file, current)
             log_event('background_commit', 'blocked', error_type=type(exc).__name__, outcome='blocked')
         finally:
             os.chdir(previous_cwd)
@@ -488,7 +507,60 @@ def control(action):
             write_journal(directory / 'job.json', job)
 
 
-def resume():
+def launch_job(directory):
+    return subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--work', str(directory)],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+
+
+def drain_parallel(meta):
+    """Separate processes isolate each job's cwd/index while Ollama runs."""
+    with (Path(meta) / (MARKER + '.scheduler.lock')).open('a+b') as scheduler:
+        try:
+            fcntl.flock(scheduler, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        active, generated, applied = {}, set(), set()
+        while True:
+            for job_id, child in list(active.items()):
+                if child.poll() is not None:
+                    del active[job_id]
+            launched = False
+            earlier_pending = False
+            for entry in queue_entries(Path(meta) / MARKER):
+                job = read_journal(Path(entry['directory']) / 'job.json')
+                if not job:
+                    continue
+                predecessor_pending = earlier_pending
+                earlier_pending |= bool(job.get('provisional'))
+                if job['id'] in active or job['phase'] in ('done', 'cancelled'):
+                    continue
+                if not job.get('sha') and alive(job.get('enqueue_pid')):
+                    continue
+                needs_generation = job.get('provisional') and job['phase'] not in ('ready', 'finalizing')
+                key = (job['id'], job.get('sha'))
+                if needs_generation:
+                    if job['id'] in generated:
+                        continue
+                elif predecessor_pending or key in applied:
+                    continue
+                if len(active) >= PARALLEL_JOBS:
+                    break
+                if needs_generation:
+                    generated.add(job['id'])
+                else:
+                    applied.add(key)
+                try:
+                    active[job['id']] = launch_job(Path(entry['directory']))
+                    launched = True
+                except OSError:
+                    log_event('background_commit', 'worker_start_pending', outcome='retry')
+            if not active and not launched:
+                return
+            time.sleep(.1)
+
+
+def resume(parallel=True):
     repositories = set()
     for file in jobs_home().glob('*/job.json'):
         job = read_journal(file)
@@ -496,6 +568,10 @@ def resume():
         if meta in repositories:
             continue
         repositories.add(meta)
+        if parallel:
+            if queue_entries(Path(meta) / MARKER):
+                drain_parallel(meta)
+            continue
         visited = set()
         while True:
             entry = next((item for item in queue_entries(Path(meta) / MARKER)
@@ -523,6 +599,8 @@ if __name__ == '__main__':
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--resume']:
             resume()
+        elif len(sys.argv) == 3 and sys.argv[1] == '--work':
+            work(Path(sys.argv[2]))
         elif sys.argv[1:] in (['--retry'], ['--cancel']):
             control(sys.argv[1][2:])
             if sys.argv[1] == '--retry':

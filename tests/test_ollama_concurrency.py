@@ -13,7 +13,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(env["OLLAMA_HOST"], "127.0.0.1:11435")
         self.assertEqual(env["OLLAMA_MODELS"], "/Users/test/.ollama/models")
         self.assertEqual(env["OLLAMA_MAX_LOADED_MODELS"], "1")
-        self.assertEqual(env["OLLAMA_NUM_PARALLEL"], "1")
+        self.assertEqual(env["OLLAMA_NUM_PARALLEL"], "4")
         self.assertEqual(env["OLLAMA_KV_CACHE_TYPE"], "q8_0")
         self.assertEqual(definition["ProgramArguments"], ["/opt/homebrew/bin/ollama", "serve"])
 
