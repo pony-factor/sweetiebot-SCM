@@ -7,7 +7,7 @@ const vm = require('node:vm');
 async function run() {
 const timers = new Map();
 const intervals = new Map();
-let enabled = true, installed = true;
+let enabled = true, installed = true, paused = false;
 let revision = 'initial';
 let releaseServer, stopping = false, reloads = 0;
 const notices = [];
@@ -29,6 +29,8 @@ const sandbox = vm.createContext({
   clearTimeout(id) { timers.delete(id); },
   require(name) {
     if (name === 'path') return path;
+    if (name === 'os') return { homedir() { return '/test-home'; } };
+    if (name === 'fs') return { existsSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); return paused; } };
     if (name === './runtime_revision') return { runtimeRevision() { return revision; } };
     if (name === './extension_cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
     if (name === './reload_guard') return require('../efs/reload_guard');

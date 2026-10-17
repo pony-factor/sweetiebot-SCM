@@ -2,6 +2,8 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { runtimeRevision } = require('./runtime_revision');
 const { invalidateUserExtensionCache } = require('./extension_cache');
 const { reloadBlockReason, rememberAutomaticReload } = require('./reload_guard');
@@ -21,7 +23,9 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   let failures = 0;
   let reloadLoopReported = false;
   const loadedRevision = runtimeRevision(vscode, context);
-  const enabled = () => vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
+  // A shared stop flag also covers windows using another settings profile.
+  const paused = path.join(os.homedir(), '.config', 'sweetiebot', 'pause-app-repair');
+  const enabled = () => !fs.existsSync(paused) && vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
   const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
 
   const reportReloadBlock = reason => {
