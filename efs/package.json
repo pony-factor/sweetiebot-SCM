@@ -29,6 +29,8 @@
     "onCommand:sweetiebot.previewCommitSpellcheck",
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
+    "onCommand:sweetiebot.listBranchStrip",
+    "onCommand:sweetiebot.checkoutBranchStrip",
     "onCommand:sweetiebot.deleteBranch",
     "onCommand:sweetiebot.deleteEmptyBranch",
     "onCommand:sweetiebot.autoPullClean",

@@ -820,10 +820,13 @@ def transform(js, css, remove=False, settings=None):
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
         + "\n"
+        + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
+        + "\n"
         + (WORKBENCH_ASSETS / "message_bar.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
+    toolkit_css += "\n" + (WORKBENCH_ASSETS / "branch_strip.css").read_text()
     if settings.get("hideSCMProgress", True):
         toolkit_css += "\n" + (WORKBENCH_ASSETS / "hide_progress.css").read_text()
     if not settings["filledButtons"]:

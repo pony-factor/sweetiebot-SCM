@@ -10,6 +10,7 @@ const { promisify } = require('node:util');
 
 const { isConflictState, offerConflictRecoveryOptions } = require('./lindsey_conflicts');
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
+const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -826,6 +827,25 @@ function registerBranchCommands(vscode, context) {
       }
     }));
   }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.listBranchStrip', async (uri, options = {}) => {
+      const repository = await resolveRepository(uri);
+      const defaultBranch = await resolveDefaultBranch(repository, options.remote || 'origin');
+      return listBranchStrip(repository, { ...options, defaultBranch });
+    }),
+    vscode.commands.registerCommand('sweetiebot.checkoutBranchStrip', async (uri, options = {}) => {
+      try {
+        const repository = await resolveRepository(uri);
+        return await queueRepositoryOperation(repository, async () => {
+          await requireFinalizedCommit(repository);
+          return checkoutBranchStrip(repository, options);
+        });
+      } catch (error) {
+        throw explainGitError(error);
+      }
+    })
+  );
 
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.deleteEmptyBranch', async (uri, options = {}) => {
     try {

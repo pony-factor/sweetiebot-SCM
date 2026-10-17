@@ -1388,6 +1388,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         ponyBranchButton
     );
 
+    const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
+        settings, event => openBranchPicker(event));
+
     let currentCommand;
     let currentBranch;
     let currentRepositoryArgument;
@@ -1883,6 +1886,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
 
     const refreshBranchControls = () => {
+        branchStrip.update(currentRepositoryUri, currentBranch, currentDefaultBranch,
+            Boolean(currentCommand?.id));
         homeButton.hidden = branchButton.hidden;
         const homeDescription = `Home: switch to ${currentDefaultBranch || 'the default branch'}`;
         homeButton.title = homeDescription;
@@ -2096,6 +2101,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             doc.removeEventListener('pointerdown', dismissBranchContextMenu, true);
             doc.removeEventListener('keydown', escapeBranchContextMenu);
             closeBranchContextMenu();
+            branchStrip.dispose();
             syncButton.removeEventListener('click', syncBranch);
             deleteButton.removeEventListener('click', deleteBranch);
             pushCheckbox.removeEventListener('change', changePush);
@@ -2175,6 +2181,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
             currentDefaultBranch = undefined;
+            branchStrip.update(undefined, undefined, undefined, false);
             clearTimeout(defaultBranchRetry);
             defaultBranchRetry = undefined;
             currentBranchRevision = undefined;
