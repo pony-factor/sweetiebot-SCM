@@ -49,6 +49,18 @@ def ready() -> bool:
         return False
 
 
+def bootstrap(agent: Path) -> None:
+    # launchd can acknowledge bootout before the service name is reusable.
+    for attempt in range(20):
+        result = subprocess.run(['/bin/launchctl', 'bootstrap', f'gui/{os.getuid()}', str(agent)],
+                                check=False, capture_output=True)
+        if result.returncode == 0:
+            return
+        if result.returncode != 5 or attempt == 19:
+            raise RuntimeError('The dedicated commit service could not start.')
+        time.sleep(.25)
+
+
 def install(home: Path | None = None, binary: str | None = None) -> None:
     if sys.platform != "darwin":
         raise RuntimeError("The dedicated worker installer currently supports macOS.")
@@ -72,7 +84,7 @@ def install(home: Path | None = None, binary: str | None = None) -> None:
             agent.write_bytes(plistlib.dumps(definition))
             agent.chmod(0o600)
             subprocess.run(['/bin/launchctl', 'bootout', service], check=True, capture_output=True)
-            subprocess.run(['/bin/launchctl', 'bootstrap', f'gui/{os.getuid()}', str(agent)], check=True, capture_output=True)
+            bootstrap(agent)
     if not registered:
         if ready():
             raise RuntimeError("Port 11435 is already in use; refusing to replace its service.")
@@ -81,10 +93,7 @@ def install(home: Path | None = None, binary: str | None = None) -> None:
         agent.parent.mkdir(parents=True, exist_ok=True)
         agent.write_bytes(plistlib.dumps(definition))
         agent.chmod(0o600)
-        subprocess.run(
-            ["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", str(agent)],
-            check=True, capture_output=True,
-        )
+        bootstrap(agent)
     # Only a concurrency change restarts the dedicated commit service.
     for _ in range(30):
         if ready():
