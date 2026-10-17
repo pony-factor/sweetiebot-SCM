@@ -648,7 +648,10 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 && !String(message ?? '').trim()
                 && !options?.amend;
             let progress;
-            if (generating) {
+            const asynchronous = configuration.getValue('scmToolkit.durableBackgroundCommits') === true
+                && !options?.amend && !options?.empty
+                && (String(message ?? '').trim() || settings.aiCommit === true);
+            const showProgress = () => {
                 try {
                     progress = notifications.notify?.({
                         severity: 1, message: 'Generating commit message'
@@ -656,13 +659,11 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 } catch {
                     // Notification API failures must never block Git.
                 }
-            }
-            const finishProgress = succeeded => {
+            };
+            if (generating && !asynchronous) showProgress();
+            const finishProgress = () => {
                 try { progress?.close?.(); } catch { /* Ignore disposed notice. */ }
                 progress = null;
-                if (succeeded && generating) {
-                    try { notifications.info?.('Commit created.'); } catch { /* Git succeeded. */ }
-                }
             };
             try {
                 const allowed = await commands.executeCommand(
@@ -683,9 +684,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 (requestedPostCommitCommand === 'push' || requestedPostCommitCommand === 'git.push')
                 || (requestedPostCommitCommand === undefined && configuredPostCommitCommand === 'push')
             );
-            if (configuration.getValue('scmToolkit.durableBackgroundCommits') === true
-                && !options?.amend && !options?.empty
-                && (String(message ?? '').trim() || settings.aiCommit === true)) {
+            if (asynchronous) {
                 let queued;
                 try {
                     queued = await commands.executeCommand('sweetiebot.queueCommit', repository.rootUri, {
@@ -701,6 +700,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                     return;
                 }
             }
+            if (generating && asynchronous) showProgress();
             const selectedBranch = repository.HEAD?.name;
             let commitLease = false;
             let gateToken = null;
@@ -919,7 +919,7 @@ function scmToolkitExpireNotifications(notifications) {
     // added directly to the workbench model; info/warn/error also return void.
     // Observe the model so every notice, including ones already open, expires.
     const keepOpen = message => message === 'Sweetiebot update ready'
-        || message === 'Generating commit message';
+        || /^Generating commit message(?: asynchronously)?$/.test(message);
     const model = notifications.model;
     if (model && Array.isArray(model.notifications) && typeof model.onDidChangeNotification === 'function') {
         const timers = new WeakMap();
@@ -2449,7 +2449,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const message = row.querySelector('.notification-list-item-message');
         const text = message?.textContent.trim() ?? '';
         row.classList.toggle('scm-toolkit-generating-commit',
-            /^Generating commit message(?: ✨)?$/.test(text));
+            /^Generating commit message(?: asynchronously)?(?: ✨)?$/.test(text));
         row.classList.toggle('scm-toolkit-making-pr',
             text === 'Creating new pull request with Kefania instructions');
         row.classList.toggle('scm-toolkit-pr-opened',

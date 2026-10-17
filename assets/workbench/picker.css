@@ -600,7 +600,7 @@
 
 /* Give Sweetie Bot's repair, PR merge, commit generation, and failure notices their own glyphs. */
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
-.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before,
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
@@ -613,7 +613,7 @@
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before {
     content: '🤖';
 }
-.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon.codicon-info::before {
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before {
     content: '✨';
 }
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before {
@@ -882,4 +882,8 @@
     background: var(--vscode-menu-selectionBackground);
     color: var(--vscode-menu-selectionForeground);
     outline: none;
+}
+
+.notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon {
+    animation: none !important;
 }
