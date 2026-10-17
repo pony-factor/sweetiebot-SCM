@@ -2,6 +2,15 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { resolveKefaniaFile } = require('./kefania_paths');
+const { publishPonyProfile } = require('./pony_git_publish');
+
+// Independent pony research tabs may finish together; Git index and ref edits must be serialized.
+let ponyPublishQueue = Promise.resolve();
+function enqueuePonyPublish(work) {
+  const task = ponyPublishQueue.then(work);
+  ponyPublishQueue = task.catch(() => {});
+  return task;
+}
 
 async function runKefania(repositoryPath, input, { botOnly = false } = {}) {
   const runner = await resolveKefaniaFile(repositoryPath, path.join('src', 'local-pr.js'));
@@ -53,8 +62,16 @@ async function runKefaniaPonyCache(repositoryPath, input) {
     child.on('error', () => complete({ hit: false }));
     child.on('close', code => {
       if (code !== 0) return complete({ hit: false });
-      try { complete(JSON.parse(output)); }
-      catch { complete({ hit: false }); }
+      let result;
+      try { result = JSON.parse(output); }
+      catch { return complete({ hit: false }); }
+      if (input?.action !== 'put' || result?.stored !== true) return complete(result);
+      // The cache runner has exited, but a Git fetch/push can take longer than
+      // its five-second timeout. Do not mark a successful save as a cache miss.
+      clearTimeout(timer);
+      void enqueuePonyPublish(() => publishPonyProfile(path.resolve(runner, '../..'), input.pony, result.path))
+        .then(publication => complete({ ...result, publication }),
+          error => complete({ ...result, publicationError: error.message }));
     });
     child.stdin.end(JSON.stringify(input));
   });
