@@ -117,12 +117,13 @@ class TransformTests(unittest.TestCase):
         import subprocess
         original = 'class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}}'
         installed = install.transform_git_background(original)
+        self.assertIn('durableBackgroundCommits', installed)
         self.assertEqual(install.transform_git_background(installed), installed)
         self.assertEqual(install.transform_git_background(installed, remove=True), original)
         script = """
 const assert = require('node:assert/strict');
 const requests=[];
-const api={Uri:{file:x=>x}, workspace:{getConfiguration(){}}, commands:{async executeCommand(id,root,options){requests.push(options);return {queued:true}}}};
+const api={Uri:{file:x=>x}, workspace:{getConfiguration(){return {get(){return true}}}}, commands:{async executeCommand(id,root,options){requests.push(options);return {queued:true}}}};
 SOURCE
 (async()=>{for(const push of ['push','git.push']){
  const repo=new Repository();repo.root='/test';repo.inputBox={};repo.getInputTemplate=async()=>'';

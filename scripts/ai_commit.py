@@ -172,7 +172,8 @@ def current_branch() -> str:
 
 
 def should_add_default_branch_description() -> bool:
-    return (
+    # Detailed style is optional on topic branches; default-branch behavior is unchanged.
+    return git_config_bool("scm-toolkit.ai-detailed-commit-style", False) or (
         default_branch_description_enabled()
         and current_branch() == configured_default_branch()
     )

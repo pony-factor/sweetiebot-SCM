@@ -203,6 +203,12 @@
           "default": true,
           "description": "Automatically remove eligible merged local branches on startup and every ten minutes."
         },
+        "scmToolkit.durableBackgroundCommits": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Opt in to restartable background Commit and Push with staged-tree snapshots and recovery. Off uses the earlier direct commit workflow."
+        },
         "scmToolkit.automaticWorkspaceCleanup": {
           "type": "boolean",
           "default": true,

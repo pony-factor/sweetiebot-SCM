@@ -28,8 +28,10 @@ async function run() {
     committingWithCodex: false,
     codexButton: {},
     settings: { codexCoauthor: true },
+    scmToolkitWithCodexCoauthor: (message, settings) => message + '\n\nCo-authored-by: Codex <noreply@openai.com>',
     scmToolkitCoauthorTrailer: () => 'Co-authored-by: Codex <noreply@openai.com>',
-    configuration: { getValue: () => 'push' },
+    configuration: { getValue: name => name === 'scmToolkit.durableBackgroundCommits' ? context.durable : 'push' },
+    durable: true,
     notifications: { error: error => errors.push(error) },
     commands: { async executeCommand(id, ...args) { calls.push({ id, args, message: input.value }); } }
   });
@@ -61,6 +63,27 @@ async function run() {
   await context.commit({ stopPropagation() {} });
   assert.equal(errors.at(-1).message, 'Queue failed');
   assert.equal(context.codexButton.disabled, false);
+
+  // The default direct path commits synchronously and preserves custom attribution.
+  context.durable = false;
+  context.commands.executeCommand = async (id, ...args) => {
+    calls.push({ id, args, message: input.value });
+    if (id === 'sweetiebot.generateCodexCommitMessage') return '🧪 Document captured changes';
+  };
+  calls.length = 0;
+  input.setValue('Fast explicit subject');
+  await context.commit({ stopPropagation() {} });
+  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.commitWithMessage']);
+  assert.match(calls[0].args[1], /Fast explicit subject/);
+  assert.match(calls[0].args[1], /Co-authored-by: Codex/);
+  assert.equal(input.value, '', 'Direct commit clears only the unchanged input');
+  calls.length = 0;
+  input.setValue('');
+  await context.commit({ stopPropagation() {} });
+  assert.deepEqual(calls.map(call => call.id), [
+    'sweetiebot.generateCodexCommitMessage', 'sweetiebot.commitWithMessage'
+  ]);
+  assert.match(calls[1].args[1], /Document captured changes/);
   console.log('Codex commit startup regression checks passed.');
 }
 
