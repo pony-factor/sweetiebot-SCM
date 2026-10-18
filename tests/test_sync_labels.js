@@ -115,11 +115,13 @@ const compactArrow = new Element('codicon codicon-arrow-up');
 const compactLabel = group(compactCount, compactArrow);
 compactLabel.classList = {contains: name => name === 'monaco-button-label-short'};
 let showCounts = true;
+let showIncoming = false;
 const progressAction = {
   querySelector: selector => {
     if (selector === '.codicon-sync') return spinningIcon;
     if (selector === '.monaco-button-label') return fullLabel;
     if (selector === '.codicon-arrow-up') return showCounts ? fullArrow : null;
+    if (selector === '.codicon-arrow-down') return showIncoming ? incomingArrow : null;
     return null;
   },
   querySelectorAll: selector => showCounts && selector.includes('codicon-arrow-up')
@@ -143,8 +145,8 @@ assert.equal(compactLabel.children.length, 3, 'Compact label is not duplicated')
 
 spinningIcon.className = 'codicon codicon-sync';
 progressObserver.callback();
-assert.equal(nativeCaption.textContent, ' Sync Changes', 'Native caption returns after push');
-assert.equal(fullLabel.children[2].textContent, 'To origin\u00a0', 'Normal outgoing count label returns');
+assert.equal(nativeCaption.textContent, ' To origin', 'Custom caption remains after push');
+assert.equal(fullLabel.children.length, 4, 'Normal caption must not duplicate the outgoing name');
 
 spinningIcon.className = 'codicon codicon-sync codicon-modifier-spin';
 values.outgoingSyncLabel = 'To remote';
@@ -162,8 +164,77 @@ assert.equal(nativeCaption.textContent, ' To origin', 'Commit-and-push spinner w
 values.postCommitCommand = 'none';
 configurationListener({affectsConfiguration: key => key === 'git.postCommitCommand'});
 assert.equal(nativeCaption.textContent, ' Sync Changes', 'No-count fallback only applies to push configuration');
+// Match the real Git markup: the full caption and count share a span.
+showCounts = true;
+values.outgoingSyncLabel = 'Flight 80';
+nativeCaption.textContent = ' Sync Changes 7';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80 7');
+nativeCaption.textContent = ' Sync Changes 9';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80 9', 'Git updates replace the saved native caption');
+values.outgoingSyncLabel = '';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Sync Changes 9', 'Clearing restores the latest native count');
+
+// Mixed incoming/outgoing sync captions belong to the arrow beside the span.
+showIncoming = true;
+values.incomingSyncLabel = 'Fetch';
+values.outgoingSyncLabel = 'Send';
+nativeCaption.nextElementSibling = incomingArrow;
+nativeCaption.textContent = ' Sync Changes 5';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Fetch 5', 'Mixed sync renames its incoming caption and preserves its count');
+assert.equal(compactLabel.children[0].textContent, 'Send\u00a0', 'Mixed sync retains its outgoing name');
+values.incomingSyncLabel = 'Receive';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.incomingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Receive 5', 'Incoming name responds to preference changes');
+showCounts = false;
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Receive 5', 'Incoming-only sync uses the incoming name');
+values.incomingSyncLabel = '';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.incomingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Sync Changes 5', 'Clearing incoming name restores native caption');
+showIncoming = false;
+showCounts = true;
+delete nativeCaption.nextElementSibling;
+nativeCaption.textContent = ' Sync Changes 9';
 progressWidget.disposables.item.dispose();
+
+// The input may be detached when VS Code constructs it.
+let attached = false;
+const lateWidget = {
+  element: {closest: () => attached ? progressRoot : null, ownerDocument: doc},
+  disposables: {add(item) { this.item = item; }}
+};
+values.outgoingSyncLabel = 'Flight 80';
+sandbox.scmToolkitCustomizeSyncLabels(lateWidget, configuration, {
+  incomingSyncLabel: '', outgoingSyncLabel: '', hideOutgoingSyncCount: true
+});
+const lateObserver = observer;
+attached = true;
+lateObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80', 'Late attachment applies name and hides native count');
+lateObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80', 'Digits in custom names survive repeated updates');
+lateWidget.disposables.item.dispose();
 
 widget.disposables.item.dispose();
 assert.equal(disposed, true);
+// Commit preferences must leave both sync captions intact.
+const commitEnd = source.indexOf('\nfunction scmToolkitCustomizeMessagePlaceholder(', end);
+vm.runInContext(source.slice(end, commitEnd), sandbox);
+const shortCaption = {textContent: '1'};
+const button = {querySelector: selector => selector === '.codicon-sync' ? spinningIcon : shortCaption};
+const commitRoot = {querySelector: () => button};
+const commitWidget = {
+  element: {closest: selector => selector === '.scm-view' ? commitRoot : null, ownerDocument: doc},
+  disposables: {add(item) { this.item = item; }}
+};
+sandbox.scmToolkitCustomizeCommitButtonLabel(commitWidget, configuration, 'Commit', 'Dash');
+assert.equal(shortCaption.textContent, '1', 'Commit label override must not overwrite compact sync label');
+button.querySelector = selector => selector === '.codicon-sync' ? null : shortCaption;
+observer.callback();
+assert.equal(shortCaption.textContent, 'Commit', 'Actual commit buttons still receive their custom name');
+commitWidget.disposables.item.dispose();
 console.log('Custom sync direction label checks passed.');
