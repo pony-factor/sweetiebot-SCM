@@ -109,9 +109,17 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   // Cross-display resizing must preserve compact size at the drag destination.
   const moving = documentFixture();
   const moves = [];
-  ctx.scmToolkitMountCompactWindow(moving, { async positionWindow(bounds) {
-    moves.push(JSON.parse(JSON.stringify(bounds)));
-  } });
+  const nativeOrder = [];
+  ctx.scmToolkitMountCompactWindow(moving, {
+    async unmaximizeWindow(options) {
+      assert.equal(options.targetWindowId, 7);
+      nativeOrder.push('unmaximize');
+    },
+    async positionWindow(bounds) {
+      nativeOrder.push('position');
+      moves.push(JSON.parse(JSON.stringify(bounds)));
+    }
+  });
   moving.action().events.click(event);
   await flush();
   moving.defaultView.screenX = 120;
@@ -126,6 +134,13 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await moving.checkDisplay();
   assert.equal(moves.length, 2, 'A display transition resizes only once');
   assert.equal(moving.action().attrs['aria-pressed'], 'true');
+  // Native zoom can arrive after the display transition has already settled.
+  moving.defaultView.outerWidth = 1920;
+  moving.defaultView.outerHeight = 1055;
+  await moving.checkDisplay();
+  assert.equal(moves.length, 3, 'Late native fill is corrected on the same display');
+  assert.deepEqual(nativeOrder.slice(-2), ['unmaximize', 'position']);
+  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 600, height: 600 });
   moving.action().events.click(event);
   await flush();
   assert.deepEqual(moves.at(-1), { x: -1300, y: 80, width: 1000, height: 760 });
