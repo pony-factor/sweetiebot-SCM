@@ -1,10 +1,11 @@
 'use strict';
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const { pendingPRCommits } = require('./pr_commit_wait');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { githubRepository, normalizeConversationSource, readCodexConversation } = require('./pull_request');
 
-function registerLocalPullRequestCommand(vscode, context) {
+function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.createLocalPullRequest', async (uri, options) => {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
@@ -20,6 +21,8 @@ function registerLocalPullRequestCommand(vscode, context) {
     const remote = repository.state.remotes.find(item => item.name === options.remote);
     const url = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     if (!url) throw new Error('The selected remote must identify a GitHub repository.');
+    const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
+    if (waitForCommits) await waitForCommits();
     const runner = await resolveKefaniaFile(repository.rootUri.fsPath, path.join('src', 'local-pr.js'));
     const source = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,

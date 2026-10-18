@@ -217,6 +217,8 @@ async function run() {
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
   let ludicrousMode = false;
+  let commitWait;
+  let contextReads = 0;
   let contextFailure;
   let aheadBy = 1;
   const ponyLookups = [];
@@ -233,7 +235,7 @@ async function run() {
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) { if (key === 'kefaniaShowCloseButton' || key === 'kefaniaCloseButtonLeft') return fallback; if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {
       from: components => components,
@@ -274,6 +276,7 @@ async function run() {
     }
   };
   registerPullRequestCommand(vscode, { subscriptions: [] }, {
+    pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
     async launchPRSession(_vscode, _context, root, options) {
       if (!launchInSeparateWorkspace) return false;
@@ -284,6 +287,7 @@ async function run() {
       assert.equal(repositoryPath, uri.fsPath);
       assert.equal(options.botOnly, true);
       if (input.contextOnly) {
+        contextReads++;
         if (contextFailure) throw contextFailure;
         return { aheadBy, headSha: 'a'.repeat(40), files: [],
           newPullRequest: existingPullRequest
@@ -542,6 +546,28 @@ async function run() {
   repository.status = originalStatus;
   await assert.rejects(callback(uri, { branch: 'main', base: 'main' }), /other than/);
   repository.state.HEAD.name = 'draft';
+
+  calls.length = 0;
+  cachedProfile = undefined;
+  const beforeWaitReads = contextReads;
+  let releaseCommits;
+  commitWait = () => new Promise(resolve => { releaseCommits = resolve; });
+  const waitingPR = callback(uri, { branch: 'draft', base: 'main', remote: 'origin', source: chatSource });
+  for (let attempt = 0; attempt < 100 && !releaseCommits; attempt++) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(typeof releaseCommits, 'function');
+  assert.equal(contextReads, beforeWaitReads, 'Do not capture provisional commit evidence');
+  assert.equal(calls.length, 2, 'Confirmation and independent pony research open before commit naming finishes');
+  const waitingPrompt = new URLSearchParams(new URL(calls[1].args[0].url).hash.slice(1)).get('q');
+  assert(waitingPrompt.includes('test-pack'));
+  releaseCommits();
+  await waitingPR;
+  assert.equal(contextReads, beforeWaitReads + 1, 'Read fresh published evidence after commit naming and push');
+  assert.equal(calls.length, 3, 'Launch PR drafting once the commit is ready');
+  const readyPrompt = new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q');
+  assert(readyPrompt.includes('headSha'));
+  commitWait = undefined;
 
   const packageJson = require('../efs/package.json');
   assert(packageJson.activationEvents.includes('onCommand:sweetiebot.openPullRequestChat'));

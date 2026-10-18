@@ -13,6 +13,7 @@ const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
 const { launchPRSession, closePRSession } = require('./pr_session');
+const { pendingPRCommits } = require('./pr_commit_wait');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
@@ -340,7 +341,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     const instructions = await readInstructions(repository.rootUri.fsPath);
     const input = { repository: repositoryUrl.slice('https://github.com/'.length), head: branch, base: options.base, source };
+    const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, root);
     let evidence, evidenceError;
+    const loadEvidence = async () => {
     try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
     catch (error) { evidenceError = error; }
     // Kefania identifies PRs by their head branch, even when they target another base.
@@ -376,6 +379,11 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     if (evidence && evidence.newPullRequest?.allowed !== true) {
       throw new Error('Kefania could not verify that this branch is eligible for a new PR.');
+    }
+    };
+    if (!waitForCommits) {
+      const result = await loadEvidence();
+      if (result) return result;
     }
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
       const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
@@ -447,7 +455,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           });
       }
     } });
-    prepare('draft', () => {
+    const prepareDraft = () => prepare('draft', () => {
       if (evidenceError) throw evidenceError;
       return boundedLaunch(boundedEvidence => pullRequestPrompt({
       branch,
@@ -462,6 +470,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       browserDraft: { evidence: boundedEvidence, callback: draftCallback },
       }), prompt => chatgptPullRequestUrl(prompt, projectUrl, draftCallback), evidence);
     });
+    if (!waitForCommits) prepareDraft();
     if (pony && !cachedProfile) prepare('pony', () => boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
       prompt => chatgptPullRequestUrl(prompt, projectUrl, profileCallback)));
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
@@ -480,6 +489,26 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           timers.set(kind, timer);
         }
         catch (error) { localHandoff.reportError(draftId, kind, error.message); }
+      }
+      if (waitForCommits) {
+        try {
+          await waitForCommits();
+          const result = await loadEvidence();
+          if (result) {
+            localHandoff.reportError(draftId, 'draft', 'PR preparation stopped: ' + (result.reason || 'an existing PR was opened'));
+            return result;
+          }
+          prepareDraft();
+          if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
+          const workflow = workflows.find(([kind]) => kind === 'draft')?.[1];
+          if (workflow) {
+            closers.set('draft', await openWorkflow(vscode, workflow.url, { openToSide: closers.has('pony') }));
+            const timer = setTimeout(() => localHandoff.reportError(draftId, 'draft',
+              'This workflow did not return a result within 20 minutes. Its chat remains available for review.'), 1200000);
+            timer.unref?.();
+            timers.set('draft', timer);
+          }
+        } catch (error) { localHandoff.reportError(draftId, 'draft', error.message); }
       }
     } catch (error) { pendingDrafts.delete(draftId); throw error; }
     return { source, conversationContext, repositoryUrl, pony };
