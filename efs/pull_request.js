@@ -246,6 +246,11 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    // A queued commit can be locally captured while naming or pushing is still
+    // underway. Open the PR workspace now; its drafting flow waits for the
+    // durable queue to finish before checking published-branch eligibility.
+    const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
+    if (waitForCommits) return { allowed: true, reason: 'pending-commits' };
     const evidence = await run(repository.rootUri.fsPath, {
       repository: repositoryUrl.slice('https://github.com/'.length),
       head: options.branch, base: options.base, contextOnly: true,
