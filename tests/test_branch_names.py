@@ -109,7 +109,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         g4_names = {
             name
-            for pack in catalog["packs"] if pack["id"].startswith("g4-")
+            for pack in catalog["packs"] if pack["id"].startswith("g4-") or pack["id"] == "rainbow-roadtrip"
             for name in pack["names"]
         }
         g5_names = {
@@ -123,7 +123,7 @@ class BranchNamePackTests(unittest.TestCase):
             "minty": "g4-mares",
             "primrose": "g4-mares",
             "comet-tail": "g4-stallions",
-            "pickle-barrel": "g4-colts",
+            "pickle-barrel": "rainbow-roadtrip",
         }
         all_names = [
             name for pack in catalog["packs"] for name in pack["names"]
@@ -134,6 +134,36 @@ class BranchNamePackTests(unittest.TestCase):
             self.assertIn(name, packs[pack_id]["names"])
             self.assertNotIn(name, g5_names)
             self.assertEqual(all_names.count(name), 1)
+
+    def test_rainbow_roadtrip_pack_is_unique_and_enabled_by_default(self):
+        import toolkit_settings
+
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        expected = {
+            "barley-barrel", "grandpa-skies", "kerfuffle", "moody-root",
+            "mr-hoofington", "mrs-hoofington", "petunia-petals",
+            "pickle-barrel", "sunny-skies", "torque-wrench", "trout-pony",
+        }
+        roadtrip = packs["rainbow-roadtrip"]
+        self.assertEqual(roadtrip["label"], "Rainbow Roadtrip")
+        self.assertEqual(set(roadtrip["names"]), expected)
+        for pack_id, pack in packs.items():
+            if pack_id != "rainbow-roadtrip":
+                self.assertTrue(
+                    expected.isdisjoint(pack["names"]),
+                    f"Rainbow Roadtrip names must not remain in {pack_id}",
+                )
+
+        defaults = toolkit_settings.DEFAULT_SETTINGS["branchNameDisabledPacks"]
+        runtime = branch_names.resolve_runtime_settings(
+            {"branchNameDisabledPacks": defaults}
+        )
+        self.assertNotIn("rainbow-roadtrip", runtime["branchNameDisabledPacks"])
+        runtime = branch_names.resolve_runtime_settings(
+            {"branchNameDisabledPacks": defaults + ",rainbow-roadtrip"}
+        )
+        self.assertIn("rainbow-roadtrip", runtime["branchNameDisabledPacks"])
 
     def test_builtin_catalog_has_unique_names_within_each_pack(self):
         catalog = branch_names.load_catalog()
