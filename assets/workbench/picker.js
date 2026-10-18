@@ -2580,12 +2580,12 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             if (!state.restore || state.busy) return;
             // macOS can apply its fill/zoom after the display-change resize.
             // Catch that native expansion even when the display key is unchanged.
-            const filled = win.outerWidth > 600 && win.outerHeight > 600
+            const filled = win.outerWidth > 640 && win.outerHeight > 640
                 && win.outerWidth >= win.screen.availWidth - 32
                 && win.outerHeight >= win.screen.availHeight - 32;
             if (displayKey() === compactDisplay && !filled) return;
             compactDisplay = displayKey();
-            if (win.screen.availWidth < 600 || win.screen.availHeight < 600) return;
+            if (win.screen.availWidth < 640 || win.screen.availHeight < 640) return;
             state.busy = true;
             try {
                 // setBounds alone does not leave a native maximized state.
@@ -2594,7 +2594,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 }
                 // Keep the user's drag destination; do not center on the new display.
                 await nativeHost.positionWindow({ x: win.screenX, y: win.screenY,
-                    width: 600, height: 600 }, { targetWindowId: win.vscodeWindowId });
+                    width: 640, height: 640 }, { targetWindowId: win.vscodeWindowId });
             } catch (error) {
                 console.error('Sweetiebot could not preserve compact window size', error);
             } finally {
@@ -2628,8 +2628,8 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         if (state.busy) return;
         // VS Code enforces a 600px minimum width when its panel is on the side.
         // Do not squeeze or rearrange the user's resizable vertical columns.
-        if (!state.restore && (win.screen.availWidth < 600 || win.screen.availHeight < 600)) {
-            action.title = 'Display too small for a 600px square window';
+        if (!state.restore && (win.screen.availWidth < 640 || win.screen.availHeight < 640)) {
+            action.title = 'Display too small for a 640px square window';
             action.setAttribute('aria-label', action.title);
             return;
         }
@@ -2645,7 +2645,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             // Respect the native 600px minimum for side-mounted panels.
             // Requesting 560px widens only the native window, making a rectangle.
             // Center the square; retain 32px gutters wherever the screen allows.
-            const side = 600;
+            const side = 640;
             const bounds = state.restore || {
                 x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - side) / 2),
                 y: (screen.availTop ?? 0) + Math.round((screen.availHeight - side) / 2),
