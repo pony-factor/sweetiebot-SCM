@@ -254,6 +254,7 @@ Set options with `git config --global`:
 
 ```sh
 git config --global scm-toolkit.branch-picker true
+git config --global scm-toolkit.horizontal-branch-selector true
 git config --global scm-toolkit.pony-branch true
 git config --global scm-toolkit.message-placeholder "Message"
 git config --global scm-toolkit.commit-button-label "Send"
@@ -306,6 +307,7 @@ The equivalent `~/.gitconfig` block is:
 ```gitconfig
 [scm-toolkit]
     branch-picker = true
+    horizontal-branch-selector = true
     pony-branch = true
     message-placeholder = Message
     commit-button-label = Send

@@ -10,6 +10,7 @@ from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_
 
 DEFAULT_SETTINGS = {
     "branchPicker": True,
+    "horizontalBranchSelector": True,
     "messageBarLayout": DEFAULT_MESSAGE_BAR_LAYOUT_JSON,
     "ponyBranch": True,
     "branchNameDisabledPacks": "pony-life,idw-comics,g5-remaining,g4-pets",
@@ -211,6 +212,7 @@ def persist_message_bar_layout(settings):
 
 SETTING_KEYS = {
     "branchPicker": "scm-toolkit.branch-picker",
+    "horizontalBranchSelector": "scm-toolkit.horizontal-branch-selector",
     "messageBarLayout": "scm-toolkit.message-bar-layout",
     "ponyBranch": "scm-toolkit.pony-branch",
     "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",

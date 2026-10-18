@@ -139,7 +139,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         const panel = widget.element.closest('.part.panel');
         const view = widget.element.closest('.scm-view');
         const eligible = Boolean(panel && view && repository && base && pickerReady
-            && settings.branchPicker);
+            && settings.horizontalBranchSelector);
         panelMode = eligible;
         if (!eligible) {
             bar.remove();
