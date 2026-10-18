@@ -143,8 +143,8 @@ assert.equal(compactLabel.children.length, 3, 'Compact label is not duplicated')
 
 spinningIcon.className = 'codicon codicon-sync';
 progressObserver.callback();
-assert.equal(nativeCaption.textContent, ' Sync Changes', 'Native caption returns after push');
-assert.equal(fullLabel.children[2].textContent, 'To origin\u00a0', 'Normal outgoing count label returns');
+assert.equal(nativeCaption.textContent, ' To origin', 'Custom caption remains after push');
+assert.equal(fullLabel.children.length, 4, 'Normal caption must not duplicate the outgoing name');
 
 spinningIcon.className = 'codicon codicon-sync codicon-modifier-spin';
 values.outgoingSyncLabel = 'To remote';
@@ -162,6 +162,36 @@ assert.equal(nativeCaption.textContent, ' To origin', 'Commit-and-push spinner w
 values.postCommitCommand = 'none';
 configurationListener({affectsConfiguration: key => key === 'git.postCommitCommand'});
 assert.equal(nativeCaption.textContent, ' Sync Changes', 'No-count fallback only applies to push configuration');
+// Match the real Git markup: the full caption and count share a span.
+showCounts = true;
+values.outgoingSyncLabel = 'Flight 80';
+nativeCaption.textContent = ' Sync Changes 7';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80 7');
+nativeCaption.textContent = ' Sync Changes 9';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80 9', 'Git updates replace the saved native caption');
+values.outgoingSyncLabel = '';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Sync Changes 9', 'Clearing restores the latest native count');
+
+// The input may be detached when VS Code constructs it.
+let attached = false;
+const lateWidget = {
+  element: {closest: () => attached ? progressRoot : null, ownerDocument: doc},
+  disposables: {add(item) { this.item = item; }}
+};
+values.outgoingSyncLabel = 'Flight 80';
+sandbox.scmToolkitCustomizeSyncLabels(lateWidget, configuration, {
+  incomingSyncLabel: '', outgoingSyncLabel: '', hideOutgoingSyncCount: true
+});
+const lateObserver = observer;
+attached = true;
+lateObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80', 'Late attachment applies name and hides native count');
+lateObserver.callback();
+assert.equal(nativeCaption.textContent, ' Flight 80', 'Digits in custom names survive repeated updates');
+lateWidget.disposables.item.dispose();
 progressWidget.disposables.item.dispose();
 
 widget.disposables.item.dispose();
