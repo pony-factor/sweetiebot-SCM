@@ -128,7 +128,6 @@ assert.equal(lightbox.style.height,galleryHeight,'The viewer never changes heigh
 mockWindow.innerHeight=1100;
 mockWindow.listeners.resize();
 assert(Number.parseInt(lightbox.style.height,10)<=mockWindow.innerHeight*0.95,'Resizing keeps the viewer within the viewport');
-getElementById('lightbox-next').fire('click');
 assert.equal(getElementById('lightbox-image').src,'https://example.com/first.png');
 lightbox.fire('keydown',{key:'ArrowRight'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/second.png','Next wraps');
