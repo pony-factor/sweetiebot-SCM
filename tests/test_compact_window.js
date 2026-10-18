@@ -30,7 +30,9 @@ function documentFixture() {
       vscodeWindowId: 7, screenX: -1300, screenY: 80, outerWidth: 1000, outerHeight: 760,
       screen: { availLeft: -1440, availTop: 25, availWidth: 1440, availHeight: 875 },
       MutationObserver: class { constructor(fn) { doc.remount = fn; } observe() {} disconnect() {} },
-      addEventListener() {}
+      addEventListener() {},
+      setInterval(callback) { doc.checkDisplay = callback; return 1; },
+      clearInterval() { doc.checkDisplay = null; }
     }
   };
   doc.action = () => elements.get('sweetiebot-compact-window-action').child;
@@ -56,8 +58,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   doc.action().events.click(event);
   doc.action().events.click(event);
   assert.equal(calls.length, 1, 'Double clicks cannot overwrite saved bounds');
-  assert.deepEqual(calls[0], { bounds: { x: -1020, y: 163, width: 600, height: 600 }, options: { targetWindowId: 7 } });
-  assert.ok(calls[0].bounds.width >= 600, 'Keep VS Code vertical-panel native minimum and resizable columns');
+  assert.deepEqual(calls[0], { bounds: { x: -1040, y: 143, width: 640, height: 640 }, options: { targetWindowId: 7 } });
+  assert.ok(calls[0].bounds.width >= 640, 'Keep VS Code vertical-panel native minimum and resizable columns');
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'true');
   doc.rebuild();
@@ -69,7 +71,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(doc.action().title, 'Could not resize window; click to retry');
   fail = false;
   doc.action().events.keydown({ ...event, key: ' ' });
-  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(calls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'false');
   // Dedicated PR workspaces start square, and their title-bar button still restores size.
@@ -87,7 +89,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   ctx.scmToolkitMountCompactWindow(session, sessionNative, null, sessionConfiguration);
   await flush();
   assert.deepEqual(sessionCalls, [{
-    bounds: { x: -1020, y: 163, width: 600, height: 600 },
+    bounds: { x: -1040, y: 143, width: 640, height: 640 },
     options: { targetWindowId: 7 }
   }]);
   assert.equal(session.action().attrs['aria-pressed'], 'true');
@@ -95,7 +97,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(sessionCalls.length, 1, 'Title-bar remount does not resize a second time');
   session.action().events.click(event);
   await flush();
-  assert.deepEqual(sessionCalls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(sessionCalls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
   assert.equal(session.action().attrs['aria-pressed'], 'false');
   autoCompact = false;
   changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
@@ -103,6 +105,49 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
   await flush();
   assert.equal(sessionCalls.length, 2, 'Setting changes never reapply automatic compaction');
+
+  // Cross-display resizing must preserve compact size at the drag destination.
+  const moving = documentFixture();
+  const moves = [];
+  const nativeOrder = [];
+  ctx.scmToolkitMountCompactWindow(moving, {
+    async unmaximizeWindow(options) {
+      assert.equal(options.targetWindowId, 7);
+      nativeOrder.push('unmaximize');
+    },
+    async positionWindow(bounds) {
+      nativeOrder.push('position');
+      moves.push(JSON.parse(JSON.stringify(bounds)));
+    }
+  });
+  moving.action().events.click(event);
+  await flush();
+  moving.defaultView.screenX = 120;
+  moving.defaultView.screenY = 90;
+  moving.defaultView.outerWidth = 1000;
+  moving.defaultView.outerHeight = 760;
+  await moving.checkDisplay();
+  assert.equal(moves.length, 1, 'Same-display manual resizing stays available');
+  moving.defaultView.screen = { availLeft: 0, availTop: 25, availWidth: 1920, availHeight: 1055 };
+  await moving.checkDisplay();
+  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 640, height: 640 });
+  await moving.checkDisplay();
+  assert.equal(moves.length, 2, 'A display transition resizes only once');
+  assert.equal(moving.action().attrs['aria-pressed'], 'true');
+  // Native zoom can arrive after the display transition has already settled.
+  moving.defaultView.outerWidth = 1920;
+  moving.defaultView.outerHeight = 1055;
+  await moving.checkDisplay();
+  assert.equal(moves.length, 3, 'Late native fill is corrected on the same display');
+  assert.deepEqual(nativeOrder.slice(-2), ['unmaximize', 'position']);
+  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 640, height: 640 });
+  moving.action().events.click(event);
+  await flush();
+  assert.deepEqual(moves.at(-1), { x: 240, y: 157, width: 1440, height: 791 });
+  assert.equal(moving.checkDisplay, null, 'Expansion stops compact display enforcement');
+  moving.action().events.click(event);
+  await flush();
+  assert.deepEqual(moves.at(-1), { x: 640, y: 233, width: 640, height: 640 });
 
   // Workspace configuration may arrive after the workbench mounts.
   const late = documentFixture();
@@ -118,21 +163,21 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   lateChanged({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
   await flush();
   assert.equal(sessionCalls.length, 3, 'Late session setting applies compact layout once');
-  assert.equal(sessionCalls.at(-1).bounds.width, 600);
-  assert.equal(sessionCalls.at(-1).bounds.height, 600);
+  assert.equal(sessionCalls.at(-1).bounds.width, 640);
+  assert.equal(sessionCalls.at(-1).bounds.height, 640);
 
   const other = documentFixture();
   ctx.scmToolkitMountCompactWindow(other, native);
   assert.notEqual(doc.__sweetiebotCompactWindow, other.__sweetiebotCompactWindow, 'Each window owns its restore state');
   // A tighter display still receives a centered square with reduced gutters.
   const narrow = documentFixture();
-  narrow.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 625, availHeight: 650 };
+  narrow.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 665, availHeight: 690 };
   ctx.scmToolkitMountCompactWindow(narrow, native);
   narrow.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1933, y: 49, width: 600, height: 600 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1933, y: 49, width: 640, height: 640 });
   release(); await flush();
   narrow.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1953, y: 110, width: 600, height: 518 });
   release(); await flush();
 
   // Native VS Code cannot fit its side-panel minimum on a smaller display.
@@ -143,14 +188,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const attempted = calls.length;
   small.action().events.click(event);
   assert.equal(calls.length, attempted, 'Too-small displays leave the native layout alone');
-  assert.equal(small.action().title, 'Display too small for a 600px square window');
+  assert.equal(small.action().title, 'Display too small for a 640px square window');
   assert.equal(small.action().attrs['aria-pressed'], 'false');
   small.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 650, availHeight: 720 };
   small.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1945, y: 84, width: 600, height: 600 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1925, y: 64, width: 640, height: 640 });
   release(); await flush();
   small.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1945, y: 114, width: 600, height: 540 });
   release(); await flush();
   // The workbench's titlebar still installs the popup consumer when the SCM
   // widget is absent and compact-window resizing is unavailable.

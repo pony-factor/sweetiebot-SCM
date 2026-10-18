@@ -2566,6 +2566,46 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     doc.__sweetiebotCompactWindow = state;
     const actionId = 'sweetiebot-compact-window-action';
     const newActionId = 'sweetiebot-new-workspace-window-action';
+    const displayKey = () => [win.screen.availLeft, win.screen.availTop,
+        win.screen.width ?? win.screen.availWidth,
+        win.screen.height ?? win.screen.availHeight, win.devicePixelRatio].join(':');
+    let compactDisplay;
+    let displayWatcher;
+    const stopDisplayWatcher = () => {
+        if (displayWatcher !== undefined) win.clearInterval(displayWatcher);
+        displayWatcher = undefined;
+    };
+    const watchCompactDisplay = () => {
+        stopDisplayWatcher();
+        compactDisplay = displayKey();
+        // Moving a window need not emit a renderer resize event. Watch only
+        // while compact, including moves between displays with different scales.
+        displayWatcher = win.setInterval(async () => {
+            if (!state.restore || state.busy) return;
+            // macOS can apply its fill/zoom after the display-change resize.
+            // Catch that native expansion even when the display key is unchanged.
+            const filled = win.outerWidth > 640 && win.outerHeight > 640
+                && win.outerWidth >= win.screen.availWidth - 32
+                && win.outerHeight >= win.screen.availHeight - 32;
+            if (displayKey() === compactDisplay && !filled) return;
+            compactDisplay = displayKey();
+            if (win.screen.availWidth < 640 || win.screen.availHeight < 640) return;
+            state.busy = true;
+            try {
+                // setBounds alone does not leave a native maximized state.
+                if (nativeHost.unmaximizeWindow) {
+                    await nativeHost.unmaximizeWindow({ targetWindowId: win.vscodeWindowId });
+                }
+                // Keep the user's drag destination; do not center on the new display.
+                await nativeHost.positionWindow({ x: win.screenX, y: win.screenY,
+                    width: 640, height: 640 }, { targetWindowId: win.vscodeWindowId });
+            } catch (error) {
+                console.error('Sweetiebot could not preserve compact window size', error);
+            } finally {
+                state.busy = false;
+            }
+        }, 250);
+    };
     const refreshVisibility = () => {
         const compact = configuration?.getValue('scmToolkit.compactWindowButton')
             ?? settings.compactWindowButton ?? true;
@@ -2585,15 +2625,15 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         action.classList.toggle('codicon-screen-full', compact);
         action.setAttribute('aria-pressed', String(compact));
         action.setAttribute('aria-disabled', String(state.busy));
-        action.title = compact ? 'Restore window size' : 'Compact window';
+        action.title = compact ? 'Expand to 75% of this display' : 'Compact window';
         action.setAttribute('aria-label', action.title);
     };
     const toggle = async action => {
         if (state.busy) return;
         // VS Code enforces a 600px minimum width when its panel is on the side.
         // Do not squeeze or rearrange the user's resizable vertical columns.
-        if (!state.restore && (win.screen.availWidth < 600 || win.screen.availHeight < 600)) {
-            action.title = 'Display too small for a 600px square window';
+        if (!state.restore && (win.screen.availWidth < 640 || win.screen.availHeight < 640)) {
+            action.title = 'Display too small for a 640px square window';
             action.setAttribute('aria-label', action.title);
             return;
         }
@@ -2606,17 +2646,23 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 width: win.outerWidth, height: win.outerHeight
             };
             const screen = win.screen;
-            // Respect the native 600px minimum for side-mounted panels.
-            // Requesting 560px widens only the native window, making a rectangle.
-            // Center the square; retain 32px gutters wherever the screen allows.
-            const side = 600;
-            const bounds = state.restore || {
-                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - side) / 2),
-                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - side) / 2),
-                width: side, height: side
+            // Expand on the current display instead of restoring stale bounds
+            // from whichever display the window was originally compacted on.
+            const width = state.restore
+                ? Math.min(screen.availWidth, Math.max(600, Math.round(screen.availWidth * 0.75))) : 640;
+            const height = state.restore ? Math.round(screen.availHeight * 0.75) : 640;
+            const bounds = {
+                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
+                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
+                width, height
             };
+            if (nativeHost.unmaximizeWindow) {
+                await nativeHost.unmaximizeWindow({ targetWindowId: win.vscodeWindowId });
+            }
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
             state.restore = state.restore ? null : previous;
+            if (state.restore) watchCompactDisplay();
+            else stopDisplayWatcher();
         } catch (error) {
             console.error('Sweetiebot could not resize the window', error);
             failed = true;
@@ -2731,6 +2777,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         }
     });
     win.addEventListener('unload', () => {
+        stopDisplayWatcher();
         observer.disconnect();
         visibilityListener?.dispose();
     }, { once: true });
