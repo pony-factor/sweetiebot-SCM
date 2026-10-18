@@ -439,7 +439,7 @@ Both normal and Codex-context generation read commit-writing preferences from `~
 
 Without a dedicated title preference, titles default to one professional emoji followed by a concise imperative title; fallback subjects also include an emoji. Recent repository subjects supply style examples only. Sync titles are excluded from those examples and rejected from generated output, regardless of diff size or file count. Only the dedicated Sync button supplies the branch-sync message.
 
-When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly when the title is applied. Local saves and completed commits produce no success notification; optional pushes still run independently.
+When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly after one second while generation continues in the background. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message

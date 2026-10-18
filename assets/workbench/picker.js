@@ -919,7 +919,8 @@ function scmToolkitExpireNotifications(notifications) {
     // added directly to the workbench model; info/warn/error also return void.
     // Observe the model so every notice, including ones already open, expires.
     const keepOpen = message => message === 'Sweetiebot update ready'
-        || /^Generating commit message(?: asynchronously)?$/.test(message);
+        || message === 'Generating commit message';
+    const duration = message => message === 'Generating commit message asynchronously' ? 1_000 : 20_000;
     const model = notifications.model;
     if (model && Array.isArray(model.notifications) && typeof model.onDidChangeNotification === 'function') {
         const timers = new WeakMap();
@@ -942,7 +943,7 @@ function scmToolkitExpireNotifications(notifications) {
                 if (model.notifications.includes(item) && !keepOpen(messageOf(item))) {
                     item.close();
                 }
-            }, 20_000);
+            }, duration(messageOf(item)));
             timers.set(item, timeout);
             if (typeof item.onDidClose === 'function') item.onDidClose(() => cancel(item));
         };
@@ -964,7 +965,7 @@ function scmToolkitExpireNotifications(notifications) {
             || keepOpen(String(text).trim())
             || scheduled.has(handle)) return handle;
         scheduled.add(handle);
-        const timeout = setTimeout(() => handle.close(), 20_000);
+        const timeout = setTimeout(() => handle.close(), duration(String(text).trim()));
         if (typeof handle.onDidClose === 'function') {
             handle.onDidClose(() => clearTimeout(timeout));
         }

@@ -65,8 +65,10 @@ const generating = service.notify({ message: 'Generating commit message' });
 assert.equal(timers.length, 5, 'Active commit generation must not expire after 20 seconds');
 generating.close();
 const asynchronous = service.notify({ message: 'Generating commit message asynchronously' });
-assert.equal(timers.length, 5, 'Background generation must not expire while Ollama is working');
-asynchronous.close();
+assert.equal(timers.length, 6, 'Background generation receives a short expiry');
+assert.equal(timers[5].delay, 1_000);
+timers[5].callback();
+assert.equal(asynchronous.closed, 1);
 
 // A GitHub PR merge notification originates in the extension host. Its
 // showInformationMessage call may bypass the service methods wrapped above.
@@ -149,5 +151,14 @@ model.notifications.unshift(activeCommit);
 modelListeners[0]({ kind: 0, item: activeCommit });
 assert.equal(modelTimers.length, 5, 'Model-backed commit progress must stay open');
 activeCommit.close();
+const asyncCommit = makeItem('Generating commit message asynchronously');
+model.notifications.unshift(asyncCommit);
+modelListeners[0]({ kind: 0, item: asyncCommit });
+assert.equal(modelTimers.length, 6, 'Model-backed background generation receives a timer');
+assert.equal(modelTimers[5].delay, 1_000);
+modelListeners[0]({ kind: 1, item: asyncCommit });
+assert.equal(modelTimers.length, 6, 'Progress updates must not restart the one-second expiry');
+modelTimers[5].callback();
+assert.equal(asyncCommit.closed, 1);
 
 console.log('Sweetiebot notification timeout tests passed.');
