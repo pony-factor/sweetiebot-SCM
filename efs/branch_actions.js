@@ -12,6 +12,7 @@ const { isConflictState, offerConflictRecoveryOptions } = require('./lindsey_con
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
 const { resolvePythonExecutable } = require('./python_runtime');
+const { recoveryPlan } = require('./finalized_commit_recovery');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -225,9 +226,27 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   }
   const { HEAD: head, mergeChanges = [] } = repository.state;
   const divergence = await automaticPullDivergence(repository, head, target);
-  if (!divergence?.behind || divergence.ahead !== 0
+  if (!divergence?.behind
       || mergeChanges.length || commitInProgress(repository)
       || await asyncCommitPending(repository)) return false;
+  if (divergence.ahead !== 0) {
+    const root = repository.rootUri?.fsPath;
+    if (!root || head.name !== await resolveDefaultBranch(repository, target.remote)) return false;
+    if (await gitConfig(repository, 'scm-toolkit.auto-reconcile-finalized-commits', 'false') !== 'true') return false;
+    const plan = await recoveryPlan(root, head.name, `refs/remotes/${target.remote}/${target.name}`);
+    if (!plan || commitInProgress(repository) || await asyncCommitPending(repository)) return false;
+    await repository.status();
+    if (repository.state.HEAD?.name !== plan.branch
+        || repository.state.HEAD?.commit !== plan.local
+        || repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length
+        || repository.state.mergeChanges?.length) return false;
+    // An explicit opt-in permits this new merge commit. Existing commits retain
+    // their identities, including any local descendants of the placeholder.
+    await promisify(execFile)('git', ['merge', '--no-ff', '--no-edit', '-m',
+      '🔄 Reconcile finalized commit history', plan.remote], { cwd: root, timeout: 120000 });
+    await repository.status();
+    return true;
+  }
   if (repository.rootUri?.fsPath) {
     // Let Git carry nonconflicting local edits; never create a merge commit or
     // overwrite a changed path. A failed fast-forward preserves the worktree.
