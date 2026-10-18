@@ -2090,11 +2090,14 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                     remote: settings.remote,
                 });
             } else {
-                await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
+                result = await commands.executeCommand('sweetiebot.deleteBranch', repositoryArgument, {
                     branch,
                     defaultBranch: currentDefaultBranch,
                     remote: settings.remote,
                 });
+            }
+            if (!onlyEmpty && result?.remoteDeleted) {
+                notifications.info(`Deleted ${branch} locally and on ${settings.remote}.`);
             }
             if (onlyEmpty && result) {
                 notifications.info(`Deleted empty branch ${branch}${result.remoteDeleted ? ' locally and on ' + settings.remote : ' locally'}.`);
@@ -2108,8 +2111,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 
-    // Right-clicking the branch selector exposes safe deletion of an empty
-    // branch. This does not change the existing trash-button/merged-PR path.
+    // Right-click still offers the stricter empty-branch cleanup. The trash
+    // button separately confirms deletion of published PR branches.
     let branchContextMenu;
     const closeBranchContextMenu = () => {
         branchContextMenu?.remove();
