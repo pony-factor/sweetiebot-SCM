@@ -344,42 +344,42 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, root);
     let evidence, evidenceError;
     const loadEvidence = async () => {
-    try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
-    catch (error) { evidenceError = error; }
-    // Kefania identifies PRs by their head branch, even when they target another base.
-    // Reuse the existing PR before initiating independent draft or pony workflows.
-    if (evidence?.existingPullRequest) {
-      const { number, url } = evidence.existingPullRequest;
-      if (!Number.isSafeInteger(number) || number < 1 || url !== `${repositoryUrl}/pull/${number}`) {
-        throw new Error('Kefania returned an invalid existing pull-request reference.');
+      try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
+      catch (error) { evidenceError = error; }
+      // Kefania identifies PRs by their head branch, even when they target another base.
+      // Reuse the existing PR before initiating independent draft or pony workflows.
+      if (evidence?.existingPullRequest) {
+        const { number, url } = evidence.existingPullRequest;
+        if (!Number.isSafeInteger(number) || number < 1 || url !== `${repositoryUrl}/pull/${number}`) {
+          throw new Error('Kefania returned an invalid existing pull-request reference.');
+        }
+        await vscode.window.showInformationMessage(`PR #${number} already exists for ${branch}; opening it instead.`);
+        await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
+        return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
       }
-      await vscode.window.showInformationMessage(`PR #${number} already exists for ${branch}; opening it instead.`);
-      await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
-      return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
-    }
-    if (evidence && typeof evidence.newPullRequest?.allowed !== 'boolean') {
-      throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
-    }
-    // The historical fork point must differ from previous PRs for this head,
-    // even if the prior PR was merged months ago and new commits were added.
-    if (evidence?.newPullRequest?.reason === 'same-starting-base') {
-      const previous = evidence.newPullRequest.pullRequest;
-      await vscode.window.showInformationMessage(
-        `PR #${previous?.number ?? '?'} already used the starting base for ${branch}. Create a new branch from a different base commit.`
-      );
-      return { skipped: true, reason: 'same-starting-base', repositoryUrl };
-    }
-    // Kefania's published comparison is authoritative: an empty branch cannot
-    // produce a PR, so do not open either the draft or independent pony chat.
-    if (evidence?.aheadBy === 0) {
-      await vscode.window.showInformationMessage(
-        `No published commits on ${branch} ahead of ${options.base}. Commit and push changes before creating a pull request.`
-      );
-      return { skipped: true, reason: 'no-commits', repositoryUrl };
-    }
-    if (evidence && evidence.newPullRequest?.allowed !== true) {
-      throw new Error('Kefania could not verify that this branch is eligible for a new PR.');
-    }
+      if (evidence && typeof evidence.newPullRequest?.allowed !== 'boolean') {
+        throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
+      }
+      // The historical fork point must differ from previous PRs for this head,
+      // even if the prior PR was merged months ago and new commits were added.
+      if (evidence?.newPullRequest?.reason === 'same-starting-base') {
+        const previous = evidence.newPullRequest.pullRequest;
+        await vscode.window.showInformationMessage(
+          `PR #${previous?.number ?? '?'} already used the starting base for ${branch}. Create a new branch from a different base commit.`
+        );
+        return { skipped: true, reason: 'same-starting-base', repositoryUrl };
+      }
+      // Kefania's published comparison is authoritative: an empty branch cannot
+      // produce a PR, so do not open either the draft or independent pony chat.
+      if (evidence?.aheadBy === 0) {
+        await vscode.window.showInformationMessage(
+          `No published commits on ${branch} ahead of ${options.base}. Commit and push changes before creating a pull request.`
+        );
+        return { skipped: true, reason: 'no-commits', repositoryUrl };
+      }
+      if (evidence && evidence.newPullRequest?.allowed !== true) {
+        throw new Error('Kefania could not verify that this branch is eligible for a new PR.');
+      }
     };
     if (!waitForCommits) {
       const result = await loadEvidence();

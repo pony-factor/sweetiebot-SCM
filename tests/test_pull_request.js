@@ -567,6 +567,14 @@ async function run() {
   assert.equal(calls.length, 3, 'Launch PR drafting once the commit is ready');
   const readyPrompt = new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q');
   assert(readyPrompt.includes('headSha'));
+  calls.length = 0;
+  commitWait = async () => { throw new Error('Commit naming paused'); };
+  const failedWaitReads = contextReads;
+  await callback(uri, { branch: 'draft', base: 'main', remote: 'origin', source: chatSource });
+  assert.equal(contextReads, failedWaitReads, 'A failed commit never starts drafting from provisional evidence');
+  assert.equal(calls.length, 2, 'Keep confirmation and independent pony research on a paused commit');
+  const pausedState = await (await fetch(calls[0].args[0].url + '/state')).json();
+  assert.equal(pausedState.errors.draft, 'Commit naming paused');
   commitWait = undefined;
 
   const packageJson = require('../efs/package.json');
