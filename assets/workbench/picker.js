@@ -1492,7 +1492,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     );
 
     const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
-        settings, event => openBranchPicker(event));
+        settings, event => openBranchPicker(event), branchButton);
 
     let currentCommand;
     let currentBranch;
@@ -2199,8 +2199,14 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 
+    const toggleBranchPicker = event => {
+        event.stopPropagation();
+        if (pending || deletingBranch || creatingPullRequest || creatingPonyBranch) return;
+        if (!branchStrip.toggle()) void openBranchPicker(event);
+    };
+
     homeButton.addEventListener('click', returnHome);
-    branchButton.addEventListener('click', openBranchPicker);
+    branchButton.addEventListener('click', toggleBranchPicker);
     syncButton.addEventListener('click', syncBranch);
     deleteButton.addEventListener('click', deleteBranch);
     spellcheckButton.addEventListener('click', previewSpellcheck);
@@ -2215,7 +2221,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             clearTimeout(pullRequestEligibilityRetry);
             pullRequestEligibilityRequest += 1;
             homeButton.removeEventListener('click', returnHome);
-            branchButton.removeEventListener('click', openBranchPicker);
+            branchButton.removeEventListener('click', toggleBranchPicker);
             branchButton.removeEventListener('contextmenu', showBranchContextMenu);
             doc.removeEventListener('pointerdown', dismissBranchContextMenu, true);
             doc.removeEventListener('keydown', escapeBranchContextMenu);

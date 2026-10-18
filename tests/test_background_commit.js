@@ -148,6 +148,9 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1, 'a genuine branch mismatch remains visible');
+  assert.equal(progress.length, 2, 'a separate generation batch gets a new notification');
+  assert.equal(completed.length, 2, 'jobs finishing early close their notification immediately');
+  assert.equal(noticeTimers[1].cancelled, true, 'early completion cancels the one-second timer');
   console.log('Background smart commit and notification lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
