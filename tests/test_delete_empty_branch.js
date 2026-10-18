@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { deleteEmptyBranch, remoteBranchTip, deletePublishedBranch, registerBranchCommands } = require('../efs/branch_actions');
+const { deleteBranch, deleteEmptyBranch, remoteBranchTip, deletePublishedBranch,
+  deleteUnverifiedLocalBranch, confirmUnverifiedLocalDeletion, registerBranchCommands } = require('../efs/branch_actions');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-delete-empty-'));
 const git = (cwd, ...args) => execFileSync('git', args, {
@@ -37,8 +38,12 @@ function fixture(name, published = false) {
       assert.equal(branch, 'main');
       return { upstream: { remote: 'origin', name: 'main' } };
     },
-    async fetch({ remote: target, ref }) {
-      git(local, 'fetch', target, ref);
+    async fetch({ remote: target, ref, prune }) {
+      git(local, 'fetch', ...(prune ? ['--prune'] : []), target, ...(ref ? [ref] : []));
+    },
+    async getRefs({ pattern }) {
+      return git(local, 'for-each-ref', '--format=%(refname:short)', pattern)
+        .split('\n').filter(Boolean).map(name => ({ name }));
     },
     async checkout(branch) { git(local, 'checkout', branch); await this.status(); },
     async deleteBranch(branch, force) { git(local, 'branch', force ? '-D' : '-d', branch); }
@@ -46,6 +51,16 @@ function fixture(name, published = false) {
   const remoteBranch = () => git(base, '--git-dir', remote, 'branch', '--list', 'topic');
   const localBranch = () => git(local, 'branch', '--list', 'topic');
   return { base, remote, local, repository, remoteBranch, localBranch };
+}
+
+function orphanedTopic(name) {
+  const f = fixture(name, true);
+  fs.writeFileSync(path.join(f.local, 'topic.txt'), 'Unique PR work\n');
+  git(f.local, 'add', '.');
+  git(f.local, 'commit', '-m', 'PR-only change');
+  git(f.local, 'push', 'origin', 'topic');
+  git(f.local, 'push', 'origin', '--delete', 'topic');
+  return f;
 }
 
 async function run() {
@@ -242,6 +257,95 @@ async function run() {
     }), /non-default/);
     assert(f.localBranch());
     assert(f.remoteBranch());
+  }
+
+
+  {
+    // Reproduce the exact post-checkout failure after remote deletion and a
+    // squash merge: the PR cleaner cannot prove the original topic tip.
+    const f = orphanedTopic('unverified-cancel');
+    const prompts = [];
+    const vscode = { window: { async showWarningMessage(...args) {
+      prompts.push(args);
+      return undefined;
+    } } };
+    const result = await deleteBranch(f.repository, {
+      ...opts, confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, f.repository, opts)
+    }, async () => {});
+    assert.equal(result, false, 'Cancel must not delete local commits');
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0][0], /unverified local branch/);
+    assert.equal(prompts[0][1].modal, true);
+    assert.match(prompts[0][1].detail, /unmerged commits/);
+    assert.equal(prompts[0][2], 'Delete Local Branch Anyway');
+    assert(f.localBranch());
+    assert.equal(f.remoteBranch(), '');
+    assert.equal(git(f.local, 'branch', '--show-current'), 'main');
+  }
+  {
+    const f = orphanedTopic('unverified-confirmed');
+    const vscode = { window: { async showWarningMessage() { return 'Delete Local Branch Anyway'; } } };
+    assert.deepEqual(await deleteBranch(f.repository, {
+      ...opts, confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, f.repository, opts)
+    }, async () => {}), { branch: 'topic', remoteDeleted: false, unverifiedDeleted: true });
+    assert.equal(f.localBranch(), '');
+    assert.equal(f.remoteBranch(), '');
+    assert.equal(git(f.local, 'branch', '--show-current'), 'main');
+  }
+  {
+    // Do not delete a branch whose tip changes while the modal is open.
+    const f = orphanedTopic('unverified-race');
+    const vscode = { window: { async showWarningMessage() {
+      git(f.local, 'branch', '-f', 'topic', 'main');
+      return 'Delete Local Branch Anyway';
+    } } };
+    await assert.rejects(deleteBranch(f.repository, {
+      ...opts, confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, f.repository, opts)
+    }, async () => {}), /tip changed after confirmation/);
+    assert(f.localBranch());
+  }
+  {
+    // A branch republished during confirmation must use the SHA-leased route.
+    const f = orphanedTopic('unverified-republished');
+    const vscode = { window: { async showWarningMessage() {
+      git(f.local, 'push', 'origin', 'refs/heads/topic:refs/heads/topic');
+      return 'Delete Local Branch Anyway';
+    } } };
+    await assert.rejects(deleteBranch(f.repository, {
+      ...opts, confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, f.repository, opts)
+    }, async () => {}), /remote branch reappeared/);
+    assert(f.localBranch());
+    assert(f.remoteBranch());
+  }
+  {
+    const f = orphanedTopic('unverified-dirty');
+    const vscode = { window: { async showWarningMessage() {
+      fs.writeFileSync(path.join(f.local, 'untracked.txt'), 'unsaved edits\n');
+      return 'Delete Local Branch Anyway';
+    } } };
+    await assert.rejects(deleteBranch(f.repository, {
+      ...opts, confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, f.repository, opts)
+    }, async () => {}), /Commit, stash, or discard/);
+    assert(f.localBranch());
+  }
+  {
+    const f = orphanedTopic('unverified-other-worktree');
+    const vscode = { window: { async showWarningMessage() {
+      git(f.local, 'worktree', 'add', path.join(f.base, 'additional-worktree'), 'topic');
+      return 'Delete Local Branch Anyway';
+    } } };
+    await assert.rejects(deleteBranch(f.repository, {
+      ...opts, confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, f.repository, opts)
+    }, async () => {}), /checked out|worktree/i);
+    assert(f.localBranch());
+  }
+  {
+    const f = fixture('unverified-default-protected');
+    const tip = git(f.local, 'rev-parse', 'main');
+    await assert.rejects(deleteUnverifiedLocalBranch(f.repository, {
+      ...opts, branch: 'main', expectedTip: tip
+    }), /non-default/);
+    assert(f.localBranch());
   }
 
   console.log('Empty branch deletion regression checks passed.');

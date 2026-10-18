@@ -543,7 +543,7 @@ async function publishBranch(repository, { branch, remote }) {
   return true;
 }
 
-async function deleteBranch(repository, { branch, defaultBranch, remote }, cleanup = cleanupMergedBranch) {
+async function deleteBranch(repository, { branch, defaultBranch, remote, confirmUnverified }, cleanup = cleanupMergedBranch) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot delete ${defaultBranch}.`);
   await repository.status();
   if (repository.state.HEAD?.name !== branch) {
@@ -597,6 +597,9 @@ async function deleteBranch(repository, { branch, defaultBranch, remote }, clean
     // GitHub PR verification and atomic tip check rather than force-delete.
     await cleanup(repository, branch);
     if (await stillExists()) {
+      // The ordinary merged-PR guard stays fail-closed unless the caller
+      // explicitly offers a separate, user-confirmed local-only override.
+      if (typeof confirmUnverified === 'function') return confirmUnverified();
       throw new Error(`Cannot delete ${branch}: its current tip could not be verified as a merged pull request. The branch was preserved; you are now on ${defaultBranch}.`);
     }
     await repository.status();
@@ -809,6 +812,77 @@ async function deletePublishedBranch(repository, {
   return { branch, remoteDeleted: true };
 }
 
+
+/**
+ * Opt-in manual override for a branch whose remote ref is already gone but
+ * whose exact tip cannot be proven to match a merged PR. Never remove a remote
+ * ref here: published branches take the separate SHA-leased deletion path.
+ */
+async function deleteUnverifiedLocalBranch(repository, {
+  branch, defaultBranch, remote = 'origin', expectedTip
+}) {
+  if (!branch || !defaultBranch || branch === defaultBranch) {
+    throw new Error('Select a non-default branch to delete.');
+  }
+  if (!/^[a-f0-9]{40,64}$/i.test(expectedTip || '')) {
+    throw new Error('Deleting an unverified local branch requires its confirmed revision.');
+  }
+  if (!repository.rootUri?.fsPath) throw new Error('A local Git repository is required.');
+  const cwd = repository.rootUri.fsPath;
+  const git = async (...args) => (await promisify(execFile)('git', args, {
+    cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  await git('check-ref-format', '--branch', branch);
+  const ref = 'refs/heads/' + branch;
+  const verifyState = async () => {
+    await repository.status();
+    if (repository.state.HEAD?.name !== defaultBranch) {
+      throw new Error('The active branch changed; the local branch was preserved.');
+    }
+    if (commitInProgress(repository)) throw new Error('Finish the current commit before deleting a branch.');
+    if (repository.state.mergeChanges?.length || await git('status', '--porcelain')) {
+      throw new Error('Commit, stash, or discard working-tree changes before deleting an unverified branch.');
+    }
+    if (await git('rev-parse', '--verify', ref) !== expectedTip) {
+      throw new Error('The local branch tip changed after confirmation; deletion was cancelled.');
+    }
+    if (await remoteBranchTip(repository, branch, remote)) {
+      throw new Error('The remote branch reappeared; use the published-branch deletion confirmation instead.');
+    }
+  };
+  await verifyState();
+  // Let Git enforce linked-worktree protections, even when force is confirmed.
+  // Rechecking the exact tip keeps this distinct from unguarded branch removal.
+  await verifyState();
+  await repository.deleteBranch(branch, true);
+  return { branch, remoteDeleted: false, unverifiedDeleted: true };
+}
+
+async function confirmUnverifiedLocalDeletion(vscode, repository, {
+  branch, defaultBranch, remote = 'origin'
+}) {
+  if (!branch || branch === defaultBranch) throw new Error('Select a non-default branch to delete.');
+  if (!repository.rootUri?.fsPath) throw new Error('A local Git repository is required.');
+  const cwd = repository.rootUri.fsPath;
+  const git = async (...args) => (await promisify(execFile)('git', args, {
+    cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  await git('check-ref-format', '--branch', branch);
+  const expectedTip = await git('rev-parse', '--verify', 'refs/heads/' + branch);
+  const choice = await vscode.window.showWarningMessage(
+    'Delete unverified local branch "' + branch + '"?',
+    { modal: true, detail: 'The branch no longer exists on ' + remote
+      + ', but its current commit could not be verified as belonging to a merged GitHub pull request. '
+      + 'Deleting this LOCAL branch may make unmerged commits unreachable. '
+      + 'The remote will not be changed. Cancel preserves the branch; you remain on ' + defaultBranch + '.' },
+    'Delete Local Branch Anyway'
+  );
+  if (choice !== 'Delete Local Branch Anyway') return false;
+  return deleteUnverifiedLocalBranch(repository, {
+    branch, defaultBranch, remote, expectedTip
+  });
+}
+
 async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash' }) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot sync ${defaultBranch} into itself.`);
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
@@ -927,7 +1001,14 @@ function registerBranchCommands(vscode, context) {
               });
             }
           }
-          return action(repository, { ...options, defaultBranch });
+          return action(repository, {
+            ...options, defaultBranch,
+            ...(command === 'sweetiebot.deleteBranch' ? {
+              confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, repository, {
+                branch: options?.branch, defaultBranch, remote
+              })
+            } : {})
+          });
         };
         try {
           return await queueRepositoryOperation(repository, attempt);
@@ -1076,6 +1157,8 @@ module.exports = {
   deleteEmptyBranch,
   remoteBranchTip,
   deletePublishedBranch,
+  deleteUnverifiedLocalBranch,
+  confirmUnverifiedLocalDeletion,
   syncBranch,
   registerBranchCommands,
   autoPullClean,
