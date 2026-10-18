@@ -19,14 +19,15 @@
 .lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px 42px}
 .lightbox-stage img{flex:1;min-width:0;width:0;height:100%;min-height:0;max-height:100%;object-fit:contain;margin:auto}
 .lightbox-stage .image-error{flex:1}
-.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
-.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(68vh,560px);min-height:180px;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
+.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;min-height:48px;padding:8px 12px;border-top:1px solid var(--line);font-size:13px;overflow:hidden}
+.lightbox-footer span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.lightbox-footer a{flex:none;white-space:nowrap}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
 .lightbox-nav:hover{filter:none;background:#50385ddd}
 #lightbox-prev{left:0}#lightbox-next{right:0}
 .lightbox-close{position:absolute;top:8px;right:8px;z-index:2;display:grid;place-items:center;width:38px;height:38px;padding:0;border:1px solid #6b5278;border-radius:8px;background:#35263f;color:#fff;box-shadow:none;font-size:25px;line-height:1}
 .lightbox-close:hover{filter:none;background:#50385d}
 .lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:2px}
-@media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:52vh;min-height:140px;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
+@media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
 </style>
 <main><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window" hidden>×</button><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft and supporting character research.</p></div></header>
 <div class="layout">
@@ -84,16 +85,35 @@ function inline(parent,text){
 }
 function renderMarkdown(target,markdown){target.replaceChildren();let paragraph=[],list,code;const flush=()=>{if(paragraph.length){const p=document.createElement('p');inline(p,paragraph.join(' '));target.append(p);paragraph=[]}list=undefined};for(const line of markdown.split('\n')){if(/^\s*```/.test(line)){flush();if(code){target.append(code);code=undefined}else code=document.createElement('pre');continue}if(code){code.append(document.createTextNode(line+'\n'));continue}if(!line.trim()){flush();continue}const heading=/^#{1,6}\s+(.+)$/.exec(line),item=/^\s*(?:[-*]|\d+\.)\s+(.+)$/.exec(line);if(heading){flush();const h=document.createElement('h3');inline(h,heading[1]);target.append(h)}else if(item){if(paragraph.length)flush();if(!list){list=document.createElement('ul');target.append(list)}const li=document.createElement('li');inline(li,item[1]);list.append(li)}else{list=undefined;paragraph.push(line)}}flush();if(code)target.append(code)}
 
+// Size the dialog once for the tallest currently loaded image at the gallery's
+// available width. A shared height prevents jumps when cycling aspect ratios.
+// The 48px footer and 16px image-stage padding are included in the budget.
+function fitLightboxToGallery(){
+  const narrow=window.innerWidth<=600;
+  const maxDialogHeight=window.innerHeight*(narrow?0.94:0.95);
+  const imageWidth=Math.max(1,window.innerWidth*0.96-(narrow?72:84));
+  const stageMax=Math.max(1,maxDialogHeight-48-2);
+  const needed=imageSources.reduce((height,source)=>{
+    const width=Number(source.width),imageHeight=Number(source.height);
+    if(!(width>0&&imageHeight>0))return height;
+    return Math.max(height,imageWidth*imageHeight/width+16);
+  },0);
+  const stageHeight=Math.min(stageMax,Math.max(Math.min(220,stageMax),needed));
+  lightbox.style.height=Math.round(stageHeight+48+2)+'px';
+}
+window.addEventListener('resize',()=>{if(lightbox.open)fitLightboxToGallery()});
 function showImage(index){
   const image=imageSources[index];
   if(!image)return;
   currentImage=index;
+  fitLightboxToGallery();
   const displayed=el('lightbox-image');
   displayed.hidden=false;
   el('lightbox-error').hidden=true;
   displayed.alt=image.label;
   displayed.src=image.url;
   el('lightbox-caption').textContent=image.label+' · '+(index+1)+' of '+imageSources.length;
+  el('lightbox-caption').title=image.label;
   el('lightbox-source').href=image.source;
   el('lightbox-prev').hidden=imageSources.length<2;
   el('lightbox-next').hidden=imageSources.length<2;
@@ -114,6 +134,7 @@ function imageIndex(profile){
     const loaded=candidates.filter(item=>item.loaded);
     imageSources=loaded.map(item=>item.source);
     el('images').replaceChildren(...loaded.map(item=>item.figure));
+    if(lightbox.open)fitLightboxToGallery();
     if(lightbox.open&&selected){
       currentImage=imageSources.indexOf(selected);
       if(currentImage<0)lightbox.close();
@@ -148,6 +169,8 @@ function imageIndex(profile){
     img.onload=()=>{
       if(generation!==imageGeneration||!img.naturalWidth||candidate.loaded)return;
       candidate.loaded=true;
+      source.width=img.naturalWidth;
+      source.height=img.naturalHeight;
       displayLoaded();
     };
     img.onerror=()=>{
