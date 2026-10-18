@@ -65,8 +65,8 @@ SETTINGS = (
     Setting("nativeAppUpdateMode", "scm-toolkit.native-app-update-mode", "VS Code app updates", "Use default for automatic update checks, start to check only at startup, manual to check on demand, or none to disable updates. VS Code keeps its normal update notices.", "Updates", "select", ("default", "start", "manual", "none")),
     Setting("nativeExtensionAutoCheckUpdates", "scm-toolkit.native-extension-auto-check-updates", "Automatically check for extension updates", "Use VS Code's built-in checks for installed extension updates.", "Updates"),
     Setting("nativeExtensionAutoUpdate", "scm-toolkit.native-extension-auto-update", "Automatically update extensions", "Let VS Code install extension updates automatically. Per-extension overrides and administrator policies still apply.", "Updates"),
-    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; automatically reload the focused window when ready.", "Startup"),
-    Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup"),
+    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; automatically reload the focused window when ready.", "Startup and repository"),
+    Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup and repository"),
     Setting("notificationPosition", "scm-toolkit.notification-position", "Notification position", "Choose where VS Code notification toasts and the Notification Center appear.", "Source control", "select", ("bottom-left", "bottom-right", "top-right")),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Show push checkbox", "Show the push-after-committing checkbox beside the message field.", "Message bar"),
@@ -99,21 +99,21 @@ SETTINGS = (
     Setting("browserGlobeNewTab", "scm-toolkit.browser-globe-new-tab", "Globe opens a new browser tab", "Click the title-bar globe to open a new Integrated Browser tab directly. Turn off to show the browser URL or tab picker.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
     Setting("browserHomeUrl", "scm-toolkit.browser-home-url", "Blank browser tab URL", "Destination for new blank browser tabs. Leave blank to use ChatGPT.", "Browser", "browser_url"),
-    Setting("workspaceSearchActivityBar", "scm-toolkit.workspace-search-activity-bar", "Standalone Activity Bar", "Move Workspace Search into its own Activity Bar container instead of the Source Control view.", "Workspace Search"),
-    Setting("workspaceSearchLabel", "scm-toolkit.workspace-search-label", "Search label", "Label for the Workspace Search panel and its standalone Activity Bar container.", "Workspace Search", "text"),
-    Setting("workspaceSearchPlaceholder", "scm-toolkit.workspace-search-placeholder", "Search box placeholder", "Text shown inside the empty EFS search field, e.g. SATS. Leave blank for the original hint.", "Workspace Search", "optional_text"),
-    Setting("workspaceSearchEmbeddingModel", "scm-toolkit.workspace-search-embedding-model", "Search embedding model", "Turns workspace passages into searchable meaning. Choose an embedding model, separate from chat models.", "Workspace Search", "model"),
-    Setting("workspaceSearchAskOllama", "scm-toolkit.workspace-search-ask-ollama", "Ask Ollama", "Show the Ask Ollama action in EFS search results.", "Workspace Search"),
-    Setting("workspaceSearchChatModel", "scm-toolkit.workspace-search-chat-model", "Ask Ollama chat model", "Ollama chat model used by Ask Ollama. Required when Ask Ollama is enabled.", "Workspace Search", "optional_model"),
-    Setting("workspaceSearchOllamaUrl", "scm-toolkit.workspace-search-ollama-url", "Search Ollama server", "Loopback URL of the Ollama server used for workspace search.", "Workspace Search", "url"),
-    Setting("workspaceSearchMode", "scm-toolkit.workspace-search-mode", "Search ranking", "Default ranking mode for search results.", "Workspace Search", "select", ("hybrid", "semantic", "exact")),
-    Setting("workspaceSearchAutoReindex", "scm-toolkit.workspace-search-auto-reindex", "Automatically refresh search index", "Refresh the workspace search index every two minutes.", "Workspace Search"),
-    Setting("workspaceSearchResultLimit", "scm-toolkit.workspace-search-result-limit", "Search result limit", "Maximum number of result passages shown.", "Workspace Search", "integer", minimum=1, maximum=100),
-    Setting("workspaceSearchMaxFiles", "scm-toolkit.workspace-search-max-files", "Search file limit", "Maximum number of workspace files considered for indexing.", "Workspace Search", "integer", minimum=1, maximum=50000),
-    Setting("workspaceSearchMaxFileSizeMB", "scm-toolkit.workspace-search-max-file-size-mb", "Maximum indexed file size (MB)", "Maximum file size indexed directly.", "Workspace Search", "number", minimum=0.1, maximum=100),
-    Setting("workspaceSearchExclude", "scm-toolkit.workspace-search-exclude", "Search exclusions", "Glob of paths excluded from workspace indexing. Leave blank to use no exclusions.", "Workspace Search", "optional_text"),
-    Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Repository", "text"),
-    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Repository", "text"),
+    Setting("workspaceSearchActivityBar", "scm-toolkit.workspace-search-activity-bar", "Standalone Activity Bar", "Move Workspace Search into its own Activity Bar container instead of the Source Control view.", "Search"),
+    Setting("workspaceSearchLabel", "scm-toolkit.workspace-search-label", "Search label", "Label for the Workspace Search panel and its standalone Activity Bar container.", "Search", "text"),
+    Setting("workspaceSearchPlaceholder", "scm-toolkit.workspace-search-placeholder", "Search box placeholder", "Text shown inside the empty EFS search field, e.g. SATS. Leave blank for the original hint.", "Search", "optional_text"),
+    Setting("workspaceSearchEmbeddingModel", "scm-toolkit.workspace-search-embedding-model", "Search embedding model", "Turns workspace passages into searchable meaning. Choose an embedding model, separate from chat models.", "Search", "model"),
+    Setting("workspaceSearchAskOllama", "scm-toolkit.workspace-search-ask-ollama", "Ask Ollama", "Show the Ask Ollama action in EFS search results.", "Search"),
+    Setting("workspaceSearchChatModel", "scm-toolkit.workspace-search-chat-model", "Ask Ollama chat model", "Ollama chat model used by Ask Ollama. Required when Ask Ollama is enabled.", "Search", "optional_model"),
+    Setting("workspaceSearchOllamaUrl", "scm-toolkit.workspace-search-ollama-url", "Search Ollama server", "Loopback URL of the Ollama server used for workspace search.", "Search", "url"),
+    Setting("workspaceSearchMode", "scm-toolkit.workspace-search-mode", "Search ranking", "Default ranking mode for search results.", "Search", "select", ("hybrid", "semantic", "exact")),
+    Setting("workspaceSearchAutoReindex", "scm-toolkit.workspace-search-auto-reindex", "Automatically refresh search index", "Refresh the workspace search index every two minutes.", "Search"),
+    Setting("workspaceSearchResultLimit", "scm-toolkit.workspace-search-result-limit", "Search result limit", "Maximum number of result passages shown.", "Search", "integer", minimum=1, maximum=100),
+    Setting("workspaceSearchMaxFiles", "scm-toolkit.workspace-search-max-files", "Search file limit", "Maximum number of workspace files considered for indexing.", "Search", "integer", minimum=1, maximum=50000),
+    Setting("workspaceSearchMaxFileSizeMB", "scm-toolkit.workspace-search-max-file-size-mb", "Maximum indexed file size (MB)", "Maximum file size indexed directly.", "Search", "number", minimum=0.1, maximum=100),
+    Setting("workspaceSearchExclude", "scm-toolkit.workspace-search-exclude", "Search exclusions", "Glob of paths excluded from workspace indexing. Leave blank to use no exclusions.", "Search", "optional_text"),
+    Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Startup and repository", "text"),
+    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Startup and repository", "text"),
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
@@ -662,6 +662,13 @@ def render_form(
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
+            controls += (
+                '<div class="setting"><span><strong>Commit hotkey</strong>'
+                '<small>Default: F6. To change it, open VS Code Keyboard Shortcuts '
+                '(Cmd+K Cmd+S on macOS; Ctrl+K Ctrl+S on Windows/Linux) and search for '
+                'Sweetiebot: Commit (Same as Source Control Button). '
+                'This runs the same action as the Source Control Commit button.</small></span></div>'
+            )
             controls += _local_setup_controls()
         if section == "Pull requests":
             controls = (
@@ -672,7 +679,7 @@ def render_form(
                 'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
             ) + controls
         status = ""
-        if section in {"Ollama", "Workspace Search"}:
+        if section in {"Ollama", "Search"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"
