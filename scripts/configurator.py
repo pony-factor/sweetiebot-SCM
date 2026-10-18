@@ -664,10 +664,9 @@ def render_form(
         if section == "Source control":
             controls += (
                 '<div class="setting"><span><strong>Commit hotkey</strong>'
-                '<small>Default: F6. To change it, open VS Code Keyboard Shortcuts '
-                '(Cmd+K Cmd+S on macOS; Ctrl+K Ctrl+S on Windows/Linux) and search for '
-                'Sweetiebot: Commit (Same as Source Control Button). '
-                'This runs the same action as the Source Control Commit button.</small></span></div>'
+                '<small>Set or clear this shortcut using Change or Reset in the Message bar tab. '
+                'New installations start unbound. The shortcut performs the same action '
+                'as the Source Control Commit button.</small></span></div>'
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
