@@ -1072,6 +1072,10 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             message.addEventListener('input', updateActions);
             updateActions();
             const renderFiles = () => {
+            if (dialog.open && !(preview.files || []).length) {
+                dialog.close();
+                return;
+            }
             const scrollTop = content.scrollTop;
             content.replaceChildren(heading);
             if (!(preview.files || []).length) {

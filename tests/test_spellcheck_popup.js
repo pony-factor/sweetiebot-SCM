@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {spellcheckDiffFiles} = require('../efs/spellcheck_diff');
 
-test('popup renders safe text, consumes once per document, and restores focus on dismissal', async () => {
+for (const closingAction of ['dismiss', 'correction', 'line', 'edit']) {
+test('popup safely renders and restores focus after closing via ' + closingAction, async () => {
   const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
   const start = source.indexOf('const scmToolkitSpellcheckDocuments');
   const end = source.indexOf('function scmToolkitCreateControls(', start);
@@ -45,10 +46,12 @@ test('popup renders safe text, consumes once per document, and restores focus on
   const saved = [];
   const undone = [];
   const accepted = [];
+  const closed = [];
+  let updatedPreview = preview;
   context.scmToolkitWatchSpellcheckPopups(doc, {async executeCommand(id, ...args) {
-    if (id === 'sweetiebot.closeSpellcheckPopup') return;
-    if (id === 'sweetiebot.saveSpellcheckEdit') { saved.push(args); return preview; }
-    if (id === 'sweetiebot.undoSpellcheckChange') { undone.push(args); return preview; }
+    if (id === 'sweetiebot.closeSpellcheckPopup') { closed.push(args); return; }
+    if (id === 'sweetiebot.saveSpellcheckEdit') { saved.push(args); return updatedPreview; }
+    if (id === 'sweetiebot.undoSpellcheckChange') { undone.push(args); return updatedPreview; }
     if (id === 'sweetiebot.finishSpellcheckPreview') { accepted.push(args); throw new Error('Fixture commit rejected'); }
     assert.equal(id, 'sweetiebot.takeSpellcheckPopup'); calls++; return calls === 1 ? preview : undefined;
   }});
@@ -108,10 +111,25 @@ test('popup renders safe text, consumes once per document, and restores focus on
   assert(elements.some(node => node.textContent === 'Fixture commit rejected'));
   await timer();
   assert.equal(calls, 1);
-  dialog.events.click({target: dialog, clientX: 50, clientY: 50});
+  updatedPreview = {...preview, files: []};
+  if (closingAction === 'dismiss') {
+    dialog.events.click({target: dialog, clientX: 50, clientY: 50});
+  } else if (closingAction === 'edit') {
+    elements.filter(node => node.tabIndex === 0).at(-1).events.click();
+    const lastEditor = elements.filter(node => node.className === 'scm-toolkit-spellcheck-line-editor').at(-1);
+    lastEditor.value = 'speling';
+    lastEditor.events.blur();
+  } else {
+    const className = closingAction === 'line' ? 'scm-toolkit-spellcheck-revert-line' : 'scm-toolkit-spellcheck-undo';
+    elements.filter(node => node.className === className).at(-1).events.click({stopPropagation() {}});
+  }
   await new Promise(setImmediate);
+  assert.equal(dialog.open, false);
   assert.equal(dialog.removed, true);
   assert.equal(previousFocus.focused, true);
+  assert.deepEqual(closed, [['session']]);
+  assert.equal(accepted.length, 1, 'automatic closure must not commit or revert files again');
   await timer();
   assert.equal(calls, 2);
 });
+}

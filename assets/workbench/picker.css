@@ -774,7 +774,8 @@
 .scm-toolkit-spellcheck-file-toggle:focus-visible,.scm-toolkit-spellcheck-undo:focus-visible,.scm-toolkit-spellcheck-revert-line:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
 .scm-toolkit-spellcheck-correction{display:inline;white-space:pre-wrap}
 .scm-toolkit-spellcheck-line-actions{display:flex;align-items:center;justify-content:center;min-width:0}
-.scm-toolkit-spellcheck-undo,.scm-toolkit-spellcheck-revert-line{display:inline-flex;align-items:center;justify-content:center;vertical-align:baseline;margin:0 3px;padding:0 2px;min-width:1.2em;height:1.2em;border:0;border-radius:3px;background:transparent;color:var(--vscode-textLink-foreground,#3794ff);font:inherit;font-size:1.15em;line-height:1;cursor:pointer}
+.scm-toolkit-spellcheck-undo,.scm-toolkit-spellcheck-revert-line{display:inline-flex;align-items:center;justify-content:center;vertical-align:baseline;margin:0 3px;padding:0 2px;min-width:1.2em;height:1.2em;border:0;border-radius:3px;background:transparent;color:var(--vscode-textLink-foreground,#3794ff);font:inherit;font-size:1em;line-height:1;cursor:pointer}
+.scm-toolkit-spellcheck-revert-line{font-size:1.5em;margin:0;padding:0;min-width:1em;height:1em;align-self:start}
 .scm-toolkit-spellcheck-undo:hover,.scm-toolkit-spellcheck-revert-line:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-textLink-activeForeground,var(--vscode-textLink-foreground,#3794ff))}
 .scm-toolkit-spellcheck-undo:disabled,.scm-toolkit-spellcheck-revert-line:disabled{opacity:.5;cursor:default}
 .scm-toolkit-spellcheck-content .diff-line{display:grid;grid-template-columns:4.2em 4.2em 2em 1.7em minmax(0,1fr);width:100%}
