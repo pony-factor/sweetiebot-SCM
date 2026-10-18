@@ -114,7 +114,6 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
-      ludicrousMode: scm.get('ludicrousMode', false),
       chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },
     appUpdateSettings: {

@@ -11,10 +11,18 @@ const {
   normalizeConversationSource,
   pullRequestPrompt,
   readSweetiebotPony,
+  readLudicrousMode,
   registerPullRequestCommand,
 } = require('../efs/pull_request');
 
 async function run() {
+  assert.equal(await readLudicrousMode(async (_git, args) => {
+    assert.deepEqual(args, ['config', '--global', '--type=bool', '--get', 'scm-toolkit.ludicrous-mode']);
+    return {stdout:'true\n'};
+  }), true);
+  assert.equal(await readLudicrousMode(async () => ({stdout:'false\n'})), false);
+  assert.equal(await readLudicrousMode(async () => {throw new Error('Unset preference');}), false);
+
   for (const remote of ['https://github.com/owner/repo.git', 'git@github.com:owner/repo.git', 'ssh://git@github.com/owner/repo.git']) {
     assert.equal(githubRepository(remote), 'https://github.com/owner/repo');
   }
@@ -212,7 +220,7 @@ async function run() {
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { if (key === 'autoPublishPullRequests') return true; if (key === 'ludicrousMode') return ludicrousMode; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) { if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {
       from: components => components,
@@ -253,6 +261,7 @@ async function run() {
     }
   };
   registerPullRequestCommand(vscode, { subscriptions: [] }, {
+    readLudicrousMode: async () => ludicrousMode,
     async launchPRSession(_vscode, _context, root, options) {
       if (!launchInSeparateWorkspace) return false;
       sessionLaunches.push({ root, options });
@@ -367,7 +376,7 @@ async function run() {
   assert.equal(cachedState.profile, savedProfile, 'Cached results immediately appear in the new confirmation');
   assert.equal(cachedState.ludicrousMode, false);
   ludicrousMode = true;
-  assert.equal((await (await fetch(cachedConfirmation + '/state')).json()).ludicrousMode, true, 'The Kefania dialog reads the current VS Code setting');
+  assert.equal((await (await fetch(cachedConfirmation + '/state')).json()).ludicrousMode, true, 'The Kefania dialog reads the current magic-wand preference');
   ludicrousMode = false;
   assert.equal(cachedState.draft, undefined, 'PR drafting remains independent');
   cachedProfile = undefined;

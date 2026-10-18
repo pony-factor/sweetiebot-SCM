@@ -397,11 +397,6 @@
           "default": "",
           "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
         },
-        "scmToolkit.ludicrousMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Skip the confirmation box when you click Squash and merge in the Kefania dialog."
-        },
         "scmToolkit.autoPublishPullRequests": {
           "type": "boolean",
           "default": true,

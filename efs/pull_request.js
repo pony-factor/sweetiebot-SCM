@@ -2,6 +2,9 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const { homedir } = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { runKefania, runKefaniaPonyCache } = require('./kefania_runner');
 const { resolveKefaniaFile } = require('./kefania_paths');
@@ -19,6 +22,15 @@ const DEFAULT_MCP_SERVER = 'codex-drafter';
 const DEFAULT_MCP_TOOL = 'github_create_pull_request';
 const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
 const CONVERSATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function readLudicrousMode(run = promisify(execFile)) {
+  try {
+    const { stdout } = await run('git',
+      ['config', '--global', '--type=bool', '--get', 'scm-toolkit.ludicrous-mode'],
+      { cwd: homedir(), timeout: 3000, encoding: 'utf8' });
+    return stdout.trim() === 'true';
+  } catch { return false; }
+}
 
 function githubRepository(remoteUrl) {
   const match = String(remoteUrl ?? '').trim().match(
@@ -196,6 +208,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readPony = dependencies.readPony || readSweetiebotPony;
   const run = dependencies.runKefania || runKefania;
   const merge = dependencies.mergePullRequest || squashMergePullRequest;
+  const ludicrousMode = dependencies.readLudicrousMode || readLudicrousMode;
   let handoff;
   const pendingDrafts = new Map();
   context.subscriptions.push({ dispose() { pendingDrafts.clear(); } });
@@ -406,7 +419,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
     localHandoff.register(draftId, { pony, profile: cachedProfile,
-      ludicrousMode: () => vscode.workspace.getConfiguration('scmToolkit').get('ludicrousMode', false) === true,
+      ludicrousMode,
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;
@@ -477,6 +490,7 @@ module.exports = {
   normalizeConversationSource,
   pullRequestPrompt,
   readKefaniaInstructions,
+  readLudicrousMode,
   readCodexConversation,
   readSweetiebotPony,
   registerPullRequestCommand,

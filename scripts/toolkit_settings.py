@@ -348,7 +348,6 @@ VSCODE_SETTINGS = {
         "pullRequestRefreshIntervalSeconds": "pullRequestRefreshIntervalSeconds",
         "pullRequestQuickMerge": "pullRequestQuickMerge",
         "autoPublishPullRequests": "autoPublishPullRequests",
-        "ludicrousMode": "ludicrousMode",
         "chatgptProjectUrl": "chatgptProjectUrl",
         "codexKeepAwake": "codexKeepAwake",
         "durableBackgroundCommits": "durableBackgroundCommits",

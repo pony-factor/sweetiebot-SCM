@@ -31,6 +31,11 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('Traceback', result.stderr)
 
+    def test_ludicrous_mode_is_only_in_magic_wand_settings(self):
+        properties = workspace_search.render_package(DEFAULTS)["contributes"]["configuration"]["properties"]
+        self.assertNotIn("scmToolkit.ludicrousMode", properties)
+        self.assertNotIn("ludicrousMode", toolkit_settings.VSCODE_SETTINGS["vscodeSettings"])
+
     def test_pony_information_has_no_sidebar_view(self):
         for activity_bar in (False, True):
             package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchActivityBar=activity_bar))

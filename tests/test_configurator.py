@@ -262,12 +262,14 @@ class SubmissionTests(unittest.TestCase):
         values["ludicrousMode"] = ["true"]
         parsed = configurator.parse_submission(values)
         payload = configurator.extension_settings_payload(parsed)
-        self.assertTrue(payload["vscodeSettings"]["ludicrousMode"])
-        current = dict(install.DEFAULT_SETTINGS)
-        configurator.apply_vscode_settings(current, payload)
-        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertNotIn("ludicrousMode", payload["vscodeSettings"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
         self.assertIn('name="ludicrousMode" value="true" checked', page)
         self.assertIn('Ludicrous mode', page)
+        self.assertEqual(toolkit_settings.SETTING_KEYS["ludicrousMode"], "scm-toolkit.ludicrous-mode")
+        with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
+            configurator.save_settings(parsed)
+        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.ludicrous-mode", "true"] for call in run.call_args_list))
         values.pop("ludicrousMode")
         self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
 
