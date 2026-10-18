@@ -368,7 +368,7 @@ Then reload Visual Studio Code. The installer resolves the Git-config values and
 
 ### Branch-name packs
 
-Random branch names are data-driven. Built-in packs live in `scripts/branch_name_packs.json`, and every pack uses the same small schema: The G4 roster has separate packs for mares, stallions, fillies, colts, and major non-pony creatures. An opt-in **G4 pets** pack holds only named pets and animal companions, distinct from the **G4 creatures** pack. The dedicated **G4 caricatures** pack containing the six Equestrian founders, six Power Ponies, Humdrum, Smash Fortune, and Grogar; Wind Rider and Coiffed Waiter Pony remain in G4 stallions, Forward-Thinking Friendship Student is in G4 mares, and Tirek and Scorpan are in G4 creatures. The two finale-era pony labels come from the Gameloft game rather than dialogue in the show.
+Random branch names are data-driven. Built-in packs live in `scripts/branch_name_packs.json`, and every pack uses the same small schema: The G4 roster has separate packs for mares, stallions, fillies, colts, and major non-pony creatures. An opt-in **G4 pets** pack holds only named pets and animal companions, distinct from the **G4 creatures** pack. The dedicated **G4 caricatures** pack includes the six Equestrian founders, six Power Ponies, Humdrum, Smash Fortune, Grogar, and the seven historical Wonderbolts names featured in *Testing Testing 1, 2, 3*; Wind Rider and Coiffed Waiter Pony remain in G4 stallions, Forward-Thinking Friendship Student is in G4 mares, and Tirek and Scorpan are in G4 creatures. The two finale-era pony labels come from the Gameloft game rather than dialogue in the show.
 
 ```json
 {

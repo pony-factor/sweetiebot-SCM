@@ -317,6 +317,29 @@ class BranchNamePackTests(unittest.TestCase):
         )
         self.assertNotIn("g4-caricatures", settings["branchNameDisabledPacks"])
 
+    def test_historical_wonderbolts_are_in_g4_caricatures(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        historical_wonderbolts = (
+            "general-firefly",
+            "purple-dart",
+            "admiral-fairweather",
+            "commander-easyglider",
+            "fairy-flight",
+            "general-flash",
+            "flair-dmare",
+        )
+        for slug in historical_wonderbolts:
+            self.assertEqual(
+                [pack["id"] for pack in catalog["packs"] if slug in pack["names"]],
+                ["g4-caricatures"],
+                f"{slug} must be exclusive to the G4 caricatures pack",
+            )
+        self.assertEqual(
+            len(packs["g4-caricatures"]["names"]),
+            len(set(packs["g4-caricatures"]["names"])),
+        )
+
     def test_missing_g4_characters_use_canonical_packs(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}

@@ -7,7 +7,6 @@
       "description": "Named adult female G4 characters, including ponies, zebras, donkeys, hippogriffs, seaponies, yaks, and background characters.",
       "names": [
         "abradacanter",
-        "fairy-flight",
         "aloe-vera",
         "aloha",
         "amaranthine",
@@ -144,7 +143,6 @@
         "coco-pommel",
         "cold-front",
         "rara",
-        "commander-easyglider",
         "soaring-virtue",
         "coral-bits",
         "coral-shine",
@@ -201,7 +199,6 @@
         "fine-line",
         "fire-flare",
         "first-folio",
-        "flair-dmare",
         "fleetfoot",
         "fleur-de-lis",
         "flitter",
@@ -227,7 +224,6 @@
         "feather-twirl",
         "gala-appleby",
         "blazing-donut-glaze",
-        "general-firefly",
         "glitter-spritz",
         "gold-slipper",
         "golden-glitter",
@@ -698,7 +694,6 @@
         "ace-point",
         "acrylic-paint",
         "adante",
-        "admiral-fairweather",
         "affero",
         "ancient-artifact",
         "cratus",
@@ -783,7 +778,6 @@
         "pratfall",
         "cobalt",
         "code-red",
-        "purple-dart",
         "limelight",
         "comb-over",
         "comet-tail",
@@ -868,7 +862,6 @@
         "wooden-legs",
         "fuzzy-slippers",
         "gary-coronet",
-        "general-flash",
         "geronimo",
         "ginger-shade",
         "gingerbread",
@@ -1546,7 +1539,7 @@
     {
       "id": "g4-caricatures",
       "label": "G4 caricatures",
-      "description": "Notable named G4 caricatures, including Equestria's founders, the Power Ponies and Humdrum, Mare Do Well, and Smash Fortune.",
+      "description": "Notable named G4 caricatures, including Equestria's founders, the Power Ponies and Humdrum, Mare Do Well, Smash Fortune, and the historical Wonderbolts from Testing Testing 1, 2, 3.",
       "names": [
         "chancellor-puddinghead",
         "clover-the-clever",
@@ -1566,7 +1559,14 @@
         "grogar",
         "plainity",
         "ahuizotl",
-        "smooze"
+        "smooze",
+        "general-firefly",
+        "purple-dart",
+        "admiral-fairweather",
+        "commander-easyglider",
+        "fairy-flight",
+        "general-flash",
+        "flair-dmare"
       ]
     },
     {
