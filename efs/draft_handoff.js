@@ -38,7 +38,7 @@ async function createDraftHandoff(publish) {
     if (!state || state.expires < Date.now()) return fail(410, 'This confirmation page expired. Start the workflows again.');
     const kind = match[2];
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, ludicrousMode: (typeof state.ludicrousMode === 'function' ? state.ludicrousMode() : state.ludicrousMode) === true });
       if (kind === 'close' || kind === 'merge') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
@@ -101,7 +101,7 @@ async function createDraftHandoff(publish) {
   expiry.unref();
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, autoPublish = false} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, autoPublish, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, autoPublish = false, ludicrousMode = false} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, autoPublish, ludicrousMode, errors: {}, expires: Date.now() + 3600000}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { clearTimeout(expiry); drafts.clear(); server.close(); }
   };

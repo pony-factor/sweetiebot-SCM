@@ -406,6 +406,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
     localHandoff.register(draftId, { pony, profile: cachedProfile,
+      ludicrousMode: () => vscode.workspace.getConfiguration('scmToolkit').get('ludicrousMode', false) === true,
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;

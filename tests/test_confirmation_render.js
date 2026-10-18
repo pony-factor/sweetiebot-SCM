@@ -155,3 +155,33 @@ assert.doesNotMatch(html, /PR drafting and pony research finish independently\./
 assert.match(html, /Pull request published\. Review the details and supporting character research\./, 'Published subtitle uses professional status copy');
 assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');
 console.log('Confirmation Markdown, lightbox, image fallback, and close action checks passed.');
+
+(async()=>{
+  let merges=0, prompts=0;
+  let state={result:{number:2,base:'main'}};
+  context.fetch=async (url, options)=>{
+    if(options?.method==='POST'){merges++;return {ok:true,json:async()=>({merged:true})};}
+    return {ok:true,json:async()=>state};
+  };
+  context.refresh=async()=>{};
+  context.confirm=()=>{prompts++;return false;};
+  await getElementById('merge').onclick();
+  assert.equal(prompts,1,'Default mode asks before merging');
+  assert.equal(merges,0,'Cancelling confirmation cannot merge');
+  state.ludicrousMode=true;
+  context.confirm=()=>{throw new Error('Ludicrous mode must skip confirmation');};
+  await getElementById('merge').onclick();
+  assert.equal(merges,1,'Ludicrous mode merges on the explicit button click');
+  state.merging=true;
+  await getElementById('merge').onclick();
+  assert.equal(merges,1,'A merge already in progress stays guarded');
+  state={ludicrousMode:true};
+  await getElementById('merge').onclick();
+  assert.equal(merges,1,'Ludicrous mode cannot merge an unpublished PR');
+  state={result:{number:2},ludicrousMode:false};
+  context.confirm=()=>{prompts++;return true;};
+  await getElementById('merge').onclick();
+  assert.equal(prompts,2,'Turning the setting off restores confirmation');
+  assert.equal(merges,2);
+  console.log('Ludicrous mode confirmation checks passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

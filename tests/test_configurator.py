@@ -256,6 +256,21 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             configurator.parse_submission(values)
 
+    def test_ludicrous_mode_defaults_off_and_round_trips(self):
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
+        values["ludicrousMode"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertTrue(payload["vscodeSettings"]["ludicrousMode"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="ludicrousMode" value="true" checked', page)
+        self.assertIn('Ludicrous mode', page)
+        values.pop("ludicrousMode")
+        self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
+
     def test_pr_auto_publish_preference_round_trips_into_vscode(self):
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["autoPublishPullRequests"])

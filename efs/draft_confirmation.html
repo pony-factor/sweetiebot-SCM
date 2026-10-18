@@ -212,7 +212,7 @@ if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderM
 el('merge').onclick=async()=>{
   const state=await (await fetch(root+'/state')).json();
   if(!state.result||state.mergeResult||state.merging)return;
-  if(!confirm('Squash and merge PR #'+state.result.number+' into '+(state.result.base||'its base branch')+'? This cannot be undone.'))return;
+  if(state.ludicrousMode!==true&&!confirm('Squash and merge PR #'+state.result.number+' into '+(state.result.base||'its base branch')+'? This cannot be undone.'))return;
   el('merge').disabled=true;el('merge-error').textContent='';
   try{const response=await fetch(root+'/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Merge failed.');await refresh();

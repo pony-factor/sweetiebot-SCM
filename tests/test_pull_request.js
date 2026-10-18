@@ -195,6 +195,7 @@ async function run() {
   } };
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
+  let ludicrousMode = false;
   let contextFailure;
   let aheadBy = 1;
   const ponyLookups = [];
@@ -211,7 +212,7 @@ async function run() {
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) { if (key === 'autoPublishPullRequests') return true; if (key === 'ludicrousMode') return ludicrousMode; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {
       from: components => components,
@@ -364,6 +365,10 @@ async function run() {
   const cachedConfirmation = calls[0].args[0].url;
   const cachedState = await (await fetch(cachedConfirmation + '/state')).json();
   assert.equal(cachedState.profile, savedProfile, 'Cached results immediately appear in the new confirmation');
+  assert.equal(cachedState.ludicrousMode, false);
+  ludicrousMode = true;
+  assert.equal((await (await fetch(cachedConfirmation + '/state')).json()).ludicrousMode, true, 'The Kefania dialog reads the current VS Code setting');
+  ludicrousMode = false;
   assert.equal(cachedState.draft, undefined, 'PR drafting remains independent');
   cachedProfile = undefined;
   const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
