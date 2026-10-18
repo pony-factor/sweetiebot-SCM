@@ -226,7 +226,7 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "description": "Opt in to mirror accessible GitHub repositories whose default branch is main every 8 hours, only when clean. Uses isolated Sweetiebot storage."
+          "description": "Sync existing local main checkouts every 15 minutes when upstream main has commits in the past seven days, even after VS Code closes. Skips local changes and divergence."
         },
         "scmToolkit.durableBackgroundCommits": {
           "type": "boolean",
