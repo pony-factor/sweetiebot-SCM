@@ -71,7 +71,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(doc.action().title, 'Could not resize window; click to retry');
   fail = false;
   doc.action().events.keydown({ ...event, key: ' ' });
-  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(calls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'false');
   // Dedicated PR workspaces start square, and their title-bar button still restores size.
@@ -97,7 +97,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(sessionCalls.length, 1, 'Title-bar remount does not resize a second time');
   session.action().events.click(event);
   await flush();
-  assert.deepEqual(sessionCalls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(sessionCalls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
   assert.equal(session.action().attrs['aria-pressed'], 'false');
   autoCompact = false;
   changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
@@ -143,8 +143,11 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 640, height: 640 });
   moving.action().events.click(event);
   await flush();
-  assert.deepEqual(moves.at(-1), { x: -1300, y: 80, width: 1000, height: 760 });
-  assert.equal(moving.checkDisplay, null, 'Restore stops watching display changes');
+  assert.deepEqual(moves.at(-1), { x: 240, y: 157, width: 1440, height: 791 });
+  assert.equal(moving.checkDisplay, null, 'Expansion stops compact display enforcement');
+  moving.action().events.click(event);
+  await flush();
+  assert.deepEqual(moves.at(-1), { x: 640, y: 233, width: 640, height: 640 });
 
   // Workspace configuration may arrive after the workbench mounts.
   const late = documentFixture();
@@ -174,7 +177,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls.at(-1).bounds, { x: 1933, y: 49, width: 640, height: 640 });
   release(); await flush();
   narrow.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1953, y: 110, width: 600, height: 518 });
   release(); await flush();
 
   // Native VS Code cannot fit its side-panel minimum on a smaller display.
@@ -192,7 +195,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls.at(-1).bounds, { x: 1925, y: 64, width: 640, height: 640 });
   release(); await flush();
   small.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1945, y: 114, width: 600, height: 540 });
   release(); await flush();
   // The workbench's titlebar still installs the popup consumer when the SCM
   // widget is absent and compact-window resizing is unavailable.

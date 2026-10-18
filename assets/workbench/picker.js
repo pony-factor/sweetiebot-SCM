@@ -2621,7 +2621,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         action.classList.toggle('codicon-screen-full', compact);
         action.setAttribute('aria-pressed', String(compact));
         action.setAttribute('aria-disabled', String(state.busy));
-        action.title = compact ? 'Restore window size' : 'Compact window';
+        action.title = compact ? 'Expand to 75% of this display' : 'Compact window';
         action.setAttribute('aria-label', action.title);
     };
     const toggle = async action => {
@@ -2642,14 +2642,15 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 width: win.outerWidth, height: win.outerHeight
             };
             const screen = win.screen;
-            // Respect the native 600px minimum for side-mounted panels.
-            // Requesting 560px widens only the native window, making a rectangle.
-            // Center the square; retain 32px gutters wherever the screen allows.
-            const side = 640;
-            const bounds = state.restore || {
-                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - side) / 2),
-                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - side) / 2),
-                width: side, height: side
+            // Expand on the current display instead of restoring stale bounds
+            // from whichever display the window was originally compacted on.
+            const width = state.restore
+                ? Math.min(screen.availWidth, Math.max(600, Math.round(screen.availWidth * 0.75))) : 640;
+            const height = state.restore ? Math.round(screen.availHeight * 0.75) : 640;
+            const bounds = {
+                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
+                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
+                width, height
             };
             if (nativeHost.unmaximizeWindow) {
                 await nativeHost.unmaximizeWindow({ targetWindowId: win.vscodeWindowId });
