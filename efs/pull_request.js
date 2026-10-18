@@ -13,6 +13,7 @@ const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
 const { launchPRSession, closePRSession } = require('./pr_session');
+const { pendingPRCommits } = require('./pr_commit_wait');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 const KEFANIA_DIRECTORY = 'kefania';
@@ -340,42 +341,49 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     const instructions = await readInstructions(repository.rootUri.fsPath);
     const input = { repository: repositoryUrl.slice('https://github.com/'.length), head: branch, base: options.base, source };
+    const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, root);
     let evidence, evidenceError;
-    try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
-    catch (error) { evidenceError = error; }
-    // Kefania identifies PRs by their head branch, even when they target another base.
-    // Reuse the existing PR before initiating independent draft or pony workflows.
-    if (evidence?.existingPullRequest) {
-      const { number, url } = evidence.existingPullRequest;
-      if (!Number.isSafeInteger(number) || number < 1 || url !== `${repositoryUrl}/pull/${number}`) {
-        throw new Error('Kefania returned an invalid existing pull-request reference.');
+    const loadEvidence = async () => {
+      try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
+      catch (error) { evidenceError = error; }
+      // Kefania identifies PRs by their head branch, even when they target another base.
+      // Reuse the existing PR before initiating independent draft or pony workflows.
+      if (evidence?.existingPullRequest) {
+        const { number, url } = evidence.existingPullRequest;
+        if (!Number.isSafeInteger(number) || number < 1 || url !== `${repositoryUrl}/pull/${number}`) {
+          throw new Error('Kefania returned an invalid existing pull-request reference.');
+        }
+        await vscode.window.showInformationMessage(`PR #${number} already exists for ${branch}; opening it instead.`);
+        await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
+        return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
       }
-      await vscode.window.showInformationMessage(`PR #${number} already exists for ${branch}; opening it instead.`);
-      await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(url));
-      return { ...evidence.existingPullRequest, existing: true, repositoryUrl };
-    }
-    if (evidence && typeof evidence.newPullRequest?.allowed !== 'boolean') {
-      throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
-    }
-    // The historical fork point must differ from previous PRs for this head,
-    // even if the prior PR was merged months ago and new commits were added.
-    if (evidence?.newPullRequest?.reason === 'same-starting-base') {
-      const previous = evidence.newPullRequest.pullRequest;
-      await vscode.window.showInformationMessage(
-        `PR #${previous?.number ?? '?'} already used the starting base for ${branch}. Create a new branch from a different base commit.`
-      );
-      return { skipped: true, reason: 'same-starting-base', repositoryUrl };
-    }
-    // Kefania's published comparison is authoritative: an empty branch cannot
-    // produce a PR, so do not open either the draft or independent pony chat.
-    if (evidence?.aheadBy === 0) {
-      await vscode.window.showInformationMessage(
-        `No published commits on ${branch} ahead of ${options.base}. Commit and push changes before creating a pull request.`
-      );
-      return { skipped: true, reason: 'no-commits', repositoryUrl };
-    }
-    if (evidence && evidence.newPullRequest?.allowed !== true) {
-      throw new Error('Kefania could not verify that this branch is eligible for a new PR.');
+      if (evidence && typeof evidence.newPullRequest?.allowed !== 'boolean') {
+        throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
+      }
+      // The historical fork point must differ from previous PRs for this head,
+      // even if the prior PR was merged months ago and new commits were added.
+      if (evidence?.newPullRequest?.reason === 'same-starting-base') {
+        const previous = evidence.newPullRequest.pullRequest;
+        await vscode.window.showInformationMessage(
+          `PR #${previous?.number ?? '?'} already used the starting base for ${branch}. Create a new branch from a different base commit.`
+        );
+        return { skipped: true, reason: 'same-starting-base', repositoryUrl };
+      }
+      // Kefania's published comparison is authoritative: an empty branch cannot
+      // produce a PR, so do not open either the draft or independent pony chat.
+      if (evidence?.aheadBy === 0) {
+        await vscode.window.showInformationMessage(
+          `No published commits on ${branch} ahead of ${options.base}. Commit and push changes before creating a pull request.`
+        );
+        return { skipped: true, reason: 'no-commits', repositoryUrl };
+      }
+      if (evidence && evidence.newPullRequest?.allowed !== true) {
+        throw new Error('Kefania could not verify that this branch is eligible for a new PR.');
+      }
+    };
+    if (!waitForCommits) {
+      const result = await loadEvidence();
+      if (result) return result;
     }
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
       const error = new Error('Update VS Code to open ChatGPT in the Integrated Browser.');
@@ -447,7 +455,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           });
       }
     } });
-    prepare('draft', () => {
+    const prepareDraft = () => prepare('draft', () => {
       if (evidenceError) throw evidenceError;
       return boundedLaunch(boundedEvidence => pullRequestPrompt({
       branch,
@@ -462,6 +470,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       browserDraft: { evidence: boundedEvidence, callback: draftCallback },
       }), prompt => chatgptPullRequestUrl(prompt, projectUrl, draftCallback), evidence);
     });
+    if (!waitForCommits) prepareDraft();
     if (pony && !cachedProfile) prepare('pony', () => boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
       prompt => chatgptPullRequestUrl(prompt, projectUrl, profileCallback)));
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
@@ -480,6 +489,26 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           timers.set(kind, timer);
         }
         catch (error) { localHandoff.reportError(draftId, kind, error.message); }
+      }
+      if (waitForCommits) {
+        try {
+          await waitForCommits();
+          const result = await loadEvidence();
+          if (result) {
+            localHandoff.reportError(draftId, 'draft', 'PR preparation stopped: ' + (result.reason || 'an existing PR was opened'));
+            return result;
+          }
+          prepareDraft();
+          if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
+          const workflow = workflows.find(([kind]) => kind === 'draft')?.[1];
+          if (workflow) {
+            closers.set('draft', await openWorkflow(vscode, workflow.url, { openToSide: closers.has('pony') }));
+            const timer = setTimeout(() => localHandoff.reportError(draftId, 'draft',
+              'This workflow did not return a result within 20 minutes. Its chat remains available for review.'), 1200000);
+            timer.unref?.();
+            timers.set('draft', timer);
+          }
+        } catch (error) { localHandoff.reportError(draftId, 'draft', error.message); }
       }
     } catch (error) { pendingDrafts.delete(draftId); throw error; }
     return { source, conversationContext, repositoryUrl, pony };

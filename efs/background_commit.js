@@ -178,4 +178,4 @@ function registerBackgroundCommit(vscode, context) {
   }));
 }
 
-module.exports = { enqueue, registerBackgroundCommit };
+module.exports = { enqueue, readStatus, registerBackgroundCommit };

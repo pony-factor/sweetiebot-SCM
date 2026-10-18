@@ -91,7 +91,7 @@ async function run() {
       }
     }
   };
-  registerLocalPullRequestCommand(vscode, { subscriptions: [] });
+  registerLocalPullRequestCommand(vscode, { subscriptions: [] }, { pendingPRCommits: async () => undefined });
   const result = await command({ rootUri }, {
     branch: 'draft', base: 'main', remote: 'origin',
     source: {
