@@ -683,16 +683,29 @@ def completed_branch_base(real_git, global_args, ref):
             raise RuntimeError('A pending commit checkpoint is unavailable.')
         pending = {job['sha']: job for job in jobs if job.get('provisional') and job.get('sha')}
         candidate = query('rev-parse', '--verify', ref + '^{commit}')
-        visited = set()
-        while (candidate in pending or re.fullmatch(
-                r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])',
-                query('show', '-s', '--format=%s', candidate))):
-            parents = query('show', '-s', '--format=%P', candidate).split()
-            if candidate in visited or len(parents) != 1:
+        # A copied workspace can have later commits on top of an orphaned
+        # placeholder. Inspect ancestry too, even without a matching job record.
+        unfinished = set(pending)
+        history = query('log', '--format=%H%x00%s', candidate)
+        ordered = []
+        for line in history.splitlines():
+            sha, _, subject = line.partition('\x00')
+            if sha in pending or re.fullmatch(
+                    r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject):
+                unfinished.add(sha)
+                ordered.append(sha)
+        for sha in ordered:
+            contained = subprocess.run([real_git, *global_args, 'merge-base', '--is-ancestor', sha, candidate],
+                                       capture_output=True)
+            if contained.returncode == 1:
+                continue
+            if contained.returncode:
+                raise RuntimeError('Could not verify completed branch ancestry.')
+            parents = query('show', '-s', '--format=%P', sha).split()
+            if len(parents) != 1:
                 raise RuntimeError('There is no completed commit to branch from yet.')
-            visited.add(candidate)
             candidate = parents[0]
-        for sha in pending:
+        for sha in unfinished:
             result = subprocess.run([real_git, *global_args, 'merge-base', '--is-ancestor', sha, candidate],
                                     capture_output=True)
             if result.returncode != 1:

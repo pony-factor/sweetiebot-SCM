@@ -453,6 +453,8 @@ worker.work(Path(sys.argv[2]))
         base = self.git('rev-parse', 'HEAD')
         self.git('commit', '--allow-empty', '-q', '-m', 'placeholder_0123456789abcdef')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
+        self.git('commit', '--allow-empty', '-q', '-m', 'Later completed message')
+        self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
 
     def test_manual_push_is_durable_and_waits_for_generation(self):
         directory = self.queue(message='', push=False)

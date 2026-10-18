@@ -503,7 +503,9 @@ async function createBranch(repository, { defaultBranch, remote, names }, secure
   let unfinishedBase = false;
   if (repository.rootUri?.fsPath && existsSync(path.join(repository.rootUri.fsPath, '.git'))) {
     const { stdout } = await promisify(execFile)('git', [
-      'show', '-s', '--format=%s', `refs/heads/${defaultBranch}`
+      'log', '-1', '--format=%s', '--extended-regexp',
+      '--grep=^(placeholder_[0-9a-f]{16}|💭 Generate local commit message \\[[0-9a-f]{16}\\])$',
+      `refs/heads/${defaultBranch}`
     ], { cwd: repository.rootUri.fsPath, timeout: 10000 }).catch(error => {
       if (error.code === 128) return { stdout: '' }; // Sync can create a missing local base ref.
       throw error;
