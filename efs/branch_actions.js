@@ -17,7 +17,7 @@ const activeCommits = new WeakMap();
 const POST_COMMIT_GATE = 'sweetiebot-post-commit-push.json';
 const ASYNC_COMMIT_JOURNAL = 'sweetiebot-async-commit.json';
 
-async function asyncCommitPending(repository) {
+async function asyncCommitPending(repository, { background = true } = {}) {
   const root = repository.rootUri?.fsPath;
   if (!root || !existsSync(path.join(root, '.git'))) return false;
   // A checkout may have a .git directory or a linked-worktree .git file.
@@ -27,14 +27,14 @@ async function asyncCommitPending(repository) {
       cwd: root, timeout: 10000
     });
     return existsSync(path.join(stdout.trim(), ASYNC_COMMIT_JOURNAL))
-      || existsSync(path.join(stdout.trim(), 'sweetiebot-background-commit.json'));
+      || (background && existsSync(path.join(stdout.trim(), 'sweetiebot-background-commit.json')));
   } catch {
     return true;
   }
 }
 
-async function requireFinalizedCommit(repository) {
-  if (await asyncCommitPending(repository)) {
+async function requireFinalizedCommit(repository, options) {
+  if (await asyncCommitPending(repository, options)) {
     throw new Error('A local commit message is still being finalized. Git operations and publishing are paused until it finishes.');
   }
 }
@@ -807,7 +807,12 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
-          if (command !== 'sweetiebot.autoPullClean') await requireFinalizedCommit(repository);
+          // Switching to an unpublished branch can trigger automatic publishing.
+          // Let a later status refresh retry after the background queue drains.
+          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository)) return false;
+          if (command !== 'sweetiebot.autoPullClean') {
+            await requireFinalizedCommit(repository, { background: command !== 'sweetiebot.returnHome' });
+          }
           if (!needsDefaultBranch.has(command)) return action(repository, options);
           const defaultBranch = await resolveDefaultBranch(repository, options?.remote || 'origin');
           return action(repository, { ...options, defaultBranch });
@@ -839,7 +844,7 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         return await queueRepositoryOperation(repository, async () => {
-          await requireFinalizedCommit(repository);
+          await requireFinalizedCommit(repository, { background: false });
           return checkoutBranchStrip(repository, options);
         });
       } catch (error) {

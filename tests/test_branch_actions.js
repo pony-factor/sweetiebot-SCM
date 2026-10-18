@@ -397,7 +397,8 @@ async function run() {
     };
     const context = { subscriptions: [] };
     registerBranchCommands(vscode, context);
-    assert.equal(context.subscriptions.length, 11);
+    assert(commands.has('sweetiebot.checkoutBranchStrip'));
+    assert(commands.has('sweetiebot.listBranchStrip'));
     assert.equal(await commands.get('sweetiebot.returnHome')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('sweetiebot.resolveDefaultBranch')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
@@ -414,6 +415,34 @@ async function run() {
     assert.equal(await commands.get('sweetiebot.deleteBranch')({ rootUri: uri }, {
       ...options, branch: 'topic'
     }), 'topic');
+
+    // Background publication must not block checkout or emit an auto-publish
+    // error just because the newly selected branch has no upstream yet.
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'sweetiebot-checkout-'));
+    const git = (...args) => require('node:child_process').execFileSync('/usr/bin/git', args, {
+      cwd: root, stdio: 'pipe',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+    });
+    try {
+      git('init', '-q', '-b', 'main');
+      git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+        '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Test base');
+      repository.rootUri = { fsPath: root };
+      fs.writeFileSync(path.join(root, '.git', 'sweetiebot-background-commit.json'), '{}');
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'topic', remote: 'origin'
+      }), false, 'Defer automatic publishing quietly until background work finishes');
+      assert.equal(await commands.get('sweetiebot.returnHome')(uri), 'main');
+      assert.equal(await commands.get('sweetiebot.checkoutBranchStrip')(uri, { branch: 'main' }), 'main');
+      fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');
+      await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /still being finalized/,
+        'Keep the legacy worker guard until it supports inactive refs');
+    } finally {
+      delete repository.rootUri;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
 
     // Polling sees main behind during cleanup, but its update must wait until
     // cleanup finishes and then recheck the now-current branch state.

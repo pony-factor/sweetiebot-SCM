@@ -1735,7 +1735,13 @@ def main() -> None:
             if subcommand == "push" and queue_plain_push(argv[index + 1:]):
                 print("🤖 Commit message generation is in progress. Your changes will be pushed as soon as it completes.")
                 return
-            wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS)
+            # Existing branch checkouts leave the captured ref intact. Creating
+            # a branch from a placeholder would copy its unfinished ancestry.
+            creates_branch = any(arg in {"-b", "-B", "-c", "-C", "--orphan", "--create", "--force-create"}
+                                 or arg.startswith(("--orphan=", "--create=", "--force-create=", "-b", "-B", "-c", "-C"))
+                                 for arg in argv[index + 1:])
+            if subcommand not in {"switch", "checkout"} or creates_branch:
+                wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS)
             wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
         except RuntimeError as exc:
             print(f"scm-toolkit: {exc}", file=sys.stderr)

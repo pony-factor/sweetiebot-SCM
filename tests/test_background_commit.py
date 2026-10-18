@@ -181,14 +181,122 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
 
-    def test_branch_change_blocks_commit_and_push(self):
-        directory = self.queue(push=True)
-        self.git('symbolic-ref', 'HEAD', 'refs/heads/other')
-        worker.work(directory)
+    def test_switched_branch_keeps_running_and_pushes_captured_ref(self):
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Queued main change\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='', push=True)
+        self.git('switch', '-q', 'other')
+        other = self.git('rev-parse', 'HEAD')
+        (self.repo / 'story.txt').write_text('Other staged work\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'draft.txt').write_text('Untracked other work\n')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish original branch', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('branch', '--show-current'), 'other')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), other)
+        self.assertEqual(self.git('show', ':story.txt'), 'Other staged work')
+        self.assertEqual((self.repo / 'draft.txt').read_text(), 'Untracked other work\n')
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'main'), '🧪 Finish original branch')
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'), self.git('rev-parse', 'main'))
+        self.assertEqual(self.git('config', 'branch.main.merge'), 'refs/heads/main')
+        self.assertNotEqual(subprocess.run(['/usr/bin/git', 'config', 'branch.other.remote'], capture_output=True).returncode, 0)
+
+    def test_each_branch_has_its_own_pending_chain_and_push(self):
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Main snapshot\n')
+        self.git('add', 'story.txt')
+        first = self.queue(message='', push=True)
+        self.git('switch', '-q', 'other')
+        (self.repo / 'story.txt').write_text('Other snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish other branch', '')):
+            worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'done')
+        self.assertTrue(self.job(first)['provisional'])
+        other = self.git('rev-parse', 'HEAD')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish main branch', '')):
+            worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'done')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), other)
+        for branch in ('main', 'other'):
+            self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', branch), self.git('rev-parse', branch))
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_changed_inactive_branch_still_blocks_publication(self):
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Queued snapshot\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='', push=True)
+        self.git('switch', '-q', 'other')
+        self.git('branch', '-f', 'main', 'other')
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Changed ref')):
+            worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'blocked')
-        self.assertTrue(self.job(directory).get('sha'))
-        refs = subprocess.run(['/usr/bin/git', '--git-dir=' + str(self.root / 'remote'), 'show-ref'], capture_output=True)
-        self.assertEqual(refs.returncode, 1)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
+    def test_old_worker_branch_change_error_recovers_on_original_ref(self):
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Queued snapshot\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='', push=True)
+        job = self.job(directory)
+        job.update(phase='blocked', error='The branch changed; background work was paused.')
+        worker.write_journal(directory / 'job.json', job)
+        self.git('switch', '-q', 'other')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Recover original branch', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('branch', '--show-current'), 'other')
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'), self.git('rev-parse', 'main'))
+
+    def test_switch_during_detached_generation_finishes_original_push(self):
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Queued snapshot\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='', push=True)
+        started, release = self.root / 'started', self.root / 'release'
+        script = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import background_commit as worker
+def generate(*args, **kwargs):
+    Path(sys.argv[3]).touch()
+    deadline = time.monotonic() + 15
+    while not Path(sys.argv[4]).exists():
+        if time.monotonic() > deadline: raise RuntimeError('Test timed out')
+        time.sleep(.02)
+    return '🧪 Finish detached original push', ''
+worker.core.generate_message = generate
+worker.work(Path(sys.argv[2]))
+"""
+        child = subprocess.Popen([sys.executable, '-c', script, str(Path(worker.__file__).parent), str(directory), str(started), str(release)])
+        try:
+            deadline = time.monotonic() + 10
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(.02)
+            self.assertTrue(started.exists())
+            subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), 'switch', 'other'], check=True, capture_output=True)
+            self.assertIsNone(child.poll())
+            other = self.git('rev-parse', 'HEAD')
+            release.touch()
+            self.assertEqual(child.wait(timeout=15), 0)
+            self.assertEqual(self.job(directory)['phase'], 'done')
+            self.assertEqual(self.git('branch', '--show-current'), 'other')
+            self.assertEqual(self.git('rev-parse', 'HEAD'), other)
+            self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'), self.git('rev-parse', 'main'))
+            self.assertEqual(self.git('log', '-1', '--format=%s', 'main'), '🧪 Finish detached original push')
+        finally:
+            release.touch()
+            child.wait(timeout=15)
 
     def test_generation_uses_captured_context_and_index(self):
         directory = self.queue(message='', context='User intent', trailer='Co-authored-by: Codex <noreply@openai.com>')
@@ -216,10 +324,25 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_wrapper_blocks_other_operations_while_job_is_pending(self):
         directory = self.queue()
-        for command in ('commit', 'checkout', 'reset'):
+        for command in ('commit', 'reset'):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('background Commit & Push is pending', result.stderr)
+        self.assertEqual(self.job(directory)['phase'], 'committed')
+
+    def test_wrapper_allows_switch_and_checkout_while_push_is_pending(self):
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Queued main change\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(push=True)
+        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        for args, expected in ((('switch', 'other'), 'other'), (('checkout', 'main'), 'main')):
+            result = subprocess.run([sys.executable, script, *args], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git('branch', '--show-current'), expected)
+        result = subprocess.run([sys.executable, script, 'switch', '-c', 'copied'], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_manual_push_is_durable_and_waits_for_generation(self):
