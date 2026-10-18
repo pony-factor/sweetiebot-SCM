@@ -3,6 +3,7 @@
 const vscode = require('vscode');
 const { spawn } = require('child_process');
 const os = require('node:os');
+const path = require('node:path');
 const { SearchIndex } = require('./search_index');
 const { WorkspaceSearchViewProvider } = require('./view');
 const { registerBranchCommands } = require('./branch_actions');
@@ -138,6 +139,9 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   const child = spawn(python, [
     script, '--no-browser', '--vscode-settings', JSON.stringify(currentSettings),
     '--parent-pid', String(process.pid),
+    ...(context.globalStorageUri?.fsPath ? [
+      `--keybindings-file=${path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'keybindings.json')}`
+    ] : []),
     ...persistedSettingsSessionArgs(context)
   ], {
     // This server survives extension repairs; its cwd must not be a replaceable install folder.

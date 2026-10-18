@@ -10,7 +10,7 @@ Current features:
 - switch the branch selector and native Commit button between outlined and accent-filled styles
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
 - customize the commit-message placeholder (defaults to `Message`)
-- press **F6** to run the same native Git Commit action as the Source Control button; rebind **Sweetiebot: Commit (Same as Source Control Button)** using VS Code's Keyboard Shortcuts (`Cmd+K Cmd+S` on macOS). This retains the current commit message, AI generation, checks, and push-after-commit setting; F6 replaces VS Code's usual Focus Next Part shortcut while assigned.
+- the **Sweetiebot: Commit (Same as Source Control Button)** command starts **unbound**. In Sweetiebot Settings → Message bar, choose **Change** beside **Commit hotkey** to record a shortcut, or **Reset** to remove it. The shortcut invokes the native Source Control Commit action, preserving the current message, AI generation, checks, and push settings. Settings writes only this command's user keybinding and preserves unrelated shortcuts and JSONC comments. VS Code and operating-system shortcuts may take precedence.
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
 - clean up unchanged local branches after their same-repository PR merges into the default branch
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically

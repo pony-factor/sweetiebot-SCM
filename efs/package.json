@@ -213,12 +213,7 @@
         }
       ]
     },
-    "keybindings": [
-      {
-        "command": "sweetiebot.commit",
-        "key": "f6"
-      }
-    ],
+    "keybindings": [],
     "configuration": {
       "title": "Sweetiebot SCM",
       "properties": {

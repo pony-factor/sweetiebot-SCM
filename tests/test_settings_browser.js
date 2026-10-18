@@ -94,6 +94,7 @@ async function run() {
     context: {
       extensionUri: {},
       extensionPath: '/extension',
+      globalStorageUri: { fsPath: '/stable-home/Code/User/globalStorage/pony-factor.sweetiebot-scm' },
       globalState: {
         get(key, fallback) { return state.has(key) ? state.get(key) : fallback; },
         async update(key, value) { state.set(key, value); }
@@ -188,7 +189,7 @@ async function run() {
   children[0].emit('exit', 0);
   await open();
   assert.equal(children.length, 2, 'A finished settings session must be restartable');
-  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-5), ['--parent-pid', String(process.pid), '--port', '49152', '--token=test']);
+  assert.deepEqual(Array.from(children[1].spawnArgs).slice(-6), ['--parent-pid', String(process.pid), '--keybindings-file=/stable-home/Code/User/keybindings.json', '--port', '49152', '--token=test']);
   failOpen = true;
   children[1].stdout.emit('data', line + '\n');
   await tick();

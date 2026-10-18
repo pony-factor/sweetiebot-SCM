@@ -19,6 +19,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from toolkit_settings import load_settings, VSCODE_SETTINGS
+from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from local_setup import (
@@ -35,6 +36,120 @@ from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, rend
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 MAX_FORM_BYTES = 512 * 1024
+
+COMMIT_HOTKEY_STYLE = """
+.hotkey-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px}
+.hotkey-status{display:block;color:var(--muted);font-size:12px}
+.hotkey-status.error-state{color:#ffb3ad}
+"""
+COMMIT_HOTKEY_SCRIPT = r"""
+const hotkeyChange = document.getElementById('commit-hotkey-change');
+const hotkeyReset = document.getElementById('commit-hotkey-reset');
+const hotkeyValue = document.getElementById('commit-hotkey-value');
+const hotkeyStatus = document.getElementById('commit-hotkey-status');
+let hotkeyListening = false;
+const hotkeyNames = {
+  Space:'space', Enter:'enter', Tab:'tab', Escape:'escape',
+  Backspace:'backspace', Delete:'delete', Home:'home', End:'end',
+  PageUp:'pageup', PageDown:'pagedown', Insert:'insert',
+  ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down',
+  Backquote:'backquote', Minus:'minus', Equal:'equal',
+  BracketLeft:'bracketleft', BracketRight:'bracketright',
+  Backslash:'backslash', Semicolon:'semicolon', Quote:'quote',
+  Comma:'comma', Period:'period', Slash:'slash'
+};
+function finishHotkeyRecording() {
+  hotkeyListening = false;
+  document.removeEventListener('keydown', captureCommitHotkey, true);
+  if (hotkeyChange) hotkeyChange.textContent = 'Change';
+}
+async function saveCommitHotkey(key) {
+  hotkeyChange.disabled = true;
+  hotkeyReset.disabled = true;
+  hotkeyStatus.classList.remove('error-state');
+  hotkeyStatus.textContent = 'Saving…';
+  try {
+    const response = await fetch('/commit-hotkey' + location.search, {
+      method:'POST', body:new URLSearchParams({key})
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
+    hotkeyValue.textContent = result.key || 'Unbound';
+    hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
+  } catch (error) {
+    hotkeyStatus.textContent = error.message;
+    hotkeyStatus.classList.add('error-state');
+  } finally {
+    hotkeyChange.disabled = false;
+    hotkeyReset.disabled = false;
+  }
+}
+function captureCommitHotkey(event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.key === 'Escape') {
+    finishHotkeyRecording();
+    hotkeyStatus.textContent = 'Recording cancelled.';
+    return;
+  }
+  if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
+  let key = hotkeyNames[event.code];
+  if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
+  if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
+  if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
+  if (!key) {
+    hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
+    return;
+  }
+  const mods = [];
+  if (event.ctrlKey) mods.push('ctrl');
+  if (event.altKey) mods.push('alt');
+  if (event.shiftKey) mods.push('shift');
+  if (event.metaKey) mods.push('cmd');
+  finishHotkeyRecording();
+  void saveCommitHotkey([...mods, key].join('+'));
+}
+if (hotkeyChange) {
+  hotkeyChange.addEventListener('click', () => {
+    if (hotkeyListening) { finishHotkeyRecording(); return; }
+    hotkeyListening = true;
+    hotkeyChange.textContent = 'Cancel';
+    hotkeyStatus.textContent = 'Press the desired key combination. Escape cancels.';
+    hotkeyStatus.classList.remove('error-state');
+    document.addEventListener('keydown', captureCommitHotkey, true);
+  });
+  hotkeyReset.addEventListener('click', () => {
+    finishHotkeyRecording();
+    void saveCommitHotkey('');
+  });
+  window.addEventListener('blur', () => {
+    if (hotkeyListening) {
+      finishHotkeyRecording();
+      hotkeyStatus.textContent = 'Recording cancelled.';
+    }
+  });
+}
+"""
+def _commit_hotkey_control(key: str | None) -> str:
+    available = key is not None
+    shown = html.escape(key or "Unbound")
+    disabled = "" if available else " disabled"
+    hint = ("Only shortcuts explicitly saved by you are active; browser/system "
+            "shortcuts may still take precedence." if available else
+            "Open this page from Sweetiebot in VS Code to edit its shortcut.")
+    return (
+        '<div class="setting"><span><strong>Commit hotkey</strong>'
+        '<small>Run the same action as the Source Control Commit button. '
+        'Unbound by default; Reset removes the assignment.</small></span>'
+        '<div class="hotkey-actions">'
+        f'<output id="commit-hotkey-value" class="hotkey-value">{shown}</output>'
+        f'<button type="button" id="commit-hotkey-change"{disabled}>Change</button>'
+        f'<button type="button" id="commit-hotkey-reset"{disabled}>Reset</button>'
+        f'<small id="commit-hotkey-status" class="hotkey-status" role="status" aria-live="polite">'
+        f'{html.escape(hint)}</small></div></div>'
+    )
+
 
 
 @dataclass(frozen=True)
@@ -620,6 +735,7 @@ def render_form(
     *,
     finish_on_save: bool = True,
     server_instance: str = "",
+    commit_hotkey: str | None = None,
 ) -> str:
     sections = []
     tabs = []
@@ -659,6 +775,8 @@ def render_form(
                 for setting in SETTINGS
                 if setting.section == section and setting.kind != "message_bar"
             )
+        if section == "Message bar":
+            controls += _commit_hotkey_control(commit_hotkey)
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
@@ -709,6 +827,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
+{COMMIT_HOTKEY_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
 @media(max-width:760px){{main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
@@ -719,6 +838,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 </div>
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
+{COMMIT_HOTKEY_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
 let autosaveTimer = null;
@@ -1168,11 +1288,13 @@ def run_configurator(
     port: int = 0,
     token: str | None = None,
     parent_pid: int | None = None,
+    keybindings_file: Path | None = None,
 ) -> bool:
     token = token or secrets.token_urlsafe(24)
     server_instance = secrets.token_urlsafe(12)
     outcome: dict[str, bool | None] = {"saved": None}
     session_settings = dict(current)
+    hotkey_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, content: str, status: int = 200) -> None:
@@ -1211,6 +1333,10 @@ def run_configurator(
                 self._send_json({"models": names, "status": status})
                 return
             names, status = fetch_ollama_models()
+            try:
+                hotkey = read_commit_hotkey(keybindings_file) if keybindings_file else None
+            except (OSError, ValueError):
+                hotkey = None
             self._send(render_form(
                 session_settings,
                 names,
@@ -1219,6 +1345,7 @@ def run_configurator(
                 action_label,
                 finish_on_save=open_browser,
                 server_instance=server_instance,
+                commit_hotkey=hotkey,
             ))
 
         def do_POST(self) -> None:
@@ -1258,6 +1385,17 @@ def run_configurator(
                     self.wfile.write(b'{"error":"Download interrupted. Retry the download."}\n')
                 return
             path = urllib.parse.urlsplit(self.path).path
+            if path == "/commit-hotkey":
+                if not keybindings_file:
+                    self._send_json({"error": "Open Settings through VS Code to edit shortcuts."}, 409)
+                    return
+                try:
+                    with hotkey_lock:
+                        key = update_commit_hotkey(keybindings_file, values.get("key", [""])[0])
+                    self._send_json({"saved": True, "key": key})
+                except (OSError, RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
             if path == "/configure-signing-key":
                 try:
                     fingerprint = values.get("fingerprint", [""])[0]
@@ -1375,6 +1513,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-browser", action="store_true", help="Send the URL to the calling extension.")
     parser.add_argument("--vscode-settings", help="Current feature preferences supplied by the companion extension.")
+    parser.add_argument("--keybindings-file", type=Path, help="VS Code user/profile keybindings.json supplied by the extension.")
     parser.add_argument("--port", type=int, default=0, help="Reuse a stable localhost port for the settings page.")
     parser.add_argument("--token", help="Reuse the settings page authentication token.")
     parser.add_argument("--parent-pid", type=int, help="Stop when the owning extension host exits.")
@@ -1399,4 +1538,5 @@ if __name__ == "__main__":
         port=args.port,
         token=args.token,
         parent_pid=args.parent_pid,
+        keybindings_file=args.keybindings_file,
     )
