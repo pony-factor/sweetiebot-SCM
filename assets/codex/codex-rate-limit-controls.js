@@ -73,6 +73,62 @@ function scmToolkitSyncResetShortcut(root) {
     row.style.gap = '8px';
     row.append(button);
 }
+
+// Turn only the small, icon-bearing "Rate Limited" notice into a Twilight sticker.
+// Do not replace usage-limit cards with reset information or transcript text.
+const scmToolkitTwilightStopSource = 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png';
+function scmToolkitSmallRateLimitNotice(root) {
+    for (const label of root.querySelectorAll('span, p, button, [role="status"], [role="alert"]')) {
+        if (!/^rate limited$/i.test(String(label.textContent || '').trim())) continue;
+        if (label.closest?.('[data-scm-toolkit-rate-limit-pony]')) continue;
+        let card = null;
+        let ancestor = label;
+        for (let depth = 0; ancestor && depth < 6; depth++, ancestor = ancestor.parentElement) {
+            if (!/^rate limited$/i.test(String(ancestor.textContent || '').trim())) break;
+            // A provider notice has an icon. A plain transcript sentence does not.
+            if (!ancestor.querySelector?.('svg, img')) continue;
+            const controls = ancestor.querySelectorAll?.('button, a, input, select') || [];
+            if (controls.length && !ancestor.matches?.('button')) continue;
+            card = ancestor; // Prefer the outermost single-purpose notification container.
+        }
+        if (card) return card;
+    }
+    return null;
+}
+function scmToolkitSyncRateLimitPony(root) {
+    const card = scmToolkitSmallRateLimitNotice(root);
+    if (!card || card.dataset.scmToolkitRateLimitPonyPending === 'true'
+        || card.dataset.scmToolkitRateLimitPonyUnavailable === 'true') return;
+    card.dataset.scmToolkitRateLimitPonyPending = 'true';
+    const image = root.createElement('img');
+    image.alt = 'Twilight Sparkle holding a STOP sign — rate limited';
+    image.title = 'Rate limited · Twilight Sparkle art by CaptainPudgeMuffin';
+    image.width = 96;
+    image.style.width = '96px';
+    image.style.maxWidth = '100%';
+    image.style.height = 'auto';
+    image.style.display = 'block';
+    image.style.borderRadius = '8px';
+    image.addEventListener('load', () => {
+        if (!card.isConnected || !/^rate limited$/i.test(String(card.textContent || '').trim())) return;
+        // Keep the existing host and its click handler, if it is itself a button.
+        card.replaceChildren(image);
+        card.setAttribute('data-scm-toolkit-rate-limit-pony', 'true');
+        card.setAttribute('aria-label', image.alt);
+        card.style.border = '0';
+        card.style.boxShadow = 'none';
+        card.style.background = 'transparent';
+        card.style.padding = '4px';
+        delete card.dataset.scmToolkitRateLimitPonyPending;
+    });
+    image.addEventListener('error', () => {
+        // An image blocked by the Codex CSP must not replace a readable error.
+        card.dataset.scmToolkitRateLimitPonyUnavailable = 'true';
+        delete card.dataset.scmToolkitRateLimitPonyPending;
+    });
+    image.src = scmToolkitTwilightStopSource;
+}
+
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
     if (globalThis.scmToolkitResetShortcutInstalled) return;
@@ -84,6 +140,7 @@ function scmToolkitSyncResetShortcut(root) {
         queueMicrotask(() => {
             queued = false;
             scmToolkitSyncResetShortcut(document);
+            scmToolkitSyncRateLimitPony(document);
         });
     };
     new MutationObserver(sync).observe(document, { childList: true, subtree: true, characterData: true });
