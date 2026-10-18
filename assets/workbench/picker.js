@@ -2100,6 +2100,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             if (!onlyEmpty && result?.remoteDeleted) {
                 notifications.info(`Deleted ${branch} locally and on ${settings.remote}.`);
             }
+            if (!onlyEmpty && result?.unverifiedDeleted) {
+                notifications.info(`Deleted unverified local branch ${branch}.`);
+            }
             if (onlyEmpty && result) {
                 notifications.info(`Deleted empty branch ${branch}${result.remoteDeleted ? ' locally and on ' + settings.remote : ' locally'}.`);
             }
