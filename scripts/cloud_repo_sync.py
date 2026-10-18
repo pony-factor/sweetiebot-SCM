@@ -116,7 +116,10 @@ def update(path):
                 return "busy"
         if pending(path):
             return "pending-commit"
-        local = git(path, "rev-parse", "HEAD").stdout.strip()
+        head = git(path, "rev-parse", "--verify", "HEAD", check=False)
+        if head.returncode:
+            return "no-main-commit"
+        local = head.stdout.strip()
         # FETCH_HEAD is deliberately not written: other Git operations may use it.
         target = "refs/remotes/" + remote + "/main"
         fetched = git(path, "fetch", "--no-tags", "--no-write-fetch-head", "--", remote,

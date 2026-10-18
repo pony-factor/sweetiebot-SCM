@@ -158,3 +158,11 @@ class TestRepositorySync(unittest.TestCase):
     def test_missing_remote_main_is_skipped(self):
         self.git("--git-dir", str(self.remote), "branch", "-m", "main", "retired")
         self.assertEqual(mirror.update(self.local), "no-remote-main")
+
+    def test_unborn_main_is_skipped(self):
+        empty = self.root / "empty"
+        self.git("init", "-b", "main", "-q", str(empty))
+        self.git("-C", str(empty), "remote", "add", "origin", str(self.remote))
+        self.git("-C", str(empty), "config", "branch.main.remote", "origin")
+        self.git("-C", str(empty), "config", "branch.main.merge", "refs/heads/main")
+        self.assertEqual(mirror.update(empty), "no-main-commit")
