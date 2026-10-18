@@ -97,16 +97,18 @@ def read_commit_hotkey(path: Path) -> str:
 
 
 def _remove(text, clean, start, end):
+    # Check the original source here: JSONC sanitization masks trailing commas,
+    # and must never make us consume a preceding inline comment instead.
     after = end
-    while after < len(clean) and clean[after].isspace():
+    while after < len(text) and text[after].isspace():
         after += 1
-    if after < len(clean) and clean[after] == ",":
+    if after < len(text) and text[after] == ",":
         return text[:start] + text[after + 1:]
     before = start - 1
     while before >= 0 and clean[before].isspace():
         before -= 1
     if before >= 0 and clean[before] == ",":
-        return text[:before] + text[end:]
+        return text[:before] + text[before + 1:start] + text[end:]
     return text[:start] + text[end:]
 
 
