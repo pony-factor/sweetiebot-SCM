@@ -115,11 +115,13 @@ const compactArrow = new Element('codicon codicon-arrow-up');
 const compactLabel = group(compactCount, compactArrow);
 compactLabel.classList = {contains: name => name === 'monaco-button-label-short'};
 let showCounts = true;
+let showIncoming = false;
 const progressAction = {
   querySelector: selector => {
     if (selector === '.codicon-sync') return spinningIcon;
     if (selector === '.monaco-button-label') return fullLabel;
     if (selector === '.codicon-arrow-up') return showCounts ? fullArrow : null;
+    if (selector === '.codicon-arrow-down') return showIncoming ? incomingArrow : null;
     return null;
   },
   querySelectorAll: selector => showCounts && selector.includes('codicon-arrow-up')
@@ -175,6 +177,28 @@ values.outgoingSyncLabel = '';
 configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
 assert.equal(nativeCaption.textContent, ' Sync Changes 9', 'Clearing restores the latest native count');
 
+// Mixed incoming/outgoing sync captions belong to the arrow beside the span.
+showIncoming = true;
+values.incomingSyncLabel = 'Fetch';
+values.outgoingSyncLabel = 'Send';
+nativeCaption.nextElementSibling = incomingArrow;
+nativeCaption.textContent = ' Sync Changes 5';
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Fetch 5', 'Mixed sync renames its incoming caption and preserves its count');
+assert.equal(compactLabel.children[0].textContent, 'Send\u00a0', 'Mixed sync retains its outgoing name');
+values.incomingSyncLabel = 'Receive';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.incomingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Receive 5', 'Incoming name responds to preference changes');
+showCounts = false;
+progressObserver.callback();
+assert.equal(nativeCaption.textContent, ' Receive 5', 'Incoming-only sync uses the incoming name');
+values.incomingSyncLabel = '';
+configurationListener({affectsConfiguration: key => key === 'scmToolkit.incomingSyncLabel'});
+assert.equal(nativeCaption.textContent, ' Sync Changes 5', 'Clearing incoming name restores native caption');
+showIncoming = false;
+showCounts = true;
+delete nativeCaption.nextElementSibling;
+nativeCaption.textContent = ' Sync Changes 9';
 progressWidget.disposables.item.dispose();
 
 // The input may be detached when VS Code constructs it.

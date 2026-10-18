@@ -98,10 +98,9 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         // A commit-and-push can briefly show no ahead count during the push.
         const pushWithoutCounts = !hasIncoming && !hasOutgoing
             && configuration.getValue('git.postCommitCommand') === 'push';
-        const direction = ((hasOutgoing && !hasIncoming) || (spinning && pushWithoutCounts)) ? 'up'
+        const fallbackDirection = ((hasOutgoing && !hasIncoming) || (spinning && pushWithoutCounts)) ? 'up'
             : hasIncoming && !hasOutgoing ? 'down' : undefined;
-        const name = names[direction];
-        let renamed = false;
+        let renamedDirection;
 
         for (const node of longLabel.childNodes) {
             if (node.nodeType !== 3 && node.nodeType !== 1) continue;
@@ -115,6 +114,12 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
             const original = saved && text === saved.display ? saved.original : text;
             if (!/\p{L}/u.test(original)) continue;
             captionNodes.add(node);
+            // In a two-way sync Git puts its caption and incoming count in
+            // the same span. Use that span's arrow, not the whole button.
+            const nextIcon = node.nextElementSibling;
+            const direction = nextIcon?.classList.contains('codicon-arrow-down') ? 'down'
+                : nextIcon?.classList.contains('codicon-arrow-up') ? 'up' : fallbackDirection;
+            const name = names[direction];
 
             const whitespace = original.match(/^\s*/)[0];
             const countSuffix = original.match(/\s+\d+\s*$/)?.[0] ?? '';
@@ -125,10 +130,10 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
             }
             nativeSyncCaptions.set(node, { original, display });
             if (text !== display) node.textContent = display;
-            renamed = Boolean(name);
+            renamedDirection = name ? direction : undefined;
             break;
         }
-        return renamed ? direction : undefined;
+        return renamedDirection;
     };
 
     const update = () => {
