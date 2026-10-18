@@ -175,6 +175,8 @@ values.outgoingSyncLabel = '';
 configurationListener({affectsConfiguration: key => key === 'scmToolkit.outgoingSyncLabel'});
 assert.equal(nativeCaption.textContent, ' Sync Changes 9', 'Clearing restores the latest native count');
 
+progressWidget.disposables.item.dispose();
+
 // The input may be detached when VS Code constructs it.
 let attached = false;
 const lateWidget = {
@@ -192,8 +194,23 @@ assert.equal(nativeCaption.textContent, ' Flight 80', 'Late attachment applies n
 lateObserver.callback();
 assert.equal(nativeCaption.textContent, ' Flight 80', 'Digits in custom names survive repeated updates');
 lateWidget.disposables.item.dispose();
-progressWidget.disposables.item.dispose();
 
 widget.disposables.item.dispose();
 assert.equal(disposed, true);
+// Commit preferences must leave both sync captions intact.
+const commitEnd = source.indexOf('\nfunction scmToolkitCustomizeMessagePlaceholder(', end);
+vm.runInContext(source.slice(end, commitEnd), sandbox);
+const shortCaption = {textContent: '1'};
+const button = {querySelector: selector => selector === '.codicon-sync' ? spinningIcon : shortCaption};
+const commitRoot = {querySelector: () => button};
+const commitWidget = {
+  element: {closest: selector => selector === '.scm-view' ? commitRoot : null, ownerDocument: doc},
+  disposables: {add(item) { this.item = item; }}
+};
+sandbox.scmToolkitCustomizeCommitButtonLabel(commitWidget, configuration, 'Commit', 'Dash');
+assert.equal(shortCaption.textContent, '1', 'Commit label override must not overwrite compact sync label');
+button.querySelector = selector => selector === '.codicon-sync' ? null : shortCaption;
+observer.callback();
+assert.equal(shortCaption.textContent, 'Commit', 'Actual commit buttons still receive their custom name');
+commitWidget.disposables.item.dispose();
 console.log('Custom sync direction label checks passed.');

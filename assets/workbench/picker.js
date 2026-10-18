@@ -76,6 +76,7 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     const Observer = doc.defaultView?.MutationObserver;
     if (!Observer) return;
     let root;
+    const observedRoots = globalThis.__scmToolkitSyncLabelRoots ??= new WeakMap();
 
     const configuredName = (key, fallback) => {
         const value = configuration.getValue(`scmToolkit.${key}`);
@@ -86,7 +87,7 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     // separately so preference changes and subsequent Git updates remain reversible.
     const nativeSyncCaptions = new WeakMap();
     const captionNodes = new WeakSet();
-    const customizeSyncProgressCaption = (action, names) => {
+    const customizeSyncCaption = (action, names) => {
         const longLabel = action.querySelector('.monaco-button-label');
         const icon = longLabel?.querySelector('.codicon-sync');
         if (!icon) return false;
@@ -97,7 +98,7 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         // A commit-and-push can briefly show no ahead count during the push.
         const pushWithoutCounts = !hasIncoming && !hasOutgoing
             && configuration.getValue('git.postCommitCommand') === 'push';
-        const direction = hasOutgoing && !hasIncoming || spinning && pushWithoutCounts ? 'up'
+        const direction = ((hasOutgoing && !hasIncoming) || (spinning && pushWithoutCounts)) ? 'up'
             : hasIncoming && !hasOutgoing ? 'down' : undefined;
         const name = names[direction];
         let renamed = false;
@@ -134,8 +135,11 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         const nextRoot = widget.element.closest('.scm-view');
         if (!nextRoot) return;
         if (nextRoot !== root) {
-            root = nextRoot;
             observer.disconnect();
+            if (observedRoots.has(nextRoot)) return;
+            if (root) observedRoots.delete(root);
+            root = nextRoot;
+            observedRoots.set(root, observer);
             observer.observe(root, { subtree: true, childList: true, characterData: true });
         }
         const names = {
@@ -144,7 +148,7 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         };
         for (const action of root.querySelectorAll('.button-container .monaco-button')) {
             if (!action.querySelector('.codicon-sync')) continue;
-            const captionDirection = customizeSyncProgressCaption(action, names);
+            const captionDirection = customizeSyncCaption(action, names);
 
             for (const direction of ['down', 'up']) {
                 for (const arrow of action.querySelectorAll(
@@ -201,6 +205,7 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         dispose() {
             observer.disconnect();
             disposable.dispose();
+            if (root) observedRoots.delete(root);
         }
     });
     update();
