@@ -22,6 +22,7 @@ Current features:
 - optionally show a commit button that appends a configurable co-author name and email (Codex by default)
 - optionally open a pull request for the current branch through a configured MCP server
 - recognize built-in pony branch names during PR creation and pass local-only character context to Kafania for a post-publish pony profile
+- configure a white confirmation-page X (visible and left-aligned by default) and inspect pony artwork in a stable-size lightbox with tall side navigation targets, no top banner, and click-outside dismissal
 - show the matched pony as a small local-only **Pony Info** view in Source Control, beside whatever editor or Integrated Browser content is open
 - optionally hide the outgoing commit count from the built-in Sync action, and set separate incoming/outgoing count labels without changing Git operations
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly

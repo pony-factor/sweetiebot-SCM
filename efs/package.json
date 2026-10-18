@@ -397,6 +397,18 @@
           "default": "",
           "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
         },
+        "scmToolkit.kefaniaShowCloseButton": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Show the X to close a published Kefania confirmation window."
+        },
+        "scmToolkit.kefaniaCloseButtonLeft": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Place the white Kefania confirmation X in the upper-left corner instead of the right."
+        },
         "scmToolkit.autoPublishPullRequests": {
           "type": "boolean",
           "default": true,

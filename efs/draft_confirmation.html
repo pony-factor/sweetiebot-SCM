@@ -6,36 +6,35 @@
 .actions:has(> #publish[hidden]):has(> #publication:empty):has(> #close-error:empty){display:none}
 #draft-status:has(a){display:block}#draft-status:has(a)::before{display:none}
 .status.pack-tag{padding:2px 8px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--accent);background:#ffffff06}.status.pack-tag::before{display:none}
-.merge-controls{margin:10px 0 12px}.merge-controls button{padding:10px 15px}.merge-controls .publication{color:#f0bdc5}.close-confirmation{position:fixed;top:16px;right:16px;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:6px;letter-spacing:0;box-shadow:none}header{padding-right:44px}
+.merge-controls{margin:10px 0 12px}.merge-controls button{padding:10px 15px}.merge-controls .publication{color:#f0bdc5}.close-confirmation{position:fixed;top:16px;left:16px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:6px;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:16px}header{padding-left:44px}.close-button-right header{padding-left:0;padding-right:44px}
 
 /* Native modal image viewer keeps pony previews in this confirmation window. */
 .image-trigger{display:block;width:100%;padding:0;border:0;border-radius:0;background:transparent;color:inherit;box-shadow:none;text-align:left;cursor:zoom-in}
 .image-trigger:hover{filter:none;background:#33283d}
 .image-trigger:focus-visible{outline:2px solid #f5d4ff;outline-offset:-3px}
 .image-trigger img{pointer-events:none}
-.lightbox{position:fixed;inset:0;margin:auto;width:95vw;height:95vh;max-width:95vw;max-height:95vh;padding:0;border:1px solid #6b5278;border-radius:16px;background:#1c1725;color:var(--text);box-shadow:0 25px 80px #000a}
-.lightbox[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.lightbox{position:fixed;inset:0;margin:auto;width:96vw;height:95vh;max-width:96vw;max-height:95vh;padding:0;border:1px solid #6b5278;border-radius:12px;background:#1c1725;color:var(--text);box-shadow:0 25px 80px #000a}
+.lightbox[open]{display:grid;grid-template-rows:minmax(0,1fr) auto}
 .lightbox::backdrop{background:#08060edb}
-.lightbox-toolbar,.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 18px}
-.lightbox-toolbar{border-bottom:1px solid var(--line)}
-.lightbox-footer{border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
-.lightbox-toolbar button,.lightbox-nav{padding:7px 12px;border:1px solid #6b5278;background:#35263f;color:var(--text);box-shadow:none}
-.lightbox-toolbar button:hover,.lightbox-nav:hover{filter:none;background:#50385d}
-.lightbox-stage{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:0;min-width:0}
-.lightbox-stage img{flex:1;min-width:0;width:0;height:100%;object-fit:contain;margin:auto}
+.lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px 42px}
+.lightbox-stage img{flex:1;min-width:0;width:0;height:100%;min-height:0;max-height:100%;object-fit:contain;margin:auto}
 .lightbox-stage .image-error{flex:1}
-.lightbox-nav{flex:0 0 auto;font-size:22px}
-.lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:3px}
-@media(max-width:600px){.lightbox-stage{gap:6px;padding:8px}.lightbox-nav{padding:5px 8px}}
+.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(68vh,560px);min-height:180px;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
+.lightbox-nav:hover{filter:none;background:#50385ddd}
+#lightbox-prev{left:0}#lightbox-next{right:0}
+.lightbox-close{position:absolute;top:8px;right:8px;z-index:2;display:grid;place-items:center;width:38px;height:38px;padding:0;border:1px solid #6b5278;border-radius:8px;background:#35263f;color:#fff;box-shadow:none;font-size:25px;line-height:1}
+.lightbox-close:hover{filter:none;background:#50385d}
+.lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:2px}
+@media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:52vh;min-height:140px;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
 </style>
 <main><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window" hidden>×</button><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft and supporting character research.</p></div></header>
 <div class="layout">
 <section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><h2 id="title">Preparing your draft</h2><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><p id="merge-error" class="publication" role="alert"></p></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 <section id="pony-section" class="card"><div class="card-head"><p class="eyebrow">Meet the pony</p><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div><div id="images" class="images"></div><div id="profile" class="content"></div></section>
 </div>
-<dialog id="image-lightbox" class="lightbox" aria-labelledby="lightbox-title">
-<div class="lightbox-toolbar"><strong id="lightbox-title" aria-label="Image">🖼️</strong><button id="lightbox-close" type="button" aria-label="Close image viewer">×</button></div>
-<div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button></div>
+<dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
+<div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button><button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close image viewer">×</button></div>
 <div class="lightbox-footer"><span id="lightbox-caption"></span><a id="lightbox-source" target="_blank" rel="noopener noreferrer">View source ↗</a></div>
 </dialog></main>
 <script>
@@ -193,7 +192,9 @@ async function refresh(){try{const response=await fetch(root+'/state');const sta
 if(state.draft){el('title').textContent=state.draft.title;if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
 el('publish').disabled=!state.draft||state.attempted||state.publishing;
 el('publish').hidden=state.autoPublish||!!state.result;
-el('close-confirmation').hidden=!state.result;
+el('close-confirmation').hidden=!state.result||state.showKefaniaCloseButton===false;
+el('close-confirmation').classList.toggle('on-right',state.kefaniaCloseButtonLeft===false);
+document.querySelector('main').classList.toggle('close-button-right',state.kefaniaCloseButtonLeft===false);
 el('merge-controls').hidden=!state.result||!!state.mergeResult;
 el('merge').disabled=!state.result||!!state.mergeResult||!!state.merging;
 el('merge').textContent=state.merging?'Merging…':'Squash and merge';
