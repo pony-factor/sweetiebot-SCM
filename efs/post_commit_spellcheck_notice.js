@@ -259,7 +259,17 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
   } finally { session.acting = false; }
 }
 
-function closeSpellcheckPopup(sessionId) { previewSessions.delete(sessionId); }
+function closeSpellcheckPopup(sessionId, draftMessage) {
+  const session = previewSessions.get(sessionId);
+  const inputBox = session?.repository?.inputBox;
+  // Dismissing the review leaves corrections unstaged; keep the reviewed
+  // message ready for a normal commit, without overwriting another draft.
+  if (typeof draftMessage === 'string' && draftMessage.trim()
+      && typeof inputBox?.value === 'string' && !inputBox.value.trim()) {
+    inputBox.value = draftMessage;
+  }
+  previewSessions.delete(sessionId);
+}
 
 async function showNotice(vscode, repository, notice, readDiff = gitDiff, readConfig = git) {
   const patch = await readDiff(notice.root, [
