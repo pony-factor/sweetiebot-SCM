@@ -443,7 +443,7 @@ def pr_workspace_explorer_edits(js):
         return []  # Synthetic fixtures and older builds without this feature.
     ident = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
-        rf"(?P<state>this\.contextService\.getWorkbenchState\(\)!=={ident}\.FOLDER)"
+        rf"(?P<state>this\.contextService\.getWorkbenchState\(\)!==(?:{ident}\.FOLDER|2))"
         rf"\|\|(?P<roots>{ident})\[0\]\.error"
     )
     matches = [
