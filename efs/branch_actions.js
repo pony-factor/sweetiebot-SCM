@@ -713,6 +713,102 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
   return { branch, remoteDeleted: Boolean(remoteTip) };
 }
 
+
+
+async function remoteBranchTip(repository, branch, remote = 'origin') {
+  if (!repository.rootUri?.fsPath) throw new Error('A local Git repository is required.');
+  const cwd = repository.rootUri.fsPath;
+  const git = async (...args) => (await promisify(execFile)('git', args, {
+    cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  await git('check-ref-format', '--branch', branch);
+  const ref = `refs/heads/${branch}`;
+  const response = await git('ls-remote', '--heads', remote, ref);
+  const matching = response.split('\n').filter(Boolean)
+    .map(line => line.split('\t'))
+    .filter(parts => parts.length === 2 && parts[1] === ref && /^[a-f0-9]{40,64}$/i.test(parts[0]));
+  if (response && matching.length !== 1) {
+    throw new Error(`Could not verify ${remote}/${branch}; no branch was deleted.`);
+  }
+  return matching[0]?.[0] || null;
+}
+
+async function deletePublishedBranch(repository, {
+  branch, defaultBranch, remote = 'origin', expectedRemoteTip
+}) {
+  if (!branch || !defaultBranch || branch === defaultBranch) {
+    throw new Error('Select a non-default branch to delete.');
+  }
+  if (!/^[a-f0-9]{40,64}$/i.test(expectedRemoteTip || '')) {
+    throw new Error('Deleting a published branch requires confirmed remote revision.');
+  }
+  if (!repository.rootUri?.fsPath) throw new Error('A local Git repository is required.');
+  const cwd = repository.rootUri.fsPath;
+  const git = async (...args) => (await promisify(execFile)('git', args, {
+    cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  await git('check-ref-format', '--branch', branch);
+  const localRef = `refs/heads/${branch}`;
+  const remoteRef = `refs/heads/${branch}`;
+  const checkActive = async () => {
+    await repository.status();
+    if (repository.state.HEAD?.name !== branch) {
+      throw new Error('The active branch changed; no branch was deleted.');
+    }
+  };
+  await checkActive();
+  if (commitInProgress(repository)) throw new Error('Finish the current commit before deleting a branch.');
+  if (repository.state.mergeChanges?.length || await git('status', '--porcelain')) {
+    throw new Error('Commit, stash, or discard working-tree changes before deleting a published branch.');
+  }
+  const localTip = await git('rev-parse', '--verify', localRef);
+  if (localTip !== expectedRemoteTip) {
+    throw new Error(`Cannot delete ${remote}/${branch}: local and published tips differ.`);
+  }
+  const home = await repository.getBranch(defaultBranch);
+  if (!home?.upstream?.name || home.upstream.remote !== remote) {
+    throw new Error(`${defaultBranch} must track a branch on ${remote} before deleting a published branch.`);
+  }
+  await git('fetch', '--prune', '--no-tags', remote);
+  const remoteTip = await remoteBranchTip(repository, branch, remote);
+  if (remoteTip !== expectedRemoteTip) {
+    throw new Error(`Cannot delete ${remote}/${branch}: its tip changed after confirmation.`);
+  }
+  const baseRef = `refs/remotes/${remote}/${home.upstream.name}`;
+  await git('rev-parse', '--verify', baseRef);
+  const localBaseRef = `refs/heads/${defaultBranch}`;
+  const canFastForward = await git('merge-base', '--is-ancestor', localBaseRef, baseRef)
+    .then(() => true, error => {
+      if (error.code === 1) return false;
+      throw error;
+    });
+  await checkActive();
+  if (canFastForward) {
+    await repository.fetch({ remote: '.', ref: `${baseRef}:${localBaseRef}` });
+  }
+  await checkActive();
+  if (await git('rev-parse', '--verify', localRef) !== localTip
+      || await git('status', '--porcelain')) {
+    throw new Error('The branch or working tree changed during verification; deletion was cancelled.');
+  }
+  await repository.checkout(defaultBranch);
+  await repository.status();
+  if (repository.state.HEAD?.name !== defaultBranch
+      || await git('rev-parse', '--verify', localRef) !== localTip
+      || await git('status', '--porcelain')) {
+    throw new Error('Checkout or branch verification changed; remote deletion was cancelled.');
+  }
+  // The remote must still point to the exact SHA confirmed by the user.
+  await git('push', `--force-with-lease=${remoteRef}:${expectedRemoteTip}`,
+    remote, `:${remoteRef}`);
+  try {
+    await repository.deleteBranch(branch, true);
+  } catch (error) {
+    throw new Error(`${remote}/${branch} was deleted, but local branch ${branch} was preserved: ${error.message || error}`);
+  }
+  return { branch, remoteDeleted: true };
+}
+
 async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash' }) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot sync ${defaultBranch} into itself.`);
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
@@ -814,7 +910,23 @@ function registerBranchCommands(vscode, context) {
             await requireFinalizedCommit(repository, { background: command !== 'sweetiebot.returnHome' });
           }
           if (!needsDefaultBranch.has(command)) return action(repository, options);
-          const defaultBranch = await resolveDefaultBranch(repository, options?.remote || 'origin');
+          const remote = options?.remote || 'origin';
+          const defaultBranch = await resolveDefaultBranch(repository, remote);
+          if (command === 'sweetiebot.deleteBranch' && options?.branch
+              && options.branch !== defaultBranch && repository.rootUri?.fsPath) {
+            const tip = await remoteBranchTip(repository, options.branch, remote);
+            if (tip) {
+              const choice = await vscode.window.showWarningMessage(
+                `Delete published branch "${options.branch}"?`,
+                { modal: true, detail: `This permanently removes ${remote}/${options.branch} and its local branch. Any associated GitHub pull request may close, and unmerged commits may become unreachable. The working tree must be clean.` },
+                'Delete Local and Remote'
+              );
+              if (choice !== 'Delete Local and Remote') return false;
+              return deletePublishedBranch(repository, {
+                branch: options.branch, defaultBranch, remote, expectedRemoteTip: tip
+              });
+            }
+          }
           return action(repository, { ...options, defaultBranch });
         };
         try {
@@ -962,6 +1074,8 @@ module.exports = {
   publishBranch,
   deleteBranch,
   deleteEmptyBranch,
+  remoteBranchTip,
+  deletePublishedBranch,
   syncBranch,
   registerBranchCommands,
   autoPullClean,

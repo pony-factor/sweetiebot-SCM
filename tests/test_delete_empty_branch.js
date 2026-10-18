@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { deleteEmptyBranch } = require('../efs/branch_actions');
+const { deleteEmptyBranch, remoteBranchTip, deletePublishedBranch, registerBranchCommands } = require('../efs/branch_actions');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-delete-empty-'));
 const git = (cwd, ...args) => execFileSync('git', args, {
@@ -134,6 +134,116 @@ async function run() {
     await assert.rejects(deleteEmptyBranch(f.repository, { ...opts, branch: 'main' }), /non-default/);
     assert(f.localBranch());
   }
+
+  {
+    // The trash action must ask before deleting a published branch with PR commits.
+    const f = fixture('published-confirmation', true);
+    fs.writeFileSync(path.join(f.local, 'pr.txt'), 'PR work\n');
+    git(f.local, 'add', '.');
+    git(f.local, 'commit', '-m', 'PR commit');
+    git(f.local, 'push', 'origin', 'topic');
+    let allow = false;
+    const notices = [];
+    const commands = new Map();
+    const vscode = {
+      Uri: { from(value) { return value.rootUri || value; } },
+      extensions: { getExtension() { return { async activate() { return {
+        getAPI() { return { getRepository() { return f.repository; } }; }
+      }; } }; } },
+      commands: { registerCommand(id, callback) {
+        commands.set(id, callback);
+        return { dispose() {} };
+      } },
+      window: { async showWarningMessage(message, options, action) {
+        notices.push({ message, options, action });
+        return allow ? 'Delete Local and Remote' : undefined;
+      } }
+    };
+    registerBranchCommands(vscode, { subscriptions: [] });
+    const trash = commands.get('sweetiebot.deleteBranch');
+    assert.equal(await trash({ rootUri: f.repository.rootUri }, opts), false);
+    assert(f.localBranch(), 'Cancel must retain the local branch');
+    assert(f.remoteBranch(), 'Cancel must retain origin');
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].options.modal, true);
+    assert(notices[0].options.detail.includes('origin/topic'));
+    assert.match(notices[0].options.detail, /pull request/);
+    allow = true;
+    assert.deepEqual(await trash({ rootUri: f.repository.rootUri }, opts),
+      { branch: 'topic', remoteDeleted: true });
+    assert.equal(f.localBranch(), '');
+    assert.equal(f.remoteBranch(), '');
+    assert.equal(git(f.local, 'branch', '--show-current'), 'main');
+  }
+  {
+    const f = fixture('published-dirty', true);
+    const tip = await remoteBranchTip(f.repository, 'topic');
+    fs.writeFileSync(path.join(f.local, 'unsaved.txt'), 'keep me\n');
+    await assert.rejects(deletePublishedBranch(f.repository, { ...opts, expectedRemoteTip: tip }),
+      /Commit, stash, or discard/);
+    assert(f.localBranch());
+    assert(f.remoteBranch());
+  }
+  {
+    const f = fixture('published-tip-mismatch', true);
+    const tip = await remoteBranchTip(f.repository, 'topic');
+    fs.writeFileSync(path.join(f.local, 'unpublished.txt'), 'local only\n');
+    git(f.local, 'add', '.');
+    git(f.local, 'commit', '-m', 'Not published');
+    await assert.rejects(deletePublishedBranch(f.repository, { ...opts, expectedRemoteTip: tip }),
+      /tips differ/);
+    assert(f.localBranch());
+    assert(f.remoteBranch());
+  }
+  {
+    const f = fixture('published-stale-confirmation', true);
+    const tip = await remoteBranchTip(f.repository, 'topic');
+    const other = path.join(f.base, 'other');
+    git(f.base, 'clone', f.remote, other);
+    git(other, 'config', 'user.name', 'Test');
+    git(other, 'config', 'user.email', 'test@example.invalid');
+    git(other, 'checkout', 'topic');
+    fs.writeFileSync(path.join(other, 'new.txt'), 'remote advanced\n');
+    git(other, 'add', '.');
+    git(other, 'commit', '-m', 'Remote advanced');
+    git(other, 'push', 'origin', 'topic');
+    await assert.rejects(deletePublishedBranch(f.repository, { ...opts, expectedRemoteTip: tip }),
+      /tip changed after confirmation/);
+    assert(f.localBranch());
+    assert(f.remoteBranch());
+  }
+  {
+    // A push after preflight still cannot bypass Git's remote SHA lease.
+    const f = fixture('published-lease-race', true);
+    const tip = await remoteBranchTip(f.repository, 'topic');
+    const other = path.join(f.base, 'other');
+    git(f.base, 'clone', f.remote, other);
+    git(other, 'config', 'user.name', 'Test');
+    git(other, 'config', 'user.email', 'test@example.invalid');
+    git(other, 'checkout', 'topic');
+    const checkout = f.repository.checkout.bind(f.repository);
+    f.repository.checkout = async branch => {
+      await checkout(branch);
+      fs.writeFileSync(path.join(other, 'race.txt'), 'new upstream commit\n');
+      git(other, 'add', '.');
+      git(other, 'commit', '-m', 'Racing push');
+      git(other, 'push', 'origin', 'topic');
+    };
+    await assert.rejects(deletePublishedBranch(f.repository, { ...opts, expectedRemoteTip: tip }),
+      /stale info|rejected|fetch first|failed to push/i);
+    assert(f.localBranch(), 'The local branch survives a failed remote deletion');
+    assert(f.remoteBranch());
+  }
+  {
+    const f = fixture('published-protect-default', true);
+    const tip = git(f.local, 'rev-parse', 'main');
+    await assert.rejects(deletePublishedBranch(f.repository, {
+      ...opts, branch: 'main', expectedRemoteTip: tip
+    }), /non-default/);
+    assert(f.localBranch());
+    assert(f.remoteBranch());
+  }
+
   console.log('Empty branch deletion regression checks passed.');
 }
 

@@ -979,15 +979,11 @@ git config --global scm-toolkit.pony-branch false
 
 When `branch-cleanup` is enabled, the trash control appears for local branches other than the configured `default-branch`.
 
-Before deletion, the control:
+For a branch already absent from the remote, the trash control retains its guarded merged-branch cleanup: fetch and prune, verify the remote, update and check out the configured default branch, then delete locally without forcing. GitHub PR verification is required before cleaning up a squash-merged local branch.
 
-1. fetches with prune
-2. verifies that the current branch no longer exists under `refs/remotes/<remote>/`
-3. refuses to delete if the configured remote cannot be verified
-4. checks out and syncs the configured default branch
-5. deletes the old local branch without forcing, stopping if Git rejects deletion
+If the branch still exists on `origin` (or the configured remote), clicking trash instead opens a **modal confirmation**. Cancel leaves both copies untouched. **Delete Local and Remote** removes the exact confirmed remote ref using Git CLI with an SHA lease, then removes the local branch. This can close the associated GitHub PR and discard unmerged branch commits, so confirmation is required. Deletion requires a clean worktree and a matching local/remote tip; changes on the remote before or during deletion abort it. The default branch remains protected. If the remote delete fails, the local branch is preserved (even if checkout has already returned to the default branch).
 
-This does not delete the remote branch.
+The separate right-click **Delete empty branch** action retains its stricter ancestry checks for empty topics.
 
 ## Uninstall
 
