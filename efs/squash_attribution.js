@@ -2,6 +2,8 @@
 const COAUTHOR=/^Co-authored-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/gim;
 function who(name,email,original=false) {
  if(typeof name!=='string'||!name.trim()||/[<>\r\n]/.test(name)||typeof email!=='string'||!/^[^\s<>]+@[^\s<>]+$/.test(email)) return null;
+ // A historical Ollama placeholder is not a verified account-linked co-author.
+ if(email.trim().toLowerCase()==='hello@ollama.com') return null;
  const id=(name+' '+email).toLowerCase();
  const tier=/^codex$/i.test(name)?2:/^codex web$/i.test(name)?3:/codex-pony/.test(id)?4:/copilot/.test(id)?5:/ollama/.test(id)?6:/\[bot\]|bot@|dependabot|github.actions|web-flow/.test(id)?7:/openai|claude|gemini|ai.agent/.test(id)?8:original?0:1;
  return {name:name.trim(),email:email.trim(),tier};

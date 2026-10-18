@@ -200,7 +200,9 @@ async function run() {
   assert.match(prompt, /Co-authored-by: codex-pony\[bot\] <326443430\+codex-pony\[bot\]@users.noreply.github.com>/);
   assert.match(prompt, /Co-authored-by: Copilot <175728472\+Copilot@users.noreply.github.com>/);
   assert.match(prompt, /other Copilot agent identities exist/);
-  assert.match(prompt, /Co-authored-by: Ollama <hello@ollama.com>/);
+  assert.match(prompt, /For evidenced Ollama contributions, preserve only the exact verified co-author name and email/);
+  assert.match(prompt, /omit unverified legacy Ollama trailers/);
+  assert.doesNotMatch(prompt, /hello@ollama\.com/i);
   assert.match(prompt, /Do not add these optional entries/);
   assert.match(prompt, /original human author appears before bots and AI/);
   assert.match(prompt, /cover the verified original human authors and other evidenced contributors in the requested priority order/);
@@ -357,7 +359,8 @@ async function run() {
   assert.match(sentPrompt, /pull\/41/);
   assert.match(sentPrompt, /squash title: "Selected PR \(#41\)"/);
   assert.match(sentPrompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
-  assert.match(sentPrompt, /Ollama <hello@ollama.com>/);
+  assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
+  assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
 
