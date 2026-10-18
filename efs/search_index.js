@@ -6,7 +6,8 @@ const { chunkText, keywordScore, bestMatchingLine, cosine } = require('./core');
 const { extractText } = require('./extract');
 const { embedTexts } = require('./ollama');
 
-const INDEX_VERSION = 2;
+const INDEX_VERSION = 3;
+const CACHE_SHARD_CHUNKS = 16;
 const FILENAME_CACHE_TTL_MS = 2 * 60 * 1000;
 const FOLDER_CACHE_TTL_MS = 2 * 60 * 1000;
 
@@ -42,10 +43,27 @@ class SearchIndex {
     this.filenameScanPromise = undefined;
     this.folderCache = undefined;
     this.folderScanPromise = undefined;
+    this.persistedEntries = new Map();
+    this.cacheChanges = new Map();
+    this.cacheRevision = 0;
+    this.persistPromise = undefined;
   }
 
   get storageUri() {
     return vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${workspaceKey()}.json`);
+  }
+
+  get cacheDirectoryUri() {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${workspaceKey()}-parts`);
+  }
+
+  shardUri(uri, generation, part) {
+    const id = crypto.createHash('sha1').update(uri).digest('hex');
+    return vscode.Uri.joinPath(this.cacheDirectoryUri, `${id}-${generation}-${part}.json`);
+  }
+
+  markCacheChanged(uri) {
+    this.cacheChanges.set(uri, ++this.cacheRevision);
   }
 
   async load() {
@@ -56,7 +74,24 @@ class SearchIndex {
         const raw = await vscode.workspace.fs.readFile(this.storageUri);
         const payload = JSON.parse(Buffer.from(raw).toString('utf8'));
         if (payload.version !== INDEX_VERSION || payload.embeddingModel !== this.embeddingModel || !Array.isArray(payload.files)) return;
-        for (const file of payload.files) this.files.set(file.uri, file);
+        for (const entry of payload.files) {
+          if (!entry || typeof entry.uri !== 'string' || !/^[a-f0-9]{16}$/.test(entry.generation)
+              || !Number.isSafeInteger(entry.shardCount) || entry.shardCount < 0) continue;
+          const chunks = [];
+          try {
+            for (let part = 0; part < entry.shardCount; part += 1) {
+              const rawPart = await vscode.workspace.fs.readFile(this.shardUri(entry.uri, entry.generation, part));
+              const parsed = JSON.parse(Buffer.from(rawPart).toString('utf8'));
+              if (!Array.isArray(parsed)) throw new Error('Invalid semantic index shard.');
+              chunks.push(...parsed);
+            }
+          } catch {
+            // Rebuild an incomplete entry instead of dropping the entire index.
+            continue;
+          }
+          this.files.set(entry.uri, { uri: entry.uri, mtime: entry.mtime, size: entry.size, chunks });
+          this.persistedEntries.set(entry.uri, entry);
+        }
       } catch {
         // A missing or stale index starts clean.
       } finally {
@@ -73,12 +108,64 @@ class SearchIndex {
 
   async persist() {
     if (!this.loaded) return;
+    // Background refreshes and file watcher updates must not race index writes.
+    if (this.persistPromise) {
+      await this.persistPromise;
+      if (this.cacheChanges.size) return this.persist();
+      return;
+    }
+    const work = this.persistNow();
+    this.persistPromise = work;
+    try {
+      await work;
+    } finally {
+      if (this.persistPromise === work) this.persistPromise = undefined;
+    }
+  }
+
+  async persistNow() {
     await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
-    const payload = JSON.stringify({ version: INDEX_VERSION, embeddingModel: this.embeddingModel, files: [...this.files.values()] });
+    await vscode.workspace.fs.createDirectory(this.cacheDirectoryUri);
+    const oldEntries = this.persistedEntries;
+    const changes = new Map(this.cacheChanges);
+    const entries = new Map();
+
+    // Persist each file in bounded chunks. A whole-workspace JSON.stringify()
+    // can exceed V8's maximum string size with thousands of embeddings.
+    for (const file of this.files.values()) {
+      const old = oldEntries.get(file.uri);
+      if (old && !changes.has(file.uri)) {
+        entries.set(file.uri, old);
+        continue;
+      }
+      const generation = crypto.randomBytes(8).toString('hex');
+      const chunks = file.chunks || [];
+      const shardCount = Math.ceil(chunks.length / CACHE_SHARD_CHUNKS);
+      for (let part = 0; part < shardCount; part += 1) {
+        const batch = chunks.slice(part * CACHE_SHARD_CHUNKS, (part + 1) * CACHE_SHARD_CHUNKS);
+        await vscode.workspace.fs.writeFile(this.shardUri(file.uri, generation, part), Buffer.from(JSON.stringify(batch)));
+      }
+      entries.set(file.uri, { uri: file.uri, mtime: file.mtime, size: file.size, generation, shardCount });
+    }
+
+    const payload = JSON.stringify({
+      version: INDEX_VERSION, embeddingModel: this.embeddingModel, files: [...entries.values()]
+    });
     const temp = vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${workspaceKey()}.tmp`);
     await vscode.workspace.fs.writeFile(temp, Buffer.from(payload));
     try { await vscode.workspace.fs.delete(this.storageUri, { useTrash: false }); } catch {}
     await vscode.workspace.fs.rename(temp, this.storageUri, { overwrite: true });
+
+    this.persistedEntries = entries;
+    for (const [uri, revision] of changes) {
+      if (this.cacheChanges.get(uri) === revision) this.cacheChanges.delete(uri);
+    }
+    for (const [uri, old] of oldEntries) {
+      if (entries.get(uri)?.generation === old.generation) continue;
+      for (let part = 0; part < old.shardCount; part += 1) {
+        try { await vscode.workspace.fs.delete(this.shardUri(uri, old.generation, part), { useTrash: false }); } catch {}
+      }
+    }
   }
 
   schedulePersist() {
@@ -101,6 +188,7 @@ class SearchIndex {
     this.folderCache = undefined;
     this.dirty.delete(uri.toString());
     this.files.delete(uri.toString());
+    this.markCacheChanged(uri.toString());
     this.schedulePersist();
   }
 
@@ -109,7 +197,10 @@ class SearchIndex {
     this.folderCache = undefined;
     this.files.clear();
     this.dirty.clear();
+    this.persistedEntries.clear();
+    this.cacheChanges.clear();
     try { await vscode.workspace.fs.delete(this.storageUri, { useTrash: false }); } catch {}
+    try { await vscode.workspace.fs.delete(this.cacheDirectoryUri, { useTrash: false, recursive: true }); } catch {}
   }
 
   async indexUri(uri, stat) {
@@ -131,6 +222,7 @@ class SearchIndex {
       }
     }
     this.files.set(uri.toString(), { uri: uri.toString(), mtime: stat.mtime, size: stat.size, chunks: indexed });
+    this.markCacheChanged(uri.toString());
   }
 
   async refresh(options = {}) {
@@ -144,11 +236,13 @@ class SearchIndex {
     }
   }
 
-  async refreshNow({ force = false, progress } = {}) {
+  async refreshNow({ force = false, repairVectors = false, progress } = {}) {
     await this.load();
     if (this.embeddingModel !== this.getSettings().embeddingModel) {
       this.files.clear();
       this.embeddingModel = this.getSettings().embeddingModel;
+      this.embeddingAvailable = true;
+      this.embeddingWarning = '';
       force = true;
     }
     if (force) {
@@ -166,15 +260,21 @@ class SearchIndex {
       try { stat = await vscode.workspace.fs.stat(uri); } catch { continue; }
       if ((stat.type & vscode.FileType.File) === 0) continue;
       const previous = this.files.get(key);
-      const changed = force || this.dirty.has(key) || !previous || previous.mtime !== stat.mtime || previous.size !== stat.size;
+      const changed = force || this.dirty.has(key) || !previous || previous.mtime !== stat.mtime || previous.size !== stat.size
+        || (repairVectors && previous.chunks.some(chunk => !chunk.vector));
       if (!changed) continue;
       progress?.report({ message: vscode.workspace.asRelativePath(uri, false) });
       await this.indexUri(uri, stat);
       this.dirty.delete(key);
       processed += 1;
     }
-    for (const key of [...this.files.keys()]) if (!seen.has(key)) this.files.delete(key);
-    if (processed || force) await this.persist();
+    let removed = 0;
+    for (const key of [...this.files.keys()]) if (!seen.has(key)) {
+      this.files.delete(key);
+      this.markCacheChanged(key);
+      removed += 1;
+    }
+    if (processed || force || removed) await this.persist();
     return { files: this.files.size, processed, warning: this.embeddingWarning };
   }
 
@@ -246,13 +346,19 @@ class SearchIndex {
     if (selectedMode !== 'exact') {
       try {
         [queryVector] = await embedTexts(settings, [query]);
-        // Recover passages indexed before the selected model was installed.
-        if ([...this.files.values()].some(file => file.chunks.some(chunk => !chunk.vector))) {
-          await this.refresh({ force: true });
-        }
         this.embeddingAvailable = true;
+        this.embeddingWarning = '';
       } catch (error) {
         this.embeddingWarning = `Semantic search unavailable: ${error.message}`;
+      }
+      // Only repair files with missing vectors; do not re-embed the workspace
+      // on every query or misreport an index storage error as an Ollama error.
+      if (queryVector && [...this.files.values()].some(file => file.chunks.some(chunk => !chunk.vector))) {
+        try {
+          await this.refresh({ repairVectors: true });
+        } catch (error) {
+          this.embeddingWarning = `Semantic index recovery failed: ${error.message}`;
+        }
       }
     }
     const scored = [];

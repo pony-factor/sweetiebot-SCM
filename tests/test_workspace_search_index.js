@@ -7,6 +7,7 @@ const {normalizeVector} = require('../efs/core');
 
 async function run() {
   let model = 'first:embed', unavailable = false, persisted;
+  const cache = new Map();
   const calls = [];
   const exampleUri = {toString: () => 'file:///example.txt'};
   const emptyUri = {toString: () => 'file:///notes/empty-notes.md'};
@@ -19,6 +20,7 @@ async function run() {
     Uri: {
       joinPath: (uri, component) => {
         if (uri === rootUri && component.startsWith('workspace-search-')) return component;
+        if (typeof uri === 'string') return `${uri}/${component}`;
         const url = new URL(uri.toString());
         url.pathname = path.posix.resolve(url.pathname, component);
         return {toString: () => url.toString()};
@@ -35,9 +37,20 @@ async function run() {
         filenameScans += 1;
         return [exampleUri, emptyUri, overlookedUri, outsideCapUri];
       },
-      fs: {readFile: async () => {throw new Error('No cache');}, createDirectory: async () => {},
-        writeFile: async (_uri, bytes) => {persisted = JSON.parse(bytes.toString());},
-        delete: async () => {}, rename: async () => {}, stat: async () => ({type: 1, size: 20, mtime: 1})}
+      fs: {readFile: async uri => {
+          if (!cache.has(uri.toString())) throw new Error('No cache');
+          return cache.get(uri.toString());
+        }, createDirectory: async () => {},
+        writeFile: async (uri, bytes) => {
+          cache.set(uri.toString(), bytes);
+          if (uri.toString().endsWith('.tmp')) persisted = JSON.parse(bytes.toString());
+        },
+        delete: async uri => {cache.delete(uri.toString());},
+        rename: async (from, to) => {
+          cache.set(to.toString(), cache.get(from.toString()));
+          cache.delete(from.toString());
+        },
+        stat: async () => ({type: 1, size: 20, mtime: 1})}
     }
   };
   const sandbox = {module: {exports: {}}, Buffer, setTimeout, clearTimeout, require(name) {
@@ -63,7 +76,7 @@ async function run() {
   assert.equal(result.results.length, 1, 'Installing a model must recover previously unembedded passages');
   assert.equal(result.results[0].line, 1, 'Search results should point at the matching line inside the indexed chunk');
   assert.equal(persisted.embeddingModel, model);
-  assert.equal(persisted.version, 2, 'PDF extraction changes must invalidate older cached passages');
+  assert.equal(persisted.version, 3, 'Sharded storage must invalidate the monolithic v2 cache');
   model = 'second:embed';
   calls.length = 0;
   result = await index.search('passage', 'semantic');
@@ -146,6 +159,38 @@ async function run() {
     'File-name hits remain independent of passage hits');
   vscode.workspace.asRelativePath = originalRelativePath;
 
-  console.log('Workspace model recovery, literal URL ranking, uncapped filenames, exact-name priority, folder search, and index checks passed.');
+  // Regression: a large embedding cache must never be stringified as one giant
+  // payload. Emulate the V8 string length limit without allocating gigabytes.
+  const oversizedUri = 'file:///research/large-pdf.md';
+  const oversizedChunks = Array.from({length: 40}, (_, line) => ({
+    text: 'A long indexed passage. '.repeat(20),
+    line,
+    vector: Array(300).fill(0.5)
+  }));
+  index.files.set(oversizedUri, {uri: oversizedUri, mtime: 1, size: 100, chunks: oversizedChunks});
+  index.markCacheChanged(oversizedUri);
+  sandbox.JSON = {
+    parse: JSON.parse,
+    stringify(value) {
+      const result = JSON.stringify(value);
+      if (result.length > 45000) throw new RangeError('Invalid string length');
+      return result;
+    }
+  };
+  try {
+    await index.persist();
+  } finally {
+    delete sandbox.JSON;
+  }
+  const oversizedManifestEntry = persisted.files.find(file => file.uri === oversizedUri);
+  assert.equal(oversizedManifestEntry.shardCount, 3, '40 chunks must be persisted in three bounded shards');
+  const restored = new sandbox.module.exports.SearchIndex(
+    {globalStorageUri: rootUri}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'})
+  );
+  await restored.load();
+  assert.equal(restored.files.get(oversizedUri).chunks.length, 40, 'Reload must restore all persisted chunks and embeddings');
+  assert.deepEqual(restored.files.get(oversizedUri).chunks[0].vector, oversizedChunks[0].vector);
+
+  console.log('Workspace model recovery, URL ranking, filename and folder search, and bounded embedding cache checks passed.');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});
