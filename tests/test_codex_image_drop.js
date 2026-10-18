@@ -32,6 +32,7 @@ assert.equal(count, 1, 'crossing child elements does not increment the pane coun
 const internalLeave = event('dragleave'); internalLeave.relatedTarget = { inside: true };
 listeners.get('dragleave')(internalLeave);
 assert.equal(highlighted, true);
+assert.equal(internalLeave.stopped, true, 'child leaves cannot also reach native React handlers');
 listeners.get('dragleave')(event('dragleave'));
 assert.equal(highlighted, false, 'leaving the pane clears the native highlight');
 const over = event('dragover'); listeners.get('dragover')(over);
@@ -43,6 +44,23 @@ nullLeave.clientX = 20; nullLeave.clientY = 30;
 context.document.elementFromPoint = () => ({ inside: true });
 listeners.get('dragleave')(nullLeave);
 assert.equal(highlighted, true, 'null relatedTarget over a child keeps the overlay');
+assert.equal(nullLeave.stopped, true, 'hit-tested child leaves cannot reset the native overlay');
+for (let attempt = 0; attempt < 3; attempt++) {
+    const paneLeave = event('dragleave');
+    paneLeave.target = body;
+    paneLeave.clientX = 20; paneLeave.clientY = 30;
+    listeners.get('dragleave')(paneLeave);
+    assert.equal(highlighted, false, 'webview boundary clears overlay despite stale hit testing');
+    assert.equal(count, 0);
+    listeners.get('dragleave')(paneLeave);
+    assert.equal(count, 0, 'duplicate boundary leaves do not change the native counter');
+    listeners.get('dragover')(event('dragover'));
+    assert.equal(count, 1, 'returning from the main editor starts a fresh native enter');
+    assert.equal(highlighted, true, 'attachment overlay reappears on every return');
+}
+const textLeave = event('dragleave', false);
+listeners.get('dragleave')(textLeave);
+assert.equal(textLeave.stopped, false, 'non-file leaves remain available to native handlers');
 const dropped = event('drop'); listeners.get('drop')(dropped);
 assert.equal(uploads, 1);
 assert.equal(dropped.stopped, true, 'native attachment processing happens once');

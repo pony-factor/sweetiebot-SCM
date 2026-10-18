@@ -99,12 +99,20 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
             dragenter: enterTarget,
             dragover: enterTarget,
             dragleave(event) {
+                if (!hasFiles(event)) return;
+                // This capture listener owns the native counter. Letting an ignored
+                // child leave reach React hides its overlay without clearing active.
+                event.stopPropagation();
                 // Moving across children is still inside the drop target.
                 if (event.relatedTarget && body.contains(event.relatedTarget)) return;
                 // Chromium can omit relatedTarget when crossing webview children.
-                if (!event.relatedTarget && event.clientX > 0 && event.clientY > 0
+                // A leave from the document boundary must still clear active even
+                // when hit testing returns the last element inside the webview.
+                const boundary = event.target === body || event.target === document.documentElement
+                    || event.target === document || event.target === window;
+                if (!boundary && !event.relatedTarget && event.clientX > 0 && event.clientY > 0
                     && body.contains(document.elementFromPoint?.(event.clientX, event.clientY))) return;
-                (active ?? select(event))?.leave(event);
+                active?.leave(event);
                 active = undefined;
             },
             drop(event) {
