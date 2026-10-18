@@ -1812,8 +1812,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             ? `${currentDefaultBranch} is the pull-request base branch`
             : !pullRequestEligibility
                 ? 'Checking existing PRs and starting base…'
-                : pullRequestEligibility.reason === 'open-pr'
-                    ? `PR #${previous?.number ?? '?'} is already open; new commits appear there automatically`
+                : pullRequestEligibility.reason === 'pending-commits'
+                    ? 'Open the PR window now; drafting starts after commit naming and push finish'
+                    : pullRequestEligibility.reason === 'open-pr'
+                        ? `PR #${previous?.number ?? '?'} is already open; new commits appear there automatically`
                     : pullRequestEligibility.reason === 'same-starting-base'
                         ? `PR #${previous?.number ?? '?'} already used this starting base; branch must start from a different commit`
                         : pullRequestEligibility.reason === 'no-commits'

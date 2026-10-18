@@ -64,6 +64,16 @@ async function run() {
   pending[0]({ allowed: false, reason: 'no-commits' });
   await tick();
   assert.equal(switched.context.pullRequestButton.disabled, false, 'An older request cannot replace evidence after rebinding the same repository');
+  const deferred = harness(async () => ({ allowed: true, reason: 'pending-commits' }));
+  deferred.context.refresh();
+  await tick();
+  assert.equal(deferred.context.pullRequestButton.disabled, false,
+    'Queued commit titles must not block opening a New PR window');
+  const unqueued = harness(async () => ({ allowed: false, reason: 'no-commits' }));
+  unqueued.context.refresh();
+  await tick();
+  assert.equal(unqueued.context.pullRequestButton.disabled, true,
+    'Without a pending commit, the existing no-commits guard remains');
   console.log('PR eligibility recovery checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
