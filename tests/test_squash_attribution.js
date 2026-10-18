@@ -40,6 +40,13 @@ async function run(){
   'Trailers appear only in one consolidated block');
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{name:'A',email:'a@example.org'},message:'\nNo subject'}}]),/subject/);
 
+ const legacy=squashMessage('🛠️ Keep verified Ollama attribution',270,[{commit:{
+  author:{name:'John Wooten',email:'noreply@wooten.link'},
+  message:'Spellcheck\n\nCo-authored-by: Ollama <hello@ollama.com>\nCo-authored-by: Ollama (qwen2.5-coder:7b) <326443430+codex-pony[bot]@users.noreply.github.com>'
+ }}]);
+ assert(!legacy.message.includes('hello@ollama.com'), 'Obsolete Ollama placeholder must never enter a squash commit');
+ assert(legacy.trailers.includes('Co-authored-by: Ollama (qwen2.5-coder:7b) <326443430+codex-pony[bot]@users.noreply.github.com>'));
+ assert(!legacy.message.includes('Co-authored-by: Ollama <'));
  assert.throws(()=>squashMessage('Wrong',269,[]),/history/);
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{}}}]),/Git author/);
  let calls=0;
