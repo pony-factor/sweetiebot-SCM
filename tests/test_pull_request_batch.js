@@ -83,7 +83,7 @@ async function run() {
       onDidHide(callback) { events.hide = callback; return { dispose() {} }; },
       show() {
         verify(this);
-        if (action === 'all') events.button(this.buttons[0]);
+        if (action === 'all') { this.selectedItems = [...this.items]; events.accept(); }
         else if (action === 'one') {
           this.selectedItems = [this.items[1]];
           events.accept();
@@ -118,9 +118,7 @@ async function run() {
     assert.equal(picker.canSelectMany, true);
     assert.equal(picker.items.length, pulls.length);
     assert.equal(picker.items.some(item => item.selectAll), false);
-    assert.equal(picker.buttons.length, 1);
-    assert.equal(picker.buttons[0].iconPath.id, 'run-all');
-    assert.match(picker.buttons[0].tooltip, /Queue all pull requests/);
+    assert.equal(picker.buttons.length, 0);
   });
   assert.deepEqual(await pickPullRequests(allPicker.vscode, pulls), pulls);
   assert.equal(allPicker.disposed, true);
@@ -230,7 +228,7 @@ async function run() {
     assert.match(picker.items[1].label, /^↳ #42/);
     assert.match(picker.items[2].label, /^↳ ↳ #43/);
   });
-  assert.deepEqual(await pickPullRequests(stackPicker.vscode, stackPulls), stackPulls);
+  assert.deepEqual((await pickPullRequests(stackPicker.vscode, stackPulls)).map(pr => pr.number), [41, 42, 43]);
   const stackPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
     pullRequests: stackPulls });
   assert(stackPrompt.indexOf('#41:') < stackPrompt.indexOf('#42:'));
@@ -267,6 +265,7 @@ async function run() {
     rootUri: { scheme: 'file', fsPath: '/workspace/repo' },
     state: { remotes: [{ name: 'origin', fetchUrl: 'git@github.com:owner/repo.git' }] }
   };
+  let mergeAllHandler;
   let configuredProject = '';
   let pickerAction = 'first';
   let includeNonMain = false;
@@ -295,8 +294,11 @@ async function run() {
     },
     commands: {
       registerCommand(id, callback) {
-        assert.equal(id, 'sweetiebot.openPullRequestBatchChat');
-        handler = callback;
+        if (id === 'sweetiebot.mergeAllPullRequests') mergeAllHandler = callback;
+        else {
+          assert.equal(id, 'sweetiebot.openPullRequestBatchChat');
+          handler = callback;
+        }
         return { dispose() {} };
       },
       async getCommands() { return ['workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow']; },
@@ -359,13 +361,13 @@ async function run() {
   assert(!sentPrompt.includes('pull/40'));
   assert.equal(browserCalls[0].options.openToSide, false);
 
-  pickerAction = 'all';
-  await handler();
+  pickerAction = 'cancel';
+  await mergeAllHandler();
   const allChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
   assert.match(mergePromptFromUrl(allChat), /pull\/41/);
   assert.match(mergePromptFromUrl(allChat), /pull\/40/);
   assert(browserCalls.every(call => call.id === 'workbench.action.browser.open'),
-    'Queue All keeps ChatGPT in the current window');
+    'Merge All keeps ChatGPT in the current window');
   includeNonMain = true;
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';

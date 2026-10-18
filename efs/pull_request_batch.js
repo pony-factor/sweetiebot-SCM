@@ -147,10 +147,6 @@ function squashCommitTitle(pr) {
 
 async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
   const picker = vscode.window.createQuickPick();
-  const queueAllButton = {
-    iconPath: new vscode.ThemeIcon('run-all'),
-    tooltip: 'Queue all pull requests in ' + engine + ' (one click)'
-  };
   const plan = planStackMerges(pullRequests, pullRequests[0]?.baseRepo);
   picker.items = plan.ordered.map(item => ({
     label: `${'↳ '.repeat(item.stackDepth || 0)}#${item.number} ${item.title}`,
@@ -160,8 +156,7 @@ async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
   }));
   picker.canSelectMany = true;
   picker.title = 'Squash and merge with ' + engine;
-  picker.placeholder = 'Select pull requests and press OK, or use Queue All to submit every PR.';
-  picker.buttons = [queueAllButton];
+  picker.placeholder = 'Select pull requests and press OK.';
 
   return new Promise(resolve => {
     let finished = false;
@@ -175,9 +170,6 @@ async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
       resolve(selection);
     };
     listeners.push(
-      picker.onDidTriggerButton(button => {
-        if (button === queueAllButton) finish([...pullRequests]);
-      }),
       picker.onDidAccept(() => {
         finish(picker.selectedItems.flatMap(item => item.pullRequest ? [item.pullRequest] : []));
       }),
@@ -223,7 +215,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
 }
 
 function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch) {
-  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', async () => {
+  const mergePullRequests = async (all) => {
     try {
       const repositories = await workspaceGitHubRepositories(vscode);
       const selectedRepository = await chooseRepository(vscode, repositories);
@@ -238,7 +230,8 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       }
       const root = selectedRepository.repository.rootUri?.fsPath;
       const lindsey = root ? findBulkMergeScript(root, vscode.workspace?.workspaceFolders || []) : undefined;
-      const selected = await pickPullRequests(vscode, pullRequests, lindsey ? 'Lindsey' : 'ChatGPT');
+      const selected = all ? pullRequests
+        : await pickPullRequests(vscode, pullRequests, lindsey ? 'Lindsey' : 'ChatGPT');
       if (selected === undefined) return;
       if (!selected.length) {
         vscode.window.showInformationMessage('Select at least one pull request.');
@@ -295,7 +288,11 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
     } catch (error) {
       vscode.window.showErrorMessage(`Unable to prepare pull-request bulk merge: ${error.message}`);
     }
-  }));
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.openPullRequestBatchChat', () => mergePullRequests(false)),
+    vscode.commands.registerCommand('sweetiebot.mergeAllPullRequests', () => mergePullRequests(true))
+  );
 }
 
 module.exports = {

@@ -25,6 +25,7 @@
     "onCommand:sweetiebot.pullRequestEligibility",
     "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.openPullRequestBatchChat",
+    "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
     "onCommand:sweetiebot.configureIndependentWorkspaceTrust",
     "onCommand:sweetiebot.closeAllEditors",
@@ -130,6 +131,11 @@
         }
       },
       {
+        "command": "sweetiebot.mergeAllPullRequests",
+        "title": "Merge All Pull Requests",
+        "icon": "$(run-all)"
+      },
+      {
         "command": "sweetiebot.openIndependentWorkspace",
         "title": "Open Independent Workspace from Main",
         "icon": "$(git-branch)"
@@ -166,6 +172,11 @@
           "command": "sweetiebot.openPullRequestBatchChat",
           "when": "view == pr:github && !isWeb",
           "group": "navigation@2"
+        },
+        {
+          "command": "sweetiebot.mergeAllPullRequests",
+          "when": "view == pr:github && !isWeb",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

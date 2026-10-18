@@ -1043,7 +1043,7 @@ Proposals open in the **Spellchecks Performed** review popup as unstaged edits. 
 
 ### Lindsey-backed bulk merges
 
-When a local `lindsey-sync` checkout includes `scripts/bulk-merge.js`, Sweetiebot's existing Merge All picker calls Lindsey directly rather than launching a ChatGPT merge chat. The **Queue All** control and selective checkboxes remain; Lindsey executes exact-SHA squash operations and reports individually merged, queued, blocked and unverified results in the **Lindsey Bulk Merge** output channel.
+When a local `lindsey-sync` checkout includes `scripts/bulk-merge.js`, Sweetiebot's existing Merge All picker calls Lindsey directly rather than launching a ChatGPT merge chat. The **Merge All Pull Requests** button appears beside the bulk merge button in the GitHub Pull Requests toolbar and submits all ready-for-review PRs directly. The bulk merge picker retains its selective checkboxes; Lindsey executes exact-SHA squash operations and reports individually merged, queued, blocked and unverified results in the **Lindsey Bulk Merge** output channel.
 
 Place the Lindsey repository beside the active repository, add it to the VS Code workspace, or set `LINDSEY_SYNC_REPO`. Install the GitHub `gh` CLI. The existing VS Code GitHub session is passed only to the local Lindsey child process, and selection snapshots are written as private temporary JSON that is removed afterward. When the Lindsey CLI is absent, Sweetiebot retains the existing ChatGPT flow.
 
