@@ -422,6 +422,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
     localHandoff.register(draftId, { pony, profile: cachedProfile,
       ludicrousMode,
+      showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
+      kefaniaCloseButtonLeft: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseButtonLeft', true),
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;

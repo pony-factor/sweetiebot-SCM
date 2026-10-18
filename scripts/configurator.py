@@ -134,6 +134,8 @@ SETTINGS = (
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
+    Setting("kefaniaShowCloseButton", "scm-toolkit.kefania-show-close-button", "Show Kefania X button", "Show the close-window X after publishing a PR in Kefania.", "Pull requests"),
+    Setting("kefaniaCloseButtonLeft", "scm-toolkit.kefania-close-button-left", "Kefania X on the left", "Position the confirmation-page close X on the upper left; turn off for the upper right. The X itself stays white.", "Pull requests"),
     Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "Pull requests"),
     Setting("ludicrousMode", "scm-toolkit.ludicrous-mode", "Ludicrous mode", "Skip the confirmation box when you click Squash and merge in the Kefania dialog.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
