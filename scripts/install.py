@@ -1229,9 +1229,9 @@ def main():
     ):
         if draft_path in paths:
             index = paths.index(draft_path)
-            transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
+            draft_transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
                          else codex_drafts.transform_webview)
-            new[index] = transform(new[index], enabled=not args.uninstall)
+            new[index] = draft_transform(new[index], enabled=not args.uninstall)
         else:
             paths.append(draft_path)
             old.append(draft_old)
