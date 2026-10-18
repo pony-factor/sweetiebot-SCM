@@ -30,7 +30,9 @@ function documentFixture() {
       vscodeWindowId: 7, screenX: -1300, screenY: 80, outerWidth: 1000, outerHeight: 760,
       screen: { availLeft: -1440, availTop: 25, availWidth: 1440, availHeight: 875 },
       MutationObserver: class { constructor(fn) { doc.remount = fn; } observe() {} disconnect() {} },
-      addEventListener() {}
+      addEventListener() {},
+      setInterval(callback) { doc.checkDisplay = callback; return 1; },
+      clearInterval() { doc.checkDisplay = null; }
     }
   };
   doc.action = () => elements.get('sweetiebot-compact-window-action').child;
@@ -103,6 +105,31 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
   await flush();
   assert.equal(sessionCalls.length, 2, 'Setting changes never reapply automatic compaction');
+
+  // Cross-display resizing must preserve compact size at the drag destination.
+  const moving = documentFixture();
+  const moves = [];
+  ctx.scmToolkitMountCompactWindow(moving, { async positionWindow(bounds) {
+    moves.push(JSON.parse(JSON.stringify(bounds)));
+  } });
+  moving.action().events.click(event);
+  await flush();
+  moving.defaultView.screenX = 120;
+  moving.defaultView.screenY = 90;
+  moving.defaultView.outerWidth = 1000;
+  moving.defaultView.outerHeight = 760;
+  await moving.checkDisplay();
+  assert.equal(moves.length, 1, 'Same-display manual resizing stays available');
+  moving.defaultView.screen = { availLeft: 0, availTop: 25, availWidth: 1920, availHeight: 1055 };
+  await moving.checkDisplay();
+  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 600, height: 600 });
+  await moving.checkDisplay();
+  assert.equal(moves.length, 2, 'A display transition resizes only once');
+  assert.equal(moving.action().attrs['aria-pressed'], 'true');
+  moving.action().events.click(event);
+  await flush();
+  assert.deepEqual(moves.at(-1), { x: -1300, y: 80, width: 1000, height: 760 });
+  assert.equal(moving.checkDisplay, null, 'Restore stops watching display changes');
 
   // Workspace configuration may arrive after the workbench mounts.
   const late = documentFixture();

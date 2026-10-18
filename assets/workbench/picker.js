@@ -2562,6 +2562,36 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     doc.__sweetiebotCompactWindow = state;
     const actionId = 'sweetiebot-compact-window-action';
     const newActionId = 'sweetiebot-new-workspace-window-action';
+    const displayKey = () => [win.screen.availLeft, win.screen.availTop,
+        win.screen.width ?? win.screen.availWidth,
+        win.screen.height ?? win.screen.availHeight, win.devicePixelRatio].join(':');
+    let compactDisplay;
+    let displayWatcher;
+    const stopDisplayWatcher = () => {
+        if (displayWatcher !== undefined) win.clearInterval(displayWatcher);
+        displayWatcher = undefined;
+    };
+    const watchCompactDisplay = () => {
+        stopDisplayWatcher();
+        compactDisplay = displayKey();
+        // Moving a window need not emit a renderer resize event. Watch only
+        // while compact, including moves between displays with different scales.
+        displayWatcher = win.setInterval(async () => {
+            if (!state.restore || state.busy || displayKey() === compactDisplay) return;
+            compactDisplay = displayKey();
+            if (win.screen.availWidth < 600 || win.screen.availHeight < 600) return;
+            state.busy = true;
+            try {
+                // Keep the user's drag destination; do not center on the new display.
+                await nativeHost.positionWindow({ x: win.screenX, y: win.screenY,
+                    width: 600, height: 600 }, { targetWindowId: win.vscodeWindowId });
+            } catch (error) {
+                console.error('Sweetiebot could not preserve compact window size', error);
+            } finally {
+                state.busy = false;
+            }
+        }, 250);
+    };
     const refreshVisibility = () => {
         const compact = configuration?.getValue('scmToolkit.compactWindowButton')
             ?? settings.compactWindowButton ?? true;
@@ -2613,6 +2643,8 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             };
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
             state.restore = state.restore ? null : previous;
+            if (state.restore) watchCompactDisplay();
+            else stopDisplayWatcher();
         } catch (error) {
             console.error('Sweetiebot could not resize the window', error);
             failed = true;
@@ -2727,6 +2759,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         }
     });
     win.addEventListener('unload', () => {
+        stopDisplayWatcher();
         observer.disconnect();
         visibilityListener?.dispose();
     }, { once: true });
