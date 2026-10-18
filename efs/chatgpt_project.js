@@ -1,7 +1,7 @@
 'use strict';
 
 // ChatGPT project paths scope new chats to the project's instructions and files.
-// A blank setting retains Sweetie Bot's existing ordinary ChatGPT destination.
+// A blank setting retains Sweetiebot's existing ordinary ChatGPT destination.
 const PROJECT_PATH = /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/;
 
 function normalizeChatgptProjectUrl(value) {

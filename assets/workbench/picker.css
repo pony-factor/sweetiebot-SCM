@@ -598,7 +598,7 @@
     transition-delay: .4s;
 }
 
-/* Give Sweetie Bot's repair, PR merge, commit generation, and failure notices their own glyphs. */
+/* Give Sweetiebot's repair, PR merge, commit generation, and failure notices their own glyphs. */
 .notification-list-item.scm-toolkit-push-waiting .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before,

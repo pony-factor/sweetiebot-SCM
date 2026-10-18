@@ -12,7 +12,7 @@ const QUIET_PERIOD_MS = 8000;
 const RETRY_DELAYS_MS = [15000, 60000, 300000];
 
 // Repair the app and the selected Codex extension before automatically reloading.
-// Extension installs can finish after Sweetie Bot starts, so a repair followed
+// Extension installs can finish after Sweetiebot starts, so a repair followed
 // by an extension change must be reconciled before reloading the window.
 function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   if (process.platform !== 'darwin' || vscode.env.remoteName) return;

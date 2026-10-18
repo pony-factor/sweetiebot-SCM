@@ -147,13 +147,13 @@ Run Python tests from the repository root with `PYTHONPATH=scripts python3 -m un
 
 ## Install
 
-On macOS, double-click **Install Sweetie Bot.command** in a repository checkout to build a fresh, locally signed **Sweetiebot Installer.app** from the current source files and launch it. The app bundle is generated locally and ignored by Git, rather than keeping signed binaries and duplicate source files in the repository. You can move the generated app to Applications for future use. To rebuild that app with later changes, update your checkout and run the launcher again. Close and reopen your VS Code windows afterward. Once installed, Sweetie Bot automatically restores supported customizations after VS Code and extension updates.
+On macOS, double-click **Install Sweetiebot.command** in a repository checkout to build a fresh, locally signed **Sweetiebot Installer.app** from the current source files and launch it. The app bundle is generated locally and ignored by Git, rather than keeping signed binaries and duplicate source files in the repository. You can move the generated app to Applications for future use. To rebuild that app with later changes, update your checkout and run the launcher again. Close and reopen your VS Code windows afterward. Once installed, Sweetie Bot automatically restores supported customizations after VS Code and extension updates.
 
 You can also install directly from source with `python3 scripts/install.py` without building an app, but this runs under your terminal's macOS permissions rather than the signed installer app's permissions.
 
 On the first run, macOS may require you to allow **Sweetiebot Installer** in **System Settings → Privacy & Security → App Management**. The app offers an **Open Settings** button when access is blocked; grant access and double-click the app again.
 
-**Install Sweetie Bot.command** runs the following builder automatically before opening the app; the equivalent manual command is:
+**Install Sweetiebot.command** runs the following builder automatically before opening the app; the equivalent manual command is:
 
 ```sh
 python3 scripts/build_installer_app.py
@@ -173,7 +173,7 @@ Automatic repair checks the project's `main` branch for Sweetie Bot updates at s
 
 Updates and repairs are serialized across windows. The Python settings server suppresses bytecode generation, and any existing `__pycache__` / `.pyc` files are ignored when checking whether installed extension sources match, preventing unnecessary reinstalls and reload loops. Routine repair skips companion-extension installation; a new toolkit revision updates it too. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require a compatible Sweetie Bot release, which is fetched automatically once published to `main`.
 
-The locally built and signed installer app includes the update bootstrap for first-time installation. Existing installations with this bootstrap update themselves; you do not need to retain or rerun the installer. Older installations need the bootstrap installed once, using **Install Sweetie Bot.command** or the direct Python installer.
+The locally built and signed installer app includes the update bootstrap for first-time installation. Existing installations with this bootstrap update themselves; you do not need to retain or rerun the installer. Older installations need the bootstrap installed once, using **Install Sweetiebot.command** or the direct Python installer.
 
 Validate that the currently installed VS Code build matches the guarded patch anchors without changing anything:
 
@@ -626,7 +626,7 @@ python3 scripts/codex_composer.py
 The recovery command scans installed `openai.chatgpt-*` extensions, validates the
 old Sweetie Bot restoration metadata, removes only that retired payload, and
 restores any source text it replaced. Before reloading Visual Studio Code, rebuild
-and run **Sweetiebot Installer.app** using **Install Sweetie Bot.command** from this checkout. The companion Workspace
+and run **Sweetiebot Installer.app** using **Install Sweetiebot.command** from this checkout. The companion Workspace
 Search extension bundles its own Codex installer and runs it at startup; an older
 installed copy can reintroduce the retired composer patch on every reload.
 Rebuilding the app alone does not update that companion extension: run the rebuilt

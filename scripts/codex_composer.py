@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove the retired Sweetie Bot Codex composer patch from installed extensions."""
+"""Remove the retired Sweetiebot Codex composer patch from installed extensions."""
 
 from __future__ import annotations
 
