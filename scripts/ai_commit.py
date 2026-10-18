@@ -1735,13 +1735,19 @@ def main() -> None:
             if subcommand == "push" and queue_plain_push(argv[index + 1:]):
                 print("🤖 Commit message generation is in progress. Your changes will be pushed as soon as it completes.")
                 return
-            # Existing branch checkouts leave the captured ref intact. Creating
-            # a branch from a placeholder would copy its unfinished ancestry.
+            # Existing checkouts leave the captured ref intact. New branches
+            # must use a verified completed base to avoid unfinished ancestry.
             creates_branch = any(arg in {"-b", "-B", "-c", "-C", "--orphan", "--create", "--force-create"}
                                  or arg.startswith(("--orphan=", "--create=", "--force-create=", "-b", "-B", "-c", "-C"))
                                  for arg in argv[index + 1:])
             if subcommand not in {"switch", "checkout"} or creates_branch:
-                wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS)
+                args = argv[index + 1:]
+                # Sweetiebot passes a fixed completed base when creating a new
+                # branch while the original branch's messages are generating.
+                branch_base = (args[2] if subcommand in {"switch", "checkout"}
+                               and len(args) == 3 and args[0] in {"-b", "-c"}
+                               and re.fullmatch(r"[0-9a-f]{40,64}", args[2]) else None)
+                wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base)
             wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
         except RuntimeError as exc:
             print(f"scm-toolkit: {exc}", file=sys.stderr)

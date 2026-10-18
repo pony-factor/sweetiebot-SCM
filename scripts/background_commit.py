@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -666,7 +667,40 @@ def queue_plain_push(args):
     return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
 
 
-def wait_for_background(real_git, global_args):
+def completed_branch_base(real_git, global_args, ref):
+    """Resolve a fixed commit without copying unfinished message ancestry."""
+    def query(*args):
+        result = subprocess.run([real_git, *global_args, *args], capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError('Could not resolve a completed branch base.')
+        return result.stdout.strip()
+
+    meta = Path(query('rev-parse', '--absolute-git-dir'))
+    with repository_lock(meta):
+        jobs = [read_journal(Path(entry['directory']) / 'job.json')
+                for entry in queue_entries(meta / MARKER)]
+        if any(not job for job in jobs):
+            raise RuntimeError('A pending commit checkpoint is unavailable.')
+        pending = {job['sha']: job for job in jobs if job.get('provisional') and job.get('sha')}
+        candidate = query('rev-parse', '--verify', ref + '^{commit}')
+        visited = set()
+        while (candidate in pending or re.fullmatch(
+                r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])',
+                query('show', '-s', '--format=%s', candidate))):
+            parents = query('show', '-s', '--format=%P', candidate).split()
+            if candidate in visited or len(parents) != 1:
+                raise RuntimeError('There is no completed commit to branch from yet.')
+            visited.add(candidate)
+            candidate = parents[0]
+        for sha in pending:
+            result = subprocess.run([real_git, *global_args, 'merge-base', '--is-ancestor', sha, candidate],
+                                    capture_output=True)
+            if result.returncode != 1:
+                raise RuntimeError('The selected branch base contains an unfinished commit message.')
+        return candidate
+
+
+def wait_for_background(real_git, global_args, branch_base=None):
     result = subprocess.run([real_git, *global_args, 'rev-parse', '--absolute-git-dir'],
                             capture_output=True, text=True)
     if result.returncode:
@@ -674,12 +708,17 @@ def wait_for_background(real_git, global_args):
     marker = Path(result.stdout.strip()) / MARKER
     entries = queue_entries(marker)
     if entries and not any(os.environ.get('SWEETIEBOT_BACKGROUND_JOB') == entry['id'] for entry in entries):
+        # Only an explicit immutable, already completed base may bypass the gate.
+        if branch_base and completed_branch_base(real_git, global_args, branch_base) == branch_base:
+            return
         raise RuntimeError('A background Commit & Push is pending. Let it finish before modifying pending history or committing again.')
 
 
 if __name__ == '__main__':
     try:
-        if sys.argv[1:] == ['--enqueue']:
+        if len(sys.argv) == 3 and sys.argv[1] == '--branch-base':
+            print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
+        elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
             print(json.dumps(request_push(json.load(sys.stdin))))

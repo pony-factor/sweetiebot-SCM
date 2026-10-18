@@ -11,6 +11,7 @@ const { promisify } = require('node:util');
 const { isConflictState, offerConflictRecoveryOptions } = require('./lindsey_conflicts');
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
+const { resolvePythonExecutable } = require('./python_runtime');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -499,7 +500,25 @@ async function createBranch(repository, { defaultBranch, remote, names }, secure
   }
   let original = repository.state.HEAD?.name;
   let start;
-  if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
+  let unfinishedBase = false;
+  if (repository.rootUri?.fsPath && existsSync(path.join(repository.rootUri.fsPath, '.git'))) {
+    const { stdout } = await promisify(execFile)('git', [
+      'show', '-s', '--format=%s', `refs/heads/${defaultBranch}`
+    ], { cwd: repository.rootUri.fsPath, timeout: 10000 }).catch(error => {
+      if (error.code === 128) return { stdout: '' }; // Sync can create a missing local base ref.
+      throw error;
+    });
+    unfinishedBase = /^(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])$/.test(stdout.trim());
+  }
+  if (unfinishedBase || await asyncCommitPending(repository)) {
+    const installedScript = path.join(__dirname, 'background_commit.py');
+    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
+    const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
+      script, '--branch-base', `refs/heads/${defaultBranch}`
+    ], { cwd: repository.rootUri.fsPath, timeout: 10000 });
+    start = stdout.trim();
+    if (!/^[0-9a-f]{40,64}$/.test(start)) throw new Error('Could not resolve a completed branch base.');
+  } else if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
     // Preserve pending edits and their staging by avoiding a remote merge.
     await repository.checkout(defaultBranch);
     await repository.status();
@@ -981,7 +1000,9 @@ function registerBranchCommands(vscode, context) {
           // Let a later status refresh retry after the background queue drains.
           if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository)) return false;
           if (command !== 'sweetiebot.autoPullClean') {
-            await requireFinalizedCommit(repository, { background: command !== 'sweetiebot.returnHome' });
+            await requireFinalizedCommit(repository, {
+              background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command)
+            });
           }
           if (!needsDefaultBranch.has(command)) return action(repository, options);
           const remote = options?.remote || 'origin';

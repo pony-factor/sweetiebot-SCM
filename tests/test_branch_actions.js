@@ -377,7 +377,7 @@ async function run() {
     assert(!calls.some(call => call[0] === 'create'));
   }
   {
-    const { repository } = fixture();
+    const { repository, calls } = fixture();
     const commands = new Map();
     const uri = { scheme: 'file', path: '/selected-repository' };
     const vscode = {
@@ -436,6 +436,24 @@ async function run() {
       }), false, 'Defer automatic publishing quietly until background work finishes');
       assert.equal(await commands.get('sweetiebot.returnHome')(uri), 'main');
       assert.equal(await commands.get('sweetiebot.checkoutBranchStrip')(uri, { branch: 'main' }), 'main');
+      const base = git('rev-parse', 'HEAD').toString().trim();
+      git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+        '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Pending title');
+      const jobDirectory = path.join(root, 'job');
+      fs.mkdirSync(jobDirectory);
+      fs.writeFileSync(path.join(jobDirectory, 'job.json'), JSON.stringify({
+        sha: git('rev-parse', 'HEAD').toString().trim(), parent: base,
+        provisional: true, phase: 'generating'
+      }));
+      fs.writeFileSync(path.join(root, '.git', 'sweetiebot-background-commit.json'), JSON.stringify({
+        jobs: [{ id: 'pending', directory: jobDirectory }]
+      }));
+      const callCount = calls.length;
+      assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
+      assert.deepEqual(calls.slice(callCount).find(call => call[0] === 'create'),
+        ['create', 'fresh', true, base]);
+      assert(!calls.slice(callCount).some(call => ['merge', 'fetch', 'push'].includes(call[0])),
+        'Do not sync or publish pending history while creating a branch');
       fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');
       await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /still being finalized/,
         'Keep the legacy worker guard until it supports inactive refs');

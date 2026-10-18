@@ -415,6 +415,45 @@ worker.work(Path(sys.argv[2]))
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
+    def test_new_branch_uses_last_completed_commit_while_titles_generate(self):
+        self.git('commit', '-q', '-m', 'Base')
+        base = self.git('rev-parse', 'HEAD')
+        (self.repo / 'story.txt').write_text('First pending change\n')
+        self.git('add', 'story.txt')
+        first = self.queue(message='')
+        (self.repo / 'story.txt').write_text('Second pending change\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='')
+        provisional = self.git('rev-parse', 'main')
+        self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'refs/heads/main'), base)
+        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        for flag, name in (('-b', 'checkout-copy'), ('-c', 'switch-copy')):
+            command = 'checkout' if flag == '-b' else 'switch'
+            result = subprocess.run([sys.executable, script, command, flag, name, base],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git('rev-parse', 'HEAD'), base)
+        result = subprocess.run([sys.executable, script, 'switch', '-c', 'unfinished', provisional],
+                                capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.git('rev-parse', 'main'), provisional)
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Complete queued change', '')):
+            worker.work(first)
+            worker.work(second)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), base)
+        self.assertNotEqual(self.git('rev-parse', 'main'), provisional)
+
+    def test_no_completed_base_for_an_unfinished_initial_commit(self):
+        self.queue(message='')
+        with self.assertRaisesRegex(RuntimeError, 'no completed commit'):
+            worker.completed_branch_base('/usr/bin/git', [], 'refs/heads/main')
+
+    def test_copied_placeholder_without_a_job_record_uses_completed_parent(self):
+        self.git('commit', '-q', '-m', 'Base')
+        base = self.git('rev-parse', 'HEAD')
+        self.git('commit', '--allow-empty', '-q', '-m', 'placeholder_0123456789abcdef')
+        self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
+
     def test_manual_push_is_durable_and_waits_for_generation(self):
         directory = self.queue(message='', push=False)
         provisional = self.git('rev-parse', 'HEAD')
