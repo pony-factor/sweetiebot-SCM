@@ -68,14 +68,20 @@ function registerBackgroundCommit(vscode, context) {
     if (generation.has(root)) return;
     let finish;
     const pending = new Promise(resolve => { finish = resolve; });
-    generation.set(root, finish);
+    // Keep this entry until generation ends so polling cannot reopen the toast.
+    const timer = setTimeout(finish, 1000);
+    generation.set(root, { finish, timer });
     void vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
       title: 'Generating commit message asynchronously', cancellable: false
     }, () => pending).catch(() => {});
   };
   const closeGeneration = root => {
-    generation.get(root)?.();
+    const notice = generation.get(root);
+    if (notice) {
+      clearTimeout(notice.timer);
+      notice.finish();
+    }
     generation.delete(root);
   };
   const scan = async () => {
