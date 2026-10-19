@@ -35,6 +35,7 @@
     "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
     "onCommand:sweetiebot.previewCommitSpellcheck",
+    "onCommand:sweetiebot.postCommitSpellcheck",
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
     "onCommand:sweetiebot.listBranchStrip",

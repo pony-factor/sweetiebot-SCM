@@ -1024,6 +1024,7 @@ function scmToolkitExpireNotifications(notifications) {
 
 // One popup consumer per workbench document, shared by all repository widgets.
 const scmToolkitSpellcheckDocuments = new WeakSet();
+const scmToolkitPostSpellcheckStates = new WeakMap();
 function scmToolkitWatchSpellcheckPopups(doc, commands) {
     if (scmToolkitSpellcheckDocuments.has(doc)) return;
     scmToolkitSpellcheckDocuments.add(doc);
@@ -1431,6 +1432,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     spellcheckButton.title = 'Preview spelling correction';
     spellcheckButton.setAttribute('aria-label', 'Preview spelling correction');
 
+    const postSpellcheckButton = doc.createElement('button');
+    postSpellcheckButton.type = 'button';
+    postSpellcheckButton.className = 'scm-toolkit-post-spellcheck codicon codicon-spell-check';
+    postSpellcheckButton.hidden = true;
+
     const codexButton = doc.createElement('button');
     codexButton.type = 'button';
     codexButton.className = 'scm-toolkit-codex-coauthor codicon codicon-account';
@@ -1494,6 +1500,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         firstDivider,
         autocompleteButton,
         spellcheckButton,
+        postSpellcheckButton,
         codexButton,
         autoPublishButton,
         secondDivider,
@@ -1525,6 +1532,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let updatingPush = false;
     let updatingAutocomplete = false;
     let spellchecking = false;
+    let updatingPostSpellcheck = false;
+    const postSpellcheckState = scmToolkitPostSpellcheckStates.get(doc)
+        || { enabled: Boolean(settings.postCommitSpellcheck) };
+    scmToolkitPostSpellcheckStates.set(doc, postSpellcheckState);
     let updatingAutoPublish = false;
     let publishingBranch;
     let committingWithCodex = false;
@@ -1602,6 +1613,41 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const refreshSpellcheck = () => {
         spellcheckButton.disabled =
             spellchecking || pending || deletingBranch || !currentInput || !currentRepositoryUri;
+    };
+
+    const refreshPostSpellcheck = () => {
+        const enabled = postSpellcheckState.enabled;
+        const description = enabled
+            ? 'Turn off automatic post-commit spellcheck'
+            : 'Turn on automatic post-commit spellcheck';
+        const updateButton = button => {
+            button.classList.toggle('scm-toolkit-post-spellcheck-active', enabled);
+            button.setAttribute('aria-pressed', String(enabled));
+            button.setAttribute('aria-label', description);
+            button.title = description;
+        };
+        updateButton(postSpellcheckButton);
+        for (const button of doc.querySelectorAll?.('.scm-toolkit-post-spellcheck') || []) {
+            if (button !== postSpellcheckButton) updateButton(button);
+        }
+        postSpellcheckButton.disabled = updatingPostSpellcheck;
+    };
+
+    const togglePostSpellcheck = async event => {
+        event.stopPropagation();
+        if (updatingPostSpellcheck) return;
+        updatingPostSpellcheck = true;
+        refreshPostSpellcheck();
+        try {
+            postSpellcheckState.enabled = await commands.executeCommand(
+                'sweetiebot.postCommitSpellcheck', 'toggle'
+            );
+        } catch (error) {
+            notifications.error(error);
+        } finally {
+            updatingPostSpellcheck = false;
+            refreshPostSpellcheck();
+        }
     };
 
     const previewSpellcheck = async event => {
@@ -2055,6 +2101,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshSyncBranch();
         refreshAutoPublish();
         refreshSpellcheck();
+        refreshPostSpellcheck();
         refreshCodexCommit();
         refreshPullRequest();
         refreshPonyBranch();
@@ -2223,6 +2270,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     syncButton.addEventListener('click', syncBranch);
     deleteButton.addEventListener('click', deleteBranch);
     spellcheckButton.addEventListener('click', previewSpellcheck);
+    postSpellcheckButton.addEventListener('click', togglePostSpellcheck);
     codexButton.addEventListener('click', commitWithCodex);
     pullRequestButton.addEventListener('click', createPullRequest);
     ponyBranchButton.addEventListener('click', createPonyBranch);
@@ -2245,6 +2293,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             pushCheckbox.removeEventListener('change', changePush);
             autocompleteButton.removeEventListener('click', toggleAutocomplete);
             spellcheckButton.removeEventListener('click', previewSpellcheck);
+            postSpellcheckButton.removeEventListener('click', togglePostSpellcheck);
             autoPublishButton.removeEventListener('click', toggleAutoPublish);
             codexButton.removeEventListener('click', commitWithCodex);
             pullRequestButton.removeEventListener('click', createPullRequest);
@@ -2258,6 +2307,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             firstDivider.remove();
             autocompleteButton.remove();
             spellcheckButton.remove();
+            postSpellcheckButton.remove();
             codexButton.remove();
             autoPublishButton.remove();
             secondDivider.remove();
@@ -2293,6 +2343,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const spellcheckWidth = spellcheckButton.hidden
                 ? 0
                 : spellcheckButton.getBoundingClientRect().width;
+            const postSpellcheckWidth = postSpellcheckButton.hidden
+                ? 0
+                : postSpellcheckButton.getBoundingClientRect().width;
             const codexWidth = codexButton.hidden
                 ? 0
                 : codexButton.getBoundingClientRect().width;
@@ -2309,7 +2362,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 ? 0
                 : ponyBranchButton.getBoundingClientRect().width;
             return homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
-                + autocompleteWidth + spellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
+                + autocompleteWidth + spellcheckWidth + postSpellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
                 + pullRequestWidth + ponyBranchWidth;
         },
 
@@ -2344,6 +2397,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             autocompleteButton.disabled = false;
             spellcheckButton.hidden = true;
             spellcheckButton.disabled = true;
+            postSpellcheckButton.hidden = true;
             codexButton.hidden = true;
             autoPublishButton.hidden = true;
             autoPublishButton.disabled = true;
@@ -2395,6 +2449,16 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 refreshSpellcheck();
             }
 
+            postSpellcheckButton.hidden = false;
+            refreshPostSpellcheck();
+            const spellcheckInput = input;
+            void commands.executeCommand('sweetiebot.postCommitSpellcheck', 'get')
+                .then(enabled => {
+                    if (currentInput !== spellcheckInput || typeof enabled !== 'boolean') return;
+                    postSpellcheckState.enabled = enabled;
+                    refreshPostSpellcheck();
+                }).catch(error => notifications.error(error));
+
             if (settings.codexCoauthor) {
                 codexButton.hidden = false;
                 refreshCodexCommit();
@@ -2406,7 +2470,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             }
 
             const groupedControlsVisible =
-                !autocompleteButton.hidden || !spellcheckButton.hidden
+                !autocompleteButton.hidden || !spellcheckButton.hidden || !postSpellcheckButton.hidden
                     || !codexButton.hidden || !autoPublishButton.hidden;
             firstDivider.hidden = !groupedControlsVisible;
             secondDivider.hidden = !groupedControlsVisible;
@@ -2424,21 +2488,26 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             syncButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !deleteButton.hidden || !autocompleteButton.hidden || !spellcheckButton.hidden
-                    || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !postSpellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             deleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !autocompleteButton.hidden || !spellcheckButton.hidden || !codexButton.hidden
+                !autocompleteButton.hidden || !spellcheckButton.hidden || !postSpellcheckButton.hidden || !codexButton.hidden
                     || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             autocompleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !spellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
+                !spellcheckButton.hidden || !postSpellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden
                     || !pullRequestButton.hidden || !ponyBranchButton.hidden || !homeButton.hidden
             );
             spellcheckButton.classList.toggle(
+                'scm-toolkit-has-following-control',
+                !postSpellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
+            );
+            postSpellcheckButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden

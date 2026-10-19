@@ -121,7 +121,13 @@ function spellcheckChangeSpans(before, after) {
     const end = c < e ? next[e - 1].end : start;
     const beforeText = a < b ? before.slice(old[a].start, old[b - 1].end) : '';
     const afterText = after.slice(start, end);
-    if (beforeText !== afterText) changes.push({start, end, before: beforeText, after: afterText});
+    if (beforeText !== afterText) {
+      changes.push({
+        start, end, before: beforeText, after: afterText,
+        oldStart: a < b ? old[a].start : (old[a]?.start ?? before.length),
+        oldEnd: a < b ? old[b - 1].end : (old[a]?.start ?? before.length)
+      });
+    }
   }
   let oldStart = 0, nextStart = 0;
   for (const [oldEnd, nextEnd] of matches) {
@@ -134,7 +140,25 @@ function spellcheckChangeSpans(before, after) {
     oldStart = oldEnd + 1;
     nextStart = nextEnd + 1;
   }
-  return changes.length ? changes : wholeLine();
+  // Consecutive corrections separated only by unchanged whitespace are a
+  // single visual/undo range, including the spaces in its highlight.
+  // Unchanged words still separate corrections so Undo remains selective.
+  const merged = [];
+  for (const current of changes) {
+    const previous = merged.at(-1);
+    if (previous
+        && /^[ \t]*$/.test(after.slice(previous.end, current.start))
+        && /^[ \t]*$/.test(before.slice(previous.oldEnd, current.oldStart))
+        && after.slice(previous.end, current.start) === before.slice(previous.oldEnd, current.oldStart)) {
+      previous.end = current.end;
+      previous.oldEnd = current.oldEnd;
+      previous.before = before.slice(previous.oldStart, previous.oldEnd);
+      previous.after = after.slice(previous.start, previous.end);
+    } else merged.push({...current});
+  }
+  return merged.length
+    ? merged.map(({start, end, before, after}) => ({start, end, before, after}))
+    : wholeLine();
 }
 
 function renderRows(rows) {

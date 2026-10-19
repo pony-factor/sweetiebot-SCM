@@ -62,6 +62,23 @@ async function git(cwd, args) {
   return (await execFileAsync('git', args, { cwd, timeout: 10000 })).stdout.trim();
 }
 
+// The SCM toolbar and Settings use exactly the same global Git preference.
+// A Git config read with exit status 1 simply means the opt-in is unset.
+async function postCommitSpellcheck(action = 'get', run = git) {
+  const key = 'scm-toolkit.post-commit-spellcheck';
+  let enabled;
+  try {
+    enabled = (await run(process.cwd(), ['config', '--global', '--bool', '--get', key])) === 'true';
+  } catch (error) {
+    if (error.code !== 1) throw error;
+    enabled = false;
+  }
+  if (action === 'get') return enabled;
+  if (action !== 'toggle') throw new Error('Invalid post-commit spellcheck action.');
+  await run(process.cwd(), ['config', '--global', key, String(!enabled)]);
+  return !enabled;
+}
+
 async function takeNotice(repository, dependencies = {}) {
   const io = dependencies.fs || fs;
   const run = dependencies.git || git;
@@ -294,9 +311,11 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
 }
 
 async function registerPostCommitSpellcheckNotice(vscode, extensionContext, dependencies = {}) {
-  extensionContext.subscriptions.push(vscode.commands.registerCommand(
-    'sweetiebot.takeSpellcheckPopup', takeSpellcheckPopup
-  ));
+  extensionContext.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.postCommitSpellcheck', action =>
+      postCommitSpellcheck(action)),
+    vscode.commands.registerCommand('sweetiebot.takeSpellcheckPopup', takeSpellcheckPopup)
+  );
   extensionContext.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.saveSpellcheckEdit', (sessionId, editId, text) =>
       saveSpellcheckEdit(vscode, sessionId, editId, text)),
@@ -339,5 +358,5 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
 
 module.exports = {
   normalizeReviewedWhitespace, finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, gitDiff,
-  registerPostCommitSpellcheckNotice,
+  registerPostCommitSpellcheckNotice, postCommitSpellcheck,
 };
