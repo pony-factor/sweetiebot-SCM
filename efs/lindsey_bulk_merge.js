@@ -61,9 +61,15 @@ async function invokeLindseyBulkMerge(script, selection, token, runner = exec) {
   try {
     const input = path.join(temporary, 'selection.json');
     await fs.writeFile(input, JSON.stringify(selection), { mode: 0o600 });
+    // Finder-launched VS Code may omit Homebrew from its inherited PATH.
+    const executablePath = process.platform === 'darwin'
+      ? [...new Set([...(process.env.PATH || '').split(path.delimiter).filter(Boolean),
+        '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'])].join(path.delimiter)
+      : process.env.PATH;
     const { stdout } = await runner(process.execPath, [script, '--input', input], {
       timeout: 15 * 60 * 1000, maxBuffer: 4 * 1024 * 1024,
-      env: { ...process.env, GH_TOKEN: token, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' }
+      env: { ...process.env, PATH: executablePath, GH_TOKEN: token,
+        GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' }
     });
     return validateResult(JSON.parse(stdout), selection);
   } finally {

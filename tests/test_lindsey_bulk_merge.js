@@ -53,6 +53,22 @@ async function run() {
     assert.deepEqual(await invokeLindseyBulkMerge(found, selection, 'session-token', fakeExec), good);
     await assert.rejects(fs.access(seen), /ENOENT/);
 
+    if (process.platform === 'darwin') {
+      const probe = path.join(tmp, 'probe.cjs');
+      await fs.writeFile(probe, `
+        require('node:child_process').execFileSync('gh', ['--version']);
+        process.stdout.write(${JSON.stringify(JSON.stringify(good))});
+      `);
+      const originalPath = process.env.PATH;
+      try {
+        process.env.PATH = '/usr/bin:/bin';
+        assert.deepEqual(await invokeLindseyBulkMerge(probe, selection, 'session-token'), good);
+      } finally {
+        if (originalPath === undefined) delete process.env.PATH;
+        else process.env.PATH = originalPath;
+      }
+    }
+
     const lines = [], notices = [];
     const vscode = {
       ProgressLocation: { Notification: 15 },
