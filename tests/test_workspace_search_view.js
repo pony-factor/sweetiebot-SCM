@@ -81,17 +81,20 @@ async function run() {
     closest(selector) {
       for (let node = this; node; node = node.parent) {
         if (selector === '[data-index]' && Object.hasOwn(node.dataset, 'index')) return node;
+        if (selector === '[data-history-index]' && Object.hasOwn(node.dataset, 'historyIndex')) return node;
       }
       return null;
     },
     remove() { this.removed = true; }
   });
   const elements = new Map();
-  for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle']) {
+  for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
     elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : '', focus() {}}));
   }
   const windowListeners = {};
-  const timers = new Map(); let nextTimer = 0; const sent = [];
+  const timers = new Map(); let nextTimer = 0; const sent = [];let pageState;let currentTime=Date.now();
+  const searchTimers=()=>[...timers.entries()].filter(([,entry])=>entry.delay===350);
+  class PageDate extends Date {static now(){return currentTime;}}
   const html = provider.html({cspSource: 'test'});
   assert.match(html, /placeholder="Search your workspace…"/);
   const customProvider = new sandbox.module.exports.WorkspaceSearchViewProvider({}, () => ({placeholder: 'SATS "targets" & <files>'}));
@@ -112,6 +115,10 @@ async function run() {
   assert.match(html, /idle\.hidden=Boolean\(query\.value\.trim\(\)\)&&!searching/);
   assert.match(html, /message\.type==='results'\)\{searching=false;updateIdleState\(\)/);
   assert.match(html, /MAX_RESULTS_PER_FILE=7/);
+  assert.match(html, /id="history-toggle"/);
+  assert.match(html, /id="history-panel"/);
+  assert.match(html, /id="history-clear"/);
+  assert.match(html, /INACTIVITY_MS=8\*60\*60\*1000/);
   assert.match(html, /className='folder-tree'/);
   assert.match(html, /className='folder-route'/);
   assert.match(html, /className='file-name'/);
@@ -127,9 +134,12 @@ async function run() {
   assert.match(html, /meta\.append\(score,copied\)/);
   assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
   assert.match(html, /more\.textContent='…'/);
-  const page = {document: {getElementById: id => elements.get(id), createElement: makeNode},
-    acquireVsCodeApi: () => ({postMessage: message => sent.push(message)}),
-    setTimeout: (callback, delay) => {assert.equal(delay, 350); timers.set(++nextTimer, callback); return nextTimer;},
+  const page = {document: {getElementById: id => elements.get(id), createElement: makeNode,
+    addEventListener(event, listener) {windowListeners[event] = listener;}},
+    Date: PageDate,
+    acquireVsCodeApi: () => ({postMessage: message => sent.push(message),
+      getState: () => pageState, setState: value => {pageState = value;}}),
+    setTimeout: (callback, delay) => {assert.ok(delay===350||(delay>0&&delay<=8*60*60*1000));timers.set(++nextTimer,{callback,delay});return nextTimer;},
     clearTimeout: id => timers.delete(id), window: {addEventListener(event, listener) { windowListeners[event] = listener; }}};
   vm.runInNewContext(html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1], page);
   assert.equal(page.contrastCheckColor('rgb(255, 255, 255)'), '#000');
@@ -145,22 +155,22 @@ async function run() {
   assert.equal(idle.hidden, false, 'logo stays visible while a search is pending');
   assert.equal(clearQuery.hidden, false, 'clear control appears when the query has text');
   query.value = 'apple'; query.listeners.input();
-  assert.equal(timers.size, 1);
+  assert.equal(searchTimers().length, 1);
   assert.equal(sent.length, 0);
-  [...timers.values()][0](); timers.clear();
+  const [firstTimerId,firstTimer]=searchTimers()[0];timers.delete(firstTimerId);firstTimer.callback();
   assert.equal(sent[0].query, 'apple');
   query.value = 'orchard'; query.listeners.input();
   form.listeners.submit({preventDefault() {}});
-  assert.equal(timers.size, 0, 'Enter/icon submit cancels the pending automatic search');
+  assert.equal(searchTimers().length, 0, 'Enter/icon submit cancels the pending automatic search');
   assert.equal(sent[1].query, 'orchard');
   query.listeners.compositionstart(); query.value = 'composing'; query.listeners.input();
-  assert.equal(timers.size, 0);
-  query.listeners.compositionend(); assert.equal(timers.size, 1);
+  assert.equal(searchTimers().length, 0);
+  query.listeners.compositionend(); assert.equal(searchTimers().length, 1);
   clearQuery.listeners.click();
   assert.equal(query.value, '');
   assert.equal(clearQuery.hidden, true, 'clear control hides after clearing');
   assert.equal(idle.hidden, false, 'logo returns after the search term is cleared');
-  assert.equal(timers.size, 0); assert.equal(sent.at(-1).query, '');
+  assert.equal(searchTimers().length, 0); assert.equal(sent.at(-1).query, '');
   elements.get('mode').value = 'exact'; query.value = 'apples';
   elements.get('mode').listeners.change(); assert.equal(sent.at(-1).mode, 'exact');
   let pastePrevented = false;
@@ -173,6 +183,27 @@ async function run() {
   windowListeners.paste({target: query, clipboardData: {getData: () => ' additive'}, preventDefault() { pastePrevented = true; }});
   assert.equal(pastePrevented, false, 'paste stays native while the user is actively editing the query field');
   query.listeners.blur();
+
+  assert.ok(pageState.history.some(entry=>entry.query==='orchard'&&entry.mode==='hybrid'),'submitted searches are saved');
+  assert.ok(pageState.history.some(entry=>entry.query==='apples'&&entry.mode==='exact'),'search modes are saved');
+  elements.get('history-toggle').listeners.click();
+  assert.equal(elements.get('history-toggle')['aria-expanded'],'true');
+  assert.ok(elements.get('history-list').children.length>=2);
+  const recent=elements.get('history-list').children[0];
+  elements.get('history-list').listeners.click({target:recent});
+  assert.equal(sent.at(-1).query,recent.children[0].textContent,'choosing a recent query searches again');
+  assert.equal(elements.get('history-panel').hidden,true);
+  query.value='still showing';windowListeners.pointerdown();
+  currentTime+=8*60*60*1000+1;
+  windowListeners.focus();
+  assert.equal(query.value,'','the search query expires after eight hours of inactivity');
+  assert.equal(elements.get('results').children.length,0);
+  assert.equal(sent.at(-1).query,'','idle expiry cancels any pending search');
+  assert.ok(pageState.history.length>0,'history is preserved after panel expiry');
+  elements.get('history-toggle').listeners.click();
+  elements.get('history-clear').listeners.click();
+  assert.equal(pageState.history.length,0,'history can be cleared on demand');
+  assert.equal(elements.get('history-list').children[0].textContent,'No recent searches.');
 
   windowListeners.message({data: {type: 'results', results: [
     {uri: 'file:///tmp/src/foo.js', relative: 'src/foo.js', text: 'first match', score: .9, line: 3},
