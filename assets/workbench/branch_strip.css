@@ -1,19 +1,16 @@
-/* Hide the compact branch button only while the bottom-panel strip is mounted. */
-.monaco-workbench .part.panel .scm-view:has(> .scm-toolkit-branch-strip) .scm-editor > .scm-toolkit-branch,
-.monaco-workbench .part.panel .scm-view:has(> .scm-toolkit-branch-strip) .scm-editor > .scm-toolkit-home {
-    display: none;
-}
-
-/* Bottom-panel branch navigator: one line, with horizontal scrolling only. */
-.monaco-workbench .part.panel .scm-toolkit-branch-strip {
+/* Click-open branch popup; the original message-row button keeps its styling. */
+.monaco-workbench .scm-toolkit-branch-strip {
+    position: fixed;
+    z-index: 2600;
     display: flex;
     box-sizing: border-box;
-    flex: 0 0 32px;
     width: 100%;
     min-width: 0;
-    height: 32px;
+    height: 36px;
     align-items: stretch;
-    border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+    border-radius: 4px;
+    box-shadow: 0 4px 12px var(--vscode-widget-shadow, #0006);
     background: var(--vscode-panel-background, var(--vscode-sideBar-background));
     color: var(--vscode-foreground);
     font: var(--vscode-font-size) var(--vscode-font-family);

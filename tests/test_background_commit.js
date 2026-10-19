@@ -10,6 +10,7 @@ async function run() {
   let poll;
   let status = {};
   const notices = [], progress = [], completed = [], errors = [];
+  const noticeTimers = [];
   let resumes = 0;
   const root = { scheme: 'file', fsPath: '/repo' };
   const repository = {
@@ -18,7 +19,17 @@ async function run() {
     async status() {},
   };
   const sandbox = vm.createContext({
-    module: { exports: {} }, setTimeout, clearTimeout,
+    module: { exports: {} },
+    setTimeout(callback, delay) {
+      if (delay !== 1000) return setTimeout(callback, delay);
+      const timer = { callback, cancelled: false };
+      noticeTimers.push(timer);
+      return timer;
+    },
+    clearTimeout(timer) {
+      if (noticeTimers.includes(timer)) timer.cancelled = true;
+      else clearTimeout(timer);
+    },
     setInterval(callback) { poll = callback; return 1; }, clearInterval() {},
     require(name) {
       if (name === './python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
@@ -105,14 +116,20 @@ async function run() {
   assert.equal(progress.length, 1, 'parallel title jobs share the original generation box');
   assert.equal(progress[0].title, 'Generating commit message asynchronously');
   assert.equal(completed.length, 0, 'enqueue acknowledgement does not close generation');
+  assert.equal(noticeTimers.length, 1, 'parallel title jobs share one expiry timer');
+  noticeTimers[0].callback();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(completed.length, 1, 'notification closes after one second while generation continues');
   status = { id: '1', phase: 'pushing', titleJobs: ['5'] };
   poll();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(completed.length, 0, 'later generation stays visible while an earlier push is pending');
+  assert.equal(completed.length, 1, 'pending title jobs do not reopen the expired notification');
+  assert.equal(progress.length, 1, 'polling must not show the same notification again');
   status = { id: '1', phase: 'pushing', titleJobs: [] };
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(completed.length, 1, 'title application closes progress without waiting for push');
+  assert.equal(noticeTimers[0].cancelled, true, 'finished jobs clean up their expiry timer');
   status = {};
   poll();
   await new Promise(resolve => setImmediate(resolve));
@@ -131,6 +148,9 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1, 'a genuine branch mismatch remains visible');
+  assert.equal(progress.length, 2, 'a separate generation batch gets a new notification');
+  assert.equal(completed.length, 2, 'jobs finishing early close their notification immediately');
+  assert.equal(noticeTimers[1].cancelled, true, 'early completion cancels the one-second timer');
   console.log('Background smart commit and notification lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

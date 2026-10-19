@@ -244,6 +244,8 @@ After installation, the gear at the right end of the Source Control message row 
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
 
+**Horizontal branch selector**, under **Source control**, keeps the existing branch box beside the message field. In the bottom panel, clicking that box opens a horizontal branch popup; selecting a branch, pressing Escape, clicking outside, or clicking the box again closes it. Turn the setting off to open VS Code's native branch picker instead.
+
 With **Automatically pull clean branches** enabled, each repository's default branch fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Sweetiebot pauses these ref-moving pulls for the full lifetime of a VS Code commit so background syncing cannot advance `HEAD` between Git reading and updating the branch ref. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, changed branch tips or upstreams also pause pulling.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
@@ -254,6 +256,7 @@ Set options with `git config --global`:
 
 ```sh
 git config --global scm-toolkit.branch-picker true
+git config --global scm-toolkit.horizontal-branch-selector true
 git config --global scm-toolkit.pony-branch true
 git config --global scm-toolkit.message-placeholder "Message"
 git config --global scm-toolkit.commit-button-label "Send"
@@ -306,6 +309,7 @@ The equivalent `~/.gitconfig` block is:
 ```gitconfig
 [scm-toolkit]
     branch-picker = true
+    horizontal-branch-selector = true
     pony-branch = true
     message-placeholder = Message
     commit-button-label = Send

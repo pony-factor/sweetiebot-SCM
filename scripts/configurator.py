@@ -171,6 +171,7 @@ SETTINGS = (
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
         Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
+    Setting("horizontalBranchSelector", "scm-toolkit.horizontal-branch-selector", "Horizontal branch selector", "Click the branch box beside the message field to open horizontal branch options in the bottom panel. Turn off to open the native branch picker instead.", "Source control"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
     Setting("ponyBranch", "scm-toolkit.pony-branch", "Random branch button", "Create a freshly synced branch using the configured branch-name pool.", "Message bar"),
     Setting("messagePlaceholder", "scm-toolkit.message-placeholder", "Message placeholder", "Text shown in the Source Control commit-message box. Leave blank to use VS Code\'s default.", "Message bar", "optional_text"),

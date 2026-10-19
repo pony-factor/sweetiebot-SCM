@@ -678,6 +678,19 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             )
         self.assertEqual(install.pr_workspace_explorer_edits(workbench_fixture()), [])
 
+    def test_pr_explorer_supports_inlined_folder_state(self):
+        original = workbench_fixture() + pr_explorer_fixture().replace(
+            'WorkbenchState.FOLDER', '2'
+        )
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertIn(
+            'this.contextService.getWorkbenchState()!==2'
+            '&&!scmToolkitIsPRSingleRoot(this.contextService.getWorkspace(),roots)',
+            patched[0],
+        )
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+
 
 
 class AiWrapperTests(unittest.TestCase):

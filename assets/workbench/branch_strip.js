@@ -1,11 +1,11 @@
-// A one-row branch navigator shown only when Source Control is in the bottom panel.
+// A one-row branch popup opened from the existing SCM branch button.
 // The native branch picker stays available as the overflow action and elsewhere.
-function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, openNativePicker) {
+function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, openNativePicker, trigger) {
     const doc = widget.element.ownerDocument;
     const win = doc.defaultView;
     const bar = doc.createElement('div');
     bar.className = 'scm-toolkit-branch-strip';
-    bar.setAttribute('role', 'group');
+    bar.setAttribute('role', 'dialog');
     bar.setAttribute('aria-label', 'Git branches');
     const scroll = doc.createElement('div');
     scroll.className = 'scm-toolkit-branch-strip-scroll';
@@ -16,13 +16,33 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     nativeButton.className = 'scm-toolkit-branch-strip-native codicon codicon-ellipsis';
     nativeButton.title = 'Open Git branch and tag picker';
     nativeButton.setAttribute('aria-label', nativeButton.title);
-    nativeButton.addEventListener('click', openNativePicker);
+    nativeButton.addEventListener('click', event => {
+        close();
+        openNativePicker(event);
+    });
     bar.append(scroll, nativeButton);
 
     let repository, branch, base, pickerReady = false, panelMode = false, disposed = false;
     let generation = 0, refreshedAt = 0, refreshedRepository = '';
     let refreshTimer, pending = false, knownBranches = [], lastFeaturedCount = 0;
     let lastPrStatus = 'unavailable', lastScrolledBranch;
+    let opened = false;
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    trigger.setAttribute('aria-expanded', 'false');
+    const close = (restoreFocus = false) => {
+        opened = false;
+        bar.remove();
+        trigger.setAttribute('aria-expanded', 'false');
+        if (restoreFocus && trigger.isConnected) trigger.focus();
+    };
+    const position = () => {
+        const rect = trigger.getBoundingClientRect();
+        const width = Math.min(720, win.innerWidth - 16);
+        bar.style.width = `${width}px`;
+        bar.style.left = `${Math.max(8, Math.min(rect.left, win.innerWidth - width - 8))}px`;
+        bar.style.top = `${rect.bottom + 40 <= win.innerHeight
+            ? rect.bottom + 4 : Math.max(8, rect.top - 40)}px`;
+    };
 
     const render = (list, featuredCount, prStatus) => {
         const previousScroll = scroll.scrollLeft;
@@ -70,7 +90,9 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             button.append(label);
             button.disabled = pending;
             button.addEventListener('click', () => {
-                if (!pending && repository && item.name !== branch) void checkout(item.name);
+                if (pending || !repository) return;
+                if (item.name === branch) close(true);
+                else void checkout(item.name);
             });
             fragment.append(button);
         });
@@ -91,7 +113,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     };
 
     const refresh = async (force = false) => {
-        if (!panelMode || !repository || !base || disposed) return;
+        if (!opened || !panelMode || !repository || !base || disposed) return;
         const uri = repository;
         const key = `${uri.toString()}:${base}`;
         if (!force && key === refreshedRepository && Date.now() - refreshedAt < 20000) return;
@@ -125,7 +147,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
                 { branch: name, remote: settings.remote });
             lastScrolledBranch = undefined;
             refreshedAt = 0;
-            void refresh(true);
+            close(true);
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -139,14 +161,18 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         const panel = widget.element.closest('.part.panel');
         const view = widget.element.closest('.scm-view');
         const eligible = Boolean(panel && view && repository && base && pickerReady
-            && settings.branchPicker);
+            && settings.horizontalBranchSelector);
         panelMode = eligible;
         if (!eligible) {
-            bar.remove();
+            close();
             generation++;
             return false;
         }
-        if (bar.parentElement !== view) view.prepend(bar);
+        if (opened) {
+            const host = doc.querySelector('.monaco-workbench') || doc.body;
+            if (bar.parentElement !== host) host.append(bar);
+            position();
+        }
         return true;
     };
 
@@ -160,6 +186,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         pickerReady = hasNativePicker;
         if (!syncPlacement()) return false;
         if (repositoryChanged) {
+            close();
             refreshedAt = 0;
             knownBranches = [];
             scroll.replaceChildren();
@@ -191,17 +218,48 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         if (syncPlacement()) void refresh();
     };
     win.addEventListener('focus', focus);
+    const dismiss = event => {
+        if (opened && !bar.contains(event.target) && !trigger.contains(event.target)) close();
+    };
+    const escape = event => {
+        if (opened && event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            close(true);
+        }
+    };
+    const resized = () => close();
+    doc.addEventListener('pointerdown', dismiss, true);
+    doc.addEventListener('keydown', escape, true);
+    win.addEventListener('resize', resized);
     refreshTimer = win.setInterval(focus, 20000);
     return {
         update,
-        get visible() { return panelMode; },
+        toggle() {
+            if (!syncPlacement()) return false;
+            if (opened) close();
+            else {
+                opened = true;
+                trigger.setAttribute('aria-expanded', 'true');
+                syncPlacement();
+                if (knownBranches.length) render(knownBranches, lastFeaturedCount, lastPrStatus);
+                else scroll.textContent = 'Loading branches…';
+                void refresh(true);
+                scroll.focus();
+            }
+            return true;
+        },
+        get visible() { return opened; },
         dispose() {
             disposed = true;
             win.clearInterval(refreshTimer);
             observer.disconnect();
             win.removeEventListener('focus', focus);
+            doc.removeEventListener('pointerdown', dismiss, true);
+            doc.removeEventListener('keydown', escape, true);
+            win.removeEventListener('resize', resized);
             generation++;
-            bar.remove();
+            close();
         }
     };
 }

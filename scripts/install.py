@@ -442,8 +442,9 @@ def pr_workspace_explorer_edits(js):
     if marker not in js:
         return []  # Synthetic fixtures and older builds without this feature.
     ident = r"[A-Za-z_$][\w$]*"
+    # VS Code 1.142 inlines WorkbenchState.FOLDER as 2.
     pattern = re.compile(
-        rf"(?P<state>this\.contextService\.getWorkbenchState\(\)!=={ident}\.FOLDER)"
+        rf"(?P<state>this\.contextService\.getWorkbenchState\(\)!==(?:{ident}\.FOLDER|2))"
         rf"\|\|(?P<roots>{ident})\[0\]\.error"
     )
     matches = [
@@ -1224,14 +1225,21 @@ def main():
 
     # Draft isolation runs even when read-only Codex commit context is disabled.
     # Compose with the context patch rather than overwriting its webview edits.
-    for draft_path, draft_old, draft_new in codex_drafts.patch_files(
-        args.codex_extension, enabled=not args.uninstall
-    ):
+    try:
+        draft_patches = codex_drafts.patch_files(
+            args.codex_extension, enabled=not args.uninstall
+        )
+    except ValueError as error:
+        if args.codex_only or not str(error).startswith('Unsupported Codex '):
+            raise
+        print(f"Warning: {error} Skipping optional Codex draft isolation.")
+        draft_patches = []
+    for draft_path, draft_old, draft_new in draft_patches:
         if draft_path in paths:
             index = paths.index(draft_path)
-            transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
-                         else codex_drafts.transform_webview)
-            new[index] = transform(new[index], enabled=not args.uninstall)
+            draft_transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
+                               else codex_drafts.transform_webview)
+            new[index] = draft_transform(new[index], enabled=not args.uninstall)
         else:
             paths.append(draft_path)
             old.append(draft_old)
