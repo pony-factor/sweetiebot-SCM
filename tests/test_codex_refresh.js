@@ -19,7 +19,7 @@ const workspaceState = {
   update(key, value) { workspaceData.set(key, value); return Promise.resolve(); }
 };
 const delays = [];
-let timerId = 0, changed, focusChanged, extensionPath = '/extensions/codex-old', launches = 0;
+let timerId = 0, changed, configurationChanged, focusChanged, extensionPath = '/extensions/codex-old', launches = 0;
 const children = [];
 const sandbox = vm.createContext({
   module: { exports: {} }, process: { platform: 'darwin', env: {} },
@@ -54,7 +54,7 @@ const context = { subscriptions: [], extensionUri: { fsPath: '/toolkit' }, works
 const vscode = {
   env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },
   workspace: { getConfiguration() { return { get() { return enabled; } }; },
-    onDidChangeConfiguration() { return { dispose() {} }; } },
+    onDidChangeConfiguration(fn) { configurationChanged = fn; return { dispose() {} }; } },
   commands: { executeCommand(command) { assert.equal(command, 'workbench.action.reloadWindow'); reloads++; } },
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },
   window: { onDidChangeWindowState(fn) { focusChanged = fn; return { dispose() {} }; }, showInformationMessage(message) { notices.push(message); return Promise.resolve(); }, showWarningMessage(message) { warnings.push(message); return Promise.resolve(); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
@@ -71,6 +71,11 @@ sandbox.module.exports.registerCodexRefresh(vscode, context, () => {
   stopping = true;
   return new Promise(resolve => { releaseServer = resolve; });
 });
+timers.clear();
+configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.messagePlaceholder'; } });
+assert.equal(timers.size, 0, 'unrelated live settings do not request app repair');
+configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.sourceControlLabel'; } });
+assert.equal(timers.size, 1, 'saving the Source Control label requests app repair without restarting first');
 tick();
 assert.equal(launches, 1, 'startup repairs the selected Codex installation');
 changed();

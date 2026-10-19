@@ -345,6 +345,7 @@ VSCODE_SETTINGS = {
         "newWorkspaceWindowButton": "newWorkspaceWindowButton",
         "automaticAppRepair": "automaticAppRepair",
         "openPanelOnStartup": "openPanelOnStartup",
+        "sourceControlLabel": "sourceControlLabel",
         "messagePlaceholder": "messagePlaceholder",
         "commitButtonLabel": "commitButtonLabel",
         "commitAndSendButtonLabel": "commitAndSendButtonLabel",

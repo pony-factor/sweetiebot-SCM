@@ -372,6 +372,12 @@
           "default": "Message",
           "description": "Text shown in the Source Control commit-message box. Leave blank to use VS Code's default."
         },
+        "scmToolkit.sourceControlLabel": {
+          "type": "string",
+          "default": "Sweetie Bot",
+          "scope": "application",
+          "description": "Source Control panel and Activity Bar label. Save in Sweetiebot settings to apply through automatic app repair and reload."
+        },
         "scmToolkit.commitButtonLabel": {
           "type": "string",
           "default": "Send",

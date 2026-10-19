@@ -160,7 +160,8 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
       }
     }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('scmToolkit.automaticAppRepair')) schedule(QUIET_PERIOD_MS);
+      if (event.affectsConfiguration('scmToolkit.automaticAppRepair') ||
+          event.affectsConfiguration('scmToolkit.sourceControlLabel')) schedule(QUIET_PERIOD_MS);
     }), {
       dispose() {
         disposed = true;
