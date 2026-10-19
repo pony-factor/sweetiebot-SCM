@@ -76,7 +76,8 @@ function scmToolkitSyncResetShortcut(root) {
 
 // Turn only the small, icon-bearing "Rate Limited" notice into a Twilight sticker.
 // Do not replace usage-limit cards with reset information or transcript text.
-const scmToolkitTwilightStopSource = 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png';
+// Replaced by the installer with a data URI for the branch-provided twi-stop.png.
+const scmToolkitTwilightStopSource = "__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__";
 function scmToolkitSmallRateLimitNotice(root) {
     for (const label of root.querySelectorAll('span, p, button, [role="status"], [role="alert"]')) {
         if (!/^rate limited$/i.test(String(label.textContent || '').trim())) continue;
@@ -102,7 +103,7 @@ function scmToolkitSyncRateLimitPony(root) {
     card.dataset.scmToolkitRateLimitPonyPending = 'true';
     const image = root.createElement('img');
     image.alt = 'Twilight Sparkle holding a STOP sign — rate limited';
-    image.title = 'Rate limited · Twilight Sparkle art by CaptainPudgeMuffin';
+    image.title = 'Rate limited · Twilight Sparkle STOP art by Anon';
     image.width = 96;
     image.style.width = '96px';
     image.style.maxWidth = '100%';
@@ -129,6 +130,36 @@ function scmToolkitSyncRateLimitPony(root) {
     image.src = scmToolkitTwilightStopSource;
 }
 
+
+// Hide only the native icon-bearing, untimed Codex usage-limit transcript error.
+// Keep user-authored copies, reset timers, upgrade cards, and other messages visible.
+function scmToolkitIsInlineUsageLimitText(value) {
+    const text = String(value || '').trim().replace(/\s+/g, ' ');
+    return /^you['’]ve hit your usage limit\.\s+upgrade your plan or add credits to continue,\s+or try again later\.?$/i.test(text);
+}
+function scmToolkitSyncInlineUsageLimit(root) {
+    for (const leaf of root.querySelectorAll('p, span, div, [role="status"], [role="alert"]')) {
+        if (!scmToolkitIsInlineUsageLimitText(leaf.textContent)) continue;
+        if (leaf.closest?.('[data-scm-toolkit-inline-usage-limit-hidden]')) continue;
+        // Work from the innermost matching text node, not a transcript container.
+        if (Array.from(leaf.children || []).some(child => scmToolkitIsInlineUsageLimitText(child.textContent))) continue;
+        let notice = null;
+        for (let ancestor = leaf, depth = 0; ancestor && depth < 5;
+                ancestor = ancestor.parentElement, depth++) {
+            if (!scmToolkitIsInlineUsageLimitText(ancestor.textContent)) break;
+            if (ancestor.matches?.('main, article, [role="log"], [data-testid="message-list"], [data-message-id]')) break;
+            if (ancestor.querySelector?.('input, textarea, [contenteditable="true"]')) break;
+            // The native error row carries a status icon; plain transcript quotations do not.
+            if (ancestor.matches?.('[role="status"], [role="alert"]') ||
+                    ancestor.querySelector?.('svg, img')) notice = ancestor;
+        }
+        if (!notice || notice.dataset?.scmToolkitInlineUsageLimitHidden === 'true') continue;
+        notice.setAttribute('data-scm-toolkit-inline-usage-limit-hidden', 'true');
+        notice.hidden = true;
+        notice.style.display = 'none';
+    }
+}
+
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
     if (globalThis.scmToolkitResetShortcutInstalled) return;
@@ -141,6 +172,7 @@ function scmToolkitSyncRateLimitPony(root) {
             queued = false;
             scmToolkitSyncResetShortcut(document);
             scmToolkitSyncRateLimitPony(document);
+            scmToolkitSyncInlineUsageLimit(document);
         });
     };
     new MutationObserver(sync).observe(document, { childList: true, subtree: true, characterData: true });

@@ -14,8 +14,10 @@ The original imagery is credited to The Overmare Studios. This attribution does 
 
 ## Codex rate-limit Twilight sticker
 
-The optional small Codex notice links to the original Twilight Sparkle STOP illustration by **CaptainPudgeMuffin**, uploaded to Know Your Meme by **Twist** on November 5, 2016.
+The Twilight Sparkle STOP illustration is attributed to **Anon** (an anonymous /mlp/ creator), not to the separate Know Your Meme uploader. The branch includes the image as `twi-stop.png`.
 
-Attribution and original image page: https://knowyourmeme.com/photos/1188081-jack-blacks-octagon
+Archived original /mlp/ thread: https://desuarchive.org/mlp/thread/28772083/#28800004
 
-The image is loaded from https://i.kym-cdn.com/photos/images/original/001/188/081/498.png at runtime, rather than shipped in the installer or repository. The artwork is not licensed under this repository's AGPL-3.0 license. If the remote image fails to load or is blocked by Codex's content security policy, the native rate-limit notice remains visible.
+Derpibooru reference supplied for the artwork: https://derpibooru.org/images/1289098 (the exact mirror attribution could not be independently inspected).
+
+The installer embeds the supplied PNG as a data URI in Codex's JavaScript patch, avoiding a dependence on an external image CDN. This third-party artwork is not licensed under the repository's AGPL-3.0 license.

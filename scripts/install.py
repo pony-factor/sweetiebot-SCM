@@ -2,6 +2,7 @@
 """Apply, validate, or remove the custom VS Code SCM toolkit patch."""
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -25,6 +26,7 @@ from branch_names import resolve_runtime_settings
 HERE = Path(__file__).resolve().parent
 WORKBENCH_ASSETS = HERE.parent / "assets/workbench"
 CODEX_ASSETS = HERE.parent / "assets/codex"
+TWILIGHT_STOP_PNG = HERE.parent / "twi-stop.png"
 START = '\n/* scm-toolkit:start */\n'
 END = '\n/* scm-toolkit:end */\n'
 CODEX_START = '\n/* scm-toolkit-codex-countdown:start */\n'
@@ -682,6 +684,20 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
+
+def codex_rate_limit_script():
+    """Embed the supplied local PNG; no third-party host, CDN or network is required."""
+    script = (CODEX_ASSETS / "codex-rate-limit-controls.js").read_text()
+    placeholder = '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"'
+    if script.count(placeholder) != 1:
+        raise ValueError("Codex Twilight image placeholder must occur exactly once.")
+    png = TWILIGHT_STOP_PNG.read_bytes()
+    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Codex Twilight image asset is not a PNG.")
+    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    return script.replace(placeholder, json.dumps(data_url), 1)
+
+
 def codex_transcript_compact_edits(js):
     """Only compact transcript usage-limit notices without a reset time."""
     pattern = re.compile(
@@ -692,6 +708,13 @@ def codex_transcript_compact_edits(js):
     for match in pattern.finditer(js):
         key, message = match['id'], match['message']
         if '{resetDate}' in message:
+            continue
+        # Leave this one native string intact so the precise DOM matcher can
+        # hide its entire icon-bearing row, rather than merely shortening it.
+        if re.fullmatch(
+            r"you['’]ve hit your usage limit\.\s+upgrade your plan or add credits "
+            r"to continue,\s+or try again later\.?", message.strip(), re.I
+        ):
             continue
         if '.noReset' not in key and not re.search(
             r'\b(?:usage limit|try again later|rate limit)\b', message, re.I
@@ -833,7 +856,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + (CODEX_ASSETS / "codex-rate-limit-controls.js").read_text()
+               + codex_rate_limit_script()
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:

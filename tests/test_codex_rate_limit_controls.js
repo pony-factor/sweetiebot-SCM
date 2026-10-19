@@ -69,7 +69,7 @@ context.scmToolkitSyncRateLimitPony(imageRoot);
 assert.equal(notice.child, undefined); // No duplicate image before load.
 assert.equal(typeof imageEvents.load, 'function');
 imageEvents.load();
-assert.equal(notice.child.src, 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png');
+assert.equal(notice.child.src, '__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__');
 assert.match(notice.child.alt, /Twilight Sparkle/);
 assert.equal(notice.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
 assert.equal(notice.style.border, '0');
@@ -88,4 +88,33 @@ imageEvents.error();
 assert.equal(unsupported.child, null); // Failed remote image retains original text.
 assert.equal(unsupported.textContent, 'Rate Limited');
 
-console.log('Codex reset credit control and Twilight sticker checks passed.');
+// Hide the exact native inline error, including its icon, independently of image load.
+const inlineCopy = "You've hit your usage limit. Upgrade your plan or add credits to continue, or Try again later.";
+assert.equal(context.scmToolkitIsInlineUsageLimitText(inlineCopy), true);
+assert.equal(context.scmToolkitIsInlineUsageLimitText(inlineCopy.replace('Try again later.', 'Try again in two hours.')), false);
+assert.equal(context.scmToolkitIsInlineUsageLimitText('You have reached a different limit.'), false);
+const inlineRow = {
+    textContent: inlineCopy, parentElement: null, dataset: {}, style: {},
+    matches: () => false, querySelector: selector => selector === 'svg, img' ? {} : null,
+    setAttribute(name, val) { this[name] = val; },
+};
+const inlineLeaf = {
+    textContent: inlineCopy, parentElement: inlineRow, children: [],
+    closest: () => null, matches: () => false, querySelector: () => null,
+};
+const inlineRoot = {querySelectorAll: () => [inlineLeaf, inlineRow]};
+context.scmToolkitSyncInlineUsageLimit(inlineRoot);
+assert.equal(inlineRow.hidden, true);
+assert.equal(inlineRow.style.display, 'none');
+context.scmToolkitSyncInlineUsageLimit(inlineRoot); // Idempotent.
+const quotedUserRow = {
+    textContent: inlineCopy, parentElement: null, dataset: {}, style: {},
+    matches: () => false, querySelector: () => null, setAttribute: () => {},
+};
+const quotedLeaf = {
+    textContent: inlineCopy, parentElement: quotedUserRow, children: [],
+    closest: () => null, matches: () => false, querySelector: () => null,
+};
+context.scmToolkitSyncInlineUsageLimit({querySelectorAll: () => [quotedLeaf, quotedUserRow]});
+assert.equal(quotedUserRow.hidden, undefined); // No status icon, so preserve user text.
+console.log('Codex reset credit control, Twilight sticker and inline limit checks passed.');

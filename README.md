@@ -35,7 +35,7 @@ Current features:
 - keep a rotating local diagnostics log of failed commit-title attempts, rejected model outputs, and fallbacks
 - preview spelling corrections for manually entered commit subjects before applying them
 - optionally show a clipboard button at the right end of the Codex composer, sending pasted text when idle or using native queued follow-ups while Codex is busy (Codex follow-up mode should be set to `queue`)
-- replace a compact icon-bearing **Rate Limited** Codex notice with a tiny Twilight Sparkle STOP-sign image (the native message remains if the remote artwork cannot load); leave full usage-limit cards and reset actions unchanged
+- replace a compact icon-bearing **Rate Limited** Codex notice with the bundled, locally embedded Twilight STOP illustration, and hide only the matching icon-bearing inline Codex usage-limit error; keep timed reset messages, full cards, and reset actions intact
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
 - independently hide reset times in Codex menus, dialogs, tooltips, and usage-limit messages
 - optionally hide Codex promotional cards such as the Fast mode upsell
@@ -645,9 +645,9 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 
 ### Compact Codex rate-limit notices
 
-Repeated transcript notices without a usable reset time are shortened to
-**Rate limited**, rather than duplicating the upgrade/credit warning already
-shown in Codex's main limit card. Messages with an actual reset time retain it.
+Codex's exact untimed **You've hit your usage limit. Upgrade your plan or add credits to continue, or Try again later.** inline error row is hidden when the native status icon confirms it is a Codex notification, not quoted conversation text. Other untimed transcript notices are shortened to **Rate limited**. Messages with an actual reset time retain it.
+
+The compact icon-bearing **Rate Limited** notice becomes the Twilight Sparkle STOP sticker. The image is embedded from `twi-stop.png` when the Codex patch is installed, so it does not require a remote image host or connection. If Codex cannot display the image, the original compact notice remains; suppression of the exact inline error is independent.
 
 A right-aligned **Use credits** shortcut appears on the main limit card
 when Codex itself renders an available banked-reset control (for example,
