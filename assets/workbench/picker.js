@@ -151,6 +151,10 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
             down: configuredName('incomingSyncLabel', settings.incomingSyncLabel),
             up: configuredName('outgoingSyncLabel', settings.outgoingSyncLabel),
         };
+        const hiddenArrows = {
+            down: configuration.getValue('scmToolkit.hideIncomingSyncArrow') === true,
+            up: configuration.getValue('scmToolkit.hideOutgoingSyncArrow') === true,
+        };
         for (const action of root.querySelectorAll('.button-container .monaco-button')) {
             if (!action.querySelector('.codicon-sync')) continue;
             const captionDirection = customizeSyncCaption(action, names);
@@ -160,6 +164,9 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
                     `.monaco-button-label > .codicon-arrow-${direction}, `
                     + `.monaco-button-label-short > .codicon-arrow-${direction}`
                 )) {
+                    // Hide the visible icon, not the node: Git and our label logic
+                    // still use it to determine direction. This is reversible live.
+                    arrow.hidden = hiddenArrows[direction];
                     const count = arrow.previousElementSibling;
                     if (!count || count.classList.contains('codicon')) continue;
 
@@ -204,6 +211,8 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     const disposable = configuration.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('scmToolkit.incomingSyncLabel')
             || event.affectsConfiguration('scmToolkit.outgoingSyncLabel')
+            || event.affectsConfiguration('scmToolkit.hideIncomingSyncArrow')
+            || event.affectsConfiguration('scmToolkit.hideOutgoingSyncArrow')
             || event.affectsConfiguration('git.postCommitCommand')) update();
     });
     widget.disposables.add({

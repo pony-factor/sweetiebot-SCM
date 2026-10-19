@@ -170,6 +170,26 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one line"):
             configurator.parse_submission(values)
 
+    def test_sync_direction_arrow_toggles_round_trip(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncArrow"])
+        values = form_values()
+        values["hideIncomingSyncArrow"] = ["true"]
+        values["hideOutgoingSyncArrow"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["hideIncomingSyncArrow"])
+        self.assertTrue(parsed["hideOutgoingSyncArrow"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="hideIncomingSyncArrow" value="true" checked', page)
+        self.assertIn('name="hideOutgoingSyncArrow" value="true" checked', page)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertTrue(payload["hideIncomingSyncArrow"])
+        self.assertTrue(payload["hideOutgoingSyncArrow"])
+        values.pop("hideOutgoingSyncArrow")
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["hideIncomingSyncArrow"])
+        self.assertFalse(parsed["hideOutgoingSyncArrow"])
+
     def test_legacy_post_commit_sync_is_replaced_by_unchecked_push(self):
         current = dict(toolkit_settings.DEFAULT_SETTINGS)
         configurator.apply_vscode_settings(current, {"gitSettings": {"postCommitCommand": "sync"}})

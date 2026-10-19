@@ -24,7 +24,7 @@ Current features:
 - recognize built-in pony branch names during PR creation and pass local-only character context to Kafania for a post-publish pony profile
 - configure a white confirmation-page X (visible and left-aligned by default) and inspect pony artwork in a stable-size lightbox with tall side navigation targets, no top banner, and click-outside dismissal
 - show the matched pony as a small local-only **Pony Info** view in Source Control, beside whatever editor or Integrated Browser content is open
-- optionally hide the outgoing commit count from the built-in Sync action, and set separate incoming/outgoing count labels without changing Git operations
+- optionally hide the outgoing commit count from the built-in Sync action, set separate incoming/outgoing count labels, and independently hide the right-hand up/down arrows without changing Git operations
 - optionally refresh clean/blank Git repositories more aggressively so the first new change appears in SCM quickly
 - search the active workspace semantically from a `Workspace Search` view inside Source Control by default, or optionally move it to its own Activity Bar container, backed only by local Ollama
 - copy all retained text from the active integrated terminal to the clipboard in one step from its context menu or the Command Palette
@@ -753,6 +753,10 @@ When `commit-and-push` is enabled, the checkbox mirrors VS Code's `git.postCommi
 For push mode, the toolkit suppresses VS Code's awaited post-commit push, completes the commit first, then dispatches `repository.push()` without awaiting it. This releases the commit UI immediately instead of waiting for remote confirmation or performing a separate origin-verification step. If Git rejects that push because the remote branch advanced (`PushRejected`), the toolkit automatically runs `repository.pull()` and retries the push once without asking for confirmation or requiring the Sync button. Any pull conflict or second push failure is surfaced asynchronously as a notification.
 
 Disabling the toolkit feature hides the checkbox. It does not silently rewrite an existing `git.postCommitCommand` value.
+
+### Sync direction arrow visibility
+
+In Sweetie Bot Settings → Source control, **Hide incoming sync arrow** and **Hide outgoing sync arrow** independently hide the down and up arrows at the right of the Sync action. Both are off by default. These toggles affect only icon visibility, leaving the Sync button, direction counts, customized labels, and underlying Git fetch/pull/push behavior intact. Changes take effect live and can be reversed without reloading. The existing **Hide outgoing count** setting remains separate.
 
 ### Inline code completion
 

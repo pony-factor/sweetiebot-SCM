@@ -25,6 +25,8 @@ async function run() {
           if (root === 'scmToolkit' && key === 'messagePlaceholder') return 'Commit here';
           if (root === 'scmToolkit' && key === 'commitButtonLabel') return 'Commit';
           if (root === 'scmToolkit' && key === 'commitAndSendButtonLabel') return 'Commit + Push';
+          if (root === 'scmToolkit' && key === 'hideIncomingSyncArrow') return true;
+          if (root === 'scmToolkit' && key === 'hideOutgoingSyncArrow') return false;
           if (root === 'scmToolkit' && key === 'incomingSyncLabel') return 'From origin';
           if (root === 'scmToolkit' && key === 'outgoingSyncLabel') return 'To origin';
           if (root === 'scmToolkit.workspaceSearch' && key === 'resultLimit') return 35;
@@ -70,6 +72,8 @@ async function run() {
         assert.equal(current.vscodeSettings.messagePlaceholder, 'Commit here');
         assert.equal(current.vscodeSettings.commitButtonLabel, 'Commit');
         assert.equal(current.vscodeSettings.commitAndSendButtonLabel, 'Commit + Push');
+        assert.equal(current.vscodeSettings.hideIncomingSyncArrow, true);
+        assert.equal(current.vscodeSettings.hideOutgoingSyncArrow, false);
         assert.equal(current.vscodeSettings.incomingSyncLabel, 'From origin');
         assert.equal(current.vscodeSettings.outgoingSyncLabel, 'To origin');
         assert.equal(current.appUpdateSettings.mode, 'start');
@@ -144,6 +148,8 @@ async function run() {
       messagePlaceholder: 'Type a commit message',
       commitButtonLabel: 'Save',
       commitAndSendButtonLabel: 'Save + Push',
+      hideIncomingSyncArrow: false,
+      hideOutgoingSyncArrow: true,
       incomingSyncLabel: 'Pulled',
       outgoingSyncLabel: 'Pushed'
     },
@@ -163,6 +169,8 @@ async function run() {
     {root: 'scmToolkit', key: 'messagePlaceholder', value: 'Type a commit message', target: 1},
     {root: 'scmToolkit', key: 'commitButtonLabel', value: 'Save', target: 1},
     {root: 'scmToolkit', key: 'commitAndSendButtonLabel', value: 'Save + Push', target: 1},
+    {root: 'scmToolkit', key: 'hideIncomingSyncArrow', value: false, target: 1},
+    {root: 'scmToolkit', key: 'hideOutgoingSyncArrow', value: true, target: 1},
     {root: 'scmToolkit', key: 'incomingSyncLabel', value: 'Pulled', target: 1},
     {root: 'scmToolkit', key: 'outgoingSyncLabel', value: 'Pushed', target: 1},
     {root: 'update', key: 'mode', value: 'manual', target: 1},

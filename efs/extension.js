@@ -105,6 +105,8 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       messagePlaceholder: scm.get('messagePlaceholder', 'Message'),
       commitButtonLabel: scm.get('commitButtonLabel', 'Send'),
       commitAndSendButtonLabel: scm.get('commitAndSendButtonLabel', 'Send'),
+      hideIncomingSyncArrow: scm.get('hideIncomingSyncArrow', false),
+      hideOutgoingSyncArrow: scm.get('hideOutgoingSyncArrow', false),
       incomingSyncLabel: scm.get('incomingSyncLabel', ''),
       outgoingSyncLabel: scm.get('outgoingSyncLabel', ''),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
