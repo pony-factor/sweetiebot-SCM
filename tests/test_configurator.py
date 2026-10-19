@@ -505,7 +505,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(parsed["branchPicker"])
         self.assertTrue(parsed["commitAndPush"])
         self.assertEqual(parsed["aiCommitModel"], "qwen2.5-coder:7b")
-        self.assertEqual(parsed["sourceControlLabel"], "Sweetie Bot")
+        self.assertEqual(parsed["sourceControlLabel"], "Sweetiebot")
         self.assertEqual(parsed["messagePlaceholder"], "Message")
         self.assertTrue(parsed["openPanelOnStartup"])
         self.assertEqual(parsed["commitButtonLabel"], "Send")

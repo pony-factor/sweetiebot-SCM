@@ -261,7 +261,7 @@ git config --global scm-toolkit.pony-branch true
 git config --global scm-toolkit.message-placeholder "Message"
 git config --global scm-toolkit.commit-button-label "Send"
 git config --global scm-toolkit.commit-and-send-button-label "Send"
-git config --global scm-toolkit.source-control-label "Sweetie Bot"
+git config --global scm-toolkit.source-control-label "Sweetiebot"
 git config --global scm-toolkit.open-panel-on-startup true
 git config --global scm-toolkit.workspace-search-activity-bar false
 git config --global scm-toolkit.workspace-search-label EFS
@@ -314,7 +314,7 @@ The equivalent `~/.gitconfig` block is:
     message-placeholder = Message
     commit-button-label = Send
     commit-and-send-button-label = Send
-    source-control-label = Sweetie Bot
+    source-control-label = Sweetiebot
     open-panel-on-startup = true
     workspace-search-activity-bar = false
     workspace-search-label = EFS
@@ -767,7 +767,7 @@ through the sparkle means inline code completion is off.
 ### Source Control label
 
 The toolkit can replace VS Code's built-in **Source Control** view-container label
-with a custom app-bar name. It defaults to **Sweetie Bot**.
+with a custom app-bar name. It defaults to **Sweetiebot**.
 
 Set another label and reinstall:
 

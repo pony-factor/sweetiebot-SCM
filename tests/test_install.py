@@ -19,7 +19,7 @@ SETTINGS = {
     "messagePlaceholder": "Message",
     "commitButtonLabel": "Send",
     "commitAndSendButtonLabel": "Send and Push",
-    "sourceControlLabel": "Sweetie Bot",
+    "sourceControlLabel": "Sweetiebot",
     "filledButtons": False,
     "commitAndPush": True,
     "branchCleanup": True,
@@ -343,7 +343,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertEqual(css.count(install.END), 1)
 
     def test_source_control_label_defaults_to_sweetiebot(self):
-        self.assertEqual(install.DEFAULT_SETTINGS["sourceControlLabel"], "Sweetie Bot")
+        self.assertEqual(install.DEFAULT_SETTINGS["sourceControlLabel"], "Sweetiebot")
 
     def test_commit_button_label_defaults_to_send(self):
         self.assertEqual(install.DEFAULT_SETTINGS["messagePlaceholder"], "Message")
@@ -355,7 +355,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         js, _ = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)
 
         self.assertIn(
-            'title:{"value": "Sweetie Bot", "original": "Sweetie Bot"},'
+            'title:{"value": "Sweetiebot", "original": "Sweetiebot"},'
             'storageId:"workbench.scm.views.state"',
             js.split(install.START, 1)[0],
         )
@@ -404,7 +404,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             'name:O(21159,"Changes"),singleViewPaneContainerTitle:panelTitle}],container);'
         )
         patched = install.transform(original, "base-css", settings=SETTINGS)
-        self.assertIn('panelTitle="Sweetie Bot"', patched[0].split(install.START, 1)[0])
+        self.assertIn('panelTitle="Sweetiebot"', patched[0].split(install.START, 1)[0])
         self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
         self.assertEqual(install.transform(*patched, remove=True, settings=SETTINGS), (original, "base-css"))
 

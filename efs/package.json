@@ -374,7 +374,7 @@
         },
         "scmToolkit.sourceControlLabel": {
           "type": "string",
-          "default": "Sweetie Bot",
+          "default": "Sweetiebot",
           "scope": "application",
           "description": "Source Control panel and Activity Bar label. Save in Sweetiebot settings to apply through automatic app repair and reload."
         },

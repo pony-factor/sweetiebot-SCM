@@ -19,7 +19,7 @@ DEFAULT_SETTINGS = {
     "messagePlaceholder": "Message",
     "commitButtonLabel": "Send",
     "commitAndSendButtonLabel": "Send",
-    "sourceControlLabel": "Sweetie Bot",
+    "sourceControlLabel": "Sweetiebot",
     "nativeAppUpdateMode": "default",
     "nativeExtensionAutoCheckUpdates": True,
     "nativeExtensionAutoUpdate": True,
