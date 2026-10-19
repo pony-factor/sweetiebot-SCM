@@ -479,6 +479,12 @@
     border-radius: 0;
 }
 
+/* Native codicon display rules override the browser's default [hidden] rule. */
+.scm-view .button-container .monaco-button .codicon-arrow-down[hidden],
+.scm-view .button-container .monaco-button .codicon-arrow-up[hidden] {
+    display: none !important;
+}
+
 .scm-view .monaco-button-dropdown > .scm-toolkit-settings {
     position: relative;
     box-sizing: border-box;
