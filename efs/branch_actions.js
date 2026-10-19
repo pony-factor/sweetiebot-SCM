@@ -924,7 +924,7 @@ async function confirmUnverifiedLocalDeletion(vscode, repository, {
 }
 
 async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash' }) {
-  if (!branch || branch === defaultBranch) throw new Error(`Cannot sync ${defaultBranch} into itself.`);
+  if (!branch) throw new Error('Select a branch to sync.');
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
   const checkBranch = async () => {
     await repository.status();
@@ -933,6 +933,14 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     }
   };
   await checkBranch();
+  if (branch === defaultBranch) {
+    const upstream = repository.state.HEAD.upstream;
+    if (!upstream?.remote || !upstream.name) {
+      throw new Error(`${branch} must track an upstream branch before syncing.`);
+    }
+    await syncDefaultBranch(repository, branch, upstream.remote, false);
+    return branch;
+  }
   await repository.fetch({ remote });
   await checkBranch();
   const previousMessage = repository.inputBox.value;

@@ -1946,11 +1946,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || creatingPullRequest
             || creatingPonyBranch
             || !repository
-            || !currentDefaultBranch
-            || branch === currentDefaultBranch;
+            || !currentDefaultBranch;
 
         const description = branch === currentDefaultBranch
-            ? `${currentDefaultBranch} is the sync base branch`
+            ? `Sync ${branch} with its upstream branch (pull updates and push local commits)`
             : `Sync ${branch ?? 'current branch'} with ${settings.remote}/${currentDefaultBranch} as one commit (Alt-click to preserve merge ancestry)`;
         syncButton.title = description;
         syncButton.setAttribute('aria-label', description);
@@ -1963,7 +1962,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         const repository = currentRepositoryUri;
         if (
             !branch
-            || branch === currentDefaultBranch
             || !currentDefaultBranch
             || !repository
             || pending
@@ -1986,9 +1984,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 strategy: event.altKey ? 'merge' : 'squash',
             });
             if (result) {
-                notifications.info(event.altKey
-                    ? `Synced ${branch} with ${currentDefaultBranch} (merge).`
-                    : `Squash Synced '${branch}' with '${currentDefaultBranch}'`);
+                notifications.info(branch === currentDefaultBranch
+                    ? `Synced ${branch} with its upstream branch.`
+                    : event.altKey
+                        ? `Synced ${branch} with ${currentDefaultBranch} (merge).`
+                        : `Squash Synced '${branch}' with '${currentDefaultBranch}'`);
             }
         } catch (error) {
             // Leave merge conflicts untouched and keep the sync message for the manual commit.
