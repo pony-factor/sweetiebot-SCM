@@ -382,6 +382,16 @@
           "default": "Send",
           "description": "Text shown on the primary commit action when git.postCommitCommand is push."
         },
+        "scmToolkit.hideIncomingSyncArrow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the incoming (down) arrow in the Source Control Sync button without hiding its count or changing Git operations."
+        },
+        "scmToolkit.hideOutgoingSyncArrow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the outgoing (up) arrow in the Source Control Sync button without hiding its count or changing Git operations."
+        },
         "scmToolkit.incomingSyncLabel": {
           "type": "string",
           "default": "",
