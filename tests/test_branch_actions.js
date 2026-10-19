@@ -103,9 +103,31 @@ async function run() {
     assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin' }], ['status'], ['merge', 'origin/main'], ['status']]);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
-  for (const branch of ['main', 'different']) {
+  for (const ahead of [0, 2]) {
+    const { repository, calls } = fixture(true);
+    repository.state.HEAD = { name: 'main', upstream: { remote: 'upstream', name: 'trunk' }, ahead };
+    assert.equal(await syncBranch(repository, { ...options, branch: 'main' }), 'main');
+    assert.deepEqual(calls.filter(call => call[0] === 'fetch'), [['fetch', { remote: 'upstream' }]]);
+    assert.deepEqual(calls.filter(call => call[0] === 'merge'), [['merge', 'upstream/trunk']]);
+    assert.deepEqual(calls.filter(call => call[0] === 'push'), ahead ? [['push', 'upstream', 'main:trunk']] : []);
+    assert(!calls.some(call => call[0] === 'checkout'), 'Sync must stay on main');
+    assert.equal(repository.inputBox.value, 'Existing draft');
+  }
+  {
+    const { repository, calls } = fixture(true);
+    delete repository.state.HEAD.upstream;
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'main' }), /must track an upstream/);
+    assert(!calls.some(call => ['fetch', 'merge', 'push'].includes(call[0])));
+  }
+  {
+    const { repository, calls } = fixture(true);
+    repository.fetch = async () => { repository.state.HEAD.name = 'other'; };
+    await assert.rejects(syncBranch(repository, { ...options, branch: 'main' }), /active branch changed/);
+    assert(!calls.some(call => ['merge', 'push'].includes(call[0])));
+  }
+  for (const branch of ['main', 'different', undefined]) {
     const { repository, calls } = fixture();
-    await assert.rejects(syncBranch(repository, { ...options, branch }), /Cannot sync|active branch changed/);
+    await assert.rejects(syncBranch(repository, { ...options, branch }), /Select a branch|active branch changed/);
     assert(!calls.some(call => call[0] === 'fetch' || call[0] === 'merge'));
   }
   {
