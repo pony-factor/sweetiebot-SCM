@@ -273,6 +273,29 @@ test('descriptive titles appear in the proposed commit message without changing 
 });
 
 
+test('dismissing spellcheck review carries the edited message into an empty SCM draft only', async () => {
+  const f = fixture();
+  await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, async () => patch, f.git);
+  const preview = takeSpellcheckPopup();
+  assert.equal(f.repo.inputBox.value, '');
+  const editedMessage = '🖊️ Fix typos in citations\n\nPreserve this edited body.';
+  closeSpellcheckPopup(preview.sessionId, editedMessage);
+  assert.equal(f.repo.inputBox.value, editedMessage);
+  closeSpellcheckPopup(preview.sessionId, 'Should not replace');
+  assert.equal(f.repo.inputBox.value, editedMessage);
+
+  const existing = fixture({draft: 'My unrelated commit message'});
+  await showNotice({}, existing.repo, {head, root: '/repo', paths: ['notes/report.md']}, async () => patch, existing.git);
+  const otherPreview = takeSpellcheckPopup();
+  closeSpellcheckPopup(otherPreview.sessionId, otherPreview.message);
+  assert.equal(existing.repo.inputBox.value, 'My unrelated commit message');
+
+  const cancelled = fixture();
+  await showNotice({}, cancelled.repo, {head, root: '/repo', paths: ['notes/report.md']}, async () => patch, cancelled.git);
+  closeSpellcheckPopup(takeSpellcheckPopup().sessionId);
+  assert.equal(cancelled.repo.inputBox.value, '');
+});
+
 test('in-place edits save only the intended unstaged line and reject stale or unsaved content', async () => {
   const fs = require('node:fs/promises');
   const os = require('node:os');

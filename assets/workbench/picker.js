@@ -1061,7 +1061,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             accept.className = 'scm-toolkit-spellcheck-accept';
             accept.textContent = 'Accept';
             actions.append(revert, accept);
-            let activeEdit, currentSave, acting = false;
+            let activeEdit, currentSave, acting = false, dismissed = false;
             const collapsedFiles = new Set();
             const updateActions = () => {
                 accept.disabled = acting || !!currentSave || !message.value.trim() || !(preview.files || []).length;
@@ -1305,6 +1305,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
                 if (acting) return;
                 if (currentSave && !await currentSave) return;
                 if (activeEdit && !await activeEdit.finish()) return;
+                dismissed = true;
                 dialog.close();
             };
             dialog.addEventListener('cancel', event => { event.preventDefault(); void dismiss(); });
@@ -1318,7 +1319,8 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             dialog.addEventListener('close', () => {
                 popup = undefined;
                 dialog.remove();
-                void commands.executeCommand('sweetiebot.closeSpellcheckPopup', preview.sessionId).catch(() => {});
+                void commands.executeCommand('sweetiebot.closeSpellcheckPopup', preview.sessionId,
+                    dismissed ? message.value : undefined).catch(() => {});
                 if (previousFocus?.isConnected) previousFocus.focus();
             }, { once: true });
             dialog.append(close, status, content, messageLabel, actions);

@@ -127,7 +127,7 @@ test('popup safely renders and restores focus after closing via ' + closingActio
   assert.equal(dialog.open, false);
   assert.equal(dialog.removed, true);
   assert.equal(previousFocus.focused, true);
-  assert.deepEqual(closed, [['session']]);
+  assert.deepEqual(closed, [['session', ...(closingAction === 'dismiss' ? [message.value] : [])]]);
   assert.equal(accepted.length, 1, 'automatic closure must not commit or revert files again');
   await timer();
   assert.equal(calls, 2);
