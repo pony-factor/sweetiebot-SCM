@@ -202,6 +202,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
     hasStack
       ? 'BRANCH-LINKED BUT NOT GITHUB-NATIVE: Do not mistake a head/base branch-name chain for verified native stack membership. If native stack merge is unavailable, only use manual ancestor-first squash and child-only replay when you can prove each child diff excludes all ancestor changes, safely retarget ONLY selected descendants to main, respect branch protections, and preserve one squash commit per PR. Do not force-push a protected or unselected parent/base branch. If that cannot be verified and performed safely with available tools, STOP that stack; never fall back to merging children into parent branches and calling the result delivered to main.'
       : '',
+    'LIVE LINDSEY DASHBOARD: This dedicated merge workspace displays a 20%-wide ChatGPT session on the left and an 80%-wide GitHub status/diff timeline on the right. The dashboard reads GitHub PR state, changed-file patches, and tagged PR comments. It does NOT observe your private chat, and must never be treated as evidence of a successful merge. Work systematically through every selected PR; resolve routine/mechanical conflicts independently and request human review ONLY when competing intentions are genuinely ambiguous. For each safely handled PR, post exactly one concise public GitHub issue comment beginning with <!-- sweetiebot-merge-report -->. Summarize the actual change(s), why each change was appropriate, any conflict resolution and affected paths, verification performed (or not performed), and the verified merge outcome/commit URL if already known. Where resolution was committed before merging, post the report at that point and update the same comment after verification instead of duplicating it. Do not claim tests passed if they did not run. If human judgment is necessary, begin the already-required focused PR review comment with <!-- sweetiebot-merge-review --> and explain the alternatives; leave that PR unmerged. Do not post reports on unselected PRs. The dashboard labels these explanations as AI reports and independently determines status from GitHub.',
     'For GitHub-native stacked PRs missing selected lower ancestors, STOP and request a complete prefix: never merge one into an intermediate base or implicitly include its unselected ancestors. PRs outside complete selected stacks and without native stack membership must merge ONLY into their originally listed base branch. Do not silently merge them into main or pull in an unselected dependency. Report blockers or unexpected base changes and continue only with unrelated safe PRs.',
     'Before creating or updating commits, verify the resulting tree differs from its parent and intended changes are present. Never force-push main or any protected/PR base branch. Any necessary rewrite of a selected PR head must use force-with-lease and must not affect an unselected PR. Preserve unrelated work.',
     'ATTRIBUTION FOR EVERY SELECTED PR: Before merging, read ALL original PR commits (paginate the commits endpoint) and inspect their Git author and committer names/emails, linked GitHub author/committer accounts, and existing Co-authored-by trailers. Preserve original human Git authors, other human committers/co-authors, and evidenced bot/AI collaborators, including contributors behind bot-opened PRs. Distinguish the original Git authors from contributors named only in trailers. Use existing commit-associated or explicitly confirmed GitHub-linked email addresses and names; never guess a private email, invent a contributor, or give credit merely because an account opened the PR. Deduplicate repeated credits for the same person/agent, but keep regular Codex and Codex Web as separate entries when both participated even though both use noreply@openai.com. If attribution cannot be established reliably for an actual original human contributor, STOP the affected PR before merging and report the limitation.',
@@ -277,8 +278,15 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const url = chatgptMergeUrl(prompt, projectUrl);
       // The browser preload polls for a ready Send button instead of waiting
       // three seconds and sending Return through macOS accessibility APIs.
+      const handoff = {
+        repository: repositoryName(selectedRepository.repositoryUrl),
+        pullRequests: plan.ordered.map(pr => ({
+          number: pr.number, title: pr.title, url: pr.url,
+          head: pr.head, headSha: pr.headSha, base: pr.base
+        }))
+      };
       await (dependencies.launchMergeSession || launchMergeSession)(
-        vscode, context, selectedRepository.repository.rootUri, url);
+        vscode, context, selectedRepository.repository.rootUri, url, handoff);
     } catch (error) {
       vscode.window.showErrorMessage(`Unable to prepare pull-request bulk merge: ${error.message}`);
     }

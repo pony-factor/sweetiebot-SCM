@@ -98,6 +98,61 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
     assert.equal(mergeCalls.length, 4, 'Reloading never resubmits a bulk merge');
     await launchMergeSession(source, context, root, mergeUrl);
     assert.notEqual(calls.at(-1)[1].fsPath, mergeWorkspace.fsPath, 'Each merge request owns an independent workspace');
+
+    // A selected batch persists only its public PR snapshot in the dedicated
+    // workspace and restores a live dashboard without resubmitting ChatGPT.
+    const selection = { repository: 'pony-factor/example', pullRequests: [{
+      number: 12, title: 'Fix a conflict',
+      url: 'https://github.com/pony-factor/example/pull/12',
+      head: 'my-feature', base: 'main', headSha: 'a'.repeat(40)
+    }] };
+    await launchMergeSession(source, context, root, mergeUrl, selection);
+    const dashboardWorkspace = calls.at(-1)[1];
+    const dashboardDirectory = path.dirname(dashboardWorkspace.fsPath);
+    assert.deepEqual(JSON.parse(await fs.readFile(
+      path.join(dashboardDirectory, 'merge-selection.json'), 'utf8')), selection);
+    const mergeSettings = JSON.parse(await fs.readFile(dashboardWorkspace.fsPath, 'utf8'));
+    assert.equal(mergeSettings.settings['scmToolkit.startCompactPRSession'], false,
+      'A side-by-side merge dashboard needs a full-size window');
+    let launches = 0;
+    const dashboardModulePath = require.resolve('../efs/merge_dashboard');
+    const previousDashboard = require.cache[dashboardModulePath];
+    require.cache[dashboardModulePath] = {
+      id: dashboardModulePath, filename: dashboardModulePath, loaded: true,
+      exports: { startMergeDashboard(host, snapshot, token) {
+        assert.equal(host, instrumented);
+        assert.deepEqual(snapshot, selection);
+        assert.equal(token, 'merge-session-token');
+        launches++;
+      } }
+    };
+    const dashboardCalls = [];
+    const instrumented = { ...target,
+      window: {},
+      workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
+      authentication: { async getSession(provider, scopes, options) {
+        assert.equal(provider, 'github');
+        assert.deepEqual(scopes, ['repo']);
+        assert.equal(options.createIfNone, true);
+        return { accessToken: 'merge-session-token' };
+      } },
+      commands: { async executeCommand(...args) { dashboardCalls.push(args); } }
+    };
+    try {
+      await resumePRSession(instrumented, context);
+      assert.deepEqual(dashboardCalls, [
+        ...layoutCommands.map(command => [command]),
+        ['workbench.action.browser.open', { url: mergeUrl, openToSide: false }],
+        ['vscode.setEditorLayout', { orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }] }]
+      ]);
+      assert.equal(launches, 1);
+      await resumePRSession(instrumented, context);
+      assert.equal(launches, 1, 'Reload/restore must not duplicate a running dashboard');
+      assert.equal(dashboardCalls.length, 5, 'Reload must not resubmit ChatGPT');
+    } finally {
+      if (previousDashboard) require.cache[dashboardModulePath] = previousDashboard;
+      else delete require.cache[dashboardModulePath];
+    }
     console.log('Independent PR workspace launch, restart, ownership, and cleanup checks passed.');
   } finally {
     os.homedir = originalHome;
