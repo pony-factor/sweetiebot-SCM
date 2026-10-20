@@ -7,6 +7,7 @@ const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
     'separator-1',
     'autocomplete',
     'spellcheck',
+    'post-spellcheck',
     'codex',
     'auto-publish',
     'separator-2',
@@ -24,6 +25,7 @@ const SCM_TOOLKIT_DEFAULT_MESSAGE_BAR_LAYOUT = {
         'separator-1',
         'autocomplete',
         'spellcheck',
+        'post-spellcheck',
         'auto-publish',
         'separator-2',
         'home',
@@ -54,6 +56,13 @@ function scmToolkitMessageBarLayout(raw) {
             normalized[zone].push(id);
         }
     }
+    // Old pinned layouts predate the post-commit toggle. Keep it accessible
+    // without resetting the user's other message-bar placements.
+    if (!seen.has('post-spellcheck')) {
+        const afterSpellcheck = normalized.after.indexOf('spellcheck');
+        if (afterSpellcheck >= 0) normalized.after.splice(afterSpellcheck + 1, 0, 'post-spellcheck');
+        else normalized.after.unshift('post-spellcheck');
+    }
     return normalized;
 }
 
@@ -67,6 +76,7 @@ function scmToolkitMessageBarElements(widget) {
         'separator-1': root.querySelectorAll(':scope > .scm-toolkit-divider')[0],
         autocomplete: root.querySelector(':scope > .scm-toolkit-autocomplete'),
         spellcheck: root.querySelector(':scope > .scm-toolkit-spellcheck'),
+        'post-spellcheck': root.querySelector(':scope > .scm-toolkit-post-spellcheck'),
         codex: root.querySelector(':scope > .scm-toolkit-codex-coauthor'),
         'auto-publish': root.querySelector(':scope > .scm-toolkit-auto-publish'),
         'separator-2': root.querySelectorAll(':scope > .scm-toolkit-divider')[1],

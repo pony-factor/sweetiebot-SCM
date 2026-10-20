@@ -173,6 +173,19 @@ test('spellcheck change spans isolate separate typos in a shared line', () => {
     .map(({before, after}) => [before, after]), [['-', '–']]);
 });
 
+test('adjacent changed words share one highlight and one Undo, with unchanged words as boundaries', () => {
+  const before = 'The speling errror has anothr issue.';
+  const after = 'The spelling error has another issue.';
+  const spans = spellcheckChangeSpans(before, after);
+  assert.deepEqual(spans.map(({before, after}) => [before, after]), [
+    ['speling errror', 'spelling error'],
+    ['anothr', 'another']
+  ]);
+  assert.equal(after.slice(spans[0].start, spans[0].end), 'spelling error');
+  assert.deepEqual(spellcheckChangeSpans('bad wrds here', 'good words here')
+    .map(({before, after}) => [before, after]), [['bad wrds', 'good words']]);
+});
+
 test('individual Undo restores only the selected correction and invalidates stale buttons', async () => {
   const fs = require('node:fs/promises');
   const os = require('node:os');
