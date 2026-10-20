@@ -19,8 +19,19 @@ class RepairTests(unittest.TestCase):
             js, css = root / 'workbench.js', root / 'workbench.css'
             js.write_text(workbench_fixture())
             css.write_text('base')
-            stack.enter_context(patch('sys.argv', ['install.py', '--repair']))
-            stack.enter_context(patch.object(install, 'application_paths', return_value=('test', [js, css])))
+            # Test the native Git patch against a temporary application bundle
+            # rather than relying on a macOS VS Code installation in CI.
+            app = root / 'Code.app'
+            git_extension = app / 'Contents/Resources/app/extensions/git/dist/main.js'
+            git_extension.parent.mkdir(parents=True)
+            git_extension.write_text(
+                'class Repository{async commit(e,t=Object.create(null)){'
+                'let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
+                'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));'
+                'return "native"}}'
+            )
+            stack.enter_context(patch('sys.argv', ['install.py', '--repair', '--app', str(app)]))
+            stack.enter_context(patch.object(install, 'application_paths', side_effect=lambda _app: ('test', [js, css])))
             stack.enter_context(patch.object(install, 'load_settings', return_value=dict(toolkit_settings.DEFAULT_SETTINGS)))
             stack.enter_context(patch.object(install.github_pr, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.browser_pr, 'patch_files', return_value=[]))
@@ -45,6 +56,7 @@ class RepairTests(unittest.TestCase):
             install.main()
             self.assertIn(install.START, js.read_text())
             self.assertIn(install.START, css.read_text())
+            self.assertIn(install.BACKGROUND_GIT_START, git_extension.read_text())
             destination = workspace_search.extension_destination(extensions)
             helper = wrapper_path.with_name(wrapper_path.name + '-spellcheck.py')
             notice = destination / 'post_commit_spellcheck_notice.js'
