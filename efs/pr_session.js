@@ -30,7 +30,15 @@ async function sessionDirectory(vscode, context) {
 }
 
 async function launchPRSession(vscode, context, root, options) {
-  if (await sessionDirectory(vscode, context)) return false;
+  return launchSession(vscode, context, root, options);
+}
+
+async function launchMergeSession(vscode, context, root, url) {
+  return launchSession(vscode, context, root, {}, url);
+}
+
+async function launchSession(vscode, context, root, options, mergeUrl) {
+  if (!mergeUrl && await sessionDirectory(vscode, context)) return false;
   // Workspace trust includes the saved workspace file itself. Global storage
   // is outside the trusted repository and leaves the new host in Restricted
   // Mode, where this extension cannot start. Git metadata stays under a normal
@@ -46,7 +54,8 @@ async function launchPRSession(vscode, context, root, options) {
     // A saved workspace has its own main window and extension host. Auxiliary
     // browser windows and the draft server are consequently owned by this
     // session, rather than by the repository window that launched New PR.
-    const title = `${displayName(options.branch)} PR [${path.basename(root.fsPath)}]`;
+    const title = mergeUrl ? `Bulk Merge [${path.basename(root.fsPath)}]`
+      : `${displayName(options.branch)} PR [${path.basename(root.fsPath)}]`;
     const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
     const workspace = path.join(directory, filename + '.code-workspace');
     const config = vscode.workspace.getConfiguration('scmToolkit');
@@ -63,7 +72,7 @@ async function launchPRSession(vscode, context, root, options) {
       },
     }), { mode: 0o600 });
     await fs.writeFile(path.join(directory, 'request.json'), JSON.stringify({
-      root: root.fsPath, options,
+      root: root.fsPath, options, ...(mergeUrl ? { mergeUrl } : {}),
     }), { mode: 0o600 });
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(workspace), { forceNewWindow: true });
     return true;
@@ -87,6 +96,15 @@ async function resumePRSession(vscode, context) {
   for (const command of ['workbench.action.closeSidebar', 'workbench.action.closeAuxiliaryBar', 'workbench.action.closePanel']) {
     await vscode.commands.executeCommand(command);
   }
+  if (input.mergeUrl) {
+    const url = new URL(input.mergeUrl);
+    if (url.origin !== 'https://chatgpt.com' ||
+        new URLSearchParams(url.hash.slice(1)).get('sweetiebot_merge') !== '1') {
+      throw new Error('Invalid bulk merge chat URL.');
+    }
+    await require('./pr_workflows').openWorkflow(vscode, input.mergeUrl);
+    return;
+  }
   try {
     await vscode.commands.executeCommand('sweetiebot.openPullRequestChat', root, input.options);
   } catch (error) {
@@ -104,4 +122,4 @@ async function closePRSession(vscode, context) {
   return true;
 }
 
-module.exports = { sessionDirectory, launchPRSession, resumePRSession, closePRSession };
+module.exports = { sessionDirectory, launchPRSession, launchMergeSession, resumePRSession, closePRSession };

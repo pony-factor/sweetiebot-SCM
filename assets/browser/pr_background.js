@@ -1,4 +1,4 @@
-/* Keep only Kefania workflow views running without activating their window. */
+/* Keep Kefania PR and bulk merge workflows running in background windows. */
 (contents => {
   const original = contents.getBackgroundThrottling();
   let callbackOrigin;
@@ -14,6 +14,7 @@
       && /^\/kefania-draft\/[0-9a-f-]{36}(?:\/(?:draft|pony))?$/.test(url.pathname);
     if (url.origin === 'https://chatgpt.com') {
       const payload = new URLSearchParams(url.hash.slice(1));
+      if (payload.get('sweetiebot_merge') === '1') active = true;
       if (payload.get('sweetiebot_pr') === '1') {
         try {
           const callback = new URL(payload.get('return_to'));
