@@ -756,7 +756,7 @@ Disabling the toolkit feature hides the checkbox. It does not silently rewrite a
 
 ### Sync direction arrow visibility
 
-In Sweetie Bot Settings → Source control, **Hide incoming sync arrow** and **Hide outgoing sync arrow** independently hide the down and up arrows at the right of the Sync action. Both are off by default. These toggles affect only icon visibility, leaving the Sync button, direction counts, customized labels, and underlying Git fetch/pull/push behavior intact. Changes take effect live and can be reversed without reloading. The existing **Hide outgoing count** setting remains separate.
+In Sweetiebot Settings → Source control, **Hide incoming sync arrow** and **Hide outgoing sync arrow** independently hide the down and up arrows at the right of the Sync action. Both are off by default. **Hide incoming count** and **Hide outgoing count** independently hide the corresponding numbers; incoming counts are shown by default, while outgoing counts are hidden by default. When both counts and both arrows are hidden, custom incoming and outgoing labels appear together after the Sync icon, such as **Flip & Gust**. All four switches update live without changing Git fetch/pull/push behavior.
 
 ### Inline code completion
 

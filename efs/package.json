@@ -388,6 +388,16 @@
           "default": "Send",
           "description": "Text shown on the primary commit action when git.postCommitCommand is push."
         },
+        "scmToolkit.hideIncomingSyncCount": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the incoming commit count in Sync. When both counts and arrows are hidden, join custom direction labels with &."
+        },
+        "scmToolkit.hideOutgoingSyncCount": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide the outgoing commit count in Sync. When both counts and arrows are hidden, join custom direction labels with &."
+        },
         "scmToolkit.hideIncomingSyncArrow": {
           "type": "boolean",
           "default": false,

@@ -480,8 +480,8 @@
 }
 
 /* Native codicon display rules override the browser's default [hidden] rule. */
-.scm-view .button-container .monaco-button .codicon-arrow-down[hidden],
-.scm-view .button-container .monaco-button .codicon-arrow-up[hidden] {
+.scm-view .button-container .monaco-button .monaco-button-label > span[hidden],
+.scm-view .button-container .monaco-button .monaco-button-label-short > span[hidden] {
     display: none !important;
 }
 

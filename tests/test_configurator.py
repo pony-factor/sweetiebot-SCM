@@ -170,6 +170,20 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one line"):
             configurator.parse_submission(values)
 
+    def test_sync_direction_count_toggles_round_trip(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncCount"])
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncCount"])
+        values = form_values()
+        values["hideIncomingSyncCount"] = ["true"]
+        values.pop("hideOutgoingSyncCount")
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertTrue(payload["hideIncomingSyncCount"])
+        self.assertFalse(payload["hideOutgoingSyncCount"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="hideIncomingSyncCount" value="true" checked', page)
+        self.assertIn('name="hideOutgoingSyncCount" value="true"', page)
+
     def test_sync_direction_arrow_toggles_round_trip(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncArrow"])

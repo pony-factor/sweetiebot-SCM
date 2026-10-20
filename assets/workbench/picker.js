@@ -82,12 +82,22 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
         const value = configuration.getValue(`scmToolkit.${key}`);
         return String(typeof value === 'string' && value.trim() ? value : (fallback ?? '')).trim();
     };
+    const configuredFlag = (key, fallback) => {
+        const path = `scmToolkit.${key}`;
+        const inspected = configuration.inspect?.(path);
+        // Preserve the existing Git-backed preference until it is explicitly
+        // mirrored into VS Code by the settings page.
+        const value = inspected
+            ? inspected.workspaceFolderValue ?? inspected.workspaceValue ?? inspected.userValue
+            : configuration.getValue(path);
+        return typeof value === 'boolean' ? value : fallback === true;
+    };
 
     // Git can combine the caption and count in one span. Keep its native text
     // separately so preference changes and subsequent Git updates remain reversible.
     const nativeSyncCaptions = new WeakMap();
     const captionNodes = new WeakSet();
-    const customizeSyncCaption = (action, names) => {
+    const customizeSyncCaption = (action, names, hiddenCounts, combinedName) => {
         const longLabel = action.querySelector('.monaco-button-label');
         const icon = longLabel?.querySelector('.codicon-sync');
         if (!icon) return false;
@@ -123,14 +133,14 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
 
             const whitespace = original.match(/^\s*/)[0];
             const countSuffix = original.match(/\s+\d+\s*$/)?.[0] ?? '';
-            let display = name ? whitespace + name + countSuffix : original;
-            if (direction === 'up' && settings.hideOutgoingSyncCount) {
+            let display = combinedName ? whitespace + combinedName : name ? whitespace + name + countSuffix : original;
+            if (!combinedName && hiddenCounts[direction]) {
                 // Strip only the native count, preserving digits in a custom name.
                 display = name ? whitespace + name : display.replace(/\s+\d+\s*$/, '');
             }
             nativeSyncCaptions.set(node, { original, display });
             if (text !== display) node.textContent = display;
-            renamedDirection = name ? direction : undefined;
+            renamedDirection = combinedName ? 'both' : name ? direction : undefined;
             break;
         }
         return renamedDirection;
@@ -155,9 +165,16 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
             down: configuration.getValue('scmToolkit.hideIncomingSyncArrow') === true,
             up: configuration.getValue('scmToolkit.hideOutgoingSyncArrow') === true,
         };
+        const hiddenCounts = {
+            down: configuredFlag('hideIncomingSyncCount', settings.hideIncomingSyncCount),
+            up: configuredFlag('hideOutgoingSyncCount', settings.hideOutgoingSyncCount),
+        };
+        const combinedName = hiddenCounts.down && hiddenCounts.up && hiddenArrows.down && hiddenArrows.up
+            && names.down && names.up ? `${names.down} & ${names.up}` : '';
         for (const action of root.querySelectorAll('.button-container .monaco-button')) {
             if (!action.querySelector('.codicon-sync')) continue;
-            const captionDirection = customizeSyncCaption(action, names);
+            const captionDirection = customizeSyncCaption(action, names, hiddenCounts, combinedName);
+            const combinedAnchor = action.querySelector('.codicon-arrow-down') ? 'down' : 'up';
 
             for (const direction of ['down', 'up']) {
                 for (const arrow of action.querySelectorAll(
@@ -176,8 +193,9 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
                     // The full-width progress caption already displays the outgoing name.
                     // Keep the count label in the compact version, but avoid duplication.
                     const inLongLabel = arrow.parentElement?.classList.contains('monaco-button-label');
-                    const name = direction === captionDirection && inLongLabel
-                        ? '' : names[direction];
+                    const name = combinedName
+                        ? (inLongLabel && captionDirection === 'both') || direction !== combinedAnchor ? '' : combinedName
+                        : direction === captionDirection && inLongLabel ? '' : names[direction];
                     if (name) {
                         if (!label) {
                             label = doc.createElement('span');
@@ -190,14 +208,10 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
                         label?.remove();
                     }
 
-                    // Preserve the existing hide-outgoing-count preference independently.
-                    if (direction === 'up' && settings.hideOutgoingSyncCount && !captionNodes.has(count)) {
-                        const text = count.textContent ?? '';
-                        const withoutCount = text.replace(/\s*\d+\s*$/, '').trimEnd();
-                        if (withoutCount !== text) {
-                            count.textContent = withoutCount;
-                            count.hidden = withoutCount.trim() === '';
-                        }
+                    // Keep native count text intact so live toggles and Git updates
+                    // can restore it without waiting for the button to be rebuilt.
+                    if (!captionNodes.has(count)) {
+                        count.hidden = hiddenCounts[direction] && /^\s*\d*\s*$/.test(count.textContent ?? '');
                     }
                 }
             }
@@ -213,6 +227,8 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
             || event.affectsConfiguration('scmToolkit.outgoingSyncLabel')
             || event.affectsConfiguration('scmToolkit.hideIncomingSyncArrow')
             || event.affectsConfiguration('scmToolkit.hideOutgoingSyncArrow')
+            || event.affectsConfiguration('scmToolkit.hideIncomingSyncCount')
+            || event.affectsConfiguration('scmToolkit.hideOutgoingSyncCount')
             || event.affectsConfiguration('git.postCommitCommand')) update();
     });
     widget.disposables.add({

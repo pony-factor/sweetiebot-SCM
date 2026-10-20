@@ -68,6 +68,72 @@ const css = fs.readFileSync(path.join(__dirname, '../assets/workbench/picker.css
     assert.deepEqual(await displays('up'), ['none', 'none']);
     await set('hideOutgoingSyncArrow', false);
     assert.deepEqual(await displays('up'), ['inline-block', 'inline-block']);
+    // Reproduce Git's long caption/count span, compact count spans, and
+    // contiguous tokens, rather than adding fixture-only whitespace.
+    await page.goto('about:blank');
+    await page.setContent('<div class="scm-view"><div class="scm-editor"></div>' +
+      '<div class="button-container"><a class="monaco-button">' +
+      '<span class="monaco-button-label"><span class="codicon codicon-sync"></span>' +
+      '<span> Sync Changes 4</span><span class="codicon codicon-arrow-down"></span>' +
+      '<span>2</span><span class="codicon codicon-arrow-up"></span></span>' +
+      '<span class="monaco-button-label-short"><span class="codicon codicon-sync"></span>' +
+      '<span>4</span><span class="codicon codicon-arrow-down"></span>' +
+      '<span>2</span><span class="codicon codicon-arrow-up"></span></span></a></div></div>');
+    await page.addStyleTag({ content: nativeCSS + '\n' + css });
+    await page.addScriptTag({ content: helper });
+    await page.evaluate(() => {
+      window.values = { incomingSyncLabel: 'Flip', outgoingSyncLabel: 'Gust',
+        hideIncomingSyncArrow: true, hideOutgoingSyncArrow: true,
+        hideIncomingSyncCount: true, hideOutgoingSyncCount: true };
+      scmToolkitCustomizeSyncLabels({ element: document.querySelector('.scm-editor'),
+        disposables: { add() {} } }, {
+        getValue: key => values[key.split('.').pop()],
+        onDidChangeConfiguration(listener) { window.changed = listener; return { dispose() {} }; }
+      }, {});
+    });
+    async function visibleText(label) {
+      return page.locator(`.${label}`).evaluate(node => {
+        const copy = node.cloneNode(true);
+        copy.querySelectorAll('[hidden], .codicon').forEach(child => child.remove());
+        return copy.textContent.replace(/\s+/g, ' ').trim();
+      });
+    }
+    for (let cycle = 0; cycle < 3; cycle++) {
+      assert.equal(await visibleText('monaco-button-label'), 'Flip & Gust');
+      assert.equal(await visibleText('monaco-button-label-short'), 'Flip & Gust');
+      assert.deepEqual(await displays('down'), ['none', 'none']);
+      assert.deepEqual(await displays('up'), ['none', 'none']);
+      assert.deepEqual(await page.locator('.monaco-button-label-short > span[hidden]').evaluateAll(nodes =>
+        nodes.map(node => getComputedStyle(node).display)), ['none', 'none', 'none', 'none']);
+      await set('hideIncomingSyncCount', false);
+      assert.equal(await visibleText('monaco-button-label'), 'Flip 4Gust');
+      // The CSS gap separates adjacent native tokens even without text whitespace.
+      assert.ok(await page.locator('.monaco-button-label .codicon-arrow-down').evaluate(arrow =>
+        arrow.nextElementSibling.getBoundingClientRect().left - arrow.previousElementSibling.getBoundingClientRect().right >= 3));
+      await set('hideOutgoingSyncCount', false);
+      assert.match(await visibleText('monaco-button-label'), /Gust 2$/);
+      await set('hideIncomingSyncArrow', false);
+      await set('hideOutgoingSyncArrow', false);
+      assert.deepEqual(await displays('down'), ['inline-block', 'inline-block']);
+      assert.deepEqual(await displays('up'), ['inline-block', 'inline-block']);
+      await set('hideIncomingSyncCount', true);
+      await set('hideOutgoingSyncCount', true);
+      await set('hideIncomingSyncArrow', true);
+      await set('hideOutgoingSyncArrow', true);
+    }
+    await set('incomingSyncLabel', 'Fetch 80');
+    await set('outgoingSyncLabel', 'Send 20');
+    assert.equal(await visibleText('monaco-button-label'), 'Fetch 80 & Send 20');
+    await set('hideIncomingSyncCount', false);
+    assert.match(await visibleText('monaco-button-label'), /^Fetch 80 4/);
+    await set('hideIncomingSyncCount', true);
+    await page.evaluate(() => {
+      document.querySelector('.monaco-button-label .codicon-sync').nextElementSibling.textContent = ' Sync Changes 9';
+    });
+    await page.waitForFunction(() => document.querySelector('.monaco-button-label').textContent.includes('Fetch 80 & Send 20'));
+    await set('hideIncomingSyncCount', false);
+    assert.match(await visibleText('monaco-button-label'), /^Fetch 80 9/);
+    await set('hideIncomingSyncCount', true);
     console.log('Sync arrow rendered visibility checks passed.');
   } finally {
     await browser.close();
