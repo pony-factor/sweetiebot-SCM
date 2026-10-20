@@ -823,7 +823,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + "/* edit:"
             + json.dumps({"edits": edits})
             + " */\n"
-            + (CODEX_ASSETS / "codex-countdown.js").read_text()
+            + (CODEX_ASSETS / "countdown.js").read_text()
             + CODEX_END
         )
 
@@ -834,44 +834,44 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + (CODEX_ASSETS / "codex-rate-limit-controls.js").read_text()
+               + (CODEX_ASSETS / "rate-limit-controls.js").read_text()
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:
         js += (
             CODEX_HIDE_RESET_START
-            + (CODEX_ASSETS / "codex-hide-reset-times.js").read_text()
+            + (CODEX_ASSETS / "hide-reset-times.js").read_text()
             + CODEX_HIDE_RESET_END
         )
 
     if not remove and hide_promotions:
         js += (
             CODEX_PROMOTIONS_START
-            + (CODEX_ASSETS / "codex-hide-promotions.js").read_text()
+            + (CODEX_ASSETS / "hide-promotions.js").read_text()
             + CODEX_PROMOTIONS_END
         )
 
     if not remove and hide_timestamps:
         js += (
             CODEX_TIMESTAMPS_START
-            + (CODEX_ASSETS / "codex-hide-chat-timestamps.js").read_text()
+            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text()
             + CODEX_TIMESTAMPS_END
         )
 
     if not remove and hide_dictation:
         js += (
             CODEX_DICTATION_START
-            + (CODEX_ASSETS / "codex-hide-dictation.js").read_text()
+            + (CODEX_ASSETS / "hide-dictation.js").read_text()
             + CODEX_DICTATION_END
         )
 
     if not remove and short_model_labels:
-        js += CODEX_LABELS_START + (CODEX_ASSETS / "codex-short-model-labels.js").read_text() + CODEX_LABELS_END
+        js += CODEX_LABELS_START + (CODEX_ASSETS / "short-model-labels.js").read_text() + CODEX_LABELS_END
 
     if not remove and window_label != "Codex":
         # Use the manifest's already-validated, single-line custom label.
         label = codex_label._validate_label(window_label)
-        script = (CODEX_ASSETS / "codex-window-label.js").read_text().replace(
+        script = (CODEX_ASSETS / "window-label.js").read_text().replace(
             "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", json.dumps(label, ensure_ascii=True)
         )
         js += CODEX_WINDOW_LABEL_START + script + CODEX_WINDOW_LABEL_END

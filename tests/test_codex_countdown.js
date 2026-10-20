@@ -20,7 +20,7 @@ const context = vm.createContext({
         define(name, element) { Countdown = element; },
     },
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/codex-countdown.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/countdown.js'), 'utf8'), context);
 const jsx = (tag, props, key) => ({ tag, props, key });
 context.jsx = jsx;
 context.resetAt = (now + 4 * 3_600_000 + 23 * 60_000) / 1000;

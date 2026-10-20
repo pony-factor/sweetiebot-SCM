@@ -30,7 +30,7 @@ async function run() {
       }
     }
   });
-  load('codex-context-webview.js', context);
+  load('context-webview.js', context);
   context.scmToolkitRegisterCodexSnapshot({ postMessage: message => responses.push(message) });
   receive({ data: { type: 'unrelated' } });
   assert.equal(responses.length, 0);
@@ -59,7 +59,7 @@ async function run() {
     handleMessage() { throw new Error('Custom snapshot replies must not reach Codex job handling'); }
   };
   const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
-  load('codex-context-host.js', host);
+  load('context-host.js', host);
   const disposable = host.scmToolkitRegisterCodexSnapshotProvider(provider, {
     commands: {
       registerCommand(id, callback) {

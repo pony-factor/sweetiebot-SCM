@@ -23,7 +23,7 @@ function fixture(platform = 'darwin', defaultEnabled = true) {
       } };
     }
   });
-  vm.runInContext(fs.readFileSync(require.resolve('../assets/codex/codex-keep-awake.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(require.resolve('../assets/codex/keep-awake.js'), 'utf8'), sandbox);
   sandbox.connection = {
     registerInternalNotificationHandler(callback) { notify = callback; return disposable('notifications'); },
     registerProvider(name, callbacks) { fatal = callbacks.onFatalError; return disposable('provider'); }

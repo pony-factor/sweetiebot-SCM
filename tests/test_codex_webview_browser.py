@@ -43,11 +43,11 @@ def run():
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.set_content(HTML)
-        title = (ASSETS / "codex-window-label.js").read_text().replace(
+        title = (ASSETS / "window-label.js").read_text().replace(
             "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", '"CelestAI"'
         )
         page.add_script_tag(content=title)
-        timestamp = (ASSETS / "codex-hide-chat-timestamps.js").read_text()
+        timestamp = (ASSETS / "hide-chat-timestamps.js").read_text()
         page.add_script_tag(content=timestamp)
 
         def state(selector):
@@ -120,7 +120,7 @@ def run():
         assert state("#title")["text"] == "CelestAINew Chat"
         # Browser-level regression: CSS must resolve to an accent even when the
         # Codex host does not expose the VS Code focus-border theme variable.
-        page.add_script_tag(content=(ASSETS / "codex-usage.js").read_text())
+        page.add_script_tag(content=(ASSETS / "usage.js").read_text())
         page.evaluate("""() => {
             const pie = document.createElement('scm-toolkit-usage-pie');
             pie.id = 'codex-usage-pie';
@@ -156,8 +156,8 @@ def run():
             <section id="fast"><span>Enable Fast mode</span><button>Enable now</button></section>
             <section id="ordinary-upgrade"><button>Upgrade</button></section>
             <textarea id="composer">continue</textarea></main>""")
-        page.add_script_tag(content=(ASSETS / "codex-hide-promotions.js").read_text())
-        page.add_script_tag(content=(ASSETS / "codex-hide-reset-times.js").read_text())
+        page.add_script_tag(content=(ASSETS / "hide-promotions.js").read_text())
+        page.add_script_tag(content=(ASSETS / "hide-reset-times.js").read_text())
         assert page.locator('#upsell').is_visible()
         assert page.locator('#upsell [role="status"]').inner_text() == 'Rated Limited'
         assert not page.locator('#upsell button').first.is_visible()

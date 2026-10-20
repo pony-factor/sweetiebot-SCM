@@ -6,8 +6,8 @@ from pathlib import Path
 
 START = '\n/* scm-toolkit-codex-usage:start */\n'
 END = '\n/* scm-toolkit-codex-usage:end */\n'
-ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-usage.js'
-HIDE_ASSET = ASSET.with_name('codex-hide-reset-times.js')
+ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/usage.js'
+HIDE_ASSET = ASSET.with_name('hide-reset-times.js')
 IDENTIFIER = r'[A-Za-z_$][\w$]*'
 
 

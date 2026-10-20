@@ -44,7 +44,7 @@ def transform(source, kind, enabled=True):
         replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}))'
     source = source.replace(original, replacement, 1)
     return (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
-            + (ASSETS / f'codex-context-{kind}.js').read_text() + END)
+            + (ASSETS / f'context-{kind}.js').read_text() + END)
 
 
 def patch_files(extension_path=None, enabled=True):

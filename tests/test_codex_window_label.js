@@ -5,7 +5,7 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const template = readFileSync(path.join(__dirname, '../assets/codex/codex-window-label.js'), 'utf8');
+const template = readFileSync(path.join(__dirname, '../assets/codex/window-label.js'), 'utf8');
 
 function render(label) {
     return template.replace('__SCM_TOOLKIT_CODEX_WINDOW_LABEL__', JSON.stringify(label));

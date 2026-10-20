@@ -29,7 +29,7 @@ function providerFor(scoped) {
     initializeWebview() {},
     handleMessage(webview,message) { forwarded.push(message); return message; }
   };
-  const script = fs.readFileSync(path.join(__dirname,'../assets/codex/codex-drafts-host.js'),'utf8');
+  const script = fs.readFileSync(path.join(__dirname,'../assets/codex/drafts-host.js'),'utf8');
   const host = vm.createContext({Promise});
   vm.runInContext(script,host);
   host.scmToolkitProtectCodexDrafts(provider,scoped.vscode);
@@ -81,7 +81,7 @@ async function run() {
     setItem(k,v){memory.set(k,String(v));}
   }
   const store = new Storage();
-  const webJs=fs.readFileSync(path.join(__dirname,'../assets/codex/codex-drafts-webview.js'),'utf8');
+  const webJs=fs.readFileSync(path.join(__dirname,'../assets/codex/drafts-webview.js'),'utf8');
   vm.runInNewContext(webJs,{Storage,window:{localStorage:store}});
   assert.equal(JSON.parse(store.getItem('codex:persisted-atom:composer-prompt-drafts-v1'))['new-conversation'],undefined);
   assert.equal(JSON.parse(memory.get('codex:persisted-atom:composer-prompt-drafts-v1'))['new-conversation'],'Leaked legacy draft');
