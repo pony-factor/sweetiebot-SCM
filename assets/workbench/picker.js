@@ -1361,6 +1361,58 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
     void poll();
 }
 
+// Run opt-in subject-only spelling corrections as the user drafts, not during Commit.
+// Debounce local Ollama calls, serialize checks, and discard stale responses.
+function scmToolkitWatchDraftSpellcheck(input, repositoryUri, commands, blocked = () => false) {
+    let timer;
+    let busy = false;
+    let disposed = false;
+    let checkedSubject;
+    const subjectOf = value => String(value || '').split(/\r?\n/, 1)[0];
+
+    const schedule = () => {
+        clearTimeout(timer);
+        if (disposed || blocked()) return;
+        const subject = subjectOf(input.value);
+        if (!subject.trim() || subject === checkedSubject) return;
+        timer = setTimeout(async () => {
+            timer = undefined;
+            if (disposed || busy || blocked()) return;
+            const original = input.value ?? '';
+            const subject = subjectOf(original);
+            if (!subject.trim() || subject === checkedSubject) return;
+            busy = true;
+            checkedSubject = subject;
+            try {
+                const corrected = await commands.executeCommand(
+                    'sweetiebot.previewCommitSpellcheck', repositoryUri, original, { automatic: true }
+                );
+                if (!disposed && !blocked() && input.value === original
+                    && typeof corrected === 'string' && corrected !== original) {
+                    checkedSubject = subjectOf(corrected);
+                    input.setValue(corrected, false);
+                }
+            } catch (error) {
+                // An unavailable Ollama model must not interrupt drafting or commit.
+                console.warn('Sweetiebot draft spellcheck:', error?.message || error);
+            } finally {
+                busy = false;
+                if (!disposed && subjectOf(input.value) !== checkedSubject) schedule();
+            }
+        }, 1500);
+    };
+
+    const listener = input.onDidChange(schedule);
+    schedule();
+    return {
+        dispose() {
+            disposed = true;
+            clearTimeout(timer);
+            listener.dispose();
+        }
+    };
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     scmToolkitWatchSpellcheckPopups(widget.element.ownerDocument, commands);
     scmToolkitExpireNotifications(notifications);
@@ -2463,6 +2515,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             if (settings.spellcheckManualCommit) {
                 spellcheckButton.hidden = false;
                 refreshSpellcheck();
+                widget.repositoryDisposables.add(scmToolkitWatchDraftSpellcheck(
+                    input, currentRepositoryUri, commands,
+                    () => pending || deletingBranch || spellchecking
+                ));
             }
 
             postSpellcheckButton.hidden = false;

@@ -433,7 +433,7 @@ The installer places a Git wrapper at `~/.local/bin/scm-toolkit-git`. To make VS
 
 Use the absolute path shown by `python3 scripts/install.py`; do not rely on `~` expansion in the setting.
 
-When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blank message summarizes the staged diff through the configured local Ollama model. On the configured `default-branch` (normally `main`), `ai-default-branch-description = true` asks the model for a subject plus one or two substantive sentences describing what changed and, when clear from the diff, its purpose or effect. Other branches keep the subject-only format. A manually entered message is never replaced by generated commit content or silently spellchecked. Use the explicit spelling-preview control when you want a correction reviewed first. Ordinary staged commits with manually supplied `-m` or `--message` text receive the same final-newline and added-line trailing-whitespace normalization before Git commits, even when AI message generation is disabled; their message text is forwarded unchanged. This cleanup is controlled by the **Normalize staged whitespace** toggle in Sweetie Bot settings → **Source control** (on by default). Turning it off skips cleanup for both manual and automatically generated commits, without changing how their messages are created. To disable it from the terminal, run `git config --global scm-toolkit.normalize-staged-whitespace false`. Amend/fixup/squash/reuse-message mode, path-limited commits, or `--all` keep their existing behavior.
+When `ai-commit` is enabled, clicking VS Code's normal Commit button with a blank message summarizes the staged diff through the configured local Ollama model. On the configured `default-branch` (normally `main`), `ai-default-branch-description = true` asks the model for a subject plus one or two substantive sentences describing what changed and, when clear from the diff, its purpose or effect. Other branches keep the subject-only format. A manually entered message is never changed by the commit operation itself. With the optional draft spellcheck enabled, safe spelling-only subject corrections run while typing is idle, independently of the commit operation; the explicit preview control remains available. Ordinary staged commits with manually supplied `-m` or `--message` text receive the same final-newline and added-line trailing-whitespace normalization before Git commits, even when AI message generation is disabled; their message text is forwarded unchanged. This cleanup is controlled by the **Normalize staged whitespace** toggle in Sweetie Bot settings → **Source control** (on by default). Turning it off skips cleanup for both manual and automatically generated commits, without changing how their messages are created. To disable it from the terminal, run `git config --global scm-toolkit.normalize-staged-whitespace false`. Amend/fixup/squash/reuse-message mode, path-limited commits, or `--all` keep their existing behavior.
 
 Sweetiebot treats GitHub's 100 MiB regular-repository file ceiling as the large-commit split target. When a blank automatic commit contains multiple staged files whose final Git blobs total more than 100 MiB, Sweetiebot splits them at file boundaries into smaller commits through temporary indexes, leaving the real staged index intact while the split runs. If one staged file itself exceeds 100 MiB, Sweetiebot does **not** change it automatically: VS Code shows a modal confirmation with **Split file**, **Git LFS docs**, and **Cancel**. Only after **Split file** is chosen does Sweetiebot replace the oversized working-tree file with numbered `.part001`, `.part002`, … files of at most 95 MiB and stage that replacement. It refuses the automatic file split when the file has unstaged changes or when a target part already exists, and restores the original if splitting or staging fails. GitHub's softer diff-view ceilings (20,000 lines or 1 MB total raw diff, 20,000 lines or 500 KB for one file, 300 files, and 25 renderable files) produce a VS Code warning with a clickable **Commit anyway** bypass instead of forcing a split. Files over 50 MiB also receive GitHub's large-file warning with the same bypass. Existing legacy `~/.local/bin/git-auto-title` installations are migrated to symlinks pointing at the canonical `scm-toolkit-git` wrapper (and its spellcheck helper). The normal installer manages that legacy path even when it passes the canonical destination explicitly, so an older VS Code `git.path` cannot remain on a stale independent copy.
 
@@ -505,24 +505,26 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
-### Manual commit spellcheck preview
+### Automatic draft commit spellcheck
 
-The Source Control message controls can include a checkmark action for **Preview spelling correction**.
-The feature is off by default; enable **Manual commit spellcheck preview** in Sweetiebot settings to
-show the action. It sends only the current subject line to the configured local Ollama model and never
-changes the message until you approve the suggestion. If the suggestion differs, Sweetiebot shows the
-original and corrected subjects in a modal with **Apply correction** and **Keep original**.
+Opt in to **Automatic draft commit spellcheck** in Sweetiebot settings (off by default). After
+1.5 seconds without typing, Sweetiebot sends only the manually drafted commit subject to local
+Ollama and applies an accepted spelling-only correction **before committing**, provided the
+draft has not changed in the meantime. No spellcheck waits in the commit path, and failed or
+unavailable model checks leave the message alone. It never changes the commit body.
+The **Preview spelling correction** button remains available for manual reviews. Clicking it
+shows original and corrected subjects in a modal with **Apply correction** and **Keep original**.
 
 Spellcheck uses its own `scm-toolkit.spellcheck-model` setting, defaulting to `qwen2.5:3b`, instead
 of sharing either commit-writing model. The model must return a structured `{"subject":"..."}`
 response. Sweetiebot rejects malformed output, added or removed words, changed punctuation/emoji
 structure, and unrelated rewrites before the preview is shown. Commit bodies are left byte-for-byte
-in place. Codex-attributed messages are excluded from the manual spellcheck path, and blank-message
-AI generation never enters it.
+in place. Codex-attributed messages are excluded from both the automatic and manual subject spellcheck paths,
+and blank-message AI generation never enters them.
 
-The preview opt-in is stored as `scm-toolkit.spellcheck-preview`. The former
-`scm-toolkit.spellcheck-manual-commit` automatic rewrite setting remains unused, so an older global
-Git value cannot silently reactivate spellchecking or mutate a manually entered commit subject.
+The automatic draft spellcheck opt-in remains stored as `scm-toolkit.spellcheck-preview`, now also
+enabling the manual preview button. The former `scm-toolkit.spellcheck-manual-commit` Git
+rewrite setting remains unused; checking a draft never runs inside the Git commit wrapper.
 
 ### AI model picker
 

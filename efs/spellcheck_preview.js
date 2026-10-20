@@ -72,15 +72,20 @@ function hasCodexCoauthor(message) {
 function registerSpellcheckPreviewCommand(vscode, extensionContext) {
   extensionContext.subscriptions.push(vscode.commands.registerCommand(
     'sweetiebot.previewCommitSpellcheck',
-    async (uri, message) => {
+    async (uri, message, options = {}) => {
+      const automatic = options?.automatic === true;
       if (typeof message !== 'string' || !message.trim()) {
-        vscode.window.showInformationMessage('Enter a commit message before previewing spelling corrections.');
+        if (!automatic) {
+          vscode.window.showInformationMessage('Enter a commit message before previewing spelling corrections.');
+        }
         return message;
       }
       if (hasCodexCoauthor(message)) {
-        vscode.window.showInformationMessage(
-          'Codex-attributed commit messages are not passed through manual spellcheck.'
-        );
+        if (!automatic) {
+          vscode.window.showInformationMessage(
+            'Codex-attributed commit messages are not passed through manual spellcheck.'
+          );
+        }
         return message;
       }
 
@@ -96,9 +101,14 @@ function registerSpellcheckPreviewCommand(vscode, extensionContext) {
         originalSubject
       );
       if (corrected === originalSubject) {
-        vscode.window.showInformationMessage('Sweetiebot found no spelling changes in the commit subject.');
+        if (!automatic) {
+          vscode.window.showInformationMessage('Sweetiebot found no spelling changes in the commit subject.');
+        }
         return message;
       }
+      // Idle-time checks never open a dialog or delay a commit.
+      // The SCM editor verifies that the draft is unchanged before applying this.
+      if (automatic) return corrected + message.slice(originalSubject.length);
 
       const choice = await vscode.window.showInformationMessage(
         'Apply this spelling correction to the commit subject?',
