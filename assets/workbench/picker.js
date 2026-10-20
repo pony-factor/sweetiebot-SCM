@@ -1450,7 +1450,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const postSpellcheckButton = doc.createElement('button');
     postSpellcheckButton.type = 'button';
-    postSpellcheckButton.className = 'scm-toolkit-post-spellcheck codicon codicon-spell-check';
+    postSpellcheckButton.className = 'scm-toolkit-post-spellcheck codicon codicon-check-all';
     postSpellcheckButton.hidden = true;
 
     const codexButton = doc.createElement('button');
