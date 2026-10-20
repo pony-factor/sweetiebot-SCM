@@ -9,6 +9,13 @@ const ctx = vm.createContext({
   scmToolkitWatchSpellcheckPopups(doc, commands) { watched.push({doc, commands}); }
 });
 vm.runInContext(source.slice(source.indexOf('function scmToolkitMountCompactWindow(')), ctx);
+const renderedTheme = {'--vscode-editor-background':'#101010','--vscode-foreground':'#eeeeee','--vscode-button-background':'#00aa55'};
+const palette=ctx.scmToolkitKefaniaThemeColors({
+  querySelector(){return {};},
+  defaultView:{getComputedStyle(){return {getPropertyValue:key=>renderedTheme[key]||''};},CSS:{supports:()=>true}}
+});
+assert.equal(palette.button,'#00aa55','Use the rendered theme accent, including user overrides');
+assert.equal(palette.bg,'#101010');
 function documentFixture() {
   const elements = new Map();
   const doc = {

@@ -27,6 +27,22 @@ const images=getElementById('images');
 const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
 const context=vm.createContext({URL,URLSearchParams,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
 vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
+// Theme colors update in place, and disabling the option removes stale tokens.
+const themeProperties=new Map();
+document.documentElement={
+  toggleAttribute(name,value){this[name]=value;},
+  style:{setProperty:(key,value)=>themeProperties.set(key,value),removeProperty:key=>themeProperties.delete(key)}
+};
+context.CSS={supports:(kind,value)=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)};
+context.applyAppearance({bg:'#101010',text:'#eeeeee',button:'#00aa55',controlText:'#55dd88'});
+assert.equal(document.documentElement['data-theme-colors'],true);
+assert.equal(themeProperties.get('--kefania-controlText'),'#55dd88');
+context.applyAppearance({bg:'#ffffff',text:'#111111'});
+assert.equal(themeProperties.get('--kefania-bg'),'#ffffff','Changing themes updates the page');
+assert.equal(themeProperties.has('--kefania-button'),false,'Missing theme colors cannot retain stale values');
+context.applyAppearance(null);
+assert.equal(document.documentElement['data-theme-colors'],false);
+assert.equal(themeProperties.size,0);
 assert.equal(context.safeLink('javascript:alert(1)'),null);
 assert.equal(context.safeLink('https://user:password@example.com'),null);
 const output=new Element('div');

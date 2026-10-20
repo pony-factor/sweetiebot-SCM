@@ -430,6 +430,7 @@ def workspace_trust_edits(js):
     replacement = original + registry + '.registerCommand("sweetiebot.requestIndependentWorkspaceTrust",'
     replacement += ('accessor=>scmToolkitRequestIndependentWorkspaceTrust('
                     f'accessor.get({paths}).localUserHome,accessor.get({requests})));')
+    replacement += registry + '.registerCommand("sweetiebot.kefaniaThemeColors",()=>scmToolkitKefaniaThemeColors());'
     return [(original, replacement)]
 
 

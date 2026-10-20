@@ -419,6 +419,12 @@
           "default": "",
           "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
         },
+        "scmToolkit.kefaniaUseThemeColors": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Use the active VS Code theme colors for Kefania pages and controls."
+        },
         "scmToolkit.kefaniaShowCloseButton": {
           "type": "boolean",
           "default": true,
@@ -429,7 +435,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Place the white Kefania confirmation X in the upper-left corner instead of the right."
+          "description": "Place the Kefania confirmation X in the upper-left corner instead of the right."
         },
         "scmToolkit.autoPublishPullRequests": {
           "type": "boolean",

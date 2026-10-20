@@ -435,6 +435,11 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
     localHandoff.register(draftId, { pony, profile: cachedProfile,
       ludicrousMode,
+      appearance: async () => {
+        if (!vscode.workspace.getConfiguration('scmToolkit').get('kefaniaUseThemeColors', true)) return null;
+        try { return await vscode.commands.executeCommand('sweetiebot.kefaniaThemeColors'); }
+        catch { return null; }
+      },
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
       kefaniaCloseButtonLeft: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseButtonLeft', true),
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),

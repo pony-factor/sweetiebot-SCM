@@ -2894,3 +2894,24 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         visibilityListener?.dispose();
     }, { once: true });
 }
+
+// Resolve the active rendered theme, including the user's color customizations.
+function scmToolkitKefaniaThemeColors(doc = document) {
+    const win = doc.defaultView;
+    const style = win.getComputedStyle(doc.querySelector('.monaco-workbench') || doc.documentElement);
+    const tokens = {
+        bg: 'editor-background', panel: 'sideBar-background',
+        line: 'panel-border', text: 'foreground', muted: 'descriptionForeground',
+        accent: 'textLink-foreground', button: 'button-background',
+        buttonText: 'button-foreground', buttonHover: 'button-hoverBackground',
+        control: 'button-secondaryBackground', controlText: 'button-secondaryForeground',
+        controlHover: 'button-secondaryHoverBackground', focus: 'focusBorder',
+        error: 'errorForeground', code: 'textCodeBlock-background'
+    };
+    const colors = {};
+    for (const [key, token] of Object.entries(tokens)) {
+        const value = style.getPropertyValue('--vscode-' + token).trim();
+        if (value && win.CSS.supports('color', value)) colors[key] = value;
+    }
+    return colors;
+}
