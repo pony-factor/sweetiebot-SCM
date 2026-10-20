@@ -273,7 +273,6 @@
 
 .scm-view .scm-editor > .scm-toolkit-post-spellcheck-active {
     color: var(--vscode-textLink-foreground);
-    background: var(--vscode-inputOption-activeBackground, var(--vscode-input-background));
 }
 
 .scm-view .scm-editor > .scm-toolkit-codex-coauthor {
