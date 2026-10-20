@@ -87,6 +87,15 @@ console.log('Codex clipboard button action-selection checks passed.');
 // A populated new-chat composer must be replaced and automatically submitted
 // even when React initially leaves Send disabled.
 async function runClipboardChecks() {
+    const browserRead = navigator.clipboard.readText;
+    navigator.clipboard.readText = async () => { throw new Error('NotAllowedError'); };
+    assert.equal(await hooks.readClipboard(async module => {
+        assert.equal(module, './index.extension-fixture.js');
+        return { appServices: { clipboard: { readText: async () => 'native clipboard' } } };
+    }, './index.extension-fixture.js'), 'native clipboard', 'native service works when browser clipboard access is denied');
+    await assert.rejects(hooks.readClipboard(async () => { throw new Error('host unavailable'); },
+        './index.extension-fixture.js'), /host unavailable/);
+    navigator.clipboard.readText = browserRead;
     let nativeClicks = 0;
     let inputValues = [];
     const submit = button('Send message', 'submit', true);

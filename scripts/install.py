@@ -1002,6 +1002,8 @@ def transform(js, css, remove=False, settings=None):
         + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
         + "\n"
         + (WORKBENCH_ASSETS / "message_bar.js").read_text()
+        + "\n"
+        + (WORKBENCH_ASSETS / "codex_file_drag.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
@@ -1299,7 +1301,9 @@ def main():
     ):
         if composer_path in paths:
             index = paths.index(composer_path)
-            new[index] = codex_composer.transform_layout(new[index], inline_location, clipboard_submit)
+            new[index] = codex_composer.transform_layout(
+                new[index], inline_location, clipboard_submit,
+                codex_composer.clipboard_module(composer_path) if clipboard_submit else None)
         else:
             paths.append(composer_path)
             old.append(composer_old)
