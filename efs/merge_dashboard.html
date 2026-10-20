@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src __CSP_SOURCE__ https:; style-src __CSP_SOURCE__ 'unsafe-inline'; script-src 'nonce-__NONCE__';">
+<title>Lindsey merge progress</title>
+<style>
+:root{color-scheme:light dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground);font:13px/1.5 var(--vscode-font-family,system-ui)}
+button{font:inherit;cursor:pointer;color:inherit}
+button:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+header{padding:16px 20px;border-bottom:1px solid var(--vscode-panel-border,#555);display:flex;align-items:center;gap:16px;justify-content:space-between;flex-wrap:wrap}
+h1{margin:0;font-size:20px;font-weight:700}
+h2{font-size:16px;margin:0 0 12px}
+h3{margin:16px 0 8px;font-size:13px}
+.subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
+.overview{display:flex;align-items:center;gap:12px}
+.pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
+.primary{background:var(--vscode-button-background);border:0;color:var(--vscode-button-foreground);border-radius:6px;padding:7px 13px}
+.bar{height:6px;background:var(--vscode-progressBar-background,#444);margin:0;border-radius:0;opacity:.3}
+.bar-fill{height:100%;background:var(--vscode-testing-iconPassed,#4cba78);width:0%;transition:width .2s}
+.layout{display:grid;grid-template-columns:minmax(250px,37%) minmax(360px,63%);height:calc(100vh - 122px);min-height:300px}
+aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.section-heading{padding:14px 16px 6px}
+.prs{overflow-y:auto;min-height:100px;flex:1;padding:4px 10px}
+.pr{display:block;text-align:left;width:100%;padding:11px;margin-bottom:8px;background:transparent;border:1px solid var(--vscode-widget-border,#555);border-radius:8px}
+.pr[aria-current="true"]{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground);border-color:var(--vscode-focusBorder)}
+.row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.name{display:block;font-weight:650;overflow-wrap:anywhere}
+.flag{font-size:11px;font-weight:700;border-radius:16px;padding:2px 9px;background:var(--vscode-input-background);border:1px solid var(--vscode-widget-border,#555);white-space:nowrap}
+.flag.merged,.flag.resolved{color:var(--vscode-testing-iconPassed,#3cbb78);border-color:currentColor}
+.flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
+.flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
+.events{max-height:34%;min-height:170px;overflow:auto;border-top:1px solid var(--vscode-panel-border,#555);padding:10px 16px}
+.event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
+.event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
+.event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
+.event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
+main{padding:18px 22px 32px;overflow:auto;min-width:0}
+.detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.detail-top h2{flex:1;margin:0}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
+.panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.panel h3{margin:0 0 8px}
+.empty{color:var(--vscode-descriptionForeground);font-style:italic}
+.file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
+.file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
+.file summary span{float:right}
+pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
+.notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
+.footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
+@media(max-width:900px){.layout{grid-template-columns:minmax(205px,40%) minmax(250px,60%)}main{padding:14px}}
+</style>
+</head>
+<body>
+<header>
+<div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
+<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="primary">Refresh now</button></div>
+</header>
+<div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+<div id="notice" class="notice" hidden></div>
+<div class="layout">
+<aside aria-label="Merge timeline">
+  <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
+  <div id="prs" class="prs"></div>
+  <div class="events"><h2>Activity timeline</h2><div id="events"></div></div>
+</aside>
+<main id="details" aria-live="polite"><p class="empty">Waiting for live GitHub data…</p></main>
+</div>
+<script nonce="__NONCE__">
+(() => {
+  const vscode = acquireVsCodeApi();
+  const byId = id => document.getElementById(id);
+  let model = { prs: [], events: [] };
+  let selected = null;
+  const labels = {
+    waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Resolved',
+    conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
+    queued: 'Queued', updated: 'Updated'
+  };
+  function el(tag, className, value) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (value !== undefined) node.textContent = String(value);
+    return node;
+  }
+  function show(tag, cls, text, parent) {
+    const node = el(tag, cls, text);
+    parent.appendChild(node);
+    return node;
+  }
+  function dispatch(type, number) { vscode.postMessage({ type, number }); }
+  function showTextPanel(parent, heading, content, missing) {
+    const panel = el('section', 'panel');
+    show('h3', '', heading, panel);
+    show('div', content ? '' : 'empty', content || missing, panel);
+    parent.appendChild(panel);
+  }
+  function renderDetail() {
+    const parent = byId('details');
+    const scroll = parent.scrollTop;
+    parent.replaceChildren();
+    const pr = model.prs.find(p => p.number === selected);
+    if (!pr) return;
+    const top = show('div', 'detail-top', undefined, parent);
+    show('h2', '', '#' + pr.number + ' ' + pr.title, top);
+    show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
+    show('div', 'muted', pr.head + ' → ' + pr.base +
+      (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
+    const actions = show('div', 'actions', undefined, parent);
+    for (const item of [['open-pr', 'View PR'], ['open-diff', 'GitHub file diff']]) {
+      const button = show('button', 'secondary', item[1], actions);
+      button.addEventListener('click', () => dispatch(item[0], pr.number));
+    }
+    if (pr.mergedAt) {
+      showTextPanel(parent, '✓ Verified outcome', 'GitHub merged this PR at ' +
+        new Date(pr.mergedAt).toLocaleString() +
+        (pr.mergeCommit ? '\nSquash/merge commit: ' + pr.mergeCommit : ''),
+        '');
+    } else if (pr.state === 'resolved') {
+      showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
+    }
+    if (pr.review && pr.state !== 'merged') showTextPanel(parent,
+      'Human review requested · GitHub comment', pr.review.text, '');
+    showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
+      'No AI merge report yet. The ChatGPT session can post one after verifying the work.');
+    showTextPanel(parent, 'Original PR description', pr.description,
+      'No PR description supplied.');
+    show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
+    if (!pr.files.length) show('p', 'empty', 'No file diff loaded yet.', parent);
+    for (const file of pr.files) {
+      const wrap = show('details', 'file', undefined, parent);
+      const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
+      show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
+      if (file.patch) show('pre', '', file.patch, wrap);
+      else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
+    }
+    show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
+    parent.scrollTop = scroll;
+  }
+  function render() {
+    byId('repository').textContent = model.repository || 'GitHub';
+    const merged = model.prs.filter(p => p.state === 'merged').length;
+    const resolved = model.prs.filter(p => p.state === 'resolved').length;
+    const problems = model.prs.filter(p => ['conflict','review','blocked'].includes(p.state)).length;
+    byId('progress').textContent = merged + '/' + model.prs.length +
+      ' merged · ' + resolved + ' resolved · ' + problems + ' need attention';
+    byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
+    byId('count').textContent = 'Live GitHub updates · roughly every ' +
+      (model.nextRefreshSeconds || 15) + ' seconds';
+    byId('notice').hidden = !model.error;
+    byId('notice').textContent = model.error || '';
+    const list = byId('prs');
+    const listScroll = list.scrollTop;
+    list.replaceChildren();
+    for (const pr of model.prs) {
+      const button = show('button', 'pr', undefined, list);
+      button.setAttribute('aria-current', String(pr.number === selected));
+      const row = show('div', 'row', undefined, button);
+      show('span', 'name', '#' + pr.number + ' ' + pr.title, row);
+      show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
+      show('div', 'muted', pr.head + ' → ' + pr.base, button);
+      button.addEventListener('click', () => { selected = pr.number; render(); });
+    }
+    list.scrollTop = listScroll;
+    const events = byId('events');
+    const eventScroll = events.scrollTop;
+    events.replaceChildren();
+    for (const event of model.events.slice(-100).reverse()) {
+      const node = show('div', 'event ' + event.state, undefined, events);
+      show('strong', '', '#' + event.number + ' ' + event.message, node);
+      show('div', 'event-time', new Date(event.at).toLocaleTimeString(), node);
+    }
+    events.scrollTop = eventScroll;
+    if (selected === null && model.prs.length) selected = model.prs[0].number;
+    renderDetail();
+  }
+  window.addEventListener('message', event => {
+    if (event.data?.type !== 'state') return;
+    model = event.data;
+    render();
+  });
+  byId('refresh').addEventListener('click', () => dispatch('refresh'));
+  dispatch('ready');
+})();
+</script>
+</body>
+</html>
