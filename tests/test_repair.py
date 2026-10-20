@@ -31,7 +31,7 @@ class RepairTests(unittest.TestCase):
                 'return "native"}}'
             )
             stack.enter_context(patch('sys.argv', ['install.py', '--repair', '--app', str(app)]))
-            stack.enter_context(patch.object(install, 'application_paths', return_value=('test', [js, css])))
+            stack.enter_context(patch.object(install, 'application_paths', side_effect=lambda _app: ('test', [js, css])))
             stack.enter_context(patch.object(install, 'load_settings', return_value=dict(toolkit_settings.DEFAULT_SETTINGS)))
             stack.enter_context(patch.object(install.github_pr, 'patch_files', return_value=[]))
             stack.enter_context(patch.object(install.browser_pr, 'patch_files', return_value=[]))
