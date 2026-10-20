@@ -50,6 +50,8 @@ async function run() {
     require(name) {
       if (name === 'vscode') return vscode;
       if (name === 'node:os') return { homedir: () => '/stable-home' };
+      if (name === 'node:path') return require('node:path');
+      if (name === './kefania_close_position') return require('../efs/kefania_close_position');
       if (name === './workspace_activity') {
         return { stopManagedWindowActivity: async () => { managedActivityStops++; } };
       }

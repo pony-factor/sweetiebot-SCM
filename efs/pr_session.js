@@ -33,11 +33,11 @@ async function launchPRSession(vscode, context, root, options) {
   return launchSession(vscode, context, root, options);
 }
 
-async function launchMergeSession(vscode, context, root, url) {
-  return launchSession(vscode, context, root, {}, url);
+async function launchMergeSession(vscode, context, root, url, selection) {
+  return launchSession(vscode, context, root, {}, url, selection);
 }
 
-async function launchSession(vscode, context, root, options, mergeUrl) {
+async function launchSession(vscode, context, root, options, mergeUrl, mergeSelection) {
   if (!mergeUrl && await sessionDirectory(vscode, context)) return false;
   // Workspace trust includes the saved workspace file itself. Global storage
   // is outside the trusted repository and leaves the new host in Restricted
@@ -64,13 +64,17 @@ async function launchSession(vscode, context, root, options, mergeUrl) {
       settings: {
         'scmToolkit.openPanelOnStartup': false,
         'scmToolkit.automaticBranchCleanup': false,
-        'scmToolkit.startCompactPRSession': true,
+        'scmToolkit.startCompactPRSession': !mergeUrl,
         'workbench.browser.dataStorage': 'workspace',
         'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
         'window.title': title,
       },
     }), { mode: 0o600 });
+    if (mergeUrl && mergeSelection) {
+      await fs.writeFile(path.join(directory, 'merge-selection.json'),
+        JSON.stringify(mergeSelection), { mode: 0o600 });
+    }
     await fs.writeFile(path.join(directory, 'request.json'), JSON.stringify({
       root: root.fsPath, options, ...(mergeUrl ? { mergeUrl } : {}),
     }), { mode: 0o600 });
@@ -82,13 +86,34 @@ async function launchSession(vscode, context, root, options, mergeUrl) {
   }
 }
 
+let mergeDashboardStarted = false;
+
+async function resumeMergeDashboard(vscode, directory) {
+  if (mergeDashboardStarted) return;
+  let selection;
+  try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+  const dashboard = require('./merge_dashboard');
+  // A dedicated merge workspace owns this layout; no edits to the source window.
+  dashboard.startMergeDashboard(vscode, selection, auth.accessToken);
+  await vscode.commands.executeCommand('vscode.setEditorLayout', {
+    orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }]
+  });
+  mergeDashboardStarted = true;
+}
+
 async function resumePRSession(vscode, context) {
   const directory = await sessionDirectory(vscode, context);
   if (!directory) return;
   const request = path.join(directory, 'request.json');
   let input;
   try { input = JSON.parse(await fs.readFile(request, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    await resumeMergeDashboard(vscode, directory);
+    return;
+  }
   // Consume once: reloading or restoring this workspace must not publish a
   // second request. Keep the saved workspace so VS Code can restore its chats.
   await fs.unlink(request);
@@ -103,6 +128,7 @@ async function resumePRSession(vscode, context) {
       throw new Error('Invalid bulk merge chat URL.');
     }
     await require('./pr_workflows').openWorkflow(vscode, input.mergeUrl);
+    await resumeMergeDashboard(vscode, directory);
     return;
   }
   try {

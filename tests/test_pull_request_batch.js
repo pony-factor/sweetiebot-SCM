@@ -336,26 +336,29 @@ async function run() {
     async json() {
       if (includeStack) return stackPulls.map(pr => ({
         number: pr.number, title: pr.title, html_url: pr.url, draft: false,
-        head: { ref: pr.head, repo: { full_name: pr.headRepo } },
+        head: { ref: pr.head, sha: 'a'.repeat(40), repo: { full_name: pr.headRepo } },
         base: { ref: pr.base }, stack: pr.stack
       }));
       return [
         {
           number: 41, title: 'Selected PR', html_url: 'https://github.com/owner/repo/pull/41',
-          draft: false, base: { ref: includeNonMain ? 'kefania' : 'main' }, head: { ref: 'selected' }
+          draft: false, base: { ref: includeNonMain ? 'kefania' : 'main' }, head: { ref: 'selected', sha: 'a'.repeat(40) }
         },
         {
           number: 40, title: 'Unselected PR', html_url: 'https://github.com/owner/repo/pull/40',
-          draft: false, base: { ref: 'main' }, head: { ref: 'unselected' }
+          draft: false, base: { ref: 'main' }, head: { ref: 'unselected', sha: 'b'.repeat(40) }
         }
       ];
     }
   });
   // Browser preload owns submission; there is no OS keystroke timer.
   registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, {
-    async launchMergeSession(host, context, root, url) {
+    async launchMergeSession(host, context, root, url, selection) {
       assert.equal(host, vscode);
       assert.equal(root, localRepository.rootUri);
+      assert.equal(selection.repository, 'owner/repo');
+      assert(selection.pullRequests.length >= 1);
+      assert(selection.pullRequests.every(pr => pr.headSha.length === 40));
       browserCalls.push({ id: 'vscode.openFolder', options: { url } });
     }
   });
