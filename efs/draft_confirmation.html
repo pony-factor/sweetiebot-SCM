@@ -28,6 +28,23 @@
 .lightbox-close:hover{filter:none;background:#50385d}
 .lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:2px}
 @media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
+
+/* Theme mode uses the same resolved colors as the surrounding workbench. */
+:root[data-theme-colors]{color-scheme:light dark;--bg:var(--kefania-bg);--panel:var(--kefania-panel,var(--bg));--line:var(--kefania-line,var(--muted));--text:var(--kefania-text);--muted:var(--kefania-muted,var(--text));--accent:var(--kefania-accent,var(--text))}
+[data-theme-colors] body{background:var(--bg)}
+[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox{background:var(--panel);border-color:var(--line)}
+[data-theme-colors] .content pre{background:var(--kefania-code,var(--bg))}
+[data-theme-colors] a{color:var(--accent);text-decoration-color:currentColor}
+[data-theme-colors] button{background:var(--kefania-button,var(--accent));color:var(--kefania-buttonText,var(--bg));border-color:var(--line)}
+[data-theme-colors] button:hover{filter:none;background:var(--kefania-buttonHover,var(--kefania-button,var(--accent)))}
+[data-theme-colors] .close-confirmation,[data-theme-colors] .lightbox-close,[data-theme-colors] .lightbox-nav{background:var(--kefania-control,var(--panel));color:var(--kefania-controlText,var(--text));border-color:var(--line)}
+[data-theme-colors] .close-confirmation:hover,[data-theme-colors] .lightbox-close:hover,[data-theme-colors] .lightbox-nav:hover{background:var(--kefania-controlHover,var(--bg))}
+[data-theme-colors] button:disabled{background:var(--panel);color:var(--muted);opacity:.6}
+[data-theme-colors] .image-trigger{background:transparent;color:inherit;border:0}
+[data-theme-colors] .image-trigger:hover{background:var(--kefania-controlHover,var(--panel))}
+[data-theme-colors] button:focus-visible,[data-theme-colors] a:focus-visible{outline-color:var(--kefania-focus,var(--accent))}
+[data-theme-colors] .merge-controls .publication{color:var(--kefania-error,var(--text))}
+[data-theme-colors] .status:before,[data-theme-colors] .status.ready:before{background:var(--accent);box-shadow:none}
 </style>
 <main><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window" hidden>×</button><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft and supporting character research.</p></div></header>
 <div class="layout">
@@ -211,7 +228,19 @@ lightbox.addEventListener('close',()=>{
   focusBeforeLightbox=undefined;
   previous?.focus();
 });
+function applyAppearance(colors){
+  const root=document.documentElement;
+  const keys=['bg','panel','line','text','muted','accent','button','buttonText','buttonHover','control','controlText','controlHover','focus','error','code'];
+  const valid=colors&&typeof colors==='object'&&CSS.supports('color',colors.bg)&&CSS.supports('color',colors.text);
+  root.toggleAttribute('data-theme-colors',Boolean(valid));
+  for(const key of keys){
+    const value=valid&&colors[key];
+    if(typeof value==='string'&&CSS.supports('color',value))root.style.setProperty('--kefania-'+key,value);
+    else root.style.removeProperty('--kefania-'+key);
+  }
+}
 async function refresh(){try{const response=await fetch(root+'/state');const state=await response.json();if(!response.ok)throw new Error(state.error);
+applyAppearance(state.appearance);
 if(state.draft){el('title').textContent=state.draft.title;if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
 el('publish').disabled=!state.draft||state.attempted||state.publishing;
 el('publish').hidden=state.autoPublish||!!state.result;

@@ -9,6 +9,13 @@ const ctx = vm.createContext({
   scmToolkitWatchSpellcheckPopups(doc, commands) { watched.push({doc, commands}); }
 });
 vm.runInContext(source.slice(source.indexOf('function scmToolkitMountCompactWindow(')), ctx);
+const renderedTheme = {'--vscode-editor-background':'#101010','--vscode-foreground':'#eeeeee','--vscode-button-background':'#00aa55'};
+const palette=ctx.scmToolkitKefaniaThemeColors({
+  querySelector(){return {};},
+  defaultView:{getComputedStyle(){return {getPropertyValue:key=>renderedTheme[key]||''};},CSS:{supports:()=>true}}
+});
+assert.equal(palette.button,'#00aa55','Use the rendered theme accent, including user overrides');
+assert.equal(palette.bg,'#101010');
 function documentFixture() {
   const elements = new Map();
   const doc = {
@@ -134,16 +141,12 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await moving.checkDisplay();
   assert.equal(moves.length, 2, 'A display transition resizes only once');
   assert.equal(moving.action().attrs['aria-pressed'], 'true');
-  // Native zoom can arrive after the display transition has already settled.
+  // A title-bar double-click/native fill must stay expanded on this display.
   moving.defaultView.outerWidth = 1920;
   moving.defaultView.outerHeight = 1055;
   await moving.checkDisplay();
-  assert.equal(moves.length, 3, 'Late native fill is corrected on the same display');
-  assert.deepEqual(nativeOrder.slice(-2), ['unmaximize', 'position']);
-  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 640, height: 640 });
-  moving.action().events.click(event);
-  await flush();
-  assert.deepEqual(moves.at(-1), { x: 240, y: 157, width: 1440, height: 791 });
+  assert.equal(moves.length, 2, 'Native fill is not undone by compact sizing');
+  assert.equal(moving.action().attrs['aria-pressed'], 'false');
   assert.equal(moving.checkDisplay, null, 'Expansion stops compact display enforcement');
   moving.action().events.click(event);
   await flush();
