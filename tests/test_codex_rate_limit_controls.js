@@ -60,7 +60,10 @@ const imageEvents = {};
 let imagesCreated = 0;
 const imageRoot = {
     querySelectorAll(selector) {
-        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('textarea,')) {
+            assert.match(selector, /\[contenteditable\]/); // Codex ProseMirror can be contenteditable=plaintext-only.
+            return [editor];
+        }
         if (selector.startsWith('span,')) return [inChatLabel, footerLabel];
         return [];
     },
@@ -82,7 +85,7 @@ assert.equal(footer.child, undefined);
 context.scmToolkitSyncRateLimitPony(imageRoot);
 assert.equal(imagesCreated, 1); // Do not queue two network requests.
 imageEvents.load();
-assert.equal(footer.child.src, 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png');
+assert.equal(footer.child.src, '__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__');
 assert.match(footer.child.alt, /Twilight Sparkle/);
 assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
 assert.equal(footer.style.border, '0');

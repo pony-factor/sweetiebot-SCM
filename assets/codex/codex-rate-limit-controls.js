@@ -76,7 +76,8 @@ function scmToolkitSyncResetShortcut(root) {
 
 // The empty status strip above the composer owns the Twilight sticker.
 // In-chat rate-limit notices are redundant, not alternative sticker placements.
-const scmToolkitTwilightStopSource = 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png';
+// The installer replaces this literal with the repository's verified PNG as a data URI.
+const scmToolkitTwilightStopSource = "__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__";
 function scmToolkitIsShortRateLimit(value) {
     // "Rated Limited" is the current footer wording; transcript notices say "Rate limited".
     return /^rate(?:d)? limited$/i.test(String(value || '').trim());
@@ -104,7 +105,7 @@ function scmToolkitPlainRateLimitNodes(root) {
 function scmToolkitFooterRateLimitNotice(root) {
     const notices = scmToolkitPlainRateLimitNodes(root);
     let editorRect = null;
-    for (const field of root.querySelectorAll('textarea, [role="textbox"], [contenteditable="true"]')) {
+    for (const field of root.querySelectorAll('textarea, [role="textbox"], [contenteditable], .ProseMirror')) {
         const rect = field.getBoundingClientRect?.();
         if (!rect || rect.width < 180 || rect.height < 10) continue;
         if (!editorRect || rect.top > editorRect.top) editorRect = rect;
@@ -190,7 +191,7 @@ function scmToolkitSyncRateLimitPony(root) {
         delete card.dataset.scmToolkitRateLimitPonyPending;
     });
     image.addEventListener('error', () => {
-        // Retain native text if the remote illustration is blocked or fails.
+        // Retain native text if the local data URI is blocked or fails.
         card.dataset.scmToolkitRateLimitPonyUnavailable = 'true';
         delete card.dataset.scmToolkitRateLimitPonyPending;
     });
