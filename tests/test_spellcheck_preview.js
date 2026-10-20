@@ -116,6 +116,21 @@ async function run() {
     false
   );
 
+  // Automatic draft checks produce a correction without interrupting the user.
+  nextSubject = '🐜 Fix commit title';
+  notices.length = 0;
+  assert.equal(
+    await preview(uri, original, { automatic: true }),
+    '🐜 Fix commit title\n\nBody stays exact.'
+  );
+  assert.equal(notices.length, 0);
+  nextSubject = expectedInput;
+  assert.equal(await preview(uri, original, { automatic: true }), original);
+  assert.equal(notices.length, 0);
+  nextSubject = '🐜 Fix commit title';
+  assert.equal(await preview(uri, codexWeb, { automatic: true }), codexWeb);
+  assert.equal(notices.length, 0);
+
   console.log('Commit spellcheck preview checks passed.');
 }
 
