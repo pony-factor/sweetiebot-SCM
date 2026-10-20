@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import branch_names
+import build_installer_app
 import install
 import toolkit_settings
 
@@ -903,6 +904,19 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(hidden, remove=True), original)
         self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
 
+    def test_installer_app_includes_bundled_twilight_artwork(self):
+        self.assertIn(Path("twi-stop.png"), build_installer_app.source_files())
+
+    def test_rate_limit_sticker_works_without_legacy_transcript_ids(self):
+        original = 'const modernStatus = "You’re out of Codex messages";'
+        patched = install.transform_codex(original)
+        self.assertIn(install.CODEX_LIMIT_START, patched)
+        self.assertIn("data:image/png;base64,", patched)
+        self.assertNotIn("__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__", patched)
+        self.assertIn("scmToolkitFooterRateLimitNotice", patched)
+        self.assertEqual(install.transform_codex(patched), patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
     def test_rate_limited_transcript_compaction_preserves_timed_messages(self):
         no_reset = (
             "(0,J.jsx)(Message,{id:`localConversation.usageLimit.upgrade.noReset`,"
@@ -980,7 +994,11 @@ class CodexCountdownTests(unittest.TestCase):
         original = self.fixture()
         patched = install.transform_codex(original, enabled=True)
 
-        self.assertEqual(install.transform_codex(patched, enabled=False), original)
+        without_countdown = install.transform_codex(patched, enabled=False)
+        self.assertNotIn(install.CODEX_START, without_countdown)
+        self.assertIn(install.CODEX_LIMIT_START, without_countdown)
+        self.assertEqual(without_countdown, install.transform_codex(original, enabled=False))
+        self.assertEqual(install.transform_codex(without_countdown, remove=True), original)
 
 
 class CodexPromotionTests(unittest.TestCase):
