@@ -8,6 +8,21 @@ import codex_composer
 
 
 class RetiredComposerPatchTests(unittest.TestCase):
+    def test_clipboard_native_service_discovery_and_reinstallation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / 'app-initial-fixture.js'
+            source = '/* composer.placeholder.localFollowUp.locally */'
+            bundle.write_text(source)
+            with self.assertRaisesRegex(ValueError, 'native clipboard'):
+                codex_composer.clipboard_module(bundle)
+            (bundle.parent / 'index.extension-current.js').write_text(
+                'import{a,b}from"./app-initial-fixture.js";b();export{a as appServices};')
+            module = codex_composer.clipboard_module(bundle)
+            patched = codex_composer.transform_layout(source, False, True, module)
+            self.assertIn('"./index.extension-current.js" /* scm-toolkit-native-clipboard */', patched)
+            self.assertEqual(codex_composer.transform_layout(patched, False, True, module), patched)
+            self.assertEqual(codex_composer.transform_layout(patched, False, False), source)
+
     def test_inline_location_is_reversible_and_preserves_native_source(self):
         source = '/* composer.placeholder.localFollowUp.locally */\nbase;'
         patched = codex_composer.transform_layout(source)
