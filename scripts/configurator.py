@@ -255,7 +255,7 @@ SETTINGS = (
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
     Setting("kefaniaUseThemeColors", "scm-toolkit.kefania-use-theme-colors", "Use VS Code theme colors", "Use the current theme for Kefania buttons, close icons, image controls, and page colors.", "Kefania"),
     Setting("kefaniaShowCloseButton", "scm-toolkit.kefania-show-close-button", "Show Kefania X button", "Show the close-window X after publishing a PR in Kefania.", "Kefania"),
-    Setting("kefaniaCloseButtonPosition", "scm-toolkit.kefania-close-button-position", "Kefania X position", "Left or right fixes the close X to the corresponding window corner; middle right-aligns it above the pony card in the main display column.", "Kefania", "select", ("left", "middle", "right")),
+    Setting("kefaniaCloseButtonPosition", "scm-toolkit.kefania-close-button-position", "Kefania X button", "Hide the close-window X or place it on the left, middle (above the pony card), or right after publishing a PR.", "Kefania", "select", ("hidden", "left", "middle", "right")),
     Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "Pull requests"),
     Setting("ludicrousMode", "scm-toolkit.ludicrous-mode", "Ludicrous mode", "Skip the confirmation box when you click Squash and merge in the Kefania dialog.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
@@ -361,6 +361,9 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
     parsed["branchNameImports"] = json.dumps(imports, separators=(",", ":"))
 
     for setting in SETTINGS:
+        if setting.name == "kefaniaShowCloseButton":
+            # The position dropdown supplies this legacy runtime preference.
+            continue
         if setting.kind in {"packs", "names", "imports"}:
             continue
         if setting.kind == "message_bar":
@@ -410,6 +413,10 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
         if setting.kind == "select":
             if value not in setting.choices:
                 raise ValueError(f"Choose a valid {setting.label.lower()}.")
+            if setting.name == "kefaniaCloseButtonPosition":
+                parsed["kefaniaShowCloseButton"] = value != "hidden"
+                parsed[setting.name] = "left" if value == "hidden" else value
+                continue
             parsed[setting.name] = value
             continue
         if setting.kind == "coauthor_name":
@@ -572,6 +579,8 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
+    if setting.name == "kefaniaShowCloseButton":
+        return ""
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
         disabled = "" if current is True else " disabled"
         return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
@@ -742,6 +751,9 @@ def render_form(
     server_instance: str = "",
     commit_hotkey: str | None = None,
 ) -> str:
+    current = dict(current)
+    if current.get("kefaniaShowCloseButton") is False:
+        current["kefaniaCloseButtonPosition"] = "hidden"
     sections = []
     tabs = []
     section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))

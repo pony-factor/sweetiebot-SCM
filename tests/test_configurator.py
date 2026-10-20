@@ -244,7 +244,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
         for name in controls:
-            if name != "branchNameDisabledPacks":
+            if name not in {"branchNameDisabledPacks", "kefaniaShowCloseButton"}:
                 self.assertIn(f'name="{name}"', page)
 
     def test_automatic_workspace_cleanup_round_trips_into_vscode(self):
@@ -314,6 +314,7 @@ class SubmissionTests(unittest.TestCase):
             values["kefaniaCloseButtonPosition"] = [position]
             parsed = configurator.parse_submission(values)
             self.assertEqual(parsed["kefaniaCloseButtonPosition"], position)
+            self.assertTrue(parsed["kefaniaShowCloseButton"])
             payload = configurator.extension_settings_payload(parsed)
             self.assertEqual(payload["vscodeSettings"]["kefaniaCloseButtonPosition"], position)
             current = dict(install.DEFAULT_SETTINGS)
@@ -322,6 +323,21 @@ class SubmissionTests(unittest.TestCase):
             self.assertIn('<select name="kefaniaCloseButtonPosition">', page)
             self.assertIn(f'<option value="{position}" selected>{position.capitalize()}</option>', page)
             self.assertNotIn('name="kefaniaCloseButtonLeft"', page)
+            self.assertNotIn('name="kefaniaShowCloseButton"', page)
+        values["kefaniaCloseButtonPosition"] = ["hidden"]
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["kefaniaShowCloseButton"])
+        self.assertEqual(parsed["kefaniaCloseButtonPosition"], "left")
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertFalse(payload["vscodeSettings"]["kefaniaShowCloseButton"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('<option value="hidden" selected>Hidden</option>', page)
+        self.assertNotIn('name="kefaniaShowCloseButton"', page)
+        with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
+            configurator.save_settings(parsed)
+        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.kefania-show-close-button", "false"] for call in run.call_args_list))
         for invalid in ("", "center", "top", "left\\nright"):
             values["kefaniaCloseButtonPosition"] = [invalid]
             with self.assertRaises(ValueError):
