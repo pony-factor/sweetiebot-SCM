@@ -35,7 +35,7 @@ Current features:
 - keep a rotating local diagnostics log of failed commit-title attempts, rejected model outputs, and fallbacks
 - preview spelling corrections for manually entered commit subjects before applying them
 - optionally show a clipboard button at the right end of the Codex composer, sending pasted text when idle or using native queued follow-ups while Codex is busy (Codex follow-up mode should be set to `queue`)
-- replace a compact icon-bearing **Rate Limited** Codex notice with a tiny Twilight Sparkle STOP-sign image (the native message remains if the remote artwork cannot load); leave full usage-limit cards and reset actions unchanged
+- replace an empty composer-adjacent **Rated Limited** or **Rate Limited** status card with a Twilight Sparkle STOP-sign image, hide redundant short transcript notices, and preserve status controls, reset details, and the native failure fallback
 - optionally show a live, minute-precision countdown in Codex usage-limit banners
 - independently hide reset times in Codex menus, dialogs, tooltips, and usage-limit messages
 - optionally hide Codex promotional cards such as the Fast mode upsell
