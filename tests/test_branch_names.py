@@ -347,6 +347,49 @@ class BranchNamePackTests(unittest.TestCase):
         )
         self.assertNotIn("g4-caricatures", settings["branchNameDisabledPacks"])
 
+    def test_hearths_warming_tail_story_characters_use_caricatures_pack(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        story_characters = (
+            "snowfall-frost",
+            "snowdash",
+            "flutterholly",
+            "merry",
+            "professor-flintheart",
+            "chimney-dust",
+            "little-match",
+        )
+        for slug in story_characters:
+            self.assertEqual(
+                [pack["id"] for pack in catalog["packs"] if slug in pack["names"]],
+                ["g4-caricatures"],
+                f"{slug} must be exclusive to the G4 caricatures pack",
+            )
+
+        # Recurring Sherlock-inspired and background ponies stay in their original packs.
+        preserved = {
+            "natural-deduction": "g4-stallions",
+            "modus-ponens": "g4-stallions",
+            "rotten-apple": "g4-stallions",
+            "dinky-doo": "g4-fillies",
+            "cotton-cloudy": "g4-fillies",
+            "liza-doolots": "g4-fillies",
+            "featherweight": "g4-colts",
+            "octavia-melody": "g4-mares",
+        }
+        for slug, expected_pack in preserved.items():
+            self.assertEqual(
+                [pack["id"] for pack in catalog["packs"] if slug in pack["names"]],
+                [expected_pack],
+            )
+
+        for spirit in (
+            "spirit-of-hearths-warming-past",
+            "spirit-of-hearths-warming-presents",
+            "spirit-of-hearths-warming-yet-to-come",
+        ):
+            self.assertNotIn(spirit, packs["g4-caricatures"]["names"])
+
     def test_historical_wonderbolts_are_in_g4_caricatures(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
