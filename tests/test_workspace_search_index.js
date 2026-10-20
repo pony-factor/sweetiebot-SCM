@@ -189,7 +189,7 @@ async function run() {
   );
   await restored.load();
   assert.equal(restored.files.get(oversizedUri).chunks.length, 40, 'Reload must restore all persisted chunks and embeddings');
-  assert.deepEqual(restored.files.get(oversizedUri).chunks[0].vector, oversizedChunks[0].vector);
+  assert.deepEqual(Array.from(restored.files.get(oversizedUri).chunks[0].vector), oversizedChunks[0].vector);
 
   console.log('Workspace model recovery, URL ranking, filename and folder search, and bounded embedding cache checks passed.');
 }

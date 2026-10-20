@@ -179,7 +179,7 @@ assert.match(html, /grid-template-columns:minmax\(0,2fr\) minmax\(0,3fr\)/, 'Pon
 assert.match(html, /\.close-confirmation\{[^}]*position:fixed;top:16px;left:16px;right:auto[^}]*width:36px;height:36px[^}]*color:#fff/, 'Close action defaults to a left-aligned white X');
 assert.match(html, /\.close-confirmation\.on-right\{left:auto;right:16px\}/, 'Window-right option remains fixed');
 assert.match(html, /\.pony-column\{display:flex;flex-direction:column;min-width:0\}/, 'Pony content owns the right-hand column');
-assert.match(html, /<div class="pony-column"><button id="close-confirmation"[^>]+><\/button><section id="pony-section"/, 'Middle X precedes the pony card in the same column');
+assert.match(html, /<div class="pony-column"><button id="close-confirmation"[^>]+>×<\/button><section id="pony-section"/, 'Middle X precedes the pony card in the same column');
 assert.match(html, /\.close-button-middle \.close-confirmation\{position:static;[^}]*align-self:flex-end;[^}]*margin:0 0 10px\}/, 'Middle X is right-aligned above pony content without overlapping');
 assert.match(html, /for\(const position of \['left','middle','right'\]\)document\.querySelector\('main'\)\.classList\.toggle/, 'All three placements update on the live state poll');
 assert.match(html, /\.close-button-left header\{padding-left:44px\}/, 'Only visible left X reserves header space');
