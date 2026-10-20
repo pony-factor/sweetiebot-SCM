@@ -994,7 +994,11 @@ class CodexCountdownTests(unittest.TestCase):
         original = self.fixture()
         patched = install.transform_codex(original, enabled=True)
 
-        self.assertEqual(install.transform_codex(patched, enabled=False), original)
+        without_countdown = install.transform_codex(patched, enabled=False)
+        self.assertNotIn(install.CODEX_START, without_countdown)
+        self.assertIn(install.CODEX_LIMIT_START, without_countdown)
+        self.assertEqual(without_countdown, install.transform_codex(original, enabled=False))
+        self.assertEqual(install.transform_codex(without_countdown, remove=True), original)
 
 
 class CodexPromotionTests(unittest.TestCase):
