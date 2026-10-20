@@ -82,10 +82,19 @@
     }
 
     function readText(editor) {
+        if (editor.__scmToolkitComposer) return editor.__scmToolkitComposer.getPersistedText();
         return 'value' in editor ? editor.value : (editor.innerText ?? editor.textContent ?? '');
     }
 
     function setText(editor, text) {
+        const composer = editor.__scmToolkitComposer;
+        if (composer) {
+            if (composer.view.isDestroyed) return false;
+            // Update ProseMirror through Codex's own plain-text import path.
+            // Browser editing commands can fail or leave React's draft stale.
+            composer.setPromptText(text, { format: 'plain' });
+            return Boolean(readText(editor).trim());
+        }
         if ('value' in editor) {
             const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor), 'value');
             if (descriptor?.set) descriptor.set.call(editor, text);
@@ -137,6 +146,9 @@
                 message(button, 'Could not insert clipboard text into Codex');
                 return;
             }
+            // The native editor may serialize Markdown differently from the
+            // input. Guard subsequent edits against the text it actually stored.
+            const insertedText = readText(editor);
 
             // Codex may render the text before React enables its native Send
             // control. Wait for that state instead of giving up after one tick.
@@ -149,7 +161,7 @@
                     message(button, 'Composer changed; clipboard text was not submitted');
                     return;
                 }
-                if (normalized(readText(editor)) !== normalized(clipboard)) {
+                if (normalized(readText(editor)) !== normalized(insertedText)) {
                     // React can briefly restore a stale controlled draft after
                     // an input event. Retry replacing it once, without ever
                     // restoring that draft after the clipboard is submitted.

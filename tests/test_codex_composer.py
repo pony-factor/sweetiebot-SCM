@@ -11,7 +11,7 @@ class RetiredComposerPatchTests(unittest.TestCase):
     def test_clipboard_native_service_discovery_and_reinstallation(self):
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory) / 'app-initial-fixture.js'
-            source = '/* composer.placeholder.localFollowUp.locally */'
+            source = '/* composer.placeholder.localFollowUp.locally */class E{constructor(e){this.dictation=new D(e,()=>this.isInputActive)}}'
             bundle.write_text(source)
             with self.assertRaisesRegex(ValueError, 'native clipboard'):
                 codex_composer.clipboard_module(bundle)
