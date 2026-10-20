@@ -56,13 +56,6 @@ function scmToolkitMessageBarLayout(raw) {
             normalized[zone].push(id);
         }
     }
-    // Old pinned layouts predate the post-commit toggle. Keep it accessible
-    // without resetting the user's other message-bar placements.
-    if (!seen.has('post-spellcheck')) {
-        const afterSpellcheck = normalized.after.indexOf('spellcheck');
-        if (afterSpellcheck >= 0) normalized.after.splice(afterSpellcheck + 1, 0, 'post-spellcheck');
-        else normalized.after.unshift('post-spellcheck');
-    }
     return normalized;
 }
 
