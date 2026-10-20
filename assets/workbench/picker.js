@@ -2686,12 +2686,20 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         // while compact, including moves between displays with different scales.
         displayWatcher = win.setInterval(async () => {
             if (!state.restore || state.busy) return;
-            // macOS can apply its fill/zoom after the display-change resize.
-            // Catch that native expansion even when the display key is unchanged.
+            // A native fill on the same display is a user expansion. Leave it
+            // in place instead of undoing title-bar double-clicks every 250ms.
             const filled = win.outerWidth > 640 && win.outerHeight > 640
                 && win.outerWidth >= win.screen.availWidth - 32
                 && win.outerHeight >= win.screen.availHeight - 32;
-            if (displayKey() === compactDisplay && !filled) return;
+            if (displayKey() === compactDisplay) {
+                if (filled) {
+                    state.restore = null;
+                    stopDisplayWatcher();
+                    const action = doc.getElementById(actionId)?.querySelector('a');
+                    if (action) updateAction(action);
+                }
+                return;
+            }
             compactDisplay = displayKey();
             if (win.screen.availWidth < 640 || win.screen.availHeight < 640) return;
             state.busy = true;
