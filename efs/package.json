@@ -368,6 +368,12 @@
           "scope": "machine",
           "description": "Automatically install Sweetie Bot updates from main, restore customizations, and reload stale windows after updates settle. Background windows reload when focused."
         },
+        "scmToolkit.messageBarLayout": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "Message bar layout saved by Sweetiebot setup. Changes apply through automatic app repair and reload."
+        },
         "scmToolkit.messagePlaceholder": {
           "type": "string",
           "default": "Message",

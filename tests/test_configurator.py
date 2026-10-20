@@ -718,6 +718,7 @@ class SubmissionTests(unittest.TestCase):
         parsed["commitButtonLabel"] = "Commit"
         parsed["commitAndSendButtonLabel"] = "Commit + Push"
         parsed["sourceControlLabel"] = "Sweetiebot"
+        parsed["messageBarLayout"] = '{"before":["branch","home"],"after":["push"]}'
 
         payload = configurator.extension_settings_payload(parsed)
 
@@ -726,6 +727,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(payload["vscodeSettings"]["commitButtonLabel"], "Commit")
         self.assertEqual(payload["vscodeSettings"]["commitAndSendButtonLabel"], "Commit + Push")
         self.assertEqual(payload["vscodeSettings"]["sourceControlLabel"], "Sweetiebot")
+        self.assertEqual(payload["vscodeSettings"]["messageBarLayout"], parsed["messageBarLayout"])
         self.assertEqual(
             payload["workspaceSearch"]["embeddingModel"],
             install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],

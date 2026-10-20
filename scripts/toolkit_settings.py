@@ -358,6 +358,7 @@ VSCODE_SETTINGS = {
         "automaticAppRepair": "automaticAppRepair",
         "openPanelOnStartup": "openPanelOnStartup",
         "sourceControlLabel": "sourceControlLabel",
+        "messageBarLayout": "messageBarLayout",
         "messagePlaceholder": "messagePlaceholder",
         "commitButtonLabel": "commitButtonLabel",
         "commitAndSendButtonLabel": "commitAndSendButtonLabel",
