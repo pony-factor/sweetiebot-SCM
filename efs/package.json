@@ -372,6 +372,12 @@
           "default": "Message",
           "description": "Text shown in the Source Control commit-message box. Leave blank to use VS Code's default."
         },
+        "scmToolkit.sourceControlLabel": {
+          "type": "string",
+          "default": "Sweetiebot",
+          "scope": "application",
+          "description": "Source Control panel and Activity Bar label. Save in Sweetiebot settings to apply through automatic app repair and reload."
+        },
         "scmToolkit.commitButtonLabel": {
           "type": "string",
           "default": "Send",
@@ -381,6 +387,16 @@
           "type": "string",
           "default": "Send",
           "description": "Text shown on the primary commit action when git.postCommitCommand is push."
+        },
+        "scmToolkit.hideIncomingSyncCount": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the incoming commit count in Sync. When both counts and arrows are hidden, join custom direction labels with &."
+        },
+        "scmToolkit.hideOutgoingSyncCount": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide the outgoing commit count in Sync. When both counts and arrows are hidden, join custom direction labels with &."
         },
         "scmToolkit.hideIncomingSyncArrow": {
           "type": "boolean",

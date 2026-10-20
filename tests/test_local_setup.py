@@ -30,6 +30,37 @@ class InstructionFileTests(unittest.TestCase):
 
 
 class SigningKeyTests(unittest.TestCase):
+    def test_gpg_prefers_path(self):
+        with patch.object(local_setup.shutil, "which", return_value="/custom/bin/gpg"):
+            self.assertEqual(local_setup._gpg_executable(), "/custom/bin/gpg")
+
+    def test_gpg_finds_executable_macos_installations_without_shell_path(self):
+        candidates = ("/opt/homebrew/bin/gpg", "/usr/local/bin/gpg", "/usr/local/MacGPG2/bin/gpg")
+        for candidate in candidates:
+            with self.subTest(candidate=candidate), \
+                 patch.object(local_setup.sys, "platform", "darwin"), \
+                 patch.object(local_setup.shutil, "which", return_value=None), \
+                 patch.object(local_setup.Path, "is_file", return_value=True), \
+                 patch.object(local_setup.os, "access", side_effect=lambda path, mode: path == candidate):
+                self.assertEqual(local_setup._gpg_executable(), candidate)
+
+    def test_gpg_missing_does_not_report_available(self):
+        with patch.object(local_setup.shutil, "which", return_value=None), \
+             patch.object(local_setup.Path, "is_file", return_value=False), \
+             patch.object(local_setup, "configured_signing_key", return_value="ABCDEF0123456789"):
+            status = local_setup.signing_status()
+        self.assertFalse(status["gpgAvailable"])
+        self.assertEqual(status["keys"], [])
+        self.assertEqual(status["configured"], "ABCDEF0123456789")
+
+    def test_key_listing_uses_resolved_executable_and_only_metadata_output(self):
+        fingerprint = "0123456789ABCDEF0123456789ABCDEF01234567"
+        output = "sec:::::::::\nfpr:::::::::" + fingerprint + ":\nuid:::::::::Example User:\n"
+        with patch.object(local_setup, "_gpg_executable", return_value="/opt/homebrew/bin/gpg"), \
+             patch.object(local_setup.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=output, stderr="")) as run:
+            self.assertEqual(local_setup.list_signing_keys(), [{"fingerprint": fingerprint, "uid": "Example User"}])
+        self.assertEqual(run.call_args.args[0], ["/opt/homebrew/bin/gpg", "--batch", "--with-colons", "--fingerprint", "--list-secret-keys"])
+
     @patch.object(local_setup.shutil, "which", return_value="/usr/bin/git")
     @patch.object(local_setup.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="Test User", stderr=""))
     def test_git_identity_lookup_uses_stable_directory(self, run, _which):

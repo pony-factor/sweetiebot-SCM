@@ -86,7 +86,7 @@ assert.equal(incomingGroup.children[0].textContent, 'From origin\u00a0');
 assert.equal(outgoingGroup.children[0].textContent, 'To origin\u00a0');
 assert.equal(incomingCount.textContent, '2', 'Incoming Git count remains intact');
 assert.equal(outgoingCount.hidden, true, 'Existing hide-outgoing-count behavior remains intact');
-assert.equal(outgoingCount.textContent, '');
+assert.equal(outgoingCount.textContent, '3', 'Hidden counts retain their native text for live restoration');
 assert.equal(outgoingArrow.previousElementSibling, outgoingCount, 'Native arrows remain adjacent to counts');
 values.hideOutgoingSyncArrow = true;
 configurationListener({affectsConfiguration: key => key === 'scmToolkit.hideOutgoingSyncArrow'});

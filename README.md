@@ -261,7 +261,7 @@ git config --global scm-toolkit.pony-branch true
 git config --global scm-toolkit.message-placeholder "Message"
 git config --global scm-toolkit.commit-button-label "Send"
 git config --global scm-toolkit.commit-and-send-button-label "Send"
-git config --global scm-toolkit.source-control-label "Sweetie Bot"
+git config --global scm-toolkit.source-control-label "Sweetiebot"
 git config --global scm-toolkit.open-panel-on-startup true
 git config --global scm-toolkit.workspace-search-activity-bar false
 git config --global scm-toolkit.workspace-search-label EFS
@@ -314,7 +314,7 @@ The equivalent `~/.gitconfig` block is:
     message-placeholder = Message
     commit-button-label = Send
     commit-and-send-button-label = Send
-    source-control-label = Sweetie Bot
+    source-control-label = Sweetiebot
     open-panel-on-startup = true
     workspace-search-activity-bar = false
     workspace-search-label = EFS
@@ -756,7 +756,7 @@ Disabling the toolkit feature hides the checkbox. It does not silently rewrite a
 
 ### Sync direction arrow visibility
 
-In Sweetie Bot Settings → Source control, **Hide incoming sync arrow** and **Hide outgoing sync arrow** independently hide the down and up arrows at the right of the Sync action. Both are off by default. These toggles affect only icon visibility, leaving the Sync button, direction counts, customized labels, and underlying Git fetch/pull/push behavior intact. Changes take effect live and can be reversed without reloading. The existing **Hide outgoing count** setting remains separate.
+In Sweetiebot Settings → Source control, **Hide incoming sync arrow** and **Hide outgoing sync arrow** independently hide the down and up arrows at the right of the Sync action. Both are off by default. **Hide incoming count** and **Hide outgoing count** independently hide the corresponding numbers; incoming counts are shown by default, while outgoing counts are hidden by default. When both counts and both arrows are hidden, custom incoming and outgoing labels appear together after the Sync icon, such as **Flip & Gust**. All four switches update live without changing Git fetch/pull/push behavior.
 
 ### Inline code completion
 
@@ -767,7 +767,7 @@ through the sparkle means inline code completion is off.
 ### Source Control label
 
 The toolkit can replace VS Code's built-in **Source Control** view-container label
-with a custom app-bar name. It defaults to **Sweetie Bot**.
+with a custom app-bar name. It defaults to **Sweetiebot**.
 
 Set another label and reinstall:
 

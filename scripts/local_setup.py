@@ -82,8 +82,20 @@ def _decode_uid(value: str) -> str:
     return re.sub(r"\\x([0-9A-Fa-f]{2})", replace, value)
 
 
-def list_signing_keys() -> list[dict[str, str]]:
+def _gpg_executable() -> str | None:
     gpg = shutil.which("gpg")
+    if gpg:
+        return gpg
+    # GUI-launched VS Code often does not inherit the shell's Homebrew PATH.
+    if sys.platform == "darwin":
+        for candidate in ("/opt/homebrew/bin/gpg", "/usr/local/bin/gpg", "/usr/local/MacGPG2/bin/gpg"):
+            if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
+def list_signing_keys() -> list[dict[str, str]]:
+    gpg = _gpg_executable()
     if not gpg:
         return []
 
@@ -121,7 +133,7 @@ def configured_signing_key() -> str:
 def signing_status() -> dict[str, object]:
     keys = list_signing_keys()
     return {
-        "gpgAvailable": bool(shutil.which("gpg")),
+        "gpgAvailable": bool(_gpg_executable()),
         "configured": configured_signing_key(),
         "keys": keys,
         "instructionsPath": str(commit_instructions_path()),
@@ -158,7 +170,7 @@ def configure_signing_key(fingerprint: str) -> str:
 
 
 def generate_signing_key() -> str:
-    gpg = shutil.which("gpg")
+    gpg = _gpg_executable()
     if not gpg:
         raise RuntimeError("GnuPG was not found on PATH. Install GnuPG before creating a signing key.")
 

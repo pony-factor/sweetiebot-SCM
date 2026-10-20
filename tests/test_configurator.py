@@ -170,6 +170,20 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one line"):
             configurator.parse_submission(values)
 
+    def test_sync_direction_count_toggles_round_trip(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncCount"])
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncCount"])
+        values = form_values()
+        values["hideIncomingSyncCount"] = ["true"]
+        values.pop("hideOutgoingSyncCount")
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertTrue(payload["hideIncomingSyncCount"])
+        self.assertFalse(payload["hideOutgoingSyncCount"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="hideIncomingSyncCount" value="true" checked', page)
+        self.assertIn('name="hideOutgoingSyncCount" value="true"', page)
+
     def test_sync_direction_arrow_toggles_round_trip(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncArrow"])
@@ -505,7 +519,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(parsed["branchPicker"])
         self.assertTrue(parsed["commitAndPush"])
         self.assertEqual(parsed["aiCommitModel"], "qwen2.5-coder:7b")
-        self.assertEqual(parsed["sourceControlLabel"], "Sweetie Bot")
+        self.assertEqual(parsed["sourceControlLabel"], "Sweetiebot")
         self.assertEqual(parsed["messagePlaceholder"], "Message")
         self.assertTrue(parsed["openPanelOnStartup"])
         self.assertEqual(parsed["commitButtonLabel"], "Send")
@@ -658,6 +672,7 @@ class SubmissionTests(unittest.TestCase):
         parsed["messagePlaceholder"] = "Commit here"
         parsed["commitButtonLabel"] = "Commit"
         parsed["commitAndSendButtonLabel"] = "Commit + Push"
+        parsed["sourceControlLabel"] = "Sweetiebot"
 
         payload = configurator.extension_settings_payload(parsed)
 
@@ -665,6 +680,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(payload["vscodeSettings"]["messagePlaceholder"], "Commit here")
         self.assertEqual(payload["vscodeSettings"]["commitButtonLabel"], "Commit")
         self.assertEqual(payload["vscodeSettings"]["commitAndSendButtonLabel"], "Commit + Push")
+        self.assertEqual(payload["vscodeSettings"]["sourceControlLabel"], "Sweetiebot")
         self.assertEqual(
             payload["workspaceSearch"]["embeddingModel"],
             install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],
