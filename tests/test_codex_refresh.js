@@ -76,6 +76,9 @@ configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.me
 assert.equal(timers.size, 0, 'unrelated live settings do not request app repair');
 configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.sourceControlLabel'; } });
 assert.equal(timers.size, 1, 'saving the Source Control label requests app repair without restarting first');
+timers.clear();
+configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.messageBarLayout'; } });
+assert.equal(timers.size, 1, 'saving message bar order requests app repair without restarting first');
 tick();
 assert.equal(launches, 1, 'startup repairs the selected Codex installation');
 changed();
