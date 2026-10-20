@@ -42,50 +42,92 @@ source.textContent = '0 resets available';
 context.scmToolkitSyncResetShortcut(root);
 assert.equal(added[0].removed, true);
 
-// The short provider toast can become a tiny sticker without changing real usage cards.
-const notice = {
-    textContent: 'Rate Limited', dataset: {}, style: {}, isConnected: true, attrs: {},
-    parentElement: null, matches: () => false,
-    querySelector: () => ({}), querySelectorAll: () => [],
+// A narrow transcript notice is not the empty composer-adjacent rate-limit card.
+const rect = (left, top, width, height) => ({left, top, width, height, bottom: top + height});
+const makeNode = (value, bounds, parent = null) => ({
+    textContent: value, parentElement: parent, dataset: {}, style: {}, attrs: {},
+    isConnected: true, getBoundingClientRect: () => bounds, querySelectorAll: () => [],
+    matches: () => false, getAttribute(name) { return this.attrs[name] ?? null; },
     setAttribute(name, value) { this.attrs[name] = value; },
-    replaceChildren(child) { this.child = child; this.textContent = child.alt; },
-};
-const label = {
-    textContent: 'Rate Limited', parentElement: notice, closest: () => null,
-    querySelector: () => null, querySelectorAll: () => [], matches: () => false,
-};
-let imageEvents = {};
+    replaceChildren(child) { this.child = child; this.textContent = ''; },
+});
+const editor = makeNode('', rect(35, 878, 530, 100));
+const inChat = makeNode('Rate limited', rect(39, 470, 96, 96));
+const inChatLabel = makeNode('Rate limited', rect(39, 470, 96, 24), inChat);
+const footer = makeNode('Rated Limited', rect(27, 814, 564, 54));
+const footerLabel = makeNode('Rated Limited', rect(78, 834, 115, 20), footer);
+const imageEvents = {};
+let imagesCreated = 0;
 const imageRoot = {
-    querySelectorAll() { return [label]; },
+    querySelectorAll(selector) {
+        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('span,')) return [inChatLabel, footerLabel];
+        return [];
+    },
     createElement(tag) {
         assert.equal(tag, 'img');
+        imagesCreated++;
         return {style: {}, addEventListener(event, callback) { imageEvents[event] = callback; }};
     },
 };
+assert.equal(context.scmToolkitIsShortRateLimit('Rated Limited'), true);
+assert.equal(context.scmToolkitIsShortRateLimit('Rate Limited'), true);
+assert.equal(context.scmToolkitIsShortRateLimit('Rate limited · 2h reset'), false);
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, footer);
 context.scmToolkitSyncRateLimitPony(imageRoot);
-assert.equal(notice.dataset.scmToolkitRateLimitPonyPending, 'true');
-assert.equal(notice.child, undefined);
+assert.equal(imagesCreated, 1);
+assert.equal(inChat.style.display, 'none');
+assert.equal(inChat.attrs['data-scm-toolkit-rate-limit-duplicate'], 'true');
+assert.equal(footer.child, undefined);
 context.scmToolkitSyncRateLimitPony(imageRoot);
-assert.equal(notice.child, undefined); // No duplicate image before load.
-assert.equal(typeof imageEvents.load, 'function');
+assert.equal(imagesCreated, 1); // Do not queue two network requests.
 imageEvents.load();
-assert.equal(notice.child.src, 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png');
-assert.match(notice.child.alt, /Twilight Sparkle/);
-assert.equal(notice.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
-assert.equal(notice.style.border, '0');
-assert.equal(context.scmToolkitSmallRateLimitNotice(imageRoot), null);
-const unsupported = {
-    ...notice, textContent: 'Your rate limit resets in 2h', dataset: {}, child: null,
-};
-label.parentElement = unsupported;
-label.textContent = 'Your rate limit resets in 2h';
-assert.equal(context.scmToolkitSmallRateLimitNotice(imageRoot), null);
-label.textContent = 'Rate Limited';
-unsupported.textContent = 'Rate Limited';
-imageEvents = {};
+assert.equal(footer.child.src, 'https://i.kym-cdn.com/photos/images/original/001/188/081/498.png');
+assert.match(footer.child.alt, /Twilight Sparkle/);
+assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
+assert.equal(footer.style.border, '0');
+assert.equal(footer.style.outline, 'none');
+assert.equal(footer.style.width, 'max-content');
+assert.equal(footer.style.display, 'inline-flex');
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
+
+// A full card with extra information or an actionable native control is untouched.
+const timed = makeNode('Rated Limited · resets in 2h', rect(27, 814, 564, 54));
+footerLabel.parentElement = timed;
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
+const actionable = makeNode('Rated Limited', rect(27, 814, 564, 54));
+actionable.querySelectorAll = () => [{}];
+footerLabel.parentElement = actionable;
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
+
+// Never guess which message to replace when the composer is absent.
+footerLabel.parentElement = footer;
+footer.textContent = 'Rated Limited';
+footer.dataset = {};
+footer.attrs = {};
+footer.style = {};
+footer.child = undefined;
+imageRoot.querySelectorAll = selector => selector.startsWith('span,')
+    ? [inChatLabel, footerLabel] : [];
+inChat.style = {};
+context.scmToolkitSyncRateLimitPony(imageRoot);
+assert.equal(footer.child, undefined);
+assert.equal(inChat.style.display, undefined);
+
+// Image failure leaves native text available.
+imageRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [inChatLabel, footerLabel] : [];
 context.scmToolkitSyncRateLimitPony(imageRoot);
 imageEvents.error();
-assert.equal(unsupported.child, null); // Failed remote image retains original text.
-assert.equal(unsupported.textContent, 'Rate Limited');
+assert.equal(footer.textContent, 'Rated Limited');
+assert.equal(footer.child, undefined);
+assert.equal(footer.dataset.scmToolkitRateLimitPonyUnavailable, 'true');
 
-console.log('Codex reset credit control and Twilight sticker checks passed.');
+// Loading after status changes cannot replace more informative content.
+footer.dataset = {};
+context.scmToolkitSyncRateLimitPony(imageRoot);
+footer.textContent = 'Rated Limited · reset available';
+imageEvents.load();
+assert.equal(footer.child, undefined);
+assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], undefined);
+console.log('Codex reset shortcut and composer-only rate-limit sticker checks passed.');
