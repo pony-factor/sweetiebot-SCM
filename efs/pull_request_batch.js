@@ -3,7 +3,6 @@
 const { githubRepository } = require('./pull_request');
 const { openCompactKefaniaChat } = require('./kefania_chat_window');
 const { chatgptMergeUrl, resolveChatgptActionProject } = require('./chatgpt_project');
-const { findBulkMergeScript, runBulkMergeWithLindsey } = require('./lindsey_bulk_merge');
 
 function repositoryName(repositoryUrl) {
   const normalized = githubRepository(repositoryUrl);
@@ -196,6 +195,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
     summary,
     list,
     'Use the GitHub connection or tools available in this chat. Inspect main, every selected base and PR, and every diff before changes. Re-check each selected PR and its head/base just before acting. A snapshot mismatch requires fresh confirmation. Never merge, close, edit, or implicitly include an unselected PR.',
+    'CONFLICT RESOLUTION: For each selected PR with merge conflicts, inspect the conflicting files, both sides, and the surrounding code. Resolve straightforward mechanical conflicts on the selected PR branch when the intended result is clear, preserving the intended behavior of both changes. This merge request authorizes the necessary conflict-resolution commit and push on that selected branch. Re-read the updated head SHA and verify the resolution and mergeability before merging; do not keep using the pre-resolution SHA. Do not discard either side merely to make the merge succeed. If the conflict requires human judgment, leave a focused GitHub PR comment identifying the conflicting files, explaining the competing intentions and available options, and asking the specific question a maintainer must answer. Check existing comments to avoid duplicate feedback. Leave that PR open and continue with unrelated safe selected PRs. If the available tools cannot inspect or safely apply a resolution or post the comment, report the exact limitation instead of claiming it was resolved or feedback was posted.',
     hasStack
       ? 'COMPLETE SELECTED STACKS: The list is ordered from closest to main upward. For GitHub-native linked stacks, first verify live GitHub stack membership, the base branch, all approvals/checks, and that the exact contiguous prefix through the highest selected PR contains ONLY selected PRs. Prefer the GitHub-native atomic stack squash operation: gh stack merge <highest-selected-PR-number> --yes --squash, or the equivalent asynchronous stack-merge REST API. Do NOT use gh pr merge or the legacy synchronous merge endpoint for a native stack. GitHub creates one squash commit per PR. If a merge queue overrides the squash method, report that limitation; do not promise squash commits. Poll/verify each actual merge result rather than assuming a queued request completed. Do not add unselected PRs just to complete a stack.'
       : 'Determine a safe merge order from dependencies, overlapping changes, and current branch states.',
@@ -228,10 +228,8 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
         vscode.window.showInformationMessage('No open, ready-for-review pull requests were found.');
         return;
       }
-      const root = selectedRepository.repository.rootUri?.fsPath;
-      const lindsey = root ? findBulkMergeScript(root, vscode.workspace?.workspaceFolders || []) : undefined;
       const selected = all ? pullRequests
-        : await pickPullRequests(vscode, pullRequests, lindsey ? 'Lindsey' : 'ChatGPT');
+        : await pickPullRequests(vscode, pullRequests);
       if (selected === undefined) return;
       if (!selected.length) {
         vscode.window.showInformationMessage('Select at least one pull request.');
@@ -266,11 +264,6 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
           action
         );
         if (choice !== action) return;
-      }
-      if (lindsey) {
-        await runBulkMergeWithLindsey(vscode, lindsey,
-          repositoryName(selectedRepository.repositoryUrl), selected, session.accessToken);
-        return;
       }
       if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
         throw new Error('Update VS Code to open ChatGPT in the Integrated Browser.');

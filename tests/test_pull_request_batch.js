@@ -211,6 +211,12 @@ async function run() {
   assert.match(prompt, /commit_title and commit_message/);
   assert.match(prompt, /AFTER EACH COMPLETED MERGE/);
   assert.match(prompt, /first line exactly matches/);
+  assert.match(prompt, /Resolve straightforward mechanical conflicts on the selected PR branch/);
+  assert.match(prompt, /Re-read the updated head SHA/);
+  assert.match(prompt, /leave a focused GitHub PR comment/);
+  assert.match(prompt, /asking the specific question a maintainer must answer/);
+  assert.match(prompt, /Check existing comments to avoid duplicate feedback/);
+  assert.match(prompt, /continue with unrelated safe selected PRs/);
 
   // Complete stacks reach main with separate squash commits; partial stacks
   // and ambiguous fork/branched/cyclic dependencies must not be assumed.
@@ -319,6 +325,11 @@ async function run() {
       }
     }
   };
+  // Even with a locally installed Lindsey checkout, both toolbar actions
+  // must open ChatGPT so conflicts can be resolved or escalated to humans.
+  vscode.workspace.workspaceFolders = [{ uri: {
+    fsPath: path.resolve(__dirname, '../../lindsey-sync')
+  } }];
   const fetchImpl = async () => ({
     ok: true,
     status: 200,
@@ -359,6 +370,7 @@ async function run() {
   assert.match(sentPrompt, /pull\/41/);
   assert.match(sentPrompt, /squash title: "Selected PR \(#41\)"/);
   assert.match(sentPrompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(sentPrompt, /CONFLICT RESOLUTION/);
   assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
   assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
   assert(!sentPrompt.includes('pull/40'));

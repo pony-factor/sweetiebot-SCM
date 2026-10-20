@@ -1047,13 +1047,13 @@ This toggle is off by default. After a successful automatic staged commit, the l
 
 Proposals open in the **Spellchecks Performed** review popup as unstaged edits. Use **Undo** beside an individual highlighted correction to restore just that change (adjacent changed words count as one combined correction, while edits separated by unchanged words remain independent); click a file heading to collapse or expand its diff while reviewing other files. Collapsed sections stay collapsed as corrections are refreshed. You can also edit corrections and the proposed message before choosing **Accept** to commit only the reviewed files, **Revert** to discard their unstaged corrections, or **Close** to leave the edits in place. **Accept** also pushes the active branch when Source Control's **Commit and push** checkbox is checked; otherwise it commits locally. If that push fails, the commit stays local and an error is shown without reopening a stale preview. The original commit and unrelated staged work remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
 
-### Lindsey-backed bulk merges
+### Bulk merges through ChatGPT
 
-When a local `lindsey-sync` checkout includes `scripts/bulk-merge.js`, Sweetiebot's existing Merge All picker calls Lindsey directly rather than launching a ChatGPT merge chat. The **Merge All Pull Requests** button appears beside the bulk merge button in the GitHub Pull Requests toolbar and submits all ready-for-review PRs directly. The bulk merge picker retains its selective checkboxes; Lindsey executes exact-SHA squash operations and reports individually merged, queued, blocked and unverified results in the **Lindsey Bulk Merge** output channel.
+Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in the current VS Code window, including when a local Lindsey checkout is installed. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 
-Place the Lindsey repository beside the active repository, add it to the VS Code workspace, or set `LINDSEY_SYNC_REPO`. Install the GitHub `gh` CLI. The existing VS Code GitHub session is passed only to the local Lindsey child process, and selection snapshots are written as private temporary JSON that is removed afterward. When the Lindsey CLI is absent, Sweetiebot retains the existing ChatGPT flow.
+The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
 
-**Important:** Selecting PRs for Lindsey authorizes actual GitHub merges, not just creation of a ChatGPT prompt. Lindsey refuses linked/native stack merges until it can preserve independently attributed commits, and continues with unrelated safe PRs. It does not force-push or merge unselected PRs.
+The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow.
 
 
 ### Direct versus durable commit mode
