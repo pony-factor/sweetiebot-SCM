@@ -234,6 +234,7 @@ class BranchNamePackTests(unittest.TestCase):
                 "bobby-moonbeam",
                 "professor-majorchord",
                 "astro-novalite",
+                "apple-bottom",
             ],
         )
         self.assertNotIn("dazzle-feather", remaining)
