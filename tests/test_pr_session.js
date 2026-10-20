@@ -128,6 +128,7 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
     };
     const dashboardCalls = [];
     const instrumented = { ...target,
+      window: {},
       workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
       authentication: { async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
