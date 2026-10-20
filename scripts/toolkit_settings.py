@@ -46,7 +46,7 @@ DEFAULT_SETTINGS = {
     "autoPublishPullRequests": True,
     "kefaniaUseThemeColors": True,
     "kefaniaShowCloseButton": True,
-    "kefaniaCloseButtonLeft": True,
+    "kefaniaCloseButtonPosition": "left",
     "ludicrousMode": False,
     "chatgptProjectUrl": "",
     "workspaceSearchAutoReindex": True,
@@ -177,6 +177,14 @@ def load_settings():
                 default,
                 preserve_empty=name == "branchNameDisabledPacks",
             )
+    # Honor an existing right-hand preference until the user saves a dropdown choice.
+    new_position = read_git_string(SETTING_KEYS["kefaniaCloseButtonPosition"], None)
+    if new_position is None:
+        settings["kefaniaCloseButtonPosition"] = (
+            "left" if read_git_bool("scm-toolkit.kefania-close-button-left", True) else "right"
+        )
+    elif new_position not in {"left", "middle", "right"}:
+        settings["kefaniaCloseButtonPosition"] = "left"
     if settings["postCommitAction"] not in {"none", "push"}:
         settings["postCommitAction"] = "none"
     # Represent legacy disabled buttons in the layout so the editor reflects
@@ -252,7 +260,7 @@ SETTING_KEYS = {
     "autoPublishPullRequests": "scm-toolkit.auto-publish-pull-requests",
     "kefaniaUseThemeColors": "scm-toolkit.kefania-use-theme-colors",
     "kefaniaShowCloseButton": "scm-toolkit.kefania-show-close-button",
-    "kefaniaCloseButtonLeft": "scm-toolkit.kefania-close-button-left",
+    "kefaniaCloseButtonPosition": "scm-toolkit.kefania-close-button-position",
     "ludicrousMode": "scm-toolkit.ludicrous-mode",
     "chatgptProjectUrl": "scm-toolkit.chatgpt-project-url",
     "workspaceSearchAutoReindex": "scm-toolkit.workspace-search-auto-reindex",
@@ -369,7 +377,7 @@ VSCODE_SETTINGS = {
         "autoPublishPullRequests": "autoPublishPullRequests",
         "kefaniaUseThemeColors": "kefaniaUseThemeColors",
         "kefaniaShowCloseButton": "kefaniaShowCloseButton",
-        "kefaniaCloseButtonLeft": "kefaniaCloseButtonLeft",
+        "kefaniaCloseButtonPosition": "kefaniaCloseButtonPosition",
         "chatgptProjectUrl": "chatgptProjectUrl",
         "codexKeepAwake": "codexKeepAwake",
         "durableBackgroundCommits": "durableBackgroundCommits",
