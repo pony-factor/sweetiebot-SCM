@@ -485,6 +485,11 @@
     display: none !important;
 }
 
+/* Keep the incoming count separate from the outgoing caption when its icon is hidden. */
+.scm-view .button-container .monaco-button .codicon-arrow-down[hidden] + span:not([hidden]) {
+    margin-inline-start: .35em;
+}
+
 .scm-view .monaco-button-dropdown > .scm-toolkit-settings {
     position: relative;
     box-sizing: border-box;

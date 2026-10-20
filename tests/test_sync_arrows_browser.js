@@ -23,8 +23,8 @@ const css = fs.readFileSync(path.join(__dirname, '../assets/workbench/picker.css
       <div class="button-container"><a class="monaco-button">
       <span class="codicon codicon-sync"></span>
       ${['monaco-button-label', 'monaco-button-label-short'].map(label =>
-        `<span class="${label}"><span>2</span><span class="codicon codicon-arrow-down"></span>
-        <span>3</span><span class="codicon codicon-arrow-up"></span></span>`).join('')}
+        `<span class="${label}"><span>2</span><span class="codicon codicon-arrow-down"></span>` +
+        '<span>3</span><span class="codicon codicon-arrow-up"></span></span>').join('')}
       </a></div></div>`);
     await page.addStyleTag({ content: nativeCSS + '\n' + css });
     await page.addScriptTag({ content: helper });
@@ -51,6 +51,9 @@ const css = fs.readFileSync(path.join(__dirname, '../assets/workbench/picker.css
     assert.deepEqual(await displays('up'), ['inline-block', 'inline-block']);
     await set('hideIncomingSyncArrow', true);
     assert.deepEqual(await displays('down'), ['none', 'none']);
+    const gaps = await page.locator('.codicon-arrow-down').evaluateAll(arrows => arrows.map(arrow =>
+      arrow.nextElementSibling.getBoundingClientRect().left - arrow.previousElementSibling.getBoundingClientRect().right));
+    assert.ok(gaps.every(gap => gap >= 3), 'Hiding the incoming arrow preserves a visible gap before the outgoing caption');
     assert.deepEqual(await displays('up'), ['inline-block', 'inline-block']);
     await set('hideOutgoingSyncArrow', true);
     assert.deepEqual(await displays('up'), ['none', 'none']);
