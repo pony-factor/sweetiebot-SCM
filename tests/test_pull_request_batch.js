@@ -352,12 +352,18 @@ async function run() {
     }
   });
   // Browser preload owns submission; there is no OS keystroke timer.
-  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl);
+  registerPullRequestBatchCommand(vscode, { subscriptions: [] }, fetchImpl, {
+    async launchMergeSession(host, context, root, url) {
+      assert.equal(host, vscode);
+      assert.equal(root, localRepository.rootUri);
+      browserCalls.push({ id: 'vscode.openFolder', options: { url } });
+    }
+  });
   await handler();
   assert.equal(errors.length, 0);
   assert.equal(infos.length, 0);
   assert.equal(browserCalls.length, 1);
-  assert.equal(browserCalls[0].id, 'workbench.action.browser.open');
+  assert.equal(browserCalls[0].id, 'vscode.openFolder');
   const chat = new URL(browserCalls[0].options.url);
   assert.equal(chat.origin, 'https://chatgpt.com');
   const mergePromptFromUrl = url => {
@@ -374,15 +380,15 @@ async function run() {
   assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
   assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
   assert(!sentPrompt.includes('pull/40'));
-  assert.equal(browserCalls[0].options.openToSide, false);
+  assert.equal(browserCalls[0].options.openToSide, undefined);
 
   pickerAction = 'cancel';
   await mergeAllHandler();
-  const allChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
+  const allChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.match(mergePromptFromUrl(allChat), /pull\/41/);
   assert.match(mergePromptFromUrl(allChat), /pull\/40/);
-  assert(browserCalls.every(call => call.id === 'workbench.action.browser.open'),
-    'Merge All keeps ChatGPT in the current window');
+  assert(browserCalls.every(call => call.id === 'vscode.openFolder'),
+    'Merge All launches an independent workspace');
   includeNonMain = true;
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';
@@ -393,7 +399,7 @@ async function run() {
   assert.equal(modalWarnings[0].options.modal, true);
   approveNonMain = true;
   await handler();
-  const alternateChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
+  const alternateChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.match(mergePromptFromUrl(alternateChat), /base: "kefania"/);
   includeNonMain = false;
   approveNonMain = false;
@@ -404,7 +410,7 @@ async function run() {
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
   await handler();
-  const scopedChat = new URL(browserCalls.filter(call => call.id === 'workbench.action.browser.open').at(-1).options.url);
+  const scopedChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
   assert.match(mergePromptFromUrl(scopedChat), /pull\/41/);
   configuredProject = '';
@@ -416,7 +422,7 @@ async function run() {
   assert.equal(modalWarnings.length, modalCountBeforeStack,
     'Complete selected stacks must not trigger the non-main warning');
   const stackChat = new URL(browserCalls.filter(call =>
-    call.id === 'workbench.action.browser.open').at(-1).options.url);
+    call.id === 'vscode.openFolder').at(-1).options.url);
   assert.match(mergePromptFromUrl(stackChat), /gh stack merge/);
   assert(mergePromptFromUrl(stackChat).indexOf('#41:') <
     mergePromptFromUrl(stackChat).indexOf('#43:'));
@@ -424,7 +430,7 @@ async function run() {
   pickerAction = 'first';
   await handler();
   const bottomChat = new URL(browserCalls.filter(call =>
-    call.id === 'workbench.action.browser.open').at(-1).options.url);
+    call.id === 'vscode.openFolder').at(-1).options.url);
   assert.match(mergePromptFromUrl(bottomChat), /gh stack merge/);
   const existingBrowserCalls = browserCalls.length;
   pickerAction = 'top';

@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = require('../efs/pr_session');
+const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession } = require('../efs/pr_session');
 
 (async () => {
   const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pr-session-')));
@@ -83,6 +83,21 @@ const { launchPRSession, resumePRSession, sessionDirectory, closePRSession } = r
     const before = await fs.readdir(sessions);
     await assert.rejects(launchPRSession(failed, context, root, options), /Open failed/);
     assert.deepEqual(await fs.readdir(sessions), before, 'Remove only the failed launch');
+    const mergeUrl = 'https://chatgpt.com/#sweetiebot_merge=1&q=Selected%20PRs';
+    await launchMergeSession(source, context, root, mergeUrl);
+    const mergeWorkspace = calls.at(-1)[1];
+    assert.deepEqual(calls.at(-1)[2], { forceNewWindow: true });
+    assert.equal(path.basename(mergeWorkspace.fsPath), 'Bulk Merge [repository].code-workspace');
+    const mergeCalls = [];
+    const mergeHost = { ...target, workspace: { workspaceFile: mergeWorkspace, workspaceFolders: [{ uri: root }] },
+      window: {}, commands: { async executeCommand(...args) { mergeCalls.push(args); } } };
+    await resumePRSession(mergeHost, context);
+    assert.deepEqual(mergeCalls, [...layoutCommands.map(command => [command]),
+      ['workbench.action.browser.open', { url: mergeUrl, openToSide: false }]]);
+    await resumePRSession(mergeHost, context);
+    assert.equal(mergeCalls.length, 4, 'Reloading never resubmits a bulk merge');
+    await launchMergeSession(source, context, root, mergeUrl);
+    assert.notEqual(calls.at(-1)[1].fsPath, mergeWorkspace.fsPath, 'Each merge request owns an independent workspace');
     console.log('Independent PR workspace launch, restart, ownership, and cleanup checks passed.');
   } finally {
     os.homedir = originalHome;

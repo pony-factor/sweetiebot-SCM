@@ -1049,11 +1049,11 @@ Proposals open in the **Spellchecks Performed** review popup as unstaged edits. 
 
 ### Bulk merges through ChatGPT
 
-Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in the current VS Code window, including when a local Lindsey checkout is installed. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
+Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in a dedicated workspace window with its own extension host, matching Kefania’s PR submission workflow, including when a local Lindsey checkout is installed. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 
 The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
 
-The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow.
+Merge chats keep running while their windows are in the background. Each request owns a separate workspace, and reloading or restoring it does not resubmit the merge prompt. The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow.
 
 
 ### Direct versus durable commit mode

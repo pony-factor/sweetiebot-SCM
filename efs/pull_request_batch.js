@@ -1,7 +1,7 @@
 'use strict';
 
 const { githubRepository } = require('./pull_request');
-const { openCompactKefaniaChat } = require('./kefania_chat_window');
+const { launchMergeSession } = require('./pr_session');
 const { chatgptMergeUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 
 function repositoryName(repositoryUrl) {
@@ -214,7 +214,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
   ].filter(Boolean).join('\n\n');
 }
 
-function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch) {
+function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch, dependencies = {}) {
   const mergePullRequests = async (all) => {
     try {
       const repositories = await workspaceGitHubRepositories(vscode);
@@ -277,7 +277,8 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const url = chatgptMergeUrl(prompt, projectUrl);
       // The browser preload polls for a ready Send button instead of waiting
       // three seconds and sending Return through macOS accessibility APIs.
-      await openCompactKefaniaChat(vscode, url, { floating: false });
+      await (dependencies.launchMergeSession || launchMergeSession)(
+        vscode, context, selectedRepository.repository.rootUri, url);
     } catch (error) {
       vscode.window.showErrorMessage(`Unable to prepare pull-request bulk merge: ${error.message}`);
     }
