@@ -11,6 +11,15 @@
     const RUNNING_CONTROL = /\b(stop(?:\s+(?:response|generating|task))?|interrupt|cancel\s+run)\b/i;
     let scheduled = false;
     let busy = false;
+    const NATIVE_CLIPBOARD_MODULE = null /* scm-toolkit-native-clipboard */;
+
+    async function readClipboard(load = path => import(path), module = NATIVE_CLIPBOARD_MODULE) {
+        if (module) {
+            const { appServices } = await load(module);
+            return appServices.clipboard.readText();
+        }
+        return navigator.clipboard.readText();
+    }
 
     function label(button) {
         return [button.getAttribute('aria-label'), button.getAttribute('title'),
@@ -112,7 +121,7 @@
         busy = true;
         button.disabled = true;
         try {
-            const clipboard = await navigator.clipboard.readText();
+            const clipboard = await readClipboard();
             if (!clipboard.trim()) {
                 message(button, 'Clipboard is empty');
                 return;
@@ -160,7 +169,7 @@
             }
             message(button, 'Codex is not ready; clipboard text left in composer');
         } catch (error) {
-            message(button, 'Clipboard unavailable; allow access and try again');
+            message(button, 'Could not read clipboard; reload VS Code and try again');
         } finally {
             busy = false;
             button.disabled = false;
@@ -209,6 +218,7 @@
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseMountTarget = chooseMountTarget;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.findSurface = findSurface;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.sendClipboard = sendClipboard;
+        globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.readClipboard = readClipboard;
         return;
     }
 

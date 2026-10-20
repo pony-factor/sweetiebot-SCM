@@ -76,7 +76,17 @@ def transform(source: str) -> str:
     return source
 
 
-def transform_layout(source: str, inline: bool = True, paste_button: bool = False) -> str:
+def clipboard_module(bundle_path: Path) -> str:
+    """Resolve Codex's native app-service facade without depending on its build hash."""
+    matches = [path for path in bundle_path.parent.glob('index.extension-*.js')
+               if re.search(r'export\{[^}]*\bas appServices\b', path.read_text())]
+    if len(matches) != 1:
+        raise ValueError('Codex native clipboard service could not be identified uniquely.')
+    return './' + matches[0].name
+
+
+def transform_layout(source: str, inline: bool = True, paste_button: bool = False,
+                     native_clipboard_module: str | None = None) -> str:
     """Place the native computer/usage control beside access without changing React source."""
     source = transform(source)
     if source.count(LAYOUT_START) != source.count(LAYOUT_END) or source.count(LAYOUT_START) > 1:
@@ -95,7 +105,10 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
         if inline:
             source += LAYOUT_START + ';\n' + ASSET.read_text() + LAYOUT_END
         if paste_button:
-            source += PASTE_START + ';\n' + PASTE_ASSET.read_text() + PASTE_END
+            payload = PASTE_ASSET.read_text().replace(
+                'null /* scm-toolkit-native-clipboard */',
+                json.dumps(native_clipboard_module) + ' /* scm-toolkit-native-clipboard */')
+            source += PASTE_START + ';\n' + payload + PASTE_END
     return source
 
 
@@ -113,7 +126,8 @@ def patch_files(extension_path: Path | None = None, inline: bool | None = None, 
                 if START in original:
                     yield path, original, transform(original)
             elif START in original or LAYOUT_START in original or PASTE_START in original or 'composer.placeholder.localFollowUp.locally' in original:
-                yield path, original, transform_layout(original, inline, paste_button)
+                module = clipboard_module(path) if paste_button else None
+                yield path, original, transform_layout(original, inline, paste_button, module)
 
 
 def repair(extension_path: Path | None = None) -> list[Path]:
