@@ -15,6 +15,7 @@ const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workf
 const { launchPRSession, closePRSession } = require('./pr_session');
 const { pendingPRCommits } = require('./pr_commit_wait');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
+const { kefaniaClosePosition } = require('./kefania_close_position');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -441,7 +442,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         catch { return null; }
       },
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
-      kefaniaCloseButtonLeft: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseButtonLeft', true),
+      kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;

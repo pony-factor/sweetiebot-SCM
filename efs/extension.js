@@ -32,6 +32,7 @@ const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
 const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
+const { kefaniaClosePosition } = require('./kefania_close_position');
 
 const VIEW_ID = 'scmToolkit.workspaceSearch';
 const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
@@ -118,7 +119,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
       kefaniaShowCloseButton: scm.get('kefaniaShowCloseButton', true),
-      kefaniaCloseButtonLeft: scm.get('kefaniaCloseButtonLeft', true),
+      kefaniaCloseButtonPosition: kefaniaClosePosition(scm),
       chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },
     appUpdateSettings: {

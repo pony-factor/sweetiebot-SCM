@@ -948,6 +948,8 @@ Kefania can run on your computer; it does not need a dedicated website or domain
 
 VS Code's local connection and ChatGPT's connection are separate. The PR button does not require a ChatGPT MCP connection or tunnel: browser research and drafting return to the local bot publisher through the one-time link. Other ChatGPT MCP workflows can use the [official Secure MCP Tunnel setup](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels). Keep credentials in the supported local credential store or process environment, never in repository files.
 
+The Sweetiebot **Kefania** settings include **Show Kefania X button** and a **Kefania X position** dropdown. Choose **Left** or **Right** to fix the published-confirmation window's X to that upper corner, or **Middle** to right-align it immediately above the pony card within the main display column. The close action is still hidden until the PR is published. Existing right-side preferences are honored until a new position is explicitly saved. The setting also appears in VS Code as `scmToolkit.kefaniaCloseButtonPosition`.
+
 Sweetiebot's availability check verifies the VS Code server and GitHub login. It cannot verify the signed-in ChatGPT account's tunnel/plugin connection. The drafting prompt reports missing tools if that separate connection has not been completed.
 
 ### Pony branch

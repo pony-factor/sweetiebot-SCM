@@ -431,11 +431,17 @@
           "scope": "application",
           "description": "Show the X to close a published Kefania confirmation window."
         },
-        "scmToolkit.kefaniaCloseButtonLeft": {
-          "type": "boolean",
-          "default": true,
+        "scmToolkit.kefaniaCloseButtonPosition": {
+          "type": "string",
+          "enum": ["left", "middle", "right"],
+          "enumDescriptions": [
+            "Fix the X to the upper-left corner of the window.",
+            "Right-align the X above the pony card inside the main display column.",
+            "Fix the X to the upper-right corner of the window."
+          ],
+          "default": "left",
           "scope": "application",
-          "description": "Place the Kefania confirmation X in the upper-left corner instead of the right."
+          "description": "Position the Kefania confirmation X. Middle places it inside the pony column."
         },
         "scmToolkit.autoPublishPullRequests": {
           "type": "boolean",

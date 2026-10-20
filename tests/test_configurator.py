@@ -307,6 +307,35 @@ class SubmissionTests(unittest.TestCase):
         values.pop("ludicrousMode")
         self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
 
+    def test_kefania_x_position_round_trips_and_validates(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["kefaniaCloseButtonPosition"], "left")
+        for position in ("left", "middle", "right"):
+            values["kefaniaCloseButtonPosition"] = [position]
+            parsed = configurator.parse_submission(values)
+            self.assertEqual(parsed["kefaniaCloseButtonPosition"], position)
+            payload = configurator.extension_settings_payload(parsed)
+            self.assertEqual(payload["vscodeSettings"]["kefaniaCloseButtonPosition"], position)
+            current = dict(install.DEFAULT_SETTINGS)
+            configurator.apply_vscode_settings(current, payload)
+            page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+            self.assertIn('<select name="kefaniaCloseButtonPosition">', page)
+            self.assertIn(f'<option value="{position}" selected>{position.capitalize()}</option>', page)
+            self.assertNotIn('name="kefaniaCloseButtonLeft"', page)
+        for invalid in ("", "center", "top", "left\\nright"):
+            values["kefaniaCloseButtonPosition"] = [invalid]
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(values)
+
+    def test_legacy_kefania_close_position_is_preserved_until_saved(self):
+        def read_string(key, default, preserve_empty=False):
+            if key == "scm-toolkit.kefania-close-button-position":
+                return None
+            return default
+        with patch.object(toolkit_settings, "read_git_string", side_effect=read_string), patch.object(toolkit_settings, "read_git_bool", side_effect=lambda key, default: False if key == "scm-toolkit.kefania-close-button-left" else default):
+            settings = toolkit_settings.load_settings()
+        self.assertEqual(settings["kefaniaCloseButtonPosition"], "right")
+
     def test_pr_auto_publish_preference_round_trips_into_vscode(self):
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["autoPublishPullRequests"])
