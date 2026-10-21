@@ -49,7 +49,7 @@ async function main() {
     message, author), /message/);
 
   function harness({ protectedHead = false, dependent = false, rebase = true, changedBeforePush = false,
-      noFiles = false } = {}) {
+      noFiles = false, preparedPreviously = false } = {}) {
     const apiCalls = [], gitCalls = [];
     let pushed = false, merged = false;
     const pr = () => ({
@@ -57,7 +57,7 @@ async function main() {
       merged_at: merged ? '2026-10-21T00:00:00Z' : null,
       title: '🐛 Fix placement', number: 12,
       base: { ref: 'main', sha: baseSha, repo: { full_name: 'owner/repo' } },
-      head: { ref: 'bot-topic', sha: pushed || changedBeforePush ? newHead : oldHead,
+      head: { ref: 'bot-topic', sha: pushed || changedBeforePush || preparedPreviously ? newHead : oldHead,
         repo: { full_name: 'owner/repo' } },
       merge_commit_sha: merged ? newHead : null
     });
@@ -68,9 +68,11 @@ async function main() {
       if (endpoint.includes('/branches/')) return { protected: protectedHead };
       if (endpoint.includes('/pulls?state=')) return dependent ? [{ number: 13,
         base: { ref: 'bot-topic' }, head: { ref: 'downstream' } }] : [];
-      if (endpoint.includes('/commits?per_page=')) return commits;
+      if (endpoint.includes('/commits?per_page=')) return preparedPreviously
+        ? [{ author: { login: 'JFWooten4', type: 'User' }, commit: { author, message } }]
+        : commits;
       if (endpoint === 'repos/owner/repo/pulls/12/merge' && method === 'PUT') {
-        assert.equal(pushed, true, 'Never merge before guarded push');
+        assert.equal(pushed || preparedPreviously, true, 'Merge only after guarded push or an already prepared commit');
         assert.deepEqual(fields, ['-f', 'sha=' + newHead, '-f', 'merge_method=rebase']);
         merged = true;
         return { merged: true, sha: newHead };
@@ -121,6 +123,13 @@ async function main() {
   assert(!good.gitCalls.some(args => args.includes('refs/heads/main') && args.includes('push')),
     'Never push to main');
 
+  // A failed review/check can leave the prepared PR open. A retry must NOT
+  // force-push the same branch and restart checks again.
+  const retry = harness({ preparedPreviously: true });
+  const retried = await humanSquashMerge('owner/repo', 12, { api: retry.api, git: retry.git });
+  assert.equal(retried.merged, true);
+  assert.equal(retry.gitCalls.length, 0, 'Existing human-authored squash must merge without a new checkout or rewrite');
+  assert.equal(retry.pushed, false);
   for (const [options, pattern] of [
     [{ protectedHead: true }, /protected/],
     [{ dependent: true }, /depends on or shares/],
