@@ -895,7 +895,7 @@
         "high-roller",
         "hoity-toity",
         "holder-cobblestone",
-        "hoofar",
+        "hoo-far",
         "hoofdini",
         "hoops",
         "hors-doeuvre",
@@ -1208,7 +1208,11 @@
         "pegasus-dadnightjar": "nightjar",
         "sandbars-dadbeachcomber": "beachcomber",
         "security-guardlockdown": "lockdown",
-        "train-conductorsteamer": "steamer"
+        "train-conductorsteamer": "steamer",
+        "hoofar": "hoo-far"
+      },
+      "displayNames": {
+        "hoo-far": "Hoo'Far"
       }
     },
     {
