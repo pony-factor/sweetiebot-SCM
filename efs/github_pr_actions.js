@@ -16,7 +16,7 @@ const executeGh = args => run(gh, args, { timeout: 120000 });
 // Keep one-off squash merges scoped to the selected PR and let GitHub enforce
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
-  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000 } = {}) {
+  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000, humanMerge = humanSquashMerge } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -64,7 +64,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
   }
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
-    const landed = await humanSquashMerge(repo, Number(number));
+    const landed = await humanMerge(repo, Number(number));
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
         finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
