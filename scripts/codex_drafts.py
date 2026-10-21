@@ -42,7 +42,7 @@ def transform_host(source, enabled=True):
         ',scmToolkitProtectCodexDrafts(' + match['provider'] + ',' + match['vscode'] + '),', 1)
     return (source.replace(original, replacement, 1) + HOST_START +
             '/* edit:' + json.dumps([original, replacement]) + ' */\n' +
-            (ASSETS / 'codex-drafts-host.js').read_text() + HOST_END)
+            (ASSETS / 'drafts-host.js').read_text() + HOST_END)
 
 
 def transform_webview(source, enabled=True):
@@ -57,7 +57,7 @@ def transform_webview(source, enabled=True):
         return source
     if not re.search(r'acquireVsCodeApi\(\)', source):
         raise ValueError('Unsupported Codex webview draft bootstrap.')
-    return WEB_START + (ASSETS / 'codex-drafts-webview.js').read_text() + '\n' + WEB_END + source
+    return WEB_START + (ASSETS / 'drafts-webview.js').read_text() + '\n' + WEB_END + source
 
 
 def patch_files(extension_path, enabled=True):

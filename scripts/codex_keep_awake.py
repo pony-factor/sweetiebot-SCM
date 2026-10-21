@@ -11,7 +11,7 @@ ANCHOR = re.compile(
     r'[\w$]+=>\{[\w$]+\.method===\"turn/completed\"&&[\w$]+\.invalidateGitReadCachesForTurn\('
 )
 VSCODE = re.compile(r'(?P<vscode>[\w$]+)\.window\.registerUriHandler\(')
-ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/codex-keep-awake.js'
+ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/keep-awake.js'
 
 
 def transform(source, enabled=True, remove=False):

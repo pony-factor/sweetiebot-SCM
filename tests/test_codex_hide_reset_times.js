@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const context = vm.createContext({});
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/codex-hide-reset-times.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/hide-reset-times.js'), 'utf8'), context);
 const hide = context.scmToolkitStripUsageResetTime;
 for (const [input, expected] of [
     ['Resets in 1h 45m', ''],
@@ -43,7 +43,7 @@ const dom = vm.createContext({
     MutationObserver: class { observe() {} },
     queueMicrotask(callback) { callback(); },
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/codex-hide-reset-times.js'), 'utf8'), dom);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/hide-reset-times.js'), 'utf8'), dom);
 assert.equal(message.textContent, 'Your rate limit resets. ');
 assert.equal(upgrade.textContent, 'Upgrade');
 

@@ -29,7 +29,7 @@ const context = vm.createContext({
         addEventListener(type, fn) { listeners[`document:${type}`] = fn; },
     },
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/codex-usage.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/usage.js'), 'utf8'), context);
 const remaining = context.scmToolkitRemainingUsage;
 const bucket = (minutes, used) => ({ limit_window_seconds: minutes * 60, used_percent: used });
 const usage = (primary, secondary) => ({ rate_limit: { primary_window: primary, secondary_window: secondary } });

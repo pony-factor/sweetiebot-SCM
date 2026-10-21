@@ -10,7 +10,7 @@ let timeoutTicks = 0;
 let onTimeout = () => {};
 const navigator = { clipboard: { readText: async () => clipboardText } };
 vm.runInNewContext(fs.readFileSync(
-    path.join(__dirname, '../assets/codex/codex-clipboard-submit.js'), 'utf8'
+    path.join(__dirname, '../assets/codex/clipboard-submit.js'), 'utf8'
 ), {
     globalThis: { __SCM_TOOLKIT_CLIPBOARD_TEST__: hooks },
     document,

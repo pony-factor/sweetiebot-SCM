@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const context = vm.createContext({});
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/codex-rate-limit-controls.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/rate-limit-controls.js'), 'utf8'), context);
 for (const [label, eligible] of [
     ['1 reset available', true], ['2 resets available', true], ['Full reset', true],
     ['0 resets available', false], ['Add credits', false],

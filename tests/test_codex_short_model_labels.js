@@ -24,7 +24,7 @@ const context = vm.createContext({
         observe(root, options) { assert.equal(options.characterData, true); }
     },
 });
-const source = fs.readFileSync('assets/codex/codex-short-model-labels.js', 'utf8');
+const source = fs.readFileSync('assets/codex/short-model-labels.js', 'utf8');
 vm.runInContext(source, context);
 assert.deepEqual(nodes.map(node => node.nodeValue), ['6.1', 'Med', 'Low', 'Uber', 'High']);
 nodes = [{ nodeValue: 'GPT-6 Extra High' }];
