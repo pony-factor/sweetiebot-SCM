@@ -17,19 +17,20 @@ const { recoveryPlan } = require('./finalized_commit_recovery');
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
 const POST_COMMIT_GATE = 'sweetiebot-post-commit-push.json';
-const ASYNC_COMMIT_JOURNAL = 'sweetiebot-async-commit.json';
 
-async function asyncCommitPending(repository, { background = true } = {}) {
+async function asyncCommitPending(repository, { background = true, refs = ['HEAD'] } = {}) {
   const root = repository.rootUri?.fsPath;
   if (!root || !existsSync(path.join(root, '.git'))) return false;
   // A checkout may have a .git directory or a linked-worktree .git file.
   // If a real checkout's metadata cannot be inspected, fail closed.
   try {
-    const { stdout } = await promisify(execFile)('git', ['rev-parse', '--absolute-git-dir'], {
-      cwd: root, timeout: 10000
-    });
-    return existsSync(path.join(stdout.trim(), ASYNC_COMMIT_JOURNAL))
-      || (background && existsSync(path.join(stdout.trim(), 'sweetiebot-background-commit.json')));
+    const installedScript = path.join(__dirname, 'background_commit.py');
+    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
+    const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
+      script, background ? '--pending' : '--pending-legacy', ...refs
+    ], { cwd: root, timeout: 10000 });
+    const pending = JSON.parse(stdout);
+    return typeof pending === 'boolean' ? pending : true;
   } catch {
     return true;
   }
@@ -216,7 +217,7 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   if (!target.remote || !target.name) return false;
   if (fetch) {
     if (repository.state.mergeChanges?.length) return false;
-    await repository.fetch({ remote: target.remote, ref: target.name });
+    await retryFetch(() => repository.fetch({ remote: target.remote, ref: target.name }));
     await repository.status();
     if (commitInProgress(repository) || await asyncCommitPending(repository)) return false;
     const current = repository.state.HEAD;
@@ -544,7 +545,7 @@ async function createBranch(repository, { defaultBranch, remote, names }, secure
     });
     unfinishedBase = /^(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])$/.test(stdout.trim());
   }
-  if (unfinishedBase || await asyncCommitPending(repository)) {
+  if (unfinishedBase || await asyncCommitPending(repository, { refs: [`refs/heads/${defaultBranch}`] })) {
     const installedScript = path.join(__dirname, 'background_commit.py');
     const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
     const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
@@ -1038,17 +1039,19 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
+          const remote = options?.remote || 'origin';
+          const defaultBranch = needsDefaultBranch.has(command) ? await resolveDefaultBranch(repository, remote) : undefined;
+          const refs = [options?.branch || 'HEAD'];
+          if (command === 'sweetiebot.syncBranch') refs.push(`refs/remotes/${remote}/${defaultBranch}`);
           // Switching to an unpublished branch can trigger automatic publishing.
           // Let a later status refresh retry after the background queue drains.
-          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository)) return false;
+          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository, { refs })) return false;
           if (command !== 'sweetiebot.autoPullClean') {
             await requireFinalizedCommit(repository, {
-              background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command)
+              background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command), refs
             });
           }
           if (!needsDefaultBranch.has(command)) return action(repository, options);
-          const remote = options?.remote || 'origin';
-          const defaultBranch = await resolveDefaultBranch(repository, remote);
           if (command === 'sweetiebot.deleteBranch' && options?.branch
               && options.branch !== defaultBranch && repository.rootUri?.fsPath) {
             const tip = await remoteBranchTip(repository, options.branch, remote);
@@ -1121,7 +1124,7 @@ function registerBranchCommands(vscode, context) {
         'Delete Empty Branch'
       );
       if (choice !== 'Delete Empty Branch') return false;
-      await requireFinalizedCommit(repository);
+      await requireFinalizedCommit(repository, { refs: [branch] });
       return await queueRepositoryOperation(repository, () => deleteEmptyBranch(repository, {
         branch, defaultBranch, remote: options.remote || 'origin'
       }));

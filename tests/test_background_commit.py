@@ -599,10 +599,81 @@ worker.work(Path(sys.argv[2]))
 
     def test_manual_push_rejects_a_different_destination(self):
         directory = self.queue(message='')
-        for request in ({'remote': 'other'}, {'branch': 'other'}):
-            with self.assertRaisesRegex(RuntimeError, 'different push'):
-                worker.request_push(request, start=False)
+        with self.assertRaisesRegex(RuntimeError, 'different push'):
+            worker.request_push({'remote': 'other'}, start=False)
+        self.assertEqual(worker.request_push({'branch': 'other'}, start=False), {'queued': False})
         self.assertFalse(self.job(directory)['push'])
+
+    def test_unrelated_branch_can_sync_commit_and_push_while_main_generates(self):
+        self.git('commit', '-q', '-m', 'Base')
+        base = self.git('rev-parse', 'HEAD')
+        self.git('branch', 'other')
+        completed = self.git('commit-tree', self.git('rev-parse', 'HEAD^{tree}'), '-p', base, '-m', 'Completed update')
+        self.git('update-ref', 'refs/heads/completed', completed)
+        (self.repo / 'story.txt').write_text('Pending main work\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='')
+        pending = self.git('rev-parse', 'main')
+        self.git('switch', '-q', 'other')
+        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        def run(*args):
+            return subprocess.run([sys.executable, script, *args], capture_output=True, text=True, timeout=15)
+        for args in [('merge', '--ff-only', 'completed')]:
+            result = run(*args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), completed)
+        (self.repo / 'other.txt').write_text('Independent work\n')
+        self.git('add', 'other.txt')
+        result = run('commit', '-m', 'Record independent work')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = run('push', '-u', 'origin', 'other')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = run('pull', '--ff-only', 'origin', 'other')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'other'),
+                         self.git('rev-parse', 'other'))
+        for args in [('merge', 'main'), ('push', '--all', 'origin'),
+                     ('push', 'origin', 'other', 'main:pending-copy')]:
+            result = run(*args)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('still running', result.stderr)
+        self.assertEqual(self.git('rev-parse', 'main'), pending)
+        self.assertTrue(self.job(directory)['provisional'])
+
+    def test_linked_worktrees_are_independent_but_inherited_placeholders_are_guarded(self):
+        self.git('commit', '-q', '-m', 'Base')
+        linked = self.root / 'linked'
+        self.git('worktree', 'add', '-q', '-b', 'other', str(linked))
+        (self.repo / 'story.txt').write_text('Pending main work\n')
+        self.git('add', 'story.txt')
+        first = self.queue(message='')
+        pending = self.git('rev-parse', 'main')
+        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        (linked / 'other.txt').write_text('Independent staged work\n')
+        self.git('-C', str(linked), 'add', 'other.txt')
+        result = subprocess.run([sys.executable, script, '-C', str(linked), 'commit', '-m', 'Other worktree work'],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Both directions discover pending work in sibling worktree metadata.
+        previous = os.getcwd()
+        try:
+            os.chdir(linked)
+            (linked / 'other.txt').write_text('Queued independent work\n')
+            self.git('add', 'other.txt')
+            second = self.queue(message='')
+            worker.wait_for_background('/usr/bin/git', [], refs=['refs/heads/completed-missing'])
+            with self.assertRaisesRegex(RuntimeError, 'still running'):
+                worker.wait_for_background('/usr/bin/git', [], refs=['refs/heads/main'])
+        finally:
+            os.chdir(previous)
+        with self.assertRaisesRegex(RuntimeError, 'still running'):
+            worker.wait_for_background('/usr/bin/git', [], refs=['refs/heads/other'])
+        self.git('branch', 'inherited', pending)
+        self.git('switch', '-q', 'inherited')
+        with self.assertRaisesRegex(RuntimeError, 'still running'):
+            worker.wait_for_background('/usr/bin/git', [])
+        self.assertTrue(self.job(first)['provisional'])
+        self.assertTrue(self.job(second)['provisional'])
 
     def test_manual_coauthor_commit_queues_behind_generated_title(self):
         first = self.queue(message='', push=True)

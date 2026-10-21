@@ -16,7 +16,8 @@ import time
 from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
-from sweetiebot_async_commit import write_journal as _write_journal, read_journal, PLACEHOLDER, alive
+from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER, alive,
+                                    related_pending_jobs, operation_refs)
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
@@ -194,11 +195,13 @@ def enqueue(request, start=True):
     marker = meta / MARKER
     with (meta / (MARKER + '.lock')).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if (meta / 'sweetiebot-async-commit.json').exists():
+        branch, parent = state()
+        dependencies = related_pending_jobs(core.REAL_GIT, [])
+        if any(record['kind'] == 'legacy' or record['job'].get('branch') != branch
+               for record in dependencies):
             raise RuntimeError('Wait for the existing commit message to finish before queuing another commit.')
         recover_finalization(meta)
         entries = queue_entries(marker)
-        branch, parent = state()
         if any(read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch
                for entry in entries):
             captured_chain(marker, branch)
@@ -775,8 +778,6 @@ def request_push(request, start=True):
                   else 'refs/heads/' + requested_branch)
         if not any(read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch
                    for entry in queue_entries(marker)):
-            if requested_branch and branch != git('symbolic-ref', '--quiet', 'HEAD'):
-                raise RuntimeError('Pending commit messages belong to a different push branch.')
             return {'queued': False}
         entries, jobs = captured_chain(marker, branch)
         remote = request.get('remote')
@@ -794,13 +795,24 @@ def request_push(request, start=True):
     return {'queued': True}
 
 
-def queue_plain_push(args):
+def queue_plain_push(args, global_args=()):
     # Only defer the ordinary push supported by the durable queue. Preserve
     # specialized pushes (tags, deletes, force, alternate refspecs) as guarded.
     positional = [arg for arg in args if arg not in ('-u', '--set-upstream')]
     if any(arg.startswith('-') for arg in positional) or len(positional) > 2:
         return False
-    return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+    if not global_args:
+        return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+    result = subprocess.run([core.REAL_GIT, *global_args, 'rev-parse', '--show-toplevel'],
+                            capture_output=True, text=True)
+    if result.returncode:
+        return False
+    previous = os.getcwd()
+    try:
+        os.chdir(result.stdout.strip())
+        return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+    finally:
+        os.chdir(previous)
 
 
 def completed_branch_base(real_git, global_args, ref):
@@ -849,14 +861,20 @@ def completed_branch_base(real_git, global_args, ref):
         return candidate
 
 
-def wait_for_background(real_git, global_args, branch_base=None):
+def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',)):
     result = subprocess.run([real_git, *global_args, 'rev-parse', '--absolute-git-dir'],
                             capture_output=True, text=True)
     if result.returncode:
         return
     marker = Path(result.stdout.strip()) / MARKER
     entries = queue_entries(marker)
-    if entries and not any(os.environ.get('SWEETIEBOT_BACKGROUND_JOB') == entry['id'] for entry in entries):
+    own_job = os.environ.get('SWEETIEBOT_BACKGROUND_JOB')
+    if own_job and any(own_job == entry.get('id') for entry in entries):
+        return
+    dependencies = related_pending_jobs(real_git, global_args, (branch_base,) if branch_base else refs)
+    dependencies = [record for record in dependencies
+                    if record['kind'] == 'background' or record['directory'] != marker.parent]
+    if dependencies:
         # Branch creation may use a named completed base as well as a SHA.
         # An implicit HEAD is safe only after switching away from queued work.
         if branch_base:
@@ -864,12 +882,12 @@ def wait_for_background(real_git, global_args, branch_base=None):
                                       capture_output=True, text=True)
             current = subprocess.run([real_git, *global_args, 'symbolic-ref', '--quiet', 'HEAD'],
                                      capture_output=True, text=True)
-            jobs = [read_journal(Path(entry['directory']) / 'job.json') for entry in entries]
+            jobs = [record['job'] for record in dependencies]
             current_pending = any(not job or job.get('branch') == current.stdout.strip() for job in jobs)
             if (resolved.returncode == 0 and (branch_base != 'HEAD' or not current_pending)
                     and completed_branch_base(real_git, global_args, resolved.stdout.strip()) == resolved.stdout.strip()):
                 return resolved.stdout.strip()
-        job = read_journal(Path(entries[0]['directory']) / 'job.json')
+        job = dependencies[0]['job']
         name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
         branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''
         label = name + (' (' + branch + ')' if branch else '')
@@ -887,6 +905,9 @@ if __name__ == '__main__':
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
             print(json.dumps(request_push(json.load(sys.stdin))))
+        elif len(sys.argv) >= 2 and sys.argv[1] in ('--pending', '--pending-legacy'):
+            print(json.dumps(bool(related_pending_jobs(core.REAL_GIT, [], sys.argv[2:] or ['HEAD'],
+                                                      background=sys.argv[1] == '--pending'))))
         elif sys.argv[1:] == ['--resume']:
             resume()
         elif len(sys.argv) == 3 and sys.argv[1] == '--work':

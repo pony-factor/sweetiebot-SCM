@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import fcntl
+import fnmatch
 import json
 import os
 from pathlib import Path
@@ -76,6 +77,144 @@ def write_journal(journal, data):
     finally:
         if os.path.exists(name):
             os.unlink(name)
+
+
+def pending_jobs(real_git, global_args, background=True):
+    """Find checkpoints in this repository's main and linked worktrees."""
+    result = command(real_git, global_args, 'rev-parse', '--path-format=absolute', '--git-common-dir',
+                     capture_output=True, text=True)
+    if result.returncode:
+        return []
+    common = Path(result.stdout.strip())
+    directories = [common]
+    worktrees = common / 'worktrees'
+    if worktrees.exists():
+        directories.extend(path for path in worktrees.iterdir() if path.is_dir())
+    records = []
+    for directory in directories:
+        legacy = read_journal(directory / JOURNAL)
+        if legacy is not None:
+            records.append(dict(job=legacy, kind='legacy', directory=directory))
+        if not background:
+            continue
+        owner = read_journal(directory / 'sweetiebot-background-commit.json')
+        if owner is None:
+            continue
+        for entry in owner.get('jobs', [owner]):
+            job = read_journal(Path(entry['directory']) / 'job.json') if entry.get('directory') else None
+            if not job or job.get('phase') not in ('done', 'cancelled'):
+                records.append(dict(job=job or {}, kind='background', directory=directory))
+    return records
+
+
+def related_pending_jobs(real_git, global_args, refs=('HEAD',), background=True):
+    """A branch is busy only if it owns or inherits a pending commit."""
+    targets = []
+    for ref in refs:
+        if ref == 'HEAD':
+            symbolic = command(real_git, global_args, 'symbolic-ref', '--quiet', 'HEAD',
+                               capture_output=True, text=True)
+        else:
+            symbolic = command(real_git, global_args, 'rev-parse', '--symbolic-full-name', '--verify', ref,
+                               capture_output=True, text=True)
+        resolved = command(real_git, global_args, 'rev-parse', '--verify', '--end-of-options', ref + '^{commit}',
+                           capture_output=True, text=True)
+        targets.append((symbolic.stdout.strip(), resolved.stdout.strip() if resolved.returncode == 0 else ''))
+    related = []
+    for record in pending_jobs(real_git, global_args, background):
+        job = record['job']
+        branch = job.get('branch', '')
+        if branch and not branch.startswith('refs/'):
+            branch = 'refs/heads/' + branch
+        # An incomplete checkpoint cannot establish independence safely.
+        if not branch:
+            related.append(record)
+            continue
+        for symbolic, sha in targets:
+            if symbolic == branch:
+                related.append(record)
+                break
+            if sha and job.get('sha') and (record['kind'] == 'legacy' or job.get('provisional')):
+                result = command(real_git, global_args, 'merge-base', '--is-ancestor', job['sha'], sha,
+                                 capture_output=True)
+                if result.returncode != 1:
+                    related.append(record)
+                    break
+    return related
+
+
+def operation_refs(real_git, global_args, subcommand, args):
+    """Inspect publication sources, or both the destination and incoming history."""
+    if subcommand != 'push':
+        if subcommand in ('commit', 'switch', 'checkout'):
+            return ['HEAD']
+        if subcommand == 'pull':
+            positional = [arg for arg in args if not arg.startswith('-')]
+            if len(positional) > 1:
+                remote, *branches = positional
+                return ['HEAD', *(f'refs/remotes/{remote}/{branch.partition(":")[0]}' for branch in branches)]
+            return ['HEAD', '@{upstream}']
+        # Option values that are not revisions are ignored by the resolver.
+        return ['HEAD', *(ref.lstrip('^') for arg in args if not arg.startswith('-')
+                          for ref in re.split(r'\.\.\.?', arg))]
+
+    def all_heads():
+        return git_text(real_git, global_args, 'for-each-ref', '--format=%(refname)',
+                        'refs/heads', 'refs/tags').splitlines()
+
+    positional = []
+    remote = None
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        if arg in ('--all', '--branches', '--mirror'):
+            return all_heads()
+        if arg in ('--repo',):
+            # Unusual destinations are guarded conservatively.
+            return all_heads()
+        if arg in ('-o', '--push-option', '--receive-pack', '--exec'):
+            skip = True
+        elif not arg.startswith('-'):
+            positional.append(arg)
+    if positional:
+        remote, *specs = positional
+    else:
+        specs = []
+    if not specs and remote:
+        configured = command(real_git, global_args, 'config', '--get-all', f'remote.{remote}.push',
+                             capture_output=True, text=True)
+        specs = configured.stdout.splitlines()
+    if not specs:
+        mode = command(real_git, global_args, 'config', '--get', 'push.default', capture_output=True, text=True)
+        # A remote configured on HEAD can define default refspecs too.
+        if not remote:
+            branch = command(real_git, global_args, 'symbolic-ref', '--quiet', '--short', 'HEAD',
+                             capture_output=True, text=True).stdout.strip()
+            for key in (f'branch.{branch}.pushRemote', 'remote.pushDefault', f'branch.{branch}.remote'):
+                value = command(real_git, global_args, 'config', '--get', key, capture_output=True, text=True)
+                if value.returncode == 0:
+                    remote = value.stdout.strip()
+                    break
+            remote = remote or 'origin'
+            configured = command(real_git, global_args, 'config', '--get-all', f'remote.{remote}.push',
+                                 capture_output=True, text=True)
+            specs = configured.stdout.splitlines()
+        if not specs:
+            return all_heads() if mode.stdout.strip() == 'matching' else ['HEAD']
+    refs = []
+    for spec in specs:
+        source = spec.lstrip('+').partition(':')[0]
+        if spec in (':', '+:'):
+            return all_heads()
+        if not source:
+            continue  # A deletion does not publish local history.
+        if '*' in source:
+            refs.extend(ref for ref in all_heads() if fnmatch.fnmatchcase(ref, source))
+        else:
+            refs.append(source)
+    return refs
 
 
 def head(real_git, global_args):
@@ -216,7 +355,7 @@ def recover(real_git, global_args, job):
               outcome="fallback")
 
 
-def wait_for_completion(real_git, global_args, timeout=WAIT_SECONDS):
+def wait_for_completion(real_git, global_args, timeout=WAIT_SECONDS, refs=('HEAD',)):
     """Fail closed: never allow a placeholder to be pushed or moved."""
     pair = paths(real_git, global_args)
     if pair is None:
@@ -227,6 +366,9 @@ def wait_for_completion(real_git, global_args, timeout=WAIT_SECONDS):
         with exclusive(lock):
             job = read_journal(journal)
             if not job:
+                return
+            if not any(record['kind'] == 'legacy' and record['directory'] == journal.parent
+                       for record in related_pending_jobs(real_git, global_args, refs, background=False)):
                 return
             if reconcile(real_git, global_args, journal, job):
                 return
