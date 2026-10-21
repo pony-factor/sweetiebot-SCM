@@ -63,7 +63,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
   }
-  if (metadata.user.type === 'Bot' || /\\[bot\\]$/i.test(metadata.user.login)) {
+  if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
     const landed = await humanSquashMerge(repo, Number(number));
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
