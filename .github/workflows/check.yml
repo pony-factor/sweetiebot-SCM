@@ -92,3 +92,4 @@ jobs:
           node --check assets/codex/image-drop.js
           node tests/test_codex_image_drop.js
           node tests/test_codex_video_drop.js
+          node tests/test_codex_adaptive_video.js
