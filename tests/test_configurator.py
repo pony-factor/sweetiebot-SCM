@@ -454,6 +454,12 @@ class SubmissionTests(unittest.TestCase):
         values.pop("aiCommitFallback")
         self.assertFalse(configurator.parse_submission(values)["aiCommitFallback"])
 
+    def test_rebuild_button_is_not_a_preference_toggle(self):
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('id="rebuild-app"', page)
+        self.assertIn("pollRebuildStatus", page)
+        self.assertNotIn('name="rebuildApp"', page)
+
     def test_post_commit_spellcheck_toggle_defaults_off_and_saves_on(self):
         values = form_values()
         self.assertFalse(install.DEFAULT_SETTINGS["postCommitSpellcheck"])
@@ -921,7 +927,73 @@ class ModelSetupTests(unittest.TestCase):
         self.assertNotIn('list="ollama-models"', page)
 
 
+class ManualRebuildTests(unittest.TestCase):
+    def test_rebuild_invokes_explicit_installer(self):
+        with patch("configurator.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="Installed", stderr="")
+            message = configurator._manual_rebuild()
+        args = run.call_args.args[0]
+        self.assertEqual(args[0], configurator.sys.executable)
+        self.assertEqual(args[-1], "--install")
+        self.assertTrue(str(args[1]).endswith("/repair.py"))
+        self.assertEqual(run.call_args.kwargs["cwd"], Path.home())
+        self.assertIn("Reload Window", message)
+
+    def test_rebuild_reports_installer_failure(self):
+        with patch("configurator.subprocess.run", return_value=SimpleNamespace(
+            returncode=1, stdout="Oops", stderr="Repair failed",
+        )):
+            with self.assertRaisesRegex(RuntimeError, "Installer exited with status 1"):
+                configurator._manual_rebuild()
+
+
 class ServerTests(unittest.TestCase):
+    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
+    def test_rebuild_endpoint_requires_token_and_prevents_overlap(self, _models):
+        opened = threading.Event()
+        release = threading.Event()
+        captured = {}
+        def open_browser(url):
+            captured["url"] = url
+            opened.set()
+            return True
+        def rebuild():
+            release.wait(5)
+            return "Rebuild complete. Reload VS Code."
+        with patch("configurator.webbrowser.open", side_effect=open_browser), \
+             patch("configurator._manual_rebuild", side_effect=rebuild) as installer, \
+             patch("configurator.print"):
+            thread = threading.Thread(target=configurator.run_configurator, args=(install.DEFAULT_SETTINGS,))
+            thread.start()
+            self.assertTrue(opened.wait(5))
+            parsed = urllib.parse.urlsplit(captured["url"])
+            def endpoint(path, authorized=True):
+                return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query if authorized else "", ""))
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(urllib.request.Request(endpoint("/rebuild", False), data=b"", method="POST"))
+            self.assertEqual(denied.exception.code, 404)
+            with urllib.request.urlopen(urllib.request.Request(endpoint("/rebuild"), data=b"", method="POST")) as response:
+                self.assertTrue(json.load(response)["started"])
+            with self.assertRaises(urllib.error.HTTPError) as duplicate:
+                urllib.request.urlopen(urllib.request.Request(endpoint("/rebuild"), data=b"", method="POST"))
+            self.assertEqual(duplicate.exception.code, 409)
+            with urllib.request.urlopen(endpoint("/rebuild-status")) as response:
+                self.assertTrue(json.load(response)["running"])
+            release.set()
+            for _ in range(30):
+                with urllib.request.urlopen(endpoint("/rebuild-status")) as response:
+                    status = json.load(response)
+                if status["finished"]:
+                    break
+                threading.Event().wait(0.05)
+            self.assertTrue(status["finished"])
+            self.assertFalse(status["error"])
+            self.assertIn("Reload VS Code", status["message"])
+            installer.assert_called_once()
+            urllib.request.urlopen(urllib.request.Request(endpoint("/save"), data=b"action=cancel", method="POST")).close()
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+
     def test_settings_server_exits_when_extension_host_disappears(self):
         with patch('configurator.os.kill', side_effect=ProcessLookupError), patch('builtins.print'):
             thread = threading.Thread(target=lambda: configurator.run_configurator(
