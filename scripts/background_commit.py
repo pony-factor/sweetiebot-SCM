@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -37,6 +38,14 @@ class SyncConflicts(RuntimeError):
 @contextmanager
 def repository_lock(meta):
     with (Path(meta) / (MARKER + '.lock')).open('a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+@contextmanager
+def branch_sync_lock(meta, branch):
+    name = 'sweetiebot-sync-' + hashlib.sha256(branch.encode()).hexdigest() + '.lock'
+    with (Path(meta) / name).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
 
@@ -197,7 +206,7 @@ def enqueue(request, start=True):
         fcntl.flock(lock, fcntl.LOCK_EX)
         branch, parent = state()
         dependencies = related_pending_jobs(core.REAL_GIT, [])
-        if any(record['kind'] == 'legacy' or record['job'].get('branch') != branch
+        if any(record['kind'] == 'legacy' or record['directory'] != meta or record['job'].get('branch') != branch
                for record in dependencies):
             raise RuntimeError('Wait for the existing commit message to finish before queuing another commit.')
         recover_finalization(meta)
@@ -387,11 +396,14 @@ def rejected_push_error(job, result, remote_tip):
 def sync_with_lindsey(job, remote_tip):
     """Replay unpublished history through Lindsey, then atomically adopt its plan."""
     meta = Path(job['gitdir'])
-    with repository_lock(meta):
-        recover_finalization(meta)
-        entries, jobs = captured_chain(meta / MARKER, job['branch'])
-        if any(item.get('provisional') for item in jobs):
-            return False  # Let all queued titles finish before rebasing the chain.
+    with branch_sync_lock(meta, job['branch']):
+        with repository_lock(meta):
+            recover_finalization(meta)
+            entries, jobs = captured_chain(meta / MARKER, job['branch'])
+            if any(item.get('provisional') for item in jobs):
+                return False  # Let all queued titles finish before rebasing the chain.
+            before = branch_tip(job['branch'])
+        # Network and replay planning must not hold the shared queue lock.
         configured = os.environ.get('LINDSEY_SYNC_REPO')
         candidates = ([Path(configured)] if configured else []) + [
             Path(job['root']).parent / 'lindsey-sync',
@@ -408,15 +420,15 @@ def sync_with_lindsey(job, remote_tip):
             if git('fetch', '--no-tags', '--no-write-fetch-head', job['remote'], remote_tip,
                    check=False, timeout=120).returncode:
                 raise RuntimeError('Lindsey could not fetch the remote branch; retry when it is reachable.')
-        before = branch_tip(job['branch'])
         env = os.environ.copy()
         env.pop('GIT_INDEX_FILE', None)
-        active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
         # Do not update a branch checked out in another linked worktree.
-        worktrees = git('worktree', 'list', '--porcelain').split('\n\n')
-        for worktree in worktrees:
-            if '\nbranch ' + job['branch'] in worktree and not worktree.startswith('worktree ' + job['root'] + '\n'):
-                raise RuntimeError('Lindsey sync paused because the branch is open in another worktree.')
+        def check_worktrees():
+            worktrees = git('worktree', 'list', '--porcelain').split('\n\n')
+            for worktree in worktrees:
+                if '\nbranch ' + job['branch'] in worktree and not worktree.startswith('worktree ' + job['root'] + '\n'):
+                    raise RuntimeError('Lindsey sync paused because the branch is open in another worktree.')
+        check_worktrees()
         result = subprocess.run([node, str(script), job['root'], before, remote_tip, core.REAL_GIT],
                                 capture_output=True, text=True, timeout=180, env=env)
         if result.returncode:
@@ -428,29 +440,32 @@ def sync_with_lindsey(job, remote_tip):
         if (plan.get('version') != 1 or plan.get('status') != 'ready'
                 or plan.get('before') != before or plan.get('onto') != remote_tip):
             raise RuntimeError('Lindsey could not safely replay this history; manual sync is required.')
-        if active == job['branch'] and git('status', '--porcelain', env=env):
-            raise RuntimeError('Lindsey sync is waiting for your uncommitted changes. Commit or stash them before retrying; your files are preserved.')
         replacements = {item['before']: item for item in plan['commits']}
         after = plan['after']
         if git('merge-base', '--is-ancestor', remote_tip, after, check=False).returncode:
             raise RuntimeError('Lindsey returned a sync that does not contain the remote changes.')
-        updates = []
-        for entry, item in zip(entries, jobs):
-            replacement = replacements.get(item['sha'])
-            if replacement:
-                updates.append({'directory': entry['directory'], 'values': dict(
-                    sha=replacement['after'], parent=replacement['parent'], tree=replacement['tree'])})
-        # Retain the exact old history before adopting any replacement refs.
-        git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before, before)
-        if branch_tip(job['branch']) != before:
-            raise RuntimeError('The branch changed while Lindsey prepared the sync; publication was paused.')
-        if active == job['branch'] and git('status', '--porcelain', env=env):
-            raise RuntimeError('Local files changed while Lindsey prepared the sync; publication was paused.')
-        write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
-                      after=after, updates=updates, checkout=True))
-        recover_finalization(meta)
-        job.update(read_journal(Path(next(entry['directory'] for entry in entries
-                                         if entry['id'] == job['id'])) / 'job.json'))
+        with repository_lock(meta):
+            recover_finalization(meta)
+            if branch_tip(job['branch']) != before:
+                raise RuntimeError('The branch changed while Lindsey prepared the sync; publication was paused.')
+            check_worktrees()
+            active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
+            entries, jobs = captured_chain(meta / MARKER, job['branch'])
+            updates = []
+            for entry, item in zip(entries, jobs):
+                replacement = replacements.get(item['sha'])
+                if replacement:
+                    updates.append({'directory': entry['directory'], 'values': dict(
+                        sha=replacement['after'], parent=replacement['parent'], tree=replacement['tree'])})
+            # Retain the exact old history before adopting any replacement refs.
+            git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before, before)
+            if active == job['branch'] and git('status', '--porcelain', env=env):
+                raise RuntimeError('Lindsey sync is waiting for your uncommitted changes. Commit or stash them before retrying; your files are preserved.')
+            write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
+                          after=after, updates=updates, checkout=True))
+            recover_finalization(meta)
+            job.update(read_journal(Path(next(entry['directory'] for entry in entries
+                                             if entry['id'] == job['id'])) / 'job.json'))
         return True
 
 
@@ -884,19 +899,21 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
     dependencies = related_pending_jobs(real_git, global_args, (branch_base,) if branch_base else refs)
     dependencies = [record for record in dependencies
                     if record['kind'] == 'background' or record['directory'] != marker.parent]
+    # Pin named bases even when the jobs we found belong to unrelated branches.
+    # A later enqueue or ref move must not change the history being copied.
+    if branch_base:
+        resolved = subprocess.run([real_git, *global_args, 'rev-parse', '--verify', branch_base + '^{commit}'],
+                                  capture_output=True, text=True)
+        current = subprocess.run([real_git, *global_args, 'symbolic-ref', '--quiet', 'HEAD'],
+                                 capture_output=True, text=True)
+        jobs = [record['job'] for record in dependencies]
+        current_pending = any(not job or job.get('branch') == current.stdout.strip() for job in jobs)
+        if (resolved.returncode == 0 and (branch_base != 'HEAD' or not current_pending)
+                and completed_branch_base(real_git, global_args, resolved.stdout.strip()) == resolved.stdout.strip()):
+            return resolved.stdout.strip()
+        if not dependencies and resolved.returncode == 0:
+            raise RuntimeError('The selected branch base contains unfinished commit history.')
     if dependencies:
-        # Branch creation may use a named completed base as well as a SHA.
-        # An implicit HEAD is safe only after switching away from queued work.
-        if branch_base:
-            resolved = subprocess.run([real_git, *global_args, 'rev-parse', '--verify', branch_base + '^{commit}'],
-                                      capture_output=True, text=True)
-            current = subprocess.run([real_git, *global_args, 'symbolic-ref', '--quiet', 'HEAD'],
-                                     capture_output=True, text=True)
-            jobs = [record['job'] for record in dependencies]
-            current_pending = any(not job or job.get('branch') == current.stdout.strip() for job in jobs)
-            if (resolved.returncode == 0 and (branch_base != 'HEAD' or not current_pending)
-                    and completed_branch_base(real_git, global_args, resolved.stdout.strip()) == resolved.stdout.strip()):
-                return resolved.stdout.strip()
         job = dependencies[0]['job']
         name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
         branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''

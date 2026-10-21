@@ -1,5 +1,6 @@
 """Real Git checks for saved click-time commits and restartable publication."""
 import json
+import fcntl
 import os
 from pathlib import Path
 import subprocess
@@ -241,7 +242,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
     def check_divergent_push(self, conflict, dirty=True, descendants=False, crash=None, signed=False):
-        lindsey = Path(__file__).resolve().parents[2] / 'lindsey-sync'
+        lindsey = Path(os.environ.get('LINDSEY_SYNC_REPO', Path(__file__).resolve().parents[2] / 'lindsey-sync'))
         if not (lindsey / 'scripts/sync-local.js').is_file():
             self.skipTest('The local Lindsey Sync checkout is required for this integration check')
         self.env_lindsey = patch.dict(os.environ, {'LINDSEY_SYNC_REPO': str(lindsey)})
@@ -616,7 +617,7 @@ worker.work(Path(sys.argv[2]))
         directory = self.queue(message='')
         pending = self.git('rev-parse', 'main')
         self.git('switch', '-q', 'other')
-        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        script = os.environ.get('SWEETIEBOT_TEST_GIT_WRAPPER', str(Path(worker.__file__).with_name('ai_commit.py')))
         def run(*args):
             return subprocess.run([sys.executable, script, *args], capture_output=True, text=True, timeout=15)
         for args in [('merge', '--ff-only', 'completed')]:
@@ -673,6 +674,52 @@ worker.work(Path(sys.argv[2]))
         worker.wait_for_background('/usr/bin/git', [])
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
+    def test_unrelated_commit_can_queue_while_lindsey_prepares_a_sync(self):
+        self.git('commit', '-q', '-m', 'Base')
+        base = self.git('rev-parse', 'HEAD')
+        self.git('branch', 'other')
+        (self.repo / 'story.txt').write_text('Main work\n')
+        self.git('add', 'story.txt')
+        first = self.queue(message='Completed main work', push=True)
+        job = self.job(first)
+        self.git('switch', '-q', 'other')
+        (self.repo / 'other.txt').write_text('Other work\n')
+        self.git('add', 'other.txt')
+        lindsey = self.root / 'lindsey'
+        (lindsey / 'scripts').mkdir(parents=True)
+        (lindsey / 'scripts/sync-local.js').write_text('// Stubbed replay planner\n')
+        real_run = subprocess.run
+        queued = []
+        def run(args, **kwargs):
+            if args[0] != 'test-node':
+                return real_run(args, **kwargs)
+            # A different process must be able to acquire the shared queue lock.
+            with (Path(job['gitdir']) / (worker.MARKER + '.lock')).open('a+b') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            queued.append(self.queue(message='Completed other work'))
+            return subprocess.CompletedProcess(args, 0, json.dumps(dict(
+                version=1, status='ready', before=job['sha'], onto=base, after=job['sha'], commits=[])), '')
+        with patch.dict(os.environ, LINDSEY_SYNC_REPO=str(lindsey)), \
+                patch.object(worker.shutil, 'which', return_value='test-node'), \
+                patch.object(worker.subprocess, 'run', side_effect=run):
+            self.assertTrue(worker.sync_with_lindsey(job, base))
+        self.assertEqual(self.job(queued[0])['branch'], 'refs/heads/other')
+        self.assertEqual(self.git('show', 'HEAD:other.txt'), 'Other work')
+        self.assertEqual(self.git('rev-parse', 'main'), job['sha'])
+        changed = self.git('commit-tree', job['tree'], '-p', job['sha'], '-m', 'Concurrent main update')
+        def changed_run(args, **kwargs):
+            if args[0] != 'test-node':
+                return real_run(args, **kwargs)
+            real_run(['/usr/bin/git', 'update-ref', 'refs/heads/main', changed, job['sha']], check=True)
+            return subprocess.CompletedProcess(args, 0, json.dumps(dict(
+                version=1, status='ready', before=job['sha'], onto=base, after=job['sha'], commits=[])), '')
+        with patch.dict(os.environ, LINDSEY_SYNC_REPO=str(lindsey)), \
+                patch.object(worker.shutil, 'which', return_value='test-node'), \
+                patch.object(worker.subprocess, 'run', side_effect=changed_run):
+            with self.assertRaisesRegex(RuntimeError, 'branch changed'):
+                worker.sync_with_lindsey(job, base)
+        self.assertEqual(self.git('rev-parse', 'main'), changed, 'A stale sync plan must not overwrite newer work')
+
     def test_linked_worktrees_are_independent_but_inherited_placeholders_are_guarded(self):
         self.git('commit', '-q', '-m', 'Base')
         linked = self.root / 'linked'
@@ -681,7 +728,18 @@ worker.work(Path(sys.argv[2]))
         self.git('add', 'story.txt')
         first = self.queue(message='')
         pending = self.git('rev-parse', 'main')
-        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        script = os.environ.get('SWEETIEBOT_TEST_GIT_WRAPPER', str(Path(worker.__file__).with_name('ai_commit.py')))
+        same_branch = self.root / 'same-branch'
+        self.git('worktree', 'add', '-q', '--force', str(same_branch), 'main')
+        (same_branch / 'same.txt').write_text('Related work\n')
+        self.git('-C', str(same_branch), 'add', 'same.txt')
+        background_script = os.environ.get('SWEETIEBOT_TEST_BACKGROUND_WORKER', worker.__file__)
+        result = subprocess.run([sys.executable, background_script, '--enqueue'],
+                                cwd=same_branch, input=json.dumps({'message': 'Related work'}),
+                                capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('existing commit message', result.stderr)
+        self.assertEqual(self.git('rev-parse', 'main'), pending)
         (linked / 'other.txt').write_text('Independent staged work\n')
         self.git('-C', str(linked), 'add', 'other.txt')
         result = subprocess.run([sys.executable, script, '-C', str(linked), 'commit', '-m', 'Other worktree work'],
