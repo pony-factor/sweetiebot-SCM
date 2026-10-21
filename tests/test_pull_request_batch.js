@@ -174,6 +174,13 @@ async function run() {
   assert.match(prompt, /only one final trailer block after ---------/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
   assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
+  assert.match(prompt, /git commit --author/);
+  assert.match(prompt, /node efs\\/human_squash_merge\\.js/);
+  assert.match(prompt, /NEVER push a squash commit directly to main/);
+  assert.match(prompt, /original bot-opened PR as merged/);
+  assert.match(prompt, /NEVER use that route when the PR opener is codex-pony\\[bot\\]/);
+  assert.match(prompt, /Git author is the verified original HUMAN/);
   const priorities = [
     '1. Main/original human Git authors first',
     '2. Other human contributors',
