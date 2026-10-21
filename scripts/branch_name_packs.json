@@ -807,7 +807,7 @@
         "dirtbound",
         "earl-grey",
         "doctor-horse",
-        "doctor-horse-doc-top",
+        "doc-top",
         "modus-ponens",
         "don-neigh",
         "double-diamond",
@@ -1213,9 +1213,10 @@
         "hoofar": "hoo-far",
         "dr-caballeron": "doctor-caballeron",
         "dr-hooves": "doctor-hooves",
-        "dr-horse": "doctor-horse-doc-top",
+        "dr-horse": "doc-top",
         "dr-steth": "doctor-steth",
-        "dr-whooves": "doctor-whooves"
+        "dr-whooves": "doctor-whooves",
+        "doctor-horse-doc-top": "doc-top"
       },
       "displayNames": {
         "hoo-far": "Hoo'Far"
