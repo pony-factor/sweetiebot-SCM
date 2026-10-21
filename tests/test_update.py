@@ -23,6 +23,29 @@ def archive(entries):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_nested_images_survive_all_distribution_paths(self):
+        import build_installer_app
+        entries = {
+            'assets/images/twi-stop.png': 'sticker',
+            'assets/images/more/another.PNG': 'another sticker',
+            'assets/images/more/animation.webp': 'animation',
+            'assets/images/ignored.txt': 'excluded',
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            update.extract_sources(archive(entries), root)
+            bundled = update.source_files(root)
+            with patch.object(build_installer_app, 'ROOT', root):
+                installer = build_installer_app.source_files()
+            for name, contents in entries.items():
+                asset = Path(name)
+                if asset.suffix == '.txt':
+                    self.assertFalse((root / asset).exists())
+                    continue
+                self.assertEqual((root / asset).read_text(), contents)
+                self.assertEqual(bundled[Path('codex-customizations') / asset], root / asset)
+                self.assertEqual(installer[asset], root / asset)
+
     def test_draft_confirmation_survives_update_and_installer_packaging(self):
         import build_installer_app
         import subprocess
