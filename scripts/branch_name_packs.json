@@ -175,7 +175,7 @@
         "doseydotes",
         "dosie-dough",
         "downdraft",
-        "dr-fauna",
+        "doctor-fauna",
         "drizzle",
         "dry-wheat",
         "ice-mirror",
@@ -670,7 +670,8 @@
         "pushy-ponyturf": "turf",
         "salesponyjasmine-leaf": "jasmine-leaf",
         "serene-dignitaryimmemoria": "immemoria",
-        "clever-schoolponyboysenberry": "boysenberry"
+        "clever-schoolponyboysenberry": "boysenberry",
+        "dr-fauna": "doctor-fauna"
       },
       "displayNames": {
         "quake-masseuse": "Quake",
@@ -809,10 +810,9 @@
         "modus-ponens",
         "don-neigh",
         "double-diamond",
-        "dr-caballeron",
-        "dr-hooves",
-        "dr-horse",
-        "dr-steth",
+        "doctor-caballeron",
+        "doctor-hooves",
+        "doctor-steth",
         "duce-switchell",
         "kyrippos-ii",
         "dusty-mccolt",
@@ -1184,7 +1184,7 @@
         "wylin-slobinzki",
         "zephyr-breeze",
         "zirconic",
-        "dr-whooves",
+        "doctor-whooves",
         "coiffed-waiter-pony",
         "terramar",
         "grampa-gruff",
@@ -1209,7 +1209,12 @@
         "sandbars-dadbeachcomber": "beachcomber",
         "security-guardlockdown": "lockdown",
         "train-conductorsteamer": "steamer",
-        "hoofar": "hoo-far"
+        "hoofar": "hoo-far",
+        "dr-caballeron": "doctor-caballeron",
+        "dr-hooves": "doctor-hooves",
+        "dr-horse": "doctor-horse",
+        "dr-steth": "doctor-steth",
+        "dr-whooves": "doctor-whooves"
       },
       "displayNames": {
         "hoo-far": "Hoo'Far"
@@ -1635,7 +1640,7 @@
         "digger",
         "king-diomedes",
         "downey-burn",
-        "dr-philly",
+        "doctor-philly",
         "elwood",
         "fancy-shmancy",
         "fawn-doo",
@@ -1718,7 +1723,7 @@
         "wooly",
         "zarthram-the-immobilizer",
         "dewdrop-dazzle",
-        "dr-greymare",
+        "doctor-greymare",
         "trade-craft",
         "strawberry-gem",
         "blueberry-pie",
@@ -1883,7 +1888,9 @@
       ],
       "aliases": {
         "magical-ponycelena": "celena",
-        "the-great-and-powerfultwily": "twily"
+        "the-great-and-powerfultwily": "twily",
+        "dr-philly": "doctor-philly",
+        "dr-greymare": "doctor-greymare"
       }
     },
     {
