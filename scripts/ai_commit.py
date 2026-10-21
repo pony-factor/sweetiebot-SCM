@@ -379,7 +379,7 @@ def spellcheck_subject(subject: str) -> str:
         return subject
     if not manual_spellcheck_enabled():
         print(
-            "scm-toolkit: manual commit spellcheck skipped (preview is disabled)",
+            "Sweetiebot: manual commit spellcheck skipped (preview is disabled)",
             file=sys.stderr,
         )
         return subject
@@ -388,7 +388,7 @@ def spellcheck_subject(subject: str) -> str:
     model = configured_spellcheck_model()
     if model not in installed:
         print(
-            f"scm-toolkit: manual commit spellcheck skipped (spellcheck model {model} is not installed locally)",
+            f"Sweetiebot: manual commit spellcheck skipped (spellcheck model {model} is not installed locally)",
             file=sys.stderr,
         )
         return subject
@@ -428,7 +428,7 @@ Subject:
         )
     except Exception as exc:
         print(
-            f"scm-toolkit: manual commit spellcheck skipped ({exc})",
+            f"Sweetiebot: manual commit spellcheck skipped ({exc})",
             file=sys.stderr,
         )
         return subject
@@ -785,7 +785,7 @@ def commit_split_groups(argv: list[str], groups: list[list[str]]) -> int:
                 if result.returncode != 0:
                     return result.returncode
                 committed += 1
-                print(f"scm-toolkit: split commit {number}/{len(groups)} ({len(staged_files)} files)", file=sys.stderr)
+                print(f"Sweetiebot: split commit {number}/{len(groups)} ({len(staged_files)} files)", file=sys.stderr)
             finally:
                 if original_index is None:
                     os.environ.pop("GIT_INDEX_FILE", None)
@@ -1534,7 +1534,7 @@ def generate_message(
                 f"configured models {primary} and {low_memory} are not installed locally; "
                 "using fallback title"
             )
-        print(f"scm-toolkit: {detail}", file=sys.stderr)
+        print(f"Sweetiebot: {detail}", file=sys.stderr)
         return fallback_message(files, include_description)
 
     file_context = staged_file_context(files) if file_context_override is None else file_context_override
@@ -1584,7 +1584,7 @@ def generate_message(
                 if attempt + 1 == MAX_GENERATION_ATTEMPTS:
                     raise
                 delay = 2 ** attempt
-                print(f"scm-toolkit: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} failed; retrying in {delay}s", file=sys.stderr)
+                print(f"Sweetiebot: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} failed; retrying in {delay}s", file=sys.stderr)
                 time.sleep(delay)
                 continue
             try:
@@ -1639,7 +1639,7 @@ def generate_message(
         if require_model:
             raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {MAX_GENERATION_ATTEMPTS} attempts. Try again or enter an explicit message.")
         log_event("commit_title", "fallback_used", model=model, reason="invalid_message", outcome="fallback")
-        print("scm-toolkit: invalid model output; using factual staged-change summary", file=sys.stderr)
+        print("Sweetiebot: invalid model output; using factual staged-change summary", file=sys.stderr)
         return fallback_message(files, include_description, file_context)
     except RuntimeError as exc:
         if require_model:
@@ -1649,7 +1649,7 @@ def generate_message(
             reason="priority_validation_failed", error_type=type(exc).__name__,
             outcome="fallback",
         )
-        print("scm-toolkit: priority validation failed; using simple staged-change summary", file=sys.stderr)
+        print("Sweetiebot: priority validation failed; using simple staged-change summary", file=sys.stderr)
         return fallback_message(files, include_description, file_context)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         if require_model:
@@ -1665,7 +1665,7 @@ def generate_message(
             raise RuntimeError(f"Local Ollama could not generate a commit message. {detail}") from exc
         log_event("commit_title", "fallback_used", model=model, reason="request_failed", outcome="fallback")
         print(
-            f"scm-toolkit: local model unavailable ({exc}); using fallback title",
+            f"Sweetiebot: local model unavailable ({exc}); using fallback title",
             file=sys.stderr,
         )
     except Exception as exc:
@@ -1677,7 +1677,7 @@ def generate_message(
         if require_model:
             raise RuntimeError("Local Ollama could not generate a commit message.") from exc
         print(
-            f"scm-toolkit: commit generation failed ({exc}); using fallback title",
+            f"Sweetiebot: commit generation failed ({exc}); using fallback title",
             file=sys.stderr,
         )
 
@@ -1732,6 +1732,9 @@ def main() -> None:
         from sweetiebot_async_commit import wait_for_completion
         from background_commit import wait_for_background, queue_plain_push
         try:
+            if subcommand == "push":
+                from merged_branch import guard_push_arguments
+                guard_push_arguments(argv[index + 1:], GIT_GLOBAL_ARGS)
             if subcommand == "push" and queue_plain_push(argv[index + 1:]):
                 print("🤖 Commit message generation is in progress. Your changes will be pushed as soon as it completes.")
                 return
@@ -1750,7 +1753,7 @@ def main() -> None:
                 wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base)
             wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
         except RuntimeError as exc:
-            print(f"scm-toolkit: {exc}", file=sys.stderr)
+            print(f"Sweetiebot: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
     if subcommand != "commit":
         os.execv(REAL_GIT, [REAL_GIT, *argv])
@@ -1769,7 +1772,7 @@ def main() -> None:
         try:
             normalize_staged_final_newlines()
         except RuntimeError as exc:
-            print(f"scm-toolkit: {exc}", file=sys.stderr)
+            print(f"Sweetiebot: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
 
     if manual_staged_commit:
@@ -1808,7 +1811,7 @@ def main() -> None:
             include_description=should_add_default_branch_description(),
         )
     except RuntimeError as exc:
-        print(f"scm-toolkit: {exc}", file=sys.stderr)
+        print(f"Sweetiebot: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
     message_args = ["-m", title]
@@ -1826,7 +1829,7 @@ def main() -> None:
             paths = spellcheck.staged_markdown_paths(GIT_GLOBAL_ARGS)
             previous_head = spellcheck.head_sha(GIT_GLOBAL_ARGS)
     except Exception as exc:
-        print(f"scm-toolkit: post-commit spellcheck unavailable ({exc})", file=sys.stderr)
+        print(f"Sweetiebot: post-commit spellcheck unavailable ({exc})", file=sys.stderr)
     result = subprocess.run([REAL_GIT, *argv, *message_args], check=False)
     if result.returncode == 0 and paths:
         try:
@@ -1834,7 +1837,7 @@ def main() -> None:
             if committed_head and committed_head != previous_head:
                 spellcheck.spawn_post_commit(GIT_GLOBAL_ARGS, paths, committed_head, os.path.abspath(__file__), previous_head)
         except Exception as exc:
-            print(f"scm-toolkit: post-commit spellcheck skipped ({exc})", file=sys.stderr)
+            print(f"Sweetiebot: post-commit spellcheck skipped ({exc})", file=sys.stderr)
     raise SystemExit(result.returncode)
 
 

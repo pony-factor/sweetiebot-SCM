@@ -65,6 +65,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
         (HERE / "ai_commit.py", primary),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "background_commit.py", primary.with_name("background_commit.py")),
+        (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
         (HERE / "cloud_repo_sync.py", primary.with_name("cloud_repo_sync.py")),
         (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),
         (

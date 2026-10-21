@@ -18,7 +18,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             files = workspace_search.source_files()
-            for name in ('ai_commit.py', 'background_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py'):
+            for name in ('ai_commit.py', 'background_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py', 'merged_branch.py'):
                 relative = Path(name)
                 (root / name).write_bytes(files[relative].read_bytes())
             repo = root / 'repo'
@@ -30,6 +30,22 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('Traceback', result.stderr)
+
+    def test_completed_base_command_is_bundled_with_its_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = workspace_search.source_files()
+            for name in ('ai_commit.py', 'background_commit.py', 'sweetiebot_async_commit.py',
+                         'sweetiebot_diagnostics.py', 'merged_branch.py'):
+                (root / name).write_bytes(files[Path(name)].read_bytes())
+            subprocess.run(['/usr/bin/git', 'init', '-q', '-b', 'main', str(root)], check=True)
+            subprocess.run(['/usr/bin/git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                            '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'initial'], cwd=root, check=True)
+            result = subprocess.run([sys.executable, str(root / 'merged_branch.py'),
+                                     '--completed-base', 'refs/heads/main'], cwd=root, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), subprocess.check_output(
+                ['/usr/bin/git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip())
 
     def test_ludicrous_mode_is_only_in_magic_wand_settings(self):
         properties = workspace_search.render_package(DEFAULTS)["contributes"]["configuration"]["properties"]

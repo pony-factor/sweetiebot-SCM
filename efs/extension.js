@@ -119,6 +119,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
       kefaniaShowCloseButton: scm.get('kefaniaShowCloseButton', true),
+      kefaniaCloseAfterMerge: scm.get('kefaniaCloseAfterMerge', false),
       kefaniaCloseButtonPosition: kefaniaClosePosition(scm),
       chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },

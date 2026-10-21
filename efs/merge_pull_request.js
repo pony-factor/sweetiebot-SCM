@@ -2,6 +2,7 @@
 
 const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
+const { humanSquashMerge } = require('./human_squash_merge');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
@@ -66,6 +67,15 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (pr.state !== 'open' || pr.merged_at) throw new Error('Pull request is no longer open.');
   if (pr.draft) throw new Error('Mark this pull request ready for review on GitHub before merging.');
   if (!SHA.test(pr.head.sha)) throw new Error('Cannot verify the pull-request head SHA.');
+  if (!pr.user?.login || !['Bot', 'User'].includes(pr.user.type)) {
+    throw new Error('Cannot verify PR opener identity; refusing a bot-authored squash.');
+  }
+  if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
+    const landed = await humanSquashMerge(repository, result.number);
+    return { merged: true, sha: landed.sha, url: result.url,
+      number: result.number, base, author: landed.author };
+  }
+
   const merged = await request(endpoint + '/merge', {method: 'PUT',
     body: {sha: pr.head.sha, merge_method: 'squash'}});
   if (merged.merged !== true || !SHA.test(merged.sha)) throw new Error('GitHub did not confirm the squash merge. Check the pull request.');

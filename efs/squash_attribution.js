@@ -8,7 +8,7 @@ function who(name,email,original=false) {
  const tier=/^codex$/i.test(name)?2:/^codex web$/i.test(name)?3:/codex-pony/.test(id)?4:/copilot/.test(id)?5:/ollama/.test(id)?6:/\[bot\]|bot@|dependabot|github.actions|web-flow/.test(id)?7:/openai|claude|gemini|ai.agent/.test(id)?8:original?0:1;
  return {name:name.trim(),email:email.trim(),tier};
 }
-function squashMessage(title,num,commits){
+function squashMessage(title,num,commits,{primaryAuthor}={}){
  if(typeof title!=='string'||!title.trim()||/[\r\n]/.test(title)||!Number.isSafeInteger(num)||num<1) throw Error('Invalid squash title');
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
@@ -28,7 +28,9 @@ function squashMessage(title,num,commits){
    summaries.push('- '+subject.trim()+(body?'\n'+body.split('\n').map(line=>line?'  '+line:'').join('\n'):''));
  }
  add(who('Codex Web','noreply@openai.com'));
- const trailers=[...names.values()].sort((a,b)=>a.tier-b.tier).map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');
+ // The actual squash Git author is never repeated as a Co-authored-by trailer.
+ const trailers=[...names.values()].filter(p=>!primaryAuthor || p.name.toLowerCase()!==primaryAuthor.name.toLowerCase())
+   .sort((a,b)=>a.tier-b.tier).map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');
  return {title:title.trim().replace(/\s*\(#\d+\)\s*$/,'').trim()+' (#'+num+')',message:summaries.join('\n')+'\n\n---------\n\n'+trailers.join('\n'),trailers};
 }
 async function readCommits(api,repo,num){

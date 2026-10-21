@@ -271,6 +271,7 @@ el('merge').onclick=async()=>{
   el('merge').disabled=true;el('merge-error').textContent='';
   try{const response=await fetch(root+'/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Merge failed.');await refresh();
+    if(result.merged===true&&state.closeAfterMerge===true)await el('close-confirmation').onclick();
   }catch(error){el('merge').disabled=false;el('merge-error').textContent=error.message||'Merge failed. Check GitHub.';}
 };
 el('close-confirmation').onclick=async()=>{el('close-confirmation').disabled=true;el('close-error').textContent='';try{const response=await fetch(root+'/close',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok){const result=await response.json();throw new Error(result.error||'Could not close the window.')}}catch(error){el('close-confirmation').disabled=false;el('close-error').textContent=error.message||'Could not close the window. Use its window controls instead.'}};

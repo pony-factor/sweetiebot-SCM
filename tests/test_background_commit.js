@@ -10,6 +10,10 @@ async function run() {
   let poll;
   let status = {};
   const notices = [], progress = [], completed = [], errors = [];
+  const errorActions = [], details = [];
+  let nextChoice;
+  let merged = null;
+  const mergedWarnings = [];
   const noticeTimers = [];
   let resumes = 0;
   const root = { scheme: 'file', fsPath: '/repo' };
@@ -33,6 +37,10 @@ async function run() {
     setInterval(callback) { poll = callback; return 1; }, clearInterval() {},
     require(name) {
       if (name === './python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
+      if (name === './merged_branch') return {
+        mergedBranchStatus: async () => merged,
+        warnMergedBranch: async (_vscode, _repository, info) => { mergedWarnings.push(info); return false; }
+      };
       assert.equal(name, 'node:child_process');
       return { execFile(_exe, _args, _options, callback) { callback(null, JSON.stringify(status)); }, spawn(_exe, args) {
         if (args.includes('--resume')) resumes++;
@@ -65,7 +73,13 @@ async function run() {
     ProgressLocation: { Notification: 15 },
     window: {
       showInformationMessage(message) { notices.push(message); },
-      async showErrorMessage(message) { errors.push(message); },
+      async showErrorMessage(message, ...actions) {
+        errors.push(message); errorActions.push(actions);
+        const choice = nextChoice; nextChoice = undefined; return choice;
+      },
+      createOutputChannel() {
+        return { appendLine(text) { details.push(text); }, show() {}, dispose() {} };
+      },
       async withProgress(options, task) {
         progress.push(options);
         await task();
@@ -92,6 +106,12 @@ async function run() {
   assert.equal(notices.pop(), 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
   status = {};
   const commit = commands.get('sweetiebot.queueCommit');
+  merged = { branch: 'old', number: 61, defaultBranch: 'main', remote: 'origin' };
+  assert.equal((await push(root)).cancelled, true);
+  assert.equal((await commit(root, { push: true })).cancelled, true);
+  assert.equal(mergedWarnings.length, 2);
+  assert.deepEqual(events, [], 'merged-branch warning happens before staging or enqueueing');
+  merged = null;
   const notQueued = await commit(root, { message: 'Manual', onlyIfPending: true });
   assert.equal(notQueued.queued, false);
   assert.deepEqual(events, [], 'checking an empty queue never stages or commits');
@@ -133,7 +153,7 @@ async function run() {
   status = {};
   poll();
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(notices, ['Push is pending and will retry automatically.'],
+  assert.deepEqual(notices, ['repo: Push is pending and will retry automatically.'],
     'no local-save or completion notifications');
   const beforeRecovery = resumes;
   status = { id: 'old', phase: 'blocked', recoverable: true, titleJobs: ['old'],
@@ -148,14 +168,22 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1, 'a genuine branch mismatch remains visible');
-  status = { id: 'rejected-push', phase: 'blocked', titleJobs: [],
+  status = { id: 'rejected-push', phase: 'blocked', titleJobs: [], branch: 'refs/heads/hoofar',
+    conflictPaths: ['Sources/RepoLauncher.swift', 'Repository Launcher.app/Contents/MacOS/RepositoryLauncher'],
     error: 'Push rejected: local and remote changes have merge conflicts.' };
+  nextChoice = 'View conflicting files';
   poll();
   await new Promise(resolve => setImmediate(resolve));
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 2, 'a rejected push produces one actionable error');
-  assert.equal(errors[1], 'Background commit paused: ' + status.error);
+  assert.equal(errors[1], 'repo (hoofar): Push blocked by merge conflicts in 2 files. Lindsey could not sync this branch.');
+  assert.deepEqual(errorActions[1], ['View conflicting files', 'Retry sync and push', 'Stop background push']);
+  assert(details[0].includes('Repository: /repo\nBranch: hoofar'));
+  assert(details[0].includes('  • Sources/RepoLauncher.swift'));
+  assert(details[0].includes('  • Repository Launcher.app/Contents/MacOS/RepositoryLauncher'));
+  const legacy = sandbox.module.exports.blockedNotification('/work/mobli', { error: status.error });
+  assert.equal(legacy.message, 'mobli: Push blocked by merge conflicts. Lindsey could not sync this branch.');
   assert.equal(progress.length, 2, 'a separate generation batch gets a new notification');
   assert.equal(completed.length, 2, 'jobs finishing early close their notification immediately');
   assert.equal(noticeTimers[1].cancelled, true, 'early completion cancels the one-second timer');
