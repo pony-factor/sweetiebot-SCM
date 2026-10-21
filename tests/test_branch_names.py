@@ -59,11 +59,18 @@ class BranchNamePackTests(unittest.TestCase):
             pack = packs[pack_id]
             for suffix in suffixes:
                 old_name, full_name = f"dr-{suffix}", f"doctor-{suffix}"
+                if suffix == "horse":
+                    # Dr. Horse (Doc Top) is a different Earth pony from
+                    # Doctor Horse, Rainbow Dash's unicorn physician.
+                    full_name = "doctor-horse-doc-top"
                 self.assertNotIn(old_name, pack["names"])
                 self.assertIn(full_name, pack["names"])
                 self.assertEqual(pack["aliases"][old_name], full_name)
+        self.assertIn("doctor-horse", packs["g4-stallions"]["names"])
+        self.assertIn("doctor-horse-doc-top", packs["g4-stallions"]["names"])
         all_names = [name for pack in catalog["packs"] for name in pack["names"]]
         self.assertEqual(all_names.count("doctor-horse"), 1)
+        self.assertEqual(all_names.count("doctor-horse-doc-top"), 1)
         self.assertFalse(any(name.startswith("dr-") for name in all_names))
         self.assertEqual(len(all_names), len(set(all_names)))
 
