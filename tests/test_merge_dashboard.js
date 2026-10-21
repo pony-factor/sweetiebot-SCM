@@ -4,8 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
   REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments,
-  mergePhase, normalizeFiles, githubGet, startMergeDashboard
+  mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard
 } = require('../efs/merge_dashboard');
+const { formatTimelineTimestamp } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 
 (async () => {
@@ -57,7 +58,23 @@ const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
     onDidDispose(fn) { disposeHandler = fn; }
   };
   const openings = [];
+  let savedTimelineMode = 'hidden';
+  const savedModes = [];
+  const configuration = {
+    get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : fallback; },
+    async update(key, mode, target) {
+      assert.equal(key, 'mergeTimelineTimestampMode');
+      assert.equal(target, 1, 'Save globally across independent merge windows');
+      savedModes.push(mode);
+      savedTimelineMode = mode;
+    }
+  };
   const vscode = {
+    ConfigurationTarget: { Global: 1 },
+    workspace: { getConfiguration(section) {
+      assert.equal(section, 'scmToolkit');
+      return configuration;
+    } },
     ViewColumn: { Two: 2 },
     window: { createWebviewPanel(id, title, column, options) {
       assert.equal(id, 'sweetiebot.bulkMergeDashboard');
@@ -100,10 +117,26 @@ const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
   assert(!panel.webview.html.includes('__NONCE__'));
   assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
   assert(panel.webview.html.includes('function renderMergeMarkdown('));
+  assert(panel.webview.html.includes('function formatTimelineTimestamp('));
+  assert(!panel.webview.html.includes('__TIMESTAMP_FORMATTER__'));
+  assert(panel.webview.html.includes('id="timeline-time-mode"'));
+  assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
+  assert.equal(configuredTimelineMode(vscode), 'hidden');
+  assert.equal(events.at(-1).timestampMode, 'hidden', 'Timestamps start hidden');
   assert.equal(typeof pollCallback, 'function');
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(events.at(-1).prs[0].state, 'conflict');
   assert(events.at(-1).events.some(event => event.message.includes('merge conflicts')));
+  await messageHandler({ type: 'timestamp-mode', mode: 'relative' });
+  assert.deepEqual(savedModes, ['relative']);
+  assert.equal(events.at(-1).timestampMode, 'relative', 'Relative mode is reflected immediately');
+  await messageHandler({ type: 'timestamp-mode', mode: 'clock' });
+  assert.equal(events.at(-1).timestampMode, 'clock');
+  await messageHandler({ type: 'timestamp-mode', mode: 'hidden' });
+  assert.equal(events.at(-1).timestampMode, 'hidden');
+  await messageHandler({ type: 'timestamp-mode', mode: 'unexpected' });
+  assert.deepEqual(savedModes, ['relative', 'clock', 'hidden'],
+    'Reject unrecognized timestamp modes without changing persisted settings');
 
   info = { ...info, head: { sha: nextSha }, mergeable: true, mergeable_state: 'clean' };
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nMechanically reconciled both changes.' }];
@@ -177,5 +210,17 @@ const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
   const related = anchors.find(n => n.href.endsWith('/pull/5'));
   related.handlers.click({ preventDefault() {} });
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
-  console.log('Live merge dashboard, safe Markdown rendering, links and status checks passed.');
+  const now = new Date(2026, 9, 21, 6, 15, 0).getTime();
+  assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'hidden', now), '');
+  assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'relative', now), '2m ago');
+  assert.equal(formatTimelineTimestamp(new Date(now - 7200000).toISOString(), 'relative', now), '2h ago');
+  assert.equal(formatTimelineTimestamp(new Date(now - 86400000).toISOString(), 'relative', now), '1d ago');
+  assert.equal(formatTimelineTimestamp(new Date(now + 120000).toISOString(), 'relative', now), 'in 2m');
+  assert.equal(formatTimelineTimestamp(new Date(now).toISOString(), 'relative', now), 'just now');
+  assert.equal(formatTimelineTimestamp('not-a-date', 'relative', now), '');
+  assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'clock', now),
+    new Date(now - 120000).toLocaleTimeString(), 'Clock mode respects the local timezone');
+  assert.equal(formatTimelineTimestamp(new Date(now - 172800000).toISOString(), 'clock', now),
+    new Date(now - 172800000).toLocaleString(), 'Older clock timestamps include their date');
+  console.log('Live merge dashboard, Markdown, links, timestamp modes and status checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

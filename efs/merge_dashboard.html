@@ -34,6 +34,11 @@ aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-d
 .flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
 .events{max-height:34%;min-height:170px;overflow:auto;border-top:1px solid var(--vscode-panel-border,#555);padding:10px 16px}
+.timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.timeline-heading h2{margin:0}
+.timeline-time-picker{display:flex;align-items:center;gap:5px;color:var(--vscode-descriptionForeground);font-size:11px}
+.timeline-time-picker select{font:inherit;color:var(--vscode-dropdown-foreground,var(--vscode-foreground));background:var(--vscode-dropdown-background,var(--vscode-input-background));border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,#555));border-radius:4px;padding:2px 4px;max-width:100%}
+.timeline-time-picker select:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:1px}
 .event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
@@ -87,12 +92,27 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
 <aside aria-label="Merge timeline">
   <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
   <div id="prs" class="prs"></div>
-  <div class="events"><h2>Activity timeline</h2><div id="events"></div></div>
+  <div class="events">
+    <div class="timeline-heading">
+      <h2>Activity timeline</h2>
+      <label class="timeline-time-picker" for="timeline-time-mode">Time
+        <select id="timeline-time-mode" aria-label="Activity timeline timestamps">
+          <option value="hidden">Hidden</option>
+          <option value="relative">Relative</option>
+          <option value="clock">Clock</option>
+        </select>
+      </label>
+    </div>
+    <div id="events"></div>
+  </div>
 </aside>
 <main id="details" aria-live="polite"><p class="empty">Waiting for live GitHub data…</p></main>
 </div>
 <script nonce="__NONCE__">
 __MARKDOWN_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__TIMESTAMP_FORMATTER__
 </script>
 <script nonce="__NONCE__">
 (() => {
@@ -198,12 +218,20 @@ __MARKDOWN_RENDERER__
     }
     list.scrollTop = listScroll;
     const events = byId('events');
+    const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
+      ? model.timestampMode : 'hidden';
+    byId('timeline-time-mode').value = timestampMode;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
     for (const event of model.events.slice(-100).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
-      show('div', 'event-time', new Date(event.at).toLocaleTimeString(), node);
+      const label = formatTimelineTimestamp(event.at, timestampMode);
+      if (label) {
+        const stamp = show('div', 'event-time', label, node);
+        stamp.dataset.eventAt = event.at;
+        stamp.title = new Date(event.at).toLocaleString();
+      }
     }
     events.scrollTop = eventScroll;
     if (selected === null && model.prs.length) selected = model.prs[0].number;
@@ -214,7 +242,21 @@ __MARKDOWN_RENDERER__
     model = event.data;
     render();
   });
+  function refreshRelativeEventTimes() {
+    if (model.timestampMode !== 'relative') return;
+    for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
+      stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
+    }
+  }
+  byId('timeline-time-mode').addEventListener('change', event => {
+    const mode = event.target.value;
+    if (!['hidden', 'relative', 'clock'].includes(mode)) return;
+    model.timestampMode = mode;
+    render();
+    vscode.postMessage({ type: 'timestamp-mode', mode });
+  });
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
+  setInterval(refreshRelativeEventTimes, 30000);
   dispatch('ready');
 })();
 </script>

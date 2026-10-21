@@ -257,6 +257,18 @@
           "scope": "window",
           "description": "Open a dedicated pull-request session window in the compact 600px square layout."
         },
+        "scmToolkit.mergeTimelineTimestampMode": {
+          "type": "string",
+          "enum": ["hidden", "relative", "clock"],
+          "enumDescriptions": [
+            "Hide event timestamps in Lindsey's activity timeline.",
+            "Show updating elapsed times (for example, 2m ago).",
+            "Show local clock times, with a date on older events."
+          ],
+          "default": "hidden",
+          "scope": "application",
+          "description": "Timestamp display in the Lindsey bulk-merge activity timeline. Can also be changed from the dashboard."
+        },
         "scmToolkit.compactWindowButton": {
           "type": "boolean",
           "default": true,

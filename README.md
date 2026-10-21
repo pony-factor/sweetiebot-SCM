@@ -1066,6 +1066,8 @@ Both the selective bulk merge picker and **Merge All Pull Requests** open the Ch
 
 The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. For bot-opened PRs, the prompt requires an original human Git author and the same isolated `git commit --author` plus GitHub-native one-commit rebase route; if the chat lacks an authenticated local Git executor or safe branch rewrite, it stops that PR instead of producing another bot-authored commit. GitHub-native stacks remain blocked where custom human authors cannot be preserved per layer. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
 
+Lindsey's **Activity timeline** has a compact **Time** selector: **Hidden** (default), **Relative** (automatically updating elapsed time), or **Clock** (local time and a date for older events). Its choice is saved as the application-wide `scmToolkit.mergeTimelineTimestampMode` preference for future merge windows. Switching modes never changes GitHub event history or the merge workflow.
+
 Merge chats keep running while their windows are in the background. Each request owns a separate workspace, and reloading or restoring it does not resubmit the merge prompt. The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow.
 
 
