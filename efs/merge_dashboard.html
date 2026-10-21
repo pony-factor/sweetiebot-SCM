@@ -34,6 +34,11 @@ aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-d
 .flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
 .events{max-height:34%;min-height:170px;overflow:auto;border-top:1px solid var(--vscode-panel-border,#555);padding:10px 16px}
+.timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.timeline-heading h2{margin:0}
+.timeline-time-picker{display:flex;align-items:center;gap:5px;color:var(--vscode-descriptionForeground);font-size:11px}
+.timeline-time-picker select{font:inherit;color:var(--vscode-dropdown-foreground,var(--vscode-foreground));background:var(--vscode-dropdown-background,var(--vscode-input-background));border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,#555));border-radius:4px;padding:2px 4px;max-width:100%}
+.timeline-time-picker select:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:1px}
 .event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
@@ -45,14 +50,47 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
 .panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .panel h3{margin:0 0 8px}
+.markdown-panel{white-space:normal}
+.markdown-content{white-space:normal;overflow-wrap:anywhere;line-height:1.55}
+.markdown-content :first-child{margin-top:0}
+.markdown-content :last-child{margin-bottom:0}
+.markdown-content p{margin:8px 0;white-space:pre-wrap}
+.markdown-content h1,.markdown-content h2,.markdown-content h3,.markdown-content h4,.markdown-content h5,.markdown-content h6{margin:14px 0 6px;line-height:1.35}
+.markdown-content h1{font-size:18px}.markdown-content h2{font-size:16px}.markdown-content h3{font-size:14px}
+.markdown-content ul,.markdown-content ol{padding-left:22px;margin:8px 0}
+.markdown-content li{padding:2px 0}
+.markdown-content li input{margin:0 6px 0 0;vertical-align:middle}
+.markdown-content a{color:var(--vscode-textLink-foreground,#3794ff);text-decoration:underline;text-underline-offset:2px}
+.markdown-content a:hover{color:var(--vscode-textLink-activeForeground,#4daafc)}
+.markdown-content code{font-family:var(--vscode-editor-font-family,monospace);background:var(--vscode-textCodeBlock-background,#333);border-radius:3px;padding:1px 4px;white-space:pre-wrap}
+.markdown-content pre{white-space:pre;overflow:auto;margin:8px 0}
+.markdown-content pre code{padding:0;background:transparent;white-space:pre}
+.markdown-content blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,#777);margin:8px 0;padding:1px 0 1px 12px;color:var(--vscode-descriptionForeground)}
+.markdown-content table{display:block;max-width:100%;overflow:auto;border-collapse:collapse;margin:8px 0}
+.markdown-content th,.markdown-content td{padding:5px 8px;border:1px solid var(--vscode-widget-border,#555);text-align:left}
+.markdown-content hr{border:0;border-top:1px solid var(--vscode-widget-border,#555);margin:12px 0}
 .empty{color:var(--vscode-descriptionForeground);font-style:italic}
 .file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
 pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
+/* Resolved VS Code theme tokens already include workbench.colorCustomizations in settings.json. */
+pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-background,var(--vscode-textCodeBlock-background));color:var(--vscode-editor-foreground,var(--vscode-foreground))}
+.diff-line{display:block;box-sizing:border-box;width:max-content;min-width:100%;min-height:1.55em;padding:0 12px;border-inline-start:3px solid transparent;white-space:pre;line-height:1.55}
+.diff-line--added{background:var(--vscode-diffEditor-insertedLineBackground,rgba(46,160,67,.17));border-inline-start-color:var(--vscode-diffEditorGutter-insertedLineBackground,var(--vscode-gitDecoration-addedResourceForeground,#3fb950))}
+.diff-line--removed{background:var(--vscode-diffEditor-removedLineBackground,rgba(248,81,73,.17));border-inline-start-color:var(--vscode-diffEditorGutter-removedLineBackground,var(--vscode-gitDecoration-deletedResourceForeground,#f85149))}
+.diff-line--added .diff-line-text{background:var(--vscode-diffEditor-insertedTextBackground,transparent)}
+.diff-line--removed .diff-line-text{background:var(--vscode-diffEditor-removedTextBackground,transparent)}
+.diff-line-prefix{font-weight:700}
+.diff-line--added .diff-line-prefix{color:var(--vscode-gitDecoration-addedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--removed .diff-line-prefix{color:var(--vscode-gitDecoration-deletedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--hunk,.diff-line--meta{background:var(--vscode-diffEditor-unchangedRegionBackground,var(--vscode-editorWidget-background,transparent));color:var(--vscode-diffEditor-unchangedRegionForeground,var(--vscode-descriptionForeground))}
+.diff-line--note{color:var(--vscode-descriptionForeground)}
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{grid-template-columns:minmax(205px,40%) minmax(250px,60%)}main{padding:14px}}
+/* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
+@media(max-width:650px){.layout{display:block;height:auto;min-height:0}aside{min-height:240px;border-right:0;border-bottom:1px solid var(--vscode-panel-border,#555)}.prs{max-height:210px}.events{max-height:160px;min-height:100px}main{overflow:visible}}
 </style>
 </head>
 <body>
@@ -66,10 +104,31 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
 <aside aria-label="Merge timeline">
   <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
   <div id="prs" class="prs"></div>
-  <div class="events"><h2>Activity timeline</h2><div id="events"></div></div>
+  <div class="events">
+    <div class="timeline-heading">
+      <h2>Activity timeline</h2>
+      <label class="timeline-time-picker" for="timeline-time-mode">Time
+        <select id="timeline-time-mode" aria-label="Activity timeline timestamps">
+          <option value="hidden">Hidden</option>
+          <option value="relative">Relative</option>
+          <option value="clock">Clock</option>
+        </select>
+      </label>
+    </div>
+    <div id="events"></div>
+  </div>
 </aside>
 <main id="details" aria-live="polite"><p class="empty">Waiting for live GitHub data…</p></main>
 </div>
+<script nonce="__NONCE__">
+__MARKDOWN_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__DIFF_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__TIMESTAMP_FORMATTER__
+</script>
 <script nonce="__NONCE__">
 (() => {
   const vscode = acquireVsCodeApi();
@@ -92,11 +151,18 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
     parent.appendChild(node);
     return node;
   }
-  function dispatch(type, number) { vscode.postMessage({ type, number }); }
-  function showTextPanel(parent, heading, content, missing) {
-    const panel = el('section', 'panel');
+  function dispatch(type, number, url) { vscode.postMessage({ type, number, url }); }
+  function showTextPanel(parent, heading, content, missing, markdown = false) {
+    const panel = el('section', markdown ? 'panel markdown-panel' : 'panel');
     show('h3', '', heading, panel);
-    show('div', content ? '' : 'empty', content || missing, panel);
+    const body = el('div', content ? (markdown ? 'markdown-content' : '') : 'empty');
+    if (content && markdown) {
+      renderMergeMarkdown(body, content, {
+        baseUrl: 'https://github.com/' + model.repository + '/',
+        openLink: url => dispatch('open-link', undefined, url)
+      });
+    } else body.textContent = content || missing;
+    panel.appendChild(body);
     parent.appendChild(panel);
   }
   function renderDetail() {
@@ -124,18 +190,18 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
     if (pr.review && pr.state !== 'merged') showTextPanel(parent,
-      'Human review requested · GitHub comment', pr.review.text, '');
+      'Human review requested · GitHub comment', pr.review.text, '', true);
     showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
-      'No AI merge report yet. The ChatGPT session can post one after verifying the work.');
+      'No AI merge report yet. The ChatGPT session can post one after verifying the work.', true);
     showTextPanel(parent, 'Original PR description', pr.description,
-      'No PR description supplied.');
+      'No PR description supplied.', true);
     show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
     if (!pr.files.length) show('p', 'empty', 'No file diff loaded yet.', parent);
     for (const file of pr.files) {
       const wrap = show('details', 'file', undefined, parent);
       const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
       show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
-      if (file.patch) show('pre', '', file.patch, wrap);
+      if (file.patch) renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch);
       else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
@@ -167,12 +233,20 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
     }
     list.scrollTop = listScroll;
     const events = byId('events');
+    const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
+      ? model.timestampMode : 'hidden';
+    byId('timeline-time-mode').value = timestampMode;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
     for (const event of model.events.slice(-100).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
-      show('div', 'event-time', new Date(event.at).toLocaleTimeString(), node);
+      const label = formatTimelineTimestamp(event.at, timestampMode);
+      if (label) {
+        const stamp = show('div', 'event-time', label, node);
+        stamp.dataset.eventAt = event.at;
+        stamp.title = new Date(event.at).toLocaleString();
+      }
     }
     events.scrollTop = eventScroll;
     if (selected === null && model.prs.length) selected = model.prs[0].number;
@@ -183,7 +257,21 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
     model = event.data;
     render();
   });
+  function refreshRelativeEventTimes() {
+    if (model.timestampMode !== 'relative') return;
+    for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
+      stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
+    }
+  }
+  byId('timeline-time-mode').addEventListener('change', event => {
+    const mode = event.target.value;
+    if (!['hidden', 'relative', 'clock'].includes(mode)) return;
+    model.timestampMode = mode;
+    render();
+    vscode.postMessage({ type: 'timestamp-mode', mode });
+  });
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
+  setInterval(refreshRelativeEventTimes, 30000);
   dispatch('ready');
 })();
 </script>

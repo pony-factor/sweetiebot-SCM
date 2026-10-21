@@ -20,6 +20,8 @@ jobs:
           node --check efs/lindsey_bulk_merge.js
           node --check efs/pull_request_batch.js
           node --check efs/merge_dashboard.js
+          node --check efs/merge_dashboard_markdown.js
+          node --check efs/merge_dashboard_diff.js
       - name: Run Lindsey handoff and existing bulk-picker regressions
         run: |
           node tests/test_lindsey_bulk_merge.js
