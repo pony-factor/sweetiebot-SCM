@@ -40,6 +40,7 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   const input = {repository:'owner/repo',head:'pony',base:'main',
     result:{number:12,url:'https://github.com/owner/repo/pull/12'}};
   const pr = {html_url:input.result.url,state:'open',draft:false,merged_at:null,
+    user:{login:'JFWooten4',type:'User'},
     head:{ref:'pony',sha:'a'.repeat(40),repo:{full_name:'owner/repo'}},
     base:{ref:'main',repo:{full_name:'owner/repo'}}};
   const calls = [];
