@@ -1,5 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 const { humanAuthor, verifyCommit, humanSquashMerge } = require('../efs/human_squash_merge');
 const { squashMessage } = require('../efs/squash_attribution');
 
@@ -78,7 +80,10 @@ async function main() {
     };
     const git = async (...args) => {
       gitCalls.push(args);
-      if (args[0] === 'clone') return '';
+      if (args[0] === 'clone') {
+        await fs.mkdir(path.join(args[4], '.git'), { recursive: true });
+        return '';
+      }
       assert.equal(args[0], '-C');
       const [command, ...rest] = args.slice(2);
       if (command === 'rev-parse') {
