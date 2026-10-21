@@ -14,7 +14,7 @@ MESSAGE_BAR_ITEMS = (
     ("separator-1", "Separator"),
     ("autocomplete", "Inline code completion"),
     ("spellcheck", "Spellcheck preview"),
-    ("post-spellcheck", "Automatic post-commit spellcheck toggle"),
+    ("post-spellcheck", "Spellcheck after committing"),
     ("codex", "Codex co-author"),
     ("auto-publish", "Auto-publish"),
     ("separator-2", "Separator"),
