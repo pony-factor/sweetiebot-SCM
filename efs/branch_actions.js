@@ -415,6 +415,19 @@ async function retryConnection(operation) {
   }
 }
 
+async function retryFetch(operation) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await retryConnection(operation);
+    } catch (error) {
+      // Another fetch or push can update a tracking ref after Git reads it.
+      // Retry Git's comparison; leave persistent locks and other failures alone.
+      if (attempt >= 2 || !/cannot lock ref 'refs\/remotes\/[^']+': is at [0-9a-f]+ but expected [0-9a-f]+/i.test(errorText(error))) throw error;
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
 async function syncDefaultBranch(repository, defaultBranch, remote, checkout = true) {
   if (checkout) await repository.checkout(defaultBranch);
   const checkBranch = async () => {
@@ -431,9 +444,9 @@ async function syncDefaultBranch(repository, defaultBranch, remote, checkout = t
   for (let attempt = 0; ; attempt++) {
     // Fetch and merge explicitly: VS Code's throttled pull can retain a failed
     // queued request after a timeout, preventing later attempts from running.
-    await retryConnection(async () => {
+    await retryFetch(async () => {
       await checkBranch();
-      await repository.fetch({ remote });
+      await repository.fetch({ remote, ref: upstream.name });
     });
     await checkBranch();
     await repository.merge(`${remote}/${upstream.name}`);
@@ -487,7 +500,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
     await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
     added = true;
     for (let attempt = 0; ; attempt++) {
-      await retryConnection(() => git(worktree, ['fetch', remote]));
+      await retryFetch(() => git(worktree, ['fetch', remote, `${prefix}${upstream.slice(prefix.length)}`.replace(`refs/remotes/${remote}/`, 'refs/heads/') + ':' + upstream]));
       await checkBranch();
       try {
         await git(worktree, ['merge', '--no-edit', upstream]);

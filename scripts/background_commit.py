@@ -857,9 +857,18 @@ def wait_for_background(real_git, global_args, branch_base=None):
     marker = Path(result.stdout.strip()) / MARKER
     entries = queue_entries(marker)
     if entries and not any(os.environ.get('SWEETIEBOT_BACKGROUND_JOB') == entry['id'] for entry in entries):
-        # Only an explicit immutable, already completed base may bypass the gate.
-        if branch_base and completed_branch_base(real_git, global_args, branch_base) == branch_base:
-            return
+        # Branch creation may use a named completed base as well as a SHA.
+        # An implicit HEAD is safe only after switching away from queued work.
+        if branch_base:
+            resolved = subprocess.run([real_git, *global_args, 'rev-parse', '--verify', branch_base + '^{commit}'],
+                                      capture_output=True, text=True)
+            current = subprocess.run([real_git, *global_args, 'symbolic-ref', '--quiet', 'HEAD'],
+                                     capture_output=True, text=True)
+            jobs = [read_journal(Path(entry['directory']) / 'job.json') for entry in entries]
+            current_pending = any(not job or job.get('branch') == current.stdout.strip() for job in jobs)
+            if (resolved.returncode == 0 and (branch_base != 'HEAD' or not current_pending)
+                    and completed_branch_base(real_git, global_args, resolved.stdout.strip()) == resolved.stdout.strip()):
+                return
         job = read_journal(Path(entries[0]['directory']) / 'job.json')
         name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
         branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''
