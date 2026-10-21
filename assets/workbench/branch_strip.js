@@ -1,4 +1,4 @@
-// A one-row branch popup opened from the existing SCM branch button.
+// A wrapping branch popup opened from the existing SCM branch button.
 // The native branch picker stays available as the overflow action and elsewhere.
 function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, openNativePicker, trigger) {
     const doc = widget.element.ownerDocument;
@@ -9,7 +9,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     bar.setAttribute('aria-label', 'Git branches');
     const scroll = doc.createElement('div');
     scroll.className = 'scm-toolkit-branch-strip-scroll';
-    scroll.setAttribute('aria-label', 'Branches, horizontally scrollable');
+    scroll.setAttribute('aria-label', 'Branches');
     scroll.setAttribute('tabindex', '0');
     const nativeButton = doc.createElement('button');
     nativeButton.type = 'button';
@@ -37,15 +37,19 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     };
     const position = () => {
         const rect = trigger.getBoundingClientRect();
-        const width = Math.min(720, win.innerWidth - 16);
+        const width = Math.max(0, Math.min(720, win.innerWidth - 16));
+        const below = Math.max(0, win.innerHeight - rect.bottom - 12);
+        const above = Math.max(0, rect.top - 12);
         bar.style.width = `${width}px`;
         bar.style.left = `${Math.max(8, Math.min(rect.left, win.innerWidth - width - 8))}px`;
-        bar.style.top = `${rect.bottom + 40 <= win.innerHeight
-            ? rect.bottom + 4 : Math.max(8, rect.top - 40)}px`;
+        bar.style.maxHeight = `${Math.max(above, below)}px`;
+        const height = bar.getBoundingClientRect().height;
+        bar.style.top = `${height <= below || below >= above
+            ? rect.bottom + 4 : Math.max(8, rect.top - height - 4)}px`;
     };
 
     const render = (list, featuredCount, prStatus) => {
-        const previousScroll = scroll.scrollLeft;
+        const previousScroll = scroll.scrollTop;
         const fragment = doc.createDocumentFragment();
         if (prStatus !== 'available') {
             const note = doc.createElement('span');
@@ -103,12 +107,13 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             fragment.append(label);
         }
         scroll.replaceChildren(fragment);
+        if (opened) position();
         if (lastScrolledBranch !== branch) {
             lastScrolledBranch = branch;
             scroll.querySelector('[aria-current="true"]')
                 ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         } else {
-            scroll.scrollLeft = previousScroll;
+            scroll.scrollTop = previousScroll;
         }
     };
 
@@ -201,12 +206,6 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         return true;
     };
 
-    scroll.addEventListener('wheel', event => {
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && scroll.scrollWidth > scroll.clientWidth) {
-            scroll.scrollLeft += event.deltaY;
-            event.preventDefault();
-        }
-    }, { passive: false });
     // A view can move from the panel to the sidebar without repository re-binding.
     const observer = new win.MutationObserver(() => {
         const wasPanelMode = panelMode;
@@ -244,6 +243,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
                 syncPlacement();
                 if (knownBranches.length) render(knownBranches, lastFeaturedCount, lastPrStatus);
                 else scroll.textContent = 'Loading branches…';
+                position();
                 void refresh(true);
                 scroll.focus();
             }
