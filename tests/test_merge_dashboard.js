@@ -6,6 +6,7 @@ const {
   REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments,
   mergePhase, normalizeFiles, githubGet, startMergeDashboard
 } = require('../efs/merge_dashboard');
+const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -97,6 +98,8 @@ const {
   assert(panel.webview.html.includes('@media(max-width:650px)'),
     'Dashboard stacks its timeline and details in compact merge windows');
   assert(!panel.webview.html.includes('__NONCE__'));
+  assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
+  assert(panel.webview.html.includes('function renderMergeMarkdown('));
   assert.equal(typeof pollCallback, 'function');
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(events.at(-1).prs[0].state, 'conflict');
@@ -113,6 +116,13 @@ const {
   messageHandler({ type: 'open-pr', number: 100 });
   await new Promise(resolve => setTimeout(resolve, 1));
   assert.deepEqual(openings, [url, url + '/files']);
+  await messageHandler({ type: 'open-link', url: 'https://example.org/reference' });
+  await messageHandler({ type: 'open-link', url: 'javascript:alert(1)' });
+  await messageHandler({ type: 'open-link', url: 'https://github.com@evil.example/path' });
+  await messageHandler({ type: 'open-link', url: 'file:///private/secret' });
+  await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
+  assert.deepEqual(openings, [url, url + '/files', 'https://example.org/reference'],
+    'Only validated web links open through the extension host');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',
     merge_commit_sha: 'c'.repeat(40) };
   await dashboard.refresh();
@@ -128,5 +138,44 @@ const {
     'pony-factor/example', '/pulls/12'), /HTTP 403/);
   assert(fs.readFileSync(require('node:path').join(__dirname, '../efs/merge_dashboard.html'),
     'utf8').includes('Changed files'));
-  console.log('Live merge dashboard, safe status checks, reports and GitHub diff checks passed.');
+  // A mock DOM tests Markdown semantics without trusting any source HTML.
+  const document = { createElement(tag) {
+    return { tag, ownerDocument: document, children: [], handlers: {},
+      appendChild(child) { this.children.push(child); },
+      addEventListener(type, fn) { this.handlers[type] = fn; },
+      set textContent(value) { this.text = String(value); },
+      get textContent() { return this.text ?? this.children.map(child => child.textContent).join(''); }
+    };
+  } };
+  const root = document.createElement('div');
+  const clicked = [];
+  const tick = String.fromCharCode(96);
+  renderMergeMarkdown(root, [
+    '## **PR summary**',
+    '- [x] **Fixed** [related PR](https://github.com/pony-factor/example/pull/5)',
+    '- Bare https://example.org/path.',
+    '| Name | Status |', '| --- | --- |', '| Demo | complete |',
+    '> _Quoted_ text',
+    tick + tick + tick + 'html', '<script>alert(1)</script>', tick + tick + tick,
+    '[Unsafe](javascript:alert(1)) and ![remote](https://example.org/tracker.png)'
+  ].join('\n'), { openLink: href => clicked.push(href) });
+  const walk = n => [n, ...n.children.flatMap(walk)];
+  const elements = walk(root);
+  const tags = elements.map(n => n.tag);
+  for (const tag of ['h2', 'strong', 'ul', 'li', 'input', 'a', 'table', 'blockquote', 'pre', 'code']) {
+    assert(tags.includes(tag), 'Markdown element ' + tag + ' renders');
+  }
+  assert(!tags.includes('script') && !tags.includes('img'),
+    'Raw HTML and remote images never become executable or fetched elements');
+  assert(root.textContent.includes('<script>alert(1)</script>'),
+    'Code remains literal text');
+  const anchors = elements.filter(n => n.tag === 'a');
+  assert(anchors.some(n => n.href === 'https://example.org/path'),
+    'Bare URL becomes clickable without trailing punctuation');
+  assert(!anchors.some(n => n.href.startsWith('javascript:')),
+    'Unsafe link schemes remain plain text');
+  const related = anchors.find(n => n.href.endsWith('/pull/5'));
+  related.handlers.click({ preventDefault() {} });
+  assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
+  console.log('Live merge dashboard, safe Markdown rendering, links and status checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

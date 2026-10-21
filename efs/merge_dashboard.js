@@ -116,7 +116,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const nonce = randomBytes(16).toString('hex');
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'merge_dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
-    .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '');
+    .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
+    .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'));
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     files: [], report: null, review: null, sawConflict: false, events: []
@@ -236,6 +237,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh();
+    if (message?.type === 'open-link') {
+      if (typeof message.url !== 'string' || message.url.length > 4096) return;
+      let target;
+      try { target = new URL(message.url); } catch { return; }
+      if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) return;
+      return vscode.env.openExternal(vscode.Uri.parse(target.href));
+    }
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);
     if (!pr) return;
