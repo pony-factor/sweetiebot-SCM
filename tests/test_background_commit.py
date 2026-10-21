@@ -240,7 +240,13 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
-    def check_divergent_push(self, conflict):
+    def check_divergent_push(self, conflict, dirty=True, descendants=False, crash=None, signed=False):
+        lindsey = Path(__file__).resolve().parents[2] / 'lindsey-sync'
+        if not (lindsey / 'scripts/sync-local.js').is_file():
+            self.skipTest('The local Lindsey Sync checkout is required for this integration check')
+        self.env_lindsey = patch.dict(os.environ, {'LINDSEY_SYNC_REPO': str(lindsey)})
+        self.env_lindsey.start()
+        self.addCleanup(self.env_lindsey.stop)
         (self.repo / 'story.txt').write_bytes(b'base\x00binary\n')
         self.git('add', 'story.txt')
         self.git('commit', '-qm', 'Base')
@@ -254,25 +260,68 @@ class BackgroundCommitTests(unittest.TestCase):
         self.git('-C', str(other), 'add', path.name)
         self.git('-C', str(other), 'commit', '-qm', 'Remote change')
         self.git('-C', str(other), 'push', '-q', 'origin', 'main')
+        if signed:
+            self.enable_test_gpg_signing()
         (self.repo / 'story.txt').write_bytes(b'local\x00binary\n')
         self.git('add', 'story.txt')
         directory = self.queue(push=True)
+        second = None
+        if descendants:
+            (self.repo / 'next.txt').write_text('Next queued change\n')
+            self.git('add', 'next.txt')
+            second = self.queue(push=True)
         sha = self.git('rev-parse', 'HEAD')
-        (self.repo / 'story.txt').write_bytes(b'later staged\x00change\n')
-        self.git('add', 'story.txt')
-        (self.repo / 'story.txt').write_bytes(b'later unstaged\x00change\n')
+        if dirty:
+            (self.repo / 'story.txt').write_bytes(b'later staged\x00change\n')
+            self.git('add', 'story.txt')
+            (self.repo / 'story.txt').write_bytes(b'later unstaged\x00change\n')
         index = self.git('write-tree')
+        if crash:
+            original_git = worker.git
+            def interrupted(*args, **kwargs):
+                if args[:2] == ('update-ref', '-m') and (self.repo / '.git' / worker.TRANSACTION).exists():
+                    if crash == 'after-ref':
+                        original_git(*args, **kwargs)
+                    raise OSError('Simulated sync interruption')
+                return original_git(*args, **kwargs)
+            with patch.object(worker, 'git', side_effect=interrupted):
+                worker.work(directory)
+            self.assertTrue((self.repo / '.git' / worker.TRANSACTION).exists())
         worker.work(directory)
         job = self.job(directory)
+        if not conflict and not dirty:
+            self.assertEqual(job['phase'], 'done')
+            self.assertNotEqual(self.git('rev-parse', 'HEAD'), sha)
+            self.assertEqual(self.git('status', '--porcelain'), '')
+            self.assertEqual((self.repo / 'remote.txt').read_bytes(), b'remote\x00binary\n')
+            self.assertEqual(self.git('rev-parse', 'HEAD:story.txt'), self.git('rev-parse', sha + ':story.txt'))
+            self.assertEqual(self.git('show', 'refs/sweetiebot/recovery/' + directory.name + '/' + sha + ':story.txt'), 'local\x00binary')
+            if second:
+                worker.work(second)
+                self.assertEqual(self.job(second)['phase'], 'done')
+            remote = '--git-dir=' + str(self.root / 'remote')
+            self.assertEqual(self.git(remote, 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
+            self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+            if signed:
+                self.assert_signed('HEAD')
+            return
         self.assertEqual(job['phase'], 'blocked')
-        self.assertIn('merge conflicts' if conflict else 'newer commits', job['error'])
-        self.assertIn('Cancel the background job', job['error'])
+        expected = 'merge conflicts' if conflict else 'uncommitted changes'
+        self.assertIn(expected, job['error'])
+        self.assertIn('Lindsey', job['error'])
+        if conflict:
+            self.assertEqual(job['conflictPaths'], ['story.txt'])
+            status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+            self.assertEqual(status['conflictPaths'], ['story.txt'])
+            self.assertEqual(status['branch'], 'refs/heads/main')
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
         self.assertEqual(self.git('write-tree'), index)
-        self.assertEqual((self.repo / 'story.txt').read_bytes(), b'later unstaged\x00change\n')
+        if dirty:
+            self.assertEqual((self.repo / 'story.txt').read_bytes(), b'later unstaged\x00change\n')
         self.assertFalse((self.repo / '.git' / 'MERGE_HEAD').exists())
-        with self.assertRaisesRegex(RuntimeError, 'merge conflicts' if conflict else 'newer commits'):
+        with self.assertRaisesRegex(RuntimeError, expected) as blocked:
             worker.wait_for_background('/usr/bin/git', [])
+        self.assertIn('repo (main):', str(blocked.exception))
         with patch.object(worker, 'rejected_push_error', side_effect=AssertionError('Must not retry')):
             worker.work(directory)
         self.assertEqual(self.job(directory), job)
@@ -282,6 +331,21 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_rejected_push_reports_clean_divergence(self):
         self.check_divergent_push(conflict=False)
+
+    def test_lindsey_rebases_clean_divergence_and_pushes(self):
+        self.check_divergent_push(conflict=False, dirty=False)
+
+    def test_lindsey_rebases_all_finalized_queued_descendants(self):
+        self.check_divergent_push(conflict=False, dirty=False, descendants=True)
+
+    def test_lindsey_recovers_checkout_before_ref_move(self):
+        self.check_divergent_push(conflict=False, dirty=False, crash='before-ref')
+
+    def test_lindsey_recovers_ref_move_before_job_checkpoint(self):
+        self.check_divergent_push(conflict=False, dirty=False, crash='after-ref')
+
+    def test_lindsey_preserves_signed_commits(self):
+        self.check_divergent_push(conflict=False, dirty=False, signed=True)
 
     def test_restart_after_git_commit_before_checkpoint_is_idempotent(self):
         directory = self.queue(push=True, signoff=True)

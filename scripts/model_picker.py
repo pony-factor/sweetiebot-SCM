@@ -169,7 +169,7 @@ def show_message(title: str, message: str) -> None:
 def main() -> None:
     if not git_config_bool("scm-toolkit.ai-model-picker", True):
         print(
-            "scm-toolkit: model picker is disabled by scm-toolkit.ai-model-picker",
+            "Sweetiebot: model picker is disabled by scm-toolkit.ai-model-picker",
             file=sys.stderr,
         )
         raise SystemExit(1)

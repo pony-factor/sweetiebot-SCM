@@ -52,7 +52,7 @@ function runSpellcheck(script, cwd, subject) {
           payload.subject === subject
           && /manual commit spellcheck skipped/i.test(stderr)
         ) {
-          throw new Error(stderr.trim().replace(/^scm-toolkit:\s*/i, ''));
+          throw new Error(stderr.trim().replace(/^(?:Sweetiebot|scm-toolkit):\s*/i, ''));
         }
         succeed(payload.subject);
       } catch (error) {
