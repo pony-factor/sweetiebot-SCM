@@ -49,9 +49,9 @@ async function main() {
     message, author), /message/);
 
   function harness({ protectedHead = false, dependent = false, rebase = true, changedBeforePush = false,
-      noFiles = false, preparedPreviously = false } = {}) {
+      noFiles = false, preparedPreviously = false, lateDependent = false } = {}) {
     const apiCalls = [], gitCalls = [];
-    let pushed = false, merged = false;
+    let pushed = false, merged = false, dependencyChecks = 0;
     const pr = () => ({
       state: merged ? 'closed' : 'open', draft: false, merged, mergeable: true,
       merged_at: merged ? '2026-10-21T00:00:00Z' : null,
@@ -66,7 +66,7 @@ async function main() {
       if (endpoint === 'repos/owner/repo/pulls/12') return pr();
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: rebase };
       if (endpoint.includes('/branches/')) return { protected: protectedHead };
-      if (endpoint.includes('/pulls?state=')) return dependent ? [{ number: 13,
+      if (endpoint.includes('/pulls?state=')) return (dependent || (lateDependent && ++dependencyChecks >= 2)) ? [{ number: 13,
         base: { ref: 'bot-topic' }, head: { ref: 'downstream' } }] : [];
       if (endpoint.includes('/commits?per_page=')) return preparedPreviously
         ? [{ author: { login: 'JFWooten4', type: 'User' }, commit: { author, message } }]
@@ -133,6 +133,7 @@ async function main() {
   for (const [options, pattern] of [
     [{ protectedHead: true }, /protected/],
     [{ dependent: true }, /depends on or shares/],
+    [{ lateDependent: true }, /depends on or shares/],
     [{ rebase: false }, /rebase merging is disabled/],
     [{ noFiles: true }, /no changes/]
   ]) {
