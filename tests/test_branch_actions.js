@@ -107,7 +107,7 @@ async function run() {
     const { repository, calls } = fixture(true);
     repository.state.HEAD = { name: 'main', upstream: { remote: 'upstream', name: 'trunk' }, ahead };
     assert.equal(await syncBranch(repository, { ...options, branch: 'main' }), 'main');
-    assert.deepEqual(calls.filter(call => call[0] === 'fetch'), [['fetch', { remote: 'upstream' }]]);
+    assert.deepEqual(calls.filter(call => call[0] === 'fetch'), [['fetch', { remote: 'upstream', ref: 'trunk' }]]);
     assert.deepEqual(calls.filter(call => call[0] === 'merge'), [['merge', 'upstream/trunk']]);
     assert.deepEqual(calls.filter(call => call[0] === 'push'), ahead ? [['push', 'upstream', 'main:trunk']] : []);
     assert(!calls.some(call => call[0] === 'checkout'), 'Sync must stay on main');
@@ -350,12 +350,28 @@ async function run() {
     assert.equal(attempts, 2);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
-  for (const failure of ['timeout', 'Authentication failed']) {
+  {
+    const { repository, calls } = fixture(true);
+    let attempts = 0;
+    repository.fetch = async opts => {
+      calls.push(['fetch', opts]);
+      if (++attempts === 1) throw Object.assign(new Error('Failed to execute git'), {
+        stderr: "cannot lock ref 'refs/remotes/origin/night-shade': is at 15597c451d054e3e58d3439ede69b067e3f1eb15 but expected aedc7d949f2f1576de1cd1ea1a42572ad2c18612"
+      });
+    };
+    assert.equal(await createBranch(repository, options, () => 0), 'fresh');
+    assert.equal(attempts, 2);
+    assert(calls.filter(call => call[0] === 'fetch').every(call => call[1].ref === 'main'));
+    assert.equal(calls.filter(call => call[0] === 'create').length, 1);
+  }
+  for (const failure of ['timeout', 'Authentication failed',
+    "cannot lock ref 'refs/remotes/origin/main': Unable to create 'main.lock': File exists",
+    "cannot lock ref 'refs/remotes/origin/main': is at abcdef but expected fedcba"]) {
     const { repository, calls } = fixture(true);
     let attempts = 0;
     repository.fetch = async () => { attempts++; throw new Error(failure); };
-    await assert.rejects(createBranch(repository, options), new RegExp(failure));
-    assert.equal(attempts, failure === 'timeout' ? 3 : 1);
+    await assert.rejects(createBranch(repository, options), error => error.message === failure);
+    assert.equal(attempts, failure === 'timeout' || failure.includes('but expected') ? 3 : 1);
     assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge' || call[0] === 'push'));
   }
   {

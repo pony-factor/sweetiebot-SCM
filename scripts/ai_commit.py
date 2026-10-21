@@ -1747,7 +1747,11 @@ def main() -> None:
                 branch_base = ((args[2] if len(args) == 3 else 'HEAD')
                                if subcommand in {"switch", "checkout"}
                                and len(args) in {2, 3} and args[0] in {"-b", "-c"} else None)
-                wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base)
+                verified_base = wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base)
+                if verified_base:
+                    # Pin the checked ref so concurrent finalization or checkout
+                    # cannot change which history the new branch inherits.
+                    argv = argv[:index + 1] + args[:2] + [verified_base]
             wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
         except RuntimeError as exc:
             print(f"Sweetiebot: {exc}", file=sys.stderr)

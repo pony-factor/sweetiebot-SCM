@@ -500,7 +500,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
     await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
     added = true;
     for (let attempt = 0; ; attempt++) {
-      await retryFetch(() => git(worktree, ['fetch', remote, `${prefix}${upstream.slice(prefix.length)}`.replace(`refs/remotes/${remote}/`, 'refs/heads/') + ':' + upstream]));
+      await retryFetch(() => git(worktree, ['fetch', remote, `refs/heads/${upstream.slice(prefix.length)}:${upstream}`]));
       await checkBranch();
       try {
         await git(worktree, ['merge', '--no-edit', upstream]);

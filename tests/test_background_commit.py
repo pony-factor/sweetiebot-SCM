@@ -550,6 +550,26 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(self.git('rev-parse', 'HEAD'), base)
         self.assertNotEqual(self.git('rev-parse', 'main'), provisional)
 
+    def test_fork_completed_main_while_unrelated_branch_is_generating(self):
+        self.git('commit', '-q', '-m', 'Base')
+        base = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-q', '-c', 'night-shade')
+        (self.repo / 'story.txt').write_text('Pending night-shade change\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='')
+        pending = self.git('rev-parse', 'HEAD')
+        script = str(Path(worker.__file__).with_name('ai_commit.py'))
+        for args in [('checkout', '-b', 'named-copy', 'main'),
+                     ('switch', '-c', 'implicit-copy')]:
+            result = subprocess.run([sys.executable, script, *args], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git('rev-parse', 'HEAD'), base)
+        result = subprocess.run([sys.executable, script, 'switch', '-c', 'unsafe', 'night-shade'],
+                                capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.git('rev-parse', 'night-shade'), pending)
+        self.assertEqual(self.job(directory)['phase'], 'generating')
+
     def test_no_completed_base_for_an_unfinished_initial_commit(self):
         self.queue(message='')
         with self.assertRaisesRegex(RuntimeError, 'no completed commit'):

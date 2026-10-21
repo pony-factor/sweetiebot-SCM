@@ -868,7 +868,7 @@ def wait_for_background(real_git, global_args, branch_base=None):
             current_pending = any(not job or job.get('branch') == current.stdout.strip() for job in jobs)
             if (resolved.returncode == 0 and (branch_base != 'HEAD' or not current_pending)
                     and completed_branch_base(real_git, global_args, resolved.stdout.strip()) == resolved.stdout.strip()):
-                return
+                return resolved.stdout.strip()
         job = read_journal(Path(entries[0]['directory']) / 'job.json')
         name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
         branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''
