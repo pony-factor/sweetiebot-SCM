@@ -94,6 +94,8 @@ const {
   });
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
+  assert(panel.webview.html.includes('@media(max-width:650px)'),
+    'Dashboard stacks its timeline and details in compact merge windows');
   assert(!panel.webview.html.includes('__NONCE__'));
   assert.equal(typeof pollCallback, 'function');
   await new Promise(resolve => setTimeout(resolve, 15));

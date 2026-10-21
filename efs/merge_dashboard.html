@@ -53,6 +53,8 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{grid-template-columns:minmax(205px,40%) minmax(250px,60%)}main{padding:14px}}
+/* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
+@media(max-width:650px){.layout{display:block;height:auto;min-height:0}aside{min-height:240px;border-right:0;border-bottom:1px solid var(--vscode-panel-border,#555)}.prs{max-height:210px}.events{max-height:160px;min-height:100px}main{overflow:visible}}
 </style>
 </head>
 <body>
