@@ -11,6 +11,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.parse
 import urllib.request
@@ -842,7 +843,7 @@ def render_form(
 <title>Sweetiebot SCM Setup</title><style>
 :root{{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--danger:#f85149}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
-main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
+main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}.settings-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}}.settings-header>div:first-child{{min-width:0}}.rebuild-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:160px}}.rebuild-actions output{{font-size:12px;max-width:290px;text-align:right;color:var(--muted)}}.rebuild-actions output.error-state{{color:#ffb3ad}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .settings-group h3{{font-size:14px;margin:14px 0 4px;color:var(--muted)}}.settings-group+.settings-group{{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}}
 .setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
@@ -853,9 +854,9 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 {MESSAGE_BAR_STYLE}
 {COMMIT_HOTKEY_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
-@media(max-width:760px){{main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
+@media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
-</style></head><body><main><header><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></header>
+</style></head><body><main><header class="settings-header"><div><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></div><div class="rebuild-actions"><button type="button" id="rebuild-app" title="Manually update and restore Sweetiebot app customizations">Rebuild app</button><output id="rebuild-status" role="status" aria-live="polite"></output></div></header>
 {error_html}<form method="post" action="{action}"><div class="settings-layout">
 <nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings categories">{''.join(tabs)}</nav>
 <div class="settings-panels">{''.join(sections)}</div>
@@ -924,6 +925,52 @@ if (settingsForm) {{
     if (finishOnSave) HTMLFormElement.prototype.submit.call(settingsForm);
   }});
 }}
+
+const rebuildButton = document.getElementById('rebuild-app');
+const rebuildStatus = document.getElementById('rebuild-status');
+async function pollRebuildStatus() {{
+  try {{
+    const response = await fetch('/rebuild-status' + location.search, {{cache: 'no-store'}});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to read rebuild status.');
+    rebuildButton.disabled = Boolean(result.running);
+    rebuildStatus.textContent = result.message || '';
+    rebuildStatus.classList.toggle('error-state', Boolean(result.error));
+    if (result.running) setTimeout(pollRebuildStatus, 1500);
+  }} catch (error) {{
+    rebuildButton.disabled = false;
+    rebuildStatus.textContent = 'Status unavailable: ' + error.message;
+    rebuildStatus.classList.add('error-state');
+  }}
+}}
+rebuildButton?.addEventListener('click', async () => {{
+  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? Reload VS Code after a successful rebuild.')) return;
+  rebuildButton.disabled = true;
+  rebuildStatus.textContent = 'Saving settings…';
+  if (autosaveTimer) {{
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    queueAutosave();
+  }}
+  if ((await saveChain) === false) {{
+    rebuildButton.disabled = false;
+    rebuildStatus.textContent = 'Fix unsaved settings before rebuilding.';
+    rebuildStatus.classList.add('error-state');
+    return;
+  }}
+  try {{
+    const response = await fetch('/rebuild' + location.search, {{method: 'POST'}});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to start rebuild.');
+    rebuildStatus.classList.remove('error-state');
+    void pollRebuildStatus();
+  }} catch (error) {{
+    rebuildButton.disabled = false;
+    rebuildStatus.textContent = 'Rebuild failed: ' + error.message;
+    rebuildStatus.classList.add('error-state');
+  }}
+}});
+void pollRebuildStatus();
 
 async function runLocalSetupAction(path, values = {{}}) {{
   saveStatus.textContent = 'Working…';
@@ -1304,6 +1351,29 @@ def _result_page(saved: bool) -> str:
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>body{{margin:0;background:#0d1117;color:#f0f6fc;font:16px system-ui;display:grid;min-height:100vh;place-items:center}}main{{text-align:center;padding:32px}}p{{color:#8b949e}}</style></head><body><main><h1>{title}</h1><p>{detail} You may close this tab.</p></main></body></html>"""
 
 
+def _manual_rebuild() -> str:
+    """Run the explicit installer without changing the automatic-repair preference."""
+    root = Path(__file__).resolve().parent
+    candidates = (root / "codex-customizations" / "scripts" / "repair.py", root / "repair.py")
+    script = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if script is None:
+        raise RuntimeError("The bundled repair installer is missing.")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--install"],
+            cwd=Path.home(), capture_output=True, text=True, timeout=900, check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("The rebuild exceeded 15 minutes. Check the installer logs.") from error
+    except OSError as error:
+        raise RuntimeError(f"Could not start the repair installer: {error}") from error
+    if result.returncode != 0:
+        lines = (result.stderr or result.stdout).strip().splitlines()
+        detail = lines[-1][:240] if lines else "Check the installer output."
+        raise RuntimeError(f"Installer exited with status {result.returncode}: {detail}")
+    return "Rebuild complete. Run Developer: Reload Window in VS Code to apply it."
+
+
 def run_configurator(
     current: dict[str, object],
     action_label: str = "Done",
@@ -1319,6 +1389,18 @@ def run_configurator(
     outcome: dict[str, bool | None] = {"saved": None}
     session_settings = dict(current)
     hotkey_lock = threading.Lock()
+    rebuild_lock = threading.Lock()
+    rebuild_status = {"running": False, "finished": False, "error": False, "message": ""}
+
+    def rebuild_worker() -> None:
+        try:
+            message = _manual_rebuild()
+            failed = False
+        except Exception as error:
+            message = f"Rebuild failed: {error}"
+            failed = True
+        with rebuild_lock:
+            rebuild_status.update(running=False, finished=True, error=failed, message=message)
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, content: str, status: int = 200) -> None:
@@ -1349,6 +1431,11 @@ def run_configurator(
                 self._send("<h1>Not found</h1>", 404)
                 return
             path = urllib.parse.urlsplit(self.path).path
+            if path == "/rebuild-status":
+                with rebuild_lock:
+                    status = dict(rebuild_status)
+                self._send_json(status)
+                return
             if path == "/health":
                 self._send_json({"instance": server_instance})
                 return
@@ -1387,6 +1474,15 @@ def run_configurator(
             values = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8"), keep_blank_values=True
             )
+            if urllib.parse.urlsplit(self.path).path == "/rebuild":
+                with rebuild_lock:
+                    if rebuild_status["running"]:
+                        self._send_json({"error": "A rebuild is already running."}, 409)
+                        return
+                    rebuild_status.update(running=True, finished=False, error=False, message="Rebuilding Sweetiebot…")
+                    threading.Thread(target=rebuild_worker, daemon=True).start()
+                self._send_json({"started": True})
+                return
             if urllib.parse.urlsplit(self.path).path == "/pull":
                 try:
                     name = model_tag(values.get("model", [""])[0])
