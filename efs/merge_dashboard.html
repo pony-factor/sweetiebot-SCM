@@ -74,6 +74,18 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
 pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
+/* Resolved VS Code theme tokens already include workbench.colorCustomizations in settings.json. */
+pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-background,var(--vscode-textCodeBlock-background));color:var(--vscode-editor-foreground,var(--vscode-foreground))}
+.diff-line{display:block;box-sizing:border-box;width:max-content;min-width:100%;min-height:1.55em;padding:0 12px;border-inline-start:3px solid transparent;white-space:pre;line-height:1.55}
+.diff-line--added{background:var(--vscode-diffEditor-insertedLineBackground,rgba(46,160,67,.17));border-inline-start-color:var(--vscode-diffEditorGutter-insertedLineBackground,var(--vscode-gitDecoration-addedResourceForeground,#3fb950))}
+.diff-line--removed{background:var(--vscode-diffEditor-removedLineBackground,rgba(248,81,73,.17));border-inline-start-color:var(--vscode-diffEditorGutter-removedLineBackground,var(--vscode-gitDecoration-deletedResourceForeground,#f85149))}
+.diff-line--added .diff-line-text{background:var(--vscode-diffEditor-insertedTextBackground,transparent)}
+.diff-line--removed .diff-line-text{background:var(--vscode-diffEditor-removedTextBackground,transparent)}
+.diff-line-prefix{font-weight:700}
+.diff-line--added .diff-line-prefix{color:var(--vscode-gitDecoration-addedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--removed .diff-line-prefix{color:var(--vscode-gitDecoration-deletedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--hunk,.diff-line--meta{background:var(--vscode-diffEditor-unchangedRegionBackground,var(--vscode-editorWidget-background,transparent));color:var(--vscode-diffEditor-unchangedRegionForeground,var(--vscode-descriptionForeground))}
+.diff-line--note{color:var(--vscode-descriptionForeground)}
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{grid-template-columns:minmax(205px,40%) minmax(250px,60%)}main{padding:14px}}
@@ -110,6 +122,9 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
 </div>
 <script nonce="__NONCE__">
 __MARKDOWN_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__DIFF_RENDERER__
 </script>
 <script nonce="__NONCE__">
 __TIMESTAMP_FORMATTER__
@@ -186,7 +201,7 @@ __TIMESTAMP_FORMATTER__
       const wrap = show('details', 'file', undefined, parent);
       const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
       show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
-      if (file.patch) show('pre', '', file.patch, wrap);
+      if (file.patch) renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch);
       else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);

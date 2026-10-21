@@ -124,6 +124,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
+    .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',

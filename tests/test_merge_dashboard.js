@@ -8,6 +8,7 @@ const {
 } = require('../efs/merge_dashboard');
 const { formatTimelineTimestamp } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
+const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -117,6 +118,18 @@ const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
   assert(!panel.webview.html.includes('__NONCE__'));
   assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
   assert(panel.webview.html.includes('function renderMergeMarkdown('));
+  assert(panel.webview.html.includes('function renderMergePatch('));
+  assert(!panel.webview.html.includes('__DIFF_RENDERER__'));
+  assert(panel.webview.html.includes("renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch)"));
+  // VS Code's resolved webview CSS tokens reflect workbench.colorCustomizations from settings.json.
+  for (const themeToken of [
+    '--vscode-diffEditor-insertedLineBackground',
+    '--vscode-diffEditor-removedLineBackground',
+    '--vscode-diffEditor-insertedTextBackground',
+    '--vscode-diffEditor-removedTextBackground',
+    '--vscode-diffEditorGutter-insertedLineBackground',
+    '--vscode-diffEditorGutter-removedLineBackground',
+  ]) assert(panel.webview.html.includes(themeToken), 'Missing VS Code theme token ' + themeToken);
   assert(panel.webview.html.includes('function formatTimelineTimestamp('));
   assert(!panel.webview.html.includes('__TIMESTAMP_FORMATTER__'));
   assert(panel.webview.html.includes('id="timeline-time-mode"'));
@@ -222,5 +235,42 @@ const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
     new Date(now - 120000).toLocaleTimeString(), 'Clock mode respects the local timezone');
   assert.equal(formatTimelineTimestamp(new Date(now - 172800000).toISOString(), 'clock', now),
     new Date(now - 172800000).toLocaleString(), 'Older clock timestamps include their date');
-  console.log('Live merge dashboard, Markdown, links, timestamp modes and status checks passed.');
+  // GitHub patches must be line-colored, not rendered as one plain preformatted string.
+  const patch = [
+    '@@ -10,3 +10,4 @@',
+    ' unchanged context',
+    '-old statement',
+    '+new statement',
+    '+++ b/filename.js',
+    '--- a/filename.js',
+    '\\ No newline at end of file',
+    '+<img src=x onerror=alert(1)>',
+    ''
+  ].join('\n');
+  const renderedDiff = document.createElement('pre');
+  renderMergePatch(renderedDiff, patch);
+  assert.deepEqual(renderedDiff.children.map(item => item.className), [
+    'diff-line diff-line--hunk',
+    'diff-line diff-line--context',
+    'diff-line diff-line--removed',
+    'diff-line diff-line--added',
+    'diff-line diff-line--meta',
+    'diff-line diff-line--meta',
+    'diff-line diff-line--note',
+    'diff-line diff-line--added'
+  ]);
+  assert.equal(renderedDiff.children[2].children[0].textContent, '-');
+  assert.equal(renderedDiff.children[2].children[1].textContent, 'old statement');
+  assert.equal(renderedDiff.children[3].children[0].textContent, '+');
+  assert.equal(renderedDiff.children[3].children[1].textContent, 'new statement');
+  assert.equal(renderedDiff.children[7].children[1].textContent, '<img src=x onerror=alert(1)>',
+    'GitHub patch HTML remains inert literal text');
+  assert.equal(renderedDiff.children.length, 8, 'Final newline adds no phantom diff row');
+  assert.equal(classifyMergePatchLine('diff --git a/file b/file'), 'meta');
+  assert.equal(classifyMergePatchLine('-removed'), 'removed');
+  assert.equal(classifyMergePatchLine('+added'), 'added');
+  assert.equal(classifyMergePatchLine('@@ -1 +1 @@'), 'hunk');
+  assert.equal(classifyMergePatchLine(' context'), 'context');
+  assert.equal(classifyMergePatchLine('+++ b/file'), 'meta');
+  console.log('Live merge dashboard, Markdown, themed diffs, links, timestamps and status checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
