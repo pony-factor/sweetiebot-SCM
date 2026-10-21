@@ -6,7 +6,10 @@
 .actions:has(> #publish[hidden]):has(> #publication:empty):has(> #close-error:empty){display:none}
 #draft-status:has(a){display:block}#draft-status:has(a)::before{display:none}
 .status.pack-tag{padding:2px 8px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--accent);background:#ffffff06}.status.pack-tag::before{display:none}
-.merge-controls{margin:10px 0 12px}.merge-controls button{padding:10px 15px}.merge-controls .publication{color:#f0bdc5}.close-confirmation{position:fixed;top:16px;left:16px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:6px;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:16px}.pony-column{display:flex;flex-direction:column;min-width:0}.close-button-left header{padding-left:44px}.close-button-right header{padding-right:44px}.close-button-middle header{position:relative;padding-right:52px}.close-button-middle .close-confirmation{position:absolute;top:50%;left:auto;right:0;transform:translateY(-50%);margin:0}
+.merge-controls{margin:10px 0 12px}.merge-controls button{padding:10px 15px}.merge-controls .publication{color:#f0bdc5}.close-confirmation{position:fixed;top:16px;left:16px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:6px;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:16px}.pony-column{display:flex;flex-direction:column;min-width:0}
+/* A PR without pony research should occupy the complete content grid. */
+.layout:has(#pony-section[hidden]){grid-template-columns:minmax(0,1fr)}
+.layout:has(#pony-section[hidden]) .pony-column{display:none}.close-button-left header{padding-left:44px}.close-button-right header{padding-right:44px}.close-button-middle header{position:relative;padding-right:52px}.close-button-middle .close-confirmation{position:absolute;top:50%;left:auto;right:0;transform:translateY(-50%);margin:0}
 
 /* Native modal image viewer keeps pony previews in this confirmation window. */
 .image-trigger{display:block;width:100%;padding:0;border:0;border-radius:0;background:transparent;color:inherit;box-shadow:none;text-align:left;cursor:zoom-in}
@@ -46,9 +49,9 @@
 [data-theme-colors] .merge-controls .publication{color:var(--kefania-error,var(--text))}
 [data-theme-colors] .status:before,[data-theme-colors] .status.ready:before{background:var(--accent);box-shadow:none}
 </style>
-<main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft and supporting character research.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window" hidden>×</button></header>
+<main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window" hidden>×</button></header>
 <div class="layout">
-<div class="pony-column"><section id="pony-section" class="card"><div class="card-head"><p class="eyebrow">Meet the pony</p><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
+<div class="pony-column"><section id="pony-section" class="card" hidden><div class="card-head"><p class="eyebrow">Meet the pony</p><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
 <section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><h2 id="title">Preparing your draft</h2><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><p id="merge-error" class="publication" role="alert"></p></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 </div>
 <dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
@@ -254,9 +257,11 @@ el('merge').disabled=!state.result||!!state.mergeResult||!!state.merging;
 el('merge').textContent=state.merging?'Merging…':'Squash and merge';
 el('merge-error').textContent=state.errors.merge||'';
 if(state.autoPublish&&!state.result)el('publication').textContent=state.errors.publish||(state.publishing?'Publishing your pull request…':'Auto-publish is on.');
-if(state.result){document.title='PR #'+state.result.number+' · Kefania · '+confirmationToken;document.querySelector('h1').textContent='PR #'+state.result.number;document.querySelector('.subtitle').textContent=state.mergeResult?'Pull request merged. Review the details and supporting character research.':'Pull request published. Review the details and supporting character research.';}
+if(state.result){document.title='PR #'+state.result.number+' · Kefania · '+confirmationToken;document.querySelector('h1').textContent='PR #'+state.result.number;}
 if(state.result){el('publication').replaceChildren();el('draft-status').replaceChildren(document.createTextNode('🦄 PR #'+state.result.number+(state.mergeResult?' merged. ':' published. ')));const link=document.createElement('a');link.href=state.result.url;link.textContent='Open pull request ↗';el('draft-status').append(link)}
 el('pony-section').hidden=!state.pony;
+const subtitle=state.result?(state.mergeResult?'Pull request merged. Review the details':'Pull request published. Review the details'):'Review the pull request draft';
+document.querySelector('.subtitle').textContent=subtitle+(state.pony?' and supporting character research':'')+'.';
 if(state.pony)el('pony-title').textContent=state.pony.name||String(state.pony.slug).split('-').map(part=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');
 const packLabel=state.pony?.packLabel||state.pony?.packId||'';
 el('pony-status').textContent=state.profile?packLabel:state.errors.pony||'Researching the pony…';

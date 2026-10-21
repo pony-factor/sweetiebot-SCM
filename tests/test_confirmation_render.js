@@ -6,7 +6,7 @@ const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'ut
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
-  constructor(tag){this.tag=tag;this.children=[];this._text='';this.listeners={};this.open=false;this.hidden=false;this.style={};}
+  constructor(tag){this.tag=tag;this.children=[];this._text='';this.listeners={};this.open=false;this.hidden=false;this.style={};this.classList={add(){},toggle(){}};}
   get textContent(){return this._text+this.children.map(node=>String(node.textContent??'')).join('');}
   set textContent(value){this._text=String(value);this.children=[];}
   append(...nodes){this.children.push(...nodes);}
@@ -22,7 +22,7 @@ class Element {
 const elements=new Map(),focused=new Element('button');
 const getElementById=id=>{if(!elements.has(id))elements.set(id,new Element(id==='image-lightbox'?'dialog':'div'));return elements.get(id);};
 const pendingImages=[];
-const document={getElementById,createElement:tag=>{const item=new Element(tag);if(tag==='img')pendingImages.push(item);return item;},createTextNode:text=>({textContent:text}),activeElement:focused};
+const document={getElementById,createElement:tag=>{const item=new Element(tag);if(tag==='img')pendingImages.push(item);return item;},createTextNode:text=>({textContent:text}),activeElement:focused,querySelector:selector=>getElementById(selector==='main'?'main':selector==='h1'?'h1':'subtitle')};
 const images=getElementById('images');
 const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
 const context=vm.createContext({URL,URLSearchParams,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
@@ -176,6 +176,10 @@ assert.match(html, /id="close-confirmation"[^>]*hidden/, 'Close action initially
 assert.match(html, /const closeVisible=!!state\.result&&state\.showKefaniaCloseButton!==false/, 'Close is optional after publication');
 assert.match(html, /root\+'\/close'/, 'Close action uses local handoff');
 assert.match(html, /grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/, 'Pony takes 60% on the left of the wide confirmation layout');
+assert.match(html, /\.layout:has\(#pony-section\[hidden\]\)\{grid-template-columns:minmax\(0,1fr\)\}/, 'PR-only confirmation uses the full grid width');
+assert.match(html, /\.layout:has\(#pony-section\[hidden\]\) \.pony-column\{display:none\}/, 'An absent pony does not leave an empty grid item');
+assert.match(html, /<section id="pony-section" class="card" hidden>/, 'Pony layout starts hidden until matching research exists');
+assert.match(html, /el\('pony-section'\)\.hidden=!state\.pony;/, 'Pony visibility follows live state');
 assert.match(html, /\.close-confirmation\{[^}]*position:fixed;top:16px;left:16px;right:auto[^}]*width:36px;height:36px[^}]*color:#fff/, 'Close action defaults to a left-aligned white X');
 assert.match(html, /\.close-confirmation\.on-right\{left:auto;right:16px\}/, 'Window-right option remains fixed');
 assert.match(html, /\.pony-column\{display:flex;flex-direction:column;min-width:0\}/, 'Pony content owns the left-hand column');
@@ -194,11 +198,28 @@ assert.match(html, /function fitLightboxToGallery\(\)/, 'Artwork dimensions dete
 assert.match(html, /source\.height=img\.naturalHeight/, 'Natural image dimensions are retained for fitting');
 assert.match(html, /\.lightbox-stage img\{[^}]*width:0;height:100%[^}]*object-fit:contain/, 'All images use one contained stage size');
 assert.doesNotMatch(html, /PR drafting and pony research finish independently\./, 'Redundant footer is removed');
-assert.match(html, /Pull request published\. Review the details and supporting character research\./, 'Published subtitle uses professional status copy');
+assert.match(html, /state\.pony\?' and supporting character research':''/, 'Pony research is named only when there is a matching pony');
 assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');
 console.log('Confirmation Markdown, lightbox, image fallback, and close action checks passed.');
 
 (async()=>{
+  // Exercise the real refresh() transitions so PR-only, pony, and published states
+  // cannot accidentally leave a narrow column or a stale research subtitle.
+  let layoutState={errors:{}};
+  context.fetch=async()=>({ok:true,json:async()=>layoutState});
+  await context.refresh();
+  assert.equal(getElementById('pony-section').hidden,true,'An ordinary branch hides the pony section');
+  assert.equal(getElementById('subtitle').textContent,'Review the pull request draft.');
+  layoutState={errors:{},pony:{name:'Kefania',slug:'kefania'},result:{number:23,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/23'}};
+  await context.refresh();
+  assert.equal(getElementById('pony-section').hidden,false,'A pony match restores the split layout');
+  assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details and supporting character research.');
+  layoutState={...layoutState,pony:null};
+  await context.refresh();
+  assert.equal(getElementById('pony-section').hidden,true,'Switching back to PR-only removes the pony column');
+  assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details.');
+  console.log('Kefania PR-only and pony layout state checks passed.');
+
   let merges=0, prompts=0;
   let state={result:{number:2,base:'main'}};
   context.fetch=async (url, options)=>{
