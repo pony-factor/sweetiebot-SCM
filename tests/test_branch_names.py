@@ -36,6 +36,17 @@ class BranchNamePackTests(unittest.TestCase):
         self.assertNotIn("trixie", all_names)
         self.assertNotIn("princess-trixie", all_names)
 
+    def test_hoo_far_has_a_hyphenated_canonical_slug(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        stallions = packs["g4-stallions"]
+
+        self.assertIn("hoo-far", stallions["names"])
+        self.assertNotIn("hoofar", stallions["names"])
+        self.assertEqual(stallions["aliases"]["hoofar"], "hoo-far")
+        self.assertEqual(stallions["displayNames"]["hoo-far"], "Hoo'Far")
+        self.assertEqual(sum("hoo-far" in p["names"] for p in catalog["packs"]), 1)
+
     def test_legacy_scrape_artifacts_resolve_to_real_pony_slugs(self):
         catalog = branch_names.load_catalog()
         all_names = [n for pack in catalog["packs"] for n in pack["names"]]
