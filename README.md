@@ -136,6 +136,7 @@ The installer modifies the installed VS Code workbench files. VS Code updates ca
 - `scripts/`: Python installers, configuration tools, and their branch-name catalog.
 - `assets/workbench/`: JavaScript and CSS injected into the VS Code workbench.
 - `assets/codex/`: JavaScript injected into the Codex extension.
+- `assets/images/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
 - `efs/`: companion VS Code extension code.
 - `tests/`: Python and JavaScript tests.
 
@@ -654,7 +655,7 @@ Repeated transcript notices without a usable reset time are shortened to
 shown in Codex's main limit card. Messages with an actual reset time retain it.
 
 The empty **Rated Limited** banner directly above the composer is replaced by the
-bundled `twi-stop.png` sticker. Installation embeds the artwork as a PNG data URI,
+bundled `assets/images/twi-stop.png` sticker. Installation embeds the artwork as a PNG data URI,
 so it does not fetch an external host. The override also works when the Codex
 bundle lacks older transcript-message IDs. If the image cannot render, the
 native status remains visible; actionable limit cards are not replaced.

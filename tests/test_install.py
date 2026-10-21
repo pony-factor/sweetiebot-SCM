@@ -905,7 +905,7 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
 
     def test_installer_app_includes_bundled_twilight_artwork(self):
-        self.assertIn(Path("twi-stop.png"), build_installer_app.source_files())
+        self.assertIn(Path("assets/images/twi-stop.png"), build_installer_app.source_files())
 
     def test_rate_limit_sticker_works_without_legacy_transcript_ids(self):
         original = 'const modernStatus = "You’re out of Codex messages";'
