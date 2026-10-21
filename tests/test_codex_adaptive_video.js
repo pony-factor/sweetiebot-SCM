@@ -83,7 +83,7 @@ const photoNames = async max => {
     const files = await sandbox.scmToolkitVideoScreenshots({
         name: 'capture.mp4', type: 'video/mp4', size: 1000,
     }, max);
-    return files.map(file => Number(file.name.match(/-at-(\d+(?:\.\d+)?)s\.jpg$/)[1]));
+    return Array.from(files, file => Number(file.name.match(/-at-(\d+(?:\.\d+)?)s\.jpg$/)[1]));
 };
 (async () => {
     const diff = sandbox.scmToolkitVideoDifference;

@@ -34,6 +34,7 @@ function scmToolkitSelectVideoTimes(samples, count, duration) {
         index, score: sample.change,
     })).filter(sample => sample.score >= 0.012).sort((a, b) =>
         b.score - a.score || a.index - b.index);
+    if (!changes.length) return uniform;
     for (const candidate of changes) {
         if (selected.size >= count) break;
         if (spaced(candidate.index)) selected.add(candidate.index);
