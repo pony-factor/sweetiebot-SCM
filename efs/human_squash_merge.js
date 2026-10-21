@@ -93,6 +93,37 @@ async function humanSquashMerge(repository, number, {
   const author = humanAuthor(commits);
   const prepared = squashMessage(original.title, number, commits, { primaryAuthor: author });
   const message = prepared.title + '\n\n' + prepared.message;
+  // Retrying after GitHub rejects pending checks or reviews must NOT rewrite
+  // the same PR head again: doing so would restart checks on every click.
+  const existing = commits.length === 1 ? commits[0].commit.message.replace(/\r\n/g, '\n').trimEnd() : '';
+  const sections = existing.split('\n\n---------\n\n');
+  const alreadyPrepared = sections.length === 2 &&
+    sections[0].startsWith(prepared.title + '\n\n- ') &&
+    sections[1].split('\n').every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line)) &&
+    sections[1].includes('Co-authored-by: Codex Web <noreply@openai.com>') &&
+    !sections[1].includes('Co-authored-by: ' + author.name + ' <');
+  const finish = async (sha, expected) => {
+    const fresh = await api(prPath);
+    if (fresh?.state !== 'open' || fresh.head?.sha !== sha ||
+        fresh.base?.sha !== baseSha || fresh.base?.ref !== base ||
+        fresh.head?.ref !== head || fresh.stack) {
+      throw Error('PR changed before GitHub merge; inspect the updated head and base.');
+    }
+    const outcome = await api(prPath + '/merge', 'PUT',
+      ['-f', 'sha=' + sha, '-f', 'merge_method=rebase']);
+    if (outcome?.merged !== true || !SHA.test(outcome.sha || '')) {
+      throw Error('GitHub did not confirm rebase merge; the human-authored PR branch remains available.');
+    }
+    const destination = await api(endpoint + '/commits/' + outcome.sha);
+    verifyCommit(destination, expected, author);
+    const merged = await api(prPath);
+    if (!merged.merged || merged.base?.ref !== base || merged.merge_commit_sha !== outcome.sha) {
+      throw Error('PR merge bookkeeping or target was not verified; inspect GitHub.');
+    }
+    return { merged: true, sha: outcome.sha, author, base, number,
+      url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
+  };
+  if (alreadyPrepared) return finish(originalSha, existing);
   let temp;
   try {
     temp = await temporaryDirectory();
@@ -139,21 +170,8 @@ async function humanSquashMerge(repository, number, {
         rewritten.base?.ref !== base || rewritten.base?.sha !== baseSha) {
       throw Error('PR changed after guarded push; inspect the selected branch before merging.');
     }
-    // Native GitHub rebase merge (not direct main push) enforces required checks,
-    // reviews, merge queues and rulesets, and records the bot-opened PR as merged.
-    const outcome = await api(prPath + '/merge', 'PUT',
-      ['-f', 'sha=' + preparedSha, '-f', 'merge_method=rebase']);
-    if (outcome?.merged !== true || !SHA.test(outcome.sha || '')) {
-      throw Error('GitHub did not confirm rebase merge; the human-authored PR branch remains available.');
-    }
-    const destination = await api(endpoint + '/commits/' + outcome.sha);
-    verifyCommit(destination, message, author);
-    const merged = await api(prPath);
-    if (!merged.merged || merged.base?.ref !== base || merged.merge_commit_sha !== outcome.sha) {
-      throw Error('PR merge bookkeeping or target was not verified; inspect GitHub.');
-    }
-    return { merged: true, sha: outcome.sha, author, base, number,
-      url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
+    // Native GitHub rebase merge records the same bot-opened PR as merged.
+    return finish(preparedSha, message);
   } finally {
     if (temp) await fs.rm(temp, { recursive: true, force: true });
   }
