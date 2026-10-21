@@ -76,7 +76,7 @@ async function humanSquashMerge(repository, number, {
     throw Error('GitHub rebase merging is disabled; cannot preserve an explicit squash Git author.');
   }
   const checkHeadIsolation = async () => {
-      const headBranch = await api(endpoint + '/branches/' + head.split('/').map(encodeURIComponent).join('/'));
+    const headBranch = await api(endpoint + '/branches/' + head.split('/').map(encodeURIComponent).join('/'));
     if (headBranch.protected) throw Error('PR head is protected; cannot safely replace its commits.');
     // Rewriting the head of an open child PR or sibling would affect unselected work.
     for (let page = 1; page <= 100; page++) {
@@ -89,7 +89,7 @@ async function humanSquashMerge(repository, number, {
       }
       if (pulls.length < 100) break;
       if (page === 100) throw Error('Open PR dependency list is incomplete.');
-  }
+    }
   };
   await checkHeadIsolation();
   const commits = await readCommits(async ([url]) => api(url), repository, number);
