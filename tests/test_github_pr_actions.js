@@ -14,7 +14,7 @@ const asyncMergedResponse = { status: 'merged', details: { sha: 'c'.repeat(40) }
 const mergedPr = { ...open, state: 'MERGED' };
 
 function mockMerge({ views = [open, open, mergedPr], submission = pending, responses = [asyncMergedResponse],
-  submissionError, stackMetadata = { stack: null } } = {}) {
+  submissionError, stackMetadata = { stack: null, user: { login: 'JFWooten4', type: 'User' } } } = {}) {
   const calls = [];
   const execute = async args => {
     calls.push(args);
@@ -45,6 +45,30 @@ async function main() {
   assert.deepEqual(happy.calls[5], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
     `${asyncPath}/${requestId}`]);
   assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
+
+  // A bot-created PR keeps its opener but must never enter GitHub's native
+  // squash endpoint (which would author its commit as codex-pony[bot]).
+  const botOpened = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
+  } });
+  let handled = false;
+  const botResult = await squashMergePullRequest(url, botOpened.execute, undefined, {
+    ...quickPoll,
+    humanMerge: async (repo, number) => {
+      handled = true;
+      assert.equal(repo, 'owner/repo');
+      assert.equal(number, 12);
+      return { merged: true, sha: 'c'.repeat(40), author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
+    }
+  });
+  assert.equal(handled, true);
+  assert.equal(botResult.merged, true);
+  assert.equal(botOpened.calls.some(args => args.includes('--method')), false,
+    'A bot opener must not reach the bot-authored squash merge endpoint');
+  const unverifiable = mockMerge({ stackMetadata: { stack: null } });
+  await assert.rejects(squashMergePullRequest(url, unverifiable.execute, undefined, quickPoll),
+    /Cannot verify PR opener identity/);
+  assert.equal(unverifiable.calls.some(args => args.includes('--method')), false);
 
   for (const invalid of [{ isDraft: true }, { baseRefName: '' }, { state: 'CLOSED' }, { headRefOid: '' }]) {
     const denied = mockMerge({ views: [{ ...open, ...invalid }] });
