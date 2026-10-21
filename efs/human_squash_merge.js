@@ -62,12 +62,12 @@ async function humanSquashMerge(repository, number, {
   const base = original?.base?.ref;
   const head = original?.head?.ref;
   const originalSha = original?.head?.sha;
-  const baseSha = original?.base?.sha;
+  const prBaseSha = original?.base?.sha;
   if (original?.state !== 'open' || original.draft || original.merged_at ||
       original?.stack || original.mergeable !== true ||
       original?.head?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
       original?.base?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
-      !SHA.test(originalSha || '') || !SHA.test(baseSha || '') || !head || !base || head === base ||
+      !SHA.test(originalSha || '') || !SHA.test(prBaseSha || '') || !head || !base || head === base ||
       head === 'main' || head === 'master') {
     throw Error('PR must be open, mergeable, unstacked and use a separate writable head in this repository.');
   }
@@ -75,6 +75,12 @@ async function humanSquashMerge(repository, number, {
   if (repositoryInfo.allow_rebase_merge !== true) {
     throw Error('GitHub rebase merging is disabled; cannot preserve an explicit squash Git author.');
   }
+  // A PR's base.sha can lag behind the branch after unrelated PRs merge.
+  // Snapshot the branch itself and recheck it at every mutation boundary.
+  const basePath = endpoint + '/branches/' + base.split('/').map(encodeURIComponent).join('/');
+  const baseSha = (await api(basePath))?.commit?.sha;
+  if (!SHA.test(baseSha || '')) throw Error('Cannot identify the current PR base branch tip.');
+  const baseUnchanged = async () => (await api(basePath))?.commit?.sha === baseSha;
   const checkHeadIsolation = async () => {
     const headBranch = await api(endpoint + '/branches/' + head.split('/').map(encodeURIComponent).join('/'));
     if (headBranch.protected) throw Error('PR head is protected; cannot safely replace its commits.');
@@ -108,8 +114,8 @@ async function humanSquashMerge(repository, number, {
   const finish = async (sha, expected) => {
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.head?.sha !== sha ||
-        fresh.base?.sha !== baseSha || fresh.base?.ref !== base ||
-        fresh.head?.ref !== head || fresh.stack) {
+        fresh.base?.ref !== base ||
+        fresh.head?.ref !== head || fresh.stack || !(await baseUnchanged())) {
       throw Error('PR changed before GitHub merge; inspect the updated head and base.');
     }
     const outcome = await api(prPath + '/merge', 'PUT',
@@ -162,8 +168,8 @@ async function humanSquashMerge(repository, number, {
     // Re-read GitHub before the ONLY force-with-lease, scoped strictly to the selected head.
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.head?.sha !== originalSha ||
-        fresh.base?.sha !== baseSha || fresh.base?.ref !== base ||
-        fresh.head?.ref !== head || fresh.stack) {
+        fresh.base?.ref !== base ||
+        fresh.head?.ref !== head || fresh.stack || !(await baseUnchanged())) {
       throw Error('PR changed before guarded push; no branch was modified.');
     }
     // Close the PR-dependency race between the first preflight and this push.
@@ -172,7 +178,7 @@ async function humanSquashMerge(repository, number, {
       'origin', preparedSha + ':refs/heads/' + head);
     const rewritten = await api(prPath);
     if (rewritten?.state !== 'open' || rewritten.head?.sha !== preparedSha ||
-        rewritten.base?.ref !== base || rewritten.base?.sha !== baseSha) {
+        rewritten.base?.ref !== base || !(await baseUnchanged())) {
       throw Error('PR changed after guarded push; inspect the selected branch before merging.');
     }
     // Native GitHub rebase merge records the same bot-opened PR as merged.

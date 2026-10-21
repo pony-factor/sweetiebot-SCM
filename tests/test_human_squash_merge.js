@@ -49,14 +49,14 @@ async function main() {
     message, author), /message/);
 
   function harness({ protectedHead = false, dependent = false, rebase = true, changedBeforePush = false,
-      noFiles = false, preparedPreviously = false, lateDependent = false } = {}) {
+      noFiles = false, preparedPreviously = false, lateDependent = false, stalePrBase = false, baseChangedDuringFetch = false } = {}) {
     const apiCalls = [], gitCalls = [];
     let pushed = false, merged = false, dependencyChecks = 0;
     const pr = () => ({
       state: merged ? 'closed' : 'open', draft: false, merged, mergeable: true,
       merged_at: merged ? '2026-10-21T00:00:00Z' : null,
       title: '🐛 Fix placement', number: 12,
-      base: { ref: 'main', sha: baseSha, repo: { full_name: 'owner/repo' } },
+      base: { ref: 'main', sha: stalePrBase ? '9'.repeat(40) : baseSha, repo: { full_name: 'owner/repo' } },
       head: { ref: 'bot-topic', sha: pushed || changedBeforePush || preparedPreviously ? newHead : oldHead,
         repo: { full_name: 'owner/repo' } },
       merge_commit_sha: merged ? newHead : null
@@ -65,6 +65,7 @@ async function main() {
       apiCalls.push({ endpoint, method, fields });
       if (endpoint === 'repos/owner/repo/pulls/12') return pr();
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: rebase };
+      if (endpoint === 'repos/owner/repo/branches/main') return { commit: { sha: baseSha } };
       if (endpoint.includes('/branches/')) return { protected: protectedHead };
       if (endpoint.includes('/pulls?state=')) return (dependent || (lateDependent && ++dependencyChecks >= 2)) ? [{ number: 13,
         base: { ref: 'bot-topic' }, head: { ref: 'downstream' } }] : [];
@@ -90,7 +91,7 @@ async function main() {
       const [command, ...rest] = args.slice(2);
       if (command === 'rev-parse') {
         switch (rest[0]) {
-          case 'refs/remotes/origin/main': return baseSha;
+          case 'refs/remotes/origin/main': return baseChangedDuringFetch ? 'e'.repeat(40) : baseSha;
           case 'refs/remotes/origin/bot-topic': return oldHead;
           case 'HEAD': return newHead;
           case baseSha + '^{tree}': return 'e'.repeat(40);
@@ -122,6 +123,13 @@ async function main() {
   assert(good.gitCalls.some(args => args.includes('push')), 'Guarded PR branch push required');
   assert(!good.gitCalls.some(args => args.includes('refs/heads/main') && args.includes('push')),
     'Never push to main');
+
+  const staleBase = harness({ stalePrBase: true });
+  assert.equal((await humanSquashMerge('owner/repo', 12, staleBase)).merged, true,
+    'An outdated PR base SHA must not block a merge onto the actual branch tip');
+  const movedBase = harness({ baseChangedDuringFetch: true });
+  await assert.rejects(humanSquashMerge('owner/repo', 12, movedBase), /Selected base or head changed/);
+  assert.equal(movedBase.pushed, false, 'An actual base move during fetch must still stop before pushing');
 
   // A failed review/check can leave the prepared PR open. A retry must NOT
   // force-push the same branch and restart checks again.
