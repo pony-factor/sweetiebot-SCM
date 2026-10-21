@@ -13,6 +13,20 @@ function git(root, ...args) {
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }).trim();
 }
 
+async function advanceRemote(root, remote, relativePath, content) {
+  const upstream = path.join(path.dirname(root), 'upstream');
+  execFileSync('git', ['clone', '--quiet', remote, upstream]);
+  git(upstream, 'config', 'user.name', 'Upstream Tester');
+  git(upstream, 'config', 'user.email', 'upstream@example.test');
+  const file = path.join(upstream, relativePath);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, content);
+  git(upstream, 'add', '--', relativePath);
+  git(upstream, 'commit', '-m', 'Advance upstream main');
+  git(upstream, 'push', 'origin', 'main');
+  return git(upstream, 'rev-parse', 'HEAD');
+}
+
 async function fixture(run) {
   const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pony-push-'));
   const root = path.join(sandbox, 'kefania');
@@ -64,6 +78,46 @@ async function fixture(run) {
     git(root, 'checkout', '-b', 'topic');
     await assert.rejects(publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'), /main tracking origin\/main/);
     assert.equal(git(root, 'rev-parse', 'HEAD'), original);
+  });
+
+  await fixture(async (root, remote) => {
+    // A clean fast-forward must precede the pony-only commit, including when
+    // unrelated user files are staged or untracked in the Kafania worktree.
+    const upstream = await advanceRemote(root, remote, 'new-upstream.txt', 'latest from origin\n');
+    await fs.writeFile(path.join(root, 'README.md'), 'unrelated staged edit\n');
+    git(root, 'add', 'README.md');
+    await fs.writeFile(path.join(root, 'scratch.txt'), 'keep this untracked\n');
+    const result = await publishPonyProfile(root, pony, 'g4-mares/berry-punch.json');
+    assert.equal(git(root, 'rev-parse', 'HEAD^'), upstream);
+    assert.equal(result.commit, git(root, 'rev-parse', 'HEAD'));
+    assert.equal(git(root, 'show', '--format=', '--name-only', 'HEAD'), result.path);
+    assert.equal(git(root, 'show', 'HEAD:new-upstream.txt'), 'latest from origin\n'.trim());
+    assert.equal(git(root, 'status', '--porcelain=1', '--', 'README.md'), 'M  README.md');
+    assert.equal(git(root, 'status', '--porcelain=1', '--', 'scratch.txt'), '?? scratch.txt');
+    assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/main'), result.commit);
+  });
+
+  await fixture(async (root, remote) => {
+    // Do not overwrite a locally saved pony if upstream introduces that path.
+    const before = git(root, 'rev-parse', 'HEAD');
+    const upstream = await advanceRemote(root, remote, 'ponies/g4-mares/berry-punch.json', '{"profile":"Upstream"}\n');
+    await assert.rejects(publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'), /could not fast-forward/);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), before);
+    assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/main'), upstream);
+    assert.equal(await fs.readFile(path.join(root, 'ponies/g4-mares/berry-punch.json'), 'utf8'), '{"profile":"Sourced"}\n');
+    assert.equal(git(root, 'status', '--porcelain=1', '--untracked-files=all', '--', 'ponies/g4-mares/berry-punch.json'), '?? ponies/g4-mares/berry-punch.json');
+  });
+
+  await fixture(async (root, remote) => {
+    // Diverged main has unpublished local commits and cannot be auto-merged.
+    await advanceRemote(root, remote, 'upstream-only.txt', 'upstream\n');
+    await fs.writeFile(path.join(root, 'local-only.txt'), 'local\n');
+    git(root, 'add', 'local-only.txt');
+    git(root, 'commit', '-m', 'Unpublished local main commit');
+    const before = git(root, 'rev-parse', 'HEAD');
+    await assert.rejects(publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'), /local commits prevent a safe fast-forward/);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), before);
+    assert.equal(git(root, 'status', '--porcelain=1', '--untracked-files=all', '--', 'ponies/g4-mares/berry-punch.json'), '?? ponies/g4-mares/berry-punch.json');
   });
 
   await fixture(async root => {
