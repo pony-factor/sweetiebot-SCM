@@ -77,3 +77,18 @@ jobs:
           node tests/test_merge_pull_request.js
           node tests/test_github_pr_actions.js
           node tests/test_pull_request_batch.js
+
+  codex-video-drop:
+    name: Codex video-drop regression checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check screenshot decoder and drop integration
+        run: |
+          node --check assets/codex/video-frames.js
+          node --check assets/codex/image-drop.js
+          node tests/test_codex_image_drop.js
+          node tests/test_codex_video_drop.js
