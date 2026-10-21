@@ -113,7 +113,7 @@ async function run() {
   {
     const { repository, calls } = fixture();
     assert.equal(await syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), 'topic');
-    assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin' }], ['status'], ['merge', 'origin/main'], ['status']]);
+    assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin', ref: 'main' }], ['status'], ['merge', 'origin/main'], ['status']]);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
   for (const ahead of [0, 2]) {
@@ -505,6 +505,24 @@ async function run() {
         ['create', 'fresh', true, base]);
       assert(!calls.slice(callCount).some(call => ['merge', 'fetch', 'push'].includes(call[0])),
         'Do not sync or publish pending history while creating a branch');
+      const busy = git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+        'commit-tree', git('rev-parse', `${base}^{tree}`).toString().trim(), '-p', base,
+        '-m', 'placeholder_0123456789abcdef').toString().trim();
+      git('update-ref', 'refs/heads/busy', busy);
+      fs.writeFileSync(path.join(jobDirectory, 'job.json'), JSON.stringify({
+        branch: 'refs/heads/busy', sha: busy, parent: base, provisional: true, phase: 'generating'
+      }));
+      repository.state.HEAD = { name: 'main' };
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'main', remote: 'origin'
+      }), true, 'Publishing main is independent of the busy branch');
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'busy', remote: 'origin'
+      }), false, 'The selected pending branch stays protected');
+      repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0 };
+      assert.equal(await commands.get('sweetiebot.syncBranch')(uri, {
+        ...options, branch: 'main', strategy: 'merge'
+      }), 'main', 'Syncing main is independent of the busy branch');
       fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');
       await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /still being finalized/,
         'Keep the legacy worker guard until it supports inactive refs');

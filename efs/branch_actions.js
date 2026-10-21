@@ -962,7 +962,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     await syncDefaultBranch(repository, branch, upstream.remote, false);
     return branch;
   }
-  await repository.fetch({ remote });
+  await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
   await checkBranch();
   const previousMessage = repository.inputBox.value;
   const message = defaultBranch === 'main'

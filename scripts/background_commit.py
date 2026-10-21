@@ -801,6 +801,16 @@ def queue_plain_push(args, global_args=()):
     positional = [arg for arg in args if arg not in ('-u', '--set-upstream')]
     if any(arg.startswith('-') for arg in positional) or len(positional) > 2:
         return False
+    if len(positional) < 2:
+        # Custom default refspecs/destinations must reach the source-aware gate,
+        # rather than silently turning into a push of the current queued branch.
+        configured = subprocess.run([core.REAL_GIT, *global_args, 'config', '--get-regexp',
+                                     r'^(remote\..*\.push|remote\.pushDefault|branch\..*\.pushRemote)$'],
+                                    capture_output=True, text=True)
+        mode = subprocess.run([core.REAL_GIT, *global_args, 'config', '--get', 'push.default'],
+                              capture_output=True, text=True)
+        if configured.returncode == 0 or (mode.returncode == 0 and mode.stdout.strip() not in ('simple', 'upstream')):
+            return False
     if not global_args:
         return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
     result = subprocess.run([core.REAL_GIT, *global_args, 'rev-parse', '--show-toplevel'],

@@ -168,6 +168,8 @@ def operation_refs(real_git, global_args, subcommand, args):
     positional = []
     remote = None
     skip = False
+    tags = '--tags' in args
+    tag_refs = git_text(real_git, global_args, 'for-each-ref', '--format=%(refname)', 'refs/tags').splitlines() if tags else []
     for arg in args:
         if skip:
             skip = False
@@ -185,6 +187,8 @@ def operation_refs(real_git, global_args, subcommand, args):
         remote, *specs = positional
     else:
         specs = []
+    if tags and not specs:
+        return tag_refs
     if not specs and remote:
         configured = command(real_git, global_args, 'config', '--get-all', f'remote.{remote}.push',
                              capture_output=True, text=True)
@@ -206,7 +210,7 @@ def operation_refs(real_git, global_args, subcommand, args):
             specs = configured.stdout.splitlines()
         if not specs:
             return all_heads() if mode.stdout.strip() == 'matching' else ['HEAD']
-    refs = []
+    refs = list(tag_refs)
     for spec in specs:
         source = spec.lstrip('+').partition(':')[0]
         if spec in (':', '+:'):
