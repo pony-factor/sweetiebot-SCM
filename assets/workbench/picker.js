@@ -2819,9 +2819,12 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             const width = state.restore
                 ? Math.min(screen.availWidth, Math.max(600, Math.round(screen.availWidth * 0.75))) : 640;
             const height = state.restore ? Math.round(screen.availHeight * 0.75) : 640;
+            // Compact in place so separately positioned windows do not pile up.
             const bounds = {
-                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
-                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
+                x: state.restore
+                    ? (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2) : previous.x,
+                y: state.restore
+                    ? (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2) : previous.y,
                 width, height
             };
             if (nativeHost.unmaximizeWindow) {

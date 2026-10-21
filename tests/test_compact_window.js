@@ -65,7 +65,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   doc.action().events.click(event);
   doc.action().events.click(event);
   assert.equal(calls.length, 1, 'Double clicks cannot overwrite saved bounds');
-  assert.deepEqual(calls[0], { bounds: { x: -1040, y: 143, width: 640, height: 640 }, options: { targetWindowId: 7 } });
+  assert.deepEqual(calls[0], { bounds: { x: -1300, y: 80, width: 640, height: 640 }, options: { targetWindowId: 7 } });
   assert.ok(calls[0].bounds.width >= 640, 'Keep VS Code vertical-panel native minimum and resizable columns');
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'true');
@@ -96,7 +96,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   ctx.scmToolkitMountCompactWindow(session, sessionNative, null, sessionConfiguration);
   await flush();
   assert.deepEqual(sessionCalls, [{
-    bounds: { x: -1040, y: 143, width: 640, height: 640 },
+    bounds: { x: -1300, y: 80, width: 640, height: 640 },
     options: { targetWindowId: 7 }
   }]);
   assert.equal(session.action().attrs['aria-pressed'], 'true');
@@ -150,7 +150,25 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moving.checkDisplay, null, 'Expansion stops compact display enforcement');
   moving.action().events.click(event);
   await flush();
-  assert.deepEqual(moves.at(-1), { x: 640, y: 233, width: 640, height: 640 });
+  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 640, height: 640 });
+
+  // Compacting several windows on one display keeps their distinct positions.
+  const positions = [{ x: -1300, y: 80 }, { x: -700, y: 220 }];
+  const compacted = [];
+  for (const position of positions) {
+    const windowDoc = documentFixture();
+    windowDoc.defaultView.screenX = position.x;
+    windowDoc.defaultView.screenY = position.y;
+    ctx.scmToolkitMountCompactWindow(windowDoc, {
+      async positionWindow(bounds) {
+        compacted.push(JSON.parse(JSON.stringify(bounds)));
+      }
+    });
+    windowDoc.action().events.click(event);
+    await flush();
+  }
+  assert.deepEqual(compacted, positions.map(position => ({ ...position, width: 640, height: 640 })),
+    'Compacting multiple windows must not stack them at the display center');
 
   // Workspace configuration may arrive after the workbench mounts.
   const late = documentFixture();
@@ -172,12 +190,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const other = documentFixture();
   ctx.scmToolkitMountCompactWindow(other, native);
   assert.notEqual(doc.__sweetiebotCompactWindow, other.__sweetiebotCompactWindow, 'Each window owns its restore state');
-  // A tighter display still receives a centered square with reduced gutters.
+  // A tighter display still compacts in place.
   const narrow = documentFixture();
   narrow.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 665, availHeight: 690 };
+  narrow.defaultView.screenX = 1930;
+  narrow.defaultView.screenY = 40;
   ctx.scmToolkitMountCompactWindow(narrow, native);
   narrow.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1933, y: 49, width: 640, height: 640 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1930, y: 40, width: 640, height: 640 });
   release(); await flush();
   narrow.action().events.click(event);
   assert.deepEqual(calls.at(-1).bounds, { x: 1953, y: 110, width: 600, height: 518 });
@@ -194,8 +214,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(small.action().title, 'Display too small for a 640px square window');
   assert.equal(small.action().attrs['aria-pressed'], 'false');
   small.defaultView.screen = { availLeft: 1920, availTop: 24, availWidth: 650, availHeight: 720 };
+  small.defaultView.screenX = 1925;
+  small.defaultView.screenY = 60;
   small.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1925, y: 64, width: 640, height: 640 });
+  assert.deepEqual(calls.at(-1).bounds, { x: 1925, y: 60, width: 640, height: 640 });
   release(); await flush();
   small.action().events.click(event);
   assert.deepEqual(calls.at(-1).bounds, { x: 1945, y: 114, width: 600, height: 540 });
