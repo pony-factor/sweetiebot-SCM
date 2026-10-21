@@ -240,6 +240,49 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
+    def check_divergent_push(self, conflict):
+        (self.repo / 'story.txt').write_bytes(b'base\x00binary\n')
+        self.git('add', 'story.txt')
+        self.git('commit', '-qm', 'Base')
+        self.git('push', '-qu', 'origin', 'main')
+        other = self.root / 'other'
+        self.git('clone', '-q', '--branch', 'main', str(self.root / 'remote'), str(other))
+        self.git('-C', str(other), 'config', 'user.name', 'Other Author')
+        self.git('-C', str(other), 'config', 'user.email', 'other@example.invalid')
+        path = other / ('story.txt' if conflict else 'remote.txt')
+        path.write_bytes(b'remote\x00binary\n')
+        self.git('-C', str(other), 'add', path.name)
+        self.git('-C', str(other), 'commit', '-qm', 'Remote change')
+        self.git('-C', str(other), 'push', '-q', 'origin', 'main')
+        (self.repo / 'story.txt').write_bytes(b'local\x00binary\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(push=True)
+        sha = self.git('rev-parse', 'HEAD')
+        (self.repo / 'story.txt').write_bytes(b'later staged\x00change\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'story.txt').write_bytes(b'later unstaged\x00change\n')
+        index = self.git('write-tree')
+        worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertIn('merge conflicts' if conflict else 'newer commits', job['error'])
+        self.assertIn('Cancel the background job', job['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
+        self.assertEqual(self.git('write-tree'), index)
+        self.assertEqual((self.repo / 'story.txt').read_bytes(), b'later unstaged\x00change\n')
+        self.assertFalse((self.repo / '.git' / 'MERGE_HEAD').exists())
+        with self.assertRaisesRegex(RuntimeError, 'merge conflicts' if conflict else 'newer commits'):
+            worker.wait_for_background('/usr/bin/git', [])
+        with patch.object(worker, 'rejected_push_error', side_effect=AssertionError('Must not retry')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory), job)
+
+    def test_rejected_push_reports_binary_merge_conflicts(self):
+        self.check_divergent_push(conflict=True)
+
+    def test_rejected_push_reports_clean_divergence(self):
+        self.check_divergent_push(conflict=False)
+
     def test_restart_after_git_commit_before_checkpoint_is_idempotent(self):
         directory = self.queue(push=True, signoff=True)
         job = self.job(directory)

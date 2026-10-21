@@ -333,6 +333,32 @@ def branch_recovery_candidate(job):
                 or (job.get('provisional') and 'branch advanced' in error)))
 
 
+def rejected_push_error(job, result, remote_tip):
+    """Diagnose history rejection without exposing Git output or touching the index."""
+    rejected = any(line.startswith('!\t') and line.endswith(
+        ('(fetch first)', '(non-fast-forward)')) for line in result.stdout.splitlines())
+    if not rejected:
+        return None  # Network failures retain the durable automatic retry.
+    message = ('Push rejected: the remote branch has newer commits. '
+               'Cancel the background job, sync the branch, then push again. '
+               'Your local commit and uncommitted changes are preserved.')
+    if not remote_tip or not re.fullmatch(r'[0-9a-f]{40,64}', remote_tip):
+        return message
+    if git('cat-file', '-e', remote_tip + '^{commit}', check=False).returncode:
+        fetched = git('fetch', '--no-tags', '--no-write-fetch-head', job['remote'],
+                      remote_tip, check=False, timeout=120)
+        if fetched.returncode:
+            return message
+    # merge-tree creates only temporary Git objects: no merge, commit, or checkout.
+    preview = git('merge-tree', '--write-tree', '--name-only', job['sha'], remote_tip,
+                  check=False, timeout=30)
+    if preview.returncode == 1:
+        return ('Push rejected: local and remote changes have merge conflicts. '
+                'Cancel the background job, sync the branch and resolve the conflicts, '
+                'then push again. Your local commit and uncommitted changes are preserved.')
+    return message
+
+
 def work(directory, commit_only=False):
     with (directory / 'worker.lock').open('a+b') as lock:
         try:
@@ -462,7 +488,7 @@ def work(directory, commit_only=False):
                 write_journal(file, job)
                 env = os.environ.copy()
                 env.setdefault('GIT_SSH_COMMAND', 'ssh -oBatchMode=yes')
-                result = git('-c', 'credential.interactive=false', 'push', job['remote'],
+                result = git('-c', 'credential.interactive=false', 'push', '--porcelain', job['remote'],
                              job['sha'] + ':' + job['destination'], check=False, timeout=120, env=env)
                 if result.returncode:
                     # A later finalized job may already have published this one.
@@ -470,6 +496,9 @@ def work(directory, commit_only=False):
                     tip = published.stdout.split()[0] if published.returncode == 0 and published.stdout.strip() else ''
                     included = tip and git('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode == 0
                     if not included:
+                        error = rejected_push_error(job, result, tip)
+                        if error:
+                            raise RuntimeError(error)
                         log_event('background_commit', 'push_pending', outcome='retry')
                         return
                 if not job.get('tracking'):
@@ -724,6 +753,9 @@ def wait_for_background(real_git, global_args, branch_base=None):
         # Only an explicit immutable, already completed base may bypass the gate.
         if branch_base and completed_branch_base(real_git, global_args, branch_base) == branch_base:
             return
+        job = read_journal(Path(entries[0]['directory']) / 'job.json')
+        if job and job.get('phase') == 'blocked' and job.get('error'):
+            raise RuntimeError('Background Commit & Push paused: ' + job['error'])
         raise RuntimeError('A background Commit & Push is pending. Let it finish before modifying pending history or committing again.')
 
 

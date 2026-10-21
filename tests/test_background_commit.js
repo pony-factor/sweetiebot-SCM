@@ -148,6 +148,14 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1, 'a genuine branch mismatch remains visible');
+  status = { id: 'rejected-push', phase: 'blocked', titleJobs: [],
+    error: 'Push rejected: local and remote changes have merge conflicts.' };
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(errors.length, 2, 'a rejected push produces one actionable error');
+  assert.equal(errors[1], 'Background commit paused: ' + status.error);
   assert.equal(progress.length, 2, 'a separate generation batch gets a new notification');
   assert.equal(completed.length, 2, 'jobs finishing early close their notification immediately');
   assert.equal(noticeTimers[1].cancelled, true, 'early completion cancels the one-second timer');
