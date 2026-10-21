@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import secrets
+import shutil
 import time
 from contextlib import contextmanager, nullcontext
 
@@ -22,6 +23,14 @@ MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
 PARALLEL_JOBS = 4
+
+
+class SyncConflicts(RuntimeError):
+    def __init__(self, paths):
+        self.paths = paths
+        super().__init__('Lindsey sync found merge conflicts: ' + ', '.join(paths)
+                         + '. Your local commit and working files are preserved. '
+                         'Stop the background push before resolving these conflicts.')
 
 
 @contextmanager
@@ -69,6 +78,17 @@ def recover_finalization(meta):
     if actual not in (transaction['before'], transaction['after']):
         raise RuntimeError('The branch changed during message finalization; recovery was paused.')
     if actual != transaction['after']:
+        if transaction.get('checkout'):
+            env = os.environ.copy()
+            env.pop('GIT_INDEX_FILE', None)
+            active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
+            if active == branch:
+                # Two-tree checkout refuses overlapping edits and is replayable
+                # if a crash occurs before the compare-and-swap below.
+                result = git('read-tree', '-u', '-m', transaction['before'], transaction['after'],
+                             check=False, env=env)
+                if result.returncode:
+                    raise RuntimeError('Local edits changed during Lindsey sync; publication was paused.')
         git('update-ref', '-m', 'sweetiebot: finalize queued commit messages',
             branch, transaction['after'], transaction['before'])
     for update in transaction['updates']:
@@ -77,6 +97,8 @@ def recover_finalization(meta):
         job.update(update['values'])
         job.pop('replacement_sha', None)
         write_journal(journal, job)
+        if 'tree' in update['values']:
+            git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
     file.unlink()
 
 
@@ -359,6 +381,76 @@ def rejected_push_error(job, result, remote_tip):
     return message
 
 
+def sync_with_lindsey(job, remote_tip):
+    """Replay unpublished history through Lindsey, then atomically adopt its plan."""
+    meta = Path(job['gitdir'])
+    with repository_lock(meta):
+        recover_finalization(meta)
+        entries, jobs = captured_chain(meta / MARKER, job['branch'])
+        if any(item.get('provisional') for item in jobs):
+            return False  # Let all queued titles finish before rebasing the chain.
+        configured = os.environ.get('LINDSEY_SYNC_REPO')
+        candidates = ([Path(configured)] if configured else []) + [
+            Path(job['root']).parent / 'lindsey-sync',
+            Path.home() / 'GitHub/pony-factor/lindsey-sync']
+        script = next((root / 'scripts/sync-local.js' for root in candidates
+                       if (root / 'scripts/sync-local.js').is_file()), None)
+        node = shutil.which('node') or next((str(path) for path in (
+            Path('/opt/homebrew/bin/node'), Path('/usr/local/bin/node')) if path.is_file()), None)
+        if not script or not node:
+            raise RuntimeError('Push needs sync, but Lindsey local sync is unavailable. Install Lindsey Sync and Node, then retry.')
+        if not re.fullmatch(r'[0-9a-f]{40,64}', remote_tip or ''):
+            raise RuntimeError('Lindsey could not verify the remote branch; retry when it is reachable.')
+        if git('cat-file', '-e', remote_tip + '^{commit}', check=False).returncode:
+            if git('fetch', '--no-tags', '--no-write-fetch-head', job['remote'], remote_tip,
+                   check=False, timeout=120).returncode:
+                raise RuntimeError('Lindsey could not fetch the remote branch; retry when it is reachable.')
+        before = branch_tip(job['branch'])
+        env = os.environ.copy()
+        env.pop('GIT_INDEX_FILE', None)
+        active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
+        # Do not update a branch checked out in another linked worktree.
+        worktrees = git('worktree', 'list', '--porcelain').split('\n\n')
+        for worktree in worktrees:
+            if '\nbranch ' + job['branch'] in worktree and not worktree.startswith('worktree ' + job['root'] + '\n'):
+                raise RuntimeError('Lindsey sync paused because the branch is open in another worktree.')
+        result = subprocess.run([node, str(script), job['root'], before, remote_tip, core.REAL_GIT],
+                                capture_output=True, text=True, timeout=180, env=env)
+        if result.returncode:
+            raise RuntimeError('Lindsey could not prepare the sync; your local commits and files are preserved.')
+        plan = json.loads(result.stdout)
+        if plan.get('status') == 'conflicts':
+            paths = plan.get('paths', [])
+            raise SyncConflicts(paths)
+        if (plan.get('version') != 1 or plan.get('status') != 'ready'
+                or plan.get('before') != before or plan.get('onto') != remote_tip):
+            raise RuntimeError('Lindsey could not safely replay this history; manual sync is required.')
+        if active == job['branch'] and git('status', '--porcelain', env=env):
+            raise RuntimeError('Lindsey sync is waiting for your uncommitted changes. Commit or stash them before retrying; your files are preserved.')
+        replacements = {item['before']: item for item in plan['commits']}
+        after = plan['after']
+        if git('merge-base', '--is-ancestor', remote_tip, after, check=False).returncode:
+            raise RuntimeError('Lindsey returned a sync that does not contain the remote changes.')
+        updates = []
+        for entry, item in zip(entries, jobs):
+            replacement = replacements.get(item['sha'])
+            if replacement:
+                updates.append({'directory': entry['directory'], 'values': dict(
+                    sha=replacement['after'], parent=replacement['parent'], tree=replacement['tree'])})
+        # Retain the exact old history before adopting any replacement refs.
+        git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before, before)
+        if branch_tip(job['branch']) != before:
+            raise RuntimeError('The branch changed while Lindsey prepared the sync; publication was paused.')
+        if active == job['branch'] and git('status', '--porcelain', env=env):
+            raise RuntimeError('Local files changed while Lindsey prepared the sync; publication was paused.')
+        write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
+                      after=after, updates=updates, checkout=True))
+        recover_finalization(meta)
+        job.update(read_journal(Path(next(entry['directory'] for entry in entries
+                                         if entry['id'] == job['id'])) / 'job.json'))
+        return True
+
+
 def work(directory, commit_only=False):
     with (directory / 'worker.lock').open('a+b') as lock:
         try:
@@ -498,9 +590,21 @@ def work(directory, commit_only=False):
                     if not included:
                         error = rejected_push_error(job, result, tip)
                         if error:
-                            raise RuntimeError(error)
-                        log_event('background_commit', 'push_pending', outcome='retry')
-                        return
+                            if not sync_with_lindsey(job, tip):
+                                return
+                            # One recovery attempt per push; never force-push.
+                            result = git('-c', 'credential.interactive=false', 'push', '--porcelain',
+                                         job['remote'], job['sha'] + ':' + job['destination'],
+                                         check=False, timeout=120, env=env)
+                            if result.returncode:
+                                error = rejected_push_error(job, result, '')
+                                if error:
+                                    raise RuntimeError('The remote advanced again after Lindsey sync. Retry the background job.')
+                                log_event('background_commit', 'push_pending', outcome='retry')
+                                return
+                        else:
+                            log_event('background_commit', 'push_pending', outcome='retry')
+                            return
                 if not job.get('tracking'):
                     short = job['branch'][len('refs/heads/'):]
                     with repository_lock(job['gitdir']):
@@ -532,6 +636,9 @@ def work(directory, commit_only=False):
             with nullcontext() if commit_only else repository_lock(job['gitdir']):
                 current = read_journal(file)
                 current.update(phase='blocked', error=str(exc), context='')
+                current.pop('conflictPaths', None)
+                if isinstance(exc, SyncConflicts):
+                    current['conflictPaths'] = exc.paths
                 write_journal(file, current)
             log_event('background_commit', 'blocked', error_type=type(exc).__name__, outcome='blocked')
         finally:
@@ -754,9 +861,13 @@ def wait_for_background(real_git, global_args, branch_base=None):
         if branch_base and completed_branch_base(real_git, global_args, branch_base) == branch_base:
             return
         job = read_journal(Path(entries[0]['directory']) / 'job.json')
+        name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
+        branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''
+        label = name + (' (' + branch + ')' if branch else '')
         if job and job.get('phase') == 'blocked' and job.get('error'):
-            raise RuntimeError('Background Commit & Push paused: ' + job['error'])
-        raise RuntimeError('A background Commit & Push is pending. Let it finish before modifying pending history or committing again.')
+            reason = 'Push blocked by merge conflicts.' if 'merge conflict' in job['error'].lower() else 'Commit & Push paused.'
+            raise RuntimeError(label + ': ' + reason + ' ' + job['error'])
+        raise RuntimeError(label + ': Commit & Push is still running. Let it finish before modifying pending history or committing again.')
 
 
 if __name__ == '__main__':
@@ -779,7 +890,7 @@ if __name__ == '__main__':
             marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
-            status = {key: job[key] for key in ('id', 'phase', 'error') if key in job} if job else {}
+            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths') if key in job} if job else {}
             recoverable = False
             if job and job['phase'] == 'blocked' and branch_recovery_candidate(job):
                 try:
