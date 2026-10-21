@@ -607,6 +607,7 @@ worker.work(Path(sys.argv[2]))
     def test_unrelated_branch_can_sync_commit_and_push_while_main_generates(self):
         self.git('commit', '-q', '-m', 'Base')
         base = self.git('rev-parse', 'HEAD')
+        self.git('push', '-q', 'origin', 'main')
         self.git('branch', 'other')
         completed = self.git('commit-tree', self.git('rev-parse', 'HEAD^{tree}'), '-p', base, '-m', 'Completed update')
         self.git('update-ref', 'refs/heads/completed', completed)
@@ -630,8 +631,19 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(result.returncode, 0, result.stderr)
         result = run('pull', '--ff-only', 'origin', 'other')
         self.assertEqual(result.returncode, 0, result.stderr)
+        result = run('pull', '--ff-only', 'origin', 'main')
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'other'),
                          self.git('rev-parse', 'other'))
+        self.git('switch', '-q', 'main')
+        result = run('push', 'origin', 'other')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.git('switch', '-q', 'other')
+        self.git('config', 'remote.origin.push', 'main:configured-copy')
+        result = run('push', 'origin')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('still running', result.stderr)
+        self.git('config', '--unset-all', 'remote.origin.push')
         for args in [('merge', 'main'), ('push', '--all', 'origin'),
                      ('push', 'origin', 'other', 'main:pending-copy')]:
             result = run(*args)
@@ -639,6 +651,15 @@ worker.work(Path(sys.argv[2]))
             self.assertIn('still running', result.stderr)
         self.assertEqual(self.git('rev-parse', 'main'), pending)
         self.assertTrue(self.job(directory)['provisional'])
+
+    def test_completed_ancestor_with_pending_push_does_not_block_independent_descendants(self):
+        self.git('commit', '-q', '-m', 'Base')
+        (self.repo / 'story.txt').write_text('Completed title waiting for push\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(message='Completed title', push=True)
+        self.git('switch', '-q', '-c', 'other')
+        worker.wait_for_background('/usr/bin/git', [])
+        self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_linked_worktrees_are_independent_but_inherited_placeholders_are_guarded(self):
         self.git('commit', '-q', '-m', 'Base')

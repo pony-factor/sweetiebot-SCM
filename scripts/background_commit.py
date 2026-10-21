@@ -17,7 +17,7 @@ from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
 from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER, alive,
-                                    related_pending_jobs, operation_refs)
+                                    related_pending_jobs)
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'

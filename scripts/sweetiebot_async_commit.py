@@ -109,6 +109,9 @@ def pending_jobs(real_git, global_args, background=True):
 
 def related_pending_jobs(real_git, global_args, refs=('HEAD',), background=True):
     """A branch is busy only if it owns or inherits a pending commit."""
+    records = pending_jobs(real_git, global_args, background)
+    if not records or not refs:
+        return []
     targets = []
     for ref in refs:
         if ref == 'HEAD':
@@ -121,7 +124,7 @@ def related_pending_jobs(real_git, global_args, refs=('HEAD',), background=True)
                            capture_output=True, text=True)
         targets.append((symbolic.stdout.strip(), resolved.stdout.strip() if resolved.returncode == 0 else ''))
     related = []
-    for record in pending_jobs(real_git, global_args, background):
+    for record in records:
         job = record['job']
         branch = job.get('branch', '')
         if branch and not branch.startswith('refs/'):

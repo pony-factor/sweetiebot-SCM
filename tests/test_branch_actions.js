@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean } = require('../efs/branch_actions');
+const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean, beginRepositoryCommit, endRepositoryCommit, commitInProgress } = require('../efs/branch_actions');
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 
@@ -32,6 +32,19 @@ function fixture(onMain = false) {
 }
 
 async function run() {
+  {
+    const { repository } = fixture(true);
+    const main = beginRepositoryCommit(repository);
+    assert.equal(commitInProgress(repository), true);
+    repository.state.HEAD = { name: 'other' };
+    assert.equal(commitInProgress(repository), false, 'A push on main does not pause other');
+    const other = beginRepositoryCommit(repository);
+    assert.equal(commitInProgress(repository), true);
+    endRepositoryCommit(repository, main);
+    assert.equal(commitInProgress(repository), true, 'Finishing main must not release the other commit');
+    endRepositoryCommit(repository, other);
+    assert.equal(commitInProgress(repository), false);
+  }
   for (const state of [
     { ahead: 0, behind: 1 },
     { ahead: 1, behind: 1 },

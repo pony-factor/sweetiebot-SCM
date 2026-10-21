@@ -62,11 +62,10 @@ async function storeSpellcheckPushGate(file, gate) {
   }
 }
 
-async function armSpellcheckPushGate(repository) {
+async function armSpellcheckPushGate(repository, token = randomUUID()) {
   try {
     const file = await spellcheckPushGateFile(repository);
     if (!file) return null;
-    const token = randomUUID();
     // Use Git's actual pre-commit HEAD rather than a potentially stale VS Code
     // status snapshot, so the worker can match this gate to the right commit.
     let previousHead = '';
@@ -101,17 +100,25 @@ async function releaseSpellcheckPushGate(repository, token, pushed) {
 }
 
 function commitInProgress(repository) {
-  return (activeCommits.get(repository) ?? 0) > 0;
+  const branch = repository.state.HEAD?.name;
+  return [...(activeCommits.get(repository)?.values() || [])]
+    .some(owner => !owner || !branch || owner === branch);
 }
 
 function beginRepositoryCommit(repository) {
-  activeCommits.set(repository, (activeCommits.get(repository) ?? 0) + 1);
+  const token = randomUUID();
+  const commits = activeCommits.get(repository) || new Map();
+  commits.set(token, repository.state.HEAD?.name);
+  activeCommits.set(repository, commits);
+  return token;
 }
 
-function endRepositoryCommit(repository) {
-  const remaining = (activeCommits.get(repository) ?? 0) - 1;
-  if (remaining > 0) activeCommits.set(repository, remaining);
-  else activeCommits.delete(repository);
+function endRepositoryCommit(repository, token) {
+  const commits = activeCommits.get(repository);
+  if (!commits) return;
+  if (!token) token = [...commits].find(([, owner]) => owner === repository.state.HEAD?.name)?.[0];
+  commits.delete(token);
+  if (!commits.size) activeCommits.delete(repository);
 }
 
 function queueRepositoryOperation(repository, operation) {
@@ -1145,8 +1152,9 @@ function registerBranchCommands(vscode, context) {
     vscode.commands.registerCommand('sweetiebot.beginCommit', async (uri, options) => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, async () => {
-        beginRepositoryCommit(repository);
-        return options?.waitForPush ? armSpellcheckPushGate(repository) : null;
+        const token = beginRepositoryCommit(repository);
+        if (options?.waitForPush) await armSpellcheckPushGate(repository, token);
+        return token;
       });
     }),
     vscode.commands.registerCommand('sweetiebot.endCommit', async (uri, options) => {
@@ -1155,7 +1163,7 @@ function registerBranchCommands(vscode, context) {
         try {
           await releaseSpellcheckPushGate(repository, options?.gateToken, options?.pushed === true);
         } finally {
-          endRepositoryCommit(repository);
+          endRepositoryCommit(repository, options?.gateToken);
         }
       });
     })
