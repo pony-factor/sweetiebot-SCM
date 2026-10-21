@@ -53,4 +53,5 @@ def transform(source, remove=False):
                    + ','.join(match[name] for name in ('root', 'enter', 'leave', 'drop')) + ')')
     source = source.replace(original, replacement, 1)
     return (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
+            + (ASSETS / 'video-frames.js').read_text() + '\n'
             + (ASSETS / 'image-drop.js').read_text() + END)
