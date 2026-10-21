@@ -16,7 +16,7 @@ const palette=ctx.scmToolkitKefaniaThemeColors({
 });
 assert.equal(palette.button,'#00aa55','Use the rendered theme accent, including user overrides');
 assert.equal(palette.bg,'#101010');
-function documentFixture() {
+function documentFixture(storage = new Map()) {
   const elements = new Map();
   const doc = {
     body: {},
@@ -34,6 +34,10 @@ function documentFixture() {
       return { querySelector() { return null; }, appendChild() {} };
     },
     defaultView: {
+      localStorage: {
+        getItem(key) { return storage.get(key) ?? null; },
+        setItem(key, value) { storage.set(key, value); }
+      },
       vscodeWindowId: 7, screenX: -1300, screenY: 80, outerWidth: 1000, outerHeight: 760,
       screen: { availLeft: -1440, availTop: 25, availWidth: 1440, availHeight: 875 },
       MutationObserver: class { constructor(fn) { doc.remount = fn; } observe() {} disconnect() {} },
@@ -64,8 +68,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.length, 0, 'Regular windows do not automatically compact');
   doc.action().events.click(event);
   doc.action().events.click(event);
+  await flush();
   assert.equal(calls.length, 1, 'Double clicks cannot overwrite saved bounds');
-  assert.deepEqual(calls[0], { bounds: { x: -1300, y: 80, width: 640, height: 640 }, options: { targetWindowId: 7 } });
+  assert.deepEqual(calls[0], { bounds: { x: -1440, y: 143, width: 640, height: 640 }, options: { targetWindowId: 7 } });
   assert.ok(calls[0].bounds.width >= 640, 'Keep VS Code vertical-panel native minimum and resizable columns');
   release(); await flush();
   assert.equal(doc.action().attrs['aria-pressed'], 'true');
@@ -96,7 +101,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   ctx.scmToolkitMountCompactWindow(session, sessionNative, null, sessionConfiguration);
   await flush();
   assert.deepEqual(sessionCalls, [{
-    bounds: { x: -1300, y: 80, width: 640, height: 640 },
+    bounds: { x: -1440, y: 143, width: 640, height: 640 },
     options: { targetWindowId: 7 }
   }]);
   assert.equal(session.action().attrs['aria-pressed'], 'true');
@@ -150,25 +155,88 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moving.checkDisplay, null, 'Expansion stops compact display enforcement');
   moving.action().events.click(event);
   await flush();
-  assert.deepEqual(moves.at(-1), { x: 120, y: 90, width: 640, height: 640 });
+  assert.deepEqual(moves.at(-1), { x: 0, y: 233, width: 640, height: 640 });
 
-  // Compacting several windows on one display keeps their distinct positions.
-  const positions = [{ x: -1300, y: 80 }, { x: -700, y: 220 }];
+  // Windows share a row allocator, wrap below it, and reuse released slots.
+  const storage = new Map();
   const compacted = [];
-  for (const position of positions) {
-    const windowDoc = documentFixture();
-    windowDoc.defaultView.screenX = position.x;
-    windowDoc.defaultView.screenY = position.y;
+  const tiled = [];
+  for (let id = 1; id <= 4; id++) {
+    const windowDoc = documentFixture(storage);
+    windowDoc.defaultView.vscodeWindowId = id;
+    windowDoc.defaultView.screen = { availLeft: -1440, availTop: 25, availWidth: 1440, availHeight: 2560 };
     ctx.scmToolkitMountCompactWindow(windowDoc, {
       async positionWindow(bounds) {
         compacted.push(JSON.parse(JSON.stringify(bounds)));
       }
     });
+    tiled.push(windowDoc);
     windowDoc.action().events.click(event);
     await flush();
   }
-  assert.deepEqual(compacted, positions.map(position => ({ ...position, width: 640, height: 640 })),
-    'Compacting multiple windows must not stack them at the display center');
+  assert.deepEqual(compacted, [
+    { x: -1440, y: 985, width: 640, height: 640 },
+    { x: -800, y: 985, width: 640, height: 640 },
+    { x: -1440, y: 1625, width: 640, height: 640 },
+    { x: -800, y: 1625, width: 640, height: 640 }
+  ]);
+  tiled[0].action().events.click(event);
+  await flush();
+  tiled[0].action().events.click(event);
+  await flush();
+  assert.deepEqual(compacted.at(-1), compacted[0], 'Expansion frees the first slot for reuse');
+
+  // Concurrent renderer requests are serialized; closed windows do not hold slots.
+  const concurrentStorage = new Map();
+  concurrentStorage.set('sweetiebot.compact-window-placements.v1', JSON.stringify({
+    99: { display: '-1440:25:1440:875', slot: 0 }
+  }));
+  let pendingLock = Promise.resolve();
+  const locks = { request(name, callback) {
+    const result = pendingLock.then(callback);
+    pendingLock = result.catch(() => {});
+    return result;
+  } };
+  const concurrent = [];
+  const concurrentBounds = [];
+  for (const id of [20, 21]) {
+    const windowDoc = documentFixture(concurrentStorage);
+    windowDoc.defaultView.vscodeWindowId = id;
+    windowDoc.defaultView.navigator = { locks };
+    ctx.scmToolkitMountCompactWindow(windowDoc, {
+      async getWindows() { return [{ id: 20 }, { id: 21 }]; },
+      async positionWindow(bounds) { concurrentBounds.push(JSON.parse(JSON.stringify(bounds))); }
+    });
+    concurrent.push(windowDoc);
+  }
+  concurrent.forEach(windowDoc => windowDoc.action().events.click(event));
+  await flush();
+  assert.deepEqual(concurrentBounds, [
+    { x: -1440, y: 143, width: 640, height: 640 },
+    { x: -800, y: 143, width: 640, height: 640 }
+  ], 'Simultaneous clicks reserve distinct slots and reclaim closed-window slots');
+
+  const separate = documentFixture(concurrentStorage);
+  separate.defaultView.vscodeWindowId = 22;
+  separate.defaultView.screen = { availLeft: 0, availTop: 25, availWidth: 1920, availHeight: 1055 };
+  let separateBounds;
+  ctx.scmToolkitMountCompactWindow(separate, {
+    async positionWindow(bounds) { separateBounds = JSON.parse(JSON.stringify(bounds)); }
+  });
+  separate.action().events.click(event);
+  await flush();
+  assert.deepEqual(separateBounds, { x: 0, y: 233, width: 640, height: 640 },
+    'Each display starts its own row');
+
+  const rejected = documentFixture(concurrentStorage);
+  rejected.defaultView.vscodeWindowId = 23;
+  ctx.scmToolkitMountCompactWindow(rejected, {
+    async positionWindow() { throw new Error('native failure'); }
+  });
+  rejected.action().events.click(event);
+  await flush();
+  assert.equal(JSON.parse(concurrentStorage.get('sweetiebot.compact-window-placements.v1'))[23], undefined,
+    'A failed resize releases its reservation');
 
   // Workspace configuration may arrive after the workbench mounts.
   const late = documentFixture();
@@ -197,9 +265,11 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   narrow.defaultView.screenY = 40;
   ctx.scmToolkitMountCompactWindow(narrow, native);
   narrow.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1930, y: 40, width: 640, height: 640 });
+  await flush();
+  assert.deepEqual(calls.at(-1).bounds, { x: 1920, y: 49, width: 640, height: 640 });
   release(); await flush();
   narrow.action().events.click(event);
+  await flush();
   assert.deepEqual(calls.at(-1).bounds, { x: 1953, y: 110, width: 600, height: 518 });
   release(); await flush();
 
@@ -217,9 +287,11 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   small.defaultView.screenX = 1925;
   small.defaultView.screenY = 60;
   small.action().events.click(event);
-  assert.deepEqual(calls.at(-1).bounds, { x: 1925, y: 60, width: 640, height: 640 });
+  await flush();
+  assert.deepEqual(calls.at(-1).bounds, { x: 1920, y: 64, width: 640, height: 640 });
   release(); await flush();
   small.action().events.click(event);
+  await flush();
   assert.deepEqual(calls.at(-1).bounds, { x: 1945, y: 114, width: 600, height: 540 });
   release(); await flush();
   // The workbench's titlebar still installs the popup consumer when the SCM

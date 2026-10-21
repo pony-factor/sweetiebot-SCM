@@ -2724,6 +2724,53 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     if (!win || !nativeHost?.positionWindow) return;
     const state = { restore: null, busy: false, opening: false, autoCompactStarted: false };
     doc.__sweetiebotCompactWindow = state;
+    const placementKey = 'sweetiebot.compact-window-placements.v1';
+    const readPlacements = () => {
+        try { return JSON.parse(win.localStorage.getItem(placementKey) || '{}'); }
+        catch { return {}; }
+    };
+    const releasePlacement = () => {
+        const release = () => {
+            const placements = readPlacements();
+            delete placements[win.vscodeWindowId];
+            win.localStorage?.setItem(placementKey, JSON.stringify(placements));
+        };
+        return win.navigator?.locks
+            ? win.navigator.locks.request(placementKey, release) : release();
+    };
+    const reservePlacement = async () => {
+        const reserve = async () => {
+            const windows = nativeHost.getWindows
+                ? await nativeHost.getWindows({ includeAuxiliaryWindows: true }) : null;
+            const placements = readPlacements();
+            if (windows) {
+                const live = new Set(windows.map(window => String(window.id)));
+                for (const id of Object.keys(placements)) if (!live.has(id)) delete placements[id];
+            }
+            delete placements[win.vscodeWindowId];
+            const screen = win.screen;
+            const display = [screen.availLeft ?? 0, screen.availTop ?? 0,
+                screen.availWidth, screen.availHeight].join(':');
+            const occupied = new Set(Object.values(placements)
+                .filter(item => item.display === display).map(item => item.slot));
+            let slot = 0;
+            while (occupied.has(slot)) slot++;
+            const columns = Math.max(1, Math.floor(screen.availWidth / 640));
+            const x = (screen.availLeft ?? 0) + (slot % columns) * 640;
+            const top = screen.availTop ?? 0;
+            // Begin at the vertical middle, then fill rows below. Keep the
+            // titlebar on screen when there is no room for another full row.
+            const y = Math.min(top + Math.round((screen.availHeight - 640) / 2)
+                + Math.floor(slot / columns) * 640, top + screen.availHeight - 640);
+            placements[win.vscodeWindowId] = { display, slot };
+            win.localStorage?.setItem(placementKey, JSON.stringify(placements));
+            return { x, y, width: 640, height: 640 };
+        };
+        // Serialize reservations across renderer processes, including automatic
+        // compaction of several newly opened PR windows at the same time.
+        return win.navigator?.locks
+            ? win.navigator.locks.request(placementKey, reserve) : reserve();
+    };
     const actionId = 'sweetiebot-compact-window-action';
     const newActionId = 'sweetiebot-new-workspace-window-action';
     const displayKey = () => [win.screen.availLeft, win.screen.availTop,
@@ -2750,6 +2797,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             if (displayKey() === compactDisplay) {
                 if (filled) {
                     state.restore = null;
+                    await releasePlacement();
                     stopDisplayWatcher();
                     const action = doc.getElementById(actionId)?.querySelector('a');
                     if (action) updateAction(action);
@@ -2757,6 +2805,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 return;
             }
             compactDisplay = displayKey();
+            await releasePlacement();
             if (win.screen.availWidth < 640 || win.screen.availHeight < 640) return;
             state.busy = true;
             try {
@@ -2819,22 +2868,23 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             const width = state.restore
                 ? Math.min(screen.availWidth, Math.max(600, Math.round(screen.availWidth * 0.75))) : 640;
             const height = state.restore ? Math.round(screen.availHeight * 0.75) : 640;
-            // Compact in place so separately positioned windows do not pile up.
-            const bounds = {
-                x: state.restore
-                    ? (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2) : previous.x,
-                y: state.restore
-                    ? (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2) : previous.y,
+            const bounds = state.restore ? {
+                x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
+                y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
                 width, height
-            };
+            } : await reservePlacement();
             if (nativeHost.unmaximizeWindow) {
                 await nativeHost.unmaximizeWindow({ targetWindowId: win.vscodeWindowId });
             }
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
             state.restore = state.restore ? null : previous;
             if (state.restore) watchCompactDisplay();
-            else stopDisplayWatcher();
+            else {
+                await releasePlacement();
+                stopDisplayWatcher();
+            }
         } catch (error) {
+            if (!state.restore) await releasePlacement();
             console.error('Sweetiebot could not resize the window', error);
             failed = true;
         } finally {
@@ -2948,6 +2998,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         }
     });
     win.addEventListener('unload', () => {
+        // Closed-window reservations are pruned using the native window list.
         stopDisplayWatcher();
         observer.disconnect();
         visibilityListener?.dispose();
