@@ -1748,7 +1748,7 @@ def main() -> None:
                                if subcommand in {"switch", "checkout"}
                                and len(args) in {2, 3} and args[0] in {"-b", "-c"} else None)
                 verified_base = wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base)
-                if verified_base:
+                if isinstance(verified_base, str) and re.fullmatch(r"[0-9a-f]{40,64}", verified_base):
                     # Pin the checked ref so concurrent finalization or checkout
                     # cannot change which history the new branch inherits.
                     argv = argv[:index + 1] + args[:2] + [verified_base]

@@ -504,7 +504,7 @@ worker.work(Path(sys.argv[2]))
         for command in ('commit', 'reset'):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('background Commit & Push is pending', result.stderr)
+            self.assertIn('Commit & Push is still running', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_wrapper_allows_switch_and_checkout_while_push_is_pending(self):
@@ -568,7 +568,7 @@ worker.work(Path(sys.argv[2]))
                                 capture_output=True, text=True, timeout=10)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.git('rev-parse', 'night-shade'), pending)
-        self.assertEqual(self.job(directory)['phase'], 'generating')
+        self.assertTrue(self.job(directory)['provisional'])
 
     def test_no_completed_base_for_an_unfinished_initial_commit(self):
         self.queue(message='')
