@@ -9,6 +9,7 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
         const surface = window;
         let active;
         let interaction = 0;
+        let dropSequence = 0;
         const select = event => {
             const entries = [...targets].reverse().filter(entry => !entry.root
                 || (entry.root.isConnected !== false && entry.root.getClientRects().length));
@@ -23,7 +24,7 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 || transfer.files?.length
                 || Array.from(transfer.items || []).some(item => item.kind === 'file'));
         };
-        const reportFailure = () => {
+        const reportFailure = (message = 'The screenshot could not be attached. Save it first, then drag the saved image here.') => {
             let notice = document.getElementById('scm-toolkit-image-drop-status');
             if (!notice) {
                 notice = document.createElement('div');
@@ -34,7 +35,7 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 notice.addEventListener('click', () => notice.remove());
                 body.appendChild(notice);
             }
-            notice.textContent = 'The screenshot could not be attached. Save it first, then drag the saved image here.';
+            notice.textContent = message;
         };
         const snapshotDrop = transfer => {
             // Read the drag store synchronously: Chromium protects it once drop returns.
@@ -56,7 +57,10 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 && (!item.file || item.file.size === 0)
                 && (item.type?.startsWith('image/')
                     || /\.(png|jpe?g|gif|webp|heic|tiff?)$/i.test(item.file?.name || item.entry?.name || '')));
-            return { items, files, types, strings, pending };
+            const allFiles = [...new Set([...files, ...items.map(item => item.file).filter(Boolean)])];
+            const videos = allFiles.filter(file => /^video\//i.test(file.type || '')
+                || /\.(mp4|m4v|mov|webm|ogv)$/i.test(file.name || ''));
+            return { items, files, types, strings, pending, videos };
         };
         const recoverImage = async item => {
             // A floating macOS screenshot may initially be a zero-byte promised file.
@@ -119,7 +123,8 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 if (!hasFiles(event)) return;
                 const entry = select(event);
                 const snapshot = snapshotDrop(event.dataTransfer);
-                if (entry && snapshot.pending.length) {
+                const dropId = ++dropSequence;
+                if (entry && (snapshot.pending.length || snapshot.videos.length)) {
                     const originalInteraction = interaction;
                     const originalLocation = window.location?.href;
                     // Accept now, before awaiting the file promise, and keep the original
@@ -128,25 +133,58 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                     event.stopPropagation();
                     entry.leave(event);
                     const finish = async () => {
-                        const recovered = await Promise.all(snapshot.pending.map(recoverImage));
+                        const recovering = Promise.all(snapshot.pending.map(recoverImage));
+                        // Limit both decode work and the number of native image attachments.
+                        const selectedVideos = snapshot.videos.slice(0, 4);
+                        const framesPerVideo = Math.max(1, Math.floor(8 / selectedVideos.length));
+                        if (selectedVideos.length) {
+                            reportFailure('Extracting screenshots from dropped video…');
+                        }
+                        const converted = await Promise.allSettled(selectedVideos.map(file =>
+                            scmToolkitVideoScreenshots(file, framesPerVideo)));
+                        const recovered = await recovering;
+                        const notice = document.getElementById('scm-toolkit-image-drop-status');
+                        if (selectedVideos.length && notice?.textContent === 'Extracting screenshots from dropped video…') {
+                            notice.remove();
+                        }
                         if (!targets.has(entry) || entry.root?.isConnected === false
                             || (entry.root && !entry.root.getClientRects().length)
-                            || interaction !== originalInteraction
+                            || interaction !== originalInteraction || dropSequence !== dropId
                             || window.location?.href !== originalLocation) {
-                            reportFailure();
+                            reportFailure('Attachment canceled because the target chat changed during processing.');
                             return;
                         }
+                        const failedVideos = converted.filter(result => result.status === 'rejected').length
+                            + snapshot.videos.length - selectedVideos.length;
+                        const framesByVideo = new Map(selectedVideos.map((file, index) => [
+                            file, converted[index].status === 'fulfilled' ? converted[index].value : [],
+                        ]));
                         const replacements = new Map(snapshot.pending.map((item, index) => [item, recovered[index]]));
                         const byFile = new Map(snapshot.pending.filter(item => item.file)
                             .map(item => [item.file, replacements.get(item)]));
-                        const files = snapshot.files.map(file => byFile.has(file)
-                            ? byFile.get(file) : file).filter(Boolean);
-                        for (const file of recovered.filter(Boolean)) if (!files.includes(file)) files.push(file);
-                        const items = snapshot.items.map(item => ({
-                            kind: item.kind, type: item.type,
-                            getAsFile: () => replacements.has(item) ? replacements.get(item) : item.file,
-                            webkitGetAsEntry: () => item.entry,
-                        }));
+                        const videoSet = new Set(snapshot.videos);
+                        const expand = file => {
+                            if (videoSet.has(file)) return framesByVideo.get(file) || [];
+                            if (byFile.has(file)) return byFile.get(file) ? [byFile.get(file)] : [];
+                            return file?.size > 0 ? [file] : [];
+                        };
+                        const files = snapshot.files.flatMap(expand);
+                        const items = snapshot.items.flatMap(item => {
+                            if (item.kind !== 'file') {
+                                return [{ kind: item.kind, type: item.type, getAsFile: () => null }];
+                            }
+                            const expanded = item.file ? expand(item.file)
+                                : replacements.get(item) ? [replacements.get(item)] : [];
+                            return expanded.map(file => ({
+                                kind: 'file', type: file.type,
+                                getAsFile: () => file,
+                                webkitGetAsEntry: () => file === item.file ? item.entry : null,
+                            }));
+                        });
+                        for (const item of items) {
+                            const file = item.getAsFile();
+                            if (file && !files.includes(file)) files.push(file);
+                        }
                         const transfer = { files, items, types: snapshot.types,
                             getData: type => snapshot.strings.get(type) || '' };
                         const forwarded = new Proxy(event, {
@@ -157,7 +195,8 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                             },
                         });
                         if (files.length) entry.drop(forwarded);
-                        if (recovered.some(file => !file)) reportFailure();
+                        if (failedVideos) reportFailure('Some videos could not be decoded as screenshots. Try an MP4/WebM file or extract frames with ffmpeg.');
+                        else if (recovered.some(file => !file)) reportFailure();
                     };
                     void finish().catch(reportFailure);
                 } else {
