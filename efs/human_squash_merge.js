@@ -75,20 +75,23 @@ async function humanSquashMerge(repository, number, {
   if (repositoryInfo.allow_rebase_merge !== true) {
     throw Error('GitHub rebase merging is disabled; cannot preserve an explicit squash Git author.');
   }
-  const headBranch = await api(endpoint + '/branches/' + head.split('/').map(encodeURIComponent).join('/'));
-  if (headBranch.protected) throw Error('PR head is protected; cannot safely replace its commits.');
-  // Rewriting the head of an open child PR or sibling would affect unselected work.
-  for (let page = 1; page <= 100; page++) {
-    const pulls = await api(endpoint + '/pulls?state=open&per_page=100&page=' + page);
-    if (!Array.isArray(pulls)) throw Error('Cannot inspect all dependent pull requests.');
-    if (pulls.some(p => p.number !== number &&
+  const checkHeadIsolation = async () => {
+      const headBranch = await api(endpoint + '/branches/' + head.split('/').map(encodeURIComponent).join('/'));
+    if (headBranch.protected) throw Error('PR head is protected; cannot safely replace its commits.');
+    // Rewriting the head of an open child PR or sibling would affect unselected work.
+    for (let page = 1; page <= 100; page++) {
+      const pulls = await api(endpoint + '/pulls?state=open&per_page=100&page=' + page);
+      if (!Array.isArray(pulls)) throw Error('Cannot inspect all dependent pull requests.');
+      if (pulls.some(p => p.number !== number &&
         (p.base?.ref === head || (p.head?.ref === head &&
           p.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase())))) {
-      throw Error('Another open PR depends on or shares this head branch; refusing to rewrite it.');
-    }
-    if (pulls.length < 100) break;
-    if (page === 100) throw Error('Open PR dependency list is incomplete.');
+        throw Error('Another open PR depends on or shares this head branch; refusing to rewrite it.');
+      }
+      if (pulls.length < 100) break;
+      if (page === 100) throw Error('Open PR dependency list is incomplete.');
   }
+  };
+  await checkHeadIsolation();
   const commits = await readCommits(async ([url]) => api(url), repository, number);
   const author = humanAuthor(commits);
   const prepared = squashMessage(original.title, number, commits, { primaryAuthor: author });
@@ -163,6 +166,8 @@ async function humanSquashMerge(repository, number, {
         fresh.head?.ref !== head || fresh.stack) {
       throw Error('PR changed before guarded push; no branch was modified.');
     }
+    // Close the PR-dependency race between the first preflight and this push.
+    await checkHeadIsolation();
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
     const rewritten = await api(prPath);
