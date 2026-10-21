@@ -2,6 +2,7 @@
 """Apply, validate, or remove the custom VS Code SCM toolkit patch."""
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -25,6 +26,7 @@ from branch_names import resolve_runtime_settings
 HERE = Path(__file__).resolve().parent
 WORKBENCH_ASSETS = HERE.parent / "assets/workbench"
 CODEX_ASSETS = HERE.parent / "assets/codex"
+TWILIGHT_STOP_PNG = HERE.parent / "twi-stop.png"
 START = '\n/* scm-toolkit:start */\n'
 END = '\n/* scm-toolkit:end */\n'
 CODEX_START = '\n/* scm-toolkit-codex-countdown:start */\n'
@@ -683,6 +685,19 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
+def codex_rate_limit_script():
+    """Inline the bundled Twilight PNG instead of relying on an external image host."""
+    script = (CODEX_ASSETS / "rate-limit-controls.js").read_text()
+    placeholder = '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"'
+    if script.count(placeholder) != 1:
+        raise ValueError("Codex Twilight image placeholder must occur exactly once.")
+    png = TWILIGHT_STOP_PNG.read_bytes()
+    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Codex Twilight sticker is not a PNG.")
+    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    return script.replace(placeholder, json.dumps(data_url))
+
+
 def codex_transcript_compact_edits(js):
     """Only compact transcript usage-limit notices without a reset time."""
     pattern = re.compile(
@@ -827,14 +842,14 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + CODEX_END
         )
 
-    if not remove and ('localConversation.usageLimit.' in js or 'codex.rateLimitUpsellBanner.dismiss' in js):
+    if not remove and codex_bundle_matches(js):
         edits = codex_transcript_compact_edits(js)
         for original, replacement in edits:
             if js.count(original) != 1:
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + (CODEX_ASSETS / "rate-limit-controls.js").read_text()
+               + codex_rate_limit_script()
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:

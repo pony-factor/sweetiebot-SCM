@@ -24,7 +24,10 @@ FORMATS = (
 
 
 def source_files():
-    files = {Path("assets/commit-instructions.md"): ROOT / "assets/commit-instructions.md"}
+    files = {
+        Path("assets/commit-instructions.md"): ROOT / "assets/commit-instructions.md",
+        Path("twi-stop.png"): ROOT / "twi-stop.png",
+    }
     for directory, suffixes in FORMATS:
         for source in (ROOT / directory).rglob("*"):
             if source.is_file() and source.suffix in suffixes:

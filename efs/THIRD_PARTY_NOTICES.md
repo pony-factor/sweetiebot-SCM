@@ -18,4 +18,4 @@ The optional small Codex notice links to the original Twilight Sparkle STOP illu
 
 Attribution and original image page: https://knowyourmeme.com/photos/1188081-jack-blacks-octagon
 
-The image is loaded from https://i.kym-cdn.com/photos/images/original/001/188/081/498.png at runtime, rather than shipped in the installer or repository. The artwork is not licensed under this repository's AGPL-3.0 license. If the remote image fails to load or is blocked by Codex's content security policy, the native rate-limit notice remains visible.
+The image is included in this repository as `twi-stop.png` and embedded by the installer as a PNG data URI, rather than downloaded from an external image host at runtime. The artwork is not licensed under this repository's AGPL-3.0 license; inclusion does not imply a copyright license from the artist. If Codex blocks the embedded image, the native rate-limit notice remains visible.
