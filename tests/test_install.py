@@ -664,7 +664,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             patched[0],
         )
         self.assertIn('scmToolkitIsSingleRoot(workspace, roots)', patched[0])
-        self.assertIn('folders.length===1?"Contents":this.labelService.getWorkspaceLabel', patched[0])
+        self.assertIn('folders.length===1?this.contextService.getWorkspace().folders[0].name:this.labelService.getWorkspaceLabel', patched[0])
         self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
         self.assertEqual(
             install.transform(*patched, remove=True, settings=SETTINGS),

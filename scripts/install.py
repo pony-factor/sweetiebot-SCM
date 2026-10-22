@@ -478,7 +478,7 @@ def pr_workspace_explorer_edits(js):
     original_title = titles[0].group(0)
     new_title = original_title.replace(
         "get name(){return ",
-        'get name(){return this.contextService.getWorkspace().folders.length===1?"Contents":',
+        'get name(){return this.contextService.getWorkspace().folders.length===1?this.contextService.getWorkspace().folders[0].name:',
         1,
     )
     return [(match.group(0), replacement), (original_title, new_title)]
