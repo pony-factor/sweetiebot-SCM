@@ -434,6 +434,50 @@ class ManualSpellcheckTests(unittest.TestCase):
             self.assertIn("Instinet\nSoroban", prompt)
             self.assertIn("grammatical", prompt)
 
+    def test_reviewed_spellcheck_title_uses_the_normal_commit_generation_pipeline(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        def staged(*args):
+            if "--stat" in args:
+                return "notes/report.md | 2 + -"
+            if "--unified=2" in args:
+                return "--- a/notes/report.md\n+++ b/notes/report.md\n-old\n+new"
+            return ""
+        with patch.object(sys, "argv", argv), patch.object(
+            sys, "stdout", io.StringIO()
+        ) as output, patch.object(
+            ai_commit, "git_output", side_effect=staged
+        ) as read, patch.object(
+            ai_commit, "staged_file_context", return_value="context"
+        ), patch.object(
+            ai_commit, "should_add_default_branch_description", return_value=True
+        ), patch.object(
+            ai_commit, "generate_message", return_value=("🖊️ Fix trading citations", "Correct typos in the citations.")
+        ) as generate:
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {
+            "title": "🖊️ Fix trading citations", "description": "Correct typos in the citations."
+        })
+        generate.assert_called_once_with(
+            "notes/report.md | 2 + -",
+            "--- a/notes/report.md\n+++ b/notes/report.md\n-old\n+new",
+            ["notes/report.md"], include_description=True, file_context="context")
+        self.assertTrue(all("notes/report.md" in call.args for call in read.call_args_list))
+
+    def test_reviewed_spellcheck_title_rejects_unsafe_paths_before_git(self):
+        import io
+        for path in ["../outside.md", "/absolute.md", "other.bin", "bad\\x00.md"]:
+            with self.subTest(path=path), patch.object(
+                sys, "argv", ["ai_commit.py", "--spellcheck-generate-message",
+                              json.dumps({"paths": [path]})]
+            ), patch.object(
+                sys, "stderr", io.StringIO()
+            ), patch.object(ai_commit, "git_output") as git:
+                with self.assertRaises(SystemExit):
+                    ai_commit.main()
+                git.assert_not_called()
+
     def test_professional_emoji_adds_one_suitable_prefix(self):
         self.assertEqual(ai_commit.add_professional_emoji("Fix commit title"), "🐛 Fix commit title")
         self.assertEqual(ai_commit.add_professional_emoji("Update button layout"), "🖌️ Update button layout")

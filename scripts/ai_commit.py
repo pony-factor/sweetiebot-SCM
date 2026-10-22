@@ -1900,6 +1900,34 @@ def main() -> None:
             subject = add_professional_emoji(subject)
         print(json.dumps({"subject": subject}, ensure_ascii=False))
         return
+    if len(argv) == 2 and argv[0] == "--spellcheck-generate-message":
+        # Use the ordinary model, custom emoji priorities, effort, and retry
+        # budget on reviewed Markdown files that have ALREADY been staged.
+        try:
+            request = json.loads(argv[1])
+            paths = request["paths"]
+            if (not isinstance(paths, list) or not 0 < len(paths) <= 100 or
+                    any(not isinstance(path, str) or not path or len(path) > 1024
+                        or "\x00" in path or "\n" in path or
+                        path.startswith(("/", "-")) or
+                        ".." in Path(path).parts or Path(path).suffix.lower() not in (".md", ".mdx")
+                        for path in paths)):
+                raise ValueError("Invalid spellcheck file selection")
+            stat = git_output("diff", "--cached", "--stat", "--", *paths)
+            diff = git_output("diff", "--cached", "--no-ext-diff", "--no-color",
+                              "--unified=2", "--", *paths)
+            if not has_text_changes(diff):
+                raise ValueError("The selected spellcheck files have no staged text changes.")
+            title, description = generate_message(
+                stat, diff, paths,
+                include_description=should_add_default_branch_description(),
+                file_context=staged_file_context(paths),
+            )
+            print(json.dumps({"title": title, "description": description}, ensure_ascii=False))
+        except (ValueError, KeyError, TypeError, RuntimeError) as exc:
+            print(f"Sweetiebot: cannot generate spellcheck commit title ({exc})", file=sys.stderr)
+            raise SystemExit(1) from exc
+        return
     if len(argv) == 3 and argv[0] == "--sweetiebot-finalize":
         # The installed Git wrapper is a script, not an importable ai_commit.py.
         sys.modules.setdefault("ai_commit", sys.modules[__name__])

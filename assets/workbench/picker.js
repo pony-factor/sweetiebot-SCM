@@ -1050,7 +1050,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const previousFocus = doc.activeElement;
             const dialog = doc.createElement('dialog');
             dialog.className = 'scm-toolkit-spellcheck-popup';
-            dialog.setAttribute('aria-label', 'Spellchecks Performed');
+            dialog.setAttribute('aria-label', 'Spellcheck Changes');
             const themeHost = doc.querySelector?.('.monaco-workbench') || doc.documentElement;
             const theme = doc.defaultView.getComputedStyle?.(themeHost);
             dialog.style?.setProperty('color', theme?.getPropertyValue('--vscode-editor-foreground').trim() || '#d4d4d4');
@@ -1061,16 +1061,16 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const content = doc.createElement('div');
             content.className = 'scm-toolkit-spellcheck-content';
             const heading = doc.createElement('h1');
-            heading.textContent = 'Spellchecks Performed';
+            heading.textContent = 'Spellcheck Changes';
             const status = doc.createElement('div');
             status.className = 'scm-toolkit-spellcheck-status';
             status.setAttribute('role', 'status');
             const messageLabel = doc.createElement('label');
             messageLabel.className = 'scm-toolkit-spellcheck-message-label';
-            messageLabel.textContent = 'Commit message';
+            messageLabel.textContent = 'Optional commit description (normal title generated on Accept)';
             const message = doc.createElement('textarea');
             message.className = 'scm-toolkit-spellcheck-message';
-            message.setAttribute('aria-label', 'Commit message');
+            message.setAttribute('aria-label', 'Optional commit description');
             message.rows = 4;
             message.value = preview.message || '';
             messageLabel.append(message);
@@ -1086,7 +1086,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             let activeEdit, currentSave, acting = false, dismissed = false;
             const collapsedFiles = new Set();
             const updateActions = () => {
-                accept.disabled = acting || !!currentSave || !message.value.trim() || !(preview.files || []).length;
+                accept.disabled = acting || !!currentSave || !(preview.files || []).length;
                 revert.disabled = acting;
                 close.disabled = acting;
                 message.disabled = acting;

@@ -14,11 +14,11 @@ test('spellcheck modal fits and remains usable in very narrow and short workbenc
       try {
         await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body>
           <div class="monaco-workbench">
-            <dialog class="scm-toolkit-spellcheck-popup" aria-label="Spellchecks Performed">
+            <dialog class="scm-toolkit-spellcheck-popup" aria-label="Spellcheck Changes">
               <button class="scm-toolkit-spellcheck-close">Close</button>
               <div class="scm-toolkit-spellcheck-status" role="status"></div>
               <div class="scm-toolkit-spellcheck-content">
-                <h1>Spellchecks Performed</h1>
+                <h1>Spellcheck Changes</h1>
                 <section class="file"><h2>notes.md</h2>
                   <div class="diff-line add"><span class="line-number">1</span><span class="line-number">1</span>
                     <span class="sign">+</span><span class="scm-toolkit-spellcheck-line-actions"></span><span class="line-text">A spelling suggestion</span></div>

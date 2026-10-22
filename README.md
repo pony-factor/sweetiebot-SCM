@@ -524,9 +524,21 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
-### Spellchecking customization
+### Spellcheck Changes customization
 
-The **Spellchecking** settings tab groups draft-time and post-commit controls. The
+The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
+simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
+stages only the reviewed Markdown files, runs the **normal Ollama commit-title
+generator** on those staged corrections (same model, effort, retry budget, emoji
+priority rules, and default-branch description policy), then appends a
+`Co-authored-by: Spellchecker (Ollama MODEL) <verified GitHub noreply address>`
+trailer after the generated title and body. The regular commit includes only
+reviewed files; unrelated staged files remain untouched. The review's optional
+description is appended before the spellchecker attribution. If generation
+fails, staged corrections remain visible for manual recovery without a
+fallback special-purpose title.
+
+The **Spellcheck Changes** settings tab groups draft-time and post-commit controls. The
 **Automatic draft commit spellcheck** toggle is off by default. Draft checks can be
 configured independently of **Add professional emoji to drafted commit titles**
 (also off by default).
