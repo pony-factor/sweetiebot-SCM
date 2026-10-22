@@ -13,6 +13,7 @@ const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = requi
 const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
 const { resolvePythonExecutable } = require('./python_runtime');
 const { recoveryPlan } = require('./finalized_commit_recovery');
+const { routeBranch } = require('./shared_main');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -511,7 +512,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
   }
 }
 
-async function createBranch(repository, { defaultBranch, remote, names }, secureRandomInt) {
+async function createBranch(repository, { defaultBranch, remote, names, isolateBranch }, secureRandomInt) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
   if (repository.state.mergeChanges?.length) {
@@ -562,7 +563,9 @@ async function createBranch(repository, { defaultBranch, remote, names }, secure
   const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
   await repository.status();
   if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
-  await repository.createBranch(branch, true, start);
+  if (!isolateBranch || !await isolateBranch(branch, start)) {
+    await repository.createBranch(branch, true, start);
+  }
   try {
     await saveBranchNameHistory(history.file, selected);
   } catch (error) {
@@ -1036,6 +1039,8 @@ function registerBranchCommands(vscode, context) {
           if (!needsDefaultBranch.has(command)) return action(repository, options);
           const remote = options?.remote || 'origin';
           const defaultBranch = await resolveDefaultBranch(repository, remote);
+          if (command === 'sweetiebot.returnHome' && defaultBranch === 'main' &&
+              await routeBranch(vscode, repository, { branch: 'main' })) return 'main';
           if (command === 'sweetiebot.deleteBranch' && options?.branch
               && options.branch !== defaultBranch && repository.rootUri?.fsPath) {
             const tip = await remoteBranchTip(repository, options.branch, remote);
@@ -1053,6 +1058,9 @@ function registerBranchCommands(vscode, context) {
           }
           return action(repository, {
             ...options, defaultBranch,
+            ...(command === 'sweetiebot.createBranch' && defaultBranch === 'main' ? {
+              isolateBranch: (branch, start) => routeBranch(vscode, repository, { branch, start, create: true })
+            } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, repository, {
                 branch: options?.branch, defaultBranch, remote
@@ -1088,6 +1096,7 @@ function registerBranchCommands(vscode, context) {
         const repository = await resolveRepository(uri);
         return await queueRepositoryOperation(repository, async () => {
           await requireFinalizedCommit(repository, { background: false });
+          if (await routeBranch(vscode, repository, options)) return options.branch;
           return checkoutBranchStrip(repository, options);
         });
       } catch (error) {

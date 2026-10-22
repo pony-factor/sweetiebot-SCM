@@ -5,7 +5,7 @@ A small source-control UI patch for Visual Studio Code. It keeps the built-in Gi
 Current features:
 
 - resize the current VS Code window to a centered 640 × 640 square with the compact-window titlebar button, matching VS Code's native minimum width for side-mounted panels so resizable vertical columns remain intact without window-level horizontal overflow; restore the previous bounds on the next click (displays smaller than 600 pixels in either dimension are left unchanged)
-- open independent local Git clones starting on main, with separately switchable branches, using the title-bar button beside Compact Window (copies live under ~/Library/Application Support/Sweetiebot/Workspaces, with repository-based folder names instead of numeric prefixes; uncommitted changes are not copied)
+- open separate windows on the original repository’s shared main folder, using the title-bar button beside Compact Window; Sweetiebot’s branch controls move topic work into separate Git worktrees and reconnect to the original folder on returning to main
 - show the current branch inside the SCM message box and open VS Code's normal branch picker from it
 - switch the branch selector and native Commit button between outlined and accent-filled styles
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
@@ -51,8 +51,20 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 
 ### Independent workspace trust (first run)
 
-Sweetiebot creates independent clones under `~/Library/Application Support/Sweetiebot/Workspaces` (each new
-window gets a separate Git working directory). VS Code's Workspace Trust may
+Windows on `main` share the original repository folder under `~/GitHub`, including
+its uncommitted edits and Git index. Each window keeps its own saved workspace.
+Sweetiebot’s branch selector and new-branch button open topic branches in separate
+linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
+Topics start from committed main; pending main edits stay in the shared folder.
+Returning Home or selecting main reconnects the window to the original files,
+preserving pending topic edits in their worktree. Reopening that topic resumes
+those files. Direct terminal Git commands still act on the folder they run in.
+
+Clean legacy main clones reconnect on activation only when all their commits
+already exist in the original main. Separate edits or commits are preserved and
+reported instead of silently hidden. The original folder must be on main.
+
+VS Code's Workspace Trust may
 otherwise start these windows in **Restricted Mode**, disabling extensions,
 tasks, and other features. On the first Sweetiebot extension startup after
 this feature is installed, VS Code's native trust dialog offers to trust
