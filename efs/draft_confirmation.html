@@ -76,32 +76,69 @@ function imageSourcePage(url){
   const id=/^\/img\/(?:view\/|download\/)?\d{4}\/\d{1,2}\/\d{1,2}\/(\d+)(?:[_/.]|$)/.exec(value.pathname)?.[1];
   return host&&id?'https://'+host+'/images/'+id:url;
 }
-function inline(parent,text){
-  // Recurse through emphasis so source links within italic or bold copy stay clickable.
-  // Generated research may separate a Markdown link label and URL with whitespace.
-  const pattern=/(\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\n]+)\*|(?<!\w)_([^_\n]+)_(?!\w)|https?:\/\/[^\s<>]+)/g;
-  let start=0;
-  for(const match of text.matchAll(pattern)){
-    parent.append(document.createTextNode(text.slice(start,match.index)));
-    const url=match[3]||(/^https?:/.test(match[0])?match[0]:null);
-    const safe=url&&safeLink(url);
-    let node;
-    if(safe){
-      node=document.createElement('a');
-      node.href=imageSourcePage(safe);
-      node.target='_blank';
-      node.rel='noopener noreferrer';
-      node.textContent=match[2]||url;
-    }else if(match[4]||match[5]||match[6]||match[7]){
-      node=document.createElement(match[4]?'strong':match[5]?'code':'em');
-      const value=match[4]||match[5]||match[6]||match[7];
-      if(match[5])node.textContent=value;
-      else inline(node,value);
-    }else node=document.createTextNode(match[0]);
-    parent.append(node);
-    start=match.index+match[0].length;
+function inline(parent,text,depth=0){
+  // Parse complete emphasis delimiter runs: matching a single star inside bold markup breaks nesting.
+  if(depth>12){parent.append(document.createTextNode(text));return}
+  const tick=String.fromCharCode(96);
+  let i=0,pending='';
+  const flush=()=>{if(pending){parent.append(document.createTextNode(pending));pending=''}};
+  const closing=(marker,start)=>{
+    for(let at=start+marker.length;at<text.length;at++){
+      if(text[at]==='\\'){at++;continue}
+      if(text[at]===tick){const end=text.indexOf(tick,at+1);if(end>=0){at=end;continue}}
+      if(!text.startsWith(marker,at))continue;
+      const ch=marker[0];
+      if(marker.length===1&&(text[at-1]===ch||text[at+1]===ch))continue;
+      if(marker.length===2&&text[at+2]===ch)continue;
+      if(/\s/.test(text[at-1]))continue;
+      if(ch==='_'&&/\w/.test(text[at+marker.length]||''))continue;
+      return at;
+    }
+    return -1;
+  };
+  while(i<text.length){
+    if(text[i]==='\\'&&i+1<text.length){pending+=text[i+1];i+=2;continue}
+    const link=text[i]==='['&&/^\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)/.exec(text.slice(i));
+    if(link){
+      const safe=safeLink(link[2]);
+      if(safe){
+        flush();
+        const a=document.createElement('a');
+        a.href=imageSourcePage(safe);a.target='_blank';a.rel='noopener noreferrer';a.textContent=link[1];
+        parent.append(a);i+=link[0].length;continue;
+      }
+    }
+    if(text[i]===tick){
+      const end=text.indexOf(tick,i+1);
+      if(end>i+1){flush();const code=document.createElement('code');code.textContent=text.slice(i+1,end);parent.append(code);i=end+1;continue}
+    }
+    const bare=/^https?:\/\/[^\s<>]+/.exec(text.slice(i));
+    if(bare){
+      const safe=safeLink(bare[0]);
+      if(safe){
+        flush();
+        const a=document.createElement('a');
+        a.href=imageSourcePage(safe);a.target='_blank';a.rel='noopener noreferrer';a.textContent=bare[0];
+        parent.append(a);i+=bare[0].length;continue;
+      }
+    }
+    let matched=false;
+    for(const [marker,tag,nestedTag] of [['***','strong','em'],['___','strong','em'],['**','strong'],['__','strong'],['*','em'],['_','em']]){
+      if(!text.startsWith(marker,i))continue;
+      if(marker[0]==='_'&&i>0&&/\w/.test(text[i-1]))continue;
+      if(/\s/.test(text[i+marker.length]||''))continue;
+      const end=closing(marker,i);
+      if(end<0)continue;
+      flush();
+      const node=document.createElement(tag),inner=nestedTag?document.createElement(nestedTag):node;
+      inline(inner,text.slice(i+marker.length,end),depth+1);
+      if(nestedTag)node.append(inner);
+      parent.append(node);i=end+marker.length;matched=true;break;
+    }
+    if(matched)continue;
+    pending+=text[i++];
   }
-  parent.append(document.createTextNode(text.slice(start)));
+  flush();
 }
 function renderMarkdown(target,markdown){target.replaceChildren();let paragraph=[],list,code;const flush=()=>{if(paragraph.length){const p=document.createElement('p');inline(p,paragraph.join(' '));target.append(p);paragraph=[]}list=undefined};for(const line of markdown.split('\n')){if(/^\s*```/.test(line)){flush();if(code){target.append(code);code=undefined}else code=document.createElement('pre');continue}if(code){code.append(document.createTextNode(line+'\n'));continue}if(!line.trim()){flush();continue}const heading=/^#{1,6}\s+(.+)$/.exec(line),item=/^\s*(?:[-*]|\d+\.)\s+(.+)$/.exec(line);if(heading){flush();const h=document.createElement('h3');inline(h,heading[1]);target.append(h)}else if(item){if(paragraph.length)flush();if(!list){list=document.createElement('ul');target.append(list)}const li=document.createElement('li');inline(li,item[1]);list.append(li)}else{list=undefined;paragraph.push(line)}}flush();if(code)target.append(code)}
 
