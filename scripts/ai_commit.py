@@ -1502,6 +1502,8 @@ def generate_message(
     require_model: bool = False,
     file_context_override: str | None = None,
 ) -> tuple[str, str]:
+    # Timing covers context preparation, priority checks, retries and generation.
+    started_at = time.monotonic()
     # Simple messages are the default fallback even for text and custom emoji rules.
     # Disable the fallback in Ollama settings to expose model failures for debugging.
     text_changes = has_text_changes(diff)
@@ -1603,6 +1605,12 @@ def generate_message(
                     and valid_generated_message(title, description, include_description)
                     and not (text_changes and is_filename_only_title(title, files))
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
+                log_event(
+                    "commit_title", "generation_completed", model=model,
+                    attempts=attempt + 1,
+                    duration_ms=int((time.monotonic() - started_at) * 1000),
+                    outcome="success",
+                )
                 return title, description
             rejection_reason = (
                 "truncated_response" if response.get("done_reason") == "length"

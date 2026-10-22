@@ -345,6 +345,6 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   openFail = false;
   workspace.newWindowAction().events.keydown({ ...event, key: ' ' });
   openRelease(); await flush();
-  assert.equal(workspace.newWindowAction().title, 'Open independent workspace from main');
+  assert.equal(workspace.newWindowAction().title, 'Open a window on shared main');
   console.log('Compact window native resize, restore, failure, remount, and isolation checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
