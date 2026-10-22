@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { resolvePythonExecutable } = require('./python_runtime');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -105,7 +106,8 @@ async function replaceRepository(vscode, root, destination, options) {
   return openFolders(vscode, folders, options);
 }
 
-async function routeBranch(vscode, repository, { branch, create = false, start, ...options } = {}) {
+async function routeBranch(vscode, repository, { branch, create = false, start,
+  forkScript, source, expectedHead, ...options } = {}) {
   const run = options.run || git;
   if (!repository.rootUri?.fsPath || !branch || !vscode.workspace?.workspaceFolders?.length) return false;
   const root = await fs.realpath(repository.rootUri.fsPath);
@@ -136,7 +138,12 @@ async function routeBranch(vscode, repository, { branch, create = false, start, 
     const args = ['-C', original, 'worktree', 'add'];
     if (create) args.push('-b', branch);
     args.push('--', destination, create ? (start || 'main') : branch);
-    await run(args);
+    if (create && forkScript) {
+      await exec(resolvePythonExecutable(), [forkScript, '--fork-worktree',
+        source, branch, expectedHead, destination], { cwd: original, timeout: 120000 });
+    } else {
+      await run(args);
+    }
     added = true;
     // The old independent-clone pruner intentionally ignores linked worktrees.
     await fs.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({

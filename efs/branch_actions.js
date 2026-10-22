@@ -573,12 +573,17 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
   const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
   await repository.status();
   if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
-  if (forkScript) {
+  const isolated = isolateBranch && await isolateBranch(branch, start, {
+    forkScript, source: `refs/heads/${defaultBranch}`, expectedHead: `refs/heads/${original}`
+  });
+  if (isolated) {
+    // The shared main checkout stays on main even while its title jobs finish.
+  } else if (forkScript) {
     await promisify(execFile)(resolvePythonExecutable(), [
       forkScript, '--fork-branch', `refs/heads/${defaultBranch}`, branch, `refs/heads/${original}`
     ], { cwd: repository.rootUri.fsPath, timeout: 120000 });
     await repository.status();
-  } else if (!isolateBranch || !await isolateBranch(branch, start)) {
+  } else {
     await repository.createBranch(branch, true, start);
   }
   try {
@@ -1081,7 +1086,7 @@ function registerBranchCommands(vscode, context) {
           return action(repository, {
             ...options, defaultBranch,
             ...(command === 'sweetiebot.createBranch' && defaultBranch === 'main' ? {
-              isolateBranch: (branch, start) => routeBranch(vscode, repository, { branch, start, create: true })
+              isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork })
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, repository, {
