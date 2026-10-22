@@ -295,6 +295,8 @@ async function run() {
   };
   let mergeAllHandler;
   let configuredProject = '';
+  let filterSyncSummaries = true;
+  let emojiOnlySummaries = false;
   let pickerAction = 'first';
   let includeNonMain = false;
   let includeStack = false;
@@ -304,7 +306,13 @@ async function run() {
     ThemeIcon: class { constructor(id) { this.id = id; } },
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) {
+        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles'].includes(key),
+          'Unexpected SCM configuration key: ' + key);
+        if (key === 'chatgptProjectUrl') return configuredProject || fallback;
+        if (key === 'filterSyncCommitSummaries') return filterSyncSummaries;
+        return emojiOnlySummaries;
+      } };
     } },
     extensions: {
       getExtension(id) {
@@ -403,6 +411,17 @@ async function run() {
   assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
   assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
   assert(!sentPrompt.includes('pull/40'));
+  assert.match(sentPrompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
+  assert.match(sentPrompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
+  filterSyncSummaries = false;
+  emojiOnlySummaries = true;
+  await handler();
+  const alteredChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
+  const alteredPrompt = mergePromptFromUrl(alteredChat);
+  assert.match(alteredPrompt, /SYNC COMMIT FILTER DISABLED/);
+  assert.match(alteredPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
+  filterSyncSummaries = true;
+  emojiOnlySummaries = false;
   assert.equal(browserCalls[0].options.openToSide, undefined);
 
   pickerAction = 'cancel';
@@ -416,7 +435,7 @@ async function run() {
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';
   await handler();
-  assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
+  assert.equal(browserCalls.length, 3, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(modalWarnings.length, 1);
   assert.match(modalWarnings[0].message, /kefania.*not main/);
   assert.equal(modalWarnings[0].options.modal, true);
@@ -428,7 +447,7 @@ async function run() {
   approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
-  assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
+  assert.equal(browserCalls.length, 4, 'Cancelling must not submit a merge request');
   pickerAction = 'first';
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
