@@ -74,10 +74,10 @@ def _events():
             if not isinstance(item, dict):
                 continue
             event = {
-                key: (value[:120] if isinstance(value, str) else value)
+                key: (value[:240 if key == 'title' else 120] if isinstance(value, str) else value)
                 for key in ("timestamp", "component", "event", "model", "reason",
                             "outcome", "error_type", "http_status", "attempt",
-                            "attempts", "duration_ms")
+                            "attempts", "duration_ms", "title")
                 if isinstance((value := item.get(key)), (str, int)) and not isinstance(value, bool)
             }
             if event.get("timestamp") and event.get("event"):
@@ -132,7 +132,7 @@ DIAGNOSTICS_PANEL = """
 <div class="diagnostics" id="diagnostics-dashboard">
 <p class="status">Live background commit queues across repositories and retained Ollama failure/performance events. This view is read-only.</p>
 <div class="diagnostics-toolbar">
-<small>No prompts, diffs or generated commit messages are collected. Queue errors may include local paths.</small>
+<small>Validated AI commit titles (not bodies) are logged locally; prompts and diffs are not. Queue errors may include local paths.</small>
 <label><input type="checkbox" id="diagnostics-auto-refresh" checked> Auto-refresh (10s)</label>
 <button type="button" id="diagnostics-refresh">Refresh</button>
 <button type="button" id="diagnostics-export" disabled>Export report</button>
@@ -148,8 +148,8 @@ DIAGNOSTICS_PANEL = """
 <h3>Queued commits — all repositories</h3>
 <div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Repository</th><th>Branch</th><th>Phase / issue</th><th>Job</th></tr></thead><tbody id="diagnostics-jobs"></tbody></table></div>
 <h3>Recent diagnostic events</h3>
-<p class="status">Counts and averages use only retained logs (up to four rotating files). Generation durations will appear for newly completed AI titles.</p>
-<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Event</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
+<p class="status">Counts and averages use only retained logs (up to four rotating files). New successful AI generations show their validated final title and duration; earlier events do not contain titles.</p>
+<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Event</th><th>Final title</th><th>Duration</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
 </div>
 """
 
@@ -207,16 +207,17 @@ if (diagnosticsRoot) {
         cell(row, job.id.slice(0, 8));
         jobRows.appendChild(row);
       }
-      if (!diagnosticsReport.events.length) placeholder(eventRows, 3, 'No recorded diagnostic events.');
+      if (!diagnosticsReport.events.length) placeholder(eventRows, 5, 'No recorded diagnostic events.');
       for (const event of diagnosticsReport.events) {
         const row = document.createElement('tr');
         const date = new Date(event.timestamp);
         cell(row, Number.isNaN(date.getTime()) ? event.timestamp : date.toLocaleString());
         cell(row, (event.component || 'Sweetiebot') + ' · ' + event.event);
+        cell(row, event.title || '—');
+        cell(row, Number.isFinite(event.duration_ms) ? (event.duration_ms / 1000).toFixed(1) + 's' : '—');
         cell(row, [
           event.outcome, event.reason, event.error_type, event.model,
           event.attempt && ('attempt ' + event.attempt + (event.attempts ? '/' + event.attempts : '')),
-          Number.isFinite(event.duration_ms) && ((event.duration_ms / 1000).toFixed(1) + 's'),
           event.http_status && ('HTTP ' + event.http_status)
         ].filter(Boolean).join(' · ') || '—');
         eventRows.appendChild(row);
