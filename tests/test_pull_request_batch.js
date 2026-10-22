@@ -150,7 +150,8 @@ async function run() {
   assert.match(prompt, /#12: Newest ready change/);
   assert(!prompt.includes('#10: Ready change'));
   assert.match(prompt, /Never merge, close, edit, or implicitly include an unselected PR/);
-  assert.match(prompt, /force-with-lease/);
+  assert.match(prompt, /Never force-push or rewrite any branch/);
+  assert.match(prompt, /fast-forward-only push/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries' }),
     '🐛 Repair retries (#269)');
@@ -191,7 +192,8 @@ async function run() {
   assert.match(prompt, /If no original linked human can be verified, STOP/);
   assert.match(prompt, /NEVER invoke the GitHub connector native squash operation/);
   assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
-  assert.match(prompt, /git commit --author/);
+  assert.doesNotMatch(prompt, /git commit --author/);
+  assert.match(prompt, /NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED/);
   assert(prompt.includes('node efs/human_squash_merge.js'));
   assert.match(prompt, /NEVER push a squash commit directly to main/);
   assert.match(prompt, /original bot-opened PR as merged/);
