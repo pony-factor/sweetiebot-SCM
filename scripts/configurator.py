@@ -240,12 +240,17 @@ SETTINGS = (
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
-    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Automatic draft commit spellcheck", "After 1.5 seconds without typing, correct obvious spelling errors in manual commit subjects using local Ollama. Never blocks a commit, replaces the body, or alters Codex-attributed messages. The manual preview action remains available. Off by default.", "Ollama"),
-    Setting("draftCommitEmoji", "scm-toolkit.draft-commit-emoji", "Add professional emoji to drafted commit titles", "After 1.5 seconds without typing, prefix manual commit subjects with a change-appropriate emoji when they have none. Independent of automatic spelling correction; preserves your emoji, body, and Codex-attributed messages. Uses the built-in title classifier without a second Ollama call. Off by default.", "Ollama"),
-    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Ollama", "model"),
-    Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Ollama"),
-    Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Ollama"),
-    Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Ollama", "textarea"),
+    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Automatic draft commit spellcheck", "After 1.5 seconds without typing, correct obvious spelling errors in manual commit subjects using local Ollama. Never blocks a commit, replaces the body, or alters Codex-attributed messages. The manual preview action remains available. Off by default.", "Spellchecking"),
+    Setting("draftCommitEmoji", "scm-toolkit.draft-commit-emoji", "Add professional emoji to drafted commit titles", "After 1.5 seconds without typing, prefix manual commit subjects with a change-appropriate emoji when they have none. Independent of automatic spelling correction; preserves your emoji, body, and Codex-attributed messages. Uses the built-in title classifier without a second Ollama call. Off by default.", "Spellchecking"),
+    Setting("draftSpellcheckAction", "scm-toolkit.draft-spellcheck-action", "Correction handling", "Apply verified corrections automatically, or ask for approval in a before-and-after confirmation after typing stops.", "Spellchecking", "select", ("automatic", "review")),
+    Setting("draftSpellcheckDelaySeconds", "scm-toolkit.draft-spellcheck-delay-seconds", "Idle delay (seconds)", "Wait 0.5–10 seconds after typing before checking the current commit subject. Does not delay Commit.", "Spellchecking", "number", minimum=0.5, maximum=10),
+    Setting("draftSpellcheckStyle", "scm-toolkit.draft-spellcheck-style", "Correction scope", "Spelling only preserves word and punctuation structure; spelling and grammar also permits small grammatical fixes subject to safety checks.", "Spellchecking", "select", ("spelling", "grammar")),
+    Setting("draftSpellcheckVocabulary", "scm-toolkit.draft-spellcheck-vocabulary", "Protected vocabulary", "One term or phrase per line. When present, these exact words, brands or technical expressions must remain unchanged.", "Spellchecking", "textarea"),
+    Setting("draftSpellcheckGuidance", "scm-toolkit.draft-spellcheck-guidance", "Additional correction guidance", "Optional preferences or specialist terminology for the local model. Safety checks, protected tokens and user-selected emoji always take precedence.", "Spellchecking", "textarea"),
+    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Spellchecking", "model"),
+    Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellchecking"),
+    Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellchecking"),
+    Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellchecking", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
@@ -397,6 +402,13 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
         if setting.kind == "textarea":
             if "\x00" in raw_value:
                 raise ValueError(f"{setting.label} contains an invalid null byte.")
+            limit = 5000 if setting.name == "draftSpellcheckVocabulary" else (
+                2000 if setting.name == "draftSpellcheckGuidance" else None
+            )
+            if limit is not None and len(raw_value) > limit:
+                raise ValueError(f"{setting.label} must be at most {limit} characters.")
+            if setting.name == "draftSpellcheckVocabulary" and len(raw_value.splitlines()) > 100:
+                raise ValueError("Protected vocabulary supports at most 100 lines.")
             parsed[setting.name] = raw_value.strip()
             continue
 
@@ -831,8 +843,24 @@ def render_form(
                 'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
             ) + controls
         status = ""
-        if section in {"Ollama", "Search"}:
+        if section in {"Ollama", "Search", "Spellchecking"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
+        if section == "Spellchecking":
+            draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",
+                              "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
+                              "draftSpellcheckVocabulary", "draftSpellcheckGuidance",
+                              "draftCommitEmoji", "spellcheckModel"}
+            controls = (
+                '<div class="settings-group"><h3>While drafting a commit</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name in draft_controls)
+                + '</div><div class="settings-group"><h3>After committing</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name not in draft_controls)
+                + '</div>'
+            )
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"
         selected = "true" if index == 0 else "false"

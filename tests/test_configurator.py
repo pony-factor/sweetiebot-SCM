@@ -468,6 +468,52 @@ class SubmissionTests(unittest.TestCase):
         page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
         self.assertIn('name="draftCommitEmoji" value="true" checked', page)
 
+    def test_spellchecking_suite_defaults_validation_and_grouping(self):
+        values = form_values()
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckAction"], "automatic")
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckDelaySeconds"], "1.5")
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckStyle"], "spelling")
+        values.update({
+            "spellcheckManualCommit": ["true"],
+            "draftSpellcheckAction": ["review"],
+            "draftSpellcheckDelaySeconds": ["2.5"],
+            "draftSpellcheckStyle": ["grammar"],
+            "draftSpellcheckVocabulary": ["Instinet\nSoroban"],
+            "draftSpellcheckGuidance": ["Keep legal terminology unchanged."],
+            "draftCommitEmoji": ["true"],
+        })
+        parsed = configurator.parse_submission(values)
+        for key in ("draftSpellcheckAction", "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
+                    "draftSpellcheckVocabulary", "draftSpellcheckGuidance"):
+            self.assertEqual(parsed[key], values[key][0])
+        page = configurator.render_form(parsed, [], "Ready", "token", "Save")
+        self.assertIn(">Spellchecking</button>", page)
+        self.assertIn("<h3>While drafting a commit</h3>", page)
+        self.assertIn("<h3>After committing</h3>", page)
+        self.assertIn('name="draftSpellcheckAction"', page)
+        self.assertIn('name="draftSpellcheckDelaySeconds"', page)
+        self.assertIn('name="draftSpellcheckVocabulary"', page)
+        self.assertIn('name="draftSpellcheckGuidance"', page)
+        self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
+    def test_spellchecking_suite_rejects_invalid_inputs(self):
+        invalid = (
+            ("draftSpellcheckAction", "silent"),
+            ("draftSpellcheckStyle", "rewrite"),
+            ("draftSpellcheckDelaySeconds", "0.1"),
+            ("draftSpellcheckDelaySeconds", "11"),
+            ("draftSpellcheckDelaySeconds", "nan"),
+            ("draftSpellcheckVocabulary", "word\n" * 101),
+            ("draftSpellcheckGuidance", "x" * 2001),
+            ("draftSpellcheckVocabulary", "x\\x00"),
+        )
+        for name, value in invalid:
+            with self.subTest(name=name, value=value[:30]):
+                form = form_values()
+                form[name] = [value]
+                with self.assertRaises(ValueError):
+                    configurator.parse_submission(form)
+
     def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")

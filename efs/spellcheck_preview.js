@@ -113,12 +113,12 @@ function registerSpellcheckPreviewCommand(vscode, extensionContext) {
         }
         return message;
       }
-      // Idle-time checks never open a dialog or delay a commit.
-      // The SCM editor verifies that the draft is unchanged before applying this.
-      if (automatic) return corrected + message.slice(originalSubject.length);
+      // Automatic mode stays silent; opt-in review mode shows a comparison.
+      // The SCM editor verifies that the draft is unchanged before applying.
+      if (automatic && options.review !== true) return corrected + message.slice(originalSubject.length);
 
       const choice = await vscode.window.showInformationMessage(
-        'Apply this spelling correction to the commit subject?',
+        'Apply this commit subject correction?',
         {
           modal: true,
           detail: `Original:\n${originalSubject}\n\nSuggested:\n${corrected}`

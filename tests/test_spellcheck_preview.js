@@ -161,6 +161,25 @@ async function run() {
   assert.equal(spawnCount, beforeExcluded);
   assert.equal(notices.length, 0);
 
+  // Review mode prompts instead of applying while idle.
+  expectedInput = 'Fxi a regression';
+  expectedArgs = ['/extension/ai_commit.py', '--spellcheck-subject'];
+  nextSubject = 'Fix a regression';
+  choice = 'Keep original';
+  const originalReview = 'Fxi a regression\n\nBody unchanged';
+  const reviewOptions = { automatic: true, review: true };
+  const noticeCount = notices.length;
+  assert.equal(await preview(uri, originalReview, reviewOptions), originalReview);
+  assert.equal(notices.length, noticeCount + 1);
+  assert.match(notices.at(-1)[1].detail, /Original:/);
+  choice = 'Apply correction';
+  assert.equal(
+    await preview(uri, originalReview, reviewOptions), 'Fix a regression\n\nBody unchanged'
+  );
+  expectedInput = '🐞 Fix a regression';
+  nextSubject = expectedInput;
+  assert.equal(await preview(uri, '🐞 Fix a regression', { automatic: true, review: true }),
+    '🐞 Fix a regression');
   console.log('Commit spellcheck preview checks passed.');
 }
 

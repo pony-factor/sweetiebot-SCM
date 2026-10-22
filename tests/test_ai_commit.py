@@ -387,6 +387,53 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class ManualSpellcheckTests(unittest.TestCase):
+    def test_safe_grammar_correction_requires_high_similarity_and_preserves_tokens(self):
+        original = "🐞 Fix button are brokn"
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(
+                original, '{"subject":"🐞 Fix the buttons are broken"}', style="grammar"),
+            "🐞 Fix the buttons are broken",
+        )
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(
+                original, '{"subject":"🐞 Fix the buttons are broken"}'),
+            original,
+        )
+        for before, after in [
+            ("Fix API 2", "Fix API 3"),
+            ("Fix Instinet name", "Fix Instinett name"),
+            ("Fix `--debug` in path", "Fix `--release` in path"),
+            ("Fix typo 🐞", "Fix typo 🐛"),
+        ]:
+            self.assertEqual(
+                ai_commit.safe_spellcheck_correction(
+                    before, json.dumps({"subject": after}), style="grammar", vocabulary=["Instinet"]),
+                before,
+            )
+
+    def test_draft_spellchecking_includes_custom_preferences_and_preserves_terms(self):
+        def config(key, default=""):
+            return {
+                "scm-toolkit.draft-spellcheck-style": "grammar",
+                "scm-toolkit.draft-spellcheck-vocabulary": "Instinet\nSoroban",
+                "scm-toolkit.draft-spellcheck-guidance": "Prefer consistent capitalization.",
+            }.get(key, default)
+        with patch.object(ai_commit, "git_config_string", side_effect=config), patch.object(
+            ai_commit, "manual_spellcheck_enabled", return_value=True
+        ), patch.object(
+            ai_commit, "installed_local_model_names", return_value={"spell:test"}
+        ), patch.object(
+            ai_commit, "configured_spellcheck_model", return_value="spell:test"
+        ), patch.object(
+            ai_commit, "ollama_json",
+            return_value={"response": '{"subject":"Fix Instinett phrasing"}'},
+        ) as request:
+            self.assertEqual(ai_commit.spellcheck_subject("Fix Instinet phrasing"), "Fix Instinet phrasing")
+            prompt = request.call_args.args[1]["prompt"]
+            self.assertIn("Prefer consistent capitalization.", prompt)
+            self.assertIn("Instinet\nSoroban", prompt)
+            self.assertIn("grammatical", prompt)
+
     def test_professional_emoji_adds_one_suitable_prefix(self):
         self.assertEqual(ai_commit.add_professional_emoji("Fix commit title"), "🐛 Fix commit title")
         self.assertEqual(ai_commit.add_professional_emoji("Update button layout"), "🖌️ Update button layout")

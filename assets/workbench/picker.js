@@ -1361,7 +1361,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
 // Debounce local Ollama calls, serialize checks, and discard stale responses.
 function scmToolkitWatchDraftSpellcheck(
     input, repositoryUri, commands, blocked = () => false,
-    { spellcheck = true, professionalEmoji = false } = {}
+    { spellcheck = true, professionalEmoji = false, review = false, delaySeconds = 1.5 } = {}
 ) {
     let timer;
     let busy = false;
@@ -1385,7 +1385,7 @@ function scmToolkitWatchDraftSpellcheck(
             try {
                 const corrected = await commands.executeCommand(
                     'sweetiebot.previewCommitSpellcheck', repositoryUri, original,
-                    { automatic: true, spellcheck, professionalEmoji }
+                    { automatic: true, spellcheck, professionalEmoji, review }
                 );
                 if (!disposed && !blocked() && input.value === original
                     && typeof corrected === 'string' && corrected !== original) {
@@ -1399,7 +1399,7 @@ function scmToolkitWatchDraftSpellcheck(
                 busy = false;
                 if (!disposed && subjectOf(input.value) !== checkedSubject) schedule();
             }
-        }, 1500);
+        }, Math.max(500, Math.min(10000, (Number(delaySeconds) || 1.5) * 1000)));
     };
 
     const listener = input.onDidChange(schedule);
@@ -2522,7 +2522,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                     () => pending || deletingBranch || spellchecking,
                     {
                         spellcheck: Boolean(settings.spellcheckManualCommit),
-                        professionalEmoji: Boolean(settings.draftCommitEmoji)
+                        professionalEmoji: Boolean(settings.draftCommitEmoji),
+                        review: Boolean(settings.spellcheckManualCommit)
+                            && settings.draftSpellcheckAction === 'review',
+                        delaySeconds: settings.draftSpellcheckDelaySeconds || 1.5
                     }
                 ));
             }
