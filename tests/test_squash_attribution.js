@@ -49,6 +49,27 @@ async function run(){
  assert(!legacy.message.includes('Co-authored-by: Ollama <'));
  assert.throws(()=>squashMessage('Wrong',269,[]),/history/);
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{}}}]),/Git author/);
+ const syncCommit={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'🔄 Sync brach to main\n\nKeep the latest request timeout changes.\n\nCo-authored-by: Codex <noreply@openai.com>'}};
+ const correctSpelling={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'🔄 Sync branch to main\n\nUpdate from upstream.'}};
+ const feature={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'🖌️ Update merge settings'}};
+ const filtered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:true});
+ assert(filtered.message.includes('- 🖌️ Update merge settings'));
+ assert(!filtered.message.includes('Sync brach to main'));
+ assert(!filtered.message.includes('Sync branch to main'));
+ assert(!filtered.message.includes('latest request timeout changes'));
+ assert(filtered.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'),
+   'Filtering sync summaries never loses co-author attribution');
+ const unfiltered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:false});
+ assert(unfiltered.message.includes('- 🔄 Sync brach to main'));
+ assert(unfiltered.message.includes('- 🔄 Sync branch to main'));
+ assert(unfiltered.message.includes('Keep the latest request timeout changes.'));
+ const onlySync=squashMessage('🔧 Apply settings',394,[syncCommit],{filterSyncCommitSummaries:true});
+ assert(!onlySync.message.includes('Sync brach to main'));
+ assert(onlySync.message.startsWith('Co-authored-by: '),
+   'An all-sync PR must retain co-author trailers without an empty separator');
  let calls=0;
  assert.equal((await readCommits(async()=>{calls++;return commits},'owner/repo',269)).length,2);
  assert.equal(calls,1);

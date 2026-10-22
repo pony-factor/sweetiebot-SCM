@@ -163,6 +163,13 @@ async function run() {
   assert.match(prompt, /squash title: "Newest ready change \(#12\)"/);
   assert.match(prompt, /read ALL original PR commits \(paginate the commits endpoint\)/);
   assert.match(prompt, /linked GitHub author\/committer accounts/);
+  assert.match(prompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
+  assert.match(prompt, /preserve every verified Git author, committer and Co-authored-by trailer/);
+  const syncIncludedPrompt=batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [pulls[0]], filterSyncCommitSummaries: false });
+  assert.match(syncIncludedPrompt, /SYNC COMMIT FILTER DISABLED/);
+  assert.match(syncIncludedPrompt, /explanatory bodies in the squash summary/);
+  assert(!syncIncludedPrompt.includes('SYNC COMMIT FILTER ENABLED'));
   assert.match(prompt, /bot-opened PR/);
   assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
   assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);

@@ -3,6 +3,7 @@
 const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const { humanSquashMerge } = require('./human_squash_merge');
+const { squashMessage, readCommits } = require('./squash_attribution');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
@@ -76,8 +77,11 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       number: result.number, base, author: landed.author };
   }
 
+  const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
+  const prepared = squashMessage(pr.title, result.number, originalCommits);
   const merged = await request(endpoint + '/merge', {method: 'PUT',
-    body: {sha: pr.head.sha, merge_method: 'squash'}});
+    body: {sha: pr.head.sha, merge_method: 'squash',
+      commit_title: prepared.title, commit_message: prepared.message}});
   if (merged.merged !== true || !SHA.test(merged.sha)) throw new Error('GitHub did not confirm the squash merge. Check the pull request.');
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }

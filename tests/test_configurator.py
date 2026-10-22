@@ -54,6 +54,22 @@ class SubmissionTests(unittest.TestCase):
         for name in names:
             self.assertIn(f'name="{name}"', page)
 
+    def test_sync_commit_filter_defaults_on_and_persists(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],
+                         "scm-toolkit.filter-sync-commit-summaries")
+        values = form_values()
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["filterSyncCommitSummaries"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["filterSyncCommitSummaries"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="filterSyncCommitSummaries" value="true" checked', page)
+        self.assertIn("Exclude sync commits from squash summaries", page)
+        values.pop("filterSyncCommitSummaries")
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled["filterSyncCommitSummaries"])
+        self.assertFalse(configurator.extension_settings_payload(disabled)["vscodeSettings"]["filterSyncCommitSummaries"])
+
     def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],

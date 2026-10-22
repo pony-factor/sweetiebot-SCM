@@ -178,7 +178,7 @@ async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
   });
 }
 
-function batchMergePrompt({ repositoryUrl, pullRequests }) {
+function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummaries = true }) {
   if (!Array.isArray(pullRequests) || !pullRequests.length) {
     throw new Error('Select at least one pull request.');
   }
@@ -191,9 +191,13 @@ function batchMergePrompt({ repositoryUrl, pullRequests }) {
   const summary = hasStack
     ? `Squash and merge the following selected pull requests in repository ${repositoryUrl}. Complete selected stacks must land on main in ancestor-first order, with ONE separate squash commit per PR. Unrelated PRs retain their explicitly listed bases:`
     : `Squash and merge the following selected pull request${pullRequests.length === 1 ? '' : 's'} into each PR's explicitly listed base branch in repository ${repositoryUrl}:`;
+  const syncFilterInstruction = filterSyncCommitSummaries
+    ? 'SYNC COMMIT FILTER ENABLED (default): Omit entries whose subjects are exactly "🔄 Sync brach to main" or "🔄 Sync branch to main" (also without 🔄 or with a PR-number suffix) from final squash summaries, including their explanatory bodies. Still inspect ALL commits and preserve every verified Git author, committer and Co-authored-by trailer from filtered commits. Never remove the actual sync commits from branch history or the PR.'
+    : 'SYNC COMMIT FILTER DISABLED: Include routine "Sync brach to main" and "Sync branch to main" subjects and their explanatory bodies in the squash summary as before. Still consolidate co-author trailers.';
   return [
     summary,
     list,
+    syncFilterInstruction,
     'Use the GitHub connection or tools available in this chat. Inspect main, every selected base and PR, and every diff before changes. Re-check each selected PR and its head/base just before acting. A snapshot mismatch requires fresh confirmation. Never merge, close, edit, or implicitly include an unselected PR.',
     'CONFLICT RESOLUTION: For each selected PR with merge conflicts, inspect the conflicting files, both sides, and the surrounding code. Resolve straightforward mechanical conflicts on the selected PR branch when the intended result is clear, preserving the intended behavior of both changes. This merge request authorizes the necessary conflict-resolution commit and push on that selected branch. Re-read the updated head SHA and verify the resolution and mergeability before merging; do not keep using the pre-resolution SHA. Do not discard either side merely to make the merge succeed. If the conflict requires human judgment, leave a focused GitHub PR comment identifying the conflicting files, explaining the competing intentions and available options, and asking the specific question a maintainer must answer. Check existing comments to avoid duplicate feedback. Leave that PR open and continue with unrelated safe selected PRs. If the available tools cannot inspect or safely apply a resolution or post the comment, report the exact limitation instead of claiming it was resolved or feedback was posted.',
     hasStack
@@ -272,7 +276,8 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       }
       const prompt = batchMergePrompt({
         repositoryUrl: selectedRepository.repositoryUrl,
-        pullRequests: selected
+        pullRequests: selected,
+        filterSyncCommitSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('filterSyncCommitSummaries', true) !== false
       });
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;
