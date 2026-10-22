@@ -16,7 +16,7 @@ MAX_LOG_BYTES = 1024 * 1024
 BACKUP_COUNT = 3
 FIELDS = frozenset({
     "model", "attempt", "attempts", "reason", "outcome", "error_type",
-    "http_status",
+    "http_status", "duration_ms", "rule",
 })
 
 
