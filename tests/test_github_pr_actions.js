@@ -19,7 +19,7 @@ function mockMerge({ views = [open, open, mergedPr], submission = pending, respo
   const execute = async args => {
     calls.push(args);
     if (args[0] === 'pr') return { stdout: JSON.stringify(views.length > 1 ? views.shift() : views[0]) };
-    if (args.some(a => typeof a === 'string' && a.includes('/commits?per_page=100&page='))) return { stdout: JSON.stringify([{ commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }]) };
+    if (args.some(a => typeof a === 'string' && a.includes('/commits?per_page=100&page='))) return { stdout: JSON.stringify([{ author: { login: 'JFWooten4', type: 'User' }, commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }]) };
     if (args.includes('repos/owner/repo/pulls/12')) return { stdout: JSON.stringify(stackMetadata) };
     if (args.includes('--method')) {
       if (submissionError) throw submissionError;
@@ -65,6 +65,31 @@ async function main() {
   assert.equal(botResult.merged, true);
   assert.equal(botOpened.calls.some(args => args.includes('--method')), false,
     'A bot opener must not reach the bot-authored squash merge endpoint');
+  const anotherHumanOpener = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'DifferentHuman', type: 'User' }
+  } });
+  let usedHumanHelper = false;
+  const protectedAttribution = await squashMergePullRequest(url, anotherHumanOpener.execute, undefined, {
+    ...quickPoll, humanMerge: async () => {
+      usedHumanHelper = true;
+      return { merged: true, sha: 'c'.repeat(40),
+        author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
+    }
+  });
+  assert(usedHumanHelper && protectedAttribution.merged);
+  assert.equal(anotherHumanOpener.calls.some(args => args.includes('--method')), false,
+    'A different human PR opener must not replace the original human Git author');
+  const botOnly = mockMerge();
+  const botOnlyExecute = args => args.some(a => String(a).includes('/commits?per_page=100&page='))
+    ? Promise.resolve({stdout: JSON.stringify([{
+      author: {login: 'codex-pony[bot]', type: 'Bot'},
+      commit: { author: {name: 'codex-pony[bot]', email: 'bot@example.org'}, message: 'Bot-only change' }
+    }])})
+    : botOnly.execute(args);
+  await assert.rejects(squashMergePullRequest(url, botOnlyExecute, undefined, quickPoll),
+    /No verified original human Git author/);
+  assert.equal(botOnly.calls.some(args => args.includes('--method')), false,
+    'No native merge request without a linked human original author');
   const unverifiable = mockMerge({ stackMetadata: { stack: null } });
   await assert.rejects(squashMergePullRequest(url, unverifiable.execute, undefined, quickPoll),
     /Cannot verify PR opener identity/);
@@ -180,7 +205,7 @@ async function main() {
     const clean = { ...open, mergeable: 'MERGEABLE' };
     const stalled = mockMerge({ views: [clean, clean, clean, mergedPr], submissionError: matchingError, responses: [pending] });
     let recovered = false;
-    const originals = [{ commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }];
+    const originals = [{ author: { login: 'JFWooten4', type: 'User' }, commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }];
     const expected = squashMessage(open.title, 12, originals);
     const execute = async args => {
       if (args.includes('repos/owner/repo/pulls/12/merge')) {
