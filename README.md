@@ -589,7 +589,7 @@ The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MOD
 
 ### Flawless-GPT cannon in Codex
 
-**Codex → Time → Show cannon** (off by default) enables Flawless-GPT's cannon and minute counter for active **Working for** and completed **Worked for** labels in the Codex sidebar. The original precise duration is retained as text and on hover, and the activity expand control still works. When both Show cannon and Hide chat timestamps are enabled, the cannon takes priority over the latter's “Activity” label substitution.
+**Codex → Time → Show cannon** (off by default) enables Flawless-GPT's cannon and minute counter for active **Working for** and completed **Worked for** labels in the Codex sidebar. The cannon appears from the first second of a running turn. The original precise duration is retained as text and on hover, and the activity expand control still works. When both Show cannon and Hide chat timestamps are enabled, the cannon takes priority over the latter's “Activity” label substitution.
 
 ```sh
 git config --global scm-toolkit.codex-show-cannon true

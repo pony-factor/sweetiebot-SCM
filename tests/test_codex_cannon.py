@@ -21,6 +21,8 @@ class CannonTest(unittest.TestCase):
             "  const artworkURL = chrome.runtime.getURL('cannon.png');",
             r"const PREFIX = /^Worked\s+for\s+(.+)$/i;",
             'const root = document.querySelector("main");',
+            r'      if (!/^\s*Worked\s+for\s+/i.test(node.nodeValue || "")) continue;',
+            '      minutes: minuteCount ? ' + chr(96) + "$" + "{minuteCount}m" + chr(96) + ' : "",',
             "  const onSettingsChanged = (changes, areaName) => {",
             "    chrome.storage.get(changes);",
             "  };",
@@ -28,6 +30,8 @@ class CannonTest(unittest.TestCase):
         ])
         compiled = codex_cannon.adapt(sample, "[data-ghrc-worked-duration]{opacity:1}", b"\x89PNG\r\n\x1a\nexample")
         self.assertIn("(?:Working|Worked|Thought)", compiled)
+        self.assertIn("if (!/^\\s*(?:Working|Worked|Thought)", compiled)
+        self.assertIn("minutes: " + chr(96) + "$" + "{minuteCount}m" + chr(96) + ",", compiled)
         self.assertIn("data:image/png;base64", compiled)
         self.assertIn("scmToolkitShowCannon = true", compiled)
         self.assertNotIn("chrome.storage", compiled)

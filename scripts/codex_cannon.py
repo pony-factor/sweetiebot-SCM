@@ -81,6 +81,20 @@ def adapt(script: str, css: str, png: bytes) -> str:
         'const root = document.querySelector("main") || document.body;',
     )
 
+    # Adapt the DOM scan gate as well as the duration parser.
+    script = replace_once(
+        script,
+        r'if (!/^\s*Worked\s+for\s+/i.test(node.nodeValue || "")) continue;',
+        r'if (!/^\s*(?:Working|Worked|Thought)\s+for\s+/i.test(node.nodeValue || "")) continue;',
+    )
+    # Flawless hides durations below one minute; show a live 0m cannon instead.
+    tick = chr(96)
+    count = tick + "$" + "{minuteCount}m" + tick
+    script = replace_once(
+        script, 'minutes: minuteCount ? ' + count + ' : "",',
+        'minutes: ' + count + ',',
+    )
+
     start = script.find("  const onSettingsChanged = (changes, areaName) => {")
     end = script.find("  const observer = new MutationObserver(scheduleScan);")
     if start < 0 or end <= start or script.count("  const observer = new MutationObserver(scheduleScan);") != 1:
