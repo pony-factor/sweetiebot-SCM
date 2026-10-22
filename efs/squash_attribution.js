@@ -1,4 +1,7 @@
 'use strict';
+
+// One canonical separator for all generated PR squash-commit trailers.
+const SQUASH_SEPARATOR = '__________';
 const { execFileSync } = require('node:child_process');
 const SYNC_MAIN_SUBJECT = /^(?:🔄\s*)?Sync (?:brach|branch) to main(?:\s*\(#\d+\))?$/i;
 function filterSyncCommitSummariesEnabled() {
@@ -28,8 +31,15 @@ function who(name,email,original=false) {
  const tier=/^codex$/i.test(name)?2:/^codex web$/i.test(name)?3:/codex-pony/.test(id)?4:/copilot/.test(id)?5:/ollama/.test(id)?6:/\[bot\]|bot@|dependabot|github.actions|web-flow/.test(id)?7:/openai|claude|gemini|ai.agent/.test(id)?8:original?0:1;
  return {name:name.trim(),email:email.trim(),tier};
 }
+function exactSquashTitle(title, num) {
+ if (typeof title !== 'string' || !title.trim() || /[\r\n]/.test(title) ||
+     !Number.isSafeInteger(num) || num < 1) throw Error('Invalid squash title');
+ const originalTitle = title.trim();
+ const suffix = ' (#' + num + ')';
+ return originalTitle.endsWith(suffix) ? originalTitle : originalTitle + suffix;
+}
 function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled()}={}){
- if(typeof title!=='string'||!title.trim()||/[\r\n]/.test(title)||!Number.isSafeInteger(num)||num<1) throw Error('Invalid squash title');
+ const finalTitle = exactSquashTitle(title, num);
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
  const summaries=[];
@@ -57,7 +67,7 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    summaries.every(summary => EMOJI_PREFIX.test(summary.slice(2).split('\n', 1)[0]));
  const summaryText = summaries.map(summary => unbulleted ? summary.slice(2) : summary)
    .join(unbulleted ? '\n\n' : '\n');
- return {title:title.trim().replace(/\s*\(#\d+\)\s*$/,'').trim()+' (#'+num+')',message:(summaries.length?summaryText+'\n\n---------\n\n':'')+trailers.join('\n'),trailers};
+ return {title:finalTitle,message:(summaries.length?summaryText+'\n\n'+SQUASH_SEPARATOR+'\n\n':'')+trailers.join('\n'),trailers};
 }
 async function readCommits(api,repo,num){
  const all=[];
@@ -69,4 +79,4 @@ async function readCommits(api,repo,num){
  }
  throw Error('Cannot inspect complete PR history');
 }
-module.exports={squashMessage,readCommits};
+module.exports={SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits};

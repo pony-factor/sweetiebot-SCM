@@ -8,7 +8,7 @@ const oldSha = 'a'.repeat(40);
 const baseSha = 'b'.repeat(40);
 const mergedSha = 'c'.repeat(40);
 const originalAuthor = { name: 'John Wooten', email: 'noreply@wooten.link' };
-const originalMessage = '🐛 Fix placement (#12)\n\n- 🐛 Fix placement\n\n---------\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+const originalMessage = '🐛 Fix placement (#12)\n\n- 🐛 Fix placement\n\n__________\n\nCo-authored-by: Codex Web <noreply@openai.com>';
 const oneHuman = {
   sha: oldSha, author: { login: 'JFWooten4', type: 'User' },
   commit: { author: originalAuthor, message: originalMessage }
@@ -79,6 +79,8 @@ async function main() {
   assert(!many.calls.some(c => c.method !== 'GET'));
 
   for (const change of [
+    [{ ...oneHuman, commit: { ...oneHuman.commit,
+      message: originalMessage.replace('__________', '---------') } }, /ten-underscore separator/],
     [{ ...oneHuman, commit: { ...oneHuman.commit, message: 'Different title' } }, /exact PR title/],
     [{ ...oneHuman, commit: { ...oneHuman.commit, message: '🐛 Fix placement (#12)' } }, /required Codex Web credit/],
     [{ ...oneHuman, author: { login: 'codex-pony[bot]', type:'Bot' } }, /No verified original human/],

@@ -158,7 +158,9 @@ async function run() {
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#269)' }),
     '🐛 Repair retries (#269)', 'Do not repeat an existing PR-number suffix');
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#42)' }),
-    '🐛 Repair retries (#269)', 'Replace a stale PR-number suffix');
+    '🐛 Repair retries (#42) (#269)', 'Retain the exact PR title even when it references another PR');
+  assert.equal(squashCommitTitle({ number: 393, title: '🖌️ Show final commit titles beside generation times' }),
+    '🖌️ Show final commit titles beside generation times (#393)');
   assert.throws(() => squashCommitTitle({ number: 0, title: 'Invalid' }), /valid pull-request number/);
   assert.throws(() => squashCommitTitle({ number: 269, title: '' }), /pull-request title/);
   assert.match(prompt, /squash title: "Newest ready change \(#12\)"/);
@@ -181,11 +183,14 @@ async function run() {
   assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
   assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);
   assert.match(prompt, /compact chronological '- ' bullet list/);
+  assert.match(prompt, /exact selected PR title VERBATIM/);
+  assert.match(prompt, /never an individual commit title/);
   assert.match(prompt, /hyphen bullets, not '\*'/);
   assert.match(prompt, /indented continuation lines directly under its corresponding bullet/);
   assert.match(prompt, /relocate all such credits into ONE final trailer block/);
-  assert.match(prompt, /conventional GitHub separator ---------/);
-  assert.match(prompt, /only one final trailer block after ---------/);
+  assert.match(prompt, /separator of EXACTLY TEN underscores __________/);
+  assert.match(prompt, /only one final trailer block after exactly ten underscores __________/);
+  assert.doesNotMatch(prompt, /separator ---------/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
   assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
   assert.match(prompt, /HUMAN AUTHOR PRE-MERGE GATE \(NON-OPTIONAL\)/);

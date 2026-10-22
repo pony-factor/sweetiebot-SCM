@@ -60,6 +60,8 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
     assert.equal(options.body.merge_method,'squash');
     assert.equal(options.body.commit_title,'🖌️ Improve settings (#12)');
     assert(options.body.commit_message.includes('- 🖌️ Improve settings'));
+    assert(options.body.commit_message.includes('\n\n__________\n\n'));
+    assert(!options.body.commit_message.includes('---------'));
     assert(!options.body.commit_message.includes('Sync brach to main'));
     return {merged:true,sha:'b'.repeat(40)};
   };

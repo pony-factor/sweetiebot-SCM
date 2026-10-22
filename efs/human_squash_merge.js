@@ -8,7 +8,7 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
-const { squashMessage, readCommits } = require('./squash_attribution');
+const { SQUASH_SEPARATOR, squashMessage, readCommits } = require('./squash_attribution');
 
 const exec = promisify(execFile);
 const SHA = /^[a-f\d]{40}$/i;
@@ -85,9 +85,11 @@ async function humanSquashMerge(repository, number, { api } = {}) {
   }
   const existing = String(originalCommit.commit?.message || '').replace(/\r\n?/g, '\n').trimEnd();
   const expectedTitle = squashMessage(original.title, number, commits, { primaryAuthor: author }).title;
+  const separator = '\n\n' + SQUASH_SEPARATOR + '\n\n';
   if (existing.split('\n', 1)[0] !== expectedTitle ||
+      existing.split(separator).length !== 2 ||
       !/^Co-authored-by: Codex Web <noreply@openai.com>$/m.test(existing)) {
-    throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title and required Codex Web credit. Leave the PR open rather than rewriting it.');
+    throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title, ten-underscore separator, and required Codex Web credit. Leave the PR open rather than rewriting it.');
   }
   const repositoryInfo = await api(root);
   if (repositoryInfo?.allow_rebase_merge !== true) {

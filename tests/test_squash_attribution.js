@@ -1,8 +1,17 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {squashMessage,readCommits}=require('../efs/squash_attribution');
+const {SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits}=require('../efs/squash_attribution');
 async function run(){
  const commits=[{commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},committer:{name:'GitHub',email:'noreply@github.com'},message:'Change\n\nCo-authored-by: Codex <noreply@openai.com>'}},{commit:{author:{name:'John Wooten',email:'60260750+JFWooten4@users.noreply.github.com'},message:'Sync\n\nCo-authored-by: Codex Web <noreply@openai.com>'}}];
+ assert.equal(SQUASH_SEPARATOR, '__________');
+ assert.equal(SQUASH_SEPARATOR.length, 10);
+ assert.equal(exactSquashTitle('🖌️ Show final commit titles beside generation times', 393),
+   '🖌️ Show final commit titles beside generation times (#393)');
+ assert.equal(exactSquashTitle('🖌️ Show final commit titles beside generation times (#393)', 393),
+   '🖌️ Show final commit titles beside generation times (#393)', 'Do not duplicate the exact suffix');
+ assert.equal(exactSquashTitle('🖌️ Show final commit titles beside generation times (#42)', 393),
+   '🖌️ Show final commit titles beside generation times (#42) (#393)',
+   'Preserve the exact original PR title when it contains a different issue number');
  const prepared=squashMessage('🐛 Repair retries',269,commits);
  assert.equal(prepared.title,'🐛 Repair retries (#269)');
  assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex','Codex Web']);
@@ -10,7 +19,7 @@ async function run(){
   '- Change',
   '- Sync',
   '',
-  '---------',
+  '__________',
   '',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Codex <noreply@openai.com>',
@@ -28,7 +37,7 @@ async function run(){
   '  More context.',
   '- ➕ Add IBM Redbooks reference',
   '',
-  '---------',
+  '__________',
   '',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Codex <noreply@openai.com>',
@@ -55,6 +64,12 @@ async function run(){
    message:'🔄 Sync branch to main\n\nUpdate from upstream.'}};
  const feature={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
    message:'🖌️ Update merge settings'}};
+ const pr393=squashMessage('🖌️ Show final commit titles beside generation times',393,[feature,syncCommit],
+   {filterSyncCommitSummaries:true});
+ assert.equal(pr393.title,'🖌️ Show final commit titles beside generation times (#393)');
+ assert(pr393.message.includes('\n\n__________\n\n'));
+ assert(!pr393.message.includes('---------'));
+ assert(!pr393.message.includes('Sync brach to main'));
  const filtered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:true});
  assert(filtered.message.includes('- 🖌️ Update merge settings'));
  assert(!filtered.message.includes('Sync brach to main'));
