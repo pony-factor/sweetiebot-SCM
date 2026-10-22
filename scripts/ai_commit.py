@@ -1390,7 +1390,7 @@ def sanitize_title_explanation(text: str) -> str:
     if not isinstance(data, dict) or not isinstance(data.get("explanation"), str):
         return ""
     raw = data["explanation"]
-    if "\\x00" in raw or "\\n" in raw or "\\r" in raw:
+    if "\x00" in raw or "\n" in raw or "\r" in raw:
         return ""
     note = plain_commit_text(raw)
     return note if 12 <= len(note) <= 240 else ""
