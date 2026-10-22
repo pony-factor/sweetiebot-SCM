@@ -179,11 +179,11 @@ SETTINGS = (
     Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Message bar", "text"),
     Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Message bar", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
-    Setting("nativeAppUpdateMode", "scm-toolkit.native-app-update-mode", "VS Code app updates", "Use default for automatic update checks, start to check only at startup, manual to check on demand, or none to disable updates. VS Code keeps its normal update notices.", "Updates", "select", ("default", "start", "manual", "none")),
-    Setting("nativeExtensionAutoCheckUpdates", "scm-toolkit.native-extension-auto-check-updates", "Automatically check for extension updates", "Use VS Code's built-in checks for installed extension updates.", "Updates"),
-    Setting("nativeExtensionAutoUpdate", "scm-toolkit.native-extension-auto-update", "Automatically update extensions", "Let VS Code install extension updates automatically. Per-extension overrides and administrator policies still apply.", "Updates"),
-    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; automatically reload the focused window when ready.", "Startup and repository"),
-    Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup and repository"),
+    Setting("nativeAppUpdateMode", "scm-toolkit.native-app-update-mode", "VS Code app updates", "Use default for automatic update checks, start to check only at startup, manual to check on demand, or none to disable updates. VS Code keeps its normal update notices.", "Initialization", "select", ("default", "start", "manual", "none")),
+    Setting("nativeExtensionAutoCheckUpdates", "scm-toolkit.native-extension-auto-check-updates", "Automatically check for extension updates", "Use VS Code's built-in checks for installed extension updates.", "Initialization"),
+    Setting("nativeExtensionAutoUpdate", "scm-toolkit.native-extension-auto-update", "Automatically update extensions", "Let VS Code install extension updates automatically. Per-extension overrides and administrator policies still apply.", "Initialization"),
+    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; automatically reload the focused window when ready.", "Initialization"),
+    Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Initialization"),
     Setting("notificationPosition", "scm-toolkit.notification-position", "Notification position", "Choose where VS Code notification toasts and the Notification Center appear.", "Source control", "select", ("bottom-left", "bottom-right", "top-right")),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Show push checkbox", "Show the push-after-committing checkbox beside the message field.", "Message bar"),
@@ -232,8 +232,8 @@ SETTINGS = (
     Setting("workspaceSearchMaxFiles", "scm-toolkit.workspace-search-max-files", "Search file limit", "Maximum number of workspace files considered for indexing.", "Search", "integer", minimum=1, maximum=50000),
     Setting("workspaceSearchMaxFileSizeMB", "scm-toolkit.workspace-search-max-file-size-mb", "Maximum indexed file size (MB)", "Maximum file size indexed directly.", "Search", "number", minimum=0.1, maximum=100),
     Setting("workspaceSearchExclude", "scm-toolkit.workspace-search-exclude", "Search exclusions", "Glob of paths excluded from workspace indexing. Leave blank to use no exclusions.", "Search", "optional_text"),
-    Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Startup and repository", "text"),
-    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Startup and repository", "text"),
+    Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Initialization", "text"),
+    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Initialization", "text"),
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
@@ -254,6 +254,9 @@ SETTINGS = (
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
+    Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
+    Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
+    Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
     Setting("kefaniaUseThemeColors", "scm-toolkit.kefania-use-theme-colors", "Use VS Code theme colors", "Use the current theme for Kefania buttons, close icons, image controls, and page colors.", "Kefania"),
     Setting("kefaniaCloseAfterMerge", "scm-toolkit.kefania-close-after-merge", "Close Kefania after squash and merge", "Close the Kefania confirmation window after GitHub confirms a successful squash and merge.", "Kefania"),
     Setting("kefaniaShowCloseButton", "scm-toolkit.kefania-show-close-button", "Show Kefania X button", "Show the close-window X after publishing a PR in Kefania.", "Kefania"),
@@ -1334,6 +1337,8 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
     payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
+    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent"):
+        payload["vscodeSettings"][key] = int(settings[key])
     return payload
 
 
