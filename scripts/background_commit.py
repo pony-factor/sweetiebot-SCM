@@ -22,6 +22,7 @@ from sweetiebot_diagnostics import log_event
 MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
+FORKS = 'sweetiebot-background-forks.json'
 PARALLEL_JOBS = 4
 
 
@@ -73,24 +74,27 @@ def recover_finalization(meta):
                 job.update(sha=job.pop('replacement_sha'), provisional=False, phase='committed')
                 write_journal(journal, job)
         return
-    branch = transaction['branch']
-    actual = branch_tip(branch)
-    if actual not in (transaction['before'], transaction['after']):
-        raise RuntimeError('The branch changed during message finalization; recovery was paused.')
-    if actual != transaction['after']:
-        if transaction.get('checkout'):
+    moves = transaction.get('refs', [transaction])
+    commands = ['start']
+    for move in moves:
+        actual = branch_tip(move['branch'])
+        if actual not in (move['before'], move['after']):
+            raise RuntimeError('The branch changed during message finalization; recovery was paused.')
+        if transaction.get('checkout') and actual != move['after'] and move['branch'] == transaction['branch']:
             env = os.environ.copy()
             env.pop('GIT_INDEX_FILE', None)
             active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
-            if active == branch:
+            if active == move['branch']:
                 # Two-tree checkout refuses overlapping edits and is replayable
                 # if a crash occurs before the compare-and-swap below.
-                result = git('read-tree', '-u', '-m', transaction['before'], transaction['after'],
+                result = git('read-tree', '-u', '-m', move['before'], move['after'],
                              check=False, env=env)
                 if result.returncode:
                     raise RuntimeError('Local edits changed during Lindsey sync; publication was paused.')
-        git('update-ref', '-m', 'sweetiebot: finalize queued commit messages',
-            branch, transaction['after'], transaction['before'])
+        commands.append(f"update {move['branch']} {move['after']} {actual}")
+    commands += ['prepare', 'commit']
+    git('update-ref', '-m', 'sweetiebot: finalize queued commit messages', '--stdin',
+        input='\n'.join(commands) + '\n')
     for update in transaction['updates']:
         journal = Path(update['directory']) / 'job.json'
         job = read_journal(journal)
@@ -99,7 +103,39 @@ def recover_finalization(meta):
         write_journal(journal, job)
         if 'tree' in update['values']:
             git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
+    if 'forks' in transaction:
+        write_journal(Path(meta) / FORKS, transaction['forks'])
     file.unlink()
+
+
+def fork_branch(source, name, expected_head):
+    """Capture a pending base and its subscription under the finalizer's lock."""
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    with repository_lock(meta):
+        recover_finalization(meta)
+        if state()[0] != expected_head:
+            raise RuntimeError('The active branch changed while preparing the new branch.')
+        if (meta / 'sweetiebot-async-commit.json').exists():
+            raise RuntimeError('Wait for the existing commit message to finish before branching.')
+        git('check-ref-format', '--branch', name)
+        branch = 'refs/heads/' + name
+        if branch_tip(branch):
+            raise RuntimeError('The new branch already exists.')
+        base = git('rev-parse', '--verify', source + '^{commit}')
+        # Reject orphaned placeholders: there must be a live job to finish them.
+        jobs = [read_journal(Path(entry['directory']) / 'job.json')
+                for entry in queue_entries(meta / MARKER)]
+        pending = {job['sha'] for job in jobs if job and job.get('provisional')}
+        for line in git('log', '--format=%H%x00%s', base).splitlines():
+            sha, _, subject = line.partition('\x00')
+            if re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject) and sha not in pending:
+                raise RuntimeError('The branch base contains an unfinished commit without a background job.')
+        forks = read_journal(meta / FORKS) or {}
+        forks[branch] = base
+        # Save before creating the ref: a crash must never leave an untracked fork.
+        write_journal(meta / FORKS, forks)
+        git('checkout', '-b', name, base)
+        return base
 
 
 def captured_chain(marker, branch):
@@ -326,16 +362,54 @@ def finalize_message(directory, job):
         before = jobs[-1]['sha']
         parent = current['parent']
         updates = []
+        replacements = {}
         for entry, item in zip(entries[position:], jobs[position:]):
             message = current['message'] if item['id'] == job['id'] else git('show', '-s', '--format=%B', item['sha'])
             sha = rewritten_commit(item, parent, message)
+            replacements[item['sha']] = sha
             values = {'sha': sha, 'parent': parent}
             if item['id'] == job['id']:
                 values.update(provisional=False, phase='committed')
             updates.append({'directory': entry['directory'], 'values': values})
             parent = sha
+        moves = [dict(branch=current['branch'], before=before, after=parent)]
+        forks = read_journal(meta / FORKS) or {}
+        remaining = dict(forks)
+        while remaining:
+            advanced = False
+            for branch, base in list(remaining.items()):
+                if base not in replacements:
+                    continue
+                tip = branch_tip(branch)
+                if not tip or git('merge-base', '--is-ancestor', base, tip, check=False).returncode == 1:
+                    forks.pop(branch, None)  # Deleted or deliberately reset fork.
+                    del remaining[branch]
+                    continue
+                for sha in git('rev-list', '--reverse', base + '..' + tip).splitlines():
+                    if sha in replacements:
+                        continue
+                    parents = git('show', '-s', '--format=%P', sha).split()
+                    if len(parents) != 1 or parents[0] not in replacements:
+                        raise RuntimeError('A fork contains merged or changed history; message finalization was paused.')
+                    item = dict(sha=sha, tree=git('show', '-s', '--format=%T', sha), sign=False)
+                    replacements[sha] = rewritten_commit(item, replacements[parents[0]],
+                                                          git('show', '-s', '--format=%B', sha))
+                moves.append(dict(branch=branch, before=tip, after=replacements[tip]))
+                forks[branch] = replacements[base]
+                del remaining[branch]
+                advanced = True
+            if not advanced:
+                break
+        updated = {entry['directory'] for entry in updates}
+        for entry in queue_entries(marker):
+            if entry['directory'] in updated:
+                continue
+            item = read_journal(Path(entry['directory']) / 'job.json')
+            if item.get('sha') in replacements:
+                updates.append(dict(directory=entry['directory'], values=dict(
+                    sha=replacements[item['sha']], parent=replacements.get(item['parent'], item['parent']))))
         write_journal(meta / TRANSACTION, dict(branch=current['branch'], before=before,
-                                             after=parent, updates=updates))
+                                             after=parent, updates=updates, refs=moves, forks=forks))
         recover_finalization(meta)
         job.update(read_journal(directory / 'job.json'))
 
@@ -567,6 +641,14 @@ def work(directory, commit_only=False):
                 position = next(i for i, item in enumerate(pending) if item['id'] == job['id'])
                 if any(item.get('provisional') for item in pending[:position]):
                     return
+                # A fork may have its own ready title while its inherited base
+                # is still provisional. Never finalize or publish it first.
+                for entry in queue_entries(marker):
+                    ancestor = read_journal(Path(entry['directory']) / 'job.json')
+                    if (ancestor and ancestor.get('provisional') and ancestor['id'] != job['id']
+                            and ancestor['branch'] != job['branch']
+                            and git('merge-base', '--is-ancestor', ancestor['sha'], job['sha'], check=False).returncode == 0):
+                        return
             if job.get('provisional'):
                 job['phase'] = 'finalizing'
                 write_journal(file, job)
@@ -874,6 +956,8 @@ if __name__ == '__main__':
     try:
         if len(sys.argv) == 3 and sys.argv[1] == '--branch-base':
             print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
+        elif len(sys.argv) == 5 and sys.argv[1] == '--fork-branch':
+            print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
