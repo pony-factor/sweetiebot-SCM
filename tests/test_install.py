@@ -89,6 +89,10 @@ def workbench_fixture():
 
 def pr_explorer_fixture():
     return (
+        'get singleViewPaneContainerTitle(){return this.name}'
+        'get autoReveal(){return this._autoReveal}'
+        'set autoReveal(e){this._autoReveal=e}'
+        'get name(){return this.labelService.getWorkspaceLabel(this.contextService.getWorkspace())}'
         'let root=roots[0];'
         'if(this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER||roots[0].error)root=roots;'
         'this.configurationService.getValue().explorer.expandSingleFolderWorkspaces;'
@@ -651,15 +655,16 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             install.transform(workbench_fixture() + install.START, "base-css", settings=SETTINGS)
 
 
-    def test_pr_explorer_removes_only_saved_single_root_node(self):
+    def test_explorer_removes_single_root_node_and_labels_contents(self):
         original = workbench_fixture() + pr_explorer_fixture()
         patched = install.transform(original, "base-css", settings=SETTINGS)
         self.assertIn(
             'this.contextService.getWorkbenchState()!==WorkbenchState.FOLDER'
-            '&&!scmToolkitIsPRSingleRoot(this.contextService.getWorkspace(),roots)',
+            '&&!scmToolkitIsSingleRoot(this.contextService.getWorkspace(),roots)',
             patched[0],
         )
-        self.assertIn('scmToolkitIsPRSingleRoot(workspace, roots)', patched[0])
+        self.assertIn('scmToolkitIsSingleRoot(workspace, roots)', patched[0])
+        self.assertIn('folders.length===1?"Contents":this.labelService.getWorkspaceLabel', patched[0])
         self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
         self.assertEqual(
             install.transform(*patched, remove=True, settings=SETTINGS),
@@ -686,7 +691,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         patched = install.transform(original, 'base-css', settings=SETTINGS)
         self.assertIn(
             'this.contextService.getWorkbenchState()!==2'
-            '&&!scmToolkitIsPRSingleRoot(this.contextService.getWorkspace(),roots)',
+            '&&!scmToolkitIsSingleRoot(this.contextService.getWorkspace(),roots)',
             patched[0],
         )
         self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)

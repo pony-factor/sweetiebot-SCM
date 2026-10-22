@@ -437,7 +437,7 @@ def workspace_trust_edits(js):
 
 
 def pr_workspace_explorer_edits(js):
-    """Use a repository-root Explorer only for one-folder Sweetiebot PR workspaces.
+    """Show contents directly in every healthy single-folder workspace.
 
     This alters the tree input, not the workbench's saved workspace identity.
     """
@@ -461,10 +461,27 @@ def pr_workspace_explorer_edits(js):
     match = matches[0]
     roots = match.group("roots")
     replacement = (
-        f"({match.group('state')}&&!scmToolkitIsPRSingleRoot("
+        f"({match.group('state')}&&!scmToolkitIsSingleRoot("
         f"this.contextService.getWorkspace(),{roots}))||{roots}[0].error"
     )
-    return [(match.group(0), replacement)]
+    # Scope the label to Explorer; other workspace/window labels stay native.
+    # Parameter names vary across builds, so match the setter independently.
+    title_pattern = re.compile(
+        r"get singleViewPaneContainerTitle\(\)\{return this\.name\}"
+        r"get autoReveal\(\)\{return this\._autoReveal\}"
+        rf"set autoReveal\((?P<arg>{ident})\)\{{this\._autoReveal=(?P=arg)\}}"
+        r"get name\(\)\{return this\.labelService\.getWorkspaceLabel\(this\.contextService\.getWorkspace\(\)\)\}"
+    )
+    titles = list(title_pattern.finditer(js))
+    if len(titles) != 1:
+        raise ValueError("Unsupported VS Code build: Explorer contents title anchor does not match.")
+    original_title = titles[0].group(0)
+    new_title = original_title.replace(
+        "get name(){return ",
+        'get name(){return this.contextService.getWorkspace().folders.length===1?"Contents":',
+        1,
+    )
+    return [(match.group(0), replacement), (original_title, new_title)]
 
 
 def edits(js=None, settings=None):
