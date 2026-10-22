@@ -235,7 +235,7 @@ async function run() {
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { if (key === 'kefaniaUseThemeColors' || key === 'kefaniaShowCloseButton' || key === 'kefaniaCloseButtonLeft' || key === 'kefaniaCloseButtonPosition') return fallback; if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) { if (key === 'kefaniaCloseAfterMerge' || key === 'kefaniaUseThemeColors' || key === 'kefaniaShowCloseButton' || key === 'kefaniaCloseButtonLeft' || key === 'kefaniaCloseButtonPosition') return fallback; if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {
       from: components => components,

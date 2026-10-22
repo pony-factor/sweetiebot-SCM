@@ -247,6 +247,20 @@ class SubmissionTests(unittest.TestCase):
             if name not in {"branchNameDisabledPacks", "kefaniaShowCloseButton"}:
                 self.assertIn(f'name="{name}"', page)
 
+    def test_kefania_close_after_merge_round_trips(self):
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["kefaniaCloseAfterMerge"])
+        values["kefaniaCloseAfterMerge"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["kefaniaCloseAfterMerge"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="kefaniaCloseAfterMerge" value="true" checked', page)
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertTrue(payload["vscodeSettings"]["kefaniaCloseAfterMerge"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertTrue(current["kefaniaCloseAfterMerge"])
+
     def test_automatic_workspace_cleanup_round_trips_into_vscode(self):
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["automaticWorkspaceCleanup"])

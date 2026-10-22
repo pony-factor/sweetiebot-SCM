@@ -49,9 +49,9 @@ async function main() {
     message, author), /message/);
 
   function harness({ protectedHead = false, dependent = false, rebase = true, changedBeforePush = false,
-      noFiles = false, preparedPreviously = false, lateDependent = false } = {}) {
+      noFiles = false, preparedPreviously = false, lateDependent = false, staleReads = 0, changedAfterPush = false, baseChangedAfterPush = false } = {}) {
     const apiCalls = [], gitCalls = [];
-    let pushed = false, merged = false, dependencyChecks = 0;
+    let pushed = false, merged = false, dependencyChecks = 0, postPushReads = 0;
     const pr = () => ({
       state: merged ? 'closed' : 'open', draft: false, merged, mergeable: true,
       merged_at: merged ? '2026-10-21T00:00:00Z' : null,
@@ -63,7 +63,16 @@ async function main() {
     });
     const api = async (endpoint, method = 'GET', fields = []) => {
       apiCalls.push({ endpoint, method, fields });
-      if (endpoint === 'repos/owner/repo/pulls/12') return pr();
+      if (endpoint === 'repos/owner/repo/pulls/12') {
+        const snapshot = pr();
+        if (pushed && !merged) {
+          postPushReads++;
+          if (postPushReads <= staleReads) snapshot.head.sha = oldHead;
+          if (changedAfterPush) snapshot.head.sha = 'd'.repeat(40);
+          if (baseChangedAfterPush) snapshot.base.sha = 'e'.repeat(40);
+        }
+        return snapshot;
+      }
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: rebase };
       if (endpoint.includes('/branches/')) return { protected: protectedHead };
       if (endpoint.includes('/pulls?state=')) return (dependent || (lateDependent && ++dependencyChecks >= 2)) ? [{ number: 13,
@@ -122,6 +131,28 @@ async function main() {
   assert(good.gitCalls.some(args => args.includes('push')), 'Guarded PR branch push required');
   assert(!good.gitCalls.some(args => args.includes('refs/heads/main') && args.includes('push')),
     'Never push to main');
+
+  const stale = harness({ staleReads: 2 });
+  const waits = [];
+  assert.equal((await humanSquashMerge('owner/repo', 12,
+    { api: stale.api, git: stale.git, wait: async ms => waits.push(ms) })).merged, true);
+  assert.equal(waits.length, 2, 'Wait for GitHub to expose the prepared head');
+  assert.equal(stale.gitCalls.filter(args => args.includes('push')).length, 1,
+    'Stale API responses must never trigger another force push');
+  const neverRefreshed = harness({ staleReads: 100 });
+  const timeoutWaits = [];
+  await assert.rejects(humanSquashMerge('owner/repo', 12, {
+    api: neverRefreshed.api, git: neverRefreshed.git, wait: async ms => timeoutWaits.push(ms)
+  }), /not refreshed.*retry Squash and merge/);
+  assert.equal(timeoutWaits.length, 5, 'Stale responses have a bounded retry');
+  assert.equal(neverRefreshed.merged, false);
+  for (const options of [{ changedAfterPush: true }, { baseChangedAfterPush: true }]) {
+    const raced = harness(options);
+    await assert.rejects(humanSquashMerge('owner/repo', 12, {
+      api: raced.api, git: raced.git, wait: async () => assert.fail('Actual changes must stop immediately')
+    }), /PR changed after guarded push/);
+    assert.equal(raced.merged, false);
+  }
 
   // A failed review/check can leave the prepared PR open. A retry must NOT
   // force-push the same branch and restart checks again.

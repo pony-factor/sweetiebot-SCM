@@ -443,6 +443,12 @@
           "scope": "application",
           "description": "Use the active VS Code theme colors for Kefania pages and controls."
         },
+        "scmToolkit.kefaniaCloseAfterMerge": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Close the Kefania confirmation window after GitHub confirms a successful squash and merge."
+        },
         "scmToolkit.kefaniaShowCloseButton": {
           "type": "boolean",
           "default": true,
