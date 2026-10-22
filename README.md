@@ -55,6 +55,8 @@ Windows on `main` share the original repository folder under `~/GitHub`, includi
 its uncommitted edits and Git index. Each window keeps its own saved workspace.
 Sweetiebot’s branch selector and new-branch button open topic branches in separate
 linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
+Creating a new branch opens its worktree in a **new VS Code window**, leaving the
+original main window and its Codex session open instead of reloading them.
 Topics start from committed main; pending main edits stay in the shared folder.
 Returning Home or selecting main reconnects the window to the original files,
 preserving pending topic edits in their worktree. Reopening that topic resumes

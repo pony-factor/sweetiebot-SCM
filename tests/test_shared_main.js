@@ -44,6 +44,10 @@ async function openedRoot(result) {
     const topicEditor = editor(root);
     assert.equal(await routeBranch(topicEditor, { rootUri: { fsPath: root } },
       { ...options, branch: 'topic', create: true, start: 'main' }), true);
+    assert.deepEqual(topicEditor.commands.calls.at(-1)[2], { forceNewWindow: true },
+      'New topics open in a separate window instead of reloading the main workspace');
+    assert.equal(topicEditor.workspace.workspaceFolders[0].uri.fsPath, root,
+      'The originating main workspace and Codex session remain untouched');
     const topicWorkspace = topicEditor.commands.calls.at(-1)[1].fsPath;
     const topic = await openedRoot({ target: topicWorkspace });
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
