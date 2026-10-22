@@ -51,6 +51,27 @@ class BackgroundCommitTests(unittest.TestCase):
     def job(self, directory):
         return json.loads((directory / 'job.json').read_text())
 
+    def test_resume_skips_gitdir_replaced_by_worktree_pointer(self):
+        stale = self.root / 'jobs' / 'stale'
+        stale.mkdir(parents=True)
+        pointer = self.root / 'old.git'
+        pointer.write_text('gitdir: /relocated/worktree\n')
+        (stale / 'job.json').write_text(json.dumps({'gitdir': str(pointer)}))
+        directory = self.queue()
+        meta = self.job(directory)['gitdir']
+        # Visit the obsolete record first, as in the affected runtime.
+        journals = [stale / 'job.json', directory / 'job.json']
+        for parallel in (True, False):
+            with self.subTest(parallel=parallel), \
+                    patch.object(Path, 'glob', return_value=iter(journals)), \
+                    patch.object(worker, 'drain_parallel') as drain, \
+                    patch.object(worker, 'work') as work:
+                worker.resume(parallel=parallel)
+                if parallel:
+                    drain.assert_called_once_with(meta)
+                else:
+                    work.assert_called_once_with(directory)
+
     def test_status_tracks_title_jobs_independently_of_pending_push(self):
         first = self.queue(push=True)
         (self.repo / 'story.txt').write_text('Second change\n')

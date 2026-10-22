@@ -825,6 +825,11 @@ def resume(parallel=True):
     for file in jobs_home().glob('*/job.json'):
         job = read_journal(file)
         meta = job['gitdir']
+        # Archived jobs can outlive a checkout or its conversion to a linked
+        # worktree, where the old .git directory is now a pointer file.
+        # Never let that stale location prevent other repositories resuming.
+        if not Path(meta).is_dir():
+            continue
         if meta in repositories:
             continue
         repositories.add(meta)
