@@ -10,6 +10,7 @@ import workspace_search
 import codex_colors
 import codex_label
 import codex_composer
+import codex_cannon
 import codex_usage
 import codex_context
 import codex_drafts
@@ -39,6 +40,8 @@ CODEX_PROMOTIONS_START = '\n/* scm-toolkit-codex-promotions:start */\n'
 CODEX_PROMOTIONS_END = '\n/* scm-toolkit-codex-promotions:end */\n'
 CODEX_TIMESTAMPS_START = '\n/* scm-toolkit-codex-timestamps:start */\n'
 CODEX_TIMESTAMPS_END = '\n/* scm-toolkit-codex-timestamps:end */\n'
+CODEX_CANNON_START = '\n/* scm-toolkit-codex-cannon:start */\n'
+CODEX_CANNON_END = '\n/* scm-toolkit-codex-cannon:end */\n'
 CODEX_DICTATION_START = '\n/* scm-toolkit-codex-dictation:start */\n'
 CODEX_DICTATION_END = '\n/* scm-toolkit-codex-dictation:end */\n'
 
@@ -782,7 +785,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex"):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", cannon_payload=None):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -825,6 +828,12 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
         js = strip_codex_timestamps_payload(js)
+    if js.count(CODEX_CANNON_START) != js.count(CODEX_CANNON_END) or js.count(CODEX_CANNON_START) > 1:
+        raise ValueError('Incomplete Codex cannon patch; refusing to overwrite it.')
+    if CODEX_CANNON_START in js:
+        before, rest = js.split(CODEX_CANNON_START, 1)
+        _, after = rest.split(CODEX_CANNON_END, 1)
+        js = before + after
     if CODEX_PROMOTIONS_START in js:
         js = strip_codex_promotions_payload(js)
 
@@ -883,6 +892,9 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + (CODEX_ASSETS / "hide-promotions.js").read_text()
             + CODEX_PROMOTIONS_END
         )
+
+    if not remove and cannon_payload:
+        js += CODEX_CANNON_START + cannon_payload + CODEX_CANNON_END
 
     if not remove and hide_timestamps:
         js += (
@@ -1347,11 +1359,19 @@ def main():
             new[index], {} if args.uninstall else settings
         )
 
+    cannon_payload = None
+    if settings['codexShowCannon'] and not args.uninstall:
+        try:
+            cannon_payload = codex_cannon.bundle()
+        except (OSError, ValueError) as error:
+            print(f'Warning: Flawless-GPT cannon unavailable: {error}. Skipping optional cannon.')
+
     should_find_codex = (
         settings["codexUsageResetCountdown"]
         or hide_reset_times
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
+        or settings["codexShowCannon"]
         or settings["codexHideDictation"]
         or settings["codexShortModelLabels"]
         or settings["codexWindowLabel"] != "Codex"
@@ -1378,6 +1398,7 @@ def main():
                 hide_dictation=settings["codexHideDictation"],
                 short_model_labels=settings["codexShortModelLabels"],
                 window_label=settings["codexWindowLabel"],
+                cannon_payload=cannon_payload,
                 remove=args.uninstall,
             )
         except ValueError as error:
@@ -1387,6 +1408,7 @@ def main():
                 or CODEX_LIMIT_START in codex_old
                 or CODEX_PROMOTIONS_START in codex_old
                 or CODEX_TIMESTAMPS_START in codex_old
+                or CODEX_CANNON_START in codex_old
                 or CODEX_DICTATION_START in codex_old
                 or CODEX_LABELS_START in codex_old
                 or CODEX_WINDOW_LABEL_START in codex_old
