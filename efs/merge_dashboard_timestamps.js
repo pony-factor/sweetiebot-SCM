@@ -23,4 +23,13 @@ function formatTimelineTimestamp(at, mode, nowMs = Date.now()) {
   const value = Math.floor(abs / duration) + label;
   return seconds >= 0 ? value + ' ago' : 'in ' + value;
 }
-if (typeof module === 'object' && module.exports) module.exports = { formatTimelineTimestamp };
+// Use the activity timeline's preference for GitHub-confirmed merge results too.
+function formatMergeOutcome(mergedAt, mergeCommit, mode, nowMs = Date.now()) {
+  const timestamp = formatTimelineTimestamp(mergedAt, mode, nowMs);
+  const suffix = timestamp ? (mode === 'clock' ? ' at ' : ' ') + timestamp : '';
+  return 'GitHub merged this PR' + suffix +
+    (mergeCommit ? '\nSquash/merge commit: ' + mergeCommit : '');
+}
+if (typeof module === 'object' && module.exports) {
+  module.exports = { formatTimelineTimestamp, formatMergeOutcome };
+}

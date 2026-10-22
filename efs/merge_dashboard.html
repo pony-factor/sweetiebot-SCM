@@ -263,6 +263,7 @@ __TIMESTAMP_FORMATTER__
     } else body.textContent = content || missing;
     panel.appendChild(body);
     parent.appendChild(panel);
+    return body;
   }
   function renderDetail() {
     const parent = byId('details');
@@ -281,10 +282,9 @@ __TIMESTAMP_FORMATTER__
       button.addEventListener('click', () => dispatch(item[0], pr.number));
     }
     if (pr.mergedAt) {
-      showTextPanel(parent, '✓ Verified outcome', 'GitHub merged this PR at ' +
-        new Date(pr.mergedAt).toLocaleString() +
-        (pr.mergeCommit ? '\nSquash/merge commit: ' + pr.mergeCommit : ''),
-        '');
+      const outcome = showTextPanel(parent, '✓ Verified outcome',
+        formatMergeOutcome(pr.mergedAt, pr.mergeCommit, model.timestampMode), '');
+      outcome.dataset.mergeOutcome = 'true';
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
@@ -369,6 +369,11 @@ __TIMESTAMP_FORMATTER__
     if (model.timestampMode !== 'relative') return;
     for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
       stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
+    }
+    const pr = model.prs.find(item => item.number === selected);
+    const outcome = byId('details').querySelector('[data-merge-outcome]');
+    if (pr?.mergedAt && outcome) {
+      outcome.textContent = formatMergeOutcome(pr.mergedAt, pr.mergeCommit, 'relative');
     }
   }
   byId('timeline-time-mode').addEventListener('change', event => {
