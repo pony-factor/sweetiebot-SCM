@@ -270,5 +270,24 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await getElementById('merge').onclick();
   assert.equal(prompts,2,'Turning the setting off restores confirmation');
   assert.equal(merges,2);
+  let closes=0;
+  const originalClose=getElementById('close-confirmation').onclick;
+  getElementById('close-confirmation').onclick=async()=>{closes++;};
+  await getElementById('merge').onclick();
+  assert.equal(closes,0,'Disabled close-after-merge keeps the window open');
+  state.closeAfterMerge=true;
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Confirmed merge closes the window when enabled');
+  context.fetch=async (_url,options)=>options?.method==='POST'
+    ? {ok:false,json:async()=>({error:'Merge conflict'})}
+    : {ok:true,json:async()=>state};
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Failed merge leaves the window open');
+  context.fetch=async (_url,options)=>options?.method==='POST'
+    ? {ok:true,json:async()=>({merged:false})}
+    : {ok:true,json:async()=>state};
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Unconfirmed merge leaves the window open');
+  getElementById('close-confirmation').onclick=originalClose;
   console.log('Ludicrous mode confirmation checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

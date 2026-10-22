@@ -48,7 +48,7 @@ function verifyCommit(commit, expected, author) {
 }
 
 async function humanSquashMerge(repository, number, {
-  api, git, temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
+  api, git, wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)), temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
@@ -170,10 +170,21 @@ async function humanSquashMerge(repository, number, {
     await checkHeadIsolation();
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
-    const rewritten = await api(prPath);
-    if (rewritten?.state !== 'open' || rewritten.head?.sha !== preparedSha ||
-        rewritten.base?.ref !== base || rewritten.base?.sha !== baseSha) {
-      throw Error('PR changed after guarded push; inspect the selected branch before merging.');
+    // GitHub can briefly serve the old PR head after a successful Git push.
+    // Retry only that exact old snapshot; an unrelated head or base change
+    // must still stop immediately, and no retry may push the branch again.
+    for (let attempt = 0; ; attempt++) {
+      const rewritten = await api(prPath);
+      if (rewritten?.state !== 'open' || rewritten.head?.ref !== head ||
+          rewritten.base?.ref !== base || rewritten.base?.sha !== baseSha || rewritten.stack ||
+          ![originalSha, preparedSha].includes(rewritten.head?.sha)) {
+        throw Error('PR changed after guarded push; inspect the selected branch before merging.');
+      }
+      if (rewritten.head.sha === preparedSha) break;
+      if (attempt === 5) {
+        throw Error('GitHub has not refreshed the PR head after the guarded push. The prepared branch remains available; retry Squash and merge.');
+      }
+      await wait(Math.min(200 * 2 ** attempt, 2000));
     }
     // Native GitHub rebase merge records the same bot-opened PR as merged.
     return finish(preparedSha, message);
