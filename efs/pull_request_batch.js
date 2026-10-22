@@ -281,8 +281,8 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const prompt = batchMergePrompt({
         repositoryUrl: selectedRepository.repositoryUrl,
         pullRequests: selected,
-        filterSyncCommitSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('filterSyncCommitSummaries', true) !== false,
-        omitBulletsForEmojiTitles: vscode.workspace?.getConfiguration('scmToolkit')?.get('squashOmitBulletsForEmojiTitles', false) === true
+        filterSyncCommitSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('filterSyncCommitSummaries', true) !== false,
+        omitBulletsForEmojiTitles: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('squashOmitBulletsForEmojiTitles', false) === true
       });
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;
