@@ -39,21 +39,45 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   }
   const input = {repository:'owner/repo',head:'pony',base:'main',
     result:{number:12,url:'https://github.com/owner/repo/pull/12'}};
-  const pr = {html_url:input.result.url,state:'open',draft:false,merged_at:null,
+  const pr = {html_url:input.result.url,title:'🖌️ Improve settings',state:'open',draft:false,merged_at:null,
     user:{login:'JFWooten4',type:'User'},
     head:{ref:'pony',sha:'a'.repeat(40),repo:{full_name:'owner/repo'}},
     base:{ref:'main',repo:{full_name:'owner/repo'}}};
   const calls = [];
   const api = async (endpoint,options) => {
     calls.push([endpoint,options]);
-    if(!options)return pr;
+    if(!options) {
+      if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
+        {author:{login:'JFWooten4',type:'User'},commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+          message:'🖌️ Improve settings\n\nCo-authored-by: Codex Web <noreply@openai.com>'}},
+        {author:{login:'JFWooten4',type:'User'},commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+          message:'🔄 Sync brach to main\n\nKeep settings in sync.'}}
+      ];
+      return pr;
+    }
     assert.equal(options.method,'PUT');
     assert.equal(options.body.sha,pr.head.sha);
     assert.equal(options.body.merge_method,'squash');
+    assert.equal(options.body.commit_title,'🖌️ Improve settings (#12)');
+    assert(options.body.commit_message.includes('- 🖌️ Improve settings'));
+    assert(options.body.commit_message.includes('\n\n__________\n\n'));
+    assert(!options.body.commit_message.includes('---------'));
+    assert(!options.body.commit_message.includes('Sync brach to main'));
     return {merged:true,sha:'b'.repeat(40)};
   };
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3);
+  const blockedCalls = [];
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    blockedCalls.push([endpoint, options]);
+    if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
+      {author:{login:'codex-pony[bot]',type:'Bot'},
+       commit:{author:{name:'codex-pony[bot]',email:'bot@example.org'},message:'Bot-only change'}}];
+    if(options?.method === 'PUT') throw Error('A native merge must not run without a person');
+    return pr;
+  }), /No verified original human Git author/);
+  assert.equal(blockedCalls.filter(([,options]) => options?.method === 'PUT').length, 0,
+    'A human PR opener without a linked human original author is not mergeable');
   for(const [update,message] of [
     [{state:'closed'},'no longer open'],
     [{draft:true},'ready for review'],
