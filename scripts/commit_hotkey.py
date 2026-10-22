@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 
 COMMAND = "sweetiebot.commit"
+CODEX_COMMAND = "sweetiebot.commitWithCodex"
+SUPPORTED_COMMANDS = frozenset({COMMAND, CODEX_COMMAND})
 VALID_KEY = re.compile(
     r"(?:(?:ctrl|shift|alt|cmd)\+)*(?:[a-z0-9]|f(?:[1-9]|1\d|2[0-4])|"
     r"space|enter|tab|escape|backspace|delete|home|end|pageup|pagedown|"
@@ -86,13 +88,19 @@ def _entries(text):
     return clean, bindings, spans, opening, closing
 
 
-def read_commit_hotkey(path: Path) -> str:
+def _check_command(command: str) -> None:
+    if command not in SUPPORTED_COMMANDS:
+        raise ValueError("Unsupported Sweetiebot commit command.")
+
+
+def read_commit_hotkey(path: Path, command: str = COMMAND) -> str:
+    _check_command(command)
     if path.is_symlink():
         raise ValueError("Refusing a symlinked keybindings.json.")
     if not path.exists():
         return ""
     _, bindings, _, _, _ = _entries(path.read_text(encoding="utf-8-sig"))
-    keys = [str(item.get("key", "")) for item in bindings if item.get("command") == COMMAND]
+    keys = [str(item.get("key", "")) for item in bindings if item.get("command") == command]
     return keys[-1] if keys else ""
 
 
@@ -112,7 +120,8 @@ def _remove(text, clean, start, end):
     return text[:start] + text[end:]
 
 
-def update_commit_hotkey(path: Path, key: str) -> str:
+def update_commit_hotkey(path: Path, key: str, command: str = COMMAND) -> str:
+    _check_command(command)
     key = key.lower().strip()
     if key:
         if not VALID_KEY.fullmatch(key) or len(key.split("+")[:-1]) != len(set(key.split("+")[:-1])):
@@ -125,19 +134,19 @@ def update_commit_hotkey(path: Path, key: str) -> str:
     clean, bindings, spans, _, _ = _entries(text)
     if key:
         for item in bindings:
-            if str(item.get("key", "")).lower() == key and item.get("command") not in {COMMAND, "-" + COMMAND}:
+            if str(item.get("key", "")).lower() == key and item.get("command") not in {command, "-" + command}:
                 raise ValueError(f"Shortcut already used by {item.get('command', 'another command')}. Choose another.")
-    owned = [item for item in bindings if item.get("command") == COMMAND]
+    owned = [item for item in bindings if item.get("command") == command]
     if not owned and not key:
         return ""
     if len(owned) == 1 and owned[0].get("key") == key and not owned[0].get("when"):
         return key
     for (start, end), item in reversed(list(zip(spans, bindings))):
-        if item.get("command") == COMMAND:
+        if item.get("command") == command:
             text = _remove(text, clean, start, end)
     if key:
         clean, _, spans, opening, closing = _entries(text)
-        entry = json.dumps({"key": key, "command": COMMAND})
+        entry = json.dumps({"key": key, "command": command})
         if spans:
             end = spans[-1][1]
             cursor = end

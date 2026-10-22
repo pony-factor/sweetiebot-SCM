@@ -1850,26 +1850,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
 
         try {
-            if (configuration.getValue('scmToolkit.durableBackgroundCommits') === true) {
-                await commands.executeCommand('sweetiebot.queueCommit', repositoryUri, {
-                    message: originalMessage, codex: true,
-                    trailer: scmToolkitCoauthorTrailer(settings),
-                    push: configuration.getValue('git.postCommitCommand') === 'push'
-                });
-            } else {
-                // The original direct workflow: generate locally now and commit normally.
-                // Use the same Ollama prompt, custom instructions and emoji rules as queued jobs.
-                let message = originalMessage;
-                if (!message.trim()) {
-                    message = await commands.executeCommand('sweetiebot.generateCodexCommitMessage', repositoryUri);
-                }
-                if (typeof message !== 'string' || !message.trim()) {
-                    throw new Error('Local commit generation did not return a message.');
-                }
-                await commands.executeCommand('sweetiebot.commitWithMessage', repositoryUri,
-                    scmToolkitWithCodexCoauthor(message, settings));
-                if (input.value === originalMessage) input.setValue('');
-            }
+            const result = await commands.executeCommand('sweetiebot.commitWithCodex', repositoryUri, {
+                message: originalMessage,
+                trailer: scmToolkitCoauthorTrailer(settings),
+                codexCommitContext: settings.codexCommitContext
+            });
+            if (result?.committed && !result.queued && input.value === originalMessage) input.setValue('');
         } catch (error) {
             notifications.error(error);
         } finally {

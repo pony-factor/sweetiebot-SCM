@@ -31,6 +31,7 @@
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.copyTerminalContents",
     "onCommand:sweetiebot.commit",
+    "onCommand:sweetiebot.commitWithCodex",
     "onCommand:sweetiebot.prepareCodexCommit",
     "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
@@ -97,6 +98,12 @@
         "title": "Commit (Same as Source Control Button)",
         "category": "Sweetiebot",
         "icon": "$(check)"
+      },
+      {
+        "command": "sweetiebot.commitWithCodex",
+        "title": "Commit with Codex Co-author",
+        "category": "Sweetiebot",
+        "icon": "$(account)"
       },
       {
         "command": "sweetiebot.openSettings",
