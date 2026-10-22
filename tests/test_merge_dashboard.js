@@ -243,6 +243,18 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   const related = anchors.find(n => n.href.endsWith('/pull/5'));
   related.handlers.click({ preventDefault() {} });
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
+  const emphasisRoot = document.createElement('div');
+  renderMergeMarkdown(emphasisRoot, '**bold *italic* ending** and *italic **bold** ending* plus ***both***.');
+  assert.equal(emphasisRoot.textContent, 'bold italic ending and italic bold ending plus both.');
+  const emphasisNodes = walk(emphasisRoot);
+  assert(emphasisNodes.some(n => n.tag === 'strong' && n.children.some(c => c.tag === 'em')));
+  assert(emphasisNodes.some(n => n.tag === 'em' && n.children.some(c => c.tag === 'strong')));
+  const previewLinkRoot = document.createElement('div');
+  renderMergeMarkdown(previewLinkRoot, '[Gallery] (https://derpicdn.net/some.png)',
+    { mapLink: () => 'https://derpibooru.org/images/42' });
+  const previewLink = walk(previewLinkRoot).find(n => n.tag === 'a');
+  assert.equal(previewLink.href, 'https://derpibooru.org/images/42');
+  assert.equal(previewLink.target, '_blank');
   const now = new Date(2026, 9, 21, 6, 15, 0).getTime();
   assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'hidden', now), '');
   assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'relative', now), '2m ago');

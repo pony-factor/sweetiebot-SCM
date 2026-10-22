@@ -2,7 +2,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8');
+const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8')
+  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
@@ -10,6 +11,8 @@ class Element {
   get textContent(){return this._text+this.children.map(node=>String(node.textContent??'')).join('');}
   set textContent(value){this._text=String(value);this.children=[];}
   append(...nodes){this.children.push(...nodes);}
+  appendChild(node){this.children.push(node);return node;}
+  get ownerDocument(){return document;}
   replaceChildren(...nodes){this._text='';this.children=nodes;}
   setAttribute(name,value){this[name]=value;}
   addEventListener(name,listener){(this.listeners[name]??=[]).push(listener);}
@@ -47,9 +50,9 @@ assert.equal(context.safeLink('javascript:alert(1)'),null);
 assert.equal(context.safeLink('https://user:password@example.com'),null);
 const output=new Element('div');
 context.renderMarkdown(output,'## Profile\n\nA **recognizable** pony with <script>alert(1)</script>.\n\n- [Source](https://example.com/pony)');
-assert.equal(output.children[0].tag,'h3');
-assert.equal(output.children[1].children[1].tag,'strong');
-assert(output.children[1].children.some(node=>node.textContent.includes('<script>')),'Raw HTML remains inert text');
+assert.equal(output.children[0].tag,'h2');
+assert(output.children[1].children.some(node=>node.tag==='strong'));
+assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
 const inlineNodes=output.children[0].children;
 assert.deepEqual(inlineNodes.filter(node=>node.tag==='em').map(node=>node.textContent),['Friendship Is Magic','Rock Solid Friendship']);
