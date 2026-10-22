@@ -196,7 +196,7 @@ async function run() {
   assert.match(prompt, /NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED/);
   assert(prompt.includes('node efs/human_squash_merge.js'));
   assert.match(prompt, /NEVER push a squash commit directly to main/);
-  assert.match(prompt, /original bot-opened PR as merged/);
+  assert.match(prompt, /This uses no git push and does not rewrite the PR branch/);
   assert(prompt.includes('NEVER use that route when the PR opener is codex-pony[bot]'));
   assert.match(prompt, /Git author is the verified original HUMAN/);
   const priorities = [
