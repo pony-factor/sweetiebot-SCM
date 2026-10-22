@@ -54,6 +54,20 @@ class SubmissionTests(unittest.TestCase):
         for name in names:
             self.assertIn(f'name="{name}"', page)
 
+    def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],
+                         "scm-toolkit.ai-title-explanations")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["aiTitleExplanations"])
+        values["aiTitleExplanations"] = ["true"]
+        settings = configurator.parse_submission(values)
+        self.assertTrue(settings["aiTitleExplanations"])
+        page = configurator.render_form(settings, [], "Ready", "test-token", "Save")
+        self.assertIn('name="aiTitleExplanations" value="true" checked', page)
+        self.assertIn("Explain AI commit title choices", page)
+        self.assertFalse("aiTitleExplanations" in configurator.extension_settings_payload(settings)["vscodeSettings"])
+
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
         values["spellcheckPreserveLineBreaks"] = ["true"]
