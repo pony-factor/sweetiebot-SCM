@@ -48,6 +48,8 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                 {"timestamp": "2026-10-22T01:01:00+00:00", "component": "commit_title",
                  "event": "generation_completed", "duration_ms": 1200,
                  "outcome": "success", "title": "🖌️ Show final titles",
+                 "rule": "priority",
+                 "explanation": "This wording reflects the added title history.",
                  "response": "SECRET RESPONSE", "description": "SECRET DESCRIPTION"},
                 {"timestamp": "2026-10-22T01:02:00+00:00", "component": "commit_title",
                  "event": "generation_completed", "duration_ms": 2800},
@@ -71,6 +73,9 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             self.assertEqual(result["summary"]["generated"], 2)
             self.assertEqual(next(e["title"] for e in result["events"] if "title" in e),
                              "🖌️ Show final titles")
+            self.assertEqual(next(e["explanation"] for e in result["events"] if "explanation" in e),
+                             "This wording reflects the added title history.")
+            self.assertEqual(next(e["rule"] for e in result["events"] if "rule" in e), "priority")
             snapshot = json.dumps(result)
             for secret in ("SECRET PROMPT", "SECRET DIFF", "SECRET CHAT",
                            "SECRET RESPONSE", "SECRET DESCRIPTION",
@@ -89,15 +94,19 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                 self.assertTrue(log_event(
                     "commit_title", "generation_completed",
                     title="🖌️ Show final titles", duration_ms=1850,
+                    rule="change_type", explanation="The change improves history display.",
                     model="local", description="PRIVATE COMMIT BODY",
                     prompt="PRIVATE PROMPT", diff="PRIVATE DIFF",
                 ))
                 result = dashboard.read_diagnostics()
             self.assertEqual(result["events"][0]["title"], "🖌️ Show final titles")
             self.assertEqual(result["events"][0]["duration_ms"], 1850)
+            self.assertEqual(result["events"][0]["rule"], "change_type")
+            self.assertEqual(result["events"][0]["explanation"], "The change improves history display.")
             self.assertEqual(result["summary"]["averageGenerationMs"], 1850)
             self.assertNotIn("PRIVATE", json.dumps(result))
             self.assertNotIn("PRIVATE", logfile.read_text(encoding="utf-8"))
+
     def test_missing_and_malformed_files_do_not_break_settings(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -127,6 +136,8 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
         self.assertIn("diag-duration", page)
         self.assertIn("<th>Final title</th>", page)
         self.assertIn("event.title ||", page)
+        self.assertIn("Why this title?", page)
+        self.assertIn("AI explanation:", page)
         self.assertIn("diagnostics-auto-refresh", page)
         self.assertIn("diagnostics-export", page)
         self.assertIn(Path("commit_diagnostics_dashboard.py"), workspace_search.source_files())
