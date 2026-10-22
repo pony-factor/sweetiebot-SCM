@@ -28,7 +28,7 @@ test('uses only a configured GitHub noreply bot identity for co-authorship', () 
   assert.equal(coauthor('ollama@example.com'), '');
   assert.equal(coauthor(email, 'Injected\nTrailer'), '');
   assert.match(spellcheckMessage(['a.md', 'b.mdx'], email), /^🤖 Spellcheck Changes/);
-  assert.match(spellcheckMessage(['a.md'], email), /\n\nCo-authored-by: Ollama <123456\+ollama-bot@users\.noreply\.github\.com>$/);
+  assert.match(spellcheckMessage(['a.md'], email), /\n\nCo-authored-by: Spellchecker <123456\+ollama-bot@users\.noreply\.github\.com>$/);
   assert.equal(spellcheckMessage(['a.md'], undefined, 'qwen:3b'),
     '🤖 Spellcheck Changes\n\nCo-authored-by: Spellchecker (Ollama qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
 });
@@ -525,4 +525,58 @@ test('Accept reruns normalization before committing; a failed check keeps the pr
       return {title: '🖊️ Fix spelling', description: ''};
     });
   assert.deepEqual(calls, ['normalize', 'add', 'generate title', 'commit']);
+});
+
+
+test('normal titled spellcheck commit contains only reviewed staged files and preserves unrelated staged work', async () => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const {execFileSync} = require('node:child_process');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spellcheck-staged-title-'));
+  const git = (...args) => execFileSync('git', args, {
+    cwd: root, encoding: 'utf8', env: {...process.env, GIT_CONFIG_NOSYSTEM: '1'}
+  }).trim();
+  let preview;
+  try {
+    git('init', '--quiet');
+    git('config', 'user.name', 'Test Committer');
+    git('config', 'user.email', 'committer@example.test');
+    git('config', 'commit.gpgsign', 'false');
+    await fs.writeFile(path.join(root, 'report.md'), 'A speling issue.\n');
+    await fs.writeFile(path.join(root, 'unrelated.txt'), 'Original content.\n');
+    git('add', '--', 'report.md', 'unrelated.txt');
+    git('commit', '--quiet', '-m', 'Base');
+    await fs.writeFile(path.join(root, 'report.md'), 'A spelling issue.\n');
+    await fs.writeFile(path.join(root, 'unrelated.txt'), 'Unrelated staged work.\n');
+    git('add', '--', 'unrelated.txt');
+    const baseline = git('rev-parse', 'HEAD');
+    const read = async (_root, args) => git(...args);
+    await showNotice({}, {inputBox: {value: ''}, async status() {}}, {
+      head: baseline, root, paths: ['report.md'], model: 'qwen:3b'
+    }, read, read);
+    preview = takeSpellcheckPopup();
+    assert.equal(preview.title, 'Spellcheck Changes');
+    let generated = 0;
+    const run = async (_root, args) => git(...args);
+    const title = async (_root, files) => {
+      generated++;
+      assert.deepEqual(files, ['report.md']);
+      assert.match(git('diff', '--cached', '--', 'report.md'), /\+A spelling issue\./);
+      assert.deepEqual(git('diff', '--cached', '--name-only').split('\n').sort(),
+        ['report.md', 'unrelated.txt']);
+      return {title: '🖊️ Correct Markdown spelling', description: 'Fix the reviewed spelling error.'};
+    };
+    await finishSpellcheckPreview({Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}},
+      preview.sessionId, 'accept', '', run, async () => {}, title);
+    assert.equal(generated, 1);
+    assert.equal(git('show', '--pretty=format:', '--name-only', 'HEAD'), 'report.md');
+    assert.equal(git('diff', '--cached', '--name-only'), 'unrelated.txt');
+    assert.equal(git('diff', '--', 'report.md'), '');
+    const message = git('log', '-1', '--pretty=%B');
+    assert.match(message, /^🖊️ Correct Markdown spelling\n\nFix the reviewed spelling error\.\n\nCo-authored-by: Spellchecker \(Ollama qwen:3b\) <326443430\+codex-pony\[bot\]@users\.noreply\.github\.com>$/);
+  } finally {
+    if (preview) closeSpellcheckPopup(preview.sessionId);
+    await fs.rm(root, {recursive: true, force: true});
+  }
 });
