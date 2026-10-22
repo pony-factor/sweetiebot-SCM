@@ -250,7 +250,9 @@ SETTINGS = (
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
     Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
-    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After three failed Ollama generation attempts, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
+    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
+    Setting("aiCommitRequestTimeoutSeconds", "scm-toolkit.ai-commit-request-timeout-seconds", "Commit request timeout (seconds)", "Maximum wait for one model request. Choose 1–900 seconds. The overall generation budget is this timeout multiplied by the attempt count.", "Ollama", "integer", minimum=1, maximum=900),
+    Setting("aiCommitAttempts", "scm-toolkit.ai-commit-attempts", "Attempts per model step", "Maximum attempts for each emoji check or title-generation step. Choose 1–10. All steps and retries share the calculated overall budget; changes apply to new jobs immediately.", "Ollama", "integer", minimum=1, maximum=10),
     Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
     Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. On by default.", "Ollama"),
     Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
@@ -690,9 +692,11 @@ def _setting_control(setting: Setting, current: object) -> str:
             f'<button type="button" class="download-model" data-model="{name}">Download</button></div>'
         )
     input_class = ' class="compact-number"' if setting.name == "aiLowMemoryGiB" else ""
+    budget_output = ('<small><output id="commit-generation-budget" aria-live="polite"></output></small>'
+                     if setting.name == 'aiCommitAttempts' else '')
     return (
         '<label class="setting field-row">'
-        f'<span><strong>{label}</strong><small>{description}</small></span>'
+        f'<span><strong>{label}</strong><small>{description}</small>{budget_output}</span>'
         f'<input{attrs}{input_class} name="{name}" value="{value}"{list_attr}{required}></label>'
     )
 
@@ -879,6 +883,19 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
+const commitRequestTimeout = settingsForm.elements.namedItem('aiCommitRequestTimeoutSeconds');
+const commitAttempts = settingsForm.elements.namedItem('aiCommitAttempts');
+function updateCommitGenerationBudget() {{
+  const output = document.getElementById('commit-generation-budget');
+  const seconds = Number(commitRequestTimeout.value);
+  const attempts = Number(commitAttempts.value);
+  output.textContent = commitRequestTimeout.checkValidity() && commitAttempts.checkValidity()
+    ? `Overall budget: ${{seconds * attempts}} seconds (${{seconds}} × ${{attempts}}).`
+    : 'Enter a valid timeout and attempt count to calculate the overall budget.';
+}}
+commitRequestTimeout.addEventListener('input', updateCommitGenerationBudget);
+commitAttempts.addEventListener('input', updateCommitGenerationBudget);
+updateCommitGenerationBudget();
 let autosaveTimer = null;
 let saveChain = Promise.resolve();
 let editVersion = 0;

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+from contextvars import ContextVar
+from functools import wraps
 import json
 import os
 import re
@@ -31,6 +33,36 @@ MAX_FILE_CONTEXT_CHARS = int(
 )
 MAX_DIFF_SECTIONS = int(os.environ.get("SCM_TOOLKIT_AI_MAX_DIFF_SECTIONS", "20"))
 MAX_GENERATION_ATTEMPTS = 3
+GENERATION_REQUEST_SECONDS = 45
+GENERATION_DEADLINE = ContextVar('commit_generation_deadline', default=None)
+GENERATION_OPTIONS = ContextVar('commit_generation_options', default=None)
+
+
+class GenerationDeadlineExceeded(TimeoutError):
+    pass
+
+
+def remaining_generation_time():
+    deadline = GENERATION_DEADLINE.get()
+    if deadline is None:
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise GenerationDeadlineExceeded('Commit generation exceeded its time budget.')
+    return remaining
+
+
+def generation_budget(function):
+    @wraps(function)
+    def bounded(*args, **kwargs):
+        options = GENERATION_OPTIONS.set((generation_request_seconds(), generation_attempts()))
+        token = GENERATION_DEADLINE.set(time.monotonic() + generation_budget_seconds())
+        try:
+            return function(*args, **kwargs)
+        finally:
+            GENERATION_DEADLINE.reset(token)
+            GENERATION_OPTIONS.reset(options)
+    return bounded
 
 # GitHub blocks regular repository files larger than 100 MiB. Sweetiebot uses
 # that same size as an aggregate auto-split target for blank automatic commits.
@@ -149,6 +181,30 @@ def feature_enabled() -> bool:
 def commit_fallback_enabled() -> bool:
     """Allow a simple commit summary when Ollama cannot produce a valid one."""
     return git_config_bool("scm-toolkit.ai-commit-fallback", True)
+
+
+def generation_integer_setting(key, default, maximum):
+    try:
+        value = float(git_config_string(key, ''))
+    except ValueError:
+        return default
+    return int(value) if 1 <= value <= maximum and value.is_integer() else default
+
+
+def generation_request_seconds():
+    options = GENERATION_OPTIONS.get()
+    return options[0] if options else generation_integer_setting(
+        'scm-toolkit.ai-commit-request-timeout-seconds', GENERATION_REQUEST_SECONDS, 900)
+
+
+def generation_attempts():
+    options = GENERATION_OPTIONS.get()
+    return options[1] if options else generation_integer_setting(
+        'scm-toolkit.ai-commit-attempts', MAX_GENERATION_ATTEMPTS, 10)
+
+
+def generation_budget_seconds():
+    return generation_request_seconds() * generation_attempts()
 
 
 def title_explanations_enabled() -> bool:
@@ -1031,6 +1087,7 @@ def emoji_priority_rules(instructions: str) -> list[tuple[str, list[str], bool]]
 def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
                           stat: str, diff: str, file_context: str,
                           conversation_context: str) -> str:
+    attempts = generation_attempts()
     # Evaluate one condition at a time, in order. A small local model loses
     # condition/ID associations in a large boolean matrix.
     operations = []
@@ -1078,7 +1135,7 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
             "options": {"temperature": 0, "num_predict": 32,
                         "num_ctx": max(NUM_CTX, (len(prompt) + 1) // 2 + 768)},
         }
-        for attempt in range(MAX_GENERATION_ATTEMPTS):
+        for attempt in range(attempts):
             try:
                 response = ollama_json("/api/generate", payload)
                 result = json.loads(response.get("response", ""))
@@ -1087,10 +1144,12 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
                         or result["result"] not in ("MATCH", "NO_MATCH")):
                     raise ValueError("Incomplete priority classification")
                 break
+            except GenerationDeadlineExceeded:
+                raise
             except (ValueError, TypeError, AttributeError, OSError, urllib.error.URLError) as exc:
                 log_event("commit_title", "emoji_priority_failed", model=model,
                           rule=index, attempt=attempt + 1, error_type=type(exc).__name__)
-                if attempt + 1 == MAX_GENERATION_ATTEMPTS:
+                if attempt + 1 == attempts:
                     raise RuntimeError("Could not verify the commit emoji priority rules. Try again or enter an explicit message.") from exc
         if result["result"] == "MATCH":
             selected = index
@@ -1124,12 +1183,14 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
             "options": {"temperature": 0, "num_predict": 32,
                         "num_ctx": max(NUM_CTX, (len(prompt) + 1) // 2 + 768)},
         }
-        for attempt in range(MAX_GENERATION_ATTEMPTS):
+        for attempt in range(attempts):
             try:
                 response = ollama_json("/api/generate", payload)
                 result = json.loads(response.get("response", ""))
                 if response.get("done_reason") != "length" and isinstance(result, dict) and result.get("emoji") in choices:
                     return result["emoji"]
+            except GenerationDeadlineExceeded:
+                raise
             except (ValueError, TypeError, AttributeError, OSError, urllib.error.URLError):
                 pass
         raise RuntimeError("Could not verify the emoji assigned by the matching priority rule. Try again or enter an explicit message.")
@@ -1172,7 +1233,12 @@ def emoji_for_change(title: str, files: list[str]) -> str:
     return fallback_emoji(files)
 
 
-def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> dict:
+def ollama_json(path: str, payload: dict | None = None, timeout: int | None = None) -> dict:
+    remaining = remaining_generation_time()
+    if timeout is None:
+        timeout = generation_request_seconds() if remaining is not None else 300
+    if remaining is not None:
+        timeout = min(timeout, generation_request_seconds(), remaining)
     base = os.environ.get("SCM_TOOLKIT_AI_OLLAMA_URL") or git_config_string(
         "scm-toolkit.ai-ollama-url", OLLAMA_BASE
     )
@@ -1192,7 +1258,9 @@ def ollama_json(path: str, payload: dict | None = None, timeout: int = 300) -> d
 
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     with OLLAMA_OPENER.open(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+        result = json.loads(response.read().decode("utf-8"))
+    remaining_generation_time()
+    return result
 
 
 def installed_local_model_names() -> set[str]:
@@ -1524,6 +1592,7 @@ def is_filename_only_title(title: str, files: list[str]) -> bool:
     return False
 
 
+@generation_budget
 def generate_message(
     stat: str,
     diff: str,
@@ -1535,6 +1604,7 @@ def generate_message(
 ) -> tuple[str, str]:
     # Timing covers context preparation, priority checks, retries and generation.
     started_at = time.monotonic()
+    attempts = generation_attempts()
     # Simple messages are the default fallback even for text and custom emoji rules.
     # Disable the fallback in Ollama settings to expose model failures for debugging.
     text_changes = has_text_changes(diff)
@@ -1605,25 +1675,28 @@ def generate_message(
         if priority_emoji:
             # Old subjects cannot override the independently selected rule.
             payload["prompt"] += f"\nThe subject MUST start with {priority_emoji} followed by one space."
-        for attempt in range(MAX_GENERATION_ATTEMPTS):
+        for attempt in range(attempts):
+            remaining_generation_time()
             payload["options"]["num_ctx"] = max(NUM_CTX, (len(payload["prompt"]) + 1) // 2 + 768)
             try:
                 response = ollama_json("/api/generate", payload)
                 if not isinstance(response, dict):
                     raise ValueError("Ollama returned a non-object response")
+            except GenerationDeadlineExceeded:
+                raise
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
                 log_event(
                     "commit_title", "request_failed", model=model,
-                    attempt=attempt + 1, attempts=MAX_GENERATION_ATTEMPTS,
+                    attempt=attempt + 1, attempts=attempts,
                     error_type=type(exc).__name__,
                     http_status=exc.code if isinstance(exc, urllib.error.HTTPError) else None,
-                    outcome="retry" if attempt + 1 < MAX_GENERATION_ATTEMPTS else "stopped",
+                    outcome="retry" if attempt + 1 < attempts else "stopped",
                 )
-                if attempt + 1 == MAX_GENERATION_ATTEMPTS:
+                if attempt + 1 == attempts:
                     raise
                 delay = 2 ** attempt
-                print(f"Sweetiebot: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} failed; retrying in {delay}s", file=sys.stderr)
-                time.sleep(delay)
+                print(f"Sweetiebot: generation attempt {attempt + 1}/{attempts} failed; retrying in {delay}s", file=sys.stderr)
+                time.sleep(min(delay, remaining_generation_time()))
                 continue
             response_text = str(response.get("response", ""))
             try:
@@ -1663,11 +1736,11 @@ def generate_message(
             )
             log_event(
                 "commit_title", "output_rejected", model=model,
-                attempt=attempt + 1, attempts=MAX_GENERATION_ATTEMPTS,
+                attempt=attempt + 1, attempts=attempts,
                 reason=rejection_reason,
-                outcome="retry" if attempt + 1 < MAX_GENERATION_ATTEMPTS else "stopped",
+                outcome="retry" if attempt + 1 < attempts else "stopped",
             )
-            if attempt + 1 < MAX_GENERATION_ATTEMPTS:
+            if attempt + 1 < attempts:
                 payload["prompt"] += "\nThe previous output was invalid. Summarize the changed content, not just a filename or file count. Describe the specific information or behavior added, removed, or corrected. Begin the subject wording with Add, Fix, Update, Remove, Improve, Preserve, or Refine. Use complete factual sentences. No hedging or commentary. Keep the description under 400 characters."
                 if text_changes and is_filename_only_title(title, files):
                     # Remove path-heavy headers on retry so rough notes are not
@@ -1688,9 +1761,16 @@ def generate_message(
                 if priority_emoji:
                     payload["prompt"] += f"\nThe subject MUST start with {priority_emoji} followed by one space."
         if require_model:
-            raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {MAX_GENERATION_ATTEMPTS} attempts. Try again or enter an explicit message.")
+            raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {attempts} attempts. Try again or enter an explicit message.")
         log_event("commit_title", "fallback_used", model=model, reason="invalid_message", outcome="fallback")
         print("Sweetiebot: invalid model output; using factual staged-change summary", file=sys.stderr)
+        return fallback_message(files, include_description, file_context)
+    except GenerationDeadlineExceeded as exc:
+        log_event('commit_title', 'generation_budget_exhausted', model=model,
+                  reason='deadline_exceeded', outcome='blocked' if require_model else 'fallback')
+        if require_model:
+            raise RuntimeError('Local commit generation exceeded its configured time budget. Try again or enter an explicit message.') from exc
+        print('Sweetiebot: generation time budget exhausted; using fallback title', file=sys.stderr)
         return fallback_message(files, include_description, file_context)
     except RuntimeError as exc:
         if require_model:
@@ -1706,7 +1786,7 @@ def generate_message(
         if require_model:
             cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc
             if isinstance(cause, TimeoutError):
-                detail = "The request timed out after 300 seconds; Ollama may be busy with OCR or another model. Let that work finish, then try again."
+                detail = "The request timed out; Ollama may be busy with OCR or another model. Let that work finish, then try again."
             elif isinstance(exc, urllib.error.HTTPError):
                 detail = f"Ollama returned HTTP {exc.code} for model {model}."
             elif isinstance(exc, urllib.error.URLError):
