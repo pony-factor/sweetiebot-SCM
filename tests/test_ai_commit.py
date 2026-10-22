@@ -467,7 +467,7 @@ class ManualSpellcheckTests(unittest.TestCase):
 
     def test_reviewed_spellcheck_title_rejects_unsafe_paths_before_git(self):
         import io
-        for path in ["../outside.md", "/absolute.md", "other.bin", "bad\\x00.md"]:
+        for path in ["../outside.md", "/absolute.md", "other.bin", "bad\x00.md"]:
             with self.subTest(path=path), patch.object(
                 sys, "argv", ["ai_commit.py", "--spellcheck-generate-message",
                               json.dumps({"paths": [path]})]

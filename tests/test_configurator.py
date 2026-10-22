@@ -487,7 +487,7 @@ class SubmissionTests(unittest.TestCase):
                     "draftSpellcheckVocabulary", "draftSpellcheckGuidance"):
             self.assertEqual(parsed[key], values[key][0])
         page = configurator.render_form(parsed, [], "Ready", "token", "Save")
-        self.assertIn(">Spellchecking</button>", page)
+        self.assertIn(">Spellcheck Changes</button>", page)
         self.assertIn("<h3>While drafting a commit</h3>", page)
         self.assertIn("<h3>After committing</h3>", page)
         self.assertIn('name="draftSpellcheckAction"', page)
