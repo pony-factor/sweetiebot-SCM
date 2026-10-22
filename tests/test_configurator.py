@@ -505,7 +505,7 @@ class SubmissionTests(unittest.TestCase):
             ("draftSpellcheckDelaySeconds", "nan"),
             ("draftSpellcheckVocabulary", "word\n" * 101),
             ("draftSpellcheckGuidance", "x" * 2001),
-            ("draftSpellcheckVocabulary", "x\\x00"),
+            ("draftSpellcheckVocabulary", "x\x00"),
         )
         for name, value in invalid:
             with self.subTest(name=name, value=value[:30]):
