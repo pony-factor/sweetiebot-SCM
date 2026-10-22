@@ -138,7 +138,7 @@
       },
       {
         "command": "sweetiebot.openIndependentWorkspace",
-        "title": "Open Independent Workspace from Main",
+        "title": "Open a Window on Shared Main",
         "icon": "$(git-branch)"
       },
       {
