@@ -1607,7 +1607,7 @@ def generate_message(
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
                 log_event(
                     "commit_title", "generation_completed", model=model,
-                    attempts=attempt + 1,
+                    attempts=attempt + 1, title=title,
                     duration_ms=int((time.monotonic() - started_at) * 1000),
                     outcome="success",
                 )
