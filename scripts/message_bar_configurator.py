@@ -87,7 +87,6 @@ def render_message_bar_control(current: object, placeholder: object = "Message",
         f'data-message-bar-default="{default_serialized}">'
         '<p class="message-bar-help">Drag the buttons and separators into the order you want. Add as many separators as you need. '
         'The message field stays fixed. Controls in Available buttons are disabled.</p>'
-        '<button type="button" id="message-bar-add-separator">Add separator</button>'
         '<div class="message-bar-preview">'
         '<section class="message-bar-tray"><span>Before message</span>'
         f'<div class="message-bar-zone" data-message-bar-zone="before">{render(layout["before"])}</div>'
@@ -103,6 +102,7 @@ def render_message_bar_control(current: object, placeholder: object = "Message",
         '</section>'
         '<div class="message-bar-commit"><span>Commit</span>'
         f'{commit_inputs}</div></div>'
+        '<button type="button" id="message-bar-add-separator">Add separator</button>'
         '<section class="message-bar-hidden"><div class="message-bar-hidden-head">'
         '<span><strong>Available buttons</strong><small>Hidden from the message bar. Drag any button into a row to show it.</small></span>'
         '<button type="button" id="message-bar-reset">Reset layout</button></div>'
@@ -113,7 +113,7 @@ def render_message_bar_control(current: object, placeholder: object = "Message",
 
 MESSAGE_BAR_STYLE = r"""
 .message-bar-setting{padding:10px 0 4px;border-top:1px solid var(--line)}
-#message-bar-add-separator{margin-bottom:12px}
+#message-bar-add-separator{margin-top:12px}
 .message-bar-remove{padding:0 4px;border:0;font-size:18px;line-height:1;cursor:pointer}
 .message-bar-help{margin:0 0 14px;color:var(--muted)}
 .message-bar-preview{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
