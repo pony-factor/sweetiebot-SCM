@@ -961,6 +961,80 @@ class CommitDiagnosticsTests(unittest.TestCase):
         instructions.start()
         self.addCleanup(instructions.stop)
 
+    def test_opt_in_title_explanation_uses_same_ollama_request(self):
+        response = json.dumps({
+            "subject": "🔧 Improve parser validation",
+            "description": "",
+            "explanation": "Validation changes motivated the parser wording.",
+        })
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("staged_file_context", ""),
+                    ("recent_subjects", ""),
+                    ("emoji_priority_enabled", False),
+                    ("emoji_for_change", "🔧"),
+                    ("title_explanations_enabled", enabled),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                generate = stack.enter_context(patch.object(
+                    ai_commit, "ollama_json", return_value={"response": response}
+                ))
+                events = stack.enter_context(patch.object(ai_commit, "log_event"))
+                self.assertEqual(
+                    ai_commit.generate_message("1 file changed", "+Validate parser inputs.", ["parser.py"]),
+                    ("🔧 Improve parser validation", ""),
+                )
+                self.assertEqual(generate.call_count, 1)
+                payload = generate.call_args.args[1]
+                self.assertEqual("explanation" in payload["format"]["properties"], enabled)
+                self.assertEqual("explanation field" in payload["prompt"], enabled)
+                self.assertEqual(payload["format"]["required"], ["subject", "description"])
+                complete = [call.kwargs for call in events.call_args_list
+                            if call.args[1] == "generation_completed"]
+                self.assertEqual(len(complete), 1)
+                self.assertEqual(complete[0]["title"], "🔧 Improve parser validation")
+                self.assertEqual("explanation" in complete[0], enabled)
+                self.assertEqual("rule" in complete[0], enabled)
+                if enabled:
+                    self.assertEqual(complete[0]["explanation"],
+                                     "Validation changes motivated the parser wording.")
+                    self.assertEqual(complete[0]["rule"], "change_type")
+
+    def test_invalid_explanations_never_reject_valid_titles(self):
+        for explanation in (None, "Too short", "x" * 300, "A line.\nAnother line."):
+            with self.subTest(explanation=explanation), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("staged_file_context", ""),
+                    ("recent_subjects", ""),
+                    ("emoji_priority_enabled", False),
+                    ("emoji_for_change", "🔧"),
+                    ("title_explanations_enabled", True),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                payload = {"subject": "🔧 Improve parser validation", "description": ""}
+                if explanation is not None:
+                    payload["explanation"] = explanation
+                generate = stack.enter_context(patch.object(
+                    ai_commit, "ollama_json", return_value={"response": json.dumps(payload)}
+                ))
+                events = stack.enter_context(patch.object(ai_commit, "log_event"))
+                self.assertEqual(
+                    ai_commit.generate_message("1 file changed", "+Validate inputs.", ["parser.py"]),
+                    ("🔧 Improve parser validation", ""),
+                )
+                generate.assert_called_once()
+                completed = next(call.kwargs for call in events.call_args_list
+                                 if call.args[1] == "generation_completed")
+                self.assertNotIn("explanation", completed)
+                self.assertEqual(completed["rule"], "change_type")
+
     def test_missing_model_is_logged_without_diff(self):
         with ExitStack() as stack:
             stack.enter_context(patch.object(ai_commit, "installed_local_model_names", return_value=set()))
