@@ -146,6 +146,35 @@ def run():
         assert '255, 185, 0' not in configured_accent, configured_accent
         reset = gradient(50)
         assert '18, 171, 52' not in reset and 'rgb(255, 255, 255)' in reset, reset
+        # Native footer container queries hide values below 300px even after
+        # the controls wrap. Preserve the pie without expanding other labels.
+        page.evaluate("""() => {
+            document.body.insertAdjacentHTML('beforeend', `
+                <style>
+                  #compact-footer { container: composer-footer / inline-size; width:260px; }
+                  #compact-controls { display:flex; flex-wrap:wrap; }
+                  #model-row { flex-basis:100%; }
+                  @container composer-footer (width <= 300px) {
+                    [data-composer-footer-collapse=xs] { display:none; }
+                  }
+                </style>
+                <div id="compact-footer"><div id="compact-controls">
+                  <button id="model-row">Model</button>
+                  <button data-composer-navigation-target="permissions">
+                    <span id="permissions-label" data-composer-footer-collapse="xs">Full access</span>
+                  </button>
+                  <button data-composer-navigation-target="run-location">
+                    <span data-composer-footer-collapse="xs"><span id="usage-value"></span></span>
+                  </button>
+                </div></div>`);
+            document.getElementById('usage-value').append(document.getElementById('codex-usage-pie'));
+        }""")
+        for width in (260, 640, 280):
+            page.eval_on_selector('#compact-footer', '(el, width) => el.style.width = width + "px"', width)
+            assert page.locator('#codex-usage-pie').is_visible(), width
+            assert page.locator('#permissions-label').is_visible() == (width > 300), width
+            assert page.eval_on_selector('#compact-footer', 'el => el.scrollWidth <= el.clientWidth'), width
+        assert page.locator('#codex-usage-pie').bounding_box()['width'] == 12
         # Promotion hiding removes the exhausted-messages upsell without hiding
         # the actual error or composer sharing its outer container.
         page.set_content("""<main>

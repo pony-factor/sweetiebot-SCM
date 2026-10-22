@@ -18,6 +18,7 @@ FORMATS = (
     ("scripts", {".py", ".json"}),
     ("assets/workbench", {".js", ".css"}),
     ("assets/codex", {".js", ".css"}),
+    ("assets/images", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"}),
     ("assets/browser", {".js"}),
     ("efs", {".js", ".json", ".svg", ".md", ".html"}),
 )
@@ -26,11 +27,10 @@ FORMATS = (
 def source_files():
     files = {
         Path("assets/commit-instructions.md"): ROOT / "assets/commit-instructions.md",
-        Path("twi-stop.png"): ROOT / "twi-stop.png",
     }
     for directory, suffixes in FORMATS:
         for source in (ROOT / directory).rglob("*"):
-            if source.is_file() and source.suffix in suffixes:
+            if source.is_file() and source.suffix.lower() in suffixes:
                 files[source.relative_to(ROOT)] = source
     return dict(sorted(files.items()))
 

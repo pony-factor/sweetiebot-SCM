@@ -112,8 +112,8 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
     assert.deepEqual(JSON.parse(await fs.readFile(
       path.join(dashboardDirectory, 'merge-selection.json'), 'utf8')), selection);
     const mergeSettings = JSON.parse(await fs.readFile(dashboardWorkspace.fsPath, 'utf8'));
-    assert.equal(mergeSettings.settings['scmToolkit.startCompactPRSession'], false,
-      'A side-by-side merge dashboard needs a full-size window');
+    assert.equal(mergeSettings.settings['scmToolkit.startCompactPRSession'], true,
+      'Lindsey merge sessions also start in the 640px compact window');
     let launches = 0;
     const dashboardModulePath = require.resolve('../efs/merge_dashboard');
     const previousDashboard = require.cache[dashboardModulePath];
