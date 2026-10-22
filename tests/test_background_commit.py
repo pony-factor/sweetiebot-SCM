@@ -519,10 +519,11 @@ worker.work(Path(sys.argv[2]))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(self.git('branch', '--show-current'), expected)
         result = subprocess.run([sys.executable, script, 'switch', '-c', 'copied'], capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git('branch', '--show-current'), 'copied')
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
-    def test_new_branch_uses_last_completed_commit_while_titles_generate(self):
+    def test_new_branch_can_follow_placeholder_or_use_completed_base(self):
         self.git('commit', '-q', '-m', 'Base')
         base = self.git('rev-parse', 'HEAD')
         (self.repo / 'story.txt').write_text('First pending change\n')
@@ -542,13 +543,77 @@ worker.work(Path(sys.argv[2]))
             self.assertEqual(self.git('rev-parse', 'HEAD'), base)
         result = subprocess.run([sys.executable, script, 'switch', '-c', 'unfinished', provisional],
                                 capture_output=True, text=True, timeout=10)
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), provisional)
         self.assertEqual(self.git('rev-parse', 'main'), provisional)
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Complete queued change', '')):
             worker.work(first)
             worker.work(second)
-        self.assertEqual(self.git('rev-parse', 'HEAD'), base)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'main'))
+        self.assertEqual(self.git('rev-parse', 'checkout-copy'), base)
+        self.assertEqual(self.git('rev-parse', 'switch-copy'), base)
         self.assertNotEqual(self.git('rev-parse', 'main'), provisional)
+
+    def test_fork_descendants_wait_for_inherited_title_and_keep_staging(self):
+        first = self.queue(message='', push=True)
+        worker.fork_branch('main', 'fork', 'refs/heads/main')
+        (self.repo / 'story.txt').write_text('Fork snapshot\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        (self.repo / 'story.txt').write_text('Later staging\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'draft.txt').write_text('Untracked draft\n')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish fork', '')):
+            worker.work(second)
+        self.assertEqual(self.job(second)['phase'], 'ready')
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+        worker.fork_branch('fork', 'nested', 'refs/heads/fork')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish base', '')):
+            worker.work(first)
+            worker.work(second)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.job(second)['sha'])
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), self.job(first)['sha'])
+        self.assertEqual(self.git('rev-parse', 'fork'), self.git('rev-parse', 'nested'))
+        self.assertEqual(self.git('show', ':story.txt'), 'Later staging')
+        self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Fork snapshot')
+        self.assertEqual((self.repo / 'draft.txt').read_text(), 'Untracked draft\n')
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s'))
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'fork'), self.job(second)['sha'])
+
+    def test_fork_recovery_moves_all_refs_after_interruption(self):
+        first = self.queue(message='')
+        worker.fork_branch('main', 'fork', 'refs/heads/main')
+        recover = worker.recover_finalization
+        def interrupted(meta):
+            transaction = worker.read_journal(Path(meta) / worker.TRANSACTION)
+            if not transaction:
+                return recover(meta)
+            raise OSError('Interrupted before ref transaction')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish base', '')), patch.object(worker, 'recover_finalization', side_effect=interrupted):
+            worker.work(first)
+        self.assertTrue((self.repo / '.git' / worker.TRANSACTION).exists())
+        worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'done')
+        self.assertEqual(self.git('rev-parse', 'main'), self.git('rev-parse', 'fork'))
+
+    def test_fork_ref_rejects_changed_tip_without_overwriting_it(self):
+        first = self.queue(message='')
+        worker.fork_branch('main', 'fork', 'refs/heads/main')
+        self.git('checkout', 'main')
+        recover = worker.recover_finalization
+        # Use a valid alternate commit, then change the fork between preparation
+        # and recovery to exercise compare-and-swap protection.
+        alternate = self.git('commit-tree', 'HEAD^{tree}', input='Alternate\n')
+        def changed(meta):
+            transaction = worker.read_journal(Path(meta) / worker.TRANSACTION)
+            if transaction:
+                self.git('update-ref', 'refs/heads/fork', alternate)
+            return recover(meta)
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish base', '')), patch.object(worker, 'recover_finalization', side_effect=changed):
+            worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'fork'), alternate)
+        self.assertEqual(self.git('rev-parse', 'main'), self.job(first)['sha'])
 
     def test_no_completed_base_for_an_unfinished_initial_commit(self):
         self.queue(message='')
