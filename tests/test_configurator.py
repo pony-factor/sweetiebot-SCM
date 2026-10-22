@@ -120,6 +120,15 @@ class SubmissionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 configurator.parse_submission(values)
 
+    def test_add_separator_appears_immediately_above_available_buttons(self):
+        page = configurator.render_form(dict(toolkit_settings.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        preview = page.index('class="message-bar-preview"')
+        add_separator = page.index('id="message-bar-add-separator"')
+        available = page.index('class="message-bar-hidden"')
+        self.assertLess(preview, add_separator)
+        self.assertLess(add_separator, available)
+        self.assertEqual(page.count('id="message-bar-add-separator"'), 1)
+
     def test_available_push_control_is_disabled_without_a_visibility_switch(self):
         values = form_values()
         values["messageBarLayout"] = ['{"before":["codex"],"after":[]}']
