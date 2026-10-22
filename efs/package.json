@@ -257,6 +257,22 @@
           "scope": "window",
           "description": "Open a dedicated pull-request session window in the compact 600px square layout."
         },
+        "scmToolkit.mergeSidebarWidthPercent": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 75,
+          "default": 37,
+          "scope": "application",
+          "description": "Starting width of Lindsey's PR list as a percentage of the dashboard."
+        },
+        "scmToolkit.mergeTimelineHeightPercent": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 80,
+          "default": 34,
+          "scope": "application",
+          "description": "Starting height of Lindsey's activity timeline as a percentage of the left pane."
+        },
         "scmToolkit.mergeTimelineTimestampMode": {
           "type": "string",
           "enum": ["hidden", "relative", "clock"],
