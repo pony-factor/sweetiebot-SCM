@@ -25,7 +25,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     let repository, branch, base, pickerReady = false, panelMode = false, disposed = false;
     let generation = 0, refreshedAt = 0, refreshedRepository = '';
     let refreshTimer, pending = false, knownBranches = [], lastFeaturedCount = 0;
-    let lastPrStatus = 'unavailable', lastScrolledBranch;
+    let lastPrStatus = 'unavailable', lastRemoteStatus = 'available', lastScrolledBranch;
     let opened = false;
     trigger.setAttribute('aria-haspopup', 'dialog');
     trigger.setAttribute('aria-expanded', 'false');
@@ -48,13 +48,15 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             ? rect.bottom + 4 : Math.max(8, rect.top - height - 4)}px`;
     };
 
-    const render = (list, featuredCount, prStatus) => {
+    const render = (list, featuredCount, prStatus, remoteStatus = lastRemoteStatus) => {
         const previousScroll = scroll.scrollTop;
         const fragment = doc.createDocumentFragment();
-        if (prStatus !== 'available') {
+        if (remoteStatus !== 'available' || prStatus !== 'available') {
             const note = doc.createElement('span');
             note.className = 'scm-toolkit-branch-strip-note';
-            note.textContent = 'PR status unavailable — showing all branches';
+            note.textContent = remoteStatus !== 'available'
+                ? 'Remote unavailable — showing local branches only'
+                : 'PR status unavailable — showing all branches';
             fragment.append(note);
         }
         list.forEach((item, index) => {
@@ -132,12 +134,13 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             knownBranches = Array.isArray(result?.branches) ? result.branches : [];
             lastFeaturedCount = result?.featuredCount ?? 0;
             lastPrStatus = result?.prStatus;
+            lastRemoteStatus = result?.remoteStatus ?? 'available';
             render(knownBranches, lastFeaturedCount, lastPrStatus);
         } catch (error) {
             if (disposed || request !== generation) return;
             refreshedAt = 0;
             knownBranches = [];
-            render([], 0, 'unavailable');
+            render([], 0, 'unavailable', 'unavailable');
             console.warn('Sweetiebot branch strip refresh failed:', error);
         }
     };
@@ -241,8 +244,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
                 opened = true;
                 trigger.setAttribute('aria-expanded', 'true');
                 syncPlacement();
-                if (knownBranches.length) render(knownBranches, lastFeaturedCount, lastPrStatus);
-                else scroll.textContent = 'Loading branches…';
+                scroll.textContent = 'Loading branches…';
                 position();
                 void refresh(true);
                 scroll.focus();
