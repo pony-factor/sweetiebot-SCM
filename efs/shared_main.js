@@ -142,7 +142,10 @@ async function routeBranch(vscode, repository, { branch, create = false, start, 
     await fs.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
       version: 1, kind: 'topic-worktree', repositories: [path.basename(original)]
     }, null, 2) + '\n');
-    await replaceRepository(vscode, root, destination, options);
+    // Never replace/reload the active main window when creating a topic branch.
+    // Opening the isolated worktree in a new window preserves Codex and editor state.
+    await replaceRepository(vscode, root, destination,
+      { ...options, forceNewWindow: create });
     return true;
   } catch (error) {
     if (!added) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
