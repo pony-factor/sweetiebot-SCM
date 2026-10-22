@@ -17,7 +17,7 @@ const SHA = /^[a-f\d]{40}$/i;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 
-function humanAuthor(commits) {
+function verifiedHumanAuthor(commits) {
   if (!Array.isArray(commits) || !commits.length) throw Error('Original PR commits are unavailable.');
   const candidates = commits.filter(item => {
     const git = item?.commit?.author;
@@ -34,7 +34,12 @@ function humanAuthor(commits) {
   const chosen = candidates[0];
   const author = { name: chosen.commit.author.name.trim(), email: chosen.commit.author.email.trim() };
   if (/[<>\r\n]/.test(author.name)) throw Error('Invalid human Git author identity.');
-  return author;
+  return { ...author, login: chosen.author.login };
+}
+
+function humanAuthor(commits) {
+  const { name, email } = verifiedHumanAuthor(commits);
+  return { name, email };
 }
 
 function verifyCommit(commit, expected, author) {
@@ -202,4 +207,4 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { humanAuthor, verifyCommit, humanSquashMerge };
+module.exports = { humanAuthor, verifiedHumanAuthor, verifyCommit, humanSquashMerge };

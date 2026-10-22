@@ -5,7 +5,7 @@ const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { pullRequestFromTreeNode } = require('./github_pr_refresh');
 const { squashMessage, readCommits } = require('./squash_attribution');
-const { humanSquashMerge } = require('./human_squash_merge');
+const { humanSquashMerge, verifiedHumanAuthor } = require('./human_squash_merge');
 const { promisify } = require('node:util');
 
 const run = promisify(execFile);
@@ -76,7 +76,21 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (!pr.title || (metadata?.title && metadata.title !== pr.title)) {
     throw new Error(`PR #${number} title is unavailable or changed; merge blocked.`);
   }
-  const squash = squashMessage(pr.title, Number(number), await readCommits(api, repo, number));
+  // Do not trust a human PR opener as proof of original human authorship:
+  // GitHub's native squash credits the opener rather than the original author.
+  const commits = await readCommits(api, repo, Number(number));
+  const human = verifiedHumanAuthor(commits);
+  if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
+    const landed = await humanMerge(repo, Number(number));
+    const finished = await read();
+    if (!landed.merged || finished.state !== 'MERGED' ||
+        finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
+      throw new Error('Original human Git author was not verified after the guarded merge.');
+    }
+    return { merged: true, repo, number, base: pr.baseRefName, pr: finished,
+      sha: landed.sha, author: landed.author };
+  }
+  const squash = squashMessage(pr.title, Number(number), commits);
   let outcome;
   let resumed = false;
   try {

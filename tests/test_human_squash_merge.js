@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { humanAuthor, verifyCommit, humanSquashMerge } = require('../efs/human_squash_merge');
+const { humanAuthor, verifiedHumanAuthor, verifyCommit, humanSquashMerge } = require('../efs/human_squash_merge');
 const { squashMessage } = require('../efs/squash_attribution');
 
 const baseSha = 'b'.repeat(40), oldHead = 'a'.repeat(40), newHead = 'c'.repeat(40);
@@ -26,6 +26,7 @@ const message = prepared.title + '\n\n' + prepared.message;
 
 async function main() {
   assert.deepEqual(author, { name: 'John Wooten', email: 'noreply@wooten.link' });
+  assert.deepEqual(verifiedHumanAuthor(commits), { ...author, login: 'JFWooten4' });
   assert(!prepared.trailers.some(line => line.includes('John Wooten')),
     'Git author should not be duplicated as co-author');
   assert.deepEqual(prepared.trailers, [

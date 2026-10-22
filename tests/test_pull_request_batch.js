@@ -187,6 +187,9 @@ async function run() {
   assert.match(prompt, /only one final trailer block after ---------/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
   assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(prompt, /HUMAN AUTHOR PRE-MERGE GATE \(NON-OPTIONAL\)/);
+  assert.match(prompt, /If no original linked human can be verified, STOP/);
+  assert.match(prompt, /NEVER invoke the GitHub connector native squash operation/);
   assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
   assert.match(prompt, /git commit --author/);
   assert(prompt.includes('node efs/human_squash_merge.js'));
