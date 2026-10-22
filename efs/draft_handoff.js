@@ -62,7 +62,6 @@ async function createDraftHandoff(publish) {
       } finally { state.merging = false; }
     }
     if (kind === 'close') {
-      if (!state.result) return fail(409, 'Publish the pull request before closing this window.');
       if (typeof state.onClose !== 'function') return fail(503, 'Cannot close the confirmation window automatically. Use its window controls.');
       try { await state.onClose(); return json(200, {closed:true}); }
       catch { return fail(503, 'Could not close the confirmation window. Use its window controls.'); }
