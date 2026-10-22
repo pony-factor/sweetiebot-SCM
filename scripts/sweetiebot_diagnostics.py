@@ -1,7 +1,8 @@
 """Local, size-bounded diagnostics shared by Sweetiebot's Python commands.
 
 This log records allowlisted operational metadata and validated generated
-commit titles for successful AI generations. Never record prompts, staged
+commit titles and opt-in short explanations for successful AI generations.
+Never record prompts, staged
 diffs, chat context, commit descriptions/bodies, or exception strings.
 """
 
@@ -16,7 +17,7 @@ MAX_LOG_BYTES = 1024 * 1024
 BACKUP_COUNT = 3
 FIELDS = frozenset({
     "model", "attempt", "attempts", "reason", "outcome", "error_type",
-    "http_status", "duration_ms", "rule", "title",
+    "http_status", "duration_ms", "rule", "title", "explanation",
 })
 
 
@@ -36,7 +37,7 @@ def log_event(component: str, event: str, **details: object) -> bool:
     }
     for key, value in details.items():
         if key in FIELDS and value is not None and isinstance(value, (str, int, bool)):
-            record[key] = value[:240 if key == 'title' else 120] if isinstance(value, str) else value
+            record[key] = value[:240 if key in {'title', 'explanation'} else 120] if isinstance(value, str) else value
 
     handler = None
     try:
