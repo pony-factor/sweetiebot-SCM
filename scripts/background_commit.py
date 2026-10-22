@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -203,7 +204,117 @@ def runtime():
             os.replace(temporary, target / name)
         finally:
             Path(temporary).unlink(missing_ok=True)
+    pony_source = Path(__file__).with_name('pony_git_publish.js')
+    if not pony_source.exists():
+        pony_source = Path(__file__).resolve().parent.parent / 'efs' / 'pony_git_publish.js'
+    if pony_source.resolve() != (target / pony_source.name).resolve():
+        fd, temporary = tempfile.mkstemp(dir=target)
+        try:
+            with os.fdopen(fd, 'wb') as output:
+                output.write(pony_source.read_bytes())
+            os.replace(temporary, target / pony_source.name)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
     return target / 'background_commit.py'
+
+
+def enqueue_pony(request, start=True):
+    """Durably accept one new profile without capturing or staging the user index."""
+    pony = request.get('pony') or {}
+    pack = str(pony.get('packId', '')).strip().lower()
+    slug = str(pony.get('canonicalSlug') or pony.get('slug', '')).strip().lower()
+    if pack == 'g4-stallions' and slug == 'hoofar':
+        slug = 'hoo-far'
+    if not all(re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,127}', value) for value in (pack, slug)):
+        raise ValueError('Invalid pony identity.')
+    stored = f'{pack}/{slug}.json'
+    if request.get('path') != stored:
+        raise ValueError('Unexpected pony profile path.')
+    root = str(Path(git('rev-parse', '--show-toplevel')).resolve())
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    relative = 'ponies/' + stored
+    profile = Path(root) / relative
+    if not profile.is_file() or profile.is_symlink():
+        raise ValueError('The pony profile must be a regular file.')
+    # This path is exclusively a validated pony record, never an arbitrary file.
+    record = json.loads(profile.read_text())
+    if (record.get('packId') != pack or record.get('slug') != slug
+            or not isinstance(record.get('profile'), str) or not record['profile'].strip()):
+        raise ValueError('Pony profile identity does not match its path.')
+    with repository_lock(meta):
+        status = git('status', '--porcelain=1', '--untracked-files=all', '--', relative)
+        receipt = meta / 'sweetiebot-pony-publish' / f'{pack}--{slug}.json'
+        if status not in (f'?? {relative}', f'A  {relative}') and not receipt.exists():
+            return {'queued': False, 'reason': 'existing-profile-preserved'}
+        job_id = 'pony-' + hashlib.sha256((root + '\0' + stored).encode()).hexdigest()[:24]
+        directory = jobs_home() / job_id
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        job = read_journal(directory / 'job.json')
+        if not job or job.get('phase') == 'done':
+            node = shutil.which('node') or next((str(candidate) for candidate in
+                (Path('/opt/homebrew/bin/node'), Path('/usr/local/bin/node')) if candidate.is_file()), None)
+            if not node:
+                raise RuntimeError('Node is unavailable for pony publication.')
+            job = dict(id=job_id, kind='pony-profile', root=root, gitdir=str(meta),
+                       branch='refs/heads/main', pony=dict(packId=pack, slug=slug), path=stored,
+                       node=node, phase='queued', attempts=0, nextAttemptAt=0)
+            write_journal(directory / 'job.json', job)
+    if start:
+        script = runtime()
+        install_agent(script)
+        # The shared scheduler resumes earlier title/push jobs before pony jobs.
+        subprocess.Popen([sys.executable, str(script), '--resume'], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, close_fds=True)
+    return {'queued': True, 'id': job_id}
+
+
+def work_pony(directory):
+    """Use the existing scheduler and repository lock for scoped pony publication."""
+    with (directory / 'worker.lock').open('a+b') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        file = directory / 'job.json'
+        job = read_journal(file)
+        if not job or job['phase'] in ('done', 'cancelled') or job.get('nextAttemptAt', 0) > time.time():
+            return
+        previous_cwd = os.getcwd()
+        try:
+            os.chdir(job['root'])
+            if git('rev-parse', '--absolute-git-dir') != job['gitdir']:
+                raise RuntimeError('Repository metadata changed.')
+            with repository_lock(job['gitdir']):
+                if queue_entries(Path(job['gitdir']) / MARKER) or (Path(job['gitdir']) / 'sweetiebot-async-commit.json').exists():
+                    job.update(phase='waiting', error='Waiting for the existing background commit and push.',
+                               nextAttemptAt=time.time() + 60)
+                    write_journal(file, job)
+                    return
+                helper = Path(__file__).with_name('pony_git_publish.js')
+                if not helper.exists():
+                    helper = Path(__file__).resolve().parent.parent / 'efs' / 'pony_git_publish.js'
+                env = os.environ.copy()
+                env.pop('GIT_INDEX_FILE', None)
+                env['GIT_TERMINAL_PROMPT'] = '0'
+                env['SCM_TOOLKIT_REAL_GIT'] = core.REAL_GIT
+                result = subprocess.run([job['node'], str(helper)],
+                    input=json.dumps(dict(directory=job['root'], pony=job['pony'], path=job['path'])),
+                    capture_output=True, text=True, env=env, timeout=300)
+                if result.returncode:
+                    # The helper emits only its controlled error messages, not raw Git output.
+                    raise RuntimeError(result.stderr.strip() or 'Pony publication will retry.')
+                publication = json.loads(result.stdout)
+                job.update(phase='done', publication=publication, nextAttemptAt=0)
+                job.pop('error', None)
+                write_journal(file, job)
+        except Exception as error:
+            attempts = job.get('attempts', 0) + 1
+            job.update(phase='retrying', error=str(error), attempts=attempts,
+                       nextAttemptAt=time.time() + min(60 * 2 ** min(attempts - 1, 3), 300))
+            write_journal(file, job)
+        finally:
+            os.chdir(previous_cwd)
 
 
 def install_agent(script):
@@ -526,6 +637,8 @@ def sync_with_lindsey(job, remote_tip):
 
 
 def work(directory, commit_only=False):
+    if (read_journal(directory / 'job.json') or {}).get('kind') == 'pony-profile':
+        return work_pony(directory)
     with (directory / 'worker.lock').open('a+b') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -822,8 +935,15 @@ def drain_parallel(meta):
 
 def resume(parallel=True):
     repositories = set()
+    pony_jobs = []
     for file in jobs_home().glob('*/job.json'):
         job = read_journal(file)
+        if not job:
+            continue
+        if job.get('kind') == 'pony-profile':
+            if job['phase'] not in ('done', 'cancelled'):
+                pony_jobs.append(file.parent)
+            continue
         meta = job['gitdir']
         if meta in repositories:
             continue
@@ -840,6 +960,11 @@ def resume(parallel=True):
                 break
             visited.add(entry['id'])
             work(Path(entry['directory']))
+    for directory in pony_jobs:
+        if parallel:
+            launch_job(directory)
+        else:
+            work_pony(directory)
 
 
 def request_push(request, start=True):
@@ -960,6 +1085,8 @@ if __name__ == '__main__':
             print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
+        elif sys.argv[1:] == ['--enqueue-pony']:
+            print(json.dumps(enqueue_pony(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
             print(json.dumps(request_push(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--resume']:
@@ -987,6 +1114,13 @@ if __name__ == '__main__':
                 status['phase'] = 'recovering'
                 status['recoverable'] = True
             status['titleJobs'] = []
+            status['ponyJobs'] = []
+            for file in jobs_home().glob('pony-*/job.json'):
+                item = read_journal(file)
+                if (item and item.get('kind') == 'pony-profile' and item.get('gitdir') == str(marker.parent)
+                        and item['phase'] not in ('done', 'cancelled')):
+                    status['ponyJobs'].append({key: item[key] for key in
+                        ('id', 'phase', 'path', 'error', 'nextAttemptAt') if key in item})
             for entry in queue_entries(marker):
                 item = read_journal(Path(entry['directory']) / 'job.json')
                 if (item and item.get('provisional')
