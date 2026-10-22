@@ -504,7 +504,7 @@ worker.work(Path(sys.argv[2]))
         for command in ('commit', 'reset'):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('background Commit & Push is pending', result.stderr)
+            self.assertIn('Commit & Push is still running', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_wrapper_allows_switch_and_checkout_while_push_is_pending(self):
