@@ -473,6 +473,13 @@ async function run() {
   assert.equal(new URL(calls[1].args[0].url).pathname, '/g/g-p-test123/project');
   assert.equal(new URLSearchParams(new URL(calls[1].args[0].url).hash.slice(1)).get('sweetiebot_pr'), '1');
   assert.match(new URLSearchParams(new URL(calls[1].args[0].url).hash.slice(1)).get('q'), /"draft"/);
+  const scopedPonyUrl = new URL(calls[2].args[0].url);
+  assert.equal(scopedPonyUrl.pathname, '/g/g-p-test123/project',
+    'Independent pony research must use the configured ChatGPT project, too');
+  assert.equal(new URLSearchParams(scopedPonyUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
+  assert.equal(new URLSearchParams(scopedPonyUrl.hash.slice(1)).get('return_to').endsWith('/pony'), true,
+    'Project-scoped pony research must retain its independent local callback');
+  assert.match(new URLSearchParams(scopedPonyUrl.hash.slice(1)).get('q'), /test-pack/);
   configuredProject = '';
 
   const failedPublicationUrl = calls[0].args[0].url;
