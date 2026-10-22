@@ -64,7 +64,8 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
       settings: {
         'scmToolkit.openPanelOnStartup': false,
         'scmToolkit.automaticBranchCleanup': false,
-        'scmToolkit.startCompactPRSession': !mergeUrl,
+        // Both PR drafts and Lindsey merge dashboards open compact; expanding remains manual.
+        'scmToolkit.startCompactPRSession': true,
         'workbench.browser.dataStorage': 'workspace',
         'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),

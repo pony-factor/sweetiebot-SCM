@@ -224,6 +224,17 @@ function scmToolkitKeepUsageFresh(refetch) {
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
 
+    // Native narrow-footer rules hide the entire value, including our 12px pie.
+    // Keep only pie-bearing location values visible; other labels still collapse.
+    const style = document.createElement('style');
+    style.textContent = `
+      button[data-composer-navigation-target="run-location"]
+      [data-composer-footer-collapse]:has(scm-toolkit-usage-pie) {
+        display: inline-flex !important;
+      }
+    `;
+    document.head.append(style);
+
     const refresh = () => {
         scmToolkitApplyUsageDialogRelativeTimes(document);
         scmToolkitCorrectLastMinuteUsageLabels(document);
