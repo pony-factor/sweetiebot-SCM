@@ -40,23 +40,34 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   const input = {repository:'owner/repo',head:'pony',base:'main',
     result:{number:12,url:'https://github.com/owner/repo/pull/12'}};
   const pr = {html_url:input.result.url,state:'open',draft:false,merged_at:null,
+    title:'🎨 Set neutral send colors',
     user:{login:'JFWooten4',type:'User'},
     head:{ref:'pony',sha:'a'.repeat(40),repo:{full_name:'owner/repo'}},
     base:{ref:'main',repo:{full_name:'owner/repo'}}};
   const calls = [];
+  const expectedTitle = '🎨 Set neutral send colors (#12)';
   const api = async (endpoint,options) => {
     calls.push([endpoint,options]);
+    if(endpoint==='repos/owner/repo/git/commits/'+'b'.repeat(40))
+      return {message:expectedTitle+'\n\n- 🗣️ Original commit subject'};
     if(!options)return pr;
     assert.equal(options.method,'PUT');
     assert.equal(options.body.sha,pr.head.sha);
     assert.equal(options.body.merge_method,'squash');
+    assert.equal(options.body.commit_title,expectedTitle,'Kefania must use the PR title');
     return {merged:true,sha:'b'.repeat(40)};
   };
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3,'Read back the resulting squash commit');
+  await assert.rejects(squashMergePullRequest(input,async(endpoint,options)=>{
+    if(endpoint==='repos/owner/repo/git/commits/'+'b'.repeat(40))
+      return {message:'🗣️ Original commit subject\n\nWrong title'};
+    return api(endpoint,options);
+  }),/squash commit title differs/, 'Detect ignored squash titles');
   for(const [update,message] of [
     [{state:'closed'},'no longer open'],
     [{draft:true},'ready for review'],
+    [{title:''},'Invalid squash title'],
     [{head:{...pr.head,ref:'different'}},'changed'],
     [{base:{...pr.base,ref:'develop'}},'changed'],
     [{head:{...pr.head,repo:{full_name:'different/repo'}}},'changed'],

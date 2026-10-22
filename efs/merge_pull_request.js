@@ -3,6 +3,7 @@
 const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const { humanSquashMerge } = require('./human_squash_merge');
+const { squashTitle } = require('./squash_attribution');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
@@ -67,6 +68,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (pr.state !== 'open' || pr.merged_at) throw new Error('Pull request is no longer open.');
   if (pr.draft) throw new Error('Mark this pull request ready for review on GitHub before merging.');
   if (!SHA.test(pr.head.sha)) throw new Error('Cannot verify the pull-request head SHA.');
+  const commitTitle = squashTitle(pr.title, result.number);
   if (!pr.user?.login || !['Bot', 'User'].includes(pr.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a bot-authored squash.');
   }
@@ -77,8 +79,13 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   }
 
   const merged = await request(endpoint + '/merge', {method: 'PUT',
-    body: {sha: pr.head.sha, merge_method: 'squash'}});
+    body: {sha: pr.head.sha, merge_method: 'squash', commit_title: commitTitle}});
   if (merged.merged !== true || !SHA.test(merged.sha)) throw new Error('GitHub did not confirm the squash merge. Check the pull request.');
+  // GitHub's COMMIT_OR_PR_TITLE default must never choose a source commit title.
+  const landed = await request('repos/' + repository + '/git/commits/' + merged.sha);
+  if (String(landed?.message || '').replace(/\r\n/g, '\n').split('\n')[0] !== commitTitle) {
+    throw new Error('GitHub merged the PR, but its squash commit title differs from the PR title. Verify the GitHub commit.');
+  }
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }
 

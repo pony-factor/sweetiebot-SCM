@@ -1,10 +1,14 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {squashMessage,readCommits}=require('../efs/squash_attribution');
+const {squashTitle,squashMessage,readCommits}=require('../efs/squash_attribution');
 async function run(){
  const commits=[{commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},committer:{name:'GitHub',email:'noreply@github.com'},message:'Change\n\nCo-authored-by: Codex <noreply@openai.com>'}},{commit:{author:{name:'John Wooten',email:'60260750+JFWooten4@users.noreply.github.com'},message:'Sync\n\nCo-authored-by: Codex Web <noreply@openai.com>'}}];
  const prepared=squashMessage('🐛 Repair retries',269,commits);
  assert.equal(prepared.title,'🐛 Repair retries (#269)');
+ assert.equal(squashTitle('🎨 Adjust colors (#5)',269),'🎨 Adjust colors (#269)');
+ assert.equal(squashTitle('🎨 Adjust colors (#269)',269),'🎨 Adjust colors (#269)');
+ assert.throws(()=>squashTitle('  (#269)',269),/Invalid squash title/);
+ assert.throws(()=>squashTitle('First line\nSecond line',269),/Invalid squash title/);
  assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex','Codex Web']);
  assert.equal(prepared.message, [
   '- Change',

@@ -107,7 +107,7 @@ async function humanSquashMerge(repository, number, {
     !sections[1].includes('Co-authored-by: ' + author.name + ' <');
   const finish = async (sha, expected) => {
     const fresh = await api(prPath);
-    if (fresh?.state !== 'open' || fresh.head?.sha !== sha ||
+    if (fresh?.state !== 'open' || fresh.title !== original.title || fresh.head?.sha !== sha ||
         fresh.base?.sha !== baseSha || fresh.base?.ref !== base ||
         fresh.head?.ref !== head || fresh.stack) {
       throw Error('PR changed before GitHub merge; inspect the updated head and base.');
@@ -161,7 +161,7 @@ async function humanSquashMerge(repository, number, {
     if (!SHA.test(preparedSha) || newTree === baseTree) throw Error('No new verified squash tree.');
     // Re-read GitHub before the ONLY force-with-lease, scoped strictly to the selected head.
     const fresh = await api(prPath);
-    if (fresh?.state !== 'open' || fresh.head?.sha !== originalSha ||
+    if (fresh?.state !== 'open' || fresh.title !== original.title || fresh.head?.sha !== originalSha ||
         fresh.base?.sha !== baseSha || fresh.base?.ref !== base ||
         fresh.head?.ref !== head || fresh.stack) {
       throw Error('PR changed before guarded push; no branch was modified.');
@@ -175,7 +175,7 @@ async function humanSquashMerge(repository, number, {
     // must still stop immediately, and no retry may push the branch again.
     for (let attempt = 0; ; attempt++) {
       const rewritten = await api(prPath);
-      if (rewritten?.state !== 'open' || rewritten.head?.ref !== head ||
+      if (rewritten?.state !== 'open' || rewritten.title !== original.title || rewritten.head?.ref !== head ||
           rewritten.base?.ref !== base || rewritten.base?.sha !== baseSha || rewritten.stack ||
           ![originalSha, preparedSha].includes(rewritten.head?.sha)) {
         throw Error('PR changed after guarded push; inspect the selected branch before merging.');
