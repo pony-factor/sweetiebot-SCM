@@ -965,30 +965,72 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   const message = defaultBranch === 'main'
     ? '🔄 Sync brach to main'
     : `🔄 Sync branch to ${defaultBranch}`;
+  // A routine sync has no generated prose: only its fixed title and the
+  // required authorship trailer. Proposed substantive edits need their own
+  // human-reviewed commit before the sync is retried.
+  const routineCommitMessage = message + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
   repository.inputBox.value = message;
   try {
-    if (strategy === 'merge') {
-      // Keep ordinary Git ancestry as an explicit alternative.
-      await repository.merge(`${remote}/${defaultBranch}`);
-    } else {
-      const root = repository.rootUri.fsPath;
-      const git = async args => (await promisify(execFile)('git', args, {
-        cwd: root, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-      })).stdout.trim();
-      // Squash must not consume the user's index, working tree, or unresolved conflicts.
-      if (await git(['status', '--porcelain'])) {
-        throw new Error('Commit or stash your changes before squashing the default branch.');
+    const root = repository.rootUri?.fsPath;
+    const git = root ? async args => (await promisify(execFile)('git', args, {
+      cwd: root, timeout: 120000, env: {
+        ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no'
       }
-      const target = `refs/remotes/${remote}/${defaultBranch}`;
+    })).stdout.trim() : null;
+    if (git && await git(['status', '--porcelain'])) {
+      throw new Error('Commit or stash your changes before syncing the default branch. Unrelated edits must be reviewed and committed separately.');
+    }
+    const target = `refs/remotes/${remote}/${defaultBranch}`;
+    const isAncestor = async () => promisify(execFile)('git',
+      ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
+      .then(() => true, error => {
+        if (error.code === 1) return false;
+        throw error;
+      });
+    const proposedMergeTree = async head => {
+      try {
+        const output = await git(['merge-tree', '--write-tree', head, target]);
+        const tree = output.split('\n')[0].trim();
+        if (!/^[a-f0-9]{40,64}$/i.test(tree)) {
+          throw new Error('Git did not provide a verifiable automatic merge tree.');
+        }
+        return tree;
+      } catch (error) {
+        // An actual conflict is resolved by the existing review/editor flow.
+        // It must never be silently committed as routine sync work.
+        if (error.code === 1) return null;
+        throw error;
+      }
+    };
+    const verifyAutomaticResult = async expected => {
+      if (expected && await git(['write-tree']) !== expected) {
+        throw new Error('Sync staged changes outside the automatic Git merge result. Review and commit substantive edits in their own human-authored commit before retrying.');
+      }
+    };
+    if (strategy === 'merge') {
+      if (!git) {
+        // Allow VS Code Git API fixtures that do not expose a real checkout.
+        await repository.merge(`${remote}/${defaultBranch}`);
+      } else if (!await isAncestor()) {
+        const headBefore = await git(['rev-parse', 'HEAD']);
+        const expectedTree = await proposedMergeTree(headBefore);
+        // Do not let Git auto-commit with an arbitrary/generated description.
+        await git(['merge', '--no-ff', '--no-commit', '-m', message, target]);
+        await checkBranch();
+        if (await git(['rev-parse', 'HEAD']) !== headBefore) {
+          throw new Error('The branch advanced during synchronization; no sync commit was created.');
+        }
+        const mergeHead = await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).catch(() => '');
+        if (!mergeHead) throw new Error('Git did not leave a verifiable merge to commit.');
+        await verifyAutomaticResult(expectedTree);
+        await git(['commit', '-m', routineCommitMessage]);
+      }
+    } else {
+      if (!git) throw new Error('A local Git checkout is required for squash synchronization.');
       const headBefore = await git(['rev-parse', 'HEAD']);
       // If the target is already an ancestor there is nothing to incorporate.
-      const ancestor = await promisify(execFile)('git',
-        ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
-        .then(() => true, error => {
-          if (error.code === 1) return false;
-          throw error;
-        });
-      if (!ancestor) {
+      if (!await isAncestor()) {
+        const expectedTree = await proposedMergeTree(headBefore);
         await checkBranch();
         // A conflict intentionally leaves the index and worktree available to resolve.
         await git(['merge', '--squash', target]);
@@ -1003,7 +1045,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           if (await git(['rev-parse', 'HEAD']) !== headBefore) {
             throw new Error('The branch advanced during synchronization; changes were left staged.');
           }
-          await git(['commit', '-m', `${message}\n\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+          await verifyAutomaticResult(expectedTree);
+          await git(['commit', '-m', routineCommitMessage]);
         }
       }
     }
