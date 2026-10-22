@@ -1,3 +1,18 @@
+// Preserve branch order and featured membership when searching by name.
+function scmToolkitFilterBranchStrip(branches, featuredCount, query) {
+    const needle = String(query || '').trim().toLowerCase();
+    if (!needle) return { branches, featuredCount };
+    const matching = [];
+    let matchingFeatured = 0;
+    branches.forEach((item, index) => {
+        if (item.name.toLowerCase().includes(needle)) {
+            matching.push(item);
+            if (index < featuredCount) matchingFeatured++;
+        }
+    });
+    return { branches: matching, featuredCount: matchingFeatured };
+}
+
 // A one-row branch popup opened from the existing SCM branch button.
 // The native branch picker stays available as the overflow action and elsewhere.
 function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, openNativePicker, trigger) {
@@ -7,6 +22,13 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     bar.className = 'scm-toolkit-branch-strip';
     bar.setAttribute('role', 'dialog');
     bar.setAttribute('aria-label', 'Git branches');
+    const filterInput = doc.createElement('input');
+    filterInput.type = 'search';
+    filterInput.className = 'scm-toolkit-branch-strip-filter';
+    filterInput.placeholder = 'Filter branches';
+    filterInput.setAttribute('aria-label', 'Filter branches');
+    filterInput.setAttribute('autocomplete', 'off');
+    filterInput.spellcheck = false;
     const scroll = doc.createElement('div');
     scroll.className = 'scm-toolkit-branch-strip-scroll';
     scroll.setAttribute('aria-label', 'Branches, horizontally scrollable');
@@ -20,17 +42,20 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         close();
         openNativePicker(event);
     });
-    bar.append(scroll, nativeButton);
+    bar.append(filterInput, scroll, nativeButton);
 
     let repository, branch, base, pickerReady = false, panelMode = false, disposed = false;
     let generation = 0, refreshedAt = 0, refreshedRepository = '';
     let refreshTimer, pending = false, knownBranches = [], lastFeaturedCount = 0;
-    let lastPrStatus = 'unavailable', lastScrolledBranch;
+    let lastPrStatus = 'unavailable', lastScrolledBranch, showingLoading = false;
     let opened = false;
     trigger.setAttribute('aria-haspopup', 'dialog');
     trigger.setAttribute('aria-expanded', 'false');
     const close = (restoreFocus = false) => {
         opened = false;
+        showingLoading = false;
+        filterInput.value = '';
+        generation++; // Reject refresh results arriving after close.
         bar.remove();
         trigger.setAttribute('aria-expanded', 'false');
         if (restoreFocus && trigger.isConnected) trigger.focus();
@@ -45,6 +70,9 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     };
 
     const render = (list, featuredCount, prStatus) => {
+        const filtered = scmToolkitFilterBranchStrip(list, featuredCount, filterInput.value);
+        list = filtered.branches;
+        featuredCount = filtered.featuredCount;
         const previousScroll = scroll.scrollLeft;
         const fragment = doc.createDocumentFragment();
         if (prStatus !== 'available') {
@@ -99,11 +127,11 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         if (!list.length) {
             const label = doc.createElement('span');
             label.className = 'scm-toolkit-branch-strip-note';
-            label.textContent = 'No branches found';
+            label.textContent = filterInput.value.trim() ? 'No matching branches' : 'No branches found';
             fragment.append(label);
         }
         scroll.replaceChildren(fragment);
-        if (lastScrolledBranch !== branch) {
+        if (!filterInput.value.trim() && lastScrolledBranch !== branch) {
             lastScrolledBranch = branch;
             scroll.querySelector('[aria-current="true"]')
                 ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -111,6 +139,20 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             scroll.scrollLeft = previousScroll;
         }
     };
+
+    filterInput.addEventListener('input', () => {
+        if (!showingLoading) render(knownBranches, lastFeaturedCount, lastPrStatus);
+    });
+    // Typing continues to search after keyboard focus moves into the branch buttons.
+    bar.addEventListener('keydown', event => {
+        if (!opened || event.target === filterInput || event.ctrlKey || event.metaKey
+            || event.altKey || event.isComposing || event.key.length !== 1
+            || event.key === ' ') return;
+        filterInput.value += event.key;
+        filterInput.focus();
+        if (!showingLoading) render(knownBranches, lastFeaturedCount, lastPrStatus);
+        event.preventDefault();
+    });
 
     const refresh = async (force = false) => {
         if (!opened || !panelMode || !repository || !base || disposed) return;
@@ -123,13 +165,15 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         try {
             const result = await commands.executeCommand('sweetiebot.listBranchStrip', uri,
                 { remote: settings.remote, defaultBranch: base });
-            if (disposed || request !== generation || repository !== uri || !panelMode) return;
+            if (disposed || !opened || request !== generation || repository !== uri || !panelMode) return;
+            showingLoading = false;
             knownBranches = Array.isArray(result?.branches) ? result.branches : [];
             lastFeaturedCount = result?.featuredCount ?? 0;
             lastPrStatus = result?.prStatus;
             render(knownBranches, lastFeaturedCount, lastPrStatus);
         } catch (error) {
-            if (disposed || request !== generation) return;
+            if (disposed || !opened || request !== generation) return;
+            showingLoading = false;
             refreshedAt = 0;
             knownBranches = [];
             render([], 0, 'unavailable');
@@ -192,7 +236,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             scroll.replaceChildren();
             lastScrolledBranch = undefined;
         }
-        if (branchChanged && knownBranches.length) {
+        if (!showingLoading && branchChanged && knownBranches.length) {
             render(knownBranches, lastFeaturedCount, lastPrStatus);
         }
         if (repositoryChanged || branchChanged || Date.now() - refreshedAt >= 20000) {
@@ -242,10 +286,10 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
                 opened = true;
                 trigger.setAttribute('aria-expanded', 'true');
                 syncPlacement();
-                if (knownBranches.length) render(knownBranches, lastFeaturedCount, lastPrStatus);
-                else scroll.textContent = 'Loading branches…';
+                showingLoading = true;
+                scroll.textContent = 'Loading branches…';
                 void refresh(true);
-                scroll.focus();
+                filterInput.focus();
             }
             return true;
         },
