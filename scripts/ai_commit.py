@@ -1732,6 +1732,9 @@ def main() -> None:
         from sweetiebot_async_commit import wait_for_completion
         from background_commit import wait_for_background, queue_plain_push
         try:
+            if subcommand == "push":
+                from merged_branch import guard_push_arguments
+                guard_push_arguments(argv[index + 1:], GIT_GLOBAL_ARGS)
             args = argv[index + 1:]
             if (subcommand in {'switch', 'checkout'} and len(args) in (2, 3)
                     and args[0] == ('-c' if subcommand == 'switch' else '-b')):

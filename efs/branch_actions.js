@@ -13,6 +13,7 @@ const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = requi
 const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
 const { resolvePythonExecutable } = require('./python_runtime');
 const { recoveryPlan } = require('./finalized_commit_recovery');
+const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
 const { routeBranch } = require('./shared_main');
 
 const repositoryOperations = new WeakMap();
@@ -517,6 +518,18 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
   await repository.status();
   if (repository.state.mergeChanges?.length) {
     throw new Error('Resolve the merge conflicts before creating a new branch.');
+  }
+  const merged = await mergedBranchStatus(repository, remote);
+  if (merged) {
+    const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
+    const used = new Set(refs.flatMap(ref => [ref.name, ref.name?.replace(`${remote}/`, '')]));
+    const history = await loadBranchNameHistory(repository);
+    const { branch, selected } = chooseBranchName([...new Set(names)].filter(name => !used.has(name)),
+      history.selected, secureRandomInt);
+    await mergedBranchAction(repository, '--new-branch', branch, remote);
+    await saveBranchNameHistory(history.file, selected);
+    await repository.status();
+    return branch;
   }
   let original = repository.state.HEAD?.name;
   let start;
@@ -1026,14 +1039,18 @@ function registerBranchCommands(vscode, context) {
     ['sweetiebot.deleteBranch', deleteBranch],
     ['sweetiebot.syncBranch', syncBranch]
   ]) {
-    context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
+    context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
       try {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
           // Switching to an unpublished branch can trigger automatic publishing.
           // Let a later status refresh retry after the background queue drains.
           if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository)) return false;
-          if (command !== 'sweetiebot.autoPullClean') {
+          if (command === 'sweetiebot.publishBranch') {
+            const merged = await mergedBranchStatus(repository, options.remote, options.branch);
+            if (merged) return warnMergedBranch(vscode, repository, merged);
+          }
+          if (command !== 'sweetiebot.autoPullClean' && command !== 'sweetiebot.createBranch') {
             await requireFinalizedCommit(repository, {
               background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command)
             });
@@ -1043,6 +1060,9 @@ function registerBranchCommands(vscode, context) {
           const defaultBranch = await resolveDefaultBranch(repository, remote);
           if (command === 'sweetiebot.returnHome' && defaultBranch === 'main' &&
               await routeBranch(vscode, repository, { branch: 'main' })) return 'main';
+          if (command === 'sweetiebot.createBranch' && !options.names?.length) {
+            options = { ...options, names: await mergedBranchAction(repository, '--names') };
+          }
           if (command === 'sweetiebot.deleteBranch' && options?.branch
               && options.branch !== defaultBranch && repository.rootUri?.fsPath) {
             const tip = await remoteBranchTip(repository, options.branch, remote);

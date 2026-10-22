@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import background_commit as worker
+import merged_branch
 
 
 class BackgroundCommitTests(unittest.TestCase):
@@ -71,6 +72,17 @@ class BackgroundCommitTests(unittest.TestCase):
                     drain.assert_called_once_with(meta)
                 else:
                     work.assert_called_once_with(directory)
+
+    def test_merged_branch_is_blocked_before_background_push(self):
+        directory = self.queue(push=True)
+        info = {'branch': 'main', 'number': 61, 'defaultBranch': 'main', 'remote': 'origin'}
+        with patch.object(merged_branch, 'require_unmerged', side_effect=merged_branch.MergedBranchPush(info)):
+            worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertFalse(job['push'])
+        self.assertEqual(job['mergedBranch'], info)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
 
     def test_status_tracks_title_jobs_independently_of_pending_push(self):
         first = self.queue(push=True)
@@ -525,7 +537,7 @@ worker.work(Path(sys.argv[2]))
         for command in ('commit', 'reset'):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('background Commit & Push is pending', result.stderr)
+            self.assertIn('Commit & Push is still running', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_wrapper_allows_switch_and_checkout_while_push_is_pending(self):
