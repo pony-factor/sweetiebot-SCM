@@ -153,8 +153,9 @@ async function commitWithCodex(vscode, uri, options = {}) {
     const result = await vscode.commands.executeCommand(
       'sweetiebot.commitWithMessage', root, withCoauthorTrailer(message, trailer)
     );
+    if (result?.queued || result?.cancelled) return result;
     if (input && input.value === originalMessage) input.value = '';
-    return { committed: true, queued: Boolean(result?.queued) };
+    return { committed: true, queued: false };
   } finally {
     activeCodexCommits.delete(lockKey);
   }
@@ -172,7 +173,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     const queued = await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
       message, onlyIfPending: true
     });
-    if (queued?.queued || queued?.cancelled) return;
+    if (queued?.queued || queued?.cancelled) return queued;
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
@@ -194,6 +195,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     if (configuration.get('postCommitCommand') === 'push') {
       await vscode.commands.executeCommand('git.push', root);
     }
+    return { committed: true };
   }));
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.prepareCodexCommit', async (uri, options = {}) => {
     const extension = vscode.extensions.getExtension('vscode.git');
