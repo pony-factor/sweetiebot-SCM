@@ -534,6 +534,14 @@ unavailable model checks leave the message alone. It never changes the commit bo
 The **Preview spelling correction** button remains available for manual reviews. Clicking it
 shows original and corrected subjects in a modal with **Apply correction** and **Keep original**.
 
+The independent **Add professional emoji to drafted commit titles** toggle (off by default,
+`scm-toolkit.draft-commit-emoji`) adds a change-appropriate leading emoji to manual subjects
+that do not already contain an emoji. It uses Sweetiebot's built-in deterministic commit-title
+emoji classifier, without an extra Ollama request. It works when spellcheck is disabled;
+with both enabled, correction and emoji placement happen in one draft processing pass.
+It never replaces a user-selected emoji, changes the commit body or Codex-attributed messages,
+or delays the commit button. Both options run only while the draft is idle.
+
 Spellcheck uses its own `scm-toolkit.spellcheck-model` setting, defaulting to `qwen2.5:3b`, instead
 of sharing either commit-writing model. The model must return a structured `{"subject":"..."}`
 response. Sweetiebot rejects malformed output, added or removed words, changed punctuation/emoji

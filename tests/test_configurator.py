@@ -456,6 +456,18 @@ class SubmissionTests(unittest.TestCase):
         values["spellcheckManualCommit"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
+    def test_manual_draft_emoji_toggle_is_independent_of_spellcheck(self):
+        values = form_values()
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "scm-toolkit.draft-commit-emoji")
+        self.assertFalse(configurator.parse_submission(values)["draftCommitEmoji"])
+        values["draftCommitEmoji"] = ["true"]
+        configured = configurator.parse_submission(values)
+        self.assertTrue(configured["draftCommitEmoji"])
+        self.assertFalse(configured["spellcheckManualCommit"])
+        page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
+        self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
     def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")

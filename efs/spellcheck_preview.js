@@ -3,9 +3,12 @@
 const { spawn } = require('child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 
-function runSpellcheck(script, cwd, subject) {
+function runSpellcheck(script, cwd, subject, { spellcheck = true, professionalEmoji = false } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolvePythonExecutable(), [script, '--spellcheck-subject'], {
+    const args = [script];
+    if (spellcheck) args.push('--spellcheck-subject');
+    if (professionalEmoji) args.push('--professional-emoji');
+    const child = spawn(resolvePythonExecutable(), args, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -98,7 +101,11 @@ function registerSpellcheckPreviewCommand(vscode, extensionContext) {
       const corrected = await runSpellcheck(
         script,
         root?.fsPath || extensionContext.extensionPath,
-        originalSubject
+        originalSubject,
+        {
+          spellcheck: !automatic || options.spellcheck !== false,
+          professionalEmoji: automatic && options.professionalEmoji === true
+        }
       );
       if (corrected === originalSubject) {
         if (!automatic) {

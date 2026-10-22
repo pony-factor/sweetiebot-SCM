@@ -500,6 +500,17 @@ Subject:
     )
 
 
+def add_professional_emoji(subject: str) -> str:
+    """Add one semantic emoji to a draft without rewriting its wording.
+
+    Existing user-selected emoji take precedence. This reuses the fallback
+    classifier from AI commit generation and does not request another model.
+    """
+    if not subject.strip() or re.search(EMOJI_PATTERN, subject):
+        return subject
+    return f"{emoji_for_change(subject, [])} {subject}"
+
+
 def spellcheck_manual_message(message: str) -> str:
     subject, separator, remainder = message.partition("\n")
     corrected = spellcheck_subject(subject)
@@ -1836,9 +1847,14 @@ def main() -> None:
     global GIT_GLOBAL_ARGS
 
     argv = sys.argv[1:]
-    if argv == ["--spellcheck-subject"]:
+    if argv in (["--spellcheck-subject"], ["--professional-emoji"],
+                ["--spellcheck-subject", "--professional-emoji"]):
         subject = sys.stdin.read()
-        print(json.dumps({"subject": spellcheck_subject(subject)}, ensure_ascii=False))
+        if "--spellcheck-subject" in argv:
+            subject = spellcheck_subject(subject)
+        if "--professional-emoji" in argv:
+            subject = add_professional_emoji(subject)
+        print(json.dumps({"subject": subject}, ensure_ascii=False))
         return
     if len(argv) == 3 and argv[0] == "--sweetiebot-finalize":
         # The installed Git wrapper is a script, not an importable ai_commit.py.

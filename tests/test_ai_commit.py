@@ -387,6 +387,40 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class ManualSpellcheckTests(unittest.TestCase):
+    def test_professional_emoji_adds_one_suitable_prefix(self):
+        self.assertEqual(ai_commit.add_professional_emoji("Fix commit title"), "🐛 Fix commit title")
+        self.assertEqual(ai_commit.add_professional_emoji("Update button layout"), "🖌️ Update button layout")
+        self.assertEqual(ai_commit.add_professional_emoji("Add tests"), "🧪 Add tests")
+        self.assertEqual(ai_commit.add_professional_emoji(""), "")
+
+    def test_professional_emoji_preserves_existing_user_choice_and_whitespace(self):
+        self.assertEqual(ai_commit.add_professional_emoji("🐞 Fix spelling"), "🐞 Fix spelling")
+        self.assertEqual(ai_commit.add_professional_emoji("Fix ✅ checkmarks"), "Fix ✅ checkmarks")
+        self.assertEqual(ai_commit.add_professional_emoji("  Fix spelling"), "🐛   Fix spelling")
+
+    def test_cli_emoji_only_never_invokes_spellcheck_or_git(self):
+        import io
+        with patch.object(sys, "argv", ["ai_commit.py", "--professional-emoji"]), patch.object(
+            sys, "stdin", io.StringIO("Fix typo")
+        ), patch.object(sys, "stdout", io.StringIO()) as output, patch.object(
+            ai_commit, "spellcheck_subject"
+        ) as spellcheck, patch.object(ai_commit.os, "execv") as git:
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {"subject": "🐛 Fix typo"})
+        spellcheck.assert_not_called()
+        git.assert_not_called()
+
+    def test_cli_spellcheck_and_emoji_share_one_correction(self):
+        import io
+        with patch.object(sys, "argv", ["ai_commit.py", "--spellcheck-subject", "--professional-emoji"]), patch.object(
+            sys, "stdin", io.StringIO("Fxi typo")
+        ), patch.object(sys, "stdout", io.StringIO()) as output, patch.object(
+            ai_commit, "spellcheck_subject", return_value="Fix typo"
+        ) as spellcheck:
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {"subject": "🐛 Fix typo"})
+        spellcheck.assert_called_once_with("Fxi typo")
+
     @patch.object(ai_commit, "spellcheck_subject", return_value="Fix spelling")
     def test_only_subject_line_is_rewritten(self, _spellcheck):
         message = "Fxi spelling\n\nKeep this body exactly."

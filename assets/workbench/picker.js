@@ -1359,7 +1359,10 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
 
 // Run opt-in subject-only spelling corrections as the user drafts, not during Commit.
 // Debounce local Ollama calls, serialize checks, and discard stale responses.
-function scmToolkitWatchDraftSpellcheck(input, repositoryUri, commands, blocked = () => false) {
+function scmToolkitWatchDraftSpellcheck(
+    input, repositoryUri, commands, blocked = () => false,
+    { spellcheck = true, professionalEmoji = false } = {}
+) {
     let timer;
     let busy = false;
     let disposed = false;
@@ -1381,7 +1384,8 @@ function scmToolkitWatchDraftSpellcheck(input, repositoryUri, commands, blocked 
             checkedSubject = subject;
             try {
                 const corrected = await commands.executeCommand(
-                    'sweetiebot.previewCommitSpellcheck', repositoryUri, original, { automatic: true }
+                    'sweetiebot.previewCommitSpellcheck', repositoryUri, original,
+                    { automatic: true, spellcheck, professionalEmoji }
                 );
                 if (!disposed && !blocked() && input.value === original
                     && typeof corrected === 'string' && corrected !== original) {
@@ -2511,9 +2515,15 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             if (settings.spellcheckManualCommit) {
                 spellcheckButton.hidden = false;
                 refreshSpellcheck();
+            }
+            if (settings.spellcheckManualCommit || settings.draftCommitEmoji) {
                 widget.repositoryDisposables.add(scmToolkitWatchDraftSpellcheck(
                     input, currentRepositoryUri, commands,
-                    () => pending || deletingBranch || spellchecking
+                    () => pending || deletingBranch || spellchecking,
+                    {
+                        spellcheck: Boolean(settings.spellcheckManualCommit),
+                        professionalEmoji: Boolean(settings.draftCommitEmoji)
+                    }
                 ));
             }
 

@@ -8,6 +8,7 @@ const { EventEmitter } = require('node:events');
 async function run() {
   let nextSubject = '🐜 Fix commit title';
   let expectedInput = '';
+  let expectedArgs = ['/extension/ai_commit.py', '--spellcheck-subject'];
   let choice = 'Apply correction';
   let spawnCount = 0;
   const children = [];
@@ -17,7 +18,7 @@ async function run() {
   const spawn = (executable, args, options) => {
     spawnCount++;
     assert.equal(executable, '/resolved/python3');
-    assert.deepEqual(Array.from(args), ['/extension/ai_commit.py', '--spellcheck-subject']);
+    assert.deepEqual(Array.from(args), expectedArgs);
     assert.equal(options.cwd, '/repo');
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
@@ -129,6 +130,35 @@ async function run() {
   assert.equal(notices.length, 0);
   nextSubject = '🐜 Fix commit title';
   assert.equal(await preview(uri, codexWeb, { automatic: true }), codexWeb);
+  assert.equal(notices.length, 0);
+
+  // The independent emoji toggle works when spellcheck is disabled, without
+  // requiring an additional model call or opening a confirmation dialog.
+  const emojiOnly = 'Fix a regression\n\nKeep this body exactly.';
+  expectedInput = 'Fix a regression';
+  expectedArgs = ['/extension/ai_commit.py', '--professional-emoji'];
+  nextSubject = '🐛 Fix a regression';
+  assert.equal(
+    await preview(uri, emojiOnly, { automatic: true, spellcheck: false, professionalEmoji: true }),
+    '🐛 Fix a regression\n\nKeep this body exactly.'
+  );
+  assert.equal(notices.length, 0);
+
+  // When both toggles are on, they share the same Python process / Ollama pass.
+  expectedInput = 'Fxi a regression';
+  expectedArgs = ['/extension/ai_commit.py', '--spellcheck-subject', '--professional-emoji'];
+  nextSubject = '🐛 Fix a regression';
+  assert.equal(
+    await preview(uri, 'Fxi a regression', { automatic: true, professionalEmoji: true }),
+    '🐛 Fix a regression'
+  );
+  const beforeExcluded = spawnCount;
+  assert.equal(
+    await preview(uri, 'Fxi a regression\n\nCo-authored-by: Codex Web <noreply@openai.com>',
+      { automatic: true, professionalEmoji: true }),
+    'Fxi a regression\n\nCo-authored-by: Codex Web <noreply@openai.com>'
+  );
+  assert.equal(spawnCount, beforeExcluded);
   assert.equal(notices.length, 0);
 
   console.log('Commit spellcheck preview checks passed.');
