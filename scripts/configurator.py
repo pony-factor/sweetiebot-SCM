@@ -20,6 +20,9 @@ from pathlib import Path
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from toolkit_settings import load_settings, VSCODE_SETTINGS
+from commit_diagnostics_dashboard import (
+    DIAGNOSTICS_PANEL, DIAGNOSTICS_SCRIPT, DIAGNOSTICS_STYLE, read_diagnostics,
+)
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
@@ -764,12 +767,15 @@ def render_form(
     section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))
     section_names.remove("GitHub")
     section_names.insert(section_names.index("Codex"), "GitHub")
+    section_names.append("Diagnostics")
     for index, section in enumerate(section_names):
         controls = "".join(
             _setting_control(setting, current.get(setting.name, ""))
             for setting in SETTINGS
             if setting.section == section
         )
+        if section == "Diagnostics":
+            controls = DIAGNOSTICS_PANEL
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
@@ -857,6 +863,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
 {COMMIT_HOTKEY_STYLE}
+{DIAGNOSTICS_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
 @media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
@@ -868,6 +875,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
+{DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
 let autosaveTimer = null;
@@ -1444,6 +1452,9 @@ def run_configurator(
                 return
             if path == "/health":
                 self._send_json({"instance": server_instance})
+                return
+            if path == "/diagnostics":
+                self._send_json(read_diagnostics())
                 return
             if path == "/models":
                 names, status = fetch_ollama_models()
