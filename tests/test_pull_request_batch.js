@@ -170,6 +170,12 @@ async function run() {
   assert.match(syncIncludedPrompt, /SYNC COMMIT FILTER DISABLED/);
   assert.match(syncIncludedPrompt, /explanatory bodies in the squash summary/);
   assert(!syncIncludedPrompt.includes('SYNC COMMIT FILTER ENABLED'));
+  assert.match(prompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
+  const emojiPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [pulls[0]], omitBulletsForEmojiTitles: true });
+  assert.match(emojiPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
+  assert.match(emojiPrompt, /if EVERY remaining commit subject begins with an emoji/);
+  assert.match(emojiPrompt, /If any retained subject lacks an emoji, keep the normal hyphen bullets/);
   assert.match(prompt, /bot-opened PR/);
   assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
   assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);

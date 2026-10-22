@@ -70,6 +70,20 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(disabled["filterSyncCommitSummaries"])
         self.assertFalse(configurator.extension_settings_payload(disabled)["vscodeSettings"]["filterSyncCommitSummaries"])
 
+    def test_emoji_only_squash_summary_format_toggle(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["squashOmitBulletsForEmojiTitles"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["squashOmitBulletsForEmojiTitles"],
+                         "scm-toolkit.squash-omit-bullets-for-emoji-titles")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["squashOmitBulletsForEmojiTitles"])
+        values["squashOmitBulletsForEmojiTitles"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["squashOmitBulletsForEmojiTitles"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashOmitBulletsForEmojiTitles"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="squashOmitBulletsForEmojiTitles" value="true" checked', page)
+        self.assertIn("Hide bullets for emoji-only squash summaries", page)
+
     def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],

@@ -9,6 +9,16 @@ function filterSyncCommitSummariesEnabled() {
     return true;
   }
 }
+const EMOJI_PREFIX = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3)/u;
+function omitBulletsForEmojiTitlesEnabled() {
+  try {
+    return execFileSync('git', ['config', '--global', '--type=bool', '--get',
+      'scm-toolkit.squash-omit-bullets-for-emoji-titles'],
+      { encoding: 'utf8', timeout: 3000 }).trim() === 'true';
+  } catch {
+    return false;
+  }
+}
 const COAUTHOR=/^Co-authored-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/gim;
 function who(name,email,original=false) {
  if(typeof name!=='string'||!name.trim()||/[<>\r\n]/.test(name)||typeof email!=='string'||!/^[^\s<>]+@[^\s<>]+$/.test(email)) return null;
@@ -18,7 +28,7 @@ function who(name,email,original=false) {
  const tier=/^codex$/i.test(name)?2:/^codex web$/i.test(name)?3:/codex-pony/.test(id)?4:/copilot/.test(id)?5:/ollama/.test(id)?6:/\[bot\]|bot@|dependabot|github.actions|web-flow/.test(id)?7:/openai|claude|gemini|ai.agent/.test(id)?8:original?0:1;
  return {name:name.trim(),email:email.trim(),tier};
 }
-function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled()}={}){
+function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled()}={}){
  if(typeof title!=='string'||!title.trim()||/[\r\n]/.test(title)||!Number.isSafeInteger(num)||num<1) throw Error('Invalid squash title');
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
@@ -43,7 +53,11 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
  // The actual squash Git author is never repeated as a Co-authored-by trailer.
  const trailers=[...names.values()].filter(p=>!primaryAuthor || p.name.toLowerCase()!==primaryAuthor.name.toLowerCase())
    .sort((a,b)=>a.tier-b.tier).map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');
- return {title:title.trim().replace(/\s*\(#\d+\)\s*$/,'').trim()+' (#'+num+')',message:(summaries.length?summaries.join('\n')+'\n\n---------\n\n':'')+trailers.join('\n'),trailers};
+ const unbulleted = omitBulletsForEmojiTitles && summaries.length > 0 &&
+   summaries.every(summary => EMOJI_PREFIX.test(summary.slice(2).split('\n', 1)[0]));
+ const summaryText = summaries.map(summary => unbulleted ? summary.slice(2) : summary)
+   .join(unbulleted ? '\n\n' : '\n');
+ return {title:title.trim().replace(/\s*\(#\d+\)\s*$/,'').trim()+' (#'+num+')',message:(summaries.length?summaryText+'\n\n---------\n\n':'')+trailers.join('\n'),trailers};
 }
 async function readCommits(api,repo,num){
  const all=[];

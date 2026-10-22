@@ -70,6 +70,30 @@ async function run(){
  assert(!onlySync.message.includes('Sync brach to main'));
  assert(onlySync.message.startsWith('Co-authored-by: '),
    'An all-sync PR must retain co-author trailers without an empty separator');
+ const emojiTitles=[
+   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🐛 Fix panel resizing\n\nAvoid overflowing the viewport.'}},
+   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🧪 Cover small windows'}},
+   syncCommit
+ ];
+ const emojiOnly=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
+   {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:true});
+ assert(emojiOnly.message.startsWith('🐛 Fix panel resizing\n  Avoid overflowing the viewport.\n\n🧪 Cover small windows'));
+ assert(!emojiOnly.message.includes('- 🐛'));
+ assert(!emojiOnly.message.includes('Sync brach to main'));
+ assert(emojiOnly.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'));
+ const legacyBullets=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
+   {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:false});
+ assert(legacyBullets.message.includes('- 🐛 Fix panel resizing'));
+ assert(legacyBullets.message.includes('- 🧪 Cover small windows'));
+ const mixed=squashMessage('🖌️ Improve resize handling',395,[...emojiTitles,
+   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'Document keyboard shortcuts'}}],
+   {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:true});
+ assert(mixed.message.includes('- 🐛 Fix panel resizing'));
+ assert(mixed.message.includes('- Document keyboard shortcuts'));
+ const includedSync=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
+   {filterSyncCommitSummaries:false,omitBulletsForEmojiTitles:true});
+ assert(includedSync.message.includes('🔄 Sync brach to main'));
+ assert(!includedSync.message.includes('- 🔄 Sync brach to main'));
  let calls=0;
  assert.equal((await readCommits(async()=>{calls++;return commits},'owner/repo',269)).length,2);
  assert.equal(calls,1);

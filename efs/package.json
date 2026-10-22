@@ -257,6 +257,12 @@
           "scope": "window",
           "description": "Open a dedicated pull-request session window in the compact 600px square layout."
         },
+        "scmToolkit.squashOmitBulletsForEmojiTitles": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Remove bullet hyphens from PR squash summaries only when every included commit subject starts with an emoji. Mixed summaries keep bullets."
+        },
         "scmToolkit.filterSyncCommitSummaries": {
           "type": "boolean",
           "default": true,
