@@ -1,4 +1,4 @@
-"""Guarded patches for read-only, window-local Codex conversation snapshots."""
+"""Guarded patches for window-local Codex snapshots and explicit thread handoff."""
 
 import json
 from pathlib import Path
@@ -39,12 +39,16 @@ def transform(source, kind, enabled=True):
     original = match.group(0)
     if kind == 'host':
         replacement = original.replace('.push(',
-            f'.push(scmToolkitRegisterCodexSnapshotProvider({match["provider"]},{match["vscode"]}),', 1)
+            f'.push(scmToolkitRegisterCodexSnapshotProvider({match["provider"]},{match["vscode"]}),'
+            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}),', 1)
     else:
         replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}))'
     source = source.replace(original, replacement, 1)
+    helper = (ASSETS / f'context-{kind}.js').read_text()
+    if kind == 'host':
+        helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
     return (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
-            + (ASSETS / f'context-{kind}.js').read_text() + END)
+            + helper + END)
 
 
 def patch_files(extension_path=None, enabled=True):

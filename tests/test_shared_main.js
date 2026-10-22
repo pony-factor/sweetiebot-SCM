@@ -44,8 +44,8 @@ async function openedRoot(result) {
     const topicEditor = editor(root);
     assert.equal(await routeBranch(topicEditor, { rootUri: { fsPath: root } },
       { ...options, branch: 'topic', create: true, start: 'main' }), true);
-    assert.deepEqual(topicEditor.commands.calls.at(-1)[2], { forceNewWindow: true },
-      'New topics open in a separate window instead of reloading the main workspace');
+    assert.deepEqual(topicEditor.commands.calls.at(-1)[2], { forceReuseWindow: true },
+      'The selected branch replaces this window so the same Codex chat can follow');
     assert.equal(topicEditor.workspace.workspaceFolders[0].uri.fsPath, root,
       'The originating main workspace and Codex session remain untouched');
     const topicWorkspace = topicEditor.commands.calls.at(-1)[1].fsPath;
@@ -63,6 +63,25 @@ async function openedRoot(result) {
     const reopening = editor(root);
     await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
+
+    await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
+    git('-C', root, 'add', 'file.txt');
+    const indexBefore = git('-C', root, 'diff', '--cached');
+    const moving = editor(root);
+    moving.extensions = { getExtension: () => ({ async activate() {} }) };
+    moving.commands.getCommands = async () => ['sweetiebot.codex.prepareWorkspaceHandoff'];
+    const ordinaryExecute = moving.commands.executeCommand;
+    moving.commands.executeCommand = async function (id, ...args) {
+      if (id === 'sweetiebot.codex.prepareWorkspaceHandoff') return { threadId: 'fixture', relative: '', wasActive: true };
+      return ordinaryExecute.call(this, id, ...args);
+    };
+    await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'moving-task', create: true });
+    const moved = await openedRoot({ target: moving.commands.calls.at(-1)[1].fsPath });
+    assert.equal(await fs.readFile(path.join(moved, 'file.txt'), 'utf8'), 'pending shared main\n');
+    assert.equal(await fs.readFile(path.join(moved, 'draft.txt'), 'utf8'), 'untracked task work\n');
+    assert.equal(git('-C', moved, 'diff', '--cached'), '', 'Copied task work is never staged');
+    assert.equal(git('-C', root, 'diff', '--cached'), indexBefore, 'Source index is unchanged');
+    assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.save'));
 
     const legacy = path.join(baseDirectory, 'legacy', 'repo');
     await fs.mkdir(path.dirname(legacy), { recursive: true });
