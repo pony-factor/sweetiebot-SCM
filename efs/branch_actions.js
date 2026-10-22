@@ -533,6 +533,7 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
   }
   let original = repository.state.HEAD?.name;
   let start;
+  let forkScript;
   let unfinishedBase = false;
   if (repository.rootUri?.fsPath && existsSync(path.join(repository.rootUri.fsPath, '.git'))) {
     const { stdout } = await promisify(execFile)('git', [
@@ -546,8 +547,9 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     unfinishedBase = /^(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])$/.test(stdout.trim());
   }
   if (unfinishedBase || await asyncCommitPending(repository)) {
-    start = await mergedBranchAction(repository, '--completed-base', `refs/heads/${defaultBranch}`);
-    if (!/^[0-9a-f]{40,64}$/.test(start)) throw new Error('Could not resolve a completed branch base.');
+    const installedScript = path.join(__dirname, 'background_commit.py');
+    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
+    forkScript = script;
   } else if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
     // Preserve pending edits and their staging by avoiding a remote merge.
     await repository.checkout(defaultBranch);
@@ -571,7 +573,12 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
   const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
   await repository.status();
   if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
-  if (!isolateBranch || !await isolateBranch(branch, start)) {
+  if (forkScript) {
+    await promisify(execFile)(resolvePythonExecutable(), [
+      forkScript, '--fork-branch', `refs/heads/${defaultBranch}`, branch, `refs/heads/${original}`
+    ], { cwd: repository.rootUri.fsPath, timeout: 120000 });
+    await repository.status();
+  } else if (!isolateBranch || !await isolateBranch(branch, start)) {
     await repository.createBranch(branch, true, start);
   }
   try {

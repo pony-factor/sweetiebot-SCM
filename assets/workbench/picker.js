@@ -1,11 +1,7 @@
-// Treat a dedicated one-repository PR workspace as a folder for Explorer only.
-// The saved .code-workspace remains open, preserving its window, settings,
-// extension host, PR callback ownership, and shared Integrated Browser session.
-function scmToolkitIsPRSingleRoot(workspace, roots) {
-    if (!Array.isArray(roots) || roots.length !== 1 || roots[0]?.error) return false;
-    const configuration = workspace?.configuration;
-    if (configuration?.scheme !== 'file' || typeof configuration.fsPath !== 'string') return false;
-    return /(?:^|[/\\])sweetiebot-pr-sessions[/\\]session-[^/\\]+[/\\][^/\\]+\.code-workspace$/.test(configuration.fsPath);
+// Use the folder itself as Explorer input whenever it is the only healthy root.
+// Keep the saved workspace identity, settings, and extension host intact.
+function scmToolkitIsSingleRoot(workspace, roots) {
+    return Array.isArray(roots) && roots.length === 1 && !!roots[0] && !roots[0].error;
 }
 
 // Runs inside VS Code's SCM input widget; services and observables are supplied by install.py.

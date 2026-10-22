@@ -34,6 +34,26 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_lindsey_has_its_own_dashboard_settings_page(self):
+        names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent"}
+        controls = [setting for setting in configurator.SETTINGS if setting.name in names]
+        self.assertEqual({setting.section for setting in controls}, {"Lindsey"})
+        values = form_values()
+        values.update(mergeTimelineTimestampMode=["clock"], mergeSidebarWidthPercent=["45"], mergeTimelineHeightPercent=["60"])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertEqual(payload["mergeTimelineTimestampMode"], "clock")
+        self.assertEqual(payload["mergeSidebarWidthPercent"], 45)
+        self.assertEqual(payload["mergeTimelineHeightPercent"], 60)
+        for name, bad in [("mergeTimelineTimestampMode", "invalid"), ("mergeSidebarWidthPercent", "76"), ("mergeTimelineHeightPercent", "14")]:
+            invalid = dict(values, **{name: [bad]})
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(invalid)
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('>Lindsey</button>', page)
+        for name in names:
+            self.assertIn(f'name="{name}"', page)
+
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
         values["spellcheckPreserveLineBreaks"] = ["true"]

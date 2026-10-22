@@ -472,8 +472,11 @@ async function run() {
       }));
       const callCount = calls.length;
       assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
-      assert.deepEqual(calls.slice(callCount).find(call => call[0] === 'create'),
-        ['create', 'fresh', true, base]);
+      assert.equal(git('branch', '--show-current').toString().trim(), 'fresh');
+      assert.equal(git('rev-parse', 'fresh').toString().trim(), git('rev-parse', 'main').toString().trim());
+      assert.notEqual(git('rev-parse', 'fresh').toString().trim(), base);
+      const forks = JSON.parse(fs.readFileSync(path.join(root, '.git', 'sweetiebot-background-forks.json'), 'utf8'));
+      assert.equal(forks['refs/heads/fresh'], git('rev-parse', 'main').toString().trim());
       assert(!calls.slice(callCount).some(call => ['merge', 'fetch', 'push'].includes(call[0])),
         'Do not sync or publish pending history while creating a branch');
       fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');

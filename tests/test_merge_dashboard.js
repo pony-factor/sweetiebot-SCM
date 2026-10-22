@@ -61,8 +61,11 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   const openings = [];
   let savedTimelineMode = 'hidden';
   const savedModes = [];
+  const layoutConfig = { mergeSidebarWidthPercent: 37, mergeTimelineHeightPercent: 34 };
+  let configurationChanged;
+  let configurationDisposed = false;
   const configuration = {
-    get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : fallback; },
+    get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
       assert.equal(key, 'mergeTimelineTimestampMode');
       assert.equal(target, 1, 'Save globally across independent merge windows');
@@ -72,7 +75,10 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   };
   const vscode = {
     ConfigurationTarget: { Global: 1 },
-    workspace: { getConfiguration(section) {
+    workspace: { onDidChangeConfiguration(fn) {
+      configurationChanged = fn;
+      return { dispose() { configurationDisposed = true; } };
+    }, getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
       return configuration;
     } },
@@ -136,6 +142,14 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
   assert.equal(configuredTimelineMode(vscode), 'hidden');
   assert.equal(events.at(-1).timestampMode, 'hidden', 'Timestamps start hidden');
+  assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 37, timeline: 34 });
+  layoutConfig.mergeSidebarWidthPercent = 50;
+  layoutConfig.mergeTimelineHeightPercent = 55;
+  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeSidebarWidthPercent' });
+  assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 50, timeline: 55 }, 'Settings update open dashboards immediately');
+  layoutConfig.mergeSidebarWidthPercent = 99;
+  configurationChanged({ affectsConfiguration: () => true });
+  assert.equal(events.at(-1).layoutPreferences.sidebar, 37, 'Reject invalid configured proportions');
   assert.equal(typeof pollCallback, 'function');
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(events.at(-1).prs[0].state, 'conflict');
@@ -176,6 +190,7 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   assert(events.at(-1).events.some(event => event.state === 'merged'));
   disposeHandler();
   assert(stopped);
+  assert(configurationDisposed);
   const countBefore = events.length;
   await dashboard.refresh();
   assert.equal(events.length, countBefore);

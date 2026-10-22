@@ -1735,11 +1735,28 @@ def main() -> None:
             if subcommand == "push":
                 from merged_branch import guard_push_arguments
                 guard_push_arguments(argv[index + 1:], GIT_GLOBAL_ARGS)
+            args = argv[index + 1:]
+            if (subcommand in {'switch', 'checkout'} and len(args) in (2, 3)
+                    and args[0] == ('-c' if subcommand == 'switch' else '-b')):
+                # Register the fork and checkout under the same lock used by
+                # message finalization, so its placeholder cannot escape repair.
+                from background_commit import fork_branch, MARKER, queue_entries
+                meta = subprocess.run([REAL_GIT, *GIT_GLOBAL_ARGS, 'rev-parse', '--absolute-git-dir'],
+                                      capture_output=True, text=True)
+                if meta.returncode == 0 and queue_entries(Path(meta.stdout.strip()) / MARKER):
+                    wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
+                    root = subprocess.check_output([REAL_GIT, *GIT_GLOBAL_ARGS, 'rev-parse', '--show-toplevel'], text=True).strip()
+                    head = subprocess.check_output([REAL_GIT, *GIT_GLOBAL_ARGS, 'symbolic-ref', '--quiet', 'HEAD'], text=True).strip()
+                    source = subprocess.check_output([REAL_GIT, *GIT_GLOBAL_ARGS, 'rev-parse', '--verify',
+                                                      (args[2] if len(args) == 3 else 'HEAD') + '^{commit}'], text=True).strip()
+                    os.chdir(root)
+                    fork_branch(source, args[1], head)
+                    return
             if subcommand == "push" and queue_plain_push(argv[index + 1:]):
                 print("🤖 Commit message generation is in progress. Your changes will be pushed as soon as it completes.")
                 return
-            # Existing checkouts leave the captured ref intact. New branches
-            # must use a verified completed base to avoid unfinished ancestry.
+            # Existing checkouts leave the captured ref intact. Other branch
+            # creation forms must still use a verified completed base.
             creates_branch = any(arg in {"-b", "-B", "-c", "-C", "--orphan", "--create", "--force-create"}
                                  or arg.startswith(("--orphan=", "--create=", "--force-create=", "-b", "-B", "-c", "-C"))
                                  for arg in argv[index + 1:])

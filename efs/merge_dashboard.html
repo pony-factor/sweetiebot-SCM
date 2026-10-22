@@ -18,11 +18,21 @@ h3{margin:16px 0 8px;font-size:13px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
 .overview{display:flex;align-items:center;gap:12px}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
-.primary{background:var(--vscode-button-background);border:0;color:var(--vscode-button-foreground);border-radius:6px;padding:7px 13px}
+.refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
+.refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
+.refresh-icon svg{width:16px;height:16px}
 .bar{height:6px;background:var(--vscode-progressBar-background,#444);margin:0;border-radius:0;opacity:.3}
 .bar-fill{height:100%;background:var(--vscode-testing-iconPassed,#4cba78);width:0%;transition:width .2s}
-.layout{display:grid;grid-template-columns:minmax(250px,37%) minmax(360px,63%);height:calc(100vh - 122px);min-height:300px}
-aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+body{height:100vh;display:flex;flex-direction:column}
+header,.bar,.notice{flex-shrink:0}
+.layout{display:grid;grid-template-columns:minmax(0,var(--sidebar-width,37%)) 6px minmax(0,1fr);flex:1;min-height:0}
+aside{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.section-heading{flex-shrink:0}
+.splitter{background:var(--vscode-panel-border,#555);touch-action:none;flex-shrink:0;outline-offset:-2px}
+.splitter:hover,.splitter:focus-visible,.splitter.dragging{background:var(--vscode-focusBorder,#468cdb);outline:none}
+.splitter.vertical{cursor:col-resize}
+.splitter.horizontal{height:6px;cursor:row-resize}
+body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cursor)!important}
 .section-heading{padding:14px 16px 6px}
 .prs{overflow-y:auto;min-height:100px;flex:1;padding:4px 10px}
 .pr{display:block;text-align:left;width:100%;padding:11px;margin-bottom:8px;background:transparent;border:1px solid var(--vscode-widget-border,#555);border-radius:8px}
@@ -33,7 +43,7 @@ aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-d
 .flag.merged,.flag.resolved{color:var(--vscode-testing-iconPassed,#3cbb78);border-color:currentColor}
 .flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
-.events{max-height:34%;min-height:170px;overflow:auto;border-top:1px solid var(--vscode-panel-border,#555);padding:10px 16px}
+.events{flex:0 0 var(--timeline-height,34%);min-height:0;overflow:auto;padding:10px 16px}
 .timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
 .timeline-heading h2{margin:0}
 .timeline-time-picker{display:flex;align-items:center;gap:5px;color:var(--vscode-descriptionForeground);font-size:11px}
@@ -88,15 +98,15 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .diff-line--note{color:var(--vscode-descriptionForeground)}
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
-@media(max-width:900px){.layout{grid-template-columns:minmax(205px,40%) minmax(250px,60%)}main{padding:14px}}
+@media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
 /* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
-@media(max-width:650px){.layout{display:block;height:auto;min-height:0}aside{min-height:240px;border-right:0;border-bottom:1px solid var(--vscode-panel-border,#555)}.prs{max-height:210px}.events{max-height:160px;min-height:100px}main{overflow:visible}}
+@media(max-width:650px){body{height:auto;min-height:100vh}.layout{display:block;flex:none}aside{height:370px;border-bottom:1px solid var(--vscode-panel-border,#555)}.splitter.vertical{display:none}main{overflow:visible}}
 </style>
 </head>
 <body>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
-<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="primary">Refresh now</button></div>
+<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="notice" class="notice" hidden></div>
@@ -104,7 +114,8 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <aside aria-label="Merge timeline">
   <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
   <div id="prs" class="prs"></div>
-  <div class="events">
+  <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
+  <div id="timeline" class="events">
     <div class="timeline-heading">
       <h2>Activity timeline</h2>
       <label class="timeline-time-picker" for="timeline-time-mode">Time
@@ -118,6 +129,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
     <div id="events"></div>
   </div>
 </aside>
+<div id="details-splitter" class="splitter vertical" role="separator" tabindex="0" aria-label="Resize pull request list and details" aria-orientation="vertical" aria-controls="prs details"></div>
 <main id="details" aria-live="polite"><p class="empty">Waiting for live GitHub data…</p></main>
 </div>
 <script nonce="__NONCE__">
@@ -133,6 +145,93 @@ __TIMESTAMP_FORMATTER__
 (() => {
   const vscode = acquireVsCodeApi();
   const byId = id => document.getElementById(id);
+  const layout = document.querySelector('.layout');
+  const sidebar = document.querySelector('aside');
+  const savedLayout = vscode.getState() || {};
+  const validRatio = value => Number.isFinite(value) && value > 0 && value < 1;
+  let sidebarRatio = validRatio(savedLayout.sidebarRatio) ? savedLayout.sidebarRatio : null;
+  let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
+  let layoutPreferences = savedLayout.layoutPreferences || null;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  function saveLayout() {
+    vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
+  }
+  function bounds(kind) {
+    if (kind === 'sidebar') {
+      const total = layout.clientWidth - byId('details-splitter').offsetWidth;
+      return { total, min: Math.min(160, total / 2), max: total - Math.min(200, total / 2) };
+    }
+    const total = sidebar.clientHeight - sidebar.querySelector('.section-heading').offsetHeight - byId('timeline-splitter').offsetHeight;
+    return { total, min: Math.min(80, total / 2), max: total - Math.min(100, total / 2) };
+  }
+  function applySize(kind, requested) {
+    const { total, min, max } = bounds(kind);
+    if (total <= 0) return;
+    const size = clamp(requested, min, max);
+    if (kind === 'sidebar') layout.style.setProperty('--sidebar-width', size + 'px');
+    else sidebar.style.setProperty('--timeline-height', size + 'px');
+    const handle = byId(kind === 'sidebar' ? 'details-splitter' : 'timeline-splitter');
+    handle.setAttribute('aria-valuemin', Math.round(min / total * 100));
+    handle.setAttribute('aria-valuemax', Math.round(max / total * 100));
+    handle.setAttribute('aria-valuenow', Math.round(size / total * 100));
+    return size / total;
+  }
+  function restoreSizes() {
+    // Keep the saved wide-layout ratio while the details are stacked on narrow windows.
+    if (window.innerWidth > 650) {
+      applySize('sidebar', bounds('sidebar').total * (sidebarRatio ?? (window.innerWidth <= 900 ? 0.4 : 0.37)));
+    }
+    applySize('timeline', bounds('timeline').total * timelineRatio);
+  }
+  function rememberSize(kind, size) {
+    const ratio = applySize(kind, size);
+    if (ratio === undefined) return;
+    if (kind === 'sidebar') sidebarRatio = ratio;
+    else timelineRatio = ratio;
+  }
+  function setupSplitter(id, kind) {
+    const handle = byId(id);
+    let drag = null;
+    const position = event => kind === 'sidebar' ? event.clientX : event.clientY;
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || drag) return;
+      event.preventDefault();
+      handle.focus();
+      drag = { id: event.pointerId, start: position(event), size: kind === 'sidebar' ? sidebar.clientWidth : byId('timeline').offsetHeight };
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add('dragging');
+      document.body.classList.add('resizing');
+      document.body.style.setProperty('--resize-cursor', kind === 'sidebar' ? 'col-resize' : 'row-resize');
+    });
+    handle.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      rememberSize(kind, drag.size + (position(event) - drag.start) * (kind === 'sidebar' ? 1 : -1));
+    });
+    const finish = event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      drag = null;
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      saveLayout();
+    };
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) handle.addEventListener(type, finish);
+    handle.addEventListener('keydown', event => {
+      const keys = kind === 'sidebar' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowDown', 'ArrowUp'];
+      if (![...keys, 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const { min, max } = bounds(kind);
+      const current = kind === 'sidebar' ? sidebar.clientWidth : byId('timeline').offsetHeight;
+      rememberSize(kind, event.key === 'Home' ? min : event.key === 'End' ? max : current + (event.key === keys[0] ? -1 : 1) * (event.shiftKey ? 40 : 10));
+      saveLayout();
+    });
+  }
+  setupSplitter('details-splitter', 'sidebar');
+  setupSplitter('timeline-splitter', 'timeline');
+  const layoutObserver = new ResizeObserver(restoreSizes);
+  layoutObserver.observe(layout);
+  layoutObserver.observe(sidebar);
+  restoreSizes();
   let model = { prs: [], events: [] };
   let selected = null;
   const labels = {
@@ -254,6 +353,15 @@ __TIMESTAMP_FORMATTER__
   }
   window.addEventListener('message', event => {
     if (event.data?.type !== 'state') return;
+    const preferences = event.data.layoutPreferences;
+    if (preferences && Number.isInteger(preferences.sidebar) && preferences.sidebar >= 15 && preferences.sidebar <= 75 &&
+        Number.isInteger(preferences.timeline) && preferences.timeline >= 15 && preferences.timeline <= 80) {
+      if (preferences.sidebar !== layoutPreferences?.sidebar) sidebarRatio = preferences.sidebar / 100;
+      if (preferences.timeline !== layoutPreferences?.timeline) timelineRatio = preferences.timeline / 100;
+      layoutPreferences = preferences;
+      restoreSizes();
+      saveLayout();
+    }
     model = event.data;
     render();
   });
