@@ -151,6 +151,11 @@ def commit_fallback_enabled() -> bool:
     return git_config_bool("scm-toolkit.ai-commit-fallback", True)
 
 
+def title_explanations_enabled() -> bool:
+    """Opt in to short model-written title notes, without changing the Git message."""
+    return git_config_bool("scm-toolkit.ai-title-explanations", False)
+
+
 def staged_whitespace_enabled() -> bool:
     return git_config_bool("scm-toolkit.normalize-staged-whitespace", True)
 
@@ -1212,6 +1217,7 @@ def prompt_for_diff(
     file_context: str = "",
     include_description: bool = False,
     conversation_context: str = "",
+    include_explanation: bool = False,
 ) -> str:
     # Reserve output tokens and budget every input section, not just the patch.
     # Two characters per token is deliberately conservative for paths and diffs.
@@ -1247,7 +1253,15 @@ def prompt_for_diff(
         "and its purpose or effect. When rendered, leave one blank line after the subject."
         if include_description else "The description must be empty."
     )
-    rules = f"""Write a Git commit message. Return only a JSON object with subject and description strings.
+    explanation_rules = (
+        "- include an explanation field with one short, evidence-based sentence (maximum 200 characters) "
+        "about why the selected wording describes the changed behavior\n"
+        "- explain wording in plain language, not internal model reasoning; do not invent motivations\n"
+        "- never include the explanation in the Git commit subject or body\n"
+        if include_explanation else ""
+    )
+    fields = "subject, description, and explanation" if include_explanation else "subject and description"
+    rules = f"""Write a Git commit message. Return only a JSON object with {fields} strings.
 
 Output rules:
 - {commit_title_preference()}
@@ -1255,11 +1269,11 @@ Output rules:
 - start the subject with one change-appropriate emoji, one space, then the imperative wording; for example: 🐛 Fix footnote formatting
 - use the emoji as the change-type marker; never add conventional-commit prefixes such as fix:, feat:, refactor:, or chore:, including scoped variants
 - {shape_rules}
-- describe the actual change directly and decisively, with no hedging
+{explanation_rules}- describe the actual change directly and decisively, with no hedging
 - when text content changes, summarize what the changed text adds, removes, or corrects; a filename alone is not a summary
 - distinguish adding a new file from adding information to an existing file
 - never say 'appears to', 'seems', 'likely', 'probably', or 'the provided text'
-- no explanations of the input, analysis, alternatives, or commentary
+- no input explanations, analysis, alternatives, or commentary in the subject or description
 - plain text only in both fields: no markdown, backticks, links, headings, lists, or labels
 - do not add emoji to descriptions; subject emoji is assigned independently
 - do not invent contents, motivation, outcomes, or validation absent from the evidence
@@ -1363,6 +1377,23 @@ def sanitize_generated_message(
 
     description = sanitize_description("\n".join(lines[first + 1 :]))
     return title, description
+
+
+def sanitize_title_explanation(text: str) -> str:
+    """An optional brief model-written note, not a validation requirement."""
+    if not text.lstrip().startswith("{"):
+        return ""
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(data, dict) or not isinstance(data.get("explanation"), str):
+        return ""
+    raw = data["explanation"]
+    if "\\x00" in raw or "\\n" in raw or "\\r" in raw:
+        return ""
+    note = plain_commit_text(raw)
+    return note if 12 <= len(note) <= 240 else ""
 
 
 def fallback_emoji(files: list[str]) -> str:
@@ -1507,6 +1538,7 @@ def generate_message(
     # Simple messages are the default fallback even for text and custom emoji rules.
     # Disable the fallback in Ollama settings to expose model failures for debugging.
     text_changes = has_text_changes(diff)
+    include_explanation = title_explanations_enabled()
     priority_rules = emoji_priority_rules(commit_custom_instructions()) if emoji_priority_enabled() else []
     require_model = require_model or not commit_fallback_enabled()
     installed = installed_local_model_names()
@@ -1552,6 +1584,7 @@ def generate_message(
                 file_context,
                 include_description=include_description,
                 conversation_context=conversation_context,
+                include_explanation=include_explanation,
             ),
             "stream": False,
             "format": {
@@ -1566,6 +1599,9 @@ def generate_message(
                 "num_predict": 512 if include_description else 256,
             },
         }
+        if include_explanation:
+            payload["format"]["properties"]["explanation"] = {"type": "string"}
+            payload["options"]["num_predict"] += 96
         if priority_emoji:
             # Old subjects cannot override the independently selected rule.
             payload["prompt"] += f"\nThe subject MUST start with {priority_emoji} followed by one space."
@@ -1589,9 +1625,10 @@ def generate_message(
                 print(f"Sweetiebot: generation attempt {attempt + 1}/{MAX_GENERATION_ATTEMPTS} failed; retrying in {delay}s", file=sys.stderr)
                 time.sleep(delay)
                 continue
+            response_text = str(response.get("response", ""))
             try:
                 title, description = sanitize_generated_message(
-                    str(response.get("response", "")), include_description=include_description,
+                    response_text, include_description=include_description,
                 )
             except (ValueError, TypeError):
                 title, description = "", ""
@@ -1605,12 +1642,18 @@ def generate_message(
                     and valid_generated_message(title, description, include_description)
                     and not (text_changes and is_filename_only_title(title, files))
                     and not has_unsupported_removal_claim(title + " " + description, evidence)):
-                log_event(
-                    "commit_title", "generation_completed", model=model,
-                    attempts=attempt + 1, title=title,
-                    duration_ms=int((time.monotonic() - started_at) * 1000),
-                    outcome="success",
-                )
+                metadata = {
+                    "model": model, "attempts": attempt + 1, "title": title,
+                    "duration_ms": int((time.monotonic() - started_at) * 1000),
+                    "outcome": "success",
+                }
+                if include_explanation:
+                    # Explanations are local diagnostic notes, never Git commit bodies.
+                    metadata["rule"] = "priority" if priority_emoji else "change_type"
+                    explanation = sanitize_title_explanation(response_text)
+                    if explanation:
+                        metadata["explanation"] = explanation
+                log_event("commit_title", "generation_completed", **metadata)
                 return title, description
             rejection_reason = (
                 "truncated_response" if response.get("done_reason") == "length"
