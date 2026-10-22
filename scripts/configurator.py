@@ -48,11 +48,6 @@ COMMIT_HOTKEY_STYLE = """
 .hotkey-status.error-state{color:#ffb3ad}
 """
 COMMIT_HOTKEY_SCRIPT = r"""
-const hotkeyChange = document.getElementById('commit-hotkey-change');
-const hotkeyReset = document.getElementById('commit-hotkey-reset');
-const hotkeyValue = document.getElementById('commit-hotkey-value');
-const hotkeyStatus = document.getElementById('commit-hotkey-status');
-let hotkeyListening = false;
 const hotkeyNames = {
   Space:'space', Enter:'enter', Tab:'tab', Escape:'escape',
   Backspace:'backspace', Delete:'delete', Home:'home', End:'end',
@@ -63,61 +58,71 @@ const hotkeyNames = {
   Backslash:'backslash', Semicolon:'semicolon', Quote:'quote',
   Comma:'comma', Period:'period', Slash:'slash'
 };
-function finishHotkeyRecording() {
-  hotkeyListening = false;
-  document.removeEventListener('keydown', captureCommitHotkey, true);
-  if (hotkeyChange) hotkeyChange.textContent = 'Change';
-}
-async function saveCommitHotkey(key) {
-  hotkeyChange.disabled = true;
-  hotkeyReset.disabled = true;
-  hotkeyStatus.classList.remove('error-state');
-  hotkeyStatus.textContent = 'Saving…';
-  try {
-    const response = await fetch('/commit-hotkey' + location.search, {
-      method:'POST', body:new URLSearchParams({key})
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
-    hotkeyValue.textContent = result.key || 'Unbound';
-    hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
-  } catch (error) {
-    hotkeyStatus.textContent = error.message;
-    hotkeyStatus.classList.add('error-state');
-  } finally {
-    hotkeyChange.disabled = false;
-    hotkeyReset.disabled = false;
+let activeStopHotkey = null;
+function setupCommitHotkey(prefix, command) {
+  const hotkeyChange = document.getElementById(prefix + '-change');
+  const hotkeyReset = document.getElementById(prefix + '-reset');
+  const hotkeyValue = document.getElementById(prefix + '-value');
+  const hotkeyStatus = document.getElementById(prefix + '-status');
+  if (!hotkeyChange || !hotkeyReset || !hotkeyValue || !hotkeyStatus) return;
+  let hotkeyListening = false;
+  function finishHotkeyRecording() {
+    hotkeyListening = false;
+    document.removeEventListener('keydown', captureCommitHotkey, true);
+    hotkeyChange.textContent = 'Change';
+    if (activeStopHotkey === finishHotkeyRecording) activeStopHotkey = null;
   }
-}
-function captureCommitHotkey(event) {
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (event.key === 'Escape') {
+  async function saveCommitHotkey(key) {
+    hotkeyChange.disabled = true;
+    hotkeyReset.disabled = true;
+    hotkeyStatus.classList.remove('error-state');
+    hotkeyStatus.textContent = 'Saving…';
+    try {
+      const response = await fetch('/commit-hotkey' + location.search, {
+        method:'POST', body:new URLSearchParams({key, command})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
+      hotkeyValue.textContent = result.key || 'Unbound';
+      hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
+    } catch (error) {
+      hotkeyStatus.textContent = error.message;
+      hotkeyStatus.classList.add('error-state');
+    } finally {
+      hotkeyChange.disabled = false;
+      hotkeyReset.disabled = false;
+    }
+  }
+  function captureCommitHotkey(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.key === 'Escape') {
+      finishHotkeyRecording();
+      hotkeyStatus.textContent = 'Recording cancelled.';
+      return;
+    }
+    if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
+    let key = hotkeyNames[event.code];
+    if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
+    if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
+    if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
+    if (!key) {
+      hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
+      return;
+    }
+    const mods = [];
+    if (event.ctrlKey) mods.push('ctrl');
+    if (event.altKey) mods.push('alt');
+    if (event.shiftKey) mods.push('shift');
+    if (event.metaKey) mods.push('cmd');
     finishHotkeyRecording();
-    hotkeyStatus.textContent = 'Recording cancelled.';
-    return;
+    void saveCommitHotkey([...mods, key].join('+'));
   }
-  if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
-  let key = hotkeyNames[event.code];
-  if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
-  if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
-  if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
-  if (!key) {
-    hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
-    return;
-  }
-  const mods = [];
-  if (event.ctrlKey) mods.push('ctrl');
-  if (event.altKey) mods.push('alt');
-  if (event.shiftKey) mods.push('shift');
-  if (event.metaKey) mods.push('cmd');
-  finishHotkeyRecording();
-  void saveCommitHotkey([...mods, key].join('+'));
-}
-if (hotkeyChange) {
   hotkeyChange.addEventListener('click', () => {
     if (hotkeyListening) { finishHotkeyRecording(); return; }
+    if (activeStopHotkey) activeStopHotkey();
     hotkeyListening = true;
+    activeStopHotkey = finishHotkeyRecording;
     hotkeyChange.textContent = 'Cancel';
     hotkeyStatus.textContent = 'Press the desired key combination. Escape cancels.';
     hotkeyStatus.classList.remove('error-state');
@@ -134,8 +139,17 @@ if (hotkeyChange) {
     }
   });
 }
+setupCommitHotkey('commit-hotkey', 'sweetiebot.commit');
+setupCommitHotkey('codex-commit-hotkey', 'sweetiebot.commitWithCodex');
 """
-def _commit_hotkey_control(key: str | None) -> str:
+def _commit_hotkey_control(
+    key: str | None,
+    *,
+    prefix: str = "commit-hotkey",
+    label: str = "Commit hotkey",
+    description: str = ("Run the same action as the Source Control Commit button. "
+                        "Unbound by default; Reset removes the assignment."),
+) -> str:
     available = key is not None
     shown = html.escape(key or "Unbound")
     disabled = "" if available else " disabled"
@@ -143,17 +157,15 @@ def _commit_hotkey_control(key: str | None) -> str:
             "shortcuts may still take precedence." if available else
             "Open this page from Sweetiebot in VS Code to edit its shortcut.")
     return (
-        '<div class="setting"><span><strong>Commit hotkey</strong>'
-        '<small>Run the same action as the Source Control Commit button. '
-        'Unbound by default; Reset removes the assignment.</small></span>'
+        f'<div class="setting"><span><strong>{html.escape(label)}</strong>'
+        f'<small>{html.escape(description)}</small></span>'
         '<div class="hotkey-actions">'
-        f'<output id="commit-hotkey-value" class="hotkey-value">{shown}</output>'
-        f'<button type="button" id="commit-hotkey-change"{disabled}>Change</button>'
-        f'<button type="button" id="commit-hotkey-reset"{disabled}>Reset</button>'
-        f'<small id="commit-hotkey-status" class="hotkey-status" role="status" aria-live="polite">'
+        f'<output id="{prefix}-value" class="hotkey-value">{shown}</output>'
+        f'<button type="button" id="{prefix}-change"{disabled}>Change</button>'
+        f'<button type="button" id="{prefix}-reset"{disabled}>Reset</button>'
+        f'<small id="{prefix}-status" class="hotkey-status" role="status" aria-live="polite">'
         f'{html.escape(hint)}</small></div></div>'
     )
-
 
 
 @dataclass(frozen=True)
@@ -763,6 +775,7 @@ def render_form(
     finish_on_save: bool = True,
     server_instance: str = "",
     commit_hotkey: str | None = None,
+    codex_commit_hotkey: str | None = None,
 ) -> str:
     current = dict(current)
     if current.get("kefaniaShowCloseButton") is False:
@@ -811,14 +824,22 @@ def render_form(
             )
         if section == "Message bar":
             controls += _commit_hotkey_control(commit_hotkey)
+            controls += _commit_hotkey_control(
+                codex_commit_hotkey,
+                prefix="codex-commit-hotkey",
+                label="Commit with Codex co-author hotkey",
+                description=("Run the same action as the Codex co-author commit button, "
+                             "including its configured trailer and commit flow. "
+                             "Independently configurable and unbound by default."),
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
             controls += (
-                '<div class="setting"><span><strong>Commit hotkey</strong>'
-                '<small>Set or clear this shortcut using Change or Reset in the Message bar tab. '
-                'New installations start unbound. The shortcut performs the same action '
-                'as the Source Control Commit button.</small></span></div>'
+                '<div class="setting"><span><strong>Commit hotkeys</strong>'
+                '<small>Configure the normal Commit and Commit with Codex co-author '
+                'shortcuts independently in the Message bar tab. Both start unbound.</small>'
+                '</span></div>'
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
@@ -1483,6 +1504,12 @@ def run_configurator(
                 hotkey = read_commit_hotkey(keybindings_file) if keybindings_file else None
             except (OSError, ValueError):
                 hotkey = None
+            try:
+                codex_hotkey = read_commit_hotkey(
+                    keybindings_file, "sweetiebot.commitWithCodex"
+                ) if keybindings_file else None
+            except (OSError, ValueError):
+                codex_hotkey = None
             self._send(render_form(
                 session_settings,
                 names,
@@ -1492,6 +1519,7 @@ def run_configurator(
                 finish_on_save=open_browser,
                 server_instance=server_instance,
                 commit_hotkey=hotkey,
+                codex_commit_hotkey=codex_hotkey,
             ))
 
         def do_POST(self) -> None:
@@ -1546,7 +1574,10 @@ def run_configurator(
                     return
                 try:
                     with hotkey_lock:
-                        key = update_commit_hotkey(keybindings_file, values.get("key", [""])[0])
+                        key = update_commit_hotkey(
+                            keybindings_file, values.get("key", [""])[0],
+                            values.get("command", ["sweetiebot.commit"])[0],
+                        )
                     self._send_json({"saved": True, "key": key})
                 except (OSError, RuntimeError, ValueError) as error:
                     self._send_json({"error": str(error)}, 400)
