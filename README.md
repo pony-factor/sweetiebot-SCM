@@ -11,6 +11,7 @@ Current features:
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
 - customize the commit-message placeholder (defaults to `Message`)
 - the **Sweetiebot: Commit (Same as Source Control Button)** command starts **unbound**. In Sweetiebot Settings → Message bar, choose **Change** beside **Commit hotkey** to record a shortcut, or **Reset** to remove it. The shortcut invokes the native Source Control Commit action, preserving the current message, AI generation, checks, and push settings. Settings writes only this command's user keybinding and preserves unrelated shortcuts and JSONC comments. VS Code and operating-system shortcuts may take precedence.
+- **Sweetiebot: Commit with Codex Co-author** has its **own independently configurable, unbound-by-default shortcut** in Settings → Message bar. Its Change/Reset buttons work like the normal Commit hotkey and dispatch the same action as the co-author button, including the configured trailer, optional Codex-context generation, and direct or durable-background commit behavior. The two bindings cannot use the same key combination.
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
 - clean up unchanged local branches after their same-repository PR merges into the default branch
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
@@ -930,6 +931,7 @@ installer after enabling the setting and reopen the VS Code window once to load
 the snapshot bridge. Subsequent button presses leave Codex running.
 
 When `codex-coauthor` is enabled, an account button appears in the SCM message row.
+The same action can be assigned a separate shortcut under **Message bar → Commit with Codex co-author hotkey**. The shortcut starts unbound and does not replace the normal Commit hotkey. With multiple repositories open, the keyboard command uses the active editor's repository when identifiable, otherwise asks which repository to commit.
 The **Message bar** settings let you change the **Commit co-author name** and
 **Commit co-author email** independently. The button appends the configured
 `Co-authored-by` trailer to the current message, then commits to the selected
