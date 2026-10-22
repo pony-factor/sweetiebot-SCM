@@ -23,7 +23,7 @@ MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
 FORKS = 'sweetiebot-background-forks.json'
-PARALLEL_JOBS = 4
+PARALLEL_JOBS = 6
 
 
 class SyncConflicts(RuntimeError):

@@ -779,6 +779,29 @@ worker.resume(parallel=False)
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
+    def test_scheduler_runs_six_jobs_before_starting_seventh(self):
+        from types import SimpleNamespace
+        entries = [{'id': str(i), 'directory': str(self.root / str(i))} for i in range(7)]
+        jobs = {entry['id']: dict(entry, phase='committed', provisional=True,
+                                branch='refs/heads/main', sha=entry['id']) for entry in entries}
+        active, batches = [], []
+        def launch(directory):
+            child = SimpleNamespace(done=False)
+            child.poll = lambda: 0 if child.done else None
+            active.append(child)
+            return child
+        def tick(_seconds):
+            running = [child for child in active if not child.done]
+            batches.append(len(running))
+            for child in running:
+                child.done = True
+        with patch.object(worker, 'queue_entries', return_value=entries), \
+                patch.object(worker, 'read_journal', side_effect=lambda p: jobs[p.parent.name]), \
+                patch.object(worker, 'launch_job', side_effect=launch), \
+                patch.object(worker.time, 'sleep', side_effect=tick):
+            worker.drain_parallel(str(self.repo / '.git'))
+        self.assertEqual(batches, [6, 1])
+
     def check_parallel_generation(self, second_finishes_first):
         first = self.queue(message='', push=True)
         (self.repo / 'story.txt').write_text('Second parallel snapshot\n')
