@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import unittest
 from unittest.mock import patch
 
@@ -478,6 +478,18 @@ class TitleTests(unittest.TestCase):
         self.sleep = sleeper.start()
         self.addCleanup(sleeper.stop)
 
+    def test_budget_setting_is_validated_and_read_for_each_generation(self):
+        for value in ('', '0', '-1', '901', '2.5', 'nan', 'invalid'):
+            with self.subTest(value=value), patch.object(ai_commit, 'git_config_string', return_value=value):
+                self.assertEqual(ai_commit.generation_budget_seconds(), 135)
+        bounded = ai_commit.generation_budget(lambda: ai_commit.GENERATION_DEADLINE.get())
+        with patch.object(ai_commit, 'git_config_string', side_effect=['1', '2', '900', '10']), \
+                patch.object(ai_commit.time, 'monotonic', return_value=10):
+            self.assertEqual(bounded(), 12)
+            self.assertEqual(bounded(), 9010)
+        self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
+        self.assertIsNone(ai_commit.GENERATION_OPTIONS.get())
+
     def test_transient_failures_retry_then_accept_success(self):
         with ExitStack() as stack:
             for name, value in [
@@ -513,10 +525,33 @@ class TitleTests(unittest.TestCase):
             self.assertEqual(generate.call_count, 3)
             self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
 
+    def test_configured_attempt_count_limits_title_generation(self):
+        with ExitStack() as stack:
+            for name, value in [('installed_local_model_names', {'local'}),
+                                ('selected_model', ('local', False)),
+                                ('configured_models', ('local', 'small')),
+                                ('staged_file_context', ''), ('recent_subjects', ''),
+                                ('commit_fallback_enabled', True)]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(ai_commit, 'git_config_string',
+                                             side_effect=lambda key, default: '2' if key.endswith('attempts') else default))
+            request = stack.enter_context(patch.object(ai_commit, 'ollama_json', return_value={'response': '{}'}))
+            self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']), ('🔧 Update app.py', ''))
+            self.assertEqual(request.call_count, 2)
+
+    def test_configured_request_timeout_can_exceed_old_transport_default(self):
+        bounded = ai_commit.generation_budget(lambda: ai_commit.ollama_json('/api/generate', {'model': 'local'}))
+        with patch.object(ai_commit, 'git_config_string', side_effect=lambda key, default:
+                          '900' if key.endswith('timeout-seconds') else '2' if key.endswith('attempts') else default), \
+                patch.object(ai_commit.OLLAMA_OPENER, 'open') as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{}'
+            bounded()
+            self.assertEqual(request.call_args.kwargs['timeout'], 900)
+
     def test_required_model_reports_timeout_connection_and_http_failures(self):
         failures = [
-            (TimeoutError("timed out"), "timed out after 300 seconds"),
-            (ai_commit.urllib.error.URLError(TimeoutError("timed out")), "timed out after 300 seconds"),
+            (TimeoutError("timed out"), "request timed out"),
+            (ai_commit.urllib.error.URLError(TimeoutError("timed out")), "request timed out"),
             (ai_commit.urllib.error.URLError(ConnectionRefusedError()), "Check that Ollama is running"),
             (ai_commit.urllib.error.HTTPError("http://127.0.0.1:11434/api/generate", 503, "busy", {}, None), "HTTP 503 for model local"),
         ]
@@ -539,6 +574,28 @@ class TitleTests(unittest.TestCase):
             request.return_value.__enter__.return_value.read.return_value = b'{"response":"ok"}'
             self.assertEqual(ai_commit.ollama_json("/api/generate", {"model": "local"}), {"response": "ok"})
             self.assertEqual(request.call_args.kwargs["timeout"], 300)
+
+    def test_expired_budget_falls_back_before_retrying(self):
+        clock = [0.0]
+        def timeout(*args, **kwargs):
+            clock[0] = 135.0
+            raise TimeoutError()
+        with ExitStack() as stack:
+            for name, value in [('installed_local_model_names', {'local'}),
+                                ('selected_model', ('local', False)),
+                                ('configured_models', ('local', 'small')),
+                                ('staged_file_context', ''), ('recent_subjects', ''),
+                                ('commit_fallback_enabled', True)]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(ai_commit.time, 'monotonic', side_effect=lambda: clock[0]))
+            request = stack.enter_context(patch.object(ai_commit, 'ollama_json', side_effect=timeout))
+            logs = stack.enter_context(patch.object(ai_commit, 'log_event'))
+            self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
+                             ('🔧 Update app.py', ''))
+            request.assert_called_once()
+            self.sleep.assert_not_called()
+            self.assertEqual(logs.call_args_list[-1].kwargs['reason'], 'deadline_exceeded')
+            self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
 
     def test_commit_endpoint_routes_locally_and_rejects_remote_addresses(self):
         with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": "http://127.0.0.1:11435"}), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
@@ -1097,6 +1154,36 @@ Describe the staged change.
             self.assertEqual(ai_commit.generate_message("", "+Update handler", ["app.py"]),
                              ("🔧 Update app.py", ""))
             self.assertEqual(logs.call_args_list[-1].kwargs["reason"], "priority_validation_failed")
+
+    def test_priority_requests_share_budget_and_preserve_strict_mode(self):
+        for strict in (False, True):
+            with self.subTest(strict=strict), ExitStack() as stack:
+                clock, timeouts = [0.0], []
+                @contextmanager
+                def response(_request, timeout):
+                    timeouts.append(timeout)
+                    clock[0] += timeout
+                    if timeout < 45:
+                        raise TimeoutError()
+                    data = json.dumps({'response': '{"result":"NO_MATCH"}'}).encode()
+                    yield SimpleNamespace(read=lambda: data)
+                for name, value in [('commit_custom_instructions', self.instructions),
+                                    ('installed_local_model_names', {'local'}),
+                                    ('selected_model', ('local', False)),
+                                    ('configured_models', ('local', 'small')),
+                                    ('staged_file_context', ''), ('commit_fallback_enabled', True),
+                                    ('git_config_string', 'http://127.0.0.1:11435')]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                stack.enter_context(patch.object(ai_commit.time, 'monotonic', side_effect=lambda: clock[0]))
+                stack.enter_context(patch.object(ai_commit.OLLAMA_OPENER, 'open', side_effect=response))
+                if strict:
+                    with self.assertRaisesRegex(RuntimeError, 'configured time budget'):
+                        ai_commit.generate_message('', '+Fix handler', ['app.py'], require_model=True)
+                else:
+                    self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
+                                     ('🔧 Update app.py', ''))
+                self.assertEqual(timeouts, [45, 45, 45])
+                self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
 
     def test_first_match_stops_evaluation_before_later_rules(self):
         with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}) as generate, \

@@ -10,8 +10,9 @@ function generateMessage(script, cwd, context) {
     });
     let stdout = '';
     let stderr = '';
-    // Allow three 300-second Ollama attempts plus retry backoff and overhead.
-    const timeout = setTimeout(() => { child.kill(); reject(new Error('Local commit-message generation timed out. Ollama may be busy with OCR or another model.')); }, 960000);
+    // Python enforces the configured timeout × attempts budget (up to 9000s).
+    // Leave an extra minute for context collection and process shutdown.
+    const timeout = setTimeout(() => { child.kill(); reject(new Error('Local commit-message generation timed out. Ollama may be busy with OCR or another model.')); }, 9060000);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => { stdout += data; });

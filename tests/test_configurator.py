@@ -488,6 +488,28 @@ class SubmissionTests(unittest.TestCase):
         values.pop("aiCommitFallback")
         self.assertFalse(configurator.parse_submission(values)["aiCommitFallback"])
 
+    def test_commit_time_budget_setting_renders_and_validates(self):
+        for name, default, maximum, key in (
+                ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
+                ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
+            setting = next(s for s in configurator.SETTINGS if s.name == name)
+            self.assertEqual(setting.section, 'Ollama')
+            self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
+            self.assertEqual(toolkit_settings.SETTING_KEYS[name], key)
+            values = form_values()
+            for value in ('1', default, maximum):
+                values[name] = [value]
+                parsed = configurator.parse_submission(values)
+                self.assertEqual(parsed[name], value)
+                page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
+                self.assertIn(f'name="{name}"', page)
+                self.assertIn('id="commit-generation-budget"', page)
+                self.assertNotIn('name="aiCommitTimeBudgetSeconds"', page)
+            for value in ('', '0', '-1', str(int(maximum) + 1), '1.5', 'nan'):
+                values[name] = [value]
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    configurator.parse_submission(values)
+
     def test_rebuild_button_is_not_a_preference_toggle(self):
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
         self.assertIn('id="rebuild-app"', page)
