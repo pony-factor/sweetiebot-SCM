@@ -264,9 +264,10 @@ class ProposalTests(unittest.TestCase):
             worker, "apply_spellcheck", return_value=proposals
         ), patch.object(worker, "proposal_is_untouched", return_value=True), patch.object(
             worker, "write_spellcheck_notice"
-        ) as notice, patch.object(worker, "spellcheck_title", return_value="Spellcheck Instinet trading and citations"), patch.object(worker, "git_run") as git:
+        ) as notice, patch.object(worker, "spellcheck_title") as title, patch.object(worker, "git_run") as git:
             self.assertEqual(worker.run_post_commit_job(), 0)
-            notice.assert_called_once_with([], "expected", ["note.md"], "model", "Spellcheck Instinet trading and citations")
+            notice.assert_called_once_with([], "expected", ["note.md"], "model")
+            title.assert_not_called()
             git.assert_not_called()
 
     def test_changed_head_preserves_proposals_without_showing_stale_notice(self):

@@ -525,6 +525,46 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
+### Spellcheck Changes customization
+
+The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
+simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
+stages only the reviewed Markdown files, runs the **normal Ollama commit-title
+generator** on those staged corrections (same model, effort, retry budget, emoji
+priority rules, and default-branch description policy), then appends a
+`Co-authored-by: Spellchecker (Ollama MODEL) <verified GitHub noreply address>`
+trailer after the generated title and body. The regular commit includes only
+reviewed files; unrelated staged files remain untouched. The review's optional
+description is appended before the spellchecker attribution. If generation
+fails, staged corrections remain visible for manual recovery without a
+fallback special-purpose title.
+
+The **Spellcheck Changes** settings tab groups draft-time and post-commit controls. The
+**Automatic draft commit spellcheck** toggle is off by default. Draft checks can be
+configured independently of **Add professional emoji to drafted commit titles**
+(also off by default).
+
+- **Correction handling:** *Automatic* silently applies verified spelling changes,
+  or *Review* shows original and proposed subjects in a confirmation dialog.
+  Review declines leave the message unchanged and are not repeatedly requested
+  until you change the subject.
+- **Idle delay:** 0.5–10 seconds (default 1.5); checks occur while drafting, never
+  inside Git's commit/push operations.
+- **Correction scope:** *Spelling* (default) only corrects misspelled words and
+  retains word/punctuation structure. *Grammar* permits small grammatical or
+  punctuation changes under a higher similarity threshold.
+- **Protected vocabulary:** Up to 100 terms/phrases and 5,000 characters; preserve
+  exact technical names and specialist terms. **Additional correction guidance**
+  supports up to 2,000 characters to explain preferences to the local model.
+- **Model:** choose the dedicated local Ollama spellcheck model; missing/offline
+  models leave the draft unchanged. Post-commit Markdown options remain separate
+  beneath **After committing**.
+
+The review mode and vocabulary never override structural protections for emojis,
+code, URLs, numbers, filenames, and acronyms. The existing manual preview action
+is still available. All draft options apply to the **commit subject only**, with
+the body and Codex-attributed commits untouched.
+
 ### Automatic draft commit spellcheck
 
 Opt in to **Automatic draft commit spellcheck** in Sweetiebot settings (off by default). After
@@ -534,6 +574,14 @@ draft has not changed in the meantime. No spellcheck waits in the commit path, a
 unavailable model checks leave the message alone. It never changes the commit body.
 The **Preview spelling correction** button remains available for manual reviews. Clicking it
 shows original and corrected subjects in a modal with **Apply correction** and **Keep original**.
+
+The independent **Add professional emoji to drafted commit titles** toggle (off by default,
+`scm-toolkit.draft-commit-emoji`) adds a change-appropriate leading emoji to manual subjects
+that do not already contain an emoji. It uses Sweetiebot's built-in deterministic commit-title
+emoji classifier, without an extra Ollama request. It works when spellcheck is disabled;
+with both enabled, correction and emoji placement happen in one draft processing pass.
+It never replaces a user-selected emoji, changes the commit body or Codex-attributed messages,
+or delays the commit button. Both options run only while the draft is idle.
 
 Spellcheck uses its own `scm-toolkit.spellcheck-model` setting, defaulting to `qwen2.5:3b`, instead
 of sharing either commit-writing model. The model must return a structured `{"subject":"..."}`
