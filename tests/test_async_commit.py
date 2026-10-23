@@ -103,6 +103,20 @@ class AsyncCommitTests(unittest.TestCase):
             asynchronous.wait_for_completion(self.git_exe, [], timeout=0.02)
         self.assertIn(asynchronous.PLACEHOLDER, self.title())
 
+    def test_legacy_worker_does_not_block_a_completed_unrelated_branch(self):
+        (self.root / 'base.txt').write_text('Base\n')
+        self.git('add', 'base.txt')
+        self.git('commit', '-q', '-m', 'Base')
+        self.git('branch', 'other')
+        self.prepare()
+        job = asynchronous.read_journal(self.pending())
+        self.git('switch', '-q', 'other')
+        asynchronous.wait_for_completion(self.git_exe, [], timeout=0)
+        self.assertEqual(asynchronous.read_journal(self.pending())['id'], job['id'])
+        self.git('branch', 'inherited', job['sha'])
+        with self.assertRaisesRegex(RuntimeError, 'still pending'):
+            asynchronous.wait_for_completion(self.git_exe, [], timeout=0, refs=['inherited'])
+
     def test_crashed_worker_recovers_with_factual_fallback(self):
         self.prepare()
         job = asynchronous.read_journal(self.pending())

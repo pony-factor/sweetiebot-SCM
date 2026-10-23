@@ -2,7 +2,7 @@
 
 A small source-control UI patch for Visual Studio Code. It keeps the built-in Git workflow, but adds a compact branch selector and optional SCM controls around the commit-message box.
 
-For distinct Kefania and Lindsey GitHub App identities, see [GitHub App identity setup](docs/distinct_github_apps.md). The default legacy publishing identity and spellcheck settings are unchanged until separate-app mode is enabled.
+For distinct Kefania and Lindsey GitHub App identities, see [GitHub App identity setup](docs/DISTINCT_GITHUB_APPS.md). The default legacy publishing identity and spellcheck settings are unchanged until separate-app mode is enabled.
 
 Current features:
 
@@ -58,9 +58,14 @@ Windows on `main` share the original repository folder under `~/GitHub`, includi
 its uncommitted edits and Git index. Each window keeps its own saved workspace.
 Sweetiebot’s branch selector and new-branch button open topic branches in separate
 linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
-Creating a new branch opens its worktree in a **new VS Code window**, leaving the
-original main window and its Codex session open instead of reloading them.
-Topics start from committed main; pending main edits stay in the shared folder.
+Creating a new branch follows it in the current window with the same Codex chat.
+Saved workspaces update their folders in place rather than reopening the entire
+window. Extensions may briefly restart when the first folder changes. A window
+opened directly on a folder must first reopen as a saved workspace; subsequent
+switches reuse it. The separate shared-main window button still opens a new window.
+Topics start from committed main. During an active Codex handoff, pending edits
+are copied to the new worktree without staging; the original files and index stay
+unchanged.
 Returning Home or selecting main reconnects the window to the original files,
 preserving pending topic edits in their worktree. Reopening that topic resumes
 those files. Direct terminal Git commands still act on the folder they run in.
@@ -94,17 +99,22 @@ repository separately, simply leave the parent untrusted.
 
 ### Independent workspace folder names
 
-The **Open Independent Workspace from Main** button keeps each checkout in a
-persistent folder named for the repository, such as
-`~/Library/Application Support/Sweetiebot/Workspaces/sweetiebot-SCM-<unique>/sweetiebot-SCM`, rather than
-`workspace-<unique>/1-sweetiebot-SCM`. A multi-root workspace uses a
-`<first-repository>-group-<unique>` parent, with one named checkout per distinct
-Git repository. When multiple roots share the same name, later ones receive a
-suffix (for example, `shared` and `shared-2`) to prevent overwrites.
-The unique workspace suffix keeps repeated launches independent. Existing
-workspaces under the old `~/Sweetiebot Workspaces` directory are not renamed,
-migrated, or deleted by this change. The new folder is per-user and lives
-under macOS Application Support, not Caches.
+Sweetiebot groups saved windows, topic worktrees, and independent clones by
+repository under `~/Library/Application Support/Sweetiebot/Workspaces/<repository>/<workspace-id>/`.
+Each workspace gets a unique UUID; folder names no longer repeat the repository
+name or include `window`, `topic`, or `group` labels. Workspace metadata records
+the workspace type.
+
+Saved-window folders hold `workspace.code-workspace`, which points to the actual
+checkout. Topic and independent-clone folders also hold a checkout named for the
+repository. Multi-root workspaces live under the first repository's folder, with
+one named checkout per distinct repository. Duplicate checkout names receive a
+numeric suffix, such as `shared-2`.
+
+Existing flat workspace folders remain supported and are left in place so open
+windows and Git worktree references continue working. Activity tracking and
+merged-clone cleanup support both layouts. These persistent folders live in
+Application Support, not Caches.
 
 ### Automatic merged-workspace cleanup
 
@@ -1019,7 +1029,11 @@ When the Integrated Browser is already showing a private ChatGPT conversation, S
 
 That source metadata is passed to Kafania. Kafania formats it as a separate pull-request comment and can include a short conversation-intent summary, which is intentionally distinct from the diff-based PR description. Source UUIDs are never invented when neither ChatGPT nor Codex exposes one.
 
-Sweetiebot first looks for a sibling `kefania` checkout. It also discovers a shared `pony-factor/kefania` checkout under the same repository collection, beside the Sweetiebot source, or at `~/GitHub/pony-factor/kefania`. The eligibility check, drafting rules, and local publisher use this discovery, so repositories grouped under different owners can share one Kefania checkout. Failed eligibility checks retry after 15 seconds, allowing repaired setup to enable New PR without a branch-head change or window reload. Opening the drafting chat does not stage, commit, or push local changes. When a branch matches a pony, Sweetiebot asks that local Kefania checkout for any saved biography and source-reference pages. The URLs from `ponies/sources.json` are sent only to the independent pony research page—even when no biography is cached—and never enter PR descriptions or GitHub metadata. Update Kefania together with Sweetiebot to use the migrated source index. URLs are references, not stored copies of artwork.\n\nWhen independent pony research creates a new profile in Kafania's `ponies/<pack>/<slug>.json`, Sweetiebot automatically commits **only that new JSON file** and pushes `main` to `origin/main` using the deterministic subject `🦄 Add pony profile: <pack>/<slug>`. Other staged files and existing profiles are never included or overwritten. Automatic publishing requires an up-to-date local Kafania `main` tracking `origin/main`; it never pulls, force-pushes, or pushes previously unpushed local commits. A failed publish keeps the new file locally and shows a warning. Pony content remains separate from the target project's PR.
+Sweetiebot first looks for a sibling `kefania` checkout. It also discovers a shared `pony-factor/kefania` checkout under the same repository collection, beside the Sweetiebot source, or at `~/GitHub/pony-factor/kefania`. The eligibility check, drafting rules, and local publisher use this discovery, so repositories grouped under different owners can share one Kefania checkout. Failed eligibility checks retry after 15 seconds, allowing repaired setup to enable New PR without a branch-head change or window reload. Opening the drafting chat does not stage, commit, or push local changes. When a branch matches a pony, Sweetiebot asks that local Kefania checkout for any saved biography and source-reference pages. The URLs from `ponies/sources.json` are sent only to the independent pony research page—even when no biography is cached—and never enter PR descriptions or GitHub metadata. Update Kefania together with Sweetiebot to use the migrated source index. URLs are references, not stored copies of artwork.
+
+When independent pony research creates a new profile in Kafania's `ponies/<pack>/<slug>.json`, Sweetiebot automatically commits **only that new JSON file** and pushes `main` to `origin/main` using the deterministic subject `🦄 Add pony profile: <pack>/<slug>`. Other staged files and existing profiles are never included or overwritten. Automatic publishing requires Kafania `main` tracking `origin/main`; a behind-only checkout may fast-forward, while unpublished user commits or divergence leave publication waiting. It never force-pushes or rewrites history.
+
+A failed publish keeps the profile locally, shows a warning, and retries after 15 seconds, with increasing delays up to five minutes while the extension host remains running. Pending publication receipts live in Kafania's Git directory and resume on the first pony-cache operation after a restart. Looking up an existing cached profile or receiving a repeated save also retries an unpublished new file without replacing its research. If a commit succeeded but its push failed, the retry pushes only that recorded commit; it does not create another commit or include later local work. A manual batch that has already published the profile clears its pending job. Pony content remains separate from the target project's PR.
 
 #### Connect a local Kefania server
 
@@ -1129,6 +1143,13 @@ This toggle is off by default. After a successful automatic staged commit, the l
 Proposals open in the **Spellchecks Performed** review popup as unstaged edits. Use **Undo** beside an individual highlighted correction to restore just that change (adjacent changed words count as one combined correction, while edits separated by unchanged words remain independent); click a file heading to collapse or expand its diff while reviewing other files. Collapsed sections stay collapsed as corrections are refreshed. You can also edit corrections and the proposed message before choosing **Accept** to commit only the reviewed files, **Revert** to discard their unstaged corrections, or **Close** to leave the edits in place. **Accept** also pushes the active branch when Source Control's **Commit and push** checkbox is checked; otherwise it commits locally. If that push fails, the commit stays local and an error is shown without reopening a stale preview. The original commit and unrelated staged work remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
 
 ### Bulk merges through ChatGPT
+
+Sweetiebot uses the **current PR title** as the squash-commit subject, appending the
+matching `(#PR)` suffix only if it is not already present. Single-PR merge paths
+check for title changes before submitting, and synchronous Kefania merges also
+verify the resulting Git commit subject. This retains the ten-underscore
+`__________` separator, formatting preferences, verified-human attribution
+checks, and no-history-rewrite merge safeguards.
 
 Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in a dedicated workspace window with its own extension host, matching Kefania’s PR submission workflow, including when a local Lindsey checkout is installed. The Lindsey merge workspace now starts in Sweetiebot's centered 640 × 640 compact window, rather than filling the screen. Its dashboard safely displays formatted Markdown and clickable HTTP(S) links in PR descriptions, AI merge reports, and human-review comments, while leaving untrusted HTML inert. Its progress dashboard stacks the timeline and details when narrow; the titlebar's **Expand to 75% of this display** action provides more space for the 20/80 ChatGPT/dashboard split. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 

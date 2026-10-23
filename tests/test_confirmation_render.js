@@ -53,6 +53,9 @@ context.renderMarkdown(output,'## Profile\n\nA **recognizable** pony with <scrip
 assert.equal(output.children[0].tag,'h2');
 assert(output.children[1].children.some(node=>node.tag==='strong'));
 assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
+assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
+context.renderMarkdown(output,'Source: <https://example.com/pony>.');
+assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
 const inlineNodes=output.children[0].children;
 assert.deepEqual(inlineNodes.filter(node=>node.tag==='em').map(node=>node.textContent),['Friendship Is Magic','Rock Solid Friendship']);

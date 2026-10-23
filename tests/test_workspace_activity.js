@@ -9,12 +9,12 @@ const {
 
 (async () => {
   const base = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';
-  const group = path.join(base, 'pony-ABC123');
+  const group = path.join(base, 'pony', 'ABC123');
   const root = path.join(group, 'pony');
   const records = new Map();
   let timerCallback, timerDuration, cleared = false;
   const io = {
-    async lstat(folder) { return { isDirectory: () => folder === group || folder === root }; },
+    async lstat(folder) { return { isDirectory: () => folder === path.join(base, 'pony') || folder === group || folder === root }; },
     async readFile(file) {
       assert.equal(file, path.join(group, '.sweetiebot-workspace.json'));
       return JSON.stringify({ version: 1, kind: 'independent-clone', repositories: ['pony'] });

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { isWorkspaceDirectory } = require('./workspace_layout');
 
 const execFileAsync = promisify(execFile);
 const IDLE_MS = 60 * 60 * 1000;
@@ -52,7 +53,7 @@ async function isPlainDirectory(io, folder) {
 }
 
 async function eligibleGroup(io, group, baseDirectory, now, alive) {
-  if (path.dirname(group) !== baseDirectory || !await isPlainDirectory(io, group)) return null;
+  if (!await isWorkspaceDirectory(io, group, baseDirectory) || !await isPlainDirectory(io, group)) return null;
   const manifest = await jsonFile(io, path.join(group, MANIFEST));
   if (manifest?.version !== 1 || manifest.kind !== 'independent-clone' ||
       !Array.isArray(manifest.repositories) || !manifest.repositories.length ||
@@ -186,9 +187,22 @@ async function pruneManagedWorkspaces({
   const pruned = [];
   try {
     const entries = await io.readdir(baseDirectory, { withFileTypes: true });
+    const candidates = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-      const group = path.join(baseDirectory, entry.name);
+      const parent = path.join(baseDirectory, entry.name);
+      candidates.push(parent);
+      try {
+        // Only inspect one extra level; never descend into a legacy checkout.
+        if (await jsonFile(io, path.join(parent, MANIFEST))) continue;
+        for (const child of await io.readdir(parent, { withFileTypes: true })) {
+          if (child.isDirectory() && !child.isSymbolicLink()) candidates.push(path.join(parent, child.name));
+        }
+      } catch (error) {
+        log('Preserved ' + parent + ': ' + error.message);
+      }
+    }
+    for (const group of candidates) {
       try {
         const names = await eligibleGroup(io, group, baseDirectory, now, alive);
         if (!names) continue;
