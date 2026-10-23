@@ -16,7 +16,7 @@ h1{margin:0;font-size:20px;font-weight:700}
 h2{font-size:16px;margin:0 0 12px}
 h3{margin:16px 0 8px;font-size:13px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
-.overview{display:flex;align-items:center;gap:12px}
+.overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
 .refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
 .refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
@@ -113,7 +113,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <body>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
-<div class="overview"><label class="muted"><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="notice" class="notice" hidden></div>

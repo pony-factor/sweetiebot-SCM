@@ -83,7 +83,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           if (!pr || !input) throw Error('Local result does not match the submitted round.');
           pr.attempts++;
           const detail = { number: item.number, title: pr.title, base: pr.base,
-            status: item.status, explanation: input.explanation, decisions: input.decisions || [], reason: item.reason || '',
+            status: item.status, explanation: input.explanation, decisions: require('./resolution_commits').validateDecisions(input.decisions), reason: item.reason || '',
             sourceHeadSha: input.headSha, destinationSha: item.merged ? item.sha : undefined,
             conflictPaths: item.conflictPaths || [], baseSha: item.baseSha || pr.baseSha };
           history.push(detail);
