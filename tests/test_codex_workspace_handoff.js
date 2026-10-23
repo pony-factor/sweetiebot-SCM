@@ -75,8 +75,10 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex_workspac
     const state = new Map([[keyFor(workspace), { ...plan, destination, draft: 'Unsent draft' }]]);
     const tasks = [], errors = [], resumed = [], drafts = [];
     const globalState = { get: key => state.get(key), async update(key, value) { state.set(key, value); } };
+    let foldersChanged;
     const editor = {
-      workspace: { workspaceFile: { fsPath: workspace }, workspaceFolders: [{ uri: { scheme: 'file', fsPath: destination } }] },
+      workspace: { workspaceFile: { fsPath: workspace }, workspaceFolders: [{ uri: { scheme: 'file', fsPath: destination } }],
+        onDidChangeWorkspaceFolders(callback) { foldersChanged = callback; return { dispose() {} }; } },
       extensions: { getExtension: () => ({ async activate() {} }) },
       commands: { registerCommand() { return { dispose() {} }; }, async executeCommand(id, value) {
         if (id === 'sweetiebot.codexDraft.write') drafts.push(value);
@@ -95,6 +97,17 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex_workspac
     assert.equal(resumed[0].threadId, threadId);
     assert.deepEqual(drafts, ['Unsent draft']);
     assert.equal(state.get(keyFor(workspace)), undefined, 'Completed handoffs must not reopen stale chats on reload');
+    state.set(keyFor(workspace), { ...plan, destination, draft: 'Draft after folder change' });
+    foldersChanged();
+    foldersChanged();
+    for (let i = 0; i < 15; i++) await Promise.resolve();
+    assert.equal(resumed.length, 2, 'Folder changes resume once without a window reload');
+    assert.equal(drafts.at(-1), 'Draft after folder change');
+    assert.equal(state.get(keyFor(workspace)), undefined);
+    foldersChanged();
+    for (let i = 0; i < 15; i++) await Promise.resolve();
+    assert.equal(resumed.length, 2, 'Later folder events must not reopen the chat');
+    assert.equal(errors.length, 0);
     console.log('Same-chat interruption, verified cwd resume, stale frontend guard and draft handoff passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

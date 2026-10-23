@@ -268,8 +268,9 @@ def record_managed_workspace_merge(repo, repository, branch, oid, number, defaul
         return
     root = Path(repo).resolve()
     group = root.parent
-    base = Path.home() / "Library/Application Support/Sweetiebot/Workspaces"
-    if group.parent != base or group.is_symlink() or root.is_symlink():
+    base = (Path.home() / "Library/Application Support/Sweetiebot/Workspaces").resolve()
+    if ((group.parent != base and group.parent.parent != base)
+            or group.parent.is_symlink() or group.is_symlink() or root.is_symlink()):
         return
     try:
         manifest = json.loads((group / ".sweetiebot-workspace.json").read_text())

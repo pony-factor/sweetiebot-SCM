@@ -54,7 +54,8 @@ function editor(paths) {
     assert.deepEqual(manifest.repositories, ['original']);
     assert.equal(manifest.kind, 'independent-clone');
     assert.equal(path.basename(clone), 'original', 'No ordinal prefix on the checkout');
-    assert.match(path.basename(initial.directory), /^original-[a-zA-Z0-9_-]+$/, 'Parent uses the repository name');
+    assert.equal(path.dirname(initial.directory), path.join(copies, 'original'));
+    assert.match(path.basename(initial.directory), /^[0-9a-f-]{36}$/, 'Workspace uses an ID');
     assert.equal(git('-C', clone, 'branch', '--show-current'), 'main');
     assert.equal(await fs.readFile(path.join(clone, 'tracked.txt'), 'utf8'), 'main snapshot\n');
     assert.equal(git('-C', original, 'branch', '--show-current'), 'topic');
@@ -81,7 +82,8 @@ function editor(paths) {
     assert.ok(combined.target.endsWith('.code-workspace'));
     const data = JSON.parse(await fs.readFile(combined.target, 'utf8'));
     assert.equal(data.folders.length, 2);
-    assert.match(path.basename(combined.directory), /^original-group-[a-zA-Z0-9_-]+$/);
+    assert.equal(path.dirname(combined.directory), path.join(copies, 'original'));
+    assert.match(path.basename(combined.directory), /^[0-9a-f-]{36}$/);
     assert.deepEqual(data.folders.map(folder => path.basename(folder.path)), ['original', 'other']);
     assert.equal(git('-C', data.folders[0].path, 'branch', '--show-current'), 'main');
     assert.equal(git('-C', data.folders[1].path, 'branch', '--show-current'), 'main');
@@ -101,6 +103,12 @@ function editor(paths) {
     assert.equal(git('-C', namedFolders[1].path, 'branch', '--show-current'), 'main');
     assert.notEqual(namedFolders[0].path, namedFolders[1].path);
     assert.notEqual(initial.directory, another.directory, 'Repeated launches keep distinct workspaces');
+
+    const blocked = path.join(tmp, 'blocked');
+    await makeRepo(blocked);
+    await fs.symlink(path.join(copies, 'original'), path.join(copies, 'blocked'));
+    await assert.rejects(openIndependentWorkspace(editor([blocked]), { baseDirectory: copies }),
+      /Unsafe repository workspace folder/);
 
     const noMain = path.join(tmp, 'no-main');
     await makeRepo(noMain, 'development');

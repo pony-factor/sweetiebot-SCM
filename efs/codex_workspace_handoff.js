@@ -27,12 +27,15 @@ function registerCodexWorkspaceHandoff(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.clear', async workspace => {
     await context.globalState.update(keyFor(workspace), undefined);
   }));
-  setImmediate(() => void (async () => {
+  let resuming = false;
+  const resume = async () => {
+    if (resuming) return;
     const workspace = vscode.workspace.workspaceFile?.fsPath;
     if (!workspace) return;
     const key = keyFor(workspace);
     const plan = context.globalState.get(key);
     if (!plan) return;
+    resuming = true;
     try {
       const roots = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath);
       if (!roots.includes(plan.destination)) throw new Error('The saved Codex handoff does not match this workspace.');
@@ -49,8 +52,14 @@ function registerCodexWorkspaceHandoff(vscode, context) {
       await context.globalState.update(key, undefined);
     } catch (error) {
       vscode.window.showErrorMessage('Codex checkout handoff is paused: ' + error.message + ' The existing chat and files are preserved.');
+    } finally {
+      resuming = false;
     }
-  })());
+  };
+  // Changing the first root restarts extensions; changing another root emits
+  // this event instead. Both paths must restore the same chat and draft.
+  context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => void resume()));
+  setImmediate(() => void resume());
 }
 
 module.exports = { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor };

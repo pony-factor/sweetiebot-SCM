@@ -479,20 +479,34 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
       throw new Error('The active branch changed while preparing the new branch.');
     }
   };
-  const temporary = await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-branch-'));
-  const worktree = path.join(temporary, 'worktree');
+  const worktrees = (await git(root, ['worktree', 'list', '--porcelain', '-z'])).split('\0\0');
+  const occupied = worktrees.find(block => block.split('\0').includes(`branch refs/heads/${defaultBranch}`));
+  const existing = occupied?.split('\0').find(line => line.startsWith('worktree '))?.slice(9);
+  const temporary = existing ? null : await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-branch-'));
+  const worktree = existing || path.join(temporary, 'worktree');
   let added = false;
+  const checkMain = async () => {
+    if (await git(worktree, ['branch', '--show-current']) !== defaultBranch) {
+      throw new Error(`The ${defaultBranch} worktree changed branches while preparing the new branch.`);
+    }
+    return await git(worktree, ['status', '--porcelain', '--untracked-files=all']) === '';
+  };
   try {
     await checkBranch();
-    // Checking the default branch out in a separate worktree reserves it without switching
-    // the user's editor or disturbing their working files.
-    await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
-    added = true;
+    // A shared main window already reserves this branch. Reuse that checkout
+    // only while clean; pending edits must never be merged or carried away.
+    if (existing) {
+      if (!await checkMain()) return await git(root, ['rev-parse', `refs/heads/${defaultBranch}`]);
+    } else {
+      await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
+      added = true;
+    }
     for (let attempt = 0; ; attempt++) {
       await retryConnection(() => git(worktree, ['fetch', remote]));
       await checkBranch();
+      if (existing && !await checkMain()) return await git(root, ['rev-parse', `refs/heads/${defaultBranch}`]);
       try {
-        await git(worktree, ['merge', '--no-edit', upstream]);
+        await git(worktree, ['merge', existing ? '--ff-only' : '--no-edit', upstream]);
       } catch (error) {
         throw new Error(`Could not sync ${defaultBranch} in the background. ${errorText(error).includes('CONFLICT') ? 'Its local and remote changes conflict; sync and resolve them before creating a new branch.' : error.stderr?.trim() || error.message} Your current branch was preserved.`, { cause: error });
       }
@@ -509,7 +523,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
     }
   } finally {
     if (added) await git(root, ['worktree', 'remove', '--force', worktree]);
-    await rm(temporary, { recursive: true, force: true });
+    if (temporary) await rm(temporary, { recursive: true, force: true });
   }
 }
 
@@ -552,13 +566,17 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     forkScript = script;
   } else if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
     // Preserve pending edits and their staging by avoiding a remote merge.
-    await repository.checkout(defaultBranch);
-    await repository.status();
-    if (repository.state.HEAD?.name !== defaultBranch) {
-      throw new Error(`Could not switch to ${defaultBranch}.`);
+    if (isolateBranch) {
+      start = `refs/heads/${defaultBranch}`;
+    } else {
+      await repository.checkout(defaultBranch);
+      await repository.status();
+      if (repository.state.HEAD?.name !== defaultBranch) {
+        throw new Error(`Could not switch to ${defaultBranch}.`);
+      }
+      original = defaultBranch;
+      start = 'HEAD';
     }
-    original = defaultBranch;
-    start = 'HEAD';
   } else {
     start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
   }

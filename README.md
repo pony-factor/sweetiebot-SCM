@@ -56,9 +56,14 @@ Windows on `main` share the original repository folder under `~/GitHub`, includi
 its uncommitted edits and Git index. Each window keeps its own saved workspace.
 Sweetiebot’s branch selector and new-branch button open topic branches in separate
 linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
-Creating a new branch opens its worktree in a **new VS Code window**, leaving the
-original main window and its Codex session open instead of reloading them.
-Topics start from committed main; pending main edits stay in the shared folder.
+Creating a new branch follows it in the current window with the same Codex chat.
+Saved workspaces update their folders in place rather than reopening the entire
+window. Extensions may briefly restart when the first folder changes. A window
+opened directly on a folder must first reopen as a saved workspace; subsequent
+switches reuse it. The separate shared-main window button still opens a new window.
+Topics start from committed main. During an active Codex handoff, pending edits
+are copied to the new worktree without staging; the original files and index stay
+unchanged.
 Returning Home or selecting main reconnects the window to the original files,
 preserving pending topic edits in their worktree. Reopening that topic resumes
 those files. Direct terminal Git commands still act on the folder they run in.
@@ -92,17 +97,22 @@ repository separately, simply leave the parent untrusted.
 
 ### Independent workspace folder names
 
-The **Open Independent Workspace from Main** button keeps each checkout in a
-persistent folder named for the repository, such as
-`~/Library/Application Support/Sweetiebot/Workspaces/sweetiebot-SCM-<unique>/sweetiebot-SCM`, rather than
-`workspace-<unique>/1-sweetiebot-SCM`. A multi-root workspace uses a
-`<first-repository>-group-<unique>` parent, with one named checkout per distinct
-Git repository. When multiple roots share the same name, later ones receive a
-suffix (for example, `shared` and `shared-2`) to prevent overwrites.
-The unique workspace suffix keeps repeated launches independent. Existing
-workspaces under the old `~/Sweetiebot Workspaces` directory are not renamed,
-migrated, or deleted by this change. The new folder is per-user and lives
-under macOS Application Support, not Caches.
+Sweetiebot groups saved windows, topic worktrees, and independent clones by
+repository under `~/Library/Application Support/Sweetiebot/Workspaces/<repository>/<workspace-id>/`.
+Each workspace gets a unique UUID; folder names no longer repeat the repository
+name or include `window`, `topic`, or `group` labels. Workspace metadata records
+the workspace type.
+
+Saved-window folders hold `workspace.code-workspace`, which points to the actual
+checkout. Topic and independent-clone folders also hold a checkout named for the
+repository. Multi-root workspaces live under the first repository's folder, with
+one named checkout per distinct repository. Duplicate checkout names receive a
+numeric suffix, such as `shared-2`.
+
+Existing flat workspace folders remain supported and are left in place so open
+windows and Git worktree references continue working. Activity tracking and
+merged-clone cleanup support both layouts. These persistent folders live in
+Application Support, not Caches.
 
 ### Automatic merged-workspace cleanup
 

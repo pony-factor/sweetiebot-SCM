@@ -59,6 +59,36 @@ async function run() {
   assert.equal(fs.readFileSync(path.join(local, 'draft.txt'), 'utf8'), 'Keep my draft\n');
   assert.equal(git(local, 'worktree', 'list', '--porcelain').match(/^worktree /gm).length, 1);
 
+  // Main is already held by a shared window: sync it without reserving it again.
+  const held = path.join(directory, 'shared-main');
+  git(local, 'worktree', 'add', held, 'main');
+  fs.writeFileSync(path.join(other, 'held.txt'), 'new upstream main\n');
+  git(other, 'add', 'held.txt');
+  git(other, 'commit', '-m', 'Advance shared main');
+  git(other, 'push');
+  const heldTip = git(other, 'rev-parse', 'HEAD');
+  await createBranch(repository, { ...options, names: ['held-clean'] });
+  assert.equal(git(local, 'rev-parse', 'HEAD'), heldTip);
+  assert.equal(git(held, 'branch', '--show-current'), 'main');
+  assert.equal(fs.readFileSync(path.join(held, 'held.txt'), 'utf8'), 'new upstream main\n');
+  assert.equal(git(local, 'worktree', 'list', '--porcelain').match(/^worktree /gm).length, 2);
+
+  // Dirty shared main is preserved, including its index, while branching from its committed tip.
+  fs.writeFileSync(path.join(held, 'base.txt'), 'staged shared edits\n');
+  git(held, 'add', 'base.txt');
+  fs.writeFileSync(path.join(held, 'shared-draft.txt'), 'shared draft\n');
+  const heldIndex = git(held, 'diff', '--cached');
+  fs.writeFileSync(path.join(other, 'held.txt'), 'later upstream main\n');
+  git(other, 'commit', '-am', 'Advance remote again');
+  git(other, 'push');
+  await createBranch(repository, { ...options, names: ['held-dirty'] });
+  assert.equal(git(local, 'rev-parse', 'HEAD'), heldTip);
+  assert.equal(git(held, 'rev-parse', 'HEAD'), heldTip);
+  assert.equal(git(held, 'diff', '--cached'), heldIndex);
+  assert.equal(fs.readFileSync(path.join(held, 'shared-draft.txt'), 'utf8'), 'shared draft\n');
+  assert.equal(fs.readFileSync(path.join(local, 'draft.txt'), 'utf8'), 'Keep my draft\n');
+  git(local, 'worktree', 'remove', '--force', held);
+
   // Divergent main merges and pushes in the temporary worktree, preserving both tips.
   git(local, 'checkout', 'main');
   fs.writeFileSync(path.join(local, 'local.txt'), 'local\n');
@@ -92,7 +122,7 @@ async function run() {
   await assert.rejects(createBranch(repository, { ...options, names: ['blocked'] }), /changes conflict.*current branch was preserved/);
   assert.equal(git(local, 'branch', '--show-current'), 'topic');
   assert.equal(git(local, 'rev-parse', 'main'), conflictedMain);
-  assert.deepEqual(checkouts, ['fresh', 'second']);
+  assert.deepEqual(checkouts, ['fresh', 'held-clean', 'held-dirty', 'second']);
   assert.equal(git(local, 'worktree', 'list', '--porcelain').match(/^worktree /gm).length, 1);
   assert.equal(fs.readFileSync(path.join(local, 'draft.txt'), 'utf8'), 'Keep my draft\n');
   console.log('Background branch creation regression checks passed.');
