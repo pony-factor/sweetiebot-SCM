@@ -119,6 +119,73 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_window_naming_preserves_defaults_and_independent_templates(self):
+        native = '''class Title {
+initialize(){this.checkTitleVariables(),this.registerListeners()}
+registerListeners(){}
+onActiveEditorChange(){this.titleIncludesEditorState&&this.activeEditorListeners.add(this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))}
+getFullWindowTitle(){let{prefix:e,suffix:t}=this.getTitleDecorations(),i=this.getWindowTitle()||this.productService.nameLong;return i}
+doUpdateTitle(){let e=this.getFullWindowTitle();if(e!==this.title){this.title=e;this.onDidChangeEmitter.fire()}}
+onConfigurationChanged(e){let t=e.affectsConfiguration("window.title");t&&this.checkTitleVariables(),t&&this.titleUpdater.schedule()}
+checkTitleVariables(){let e=this.configurationService.getValue("window.title");typeof e==="string"&&(this.titleIncludesFocusedView=e.includes("${focusedView}"),this.titleIncludesEditorState=e.includes("${activeEditorState}"))}
+getWindowTitle(){let z=this.configurationService.getValue("window.title");typeof z!=="string"&&(z="${rootName}");!this.titleIncludesEditorState&&this.accessibilityService.isScreenReaderOptimized()&&this.configurationService.getValue("accessibility.windowTitleOptimized")&&(z+="${separator}${activeEditorState}");return render(z)}isCustomTitleFormat(){return!1}
+}'''
+        original = workbench_fixture() + native
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        transformed = native
+        for before, after in install.window_title_push_edits(native) + install.window_title_naming_edits(native):
+            transformed = transformed.replace(before, after)
+        subprocess.run(['node', '-e', r'''
+            const assert = require('node:assert/strict');
+            const values = {'window.title': '${activeEditorShort} — ${appName}'};
+            const tokens = {rootName:'repository',activeRepositoryBranchName:'branch',
+                activeEditorShort:'file.md',appName:'Code',focusedView:'Explorer',
+                separator:' — ',activeEditorState:'Modified'};
+            function render(template) {
+                return template.replace(/\$\{([^}]+)\}/g, (_, key) => tokens[key] || '');
+            }
+        ''' + transformed + '''
+            let pending = false, scheduled = 0, changes = 0;
+            const title = new Title();
+            Object.assign(title, {
+                configurationService:{getValue:key => values[key]},
+                contextKeyService:{getContextKeyValue:() => pending},
+                accessibilityService:{isScreenReaderOptimized:() => false},
+                productService:{nameLong:'Code'},
+                getTitleDecorations:() => ({}),
+                registerVariables:() => {},
+                titleUpdater:{schedule:() => scheduled++}
+                ,onDidChangeEmitter:{fire:() => changes++}
+            });
+            title.initialize();
+            title.doUpdateTitle();
+            assert.equal(changes,1);
+            assert.equal(title.getWindowTitle(), 'file.md — Code');
+            assert.equal(title.getFullWindowTitle(), 'file.md — Code');
+            assert.equal(title.isCustomTitleFormat(), false);
+            values['scmToolkit.windowHeading']='${rootName} (${activeRepositoryBranchName})';
+            title.onConfigurationChanged({affectsConfiguration:key=>key==='scmToolkit.windowHeading'});
+            title.doUpdateTitle();
+            assert.equal(changes,2,'heading changes refresh the UI even when the native window name stays the same');
+            assert.equal(scheduled,1);
+            assert.equal(title.getWindowTitle(),'repository (branch)');
+            assert.equal(title.getFullWindowTitle(),'file.md — Code');
+            assert.equal(title.isCustomTitleFormat(),true);
+            values['scmToolkit.windowName']='${rootName} — ${focusedView}';
+            title.onConfigurationChanged({affectsConfiguration:key=>key==='scmToolkit.windowName'});
+            assert.equal(title.titleIncludesFocusedView,true);
+            assert.equal(title.getFullWindowTitle(),'repository — Explorer');
+            pending=true;
+            assert.equal(title.getWindowTitle(),'repository (branch) — Pushing');
+            assert.equal(title.getFullWindowTitle(),'repository — Explorer — Pushing');
+            pending=false;
+            values['scmToolkit.windowHeading']='';values['scmToolkit.windowName']='';
+            assert.equal(title.getWindowTitle(),'file.md — Code');
+            assert.equal(title.getFullWindowTitle(),'file.md — Code');
+        '''], check=True, capture_output=True, text=True)
+
     def test_window_push_title_is_reversible_and_tracks_context(self):
         title = (
             'this.checkTitleVariables(),this.registerListeners();'

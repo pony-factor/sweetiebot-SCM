@@ -465,13 +465,15 @@ def window_title_naming_edits(js):
         f'!{template.group(1)}.includes("${{activeEditorState}}")&&', 1)
     config = re.search(r'onConfigurationChanged\(([\w$]+)\)\{let ([\w$]+)=\1.affectsConfiguration\("window.title"\)', js)
     variables = re.search(r'checkTitleVariables\(\)\{let ([\w$]+)=this.configurationService.getValue\("window.title"\)', js)
-    if not config or not variables:
+    update = re.search(r'doUpdateTitle\(\)\{let ([\w$]+)=this.getFullWindowTitle\(\);if\(\1!==this.title\)\{', js)
+    if not config or not variables or not update:
         raise ValueError("Unsupported VS Code build: window naming listeners do not match.")
     focused = f'this.titleIncludesFocusedView={variables.group(1)}.includes("${{focusedView}}")'
     if js.count(focused) != 1:
         raise ValueError("Unsupported VS Code build: window naming focus listener does not match.")
     return [
         (original, replacement),
+        (update.group(0), f'doUpdateTitle(){{let {update.group(1)}=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle();if({update.group(1)}!==this.title||scmToolkitHeading!==this.scmToolkitHeading){{this.scmToolkitHeading=scmToolkitHeading;'),
         ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("scmToolkit.windowHeading")||this.contextKeyService.getContextKeyValue("sweetiebot.pushPending"))return!0;'),
         (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("scmToolkit.windowHeading")||{config.group(1)}.affectsConfiguration("scmToolkit.windowName")'),
         (variables.group(0), variables.group(0).replace('this.configurationService.getValue("window.title")',
