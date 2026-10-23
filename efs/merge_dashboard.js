@@ -192,8 +192,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   });
 
-  function addEvent(pr, state, message) {
-    const event = { number: pr.number, state, message, at: new Date().toISOString() };
+  function addEvent(pr, state, message, details) {
+    const event = { number: pr.number, state, message, ...(details ? { details } : {}), at: new Date().toISOString() };
     events.push(event);
     pr.events.push(event);
     if (events.length > 400) events.shift();
@@ -379,19 +379,43 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
   publish();
   void refresh();
-  return { panel, refresh, selection, recordLocalResult(result) {
+  return { panel, refresh, selection, recordLocalProgress(event) {
+    const pr = byNumber.get(event?.number);
+    if (!pr) return;
+    const stages = {
+      preparing: 'Preparing the full PR in an isolated checkout',
+      prepared: 'Full PR squash prepared locally · not pushed yet',
+      'decision-commit': 'Conflict decision recorded as a separate local commit',
+      'sync-prepared': 'Branch synchronization prepared locally',
+      pushed: 'Prepared commit pushed to the PR branch · not merged',
+      'verifying-push': 'Verifying GitHub sees the pushed PR head',
+      'waiting-checks': 'Waiting for checks on the integrated PR head · not merged',
+      'checks-passed': 'Integrated-head checks passed · merge not yet confirmed',
+      merging: 'Requesting GitHub merge · awaiting confirmation'
+    };
+    if (!Object.hasOwn(stages, event.stage)) return;
+    const sha = SHA.test(event.sha || '') ? event.sha : '';
+    const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
+    if (event.stage === 'pushed') pr.lastPushedHead = sha;
+    addEvent(pr, 'progress', stages[event.stage], [file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '));
+    publish();
+  }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
-      const message = item.status === 'merged' ? 'Local CLI verified the human-authored merge: ' + item.sha
+      const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
+      const message = item.status === 'merged' && item.merged === true ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)
         : item.status === 'synced' ? 'PR branch synchronized after separate per-file decision commits; main was not modified.'
         : item.status === 'needs_resolution' ? 'Automatically reconciling overlapping changes against current main: ' + (item.conflictPaths || []).join(', ')
         : item.status === 'needs_refresh' ? 'Main advanced; automatically refreshing the integration.'
-        : item.status === 'waiting' ? 'Waiting for checks on the integrated PR head.'
-        : 'Local CLI stopped: ' + (item.reason || 'Review the merge result.');
-      addEvent(pr, item.status === 'merged' ? 'merged' : continuing ? 'updated' : 'blocked', message);
+        : item.status === 'waiting' ? 'Checks still pending · prepared PR remains unmerged'
+        : item.status === 'checks_failed' ? 'Integrated-head checks failed · PR remains unmerged'
+        : pushed ? 'Stopped after pushing the prepared PR branch · merge not confirmed'
+        : 'Local preparation stopped · merge not confirmed';
+      const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason].filter(Boolean).join('\n');
+      addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
     }
     publish();
   } };

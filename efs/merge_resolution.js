@@ -41,33 +41,35 @@ function validateSyncResolution(input, selection) {
   return items;
 }
 
-async function executeResolution(input, selection, { merge = humanSquashMerge, api, git } = {}) {
+async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, onProgress } = {}) {
   // Validate the entire batch before any PR can be changed.
   const items = validateResolution(input, selection);
   const results = [];
   for (const item of items) {
     try {
       const result = await merge(selection.repository, item.number, {
-        api, git, expected: item,
+        api, git, expected: item, onProgress,
         resolutionPatch: item.patch, decisions: item.decisions, operation: item.operation
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
       results.push({ number: item.number, status: error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
-        reason: error.message, ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?
+        reason: error.message, ...(SHA.test(error.preparedHead || '') ?
+          { preparedHead: error.preparedHead, originalHead: error.originalHead } : {}),
+        ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?
           { sha: error.sha, previousHeadSha: error.previousHeadSha } : {}) });
     }
   }
   return { repository: selection.repository, results };
 }
 
-async function invokeResolutionCLI(input, selection, token, runner = promisify(execFile)) {
+async function invokeResolutionCLI(input, selection, token, runner = promisify(execFile), onProgress = () => {}) {
   validateResolution(input, selection);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-merge-handoff-'));
   try {
     const file = path.join(temporary, 'handoff.json');
     await fs.writeFile(file, JSON.stringify({ input, selection }), { mode: 0o600 });
-    const { stdout } = await runner(process.execPath,
+    const running = runner(process.execPath,
       [path.join(__dirname, 'merge_resolution_cli.js'), '--input', file], {
         timeout: 15 * 60 * 1000, maxBuffer: 1024 * 1024,
         env: { ...process.env, GH_TOKEN: token, GIT_TERMINAL_PROMPT: '0',
@@ -75,6 +77,20 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
           PATH: [...new Set([...(process.env.PATH || '').split(path.delimiter),
             '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'])].filter(Boolean).join(path.delimiter) }
       });
+    let buffered = '';
+    running.child?.stderr?.on('data', chunk => {
+      buffered += chunk.toString();
+      const lines = buffered.split('\n');
+      buffered = lines.pop().slice(-4096);
+      for (const line of lines) {
+        if (!line.startsWith('LINDSEY_PROGRESS ')) continue;
+        try {
+          const event = JSON.parse(line.slice('LINDSEY_PROGRESS '.length));
+          if (input.results.some(item => item.number === event.number)) onProgress(event);
+        } catch { /* Ignore malformed progress; the final result is validated below. */ }
+      }
+    });
+    const { stdout } = await running;
     const result = JSON.parse(stdout);
     if (result.repository !== selection.repository || !Array.isArray(result.results) ||
         result.results.length !== input.results.length || result.results.some((item, index) =>

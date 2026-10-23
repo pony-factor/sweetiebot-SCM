@@ -57,6 +57,8 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
+.event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
 main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .detail-top h2{flex:1;margin:0}
@@ -374,6 +376,7 @@ __TIMESTAMP_FORMATTER__
     for (const event of model.events.slice(-100).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
+      if (event.details) show('div', 'event-details', event.details, node);
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {
         const stamp = show('div', 'event-time', label, node);
