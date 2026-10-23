@@ -1059,8 +1059,13 @@ if __name__ == '__main__':
                 status['phase'] = 'recovering'
                 status['recoverable'] = True
             status['titleJobs'] = []
+            status['pushPending'] = False
             for entry in queue_entries(marker):
                 item = read_journal(Path(entry['directory']) / 'job.json')
+                if (item and item.get('push')
+                        and (item['phase'] not in ('blocked', 'done', 'cancelled')
+                             or (recoverable and item['id'] == job['id']))):
+                    status['pushPending'] = True
                 if (item and item.get('provisional')
                         and (item['phase'] not in ('blocked', 'done', 'cancelled')
                              or (recoverable and item['id'] == job['id']))):

@@ -414,6 +414,32 @@ def window_title_status_edits(js):
     return [(original, original.removeprefix('this.titleIncludesEditorState&&'))]
 
 
+def window_title_push_edits(js):
+    if 'getFullWindowTitle(){' not in js:
+        return []
+    registration = 'this.checkTitleVariables(),this.registerListeners()'
+    pattern = re.compile(
+        r'getFullWindowTitle\(\)\{let\{prefix:([\w$]+),suffix:([\w$]+)\}'
+        r'=this\.getTitleDecorations\(\),([\w$]+)='
+        r'this\.getWindowTitle\(\)\|\|this\.productService\.nameLong;'
+    )
+    matches = list(pattern.finditer(js))
+    if len(matches) != 1 or js.count(registration) != 1:
+        raise ValueError("Unsupported VS Code build: window push title does not match.")
+    original = matches[0].group(0)
+    replacement = original.replace(
+        'this.getWindowTitle()||this.productService.nameLong;',
+        '(this.getWindowTitle()||this.productService.nameLong)'
+        '+(this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"");',
+    )
+    return [
+        (registration, 'this.checkTitleVariables(),'
+         'this.registerVariables([{name:"sweetiebotPushPending",contextKey:"sweetiebot.pushPending"}]),'
+         'this.registerListeners()'),
+        (original, replacement),
+    ]
+
+
 def compact_window_edits(js, command="fe", configuration="Xe"):
     # Match the native titlebar layout rather than relying on SCM activation.
     ident = r"[A-Za-z_$][\w$]*"
@@ -575,6 +601,7 @@ def edits(js=None, settings=None):
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(window_title_status_edits(js))
+        changes.extend(window_title_push_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))

@@ -94,11 +94,29 @@ class BackgroundCommitTests(unittest.TestCase):
         status = json.loads(subprocess.check_output(command, text=True))
         self.assertEqual(status['id'], first.name)
         self.assertEqual(status['titleJobs'], [second.name])
+        self.assertTrue(status['pushPending'])
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Apply final title', 'Explanation')):
             worker.work(second)
         status = json.loads(subprocess.check_output(command, text=True))
         self.assertEqual(status['id'], first.name)
         self.assertEqual(status['titleJobs'], [])
+        self.assertTrue(status['pushPending'])
+
+    def test_push_title_status_covers_generation_and_clears_when_paused(self):
+        directory = self.queue(message='', push=False)
+        command = [sys.executable, worker.__file__, '--status']
+        status = lambda: json.loads(subprocess.check_output(command, text=True))
+        self.assertFalse(status()['pushPending'], 'commit-only naming is not pushing')
+        job = self.job(directory)
+        job['push'] = True
+        for phase, expected in [('generating', True), ('finalizing', True), ('pushing', True),
+                                ('blocked', False), ('done', False), ('cancelled', False)]:
+            with self.subTest(phase=phase):
+                job['phase'] = phase
+                if phase == 'blocked':
+                    job['error'] = 'Push needs attention'
+                worker.write_journal(directory / 'job.json', job)
+                self.assertEqual(status()['pushPending'], expected)
 
     def test_placeholder_clears_staging_before_generation_and_push(self):
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):

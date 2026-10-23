@@ -119,6 +119,39 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_window_push_title_is_reversible_and_tracks_context(self):
+        title = (
+            'this.checkTitleVariables(),this.registerListeners();'
+            'getFullWindowTitle(){let{prefix:e,suffix:t}=this.getTitleDecorations(),'
+            'i=this.getWindowTitle()||this.productService.nameLong;return i}'
+        )
+        original = workbench_fixture() + title
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        transformed = title
+        for before, after in install.window_title_push_edits(title):
+            transformed = transformed.replace(before, after)
+        method = transformed.split(';getFullWindowTitle()', 1)[1]
+        subprocess.run(['node', '-e', '''
+            const assert = require('node:assert/strict');
+            let pending = false;
+            const title = {
+                getTitleDecorations: () => ({}),
+                getWindowTitle: () => 'repository (branch)',
+                contextKeyService: {getContextKeyValue(key) {
+                    assert.equal(key, 'sweetiebot.pushPending'); return pending;
+                }},
+                productService: {nameLong: 'Code'},
+                getFullWindowTitle() ''' + method + '''
+            };
+            assert.equal(title.getFullWindowTitle(), 'repository (branch)');
+            pending = true;
+            assert.equal(title.getFullWindowTitle(), 'repository (branch) — Pushing');
+            pending = false;
+            assert.equal(title.getFullWindowTitle(), 'repository (branch)');
+        '''], check=True, capture_output=True, text=True)
+
     def test_implicit_title_status_refreshes_after_external_commit(self):
         listener = (
             'this.titleIncludesEditorState&&this.activeEditorListeners.add('
