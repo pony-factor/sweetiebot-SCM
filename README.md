@@ -695,6 +695,19 @@ python3 scripts/install.py
 
 The environment variables `SCM_TOOLKIT_AI_MODEL`, `SCM_TOOLKIT_AI_LOW_MEMORY_MODEL`, and `SCM_TOOLKIT_AI_LOW_MEMORY_GIB` can temporarily override the corresponding Git-config values.
 
+### Flawless-GPT cannon in Codex
+
+**Codex → Time → Show cannon** (off by default) enables Flawless-GPT's cannon and minute counter for active **Working for** and completed **Worked for** labels in the Codex sidebar. The cannon appears from the first second of a running turn. The original precise duration is retained as text and on hover, and the activity expand control still works. When both Show cannon and Hide chat timestamps are enabled, the cannon takes priority over the latter's “Activity” label substitution.
+
+```sh
+git config --global scm-toolkit.codex-show-cannon true
+python3 scripts/install.py --codex-only
+```
+
+The installer references Flawless-GPT's [script](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/js/chat/worked-duration.js), [CSS](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/css/worked-duration.css), and [cannon PNG](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/artwork/searching-complete.png) at a fixed upstream commit, validates their Git blob hashes, and stores downloaded copies in `~/.cache/sweetiebot/flawless-cannon/` for offline repairs. A pinned local checkout can be supplied through `SCM_TOOLKIT_FLAWLESS_SOURCE_DIR`. If the pinned resources are unavailable on first install, only the optional cannon is skipped, with a warning.
+
+This applies to the **Codex extension webview**, not ChatGPT pages opened in VS Code's native **Integrated Browser**. Browser-installed Flawless-GPT cannot automatically run in that separate Chromium session; general Flawless-GPT features there require a dedicated injection/runtime compatibility layer.
+
 ### Custom Codex window label
 
 In Sweetie Bot's **Codex** settings, change **Codex window label** to any

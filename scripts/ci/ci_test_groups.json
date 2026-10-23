@@ -123,6 +123,7 @@
         "test_chatgpt_project.js",
         "test_chatgpt_project_setup.js",
         "test_codex_adaptive_video.js",
+        "test_codex_cannon.py",
         "test_codex_clipboard_submit.js",
         "test_codex_colors.py",
         "test_codex_composer.py",

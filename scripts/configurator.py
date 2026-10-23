@@ -361,6 +361,7 @@ SETTINGS = (
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexHideDictation", "scm-toolkit.codex-hide-dictation", "Hide dictation button", "Hide the microphone dictation control in Codex chat.", "Codex"),
     Setting("codexHideChatTimestamps", "scm-toolkit.codex-hide-chat-timestamps", "Hide chat timestamps", "Hide standalone date/time separators inside Codex conversations.", "Codex"),
+    Setting("codexShowCannon", "scm-toolkit.codex-show-cannon", "Show cannon", "Use Flawless-GPT’s cannon for live Working for and completed Worked for durations in the Codex sidebar.", "Codex"),
     Setting("codexNewChatPlaceholder", "scm-toolkit.codex-new-chat-placeholder", "New chat input text", "Replace ‘Do anything’ in a new Codex chat. Leave blank to use the original text. Apply through app repair, then reload VS Code.", "Codex", "optional_text"),
     Setting("codexFollowUpPlaceholder", "scm-toolkit.codex-follow-up-placeholder", "Follow-up input text", "Replace ‘Ask for follow-up changes’ in a local Codex chat. Leave blank to use the original text. Apply through app repair, then reload VS Code.", "Codex", "optional_text"),
 )
@@ -871,7 +872,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexHideChatTimestamps",
+                "codexUsagePieIndicator", "codexHideChatTimestamps", "codexShowCannon",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'
