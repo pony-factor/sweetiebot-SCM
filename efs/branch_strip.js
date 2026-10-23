@@ -92,12 +92,19 @@ async function pullRequestNames(root, remoteUrl) {
 
 async function listBranchStrip(repository, { defaultBranch, remote = 'origin' } = {}) {
   const root = repository.rootUri.fsPath;
+  // Remote-tracking refs survive deletion upstream until a pruning fetch.
+  // Only advertise remote branches after confirming their current state.
+  const remoteAvailable = await git(root, ['fetch', '--prune', '--no-tags',
+    '--no-prune-tags', '--no-recurse-submodules', remote,
+    `+refs/heads/*:refs/remotes/${remote}/*`]).then(() => true, () => false);
+  const refPrefixes = ['refs/heads', ...(remoteAvailable ? [`refs/remotes/${remote}`] : [])];
   const [refText, remoteUrl] = await Promise.all([
     git(root, ['for-each-ref', '--sort=-committerdate',
-      '--format=%(refname)%09%(committerdate:unix)', 'refs/heads', `refs/remotes/${remote}`]),
+      '--format=%(refname)%09%(committerdate:unix)', ...refPrefixes]),
     git(root, ['remote', 'get-url', remote]).catch(() => '')
   ]);
-  const baseRefs = [`refs/remotes/${remote}/${defaultBranch}`, `refs/heads/${defaultBranch}`];
+  const baseRefs = [...(remoteAvailable ? [`refs/remotes/${remote}/${defaultBranch}`] : []),
+    `refs/heads/${defaultBranch}`];
   let baseRef;
   for (const candidate of baseRefs) {
     if (await git(root, ['rev-parse', '--verify', '--quiet', candidate]).catch(() => '')) {
@@ -113,7 +120,8 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin' } 
   const prKnown = Boolean(prNames && baseRef);
   const classified = groupBranchRefs(refText, mergedText, prNames || new Set(),
     prKnown, defaultBranch, remote);
-  return { ...classified, prStatus: prKnown ? 'available' : 'unavailable' };
+  return { ...classified, prStatus: prKnown ? 'available' : 'unavailable',
+    remoteStatus: remoteAvailable ? 'available' : 'unavailable' };
 }
 
 async function checkoutBranchStrip(repository, { branch, remote = 'origin' } = {}) {

@@ -23,6 +23,7 @@
         "test_local_codex_commit.py",
         "test_ollama_concurrency.py",
         "test_pony_git_publish.js",
+        "test_pony_publish_retry.js",
         "test_post_commit_spellcheck.py",
         "test_post_commit_spellcheck_notice.js",
         "test_post_commit_spellcheck_toggle.js",
@@ -49,6 +50,7 @@
         "test_branch_maintenance.js",
         "test_branch_strip.js",
         "test_branch_strip_filter.js",
+        "test_branch_strip_refresh.js",
         "test_cloud_repo_sync.py",
         "test_default_branch.js",
         "test_default_branch_recovery.js",
@@ -157,7 +159,8 @@
       "tests": [
         "test_kefania_chat_window.js",
         "test_kefania_close_position.js",
-        "test_kefania_paths.js"
+        "test_kefania_paths.js",
+        "test_kefania_runner.js"
       ],
       "syntax": []
     },

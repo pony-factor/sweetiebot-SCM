@@ -460,7 +460,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           .then(saved => {
             if (saved?.publicationError) {
               void vscode.window.showWarningMessage(
-                `Pony profile saved in Kafania but not pushed: ${saved.publicationError}`);
+                `Pony profile saved in Kafania but not pushed${saved.retryScheduled ? '; automatic retry scheduled' : ''}: ${saved.publicationError}`);
             }
           }).catch(error => {
             void vscode.window.showWarningMessage(`Could not save the pony profile in Kafania: ${error.message}`);
