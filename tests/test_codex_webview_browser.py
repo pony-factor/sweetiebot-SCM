@@ -210,7 +210,51 @@ def run():
         page.wait_for_function("document.querySelector('#replacement [role=status]')?.textContent === 'Rated Limited'")
         assert page.locator('#replacement').inner_text() == 'Rated Limited'
         assert page.locator('#composer').input_value() == 'continue'
+
+        # Native generated content appears in the editor's accessibility
+        # subtree. Keep the hint visible outside that editable subtree.
+        page.set_content('''<style>
+            :root { --color-text-tertiary: #999; }
+            .ProseMirror { padding: 8px; }
+            .placeholder { position:relative; }
+            .placeholder::before { content:attr(data-placeholder);position:absolute; }
+            </style><div id="host"><div class="ProseMirror" contenteditable="true"
+            role="textbox" aria-label="Flap"><p class="placeholder" data-placeholder="Flap"><br></p></div></div><button id="elsewhere">Elsewhere</button>''')
+        cdp = page.context.new_cdp_session(page)
+        def editor_value():
+            nodes = cdp.send('Accessibility.getFullAXTree')['nodes']
+            return next(node.get('value', {}).get('value', '') for node in nodes
+                        if node.get('role', {}).get('value') == 'textbox')
+        def accessible_hint_count():
+            return sum(node.get('role', {}).get('value') == 'StaticText'
+                       and node.get('name', {}).get('value') in ('Flap', 'Soar')
+                       for node in cdp.send('Accessibility.getFullAXTree')['nodes'])
+        assert accessible_hint_count() == 1
+        placeholders = (ASSETS / 'placeholders.js').read_text().replace(
+            '__SCM_TOOLKIT_PLACEHOLDERS__', '["Flap", "Soar"]')
+        page.add_script_tag(content=placeholders)
+        page.wait_for_function("document.querySelector('.scm-toolkit-placeholder-display')?.textContent === 'Flap'")
+        assert editor_value().strip() == '', editor_value()
+        assert accessible_hint_count() == 0
+        assert page.locator('.scm-toolkit-placeholder-display').is_visible()
+        for _ in range(3):
+            page.locator('#elsewhere').focus()
+            page.locator('.ProseMirror').focus()
+            assert editor_value().strip() == ''
+            assert accessible_hint_count() == 0
+        page.locator('.ProseMirror').fill('Actual draft')
+        page.eval_on_selector('.ProseMirror p', 'p => {p.className="";p.removeAttribute("data-placeholder")}')
+        page.wait_for_function("!document.querySelector('.scm-toolkit-placeholder-display')")
+        assert editor_value().strip() == 'Actual draft', editor_value()
+        page.eval_on_selector('.ProseMirror', '''editor => {
+            editor.innerHTML = '<p class="placeholder" data-placeholder="Soar"><br></p>';
+        }''')
+        page.wait_for_function("document.querySelector('.scm-toolkit-placeholder-display')?.textContent === 'Soar'")
+        assert editor_value().strip() == '', editor_value()
+        page.eval_on_selector('#host', 'host => host.remove()')
+        page.wait_for_function("!document.querySelector('.scm-toolkit-placeholder-display')")
         assert not errors, errors
+        print("PASS: custom placeholders stay visible outside the accessible editor value and survive draft changes")
         print("PASS: exhausted-message promotions retain Rated Limited initially and after dynamic insertion")
         print("PASS: Chromium usage accent with absent theme token, override and reset")
         print("PASS: headless Chromium computed CSS, header, activity and 75 React-style rewrites")
