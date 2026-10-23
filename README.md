@@ -729,11 +729,13 @@ Repeated transcript notices without a usable reset time are shortened to
 **Rate limited**, rather than duplicating the upgrade/credit warning already
 shown in Codex's main limit card. Messages with an actual reset time retain it.
 
-The empty **Rated Limited** banner directly above the composer is replaced by the
-bundled `assets/images/twi-stop.png` sticker. Installation embeds the artwork as a PNG data URI,
-so it does not fetch an external host. The override also works when the Codex
-bundle lacks older transcript-message IDs. If the image cannot render, the
-native status remains visible; actionable limit cards are not replaced.
+The short **Rate limited** status directly above the composer (including
+older builds that mistakenly show **Rated Limited**) is replaced by the bundled
+`assets/images/twi-stop.png` sticker, including narrow icon-bearing status pills.
+Installation embeds the artwork as a PNG data URI, so it does not fetch an
+external host. The override works without older transcript-message IDs. If the
+image cannot render, the native status stays visible with corrected wording;
+actionable limit cards are not replaced.
 
 A right-aligned **Use credits** shortcut appears on the main limit card
 when Codex itself renders an available banked-reset control (for example,

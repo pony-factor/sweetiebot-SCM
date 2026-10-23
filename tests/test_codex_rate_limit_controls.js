@@ -94,6 +94,51 @@ assert.equal(footer.style.width, 'max-content');
 assert.equal(footer.style.display, 'inline-flex');
 assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
 
+// Narrow icon-bearing status pills remain eligible, but narrow transcript text does not.
+const compactFooter = makeNode('Rated Limited', rect(27, 814, 220, 54));
+const compactLabel = makeNode('Rated Limited', rect(86, 834, 115, 20), compactFooter);
+compactFooter.querySelector = selector => selector.startsWith('svg,') ? {} : null;
+const compactRoot = {
+    ...imageRoot,
+    querySelectorAll(selector) {
+        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('span,')) return [compactLabel];
+        return [];
+    },
+};
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, compactFooter);
+context.scmToolkitSyncRateLimitPony(compactRoot);
+assert.equal(imagesCreated, 2);
+imageEvents.load();
+assert.equal(compactFooter.child.width, 96);
+const noIconFooter = makeNode('Rate limited', rect(27, 814, 220, 54));
+const noIconLabel = makeNode('Rate limited', rect(86, 834, 115, 20), noIconFooter);
+compactRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [noIconLabel] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, null);
+
+// An unmatched footer still has its typo fixed, without requiring a composer.
+const unmatchedTypoText = {nodeType: 3, textContent: 'Rated Limited'};
+const unmatchedTypoLabel = makeNode('Rated Limited', rect(27, 814, 220, 54));
+unmatchedTypoLabel.childNodes = [unmatchedTypoText];
+const noComposerRoot = {
+    ...imageRoot,
+    querySelectorAll(selector) {
+        return selector.startsWith('span,') ? [unmatchedTypoLabel] : [];
+    },
+};
+context.scmToolkitSyncRateLimitPony(noComposerRoot);
+assert.equal(unmatchedTypoText.textContent, 'Rate limited');
+
+// Typo normalization edits only text, retaining the icon and native fallback.
+const typoText = {nodeType: 3, textContent: 'Rated Limited'};
+const iconNode = {nodeType: 1, childNodes: []};
+context.scmToolkitNormalizeRateLimitTypo({
+    textContent: 'Rated Limited', childNodes: [iconNode, {nodeType: 1, childNodes: [typoText]}],
+});
+assert.equal(typoText.textContent, 'Rate limited');
+assert.equal(iconNode.childNodes.length, 0);
+
 // A full card with extra information or an actionable native control is untouched.
 const timed = makeNode('Rated Limited · resets in 2h', rect(27, 814, 564, 54));
 footerLabel.parentElement = timed;

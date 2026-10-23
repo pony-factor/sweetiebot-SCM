@@ -79,16 +79,34 @@ function scmToolkitSyncResetShortcut(root) {
 // The installer replaces this literal with the repository's verified PNG as a data URI.
 const scmToolkitTwilightStopSource = "__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__";
 function scmToolkitIsShortRateLimit(value) {
-    // "Rated Limited" is the current footer wording; transcript notices say "Rate limited".
-    return /^rate(?:d)? limited$/i.test(String(value || '').trim());
+    // Exclude useful reset details and status cards with additional text.
+    return /^rate(?:d)? limited$/i.test(String(value || '').trim().replace(/\s+/g, ' '));
+}
+// Fix the legacy typo on the isolated footer label while preserving provider icons.
+// The native fallback stays readable even when the sticker cannot render.
+function scmToolkitNormalizeRateLimitTypo(card) {
+    if (!/^rated limited$/i.test(String(card.textContent || '').trim())) return;
+    const visit = node => {
+        for (const child of node.childNodes || []) {
+            if (child.nodeType === 3) {
+                child.textContent = String(child.textContent || '').replace(/rated limited/ig, 'Rate limited');
+            } else {
+                visit(child);
+            }
+        }
+    };
+    visit(card);
 }
 function scmToolkitPlainRateLimitNodes(root) {
     const found = new Set();
     for (const label of root.querySelectorAll('span, p, button, [role="status"], [role="alert"]')) {
-        if (!scmToolkitIsShortRateLimit(label.textContent)) continue;
+        if (!scmToolkitIsShortRateLimit(label.innerText || label.textContent)) continue;
+        // Correct the visible typo even when this particular layout is too
+        // different to qualify for sticker replacement.
+        scmToolkitNormalizeRateLimitTypo(label);
         let card = null;
         for (let node = label, depth = 0; node && depth < 7; node = node.parentElement, depth++) {
-            if (!scmToolkitIsShortRateLimit(node.textContent)) break;
+            if (!scmToolkitIsShortRateLimit(node.innerText || node.textContent)) break;
             const controls = node.querySelectorAll?.('button, a, input, textarea, select, [role="button"]') || [];
             if (controls.length && !node.matches?.('button')) break;
             const rect = node.getBoundingClientRect?.();
@@ -117,15 +135,19 @@ function scmToolkitFooterRateLimitNotice(root) {
         // A preexisting transcript sticker must not qualify as a footer.
         if (candidate.getAttribute?.('data-scm-toolkit-rate-limit-pony') === 'true'
             || candidate.dataset?.scmToolkitRateLimitPony === 'true') continue;
-        if (!scmToolkitIsShortRateLimit(candidate.textContent)) continue;
+        // The candidate is already identified by its short-status label.
+        if (candidate.closest?.('[role="log"], [data-testid="message-list"], [data-message-author-role], [data-conversation-role]')) continue;
         const rect = candidate.getBoundingClientRect?.();
         if (!rect || rect.height > 160 || rect.height < 20) continue;
         const gap = editorRect.top - rect.bottom;
         const leftGap = Math.abs(editorRect.left - rect.left);
-        // An empty footer spans the editor column and sits directly above it.
-        // Narrow transcript bubbles, status menus, and cards with details do not.
+        // The real footer can be a narrow, icon-bearing status pill rather
+        // than a full-width strip. Reject narrow transcript text without an icon.
+        const wideEnough = rect.width >= Math.max(180, editorRect.width * 0.74);
+        const compactWithIcon = rect.width >= Math.max(160, editorRect.width * 0.35)
+            && Boolean(candidate.querySelector?.('svg, [role="img"]'));
         if (gap < -8 || gap > 180 || leftGap > Math.max(72, editorRect.width * 0.16)
-            || rect.width < Math.max(180, editorRect.width * 0.74)
+            || !(wideEnough || compactWithIcon)
             || rect.width > editorRect.width * 1.6) continue;
         const score = gap + leftGap;
         if (score < best) {
@@ -153,6 +175,7 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
 function scmToolkitSyncRateLimitPony(root) {
     const {card, notices} = scmToolkitFooterRateLimitNotice(root);
     if (!card) return;
+    scmToolkitNormalizeRateLimitTypo(card);
     scmToolkitHideDuplicateRateLimitNotices(notices, card);
     if (card.dataset.scmToolkitRateLimitPonyPending === 'true'
         || card.dataset.scmToolkitRateLimitPonyUnavailable === 'true') return;
