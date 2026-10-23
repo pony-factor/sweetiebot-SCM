@@ -544,6 +544,62 @@ class ManualSpellcheckTests(unittest.TestCase):
             generator.assert_called_once()
             setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
 
+    def test_reviewed_spellcheck_emoji_removal_only_changes_leading_emoji(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        cases = (
+            ("🧪 Add test coverage", "Add test coverage"),
+            ("🐞 🧪 Fix typo", "Fix typo"),
+            ("Fix 🐞 icon", "Fix 🐞 icon"),
+            ("Fix title", "Fix title"),
+        )
+        for generated, expected in cases:
+            with self.subTest(generated=generated), patch.object(
+                sys, "argv", argv
+            ), patch.object(
+                sys, "stdout", io.StringIO()
+            ) as output, patch.object(
+                ai_commit, "git_output", side_effect=["report.md | 2 +-", "-typo\n+fixed"]
+            ), patch.object(
+                ai_commit, "staged_file_context", return_value=""
+            ), patch.object(
+                ai_commit, "should_add_default_branch_description", return_value=False
+            ), patch.object(
+                ai_commit, "git_config_bool", return_value=False
+            ) as setting, patch.object(
+                ai_commit, "generate_message", return_value=(generated, "Normal description.")
+            ) as generator:
+                ai_commit.main()
+            self.assertEqual(json.loads(output.getvalue()), {
+                "title": expected, "description": "Normal description.",
+            })
+            generator.assert_called_once()
+            setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
+
+    def test_reviewed_spellcheck_emoji_removal_rejects_empty_title(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        with patch.object(
+            sys, "argv", argv
+        ), patch.object(
+            sys, "stderr", io.StringIO()
+        ) as errors, patch.object(
+            ai_commit, "git_output", side_effect=["report.md | 2 +-", "-typo\n+fixed"]
+        ), patch.object(
+            ai_commit, "staged_file_context", return_value=""
+        ), patch.object(
+            ai_commit, "should_add_default_branch_description", return_value=False
+        ), patch.object(
+            ai_commit, "git_config_bool", return_value=False
+        ), patch.object(
+            ai_commit, "generate_message", return_value=("🐞 🧪", "Normal description.")
+        ):
+            with self.assertRaises(SystemExit):
+                ai_commit.main()
+        self.assertIn("Generated title contains no words after its emoji", errors.getvalue())
+
     def test_reviewed_spellcheck_title_rejects_unsafe_paths_before_git(self):
         import io
         for path in ["../outside.md", "/absolute.md", "other.bin", "bad\x00.md"]:
