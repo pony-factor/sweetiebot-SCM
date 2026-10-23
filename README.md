@@ -161,7 +161,7 @@ The installer modifies the installed VS Code workbench files. VS Code updates ca
 - `scripts/`: Python installers, configuration tools, and their branch-name catalog.
 - `assets/workbench/`: JavaScript and CSS injected into the VS Code workbench.
 - `assets/codex/`: JavaScript injected into the Codex extension.
-- `assets/images/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
+- `assets/imgs/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
 - `efs/`: companion VS Code extension code.
 - `tests/`: Python and JavaScript tests.
 
@@ -734,7 +734,7 @@ upgrade controls, and editable prompts are left unchanged.
 
 The short **Rate limited** status in the composer's own DOM region (including
 older builds that mistakenly show **Rated Limited**) is replaced by the bundled
-`assets/images/twi-stop.png` sticker. Matching depends on composer/status
+`assets/imgs/twi-stop.png` sticker. Matching depends on composer/status
 ancestry instead of fixed width, pixel-gap, alignment, zoom or icon requirements.
 Chat transcript messages and ambiguous statuses are excluded. The sticker uses
 a small, independently framed card: for a bare status, its original container

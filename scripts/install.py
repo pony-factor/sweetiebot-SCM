@@ -26,7 +26,7 @@ from branch_names import resolve_runtime_settings
 HERE = Path(__file__).resolve().parent
 WORKBENCH_ASSETS = HERE.parent / "assets/workbench"
 CODEX_ASSETS = HERE.parent / "assets/codex"
-TWILIGHT_STOP_PNG = HERE.parent / "assets/images/twi-stop.png"
+TWILIGHT_STOP_PNG = HERE.parent / "assets/imgs/twi-stop.png"
 START = '\n/* scm-toolkit:start */\n'
 END = '\n/* scm-toolkit:end */\n'
 CODEX_START = '\n/* scm-toolkit-codex-countdown:start */\n'
