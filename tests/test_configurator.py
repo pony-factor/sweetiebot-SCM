@@ -507,6 +507,19 @@ class SubmissionTests(unittest.TestCase):
         page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
         self.assertIn('name="draftCommitEmoji" value="true" checked', page)
 
+    def test_spellcheck_changes_commit_emoji_setting_is_independent(self):
+        values = form_values()
+        key = "spellcheckChangesEmoji"
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.spellcheck-changes-emoji")
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
+        self.assertTrue(configurator.parse_submission({**values, key: ["true"]})[key])
+        self.assertFalse(configurator.parse_submission(values)[key])
+        values[key] = ["true"]
+        rendered = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="spellcheckChangesEmoji" value="true" checked', rendered)
+        self.assertIn("<h3>After committing</h3>", rendered)
+
     def test_spellchecking_suite_defaults_validation_and_grouping(self):
         values = form_values()
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckAction"], "automatic")
