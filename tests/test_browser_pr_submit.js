@@ -166,3 +166,16 @@ for(const bad of [returnUrl.replace(':1234',':4567'),returnUrl.replace('/pony','
   assert.equal(f.navigations.length,0,'Collect only this workflow’s exact local callback');
 }
 console.log('Independent result collection checks passed.');
+const mergeCallback = 'http://127.0.0.1:1234/lindsey-merge/11111111-2222-4333-8444-555555555555';
+const mergeResult = mergeCallback + '#result=' + encodeURIComponent(JSON.stringify({ version: 1, repository: 'owner/repo', results: [] }));
+f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: [mergeResult], streaming: true });
+f.tick(2500); assert.equal(f.navigations.length, 0);
+f.setStreaming(false); f.tick(2500);
+assert.deepEqual(f.navigations, [mergeResult], 'Finished merge response returns structured results to the local CLI intake');
+for (const invalid of [mergeResult.replace(':1234', ':4567'), mergeResult + '&command=arbitrary', mergeResult.replace('11111111', '99999999')]) {
+  f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: [invalid] });
+  f.tick(3000); assert.equal(f.navigations.length, 0);
+}
+f = fixture({ url: fragmentUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: [mergeResult] });
+f.tick(3000); assert.equal(f.navigations.length, 0, 'A PR drafting launch cannot invoke a merge handoff');
+console.log('Local merge callback ownership and streaming checks passed.');

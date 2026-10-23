@@ -30,11 +30,14 @@ async function humanSquashMerge(repository, number, {
   }
   api ||= async (endpoint, method = 'GET', fields = []) =>
     JSON.parse((await exec(gh, ['api', '-X', method, endpoint, ...fields], { timeout: 120000 })).stdout);
-  git ||= async (...args) => (await exec('git', ['-c', 'core.hooksPath=/dev/null',
+  git ||= async (...args) => {
+    try { return (await exec('git', ['-c', 'core.hooksPath=/dev/null',
     '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
     '-c', 'credential.helper=!' + gh + ' auth git-credential', ...args],
   { timeout: 120000, maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
+    } catch { throw Error('Local Git operation failed; no file contents are included in this report.'); }
+  };
   const endpoint = 'repos/' + repository;
   const prPath = endpoint + '/pulls/' + number;
   const original = await api(prPath);
@@ -71,12 +74,13 @@ async function humanSquashMerge(repository, number, {
     }
   }
   const repositoryInfo = await api(endpoint);
+  if (head === repositoryInfo.default_branch) throw Error('Cannot rewrite the repository default branch.');
   if (repositoryInfo.allow_rebase_merge !== true) {
     throw Error('GitHub rebase merging is disabled; cannot preserve an explicit squash Git author.');
   }
   const checkHeadIsolation = async () => {
-    const headBranch = await api(endpoint + '/branches/' + head.split('/').map(encodeURIComponent).join('/'));
-    if (headBranch.protected) throw Error('PR head is protected; cannot safely replace its commits.');
+    const headBranch = await api(endpoint + '/branches/' + encodeURIComponent(head));
+    if (headBranch.protected !== false) throw Error('PR head is protected; cannot safely replace its commits.');
     // Rewriting the head of an open child PR or sibling would affect unselected work.
     for (let page = 1; page <= 100; page++) {
       const pulls = await api(endpoint + '/pulls?state=open&per_page=100&page=' + page);
@@ -91,6 +95,9 @@ async function humanSquashMerge(repository, number, {
     }
   };
   const commits = await readCommits(async ([url]) => api(url), repository, number);
+  if (commits.at(-1)?.sha && commits.at(-1).sha !== originalSha) {
+    throw Error('Original commit history does not match the selected PR head.');
+  }
   const author = humanAuthor(commits);
   const prepared = squashMessage(original.title, number, commits, { primaryAuthor: author });
   const preparedMessage = prepared.title + '\n\n' + prepared.message;
@@ -127,7 +134,9 @@ async function humanSquashMerge(repository, number, {
   };
   if (alreadyPrepared && resolutionPatch === null) return finish(originalSha, existing);
   await checkHeadIsolation();
-  let temp;
+  let temp, pushedSha;
+  try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
+  catch { throw Error('Invalid Git branch name.'); }
   try {
     temp = await temporaryDirectory();
     const remote = 'https://github.com/' + repository + '.git';
@@ -146,6 +155,12 @@ async function humanSquashMerge(repository, number, {
     // Check names before checking out or reading changed file contents.
     if (!originalFiles.length || originalFiles.some(name => !safePatchPath(name))) {
       throw Error('PR contains unsafe or secret-bearing paths; local execution is blocked.');
+    }
+    for (const tree of [liveBase, liveHead]) {
+      const entries = await inRepo('ls-tree', '-z', tree, '--', ...originalFiles);
+      if (entries.split('\0').filter(Boolean).some(entry => !/^100(?:644|755) blob [a-f0-9]{40}\t/.test(entry))) {
+        throw Error('Local squash supports regular text files only.');
+      }
     }
     await inRepo('checkout', '--quiet', '--detach', liveBase);
     let resolvedFiles;
@@ -167,16 +182,17 @@ async function humanSquashMerge(repository, number, {
     } else {
       await inRepo('merge', '--squash', '--no-commit', liveHead);
     }
-    const staged = await inRepo('diff', '--cached', '--name-only');
+    const staged = await inRepo('diff', '--cached', '--name-only', '-z');
     if (!staged.trim()) throw Error('Squash would make no changes; refusing empty commit.');
     // No unexpected base-only or unrelated file changes may enter this commit.
-    const proposedFiles = staged.split('\n').filter(Boolean).sort();
+    const proposedFiles = staged.split('\0').filter(Boolean).sort();
     if (JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles || originalFiles)) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
-    await inRepo('commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+    await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
+      '-c', 'commit.gpgsign=false', 'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
     const preparedSha = await inRepo('rev-parse', 'HEAD');
     const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
     const newTree = await inRepo('rev-parse', 'HEAD^{tree}');
@@ -192,13 +208,17 @@ async function humanSquashMerge(repository, number, {
     await checkHeadIsolation();
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
+    pushedSha = preparedSha;
     const rewritten = await api(prPath);
     if (rewritten?.state !== 'open' || rewritten.draft || rewritten.title !== original.title || rewritten.head?.sha !== preparedSha ||
         rewritten.base?.ref !== base || await readBaseTip() !== baseSha) {
       throw Error('PR changed after guarded push; inspect the selected branch before merging.');
     }
     // Native GitHub rebase merge records the same bot-opened PR as merged.
-    return finish(preparedSha, message);
+    return await finish(preparedSha, message);
+  } catch (error) {
+    if (pushedSha) throw Error(error.message + ' Prepared head: ' + pushedSha + '; original head: ' + originalSha + '. Retry from a fresh selection after checks/reviews pass.');
+    throw error;
   } finally {
     if (temp) await fs.rm(temp, { recursive: true, force: true });
   }

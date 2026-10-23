@@ -116,10 +116,11 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
       'Lindsey merge sessions also start in the 640px compact window');
     let launches = 0;
     const dashboardModulePath = require.resolve('../efs/merge_dashboard');
+    const dashboardExports = require('../efs/merge_dashboard');
     const previousDashboard = require.cache[dashboardModulePath];
     require.cache[dashboardModulePath] = {
       id: dashboardModulePath, filename: dashboardModulePath, loaded: true,
-      exports: { startMergeDashboard(host, snapshot, token) {
+      exports: { ...dashboardExports, startMergeDashboard(host, snapshot, token) {
         assert.equal(host, instrumented);
         assert.deepEqual(snapshot, selection);
         assert.equal(token, 'merge-session-token');
@@ -127,6 +128,7 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
       } }
     };
     const dashboardCalls = [];
+    context.subscriptions = [];
     const instrumented = { ...target,
       window: {},
       workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
@@ -140,9 +142,14 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
     };
     try {
       await resumePRSession(instrumented, context);
-      assert.deepEqual(dashboardCalls, [
+      const handedOff = new URL(dashboardCalls[3][1].url);
+      const payload = new URLSearchParams(handedOff.hash.slice(1));
+      assert.match(payload.get('return_to'), /^http:\/\/127\.0\.0\.1:\d+\/lindsey-merge\/[\da-f-]{36}$/);
+      assert(payload.get('q').includes('LOCAL LINDSEY CLI HANDOFF'));
+      assert(payload.get('q').includes('COMPLETE git unified diff'));
+      assert.deepEqual(dashboardCalls.map((call, index) => index === 3 ? [call[0]] : call), [
         ...layoutCommands.map(command => [command]),
-        ['workbench.action.browser.open', { url: mergeUrl, openToSide: false }],
+        ['workbench.action.browser.open'],
         ['vscode.setEditorLayout', { orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }] }]
       ]);
       assert.equal(launches, 1);
@@ -150,6 +157,7 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
       assert.equal(launches, 1, 'Reload/restore must not duplicate a running dashboard');
       assert.equal(dashboardCalls.length, 5, 'Reload must not resubmit ChatGPT');
     } finally {
+      for (const disposable of context.subscriptions) disposable.dispose();
       if (previousDashboard) require.cache[dashboardModulePath] = previousDashboard;
       else delete require.cache[dashboardModulePath];
     }

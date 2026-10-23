@@ -507,3 +507,9 @@ run().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
+
+const localPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+  pullRequests: [{ number: 12, title: 'Fix a conflict', url: 'https://github.com/owner/repo/pull/12', head: 'topic', base: 'main' }], localHandoff: true });
+assert(localPrompt.includes('MUST use the LOCAL LINDSEY CLI HANDOFF'));
+assert(!localPrompt.includes('NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED'));
+assert(!localPrompt.includes('Run ONLY the read-only-preflight'));
