@@ -115,9 +115,10 @@ imageEvents.load();
 assert.equal(footer.child.src, '__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__');
 assert.match(footer.child.alt, /Twilight Sparkle/);
 assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
-assert.equal(footer.style.border, '0');
+assert.equal(footer.style.border, '1px solid var(--vscode-focusBorder, currentColor)');
 assert.equal(footer.style.outline, 'none');
 assert.equal(footer.style.width, 'max-content');
+assert.equal(footer.style.borderRadius, '12px');
 assert.equal(footer.style.display, 'inline-flex');
 // replaceChildren detaches the original footer label in the real webview.
 footerLabel.parentElement = null;
@@ -198,16 +199,120 @@ context.scmToolkitNormalizeRateLimitTypo({
 assert.equal(typoText.textContent, 'Rate limited');
 assert.equal(iconNode.childNodes.length, 0);
 
-// A full card with extra information or an actionable native control is untouched.
+// A detailed status keeps its native information and controls, but gets a
+// standalone small sticker card in the same composer region.
+const nativeButton = {textContent: 'Upgrade', clicks: 0, click() { this.clicks++; }};
+const detailParent = makeNode('', rect(0, 0, 5000, 80));
+detailParent.parentElement = composerRegion;
+detailParent.querySelector = () => null;
+detailParent.insertBefore = (companion, reference) => {
+    assert.equal(reference.parentElement, detailParent);
+    detailParent.companion = companion;
+};
+const richNotice = makeNode('Rate limited · resets in 2h', rect(0, 0, 5000, 80));
+richNotice.parentElement = detailParent;
+richNotice.querySelector = selector => selector.includes('button') ? nativeButton : null;
+richNotice.querySelectorAll = selector => selector.includes('button') ? [nativeButton] : [];
+const richRoot = {
+    ...imageRoot,
+    querySelectorAll(selector) {
+        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('span,')) return [richNotice];
+        return [];
+    },
+    createElement(tag) {
+        if (tag === 'div') {
+            return {
+                style: {}, attrs: {}, children: [],
+                setAttribute(k, v) { this.attrs[k] = v; },
+                append(child) { this.children.push(child); },
+            };
+        }
+        return imageRoot.createElement(tag);
+    },
+};
+assert.equal(context.scmToolkitFooterRateLimitNotice(richRoot).card, richNotice);
+assert.equal(context.scmToolkitFooterRateLimitNotice(richRoot).rich, true);
+context.scmToolkitSyncRateLimitPony(richRoot);
+imageEvents.load();
+assert.equal(richNotice.textContent, 'Rate limited · resets in 2h');
+assert.equal(richNotice.querySelector('button'), nativeButton);
+assert.equal(detailParent.companion.children[0].width, 96);
+assert.equal(detailParent.companion.style.width, 'max-content');
+assert.equal(detailParent.companion.attrs['data-scm-toolkit-rate-limit-pony-companion'], 'true');
+context.scmToolkitSyncRateLimitPony(richRoot);
+assert.equal(detailParent.companion.children.length, 1);
+nativeButton.click();
+assert.equal(nativeButton.clicks, 1);
+// A bare status label with a sibling Upgrade button must create a separate
+// sticker while leaving the original button functional.
+const upgradeButton = {textContent: 'Upgrade', count: 0, click() { this.count++; }};
+const upgradeCard = makeNode('Rate limited Upgrade', rect(0, 0, 1000, 10));
+upgradeCard.parentElement = composerRegion;
+const upgradeLabel = makeNode('Rate limited', rect(0, 0, 1000, 10), upgradeCard);
+upgradeCard.querySelector = selector => selector.includes('button') ? upgradeButton : null;
+upgradeCard.querySelectorAll = selector => selector.includes('button') ? [upgradeButton] : [];
+const upgradeOwner = composerRegion;
+const upgradeRoot = {
+    ...imageRoot,
+    querySelectorAll(selector) {
+        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('span,')) return [upgradeLabel];
+        return [];
+    },
+    createElement: richRoot.createElement,
+};
+const upgradeParent = makeNode('', rect(0, 0, 1000, 10));
+upgradeParent.parentElement = composerRegion;
+upgradeCard.parentElement = upgradeParent;
+upgradeParent.insertBefore = (companion, child) => {
+    assert.equal(child, upgradeCard);
+    upgradeParent.companion = companion;
+};
+assert.equal(context.scmToolkitFooterRateLimitNotice(upgradeRoot).card, upgradeCard);
+assert.equal(context.scmToolkitFooterRateLimitNotice(upgradeRoot).rich, true);
+const countBeforeUpgrade = imagesCreated;
+context.scmToolkitSyncRateLimitPony(upgradeRoot);
+assert.equal(imagesCreated, countBeforeUpgrade + 1);
+imageEvents.load();
+assert.equal(upgradeCard.textContent, 'Rate limited Upgrade');
+assert.equal(upgradeParent.companion.style.width, 'max-content');
+upgradeButton.click();
+assert.equal(upgradeButton.count, 1);
+
+// If the artwork cannot render, a rich native notice stays unchanged.
+const failureNotice = makeNode('Rate limited · resets in 2h', rect(0, 0, 1, 1));
+failureNotice.parentElement = composerRegion;
+const failureRoot = {
+    ...richRoot,
+    querySelectorAll(selector) {
+        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('span,')) return [failureNotice];
+        return [];
+    },
+};
+context.scmToolkitSyncRateLimitPony(failureRoot);
+imageEvents.error();
+assert.equal(failureNotice.textContent, 'Rate limited · resets in 2h');
+assert.equal(failureNotice.dataset.scmToolkitRateLimitPonyUnavailable, 'true');
+
+// A rich status without buttons still gets its own sticker when it has a timer.
+assert.equal(context.scmToolkitIsDetailedRateLimitNotice('Rate Limited · resets in 2h'), true);
+assert.equal(context.scmToolkitIsDetailedRateLimitNotice('Rate limited'), false);
+
+// A timed card and a native Upgrade card now qualify for separate stickers.
+// The original controls and countdown are never replaced.
 const timed = makeNode('Rated Limited · resets in 2h', rect(27, 814, 564, 54));
 timed.parentElement = composerRegion;
 footerLabel.parentElement = timed;
-assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, timed);
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).rich, true);
 const actionable = makeNode('Rated Limited', rect(27, 814, 564, 54));
 actionable.parentElement = composerRegion;
 actionable.querySelectorAll = () => [{}];
 footerLabel.parentElement = actionable;
-assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, actionable);
+assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).rich, true);
 
 // Never guess which message to replace when the composer is absent.
 footerLabel.parentElement = footer;

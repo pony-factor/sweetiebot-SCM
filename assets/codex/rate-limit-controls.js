@@ -206,15 +206,51 @@ function scmToolkitComposerStatusDistance(status, editor) {
     return null;
 }
 
+function scmToolkitIsDetailedRateLimitNotice(value) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    return /^(?:rate(?:d)? limited|you[’']ve hit your usage limit|you[’']re out of codex messages)\b/i.test(normalized)
+        && /\b(?:resets?|credits?|upgrade|try again|usage limit|codex messages)\b/i.test(normalized);
+}
+
+function scmToolkitDetailedRateLimitNodes(root) {
+    const found = new Set();
+    for (const label of root.querySelectorAll('span, p, h1, h2, h3, strong, [role="status"], [role="alert"]')) {
+        if ((!scmToolkitIsDetailedRateLimitNotice(label.textContent)
+            && !scmToolkitIsShortRateLimit(label.textContent))
+            || label.closest?.(scmToolkitRateLimitTranscriptSelector)) continue;
+        let candidate = null;
+        // A short title with a sibling Upgrade button is also rich. Prefer
+        // the nearest native status/details container, never a composer root.
+        for (let node = label, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+            if (node.matches?.('body, html, main, [role="main"], [role="application"]')
+                || node.matches?.(scmToolkitRateLimitTranscriptSelector)
+                || node.querySelector?.(scmToolkitCodexEditorSelector)) break;
+            if (node.matches?.('button, a, [role="button"]')) break;
+            if (scmToolkitIsDetailedRateLimitNotice(node.textContent)
+                || node.querySelector?.('button, a, [role="button"]')
+                || (node.querySelectorAll?.('button, a, [role="button"]') || []).length > 0) {
+                candidate = node;
+                break;
+            }
+        }
+        if (candidate) found.add(candidate);
+    }
+    return [...found];
+}
+
 function scmToolkitFooterRateLimitNotice(root) {
     const notices = scmToolkitPlainRateLimitNodes(root);
     const editors = [...root.querySelectorAll(scmToolkitCodexEditorSelector)]
         .filter(editor => !editor.closest?.(
             '[hidden], [aria-hidden="true"], [inert], ' + scmToolkitRateLimitTranscriptSelector));
     let card = null;
+    let rich = false;
     let best = Infinity;
     let ambiguous = false;
-    for (const candidate of notices) {
+    const detailed = scmToolkitDetailedRateLimitNodes(root);
+    // The short-only footer is preferred; information-bearing cards are
+    // eligible for a separate compact sticker without losing native contents.
+    for (const candidate of [...notices, ...detailed]) {
         if (candidate.getAttribute?.('data-scm-toolkit-rate-limit-pony') === 'true'
             || candidate.dataset?.scmToolkitRateLimitPony === 'true'
             || candidate.closest?.(scmToolkitRateLimitTranscriptSelector)) continue;
@@ -223,6 +259,7 @@ function scmToolkitFooterRateLimitNotice(root) {
             if (distance === null) continue;
             if (distance < best) {
                 card = candidate;
+                rich = detailed.includes(candidate) || !scmToolkitIsShortRateLimit(candidate.textContent);
                 best = distance;
                 ambiguous = false;
             } else if (distance === best && candidate !== card) {
@@ -231,7 +268,7 @@ function scmToolkitFooterRateLimitNotice(root) {
             }
         }
     }
-    return {card: ambiguous ? null : card, notices};
+    return {card: ambiguous ? null : card, notices, rich};
 }
 function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
     for (const notice of notices) {
@@ -245,13 +282,30 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
         else if (notice.style) notice.style.display = 'none';
     }
 }
+function scmToolkitStyleRateLimitStickerCard(node) {
+    node.style.border = '1px solid var(--vscode-focusBorder, currentColor)';
+    node.style.borderRadius = '12px';
+    node.style.outline = 'none';
+    node.style.boxShadow = 'none';
+    node.style.background = 'var(--vscode-editorWidget-background, transparent)';
+    node.style.padding = '4px';
+    node.style.minWidth = '0';
+    node.style.minHeight = '0';
+    node.style.width = 'max-content';
+    node.style.height = 'auto';
+    node.style.display = 'inline-flex';
+    node.style.flex = '0 0 auto';
+    node.style.alignSelf = 'flex-start';
+}
 function scmToolkitSyncRateLimitPony(root) {
-    const {card, notices} = scmToolkitFooterRateLimitNotice(root);
+    const {card, notices, rich} = scmToolkitFooterRateLimitNotice(root);
     if (!card) return;
     scmToolkitNormalizeRateLimitTypo(card);
     scmToolkitHideDuplicateRateLimitNotices(notices, card);
     if (card.dataset.scmToolkitRateLimitPonyPending === 'true'
-        || card.dataset.scmToolkitRateLimitPonyUnavailable === 'true') return;
+        || card.dataset.scmToolkitRateLimitPonyUnavailable === 'true'
+        || card.dataset.scmToolkitRateLimitPonyMounted === 'true') return;
+    if (rich && card.parentElement?.querySelector?.('[data-scm-toolkit-rate-limit-pony-companion]')) return;
     card.dataset.scmToolkitRateLimitPonyPending = 'true';
     const image = root.createElement('img');
     image.alt = 'Twilight Sparkle holding a STOP sign — rate limited';
@@ -264,26 +318,39 @@ function scmToolkitSyncRateLimitPony(root) {
     image.style.borderRadius = '8px';
     image.addEventListener('load', () => {
         // Do not overwrite an updated, action-bearing status while art loads.
-        if (!card.isConnected || scmToolkitFooterRateLimitNotice(root).card !== card) {
+        const current = scmToolkitFooterRateLimitNotice(root);
+        if (!card.isConnected || current.card !== card || current.rich !== rich) {
+            // If Codex added reset/action details while the image loaded, a
+            // previously plain status must never be destructively replaced.
             delete card.dataset.scmToolkitRateLimitPonyPending;
             return;
         }
-        card.replaceChildren(image);
-        card.setAttribute('data-scm-toolkit-rate-limit-pony', 'true');
-        card.setAttribute('aria-label', image.alt);
-        // Collapse the entire green banner to just the standalone sticker.
-        card.style.border = '0';
-        card.style.outline = 'none';
-        card.style.boxShadow = 'none';
-        card.style.background = 'transparent';
-        card.style.padding = '0';
-        card.style.minWidth = '0';
-        card.style.minHeight = '0';
-        card.style.width = 'max-content';
-        card.style.height = 'auto';
-        card.style.display = 'inline-flex';
-        card.style.flex = '0 0 auto';
-        card.style.alignSelf = 'flex-start';
+        if (rich) {
+            // Keep the native timer, credit details, and buttons completely
+            // intact; the pony occupies its own small independent card.
+            const parent = card.parentElement;
+            if (!parent?.insertBefore) {
+                delete card.dataset.scmToolkitRateLimitPonyPending;
+                return;
+            }
+            if (parent.querySelector?.('[data-scm-toolkit-rate-limit-pony-companion]')) {
+                delete card.dataset.scmToolkitRateLimitPonyPending;
+                return;
+            }
+            const compact = root.createElement('div');
+            compact.setAttribute('data-scm-toolkit-rate-limit-pony-companion', 'true');
+            compact.setAttribute('data-scm-toolkit-rate-limit-pony', 'true');
+            compact.setAttribute('aria-label', image.alt);
+            scmToolkitStyleRateLimitStickerCard(compact);
+            compact.append(image);
+            parent.insertBefore(compact, card);
+            card.dataset.scmToolkitRateLimitPonyMounted = 'true';
+        } else {
+            card.replaceChildren(image);
+            card.setAttribute('data-scm-toolkit-rate-limit-pony', 'true');
+            card.setAttribute('aria-label', image.alt);
+            scmToolkitStyleRateLimitStickerCard(card);
+        }
         delete card.dataset.scmToolkitRateLimitPonyPending;
     });
     image.addEventListener('error', () => {

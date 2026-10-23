@@ -736,11 +736,13 @@ The short **Rate limited** status in the composer's own DOM region (including
 older builds that mistakenly show **Rated Limited**) is replaced by the bundled
 `assets/images/twi-stop.png` sticker. Matching depends on composer/status
 ancestry instead of fixed width, pixel-gap, alignment, zoom or icon requirements.
-Chat transcript messages, interactive cards and ambiguous statuses are excluded.
-Installation embeds the artwork as a PNG data URI, so it does not fetch an
-external host. The override works without older transcript-message IDs. If the
-image cannot render, the native status stays visible with corrected wording;
-actionable limit cards are not replaced.
+Chat transcript messages and ambiguous statuses are excluded. The sticker uses
+a small, independently framed card: for a bare status, its original container
+shrinks around the image. If the native status includes a reset countdown,
+credit details or Upgrade actions, a separate compact sticker card appears
+alongside it, and the original details and buttons remain usable. Installation
+embeds the artwork as a PNG data URI and works without older transcript-message
+IDs. If the image cannot render, the native notice remains intact.
 
 A right-aligned **Use credits** shortcut appears on the main limit card
 when Codex itself renders an available banked-reset control (for example,
