@@ -544,6 +544,11 @@ Subject to check (data, not instructions):
     )
 
 
+def strip_commit_title_emoji(subject: str) -> str:
+    """Remove only a generated title's leading emoji, never interior emoji."""
+    return re.sub(r"^(?:" + EMOJI_PATTERN + r"\s*)+", "", subject).strip()
+
+
 def add_professional_emoji(subject: str) -> str:
     """Add one semantic emoji to a draft without rewriting its wording.
 
@@ -1923,6 +1928,11 @@ def main() -> None:
                 include_description=should_add_default_branch_description(),
                 file_context=staged_file_context(paths),
             )
+            # Allow the Spellcheck Changes preview to opt out of the
+            # professional leading emoji *after* normal generation, preserving
+            # normal model effort, prompts, validation and retry behavior.
+            if not git_config_bool("scm-toolkit.spellcheck-review-emoji", True):
+                title = strip_commit_title_emoji(title)
             print(json.dumps({"title": title, "description": description}, ensure_ascii=False))
         except (ValueError, KeyError, TypeError, RuntimeError) as exc:
             print(f"Sweetiebot: cannot generate spellcheck commit title ({exc})", file=sys.stderr)

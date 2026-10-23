@@ -465,6 +465,42 @@ class ManualSpellcheckTests(unittest.TestCase):
             ["notes/report.md"], include_description=True, file_context="context")
         self.assertTrue(all("notes/report.md" in call.args for call in read.call_args_list))
 
+    def test_spellcheck_change_title_emoji_can_be_removed_without_extra_generation(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        def staged(*args):
+            if "--stat" in args:
+                return "notes/report.md | 1 +"
+            if "--unified=2" in args:
+                return "--- a/notes/report.md\n+++ b/notes/report.md\n-fxi\n+fix"
+            return ""
+        with patch.object(sys, "argv", argv), patch.object(
+            sys, "stdout", io.StringIO()
+        ) as output, patch.object(
+            ai_commit, "git_output", side_effect=staged
+        ), patch.object(
+            ai_commit, "staged_file_context", return_value=""
+        ), patch.object(
+            ai_commit, "should_add_default_branch_description", return_value=False
+        ), patch.object(
+            ai_commit, "generate_message", return_value=("🖊️ Correct financial typos", "")
+        ) as generated, patch.object(
+            ai_commit, "git_config_bool", return_value=False
+        ) as preference:
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {
+            "title": "Correct financial typos", "description": ""
+        })
+        generated.assert_called_once()
+        preference.assert_called_with("scm-toolkit.spellcheck-review-emoji", True)
+
+    def test_strip_title_emoji_keeps_emoji_mentioned_inside_title(self):
+        self.assertEqual(ai_commit.strip_commit_title_emoji("🧪 Add test coverage"), "Add test coverage")
+        self.assertEqual(ai_commit.strip_commit_title_emoji("🐞 🧪 Fix typo"), "Fix typo")
+        self.assertEqual(ai_commit.strip_commit_title_emoji("Fix 🐞 icon"), "Fix 🐞 icon")
+        self.assertEqual(ai_commit.strip_commit_title_emoji("Fix title"), "Fix title")
+
     def test_reviewed_spellcheck_title_rejects_unsafe_paths_before_git(self):
         import io
         for path in ["../outside.md", "/absolute.md", "other.bin", "bad\x00.md"]:

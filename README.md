@@ -537,6 +537,14 @@ The low-memory path never escalates to the larger primary model when the fallbac
 
 ### Spellcheck Changes customization
 
+**Professional emoji on Spellcheck Changes commits** is a separate toggle in
+the **After committing** section (on by default). When enabled, the normal
+commit-title generator keeps its change-appropriate leading emoji; when
+disabled, Sweetiebot removes that *leading title emoji only* after generation.
+It leaves the body, spellchecker co-author trailer, model effort, and retry
+budget unchanged. The independent manual-draft emoji toggle continues to
+default to off.
+
 The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
 simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
 stages only the reviewed Markdown files, runs the **normal Ollama commit-title
