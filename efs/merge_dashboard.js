@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
+const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -59,11 +60,13 @@ function reportFromComments(comments) {
   for (const comment of comments || []) {
     const body = String(comment?.body || '');
     if (body.includes(REPORT_MARKER)) {
-      report = { text: body.replace(REPORT_MARKER, '').trim().slice(0, 12000),
+      report = { text: stripReportOptions(body.replace(REPORT_MARKER, '')).slice(0, 12000),
+        options: parseReportOptions(body),
         url: comment.html_url || '', id: comment.id };
     }
     if (body.includes(REVIEW_MARKER)) {
-      review = { text: body.replace(REVIEW_MARKER, '').trim().slice(0, 12000),
+      review = { text: stripReportOptions(body.replace(REVIEW_MARKER, '')).slice(0, 12000),
+        options: parseReportOptions(body),
         url: comment.html_url || '', id: comment.id };
     }
   }
@@ -127,7 +130,8 @@ async function paged(fetchImpl, token, repository, endpoint, maxPages = 3) {
 // Observe GitHub state only. The ChatGPT window alone performs merge mutations;
 // never infer successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
-  intervalMs, setTimer = setInterval, clearTimer = clearInterval } = {}) {
+  intervalMs, setTimer = setInterval, clearTimer = clearInterval,
+  context, rootUri, launchAction = launchBlockerAction } = {}) {
   const selection = validateSelection(rawSelection);
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
     'Lindsey · Merge progress', vscode.ViewColumn?.Two || 2,
@@ -150,6 +154,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let rateLimitedUntil = 0;
   let error = '';
   const events = [];
+  const launchingActions = new Set();
 
   function addEvent(pr, state, message) {
     const event = { number: pr.number, state, message, at: new Date().toISOString() };
@@ -161,7 +166,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
-      type: 'state', repository: selection.repository, prs, events, error,
+      type: 'state', repository: selection.repository,
+      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode),
       nextRefreshSeconds: Math.ceil(actualInterval / 1000)
@@ -286,6 +292,35 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);
     if (!pr) return;
+    if (message.type === 'blocker-action') {
+      if (launchingActions.has(pr.number) || !['web', 'codex'].includes(message.engine || 'web')) return;
+      launchingActions.add(pr.number);
+      publish();
+      try {
+        const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
+        if (fresh.state !== 'open' || fresh.merged || fresh.merged_at ||
+            fresh.number !== pr.number || fresh.html_url !== pr.url || fresh.base?.ref !== pr.base ||
+            fresh.head?.ref !== pr.head || fresh.head?.sha !== message.headSha ||
+            fresh.head?.repo?.full_name !== selection.repository) {
+          throw Error('The PR changed. Refresh its status and review the options before choosing again.');
+        }
+        const comments = await paged(fetchImpl, token, selection.repository, '/issues/' + pr.number + '/comments', 3);
+        const notes = reportFromComments(comments);
+        const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
+          state: mergePhase(fresh, { ...pr, ...notes }) };
+        const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);
+        if (!option) throw Error('That implementation option changed. Refresh the report and choose again.');
+        const engine = option.engine || message.engine || 'web';
+        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
+        if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'web' ? 'GPT web' : 'Codex branch workspace') + ': ' + option.label);
+      } catch (failure) {
+        error = 'Could not start the selected implementation: ' + failure.message;
+      } finally {
+        launchingActions.delete(pr.number);
+        publish();
+      }
+      return;
+    }
     if (message.type === 'open-pr' || message.type === 'open-diff') {
       const target = pr.url + (message.type === 'open-diff' ? '/files' : '');
       await vscode.env.openExternal(vscode.Uri.parse(target));

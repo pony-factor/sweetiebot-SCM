@@ -59,6 +59,7 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
 .panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.blocker-choice{margin-top:12px;white-space:normal}.blocker-choice .muted{margin-top:4px}
 .panel h3{margin:0 0 8px}
 .markdown-panel{white-space:normal}
 .markdown-content{white-space:normal;overflow-wrap:anywhere;line-height:1.55}
@@ -234,6 +235,7 @@ __TIMESTAMP_FORMATTER__
   restoreSizes();
   let model = { prs: [], events: [] };
   let selected = null;
+  let actionEngine = 'web';
   const labels = {
     waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Resolved',
     conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
@@ -293,6 +295,29 @@ __TIMESTAMP_FORMATTER__
       'Human review requested · GitHub comment', pr.review.text, '', true);
     showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
       'No AI merge report yet. The ChatGPT session can post one after verifying the work.', true);
+    if (pr.blockerOptions?.length) {
+      const choices = show('section', 'panel', undefined, parent);
+      show('h3', '', 'Choose how to proceed', choices);
+      const destination = show('label', 'actions', 'Run with ', choices);
+      const engine = show('select', '', undefined, destination);
+      engine.setAttribute('aria-label', 'Implementation destination');
+      for (const [value, label] of [['web', 'GPT web'], ['codex', 'Codex branch workspace']]) {
+        const option = show('option', '', label, engine);
+        option.value = value;
+      }
+      engine.value = actionEngine;
+      engine.addEventListener('change', () => { actionEngine = engine.value; });
+      for (const option of pr.blockerOptions) {
+        const row = show('div', 'blocker-choice', undefined, choices);
+        const button = show('button', 'secondary', option.label, row);
+        button.disabled = Boolean(pr.actionPending);
+        button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
+          headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
+        if (option.description) show('div', 'muted', option.description, row);
+        if (option.suggested) show('div', 'muted', 'Suggested in the blocker report', row);
+      }
+      if (pr.actionPending) show('p', 'muted', 'Opening the selected implementation…', choices);
+    }
     showTextPanel(parent, 'Original PR description', pr.description,
       'No PR description supplied.', true);
     show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
