@@ -147,6 +147,13 @@ function scmToolkitNormalizeRateLimitTypo(card) {
     };
     visit(card);
 }
+const scmToolkitRateLimitTranscriptSelector = [
+    '[role="log"]', '[data-testid="message-list"]', '[data-testid*="transcript"]',
+    '[data-message-author-role]', '[data-conversation-role]', '[data-message-id]',
+    '[data-turn-id]'
+].join(', ');
+const scmToolkitCodexEditorSelector = 'textarea, [role="textbox"], [contenteditable], .ProseMirror';
+
 function scmToolkitPlainRateLimitNodes(root) {
     const found = new Set();
     for (const label of root.querySelectorAll('span, p, button, [role="status"], [role="alert"]')) {
@@ -156,65 +163,81 @@ function scmToolkitPlainRateLimitNodes(root) {
         scmToolkitNormalizeRateLimitTypo(label);
         let card = null;
         for (let node = label, depth = 0; node && depth < 7; node = node.parentElement, depth++) {
-            if (!scmToolkitIsShortRateLimit(node.innerText || node.textContent)) break;
+            if (!scmToolkitIsShortRateLimit(node.innerText || node.textContent)) {
+                // A short label may be nested in a richer warning. Never
+                // discard its reset time, credit details or action prompt.
+                if (/^rate(?:d)? limited\b[\s\S]*\b(?:reset|credit|upgrade|try again)/i
+                    .test(String(node.innerText || node.textContent || '').trim())) card = null;
+                break;
+            }
+            // Do not replace a label nested inside a real action or editor.
             const controls = node.querySelectorAll?.('button, a, input, textarea, select, [role="button"]') || [];
-            if (controls.length && !node.matches?.('button')) break;
-            const rect = node.getBoundingClientRect?.();
-            if (rect && rect.width >= 35 && rect.height >= 12) card = node;
+            if (controls.length || node.matches?.('button, a, [role="button"]')
+                || node.querySelector?.(scmToolkitCodexEditorSelector)) {
+                card = null;
+                break;
+            }
+            if (node.matches?.(scmToolkitRateLimitTranscriptSelector)) break;
+            card = node;
         }
         if (card) found.add(card);
     }
     // Account for already-rendered stickers from an earlier Sweetiebot injection.
     for (const sticker of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony]')) {
-        if (sticker.getBoundingClientRect?.()) found.add(sticker);
+        found.add(sticker);
     }
     return [...found];
 }
+// Identify the status by a shared local composer owner, not monitor-dependent
+// widths, pixel gaps, zoom factors, or the presence of a decorative status icon.
+function scmToolkitComposerStatusDistance(status, editor) {
+    if (!status || !editor || status === editor
+        || status.contains?.(editor) || editor.contains?.(status)
+        || status.closest?.(scmToolkitRateLimitTranscriptSelector)
+        || editor.closest?.(scmToolkitRateLimitTranscriptSelector)) return null;
+    let distance = 0;
+    for (let owner = editor.parentElement; owner; owner = owner.parentElement, distance++) {
+        if (owner.matches?.('body, html, main, [role="main"], [role="application"]')) return null;
+        if (!owner.contains?.(status)) continue;
+        // Shared app/transcript roots aren't evidence of a composer footer.
+        if (owner.querySelector?.(scmToolkitRateLimitTranscriptSelector)) return null;
+        return distance;
+    }
+    return null;
+}
+
 function scmToolkitFooterRateLimitNotice(root) {
     const notices = scmToolkitPlainRateLimitNodes(root);
-    let editorRect = null;
-    for (const field of root.querySelectorAll('textarea, [role="textbox"], [contenteditable], .ProseMirror')) {
-        const rect = field.getBoundingClientRect?.();
-        if (!rect || rect.width < 180 || rect.height < 10) continue;
-        if (!editorRect || rect.top > editorRect.top) editorRect = rect;
-    }
-    if (!editorRect) return {card: null, notices};
+    const editors = [...root.querySelectorAll(scmToolkitCodexEditorSelector)]
+        .filter(editor => !editor.closest?.(
+            '[hidden], [aria-hidden="true"], [inert], ' + scmToolkitRateLimitTranscriptSelector));
     let card = null;
     let best = Infinity;
+    let ambiguous = false;
     for (const candidate of notices) {
-        // A preexisting transcript sticker must not qualify as a footer.
         if (candidate.getAttribute?.('data-scm-toolkit-rate-limit-pony') === 'true'
-            || candidate.dataset?.scmToolkitRateLimitPony === 'true') continue;
-        // The candidate is already identified by its short-status label.
-        if (candidate.closest?.('[role="log"], [data-testid="message-list"], [data-message-author-role], [data-conversation-role]')) continue;
-        const rect = candidate.getBoundingClientRect?.();
-        if (!rect || rect.height > 160 || rect.height < 20) continue;
-        const gap = editorRect.top - rect.bottom;
-        const leftGap = Math.abs(editorRect.left - rect.left);
-        // The real footer can be a narrow, icon-bearing status pill rather
-        // than a full-width strip. Reject narrow transcript text without an icon.
-        const wideEnough = rect.width >= Math.max(180, editorRect.width * 0.74);
-        const compactWithIcon = rect.width >= Math.max(160, editorRect.width * 0.35)
-            && Boolean(candidate.querySelector?.('svg, [role="img"]'));
-        if (gap < -8 || gap > 180 || leftGap > Math.max(72, editorRect.width * 0.16)
-            || !(wideEnough || compactWithIcon)
-            || rect.width > editorRect.width * 1.6) continue;
-        const score = gap + leftGap;
-        if (score < best) {
-            card = candidate;
-            best = score;
+            || candidate.dataset?.scmToolkitRateLimitPony === 'true'
+            || candidate.closest?.(scmToolkitRateLimitTranscriptSelector)) continue;
+        for (const editor of editors) {
+            const distance = scmToolkitComposerStatusDistance(candidate, editor);
+            if (distance === null) continue;
+            if (distance < best) {
+                card = candidate;
+                best = distance;
+                ambiguous = false;
+            } else if (distance === best && candidate !== card) {
+                // Never replace an arbitrary one of two equally local statuses.
+                ambiguous = true;
+            }
         }
     }
-    return {card, notices};
+    return {card: ambiguous ? null : card, notices};
 }
 function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
-    const footerRect = footer.getBoundingClientRect();
     for (const notice of notices) {
         if (notice === footer) continue;
-        const rect = notice.getBoundingClientRect?.();
-        if (!rect || rect.bottom > footerRect.top || rect.height > 160) continue;
-        // Never hide another full-width card that could contain native actions.
-        if (rect.width >= footerRect.width * 0.8
+        // Only hide real transcript duplicates or old injected stickers.
+        if (!notice.closest?.(scmToolkitRateLimitTranscriptSelector)
             && notice.getAttribute?.('data-scm-toolkit-rate-limit-pony') !== 'true') continue;
         notice.setAttribute?.('data-scm-toolkit-rate-limit-duplicate', 'true');
         notice.setAttribute?.('aria-hidden', 'true');

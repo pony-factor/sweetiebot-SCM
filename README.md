@@ -732,9 +732,11 @@ this text after Codex rerenders an untimed warning so the long warning does
 not flicker back into view. Messages with an actual reset time, actionable
 upgrade controls, and editable prompts are left unchanged.
 
-The short **Rate limited** status directly above the composer (including
+The short **Rate limited** status in the composer's own DOM region (including
 older builds that mistakenly show **Rated Limited**) is replaced by the bundled
-`assets/images/twi-stop.png` sticker, including narrow icon-bearing status pills.
+`assets/images/twi-stop.png` sticker. Matching depends on composer/status
+ancestry instead of fixed width, pixel-gap, alignment, zoom or icon requirements.
+Chat transcript messages, interactive cards and ambiguous statuses are excluded.
 Installation embeds the artwork as a PNG data URI, so it does not fetch an
 external host. The override works without older transcript-message IDs. If the
 image cannot render, the native status stays visible with corrected wording;

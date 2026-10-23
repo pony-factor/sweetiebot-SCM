@@ -47,7 +47,22 @@ const rect = (left, top, width, height) => ({left, top, width, height, bottom: t
 const makeNode = (value, bounds, parent = null) => ({
     textContent: value, parentElement: parent, dataset: {}, style: {}, attrs: {},
     isConnected: true, getBoundingClientRect: () => bounds, querySelectorAll: () => [],
-    matches: () => false, getAttribute(name) { return this.attrs[name] ?? null; },
+    matches(selector) { return Boolean((this.roleLog && selector.includes('[role="log"]'))
+        || (this.bodyRoot && selector.includes('body'))); },
+    closest(selector) {
+        for (let node = this; node; node = node.parentElement) {
+            if (node.matches?.(selector)) return node;
+        }
+        return null;
+    },
+    contains(other) {
+        for (let node = other; node; node = node.parentElement) {
+            if (node === this) return true;
+        }
+        return false;
+    },
+    querySelector: () => null,
+    getAttribute(name) { return this.attrs[name] ?? null; },
     setAttribute(name, value) { this.attrs[name] = value; },
     replaceChildren(child) { this.child = child; this.textContent = ''; },
 });
@@ -56,6 +71,18 @@ const inChat = makeNode('Rate limited', rect(39, 470, 96, 96));
 const inChatLabel = makeNode('Rate limited', rect(39, 470, 96, 24), inChat);
 const footer = makeNode('Rated Limited', rect(27, 814, 564, 54));
 const footerLabel = makeNode('Rated Limited', rect(78, 834, 115, 20), footer);
+// Composer/footer ownership stays constant when the view is resized, zoomed,
+// moved to a different display or rendered as a compact iconless pill.
+const appRoot = makeNode('', rect(0, 0, 3000, 1200));
+appRoot.bodyRoot = true;
+const composerRegion = makeNode('', rect(0, 0, 300, 100));
+composerRegion.parentElement = appRoot;
+editor.parentElement = composerRegion;
+footer.parentElement = composerRegion;
+const transcript = makeNode('', rect(0, 0, 3000, 1100));
+transcript.roleLog = true;
+transcript.parentElement = appRoot;
+inChat.parentElement = transcript;
 const imageEvents = {};
 let imagesCreated = 0;
 const imageRoot = {
@@ -92,11 +119,14 @@ assert.equal(footer.style.border, '0');
 assert.equal(footer.style.outline, 'none');
 assert.equal(footer.style.width, 'max-content');
 assert.equal(footer.style.display, 'inline-flex');
+// replaceChildren detaches the original footer label in the real webview.
+footerLabel.parentElement = null;
 assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
 
-// Narrow icon-bearing status pills remain eligible, but narrow transcript text does not.
+// Both icon-bearing and iconless status pills are selected by composer ancestry.
 const compactFooter = makeNode('Rated Limited', rect(27, 814, 220, 54));
 const compactLabel = makeNode('Rated Limited', rect(86, 834, 115, 20), compactFooter);
+compactFooter.parentElement = composerRegion;
 compactFooter.querySelector = selector => selector.startsWith('svg,') ? {} : null;
 const compactRoot = {
     ...imageRoot,
@@ -111,11 +141,40 @@ context.scmToolkitSyncRateLimitPony(compactRoot);
 assert.equal(imagesCreated, 2);
 imageEvents.load();
 assert.equal(compactFooter.child.width, 96);
-const noIconFooter = makeNode('Rate limited', rect(27, 814, 220, 54));
+const noIconFooter = makeNode('Rate limited', rect(-18000, 99999, 1, 1));
+noIconFooter.parentElement = composerRegion;
 const noIconLabel = makeNode('Rate limited', rect(86, 834, 115, 20), noIconFooter);
 compactRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
     : selector.startsWith('span,') ? [noIconLabel] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, noIconFooter);
+// A similar notice elsewhere in the app, without a shared composer owner,
+// must not be mistaken for the footer even if it has identical wording.
+const outsider = makeNode('Rate limited', rect(27, 814, 564, 54));
+const outsiderLabel = makeNode('Rate limited', rect(27, 814, 564, 54), outsider);
+outsider.parentElement = appRoot;
+compactRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [outsiderLabel] : [];
 assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, null);
+// Neither CSS layout nor the device pixel ratio is consulted.
+editor.getBoundingClientRect = () => { throw Error('No pixel geometry required'); };
+noIconFooter.getBoundingClientRect = () => { throw Error('No pixel geometry required'); };
+compactRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [noIconLabel] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, noIconFooter);
+// Multiple equal candidates are ambiguous; never choose one at random.
+const secondFooter = makeNode('Rate limited', rect(0, 0, 9000, 10));
+secondFooter.parentElement = composerRegion;
+const secondLabel = makeNode('Rate limited', rect(0, 0, 9000, 10), secondFooter);
+compactRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [noIconLabel, secondLabel] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, null);
+// A layout whose only shared owner also contains the transcript is unsafe.
+compactRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [noIconLabel] : [];
+composerRegion.querySelector = selector => selector.includes('[role="log"]') ? transcript : null;
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, null);
+composerRegion.querySelector = () => null;
+assert.equal(context.scmToolkitFooterRateLimitNotice(compactRoot).card, noIconFooter);
 
 // An unmatched footer still has its typo fixed, without requiring a composer.
 const unmatchedTypoText = {nodeType: 3, textContent: 'Rated Limited'};
@@ -141,9 +200,11 @@ assert.equal(iconNode.childNodes.length, 0);
 
 // A full card with extra information or an actionable native control is untouched.
 const timed = makeNode('Rated Limited · resets in 2h', rect(27, 814, 564, 54));
+timed.parentElement = composerRegion;
 footerLabel.parentElement = timed;
 assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
 const actionable = makeNode('Rated Limited', rect(27, 814, 564, 54));
+actionable.parentElement = composerRegion;
 actionable.querySelectorAll = () => [{}];
 footerLabel.parentElement = actionable;
 assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
