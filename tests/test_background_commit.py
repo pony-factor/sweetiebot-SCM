@@ -95,6 +95,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.git('checkout', '--orphan', 'unrelated')
         self.git('commit', '-qm', 'Unrelated history')
         other = self.git('rev-parse', 'HEAD')
+        self.git('push', '-q', 'origin', 'HEAD:refs/heads/unrelated')
         self.git('checkout', '-q', 'main')
         self.git('--git-dir=' + str(self.root / 'remote'), 'update-ref', 'refs/heads/main', other)
         worker.reconcile_published_jobs(self.repo / '.git')
