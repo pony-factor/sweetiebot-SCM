@@ -276,6 +276,13 @@ async function humanSquashMerge(repository, number, {
       progress('verifying-push', { sha: prepared.sha });
       const updated = await api(prPath);
       if (updated.state !== 'open' || updated.head?.sha !== prepared.sha) throw Error('Could not verify the synchronized PR head.');
+      // A conflict-free merge request already authorizes this integration.
+      // Keep the check, identity and live-base gates in finish(), without an
+      // extra AI round and clone just to merge the head we have verified.
+      if (operation === 'merge' && nativeSquash && !conflicts.length) {
+        pushedSha = prepared.sha;
+        return await finish(prepared.sha, preparedMessage, 'squash');
+      }
       return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
         reason: prepared.commits.length
