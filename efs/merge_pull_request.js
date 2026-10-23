@@ -77,6 +77,13 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       number: result.number, base, author: landed.author };
   }
 
+  // Compare live branch tips, not the potentially stale PR base.sha.
+  const readBaseTip = async () => {
+    const branch = await request('repos/' + repository + '/branches/' + encodeURIComponent(base));
+    if (!SHA.test(branch?.commit?.sha || '')) throw new Error('Cannot verify the current PR base branch tip.');
+    return branch.commit.sha;
+  };
+  const baseSha = await readBaseTip();
   const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
   const human = verifiedHumanAuthor(originalCommits);
   if (human.login.toLowerCase() !== pr.user.login.toLowerCase()) {
@@ -89,7 +96,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (fresh.state !== 'open' || fresh.draft || fresh.merged_at ||
       fresh.title !== pr.title || fresh.head?.ref !== pr.head.ref ||
       fresh.base?.ref !== pr.base.ref || fresh.head?.sha !== pr.head.sha ||
-      fresh.base?.sha !== pr.base.sha) {
+      await readBaseTip() !== baseSha) {
     throw new Error('Pull request changed before squash merge; refresh and try again.');
   }
   const merged = await request(endpoint + '/merge', {method: 'PUT',
