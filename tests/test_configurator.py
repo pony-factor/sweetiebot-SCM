@@ -328,6 +328,28 @@ class SubmissionTests(unittest.TestCase):
             self.assertNotIn(f'type="checkbox" name="{name}"', page)
             self.assertIn(f'type="hidden" name="{name}"', page)
 
+    def test_relative_codex_reset_time_setting_explains_conversion(self):
+        setting = next(item for item in configurator.SETTINGS
+                       if item.name == "codexUsageResetCountdown")
+        self.assertEqual(setting.label, "Relative Codex reset times")
+        self.assertIn("absolute reset dates and times", setting.description)
+        self.assertIn("live relative countdowns", setting.description)
+        self.assertEqual(setting.git_key, "scm-toolkit.codex-usage-reset-countdown")
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "token", "Save")
+        self.assertIn("Relative Codex reset times", page)
+        self.assertIn("live relative countdowns", page)
+
+    def test_rate_limit_sticker_toggle_and_local_picker(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["codexRateLimitSticker"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="codexRateLimitSticker"', page)
+        self.assertIn('id="sticker-upload"', page)
+        self.assertIn("Cached", configurator.STICKER_SCRIPT)
+        values.pop("codexRateLimitSticker")
+        self.assertFalse(configurator.parse_submission(values)["codexRateLimitSticker"])
+
     def test_gear_page_covers_every_toolkit_and_extension_setting(self):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)

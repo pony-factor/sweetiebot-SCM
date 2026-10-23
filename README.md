@@ -161,7 +161,7 @@ The installer modifies the installed VS Code workbench files. VS Code updates ca
 - `scripts/`: Python installers, configuration tools, and their branch-name catalog.
 - `assets/workbench/`: JavaScript and CSS injected into the VS Code workbench.
 - `assets/codex/`: JavaScript injected into the Codex extension.
-- `assets/images/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
+- `assets/imgs/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
 - `efs/`: companion VS Code extension code.
 - `tests/`: Python and JavaScript tests.
 
@@ -771,15 +771,38 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 
 ### Compact Codex rate-limit notices
 
+The **Rate-limit sticker** toggle lives in **Settings → Codex → Customization**
+and is enabled by default. Select a personal PNG, JPEG, GIF, or WebP (up to 2 MB)
+in **Rate-limit sticker image** to cache the artwork under the current user's
+private local application data folder, never in the Git repository or settings
+sync. The bundled `assets/imgs/twi-stop.png` remains the default; **Use bundled
+image** deletes the cached override. Uploads and resets require a rebuild and
+Codex reload to update the patched webview. Turning the sticker off does not
+disable usage-message compaction, reset shortcuts or countdown settings.
+
+
 Repeated transcript notices without a usable reset time are shortened to
 **Rate limited**, rather than duplicating the upgrade/credit warning already
-shown in Codex's main limit card. Messages with an actual reset time retain it.
+shown in Codex's main limit card. A narrowly scoped DOM observer reapplies
+this text after Codex rerenders an untimed warning so the long warning does
+not flicker back into view. Messages with an actual reset time, actionable
+upgrade controls, and editable prompts are left unchanged.
 
-The empty **Rated Limited** banner directly above the composer is replaced by the
-bundled `assets/images/twi-stop.png` sticker. Installation embeds the artwork as a PNG data URI,
-so it does not fetch an external host. The override also works when the Codex
-bundle lacks older transcript-message IDs. If the image cannot render, the
-native status remains visible; actionable limit cards are not replaced.
+The short **Rate limited** status in the composer's own DOM region (including
+older builds that mistakenly show **Rated Limited**) is replaced by the bundled
+`assets/imgs/twi-stop.png` sticker. Matching first uses composer/status ancestry, and falls back to native
+alert/status roles, accessibility labels, and rate-limit feature identifiers if
+Codex changes its wording, markup, or renders the status in a portal outside
+the composer. It does not require particular screen coordinates, widths or
+icons. The fallback requires one unambiguous native status and preserves the
+original banner; transcript messages and unrelated alerts are excluded.
+Completely unmarked rate limits still cannot be identified reliably. The sticker uses
+a small, independently framed card: for a bare status, its original container
+shrinks around the image. If the native status includes a reset countdown,
+credit details or Upgrade actions, a separate compact sticker card appears
+alongside it, and the original details and buttons remain usable. Installation
+embeds the artwork as a PNG data URI and works without older transcript-message
+IDs. If the image cannot render, the native notice remains intact.
 
 A right-aligned **Use credits** shortcut appears on the main limit card
 when Codex itself renders an available banked-reset control (for example,
@@ -801,11 +824,13 @@ git config --global scm-toolkit.codex-hide-usage-reset-times true
 python3 scripts/install.py --codex-only
 ```
 
-### Codex usage-reset countdown
+### Relative Codex reset times
 
-When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
-Codex extension show the time remaining as a live countdown such as `4h 23m`. The
-display rounds to the nearest minute and refreshes as the countdown changes.
+The **Relative Codex reset times** setting (`codex-usage-reset-countdown`)
+converts absolute reset dates and times in supported Codex usage-limit banners
+into live relative countdowns. For example, "resets October 24 at 3 PM" is
+displayed as "resets in 1d 4h" when that duration remains. Countdown values
+are rounded to the nearest minute and update automatically.
 The local composer label beside the location icon shows the smaller remaining
 percentage of the five-hour and weekly usage limits. Until usage data is available,
 it shows **Work locally**. The usage submenu shows centered reset countdowns;
