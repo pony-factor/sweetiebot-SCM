@@ -95,7 +95,7 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
     }
     if (pageItems.length < 100) break;
   }
-  return pulls.sort((a, b) => b.number - a.number);
+  return pulls.sort((a, b) => a.number - b.number);
 }
 
 /** Find complete selected linear chains rooted at main. A branch-name link is
@@ -124,9 +124,9 @@ function planStackMerges(pullRequests, repositoryFullName, defaultBranch = 'main
   const ordered = pullRequests.map(pr => ({
     ...pr, ...(ancestry(pr) || { stackDepth: null, stackRoot: null, stackParent: null })
   })).sort((a, b) => {
-    if (a.stackDepth === null) return b.stackDepth === null ? b.number - a.number : 1;
+    if (a.stackDepth === null) return b.stackDepth === null ? a.number - b.number : 1;
     if (b.stackDepth === null) return -1;
-    return b.stackRoot - a.stackRoot || a.stackDepth - b.stackDepth || a.number - b.number;
+    return a.stackRoot - b.stackRoot || a.stackDepth - b.stackDepth || a.number - b.number;
   });
   return {
     ordered,
@@ -208,7 +208,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummari
     localHandoff ? 'CONFLICT RESOLUTION: Inspect both sides and surrounding code without changing the selected head. For a straightforward mechanical conflict whose intended result is clear, return a complete resolution patch against the exact current base through the LOCAL LINDSEY CLI HANDOFF. Preserve both intentions. If human judgment is needed, leave a focused, deduplicated inline PR review comment marked <!-- sweetiebot-merge-review --> on the actual conflicting code, explaining the competing intentions, question and implementation choices, leave that PR open and continue unrelated selected PRs. Do not commit or push from the web session; delegated heads must remain at the selected SHA.' : 'CONFLICT RESOLUTION: For each selected PR with merge conflicts, inspect the conflicting files, both sides, and the surrounding code. Resolve straightforward mechanical conflicts on the selected PR branch when the intended result is clear, preserving the intended behavior of both changes. This merge request authorizes an ordinary conflict-resolution commit and fast-forward-only push on that selected branch; never rewrite its history. Re-read the updated head SHA and verify the resolution and mergeability before merging; do not keep using the pre-resolution SHA. Do not discard either side merely to make the merge succeed. If the conflict requires human judgment, leave a focused inline GitHub PR review comment on the actual conflicting code, explaining the competing intentions and available options, and asking the specific question a maintainer must answer. Check existing review threads and update the matching comment to avoid duplicate feedback. Leave that PR open and continue with unrelated safe selected PRs. If the available tools cannot inspect or safely apply a resolution or post the comment, report the exact limitation instead of claiming it was resolved or feedback was posted.',
     hasStack
       ? 'COMPLETE SELECTED STACKS: The list is ordered from closest to main upward. For GitHub-native linked stacks, first verify live GitHub stack membership, the base branch, all approvals/checks, and that the exact contiguous prefix through the highest selected PR contains ONLY selected PRs. Prefer the GitHub-native atomic stack squash operation: gh stack merge <highest-selected-PR-number> --yes --squash, or the equivalent asynchronous stack-merge REST API. Do NOT use gh pr merge or the legacy synchronous merge endpoint for a native stack. GitHub creates one squash commit per PR. If a merge queue overrides the squash method, report that limitation; do not promise squash commits. Poll/verify each actual merge result rather than assuming a queued request completed. Do not add unselected PRs just to complete a stack.'
-      : 'Determine a safe merge order from dependencies, overlapping changes, and current branch states.',
+      : 'MERGE ORDER: Process the oldest selected PRs first (lowest PR number first). Selected stack ancestors must precede their descendants. Skip a genuinely blocked PR and continue with the oldest eligible remaining PR; do not start with the newest merely because GitHub listed it first. Reassess dependencies and overlapping changes against the current base after each merge.',
     hasStack
       ? 'BRANCH-LINKED BUT NOT GITHUB-NATIVE: Do not mistake a head/base branch-name chain for verified native stack membership. If native stack merge is unavailable, only use manual ancestor-first squash and child-only replay when you can prove each child diff excludes all ancestor changes, safely retarget ONLY selected descendants to main, respect branch protections, and preserve one squash commit per PR. Do not force-push or rewrite any branch, including selected PR heads, parents, and bases. If that cannot be verified and performed safely with available tools, STOP that stack; never fall back to merging children into parent branches and calling the result delivered to main.'
       : '',

@@ -64,8 +64,10 @@ async function run() {
     requested.push({ url, options });
     return { ok: true, status: 200, async json() { return apiPulls; } };
   });
-  assert.deepEqual(pulls.map(pr => pr.number), [12, 10, 9]);
-  assert.deepEqual(pulls.map(pr => pr.base), ['main', 'main', 'develop']);
+  assert.deepEqual(pulls.map(pr => pr.number), [9, 10, 12]);
+  const newestPull = pulls.find(pr => pr.number === 12);
+  const nonMainPull = pulls.find(pr => pr.number === 9);
+  assert.deepEqual(pulls.map(pr => pr.base), ['develop', 'main', 'main']);
   assert.match(requested[0].url, /state=open&per_page=100/);
   assert(!requested[0].url.includes('base=main'));
   assert.equal(requested[0].options.headers.Authorization, 'Bearer token');
@@ -120,12 +122,12 @@ async function run() {
     assert.equal(picker.items.some(item => item.selectAll), false);
     assert.equal(picker.buttons.length, 0);
   });
-  assert.deepEqual(await pickPullRequests(allPicker.vscode, pulls), pulls);
+  assert.deepEqual((await pickPullRequests(allPicker.vscode, pulls)).map(pr => pr.number), [10, 12, 9]);
   assert.equal(allPicker.disposed, true);
 
   const onePicker = pickerHarness('one');
   const oneResult = await pickPullRequests(onePicker.vscode, pulls);
-  assert.deepEqual(oneResult.map(pr => pr.number), [10]);
+  assert.deepEqual(oneResult.map(pr => pr.number), [12]);
   assert.equal(onePicker.disposed, true);
 
   const emptyPicker = pickerHarness('empty');
@@ -136,13 +138,13 @@ async function run() {
 
   const prompt = batchMergePrompt({
     repositoryUrl: 'https://github.com/owner/repo',
-    pullRequests: [pulls[0]],
+    pullRequests: [newestPull],
     base: 'main'
   });
   assert.match(prompt, /Squash and merge the following selected pull request into each PR's explicitly listed base branch/);
   assert.match(prompt, /base: "main"/);
   const mixedPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
-    pullRequests: [pulls[0], pulls[2]] });
+    pullRequests: [newestPull, nonMainPull] });
   assert.match(mixedPrompt, /#9: Wrong base/);
   assert.match(mixedPrompt, /base: "develop"/);
   assert.match(mixedPrompt, /ONLY into their originally listed base branch/);
@@ -169,13 +171,13 @@ async function run() {
   assert.match(prompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
   assert.match(prompt, /preserve every verified Git author, committer and Co-authored-by trailer/);
   const syncIncludedPrompt=batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
-    pullRequests: [pulls[0]], filterSyncCommitSummaries: false });
+    pullRequests: [newestPull], filterSyncCommitSummaries: false });
   assert.match(syncIncludedPrompt, /SYNC COMMIT FILTER DISABLED/);
   assert.match(syncIncludedPrompt, /explanatory bodies in the squash summary/);
   assert(!syncIncludedPrompt.includes('SYNC COMMIT FILTER ENABLED'));
   assert.match(prompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
   const emojiPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
-    pullRequests: [pulls[0]], omitBulletsForEmojiTitles: true });
+    pullRequests: [newestPull], omitBulletsForEmojiTitles: true });
   assert.match(emojiPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
   assert.match(emojiPrompt, /if EVERY remaining commit subject begins with an emoji/);
   assert.match(emojiPrompt, /If any retained subject lacks an emoji, keep the normal hyphen bullets/);
@@ -261,6 +263,12 @@ async function run() {
     branchPr(42, 'middle', 'bottom')
   ];
   const stackPlan = planStackMerges(stackPulls, 'owner/repo');
+  assert.deepEqual(planStackMerges([
+    branchPr(428, 'newest', 'main'), branchPr(407, 'oldest', 'main'), branchPr(412, 'middle', 'main')
+  ], 'owner/repo').ordered.map(pr => pr.number), [407, 412, 428], 'Independent PRs run oldest first');
+  assert.deepEqual(planStackMerges([
+    branchPr(42, 'child', 'parent'), branchPr(45, 'parent', 'main')
+  ], 'owner/repo').ordered.map(pr => pr.number), [45, 42], 'Dependencies precede even an older-numbered child');
   assert.deepEqual(stackPlan.ordered.map(pr => pr.number), [41, 42, 43]);
   assert.deepEqual(stackPlan.stacked.map(pr => pr.stackParent), [41, 42]);
   assert.equal(stackPlan.nonMain.length, 0);
@@ -292,7 +300,7 @@ async function run() {
   assert.deepEqual(planStackMerges([
     branchPr(41, 'bottom', 'main'), branchPr(42, 'middle', 'bottom'),
     branchPr(43, 'other', 'bottom')
-  ], 'owner/repo').nonMain.map(pr => pr.number), [43, 42]);
+  ], 'owner/repo').nonMain.map(pr => pr.number), [42, 43]);
   assert.equal(planStackMerges([branchPr(44, 'x', 'y'), branchPr(45, 'y', 'x')],
     'owner/repo').nonMain.length, 2);
 
@@ -416,13 +424,13 @@ async function run() {
     return fragment.get('q');
   };
   const sentPrompt = mergePromptFromUrl(chat);
-  assert.match(sentPrompt, /pull\/41/);
-  assert.match(sentPrompt, /squash title: "Selected PR \(#41\)"/);
+  assert.match(sentPrompt, /pull\/40/);
+  assert.match(sentPrompt, /squash title: "Unselected PR \(#40\)"/);
   assert.match(sentPrompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
   assert.match(sentPrompt, /CONFLICT RESOLUTION/);
   assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
   assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
-  assert(!sentPrompt.includes('pull/40'));
+  assert(!sentPrompt.includes('pull/41'));
   assert.match(sentPrompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
   assert.match(sentPrompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
   filterSyncSummaries = false;
@@ -441,6 +449,9 @@ async function run() {
   const allChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.match(mergePromptFromUrl(allChat), /pull\/41/);
   assert.match(mergePromptFromUrl(allChat), /pull\/40/);
+  assert(mergePromptFromUrl(allChat).indexOf('#40:') < mergePromptFromUrl(allChat).indexOf('#41:'),
+    'Merge All submits the oldest PR first');
+  assert.match(mergePromptFromUrl(allChat), /oldest selected PRs first/);
   assert(browserCalls.every(call => call.id === 'vscode.openFolder'),
     'Merge All launches an independent workspace');
   includeNonMain = true;
@@ -466,7 +477,7 @@ async function run() {
   await handler();
   const scopedChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
-  assert.match(mergePromptFromUrl(scopedChat), /pull\/41/);
+  assert.match(mergePromptFromUrl(scopedChat), /pull\/40/);
   configuredProject = '';
 
   const modalCountBeforeStack = modalWarnings.length;
