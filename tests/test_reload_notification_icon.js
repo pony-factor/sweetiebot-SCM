@@ -20,7 +20,7 @@ for (const directory of roots) {
   assert.match(css, /\.notification-list-item\.scm-toolkit-pr-queued \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '⏳';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-branch-squash-synced \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🔄';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-branch-squash-synced \.notification-list-item-icon\.codicon-info::before,/);
-  assert(javascript.includes(": `Squash Synced '${branch}' with '${currentDefaultBranch}'`"),
+  assert(javascript.includes(": `Squash synced '${branch}' with '${currentDefaultBranch}'`"),
     'Squash sync notice must quote both branches without a period or commit-count suffix');
 
   const start = javascript.indexOf('// Notification rows are reused, so update the marker whenever their message changes.');
@@ -61,7 +61,7 @@ for (const directory of roots) {
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-pr-queued'), `Queue icon class not added in ${directory}`);
   assert(!classes.has('scm-toolkit-pr-merged'), `Reused notification retained merge icon in ${directory}`);
-  currentMessage = "Squash Synced 'cinnamon-sugar' with 'main'";
+  currentMessage = "Squash synced 'cinnamon-sugar' with 'main'";
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-branch-squash-synced'), `Squash-sync icon class not added in ${directory}`);
   assert(!classes.has('scm-toolkit-pr-queued'), `Reused notification retained queued icon in ${directory}`);
