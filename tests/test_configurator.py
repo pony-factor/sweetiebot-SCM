@@ -52,6 +52,11 @@ class SubmissionTests(unittest.TestCase):
             self.assertIn(f'name="{name}"', page)
         self.assertIn('placeholder="VS Code default"', page)
         self.assertIn("window.title", page)
+        self.assertIn('id="heading-layout"', page)
+        self.assertIn('id="heading-available"', page)
+        self.assertIn('id="heading-add-text"', page)
+        self.assertIn('name="windowShowModifiedStatus"', page)
+        self.assertIn('name="windowShowPushingStatus"', page)
         values.update(windowHeading=[''], windowName=[''])
         restored = configurator.parse_submission(values)
         self.assertEqual(restored['windowHeading'], '')
@@ -1226,6 +1231,8 @@ class ServerTests(unittest.TestCase):
             changes = urllib.parse.urlencode({
                 "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
                 "windowName": "${activeEditorShort}",
+                "windowShowModifiedStatus": "false",
+                "windowShowPushingStatus": "false",
             }).encode()
             with urllib.request.urlopen(urllib.request.Request(
                 endpoint("/sync-window-settings"), data=changes, method="POST"
@@ -1235,6 +1242,8 @@ class ServerTests(unittest.TestCase):
                 self.assertEqual(json.load(response)["windowSettings"], {
                     "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
                     "windowName": "${activeEditorShort}",
+                    "windowShowModifiedStatus": False,
+                    "windowShowPushingStatus": False,
                 })
             with urllib.request.urlopen(endpoint("/")) as response:
                 updated_page = response.read().decode()

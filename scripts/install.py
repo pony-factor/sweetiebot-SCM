@@ -431,7 +431,8 @@ def window_title_push_edits(js):
         'this.getWindowTitle()||this.productService.nameLong;',
         '(this.getWindowTitle(this.configurationService.getValue("scmToolkit.windowName")'
         '||this.configurationService.getValue("window.title"))||this.productService.nameLong)'
-        '+(this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"");',
+        '+(this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&'
+        'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"");',
     )
     return [
         (registration, 'this.checkTitleVariables(),'
@@ -455,14 +456,17 @@ def window_title_naming_edits(js):
         raise ValueError("Unsupported VS Code build: window naming template does not match.")
     replacement = original[:render.start()] + (
         f'return ({render.group(1)})+(scmToolkitTitle===undefined&&'
+        'this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&'
         'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"")}')
     replacement = replacement.replace('getWindowTitle(){', 'getWindowTitle(scmToolkitTitle){', 1)
     replacement = replacement.replace(template.group(0),
         f'let {template.group(1)}=scmToolkitTitle??('
         'this.configurationService.getValue("scmToolkit.windowHeading")'
-        '||this.configurationService.getValue("window.title"));', 1)
+        '||this.configurationService.getValue("window.title"));'
+        'if(this.configurationService.getValue("scmToolkit.windowShowModifiedStatus")===false)'
+        f'{template.group(1)}={template.group(1)}.split("${{activeEditorState}}").join("");', 1)
     replacement = replacement.replace('!this.titleIncludesEditorState&&',
-        f'!{template.group(1)}.includes("${{activeEditorState}}")&&', 1)
+        f'this.configurationService.getValue("scmToolkit.windowShowModifiedStatus")!==false&&!{template.group(1)}.includes("${{activeEditorState}}")&&', 1)
     config = re.search(r'onConfigurationChanged\(([\w$]+)\)\{let ([\w$]+)=\1.affectsConfiguration\("window.title"\)', js)
     variables = re.search(r'checkTitleVariables\(\)\{let ([\w$]+)=this.configurationService.getValue\("window.title"\)', js)
     update = re.search(r'doUpdateTitle\(\)\{let ([\w$]+)=this.getFullWindowTitle\(\);if\(\1!==this.title\)\{', js)
@@ -474,8 +478,8 @@ def window_title_naming_edits(js):
     return [
         (original, replacement),
         (update.group(0), f'doUpdateTitle(){{let {update.group(1)}=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle();if({update.group(1)}!==this.title||scmToolkitHeading!==this.scmToolkitHeading){{this.scmToolkitHeading=scmToolkitHeading;'),
-        ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("scmToolkit.windowHeading")||this.contextKeyService.getContextKeyValue("sweetiebot.pushPending"))return!0;'),
-        (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("scmToolkit.windowHeading")||{config.group(1)}.affectsConfiguration("scmToolkit.windowName")'),
+        ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("scmToolkit.windowHeading")||(this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")))return!0;'),
+        (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("scmToolkit.windowHeading")||{config.group(1)}.affectsConfiguration("scmToolkit.windowName")||{config.group(1)}.affectsConfiguration("scmToolkit.windowShowModifiedStatus")||{config.group(1)}.affectsConfiguration("scmToolkit.windowShowPushingStatus")'),
         (variables.group(0), variables.group(0).replace('this.configurationService.getValue("window.title")',
             '(this.configurationService.getValue("scmToolkit.windowHeading")||this.configurationService.getValue("window.title"))')),
         (focused, f'this.titleIncludesFocusedView=({variables.group(1)}+" "+(this.configurationService.getValue("scmToolkit.windowName")||"")).includes("${{focusedView}}")'),
