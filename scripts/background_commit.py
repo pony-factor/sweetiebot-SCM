@@ -557,7 +557,75 @@ def sync_with_lindsey(job, remote_tip):
         return True
 
 
+def reconcile_published_jobs(meta):
+    """Retire finalized, blocked jobs proven published outside this queue."""
+    meta = Path(meta)
+    marker = meta / MARKER
+    published = {}
+    for entry in queue_entries(marker):
+        directory = Path(entry['directory'])
+        file = directory / 'job.json'
+        job = read_journal(file)
+        if (not job or job.get('phase') != 'blocked' or job.get('provisional')
+                or job.get('replacement_sha') or not job.get('sha') or not job.get('push')):
+            continue
+        try:
+            with (directory / 'worker.lock').open('a+b') as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                env = os.environ.copy()
+                env.pop('GIT_INDEX_FILE', None)
+                env['GIT_TERMINAL_PROMPT'] = '0'
+                env.setdefault('GIT_SSH_COMMAND', 'ssh -oBatchMode=yes')
+                def query(*args, **kwargs):
+                    return git(*args, cwd=job['root'], env=env, **kwargs)
+                if query('rev-parse', '--absolute-git-dir') != str(meta):
+                    continue
+                if (query('show', '-s', '--format=%T', job['sha']) != job['tree']
+                        or query('show', '-s', '--format=%P', job['sha']) != job['parent']
+                        or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
+                    continue
+                remote, destination = job.get('remote'), job.get('destination')
+                if not remote or remote.startswith('-') or not destination or not destination.startswith('refs/heads/'):
+                    continue
+                key = (job['root'], remote, destination)
+                if key not in published:
+                    result = query('ls-remote', '--refs', remote, destination, check=False, timeout=3)
+                    rows = [line.split() for line in result.stdout.splitlines()]
+                    tip = (rows[0][0] if result.returncode == 0 and len(rows) == 1
+                           and len(rows[0]) == 2 and rows[0][1] == destination
+                           and re.fullmatch(r'[0-9a-f]{40,64}', rows[0][0]) else '')
+                    if tip and query('cat-file', '-e', tip + '^{commit}', check=False).returncode:
+                        if query('fetch', '--no-tags', '--no-write-fetch-head', remote, tip,
+                                 check=False, timeout=3).returncode:
+                            tip = ''
+                    published[key] = tip
+                tip = published[key]
+                if not tip or query('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode:
+                    continue
+                with repository_lock(meta):
+                    current = read_journal(file)
+                    if (current != job or (meta / TRANSACTION).exists()
+                            or not any(item['id'] == job['id'] for item in queue_entries(marker))
+                            or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
+                        continue
+                    job.update(phase='done', context='')
+                    job.pop('error', None)
+                    job.pop('conflictPaths', None)
+                    write_journal(file, job)
+                    save_queue(marker, queue_entries(marker))
+                    query('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            # Uncertain histories and offline checks retain their existing pause.
+            continue
+
+
 def work(directory, commit_only=False):
+    saved = read_journal(directory / 'job.json')
+    if saved and saved.get('phase') == 'blocked':
+        reconcile_published_jobs(saved['gitdir'])
     with (directory / 'worker.lock').open('a+b') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -998,6 +1066,7 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
     if result.returncode:
         return
     marker = Path(result.stdout.strip()) / MARKER
+    reconcile_published_jobs(marker.parent)
     entries = queue_entries(marker)
     own_job = os.environ.get('SWEETIEBOT_BACKGROUND_JOB')
     if own_job and any(own_job == entry.get('id') for entry in entries):
@@ -1055,6 +1124,7 @@ if __name__ == '__main__':
                 resume()
         elif sys.argv[1:] == ['--status']:
             marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
+            reconcile_published_jobs(marker.parent)
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
             status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths', 'mergedBranch') if key in job} if job else {}
