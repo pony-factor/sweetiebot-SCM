@@ -65,8 +65,28 @@
     if (!callback) return;
     const expires = Date.now() + 1200000;
     let previous, stableSince;
+    let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
+    let recoveryAllowed = true;
+    const clearNotice = () => { retryNotice?.remove(); retryNotice = undefined; };
+    const cancelRecovery = event => {
+      if (!event.isTrusted || (event.type === 'input' && inserting)) return;
+      if (event.type === 'click') {
+        const button = event.target.closest?.('button');
+        if (!/^(?:send|send prompt|stop|stop streaming|retry|try again)$/i.test(
+          button?.getAttribute('aria-label') || button?.textContent?.trim() || '')) return;
+      }
+      recoveryAllowed = false;
+      clearNotice();
+    };
+    const finishRecovery = () => {
+      document.removeEventListener('input', cancelRecovery, true);
+      document.removeEventListener('click', cancelRecovery, true);
+      clearNotice();
+    };
+    document.addEventListener('input', cancelRecovery, true);
+    document.addEventListener('click', cancelRecovery, true);
     const collect = () => {
-      if (Date.now() > expires || window.location.origin !== launch.origin) return;
+      if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
         .some(button => button.getClientRects().length > 0);
       // The nonce-bearing callback validates ownership without depending on
@@ -86,7 +106,43 @@
       // A response can repeat its return link with a revised draft. Stabilize
       // the final candidate once, rather than resetting for every earlier link.
       if (latest !== previous) { previous = latest; stableSince = Date.now(); }
-      if (latest && !generating && Date.now() - stableSince >= 2000) { window.location.assign(latest); return; }
+      if (latest && !generating && Date.now() - stableSince >= 2000) {
+        finishRecovery(); window.location.assign(latest); return;
+      }
+      // Recover only a visible response-stream failure in this nonce-bound
+      // workflow. Never resend the prompt or retry a local Git handoff.
+      let retry;
+      if (recoveryAllowed && !latest && !generating) {
+        retry = [...document.querySelectorAll('button')].reverse().find(button => {
+          const label = button.getAttribute('aria-label') || button.textContent?.trim() || '';
+          if (!/^(?:retry|try again)$/i.test(label) || button.disabled ||
+              button.getAttribute('aria-disabled') === 'true' || !button.getClientRects().length) return false;
+          let parent = button.parentElement;
+          for (let depth = 0; parent && depth < 4; depth++, parent = parent.parentElement) {
+            const text = parent.textContent || '';
+            if (text.length > 3000) break;
+            if (/Error in message stream|Something went wrong while generating the response/i.test(text)) return true;
+          }
+          return false;
+        });
+      }
+      if (!retry) { errorSince = undefined; clearNotice(); }
+      else {
+        errorSince ??= Date.now();
+        if (Date.now() - errorSince >= 2000 && Date.now() - lastRetry >= 10000) {
+          if (!retryNotice) {
+            retryNotice = document.createElement('span');
+            retryNotice.setAttribute('role', 'status');
+            retryNotice.style.cssText = 'display:block;margin-top:8px;font-size:12px';
+            retry.insertAdjacentElement('afterend', retryNotice);
+          }
+          if (retries < 2) {
+            retryNotice.textContent = 'Retrying response (' + (++retries) + '/2)…';
+            lastRetry = Date.now();
+            retry.click();
+          } else retryNotice.textContent = 'Automatic retries stopped after two attempts. Retry to continue.';
+        }
+      }
       setTimeout(collect, 500);
     };
     collect();

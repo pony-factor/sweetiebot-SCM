@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, hiddenStop = false, thinkingReady = true, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], streaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -12,7 +12,14 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { sidebarClicks++; sidebar = false; } };
   const button = { disabled, getAttribute: key => key === 'aria-label' ? label : null,
     getClientRects: () => [1], click: () => { clicks++; } };
-  const navigations = [];
+  const navigations = [], retryNotices = [];
+  let retries = 0;
+  const retryButton = { disabled: false, textContent: 'Retry',
+    parentElement: { textContent: 'Error in message stream Retry' },
+    getAttribute: () => null, getClientRects: () => hiddenRetry ? [] : [1],
+    insertAdjacentElement(position, notice) { assert.equal(position, 'afterend'); retryNotices.push(notice); },
+    click() { retries++; if (retryStartsStreaming) { streamError = false; streaming = true; } } };
+
   const location = value => Object.assign(new URL(value), {assign(value){navigations.push(value);}});
   const persisted = new Map(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts'].map(key => [key, 'Keep the unrelated user draft']));
   class Storage {
@@ -26,12 +33,13 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     sweetiebotEnsureMaximumThinking: () => thinkingReady,
     require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
-    document: { execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
+    document: { createElement() { return { style: {}, setAttribute() {}, remove() { this.removed = true; } }; }, execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ type: 'input', isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
         if (selector.includes('Stop streaming')) return streaming ? [button] : hiddenStop ? [{getClientRects:()=>[]}] : [];
+        if (selector === 'button') return streamError ? [retryButton] : [];
         assert.equal(selector, 'a[href]', 'Collect exact nonce callbacks across ChatGPT message layouts');
         return resultLinks.map(href=>({href}));
       },
@@ -39,7 +47,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
-  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
+  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, setStreamError(value){streamError=value;}, retryButton, retries:()=>retries, retryNotices, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
     sidebarClicks: () => sidebarClicks, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
@@ -53,7 +61,7 @@ f.setThinkingReady(true); f.tick(); assert.equal(f.clicks(), 1);
 f = fixture({ text: '' }); f.tick(); assert.equal(f.clicks(), 0);
 f.composer.innerText = 'Draft\nPR'; f.tick(); assert.equal(f.clicks(), 1);
 f = fixture({ text: 'Different draft' }); f.tick(); assert.equal(f.clicks(), 0);
-f = fixture({ disabled: true }); f.listeners.get('input').forEach(callback => callback({ isTrusted: true }));
+f = fixture({ disabled: true }); f.listeners.get('input').forEach(callback => callback({ type: 'input', isTrusted: true }));
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
 f = fixture({ disabled: true }); f.tick(180000); f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
 for (const label of ['Stop', 'Start Voice']) { f = fixture({ label }); f.tick(); assert.equal(f.clicks(), 0); }
@@ -98,7 +106,7 @@ f.tick();assert.equal(f.clicks(),1,'Own inserted text tolerates composer whitesp
 f = fixture({ url: fragmentUrl, text: 'Keep my draft' });
 f.tick(); assert.equal(f.composer.innerText, 'Keep my draft'); assert.equal(f.clicks(), 0);
 f = fixture({ url: fragmentUrl, text: '', disabled: true });
-f.listeners.get('input').forEach(callback => callback({ isTrusted: true }));
+f.listeners.get('input').forEach(callback => callback({ type: 'input', isTrusted: true }));
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 0);
 const largePrompt = 'Evidence 🫧 & backrefs\n'.repeat(6000);
 f = fixture({ url: 'https://chatgpt.com/#sweetiebot_pr=1&q=' + encodeURIComponent(largePrompt), text: '' });
@@ -119,7 +127,7 @@ assert.equal(f.composer.innerText, 'Merge #41 & #42', 'Isolate a restored draft 
 assert.equal(f.persisted.get('oai/apps/conversationDrafts'), 'Keep the unrelated user draft');
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 1);
 f = fixture({ url: 'https://chatgpt.com/#sweetiebot_merge=1&q=User%20edited', text: '' });
-f.listeners.get('input').forEach(callback => callback({ isTrusted: true }));
+f.listeners.get('input').forEach(callback => callback({ type: 'input', isTrusted: true }));
 f.tick(); assert.equal(f.clicks(), 0, 'Respect user editing');
 f = fixture({ url: 'https://chatgpt.com/?sweetiebot_merge=1&q=Not%20fragment', text: 'Not fragment' });
 f.tick(); assert.equal(f.clicks(), 0, 'Do not auto-send unmarked query-only merge requests');
@@ -173,3 +181,35 @@ for(const bad of [returnUrl.replace(':1234',':4567'),returnUrl.replace('/pony','
   assert.equal(f.navigations.length,0,'Collect only this workflow’s exact local callback');
 }
 console.log('Independent result collection checks passed.');
+
+// A recognized stream error in this workflow retries the response, never Send.
+const retryLaunch = mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback);
+f = fixture({ url: retryLaunch, text: '', streamError: true });
+f.tick(2500);
+assert.equal(f.retries(), 1);
+assert.equal(f.clicks(), 1, 'Recovery never resubmits the original prompt');
+f.tick(15000);
+assert.equal(f.retries(), 1, 'An active recovered response cannot be retried again');
+f = fixture({ url: retryLaunch, streamError: true, retryStartsStreaming: false });
+f.tick(2500); f.tick(10000); f.tick(10000); f.tick(10000);
+assert.equal(f.retries(), 2, 'Automatic response retries are bounded');
+assert.match(f.retryNotices.at(-1).textContent, /stopped after two attempts/);
+for (const options of [
+  { hiddenRetry: true }, { streaming: true }, { resultLinks: [mergeReturn] }
+]) {
+  f = fixture({ url: retryLaunch, streamError: true, ...options });
+  f.tick(2500);
+  assert.equal(f.retries(), 0, 'Hidden controls, active generation and a ready handoff cannot trigger recovery');
+}
+f = fixture({ url: retryLaunch, streamError: true });
+f.listeners.get('input').forEach(fn => fn({ type: 'input', isTrusted: true }));
+f.tick(2500);
+assert.equal(f.retries(), 0, 'A user editing the chat takes control of recovery');
+f = fixture({ url: retryLaunch, streamError: true });
+f.retryButton.parentElement.textContent = 'An unrelated operation failed Retry';
+f.tick(2500);
+assert.equal(f.retries(), 0, 'Only recognized response-stream errors are retried');
+f = fixture({ url: mergeUrl, streamError: true });
+f.tick(2500);
+assert.equal(f.retries(), 0, 'No nonce-bound receiver means no automatic recovery');
+console.log('Bounded workflow response-stream recovery checks passed.');
