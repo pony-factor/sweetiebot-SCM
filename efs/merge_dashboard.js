@@ -345,8 +345,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
-      const continuing = ['needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
+      const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
       const message = item.status === 'merged' ? 'Local CLI verified the human-authored merge: ' + item.sha
+        : item.status === 'synced' ? 'PR branch synchronized after separate per-file decision commits; main was not modified.'
         : item.status === 'needs_resolution' ? 'Automatically reconciling overlapping changes against current main: ' + (item.conflictPaths || []).join(', ')
         : item.status === 'needs_refresh' ? 'Main advanced; automatically refreshing the integration.'
         : item.status === 'waiting' ? 'Waiting for checks on the integrated PR head.'

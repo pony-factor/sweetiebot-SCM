@@ -25,8 +25,11 @@ function validateResolution(input, selection) {
       throw Error('Handoff must identify a selected PR, its exact head/base, and a complete bounded patch or null.');
     }
     seen.add(item.number);
+    const decisions = require('./resolution_commits').validateDecisions(item.decisions);
+    if (item.operation !== undefined && !['merge', 'sync'].includes(item.operation)) throw Error('Unknown local operation.');
     return { number: pr.number, headSha: pr.headSha, baseSha: item.baseSha,
-      base: pr.base, head: pr.head, title: pr.title, patch: item.patch, explanation: item.explanation };
+      base: pr.base, head: pr.head, title: pr.title, patch: item.patch, explanation: item.explanation,
+      operation: item.operation || 'merge', decisions };
   });
 }
 
@@ -38,7 +41,7 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
     try {
       const result = await merge(selection.repository, item.number, {
         api, git, expected: item,
-        resolutionPatch: item.patch
+        resolutionPatch: item.patch, decisions: item.decisions, operation: item.operation
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
@@ -67,7 +70,7 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
     const result = JSON.parse(stdout);
     if (result.repository !== selection.repository || !Array.isArray(result.results) ||
         result.results.length !== input.results.length || result.results.some((item, index) =>
-          item.number !== input.results[index].number || !['merged', 'blocked', 'needs_resolution', 'needs_refresh', 'waiting', 'checks_failed'].includes(item.status))) {
+          item.number !== input.results[index].number || !['merged', 'synced', 'blocked', 'needs_resolution', 'needs_refresh', 'waiting', 'checks_failed'].includes(item.status))) {
       throw Error('Local CLI returned an invalid merge result.');
     }
     return result;
@@ -78,6 +81,7 @@ function resolutionInstructions(selection, callback) {
   return [
     'LOCAL LINDSEY CLI HANDOFF: This workflow has an authenticated local Git executor on the user’s Mac. The web session does not need shell access. For selected bot-opened PRs, delegate the human-author squash to this handoff instead of reporting that local Git is unavailable. Do not separately rewrite or merge a PR that you delegate.',
     'For routine Git integration return patch:null, even if GitHub currently reports an out-of-date or conflicting branch: the CLI first tries an isolated three-way Git merge. If it returns needs_resolution, inspect the named overlapping files, the current base, original PR changes and earlier batch merges; return a COMPLETE git unified diff against the exact current BASE tree. Preserve current base behavior and add the remaining PR features. A routine overlap caused by an earlier selected merge is not a human decision. Do not return shell commands, partial patches, binary files, symlinks, credentials, or secret-bearing files. Ask the user only for a genuinely ambiguous behavior/product choice or an actual capability limitation.',
+    'CONFLICT DECISION HISTORY: A conflict resolution must also include decisions:[{"path":"exact conflicted file","title":"🛠️ Preserve the specific behavior and add the feature","description":"Explain the competing intentions, the behavior chosen, why it preserves both intentions or follows the user’s selected recommendation, and any tradeoff."}]. Provide exactly one concrete decision per actual conflicted file; never use generic titles such as Resolve conflicts. The local runner appends one commit per conflicted file to the original PR branch, then a separate sync commit for the remaining incoming files. main is read-only during preparation. Return operation:"sync" for branch-only synchronization; this never authorizes merging or closing the PR. Within an already-authorized merge batch, a synced result is preparation, not a completed merge: refresh its exact new head and only then proceed with the normal attribution-preserving merge route. Do not bury the decision edits inside a generic sync commit.',
     'Recheck each delegated PR’s exact head, base branch and base SHA. The selected heads are: ' + JSON.stringify(selection.pullRequests.map(pr => ({ number: pr.number, headSha: pr.headSha, base: pr.base }))) + '. Unrelated head changes require review; the coordinator adopts only heads changed by this batch’s verified local executor. Base advancement is expected: refresh and regenerate a stale patch without asking the user to approve the same selected PR again. For patch:null the local helper independently integrates the current base. Old failing checks on an unintegrated head do not prohibit preparing its current-base resolution: the local CLI runs GitHub checks on the resulting head and will not merge failed or pending checks.',
     'After handling any PRs you can merge directly, return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, guard the push with force-with-lease, and ask GitHub to merge the resulting single human-authored squash commit. Checks and reviews still apply.',
     'If every selected PR is blocked or already handled, return results:[] in that same versioned JSON object. This is a valid no-op; the local CLI must not merge anything. Keep the blocker details in the GitHub report. End with a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. Before returning, describe delegated PRs as pending local execution, never as merged.'

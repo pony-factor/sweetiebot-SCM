@@ -37,9 +37,9 @@ async function launchMergeSession(vscode, context, root, url, selection) {
   return launchSession(vscode, context, root, {}, url, selection);
 }
 
-async function launchBlockerWebSession(vscode, context, root, url, number) {
+async function launchBlockerWebSession(vscode, context, root, url, number, selection) {
   return launchSession(vscode, context, root,
-    { sessionTitle: `Resolve #${number} [${path.basename(root.fsPath)}]` }, url);
+    { sessionTitle: `Resolve #${number} [${path.basename(root.fsPath)}]`, ...(selection ? { syncOnly: true } : {}) }, url, selection);
 }
 
 async function launchBlockerCodexSession(vscode, context, root, task) {
@@ -178,7 +178,20 @@ async function resumePRSession(vscode, context) {
       const { githubGet } = require('./merge_dashboard');
       const prefix = 'repos/' + selection.repository;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
-      handoff = await require('./merge_batch').createMergeBatch(selection, {
+      if (input.options?.syncOnly) {
+        const { validateResolution, resolutionInstructions } = require('./merge_resolution');
+        handoff = await require('./merge_handoff').createMergeHandoff(selection, {
+          validate: (result, snapshot) => {
+            const items = validateResolution(result, snapshot);
+            if (items.some(item => item.operation !== 'sync')) throw Error('This implementation session can only synchronize the selected PR branch; merging is not authorized.');
+          },
+          execute: (result, snapshot) => invokeResolutionCLI(result, snapshot, auth.accessToken)
+        });
+        url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: handoff.url,
+          q: initialPrompt + '\n\nBRANCH-ONLY EXECUTION: Use operation:"sync". Main is read-only. Append the per-file conflict decision commits to the PR branch before syncing remaining incoming changes. Do not merge or close the PR.\n\n' +
+            resolutionInstructions(selection, handoff.url) }).toString();
+        handoff.url = url.href;
+      } else handoff = await require('./merge_batch').createMergeBatch(selection, {
         api: endpoint => {
           if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
           return githubGet(globalThis.fetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));

@@ -22,7 +22,7 @@ const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh
 const { humanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
-  api, git, expected, resolutionPatch = null, checkOptions = {},
+  api, git, expected, resolutionPatch = null, checkOptions = {}, decisions = [], operation = 'merge',
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
@@ -101,6 +101,8 @@ async function humanSquashMerge(repository, number, {
     throw Error('Original commit history does not match the selected PR head.');
   }
   const author = humanAuthor(commits);
+  decisions = require('./resolution_commits').validateDecisions(decisions);
+  if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
   const prepared = squashMessage(original.title, number, commits, { primaryAuthor: author });
   const preparedMessage = prepared.title + '\n\n' + prepared.message;
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite
@@ -144,7 +146,7 @@ async function humanSquashMerge(repository, number, {
       author, base, baseSha, number,
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
-  if (alreadyPrepared && resolutionPatch === null) {
+  if (operation === 'merge' && alreadyPrepared && resolutionPatch === null) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
@@ -186,8 +188,21 @@ async function humanSquashMerge(repository, number, {
     }
     const requiredFiles = originalFiles.filter(name => treeEntries.get(liveBase).get(name) !== treeEntries.get(liveHead).get(name));
     await inRepo('checkout', '--quiet', '--detach', liveBase);
-    let resolvedFiles;
+    let resolvedFiles, conflicts = [];
     if (resolutionPatch !== null) {
+      // Determine actual conflicts independently of model-supplied metadata.
+      try { await inRepo('merge', '--squash', '--no-commit', liveHead); }
+      catch (error) {
+        conflicts = (await inRepo('diff', '--name-only', '--diff-filter=U', '-z')).split('\0').filter(Boolean);
+        if (!conflicts.length) throw error;
+        if (conflicts.some(name => !safePatchPath(name))) throw Error('Conflict involves an unsafe or secret-bearing path.');
+      }
+      await inRepo('reset', '--hard', liveBase);
+      if (conflicts.length && (conflicts.length !== decisions.length ||
+          conflicts.some(file => !decisions.some(item => item.path === file)))) {
+        return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
+          conflictPaths: conflicts, reason: 'Provide a specific decision title and explanation for each conflicted file before synchronizing the PR branch.' };
+      }
       const patchFile = path.join(temp, '.git', 'sweetiebot-resolution.patch');
       await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
       const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
@@ -219,6 +234,27 @@ async function humanSquashMerge(repository, number, {
     if (proposedFiles.some(name => !originalFiles.includes(name)) ||
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
+    }
+    if (operation === 'sync' || conflicts.length) {
+      const finalTree = await inRepo('write-tree');
+      const prepared = await require('./resolution_commits').createResolutionCommits({
+        git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
+        conflicts, decisions, author, base
+      });
+      // The PR history is append-only. No reference on main is updated here.
+      await inRepo('merge-base', '--is-ancestor', originalSha, prepared.sha);
+      const fresh = await api(prPath);
+      if (fresh.state !== 'open' || fresh.draft || fresh.head?.sha !== originalSha || fresh.title !== original.title ||
+          fresh.head?.ref !== head || fresh.base?.ref !== base) throw Error('PR changed before branch synchronization.');
+      if (await readBaseTip() !== baseSha) throw refreshBase();
+      await checkHeadIsolation();
+      // A normal fast-forward push rejects competing remote commits.
+      await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
+      const updated = await api(prPath);
+      if (updated.state !== 'open' || updated.head?.sha !== prepared.sha) throw Error('Could not verify the synchronized PR head.');
+      return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
+        base, baseSha, resolutionCommits: prepared.commits,
+        reason: 'Recorded per-file conflict decisions on the PR branch before the remaining main sync; main was not modified.' };
     }
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
