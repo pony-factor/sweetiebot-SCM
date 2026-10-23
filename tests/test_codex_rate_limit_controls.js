@@ -469,4 +469,81 @@ disabledContext.scmToolkitSyncRateLimitPony(disabledRoot);
 assert.equal(disabledImages, 0);
 assert.equal(disabledFooter.textContent, 'Rate limited');
 
+
+function semanticNode(value, parent, options = {}) {
+    const node = makeNode(value, rect(-9000, 9000, 1, 1), parent);
+    node.attrs = options.attrs || {};
+    const prior = node.matches;
+    node.matches = function(selector) {
+        return (options.status && selector.includes('[role="status"]'))
+            || (options.alert && selector.includes('[role="alert"]'))
+            || prior.call(this, selector);
+    };
+    return node;
+}
+const portal = makeNode('', rect(0, 0, 1, 1), appRoot);
+const named = semanticNode('Requests paused; retry soon.', portal, {
+    status: true, attrs: {'data-testid': 'codex-rate-limit-banner'}
+});
+const semanticRoot = {
+    ...imageRoot,
+    querySelectorAll(selector) {
+        return selector.startsWith('textarea,') ? [editor]
+            : selector.startsWith('span,') ? [named] : [];
+    },
+};
+assert.equal(context.scmToolkitRateLimitEvidence(named).anchored, true);
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, named);
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).rich, true);
+// A moved rate-limit card keeps its original text and any future native actions.
+// The sticker appears separately, even without the old markup or exact copy.
+portal.insertBefore = (companion, original) => {
+    assert.equal(original, named);
+    portal.companion = companion;
+};
+portal.querySelector = () => null;
+const portalRoot = {
+    ...semanticRoot,
+    createElement(tag) {
+        if (tag !== 'div') return imageRoot.createElement(tag);
+        return {
+            style: {}, attrs: {}, children: [],
+            setAttribute(key, value) { this.attrs[key] = value; },
+            append(child) { this.children.push(child); }
+        };
+    }
+};
+const imagesBeforePortal = imagesCreated;
+context.scmToolkitSyncRateLimitPony(portalRoot);
+assert.equal(imagesCreated, imagesBeforePortal + 1);
+imageEvents.load();
+assert.equal(named.textContent, 'Requests paused; retry soon.');
+assert.equal(portal.companion.children[0].width, 96);
+assert.equal(portal.companion.attrs['data-scm-toolkit-rate-limit-pony-companion'], 'true');
+context.scmToolkitSyncRateLimitPony(portalRoot);
+assert.equal(imagesCreated, imagesBeforePortal + 1);
+const variation = semanticNode('Quota exhausted; retry after two hours.', portal, {alert: true});
+semanticRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [variation] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, variation);
+const unrelated = semanticNode('Requests paused.', portal, {alert: true});
+semanticRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [unrelated] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, null);
+const transcriptVariant = semanticNode('Quota exhausted.', transcript, {
+    alert: true, attrs: {'data-testid': 'rate-limit-banner'}
+});
+semanticRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [transcriptVariant] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, null);
+const another = semanticNode('Too many requests.', portal, {alert: true});
+semanticRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [variation, another] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, null);
+const localVariant = semanticNode('Request limit reached. Try later.', composerRegion);
+semanticRoot.querySelectorAll = selector => selector.startsWith('textarea,') ? [editor]
+    : selector.startsWith('span,') ? [localVariant] : [];
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, localVariant);
+assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).rich, true);
+
 console.log('Codex reset shortcut, persistent compact rate-limit text, and composer sticker checks passed.');

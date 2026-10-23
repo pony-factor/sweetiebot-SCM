@@ -744,9 +744,13 @@ upgrade controls, and editable prompts are left unchanged.
 
 The short **Rate limited** status in the composer's own DOM region (including
 older builds that mistakenly show **Rated Limited**) is replaced by the bundled
-`assets/imgs/twi-stop.png` sticker. Matching depends on composer/status
-ancestry instead of fixed width, pixel-gap, alignment, zoom or icon requirements.
-Chat transcript messages and ambiguous statuses are excluded. The sticker uses
+`assets/imgs/twi-stop.png` sticker. Matching first uses composer/status ancestry, and falls back to native
+alert/status roles, accessibility labels, and rate-limit feature identifiers if
+Codex changes its wording, markup, or renders the status in a portal outside
+the composer. It does not require particular screen coordinates, widths or
+icons. The fallback requires one unambiguous native status and preserves the
+original banner; transcript messages and unrelated alerts are excluded.
+Completely unmarked rate limits still cannot be identified reliably. The sticker uses
 a small, independently framed card: for a bare status, its original container
 shrinks around the image. If the native status includes a reset countdown,
 credit details or Upgrade actions, a separate compact sticker card appears

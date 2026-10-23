@@ -912,6 +912,15 @@ class CodexCountdownTests(unittest.TestCase):
     def test_installer_app_includes_bundled_twilight_artwork(self):
         self.assertIn(Path("assets/imgs/twi-stop.png"), build_installer_app.source_files())
 
+    def test_semantic_rate_limit_bundle_can_be_discovered_after_copy_changes(self):
+        source = 'const view={"data-composer-navigation-target":true,"data-testid":"codex-rate-limit-alert",role:"alert"};'
+        self.assertTrue(install.codex_bundle_matches(source))
+        changed = install.transform_codex(source, sticker_enabled=False)
+        self.assertIn(install.CODEX_LIMIT_START, changed)
+        self.assertIn("scmToolkitSemanticRateLimitNodes", changed)
+        self.assertEqual(install.transform_codex(changed, remove=True), source)
+        self.assertFalse(install.codex_bundle_matches('const docs="quota limit";'))
+
     def test_sticker_can_be_disabled_without_disabling_compaction(self):
         original = 'const modernStatus = "You’re out of Codex messages";'
         disabled = install.transform_codex(original, sticker_enabled=False)

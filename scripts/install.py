@@ -1084,6 +1084,13 @@ def codex_bundle_matches(text):
         return True
 
     # Discover by feature, independently of compiler output and patch support.
+    # Allow a renamed/portaled rate-limit alert in the composer bundle even
+    # when its wording and React markup changed. Do not match bare translation
+    # dictionaries or arbitrary unrelated pages on a single keyword.
+    if (re.search(r'(?:rate[-_]?limit|usage[-_]?limit|quota[-_]?exhaust|rateLimit|usageLimit)', text, re.I)
+            and ('data-composer-navigation-target' in text
+                 or ('data-testid' in text and ('role:' in text or 'aria-live' in text)))):
+        return True
     # Translation dictionaries contain the same IDs, but no defaultMessage.
     if ("You’re out of Codex messages" in text
             or ('codex.rateLimitUpsellBanner.dismiss' in text

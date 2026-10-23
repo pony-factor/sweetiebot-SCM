@@ -239,6 +239,62 @@ function scmToolkitDetailedRateLimitNodes(root) {
     return [...found];
 }
 
+// A second recognition path uses accessible status semantics and stable
+// feature identifiers when Codex changes the translated banner copy or DOM
+// wrapper. This deliberately does not assume CSS classes, screen coordinates,
+// English text alone, or a fixed parent depth.
+function scmToolkitRateLimitEvidence(node) {
+    if (!node || node.closest?.(scmToolkitRateLimitTranscriptSelector)
+        || node.closest?.('[contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [hidden], [aria-hidden="true"], [inert]')) {
+        return {matched: false, anchored: false};
+    }
+    const text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim();
+    const signals = [
+        node.getAttribute?.('data-testid'), node.getAttribute?.('data-status'),
+        node.getAttribute?.('data-state'), node.getAttribute?.('id'),
+        node.getAttribute?.('aria-label'), node.getAttribute?.('title')
+    ].filter(Boolean).join(' ');
+    // These are identifiers, not exact DOM class names or displayed phrases.
+    const anchored = /(?:rate[\s_-]*limit|usage[\s_-]*limit|message[\s_-]*limit|quota[\s_-]*(?:exhaust|limit)|limit[\s_-]*reach|too[\s_-]*many[\s_-]*requests)/i.test(signals);
+    const wording = /(?:rate[\s-]*limit(?:ed|ing)?|usage[\s-]*limit|quota (?:exhausted|reached|exceeded)|(?:message|request) limit (?:reached|exceeded)|(?:too many requests)|(?:out of (?:codex )?messages)|(?:you[’']?(?:ve| have) (?:hit|reached) (?:your |the )?(?:usage )?limit))/i.test(text);
+    return {matched: anchored || wording, anchored};
+}
+function scmToolkitSemanticRateLimitNodes(root) {
+    const results = new Set();
+    for (const label of root.querySelectorAll(
+        'span, p, h1, h2, h3, [role="status"], [role="alert"], [aria-live], [data-testid], [data-status], [aria-label], [title]'
+    )) {
+        const evidence = scmToolkitRateLimitEvidence(label);
+        if (!evidence.matched || label.matches?.('button, a, [role="button"]')
+            || label.querySelector?.(scmToolkitCodexEditorSelector)) continue;
+        let candidate = label;
+        // Prefer the owning alert/status wrapper, including different markup.
+        for (let node = label.parentElement; node && node !== root; node = node.parentElement) {
+            if (node.matches?.('body, html, main, [role="main"], [role="application"]')
+                || node.matches?.(scmToolkitRateLimitTranscriptSelector)
+                || node.querySelector?.(scmToolkitCodexEditorSelector)) break;
+            if (node.matches?.('[role="status"], [role="alert"], [aria-live]') ||
+                scmToolkitRateLimitEvidence(node).anchored) {
+                candidate = node;
+                break;
+            }
+            // Do not absorb a long page or unrelated content.
+            if (String(node.textContent || '').length > 600) break;
+        }
+        if (candidate !== label && candidate.contains?.(label) === false) continue;
+        if (candidate.closest?.(scmToolkitRateLimitTranscriptSelector)) continue;
+        results.add(candidate);
+    }
+    // Nested labels of the same notice count as one candidate.
+    return [...results].filter(node =>
+        ![...results].some(other => other !== node && other.contains?.(node)));
+}
+function scmToolkitIsNativeRateLimitStatus(node) {
+    const evidence = scmToolkitRateLimitEvidence(node);
+    return evidence.matched && (evidence.anchored ||
+        Boolean(node.matches?.('[role="status"], [role="alert"], [aria-live]')));
+}
+
 function scmToolkitFooterRateLimitNotice(root) {
     const notices = scmToolkitPlainRateLimitNodes(root);
     const editors = [...root.querySelectorAll(scmToolkitCodexEditorSelector)]
@@ -269,7 +325,36 @@ function scmToolkitFooterRateLimitNotice(root) {
             }
         }
     }
-    return {card: ambiguous ? null : card, notices, rich};
+    if (card && !ambiguous) return {card, notices, rich};
+    if (ambiguous) return {card: null, notices, rich: false};
+    // Renderers may portal the limit card outside the composer subtree.
+    // Only trust a *unique*, semantically marked native alert/status with a
+    // visible composer, never a loose phrase somewhere on the page.
+    if (!editors.length) return {card: null, notices, rich: false};
+    const semantic = scmToolkitSemanticRateLimitNodes(root);
+    const local = [];
+    const remote = [];
+    for (const candidate of semantic) {
+        if (candidate.getAttribute?.('data-scm-toolkit-rate-limit-pony') === 'true'
+            || candidate.dataset?.scmToolkitRateLimitPony === 'true'
+            || candidate.dataset?.scmToolkitRateLimitPonyMounted === 'true'
+            || candidate.closest?.(scmToolkitRateLimitTranscriptSelector)) continue;
+        const distances = editors.map(editor => scmToolkitComposerStatusDistance(candidate, editor))
+            .filter(distance => distance !== null);
+        if (distances.length) {
+            local.push({candidate, distance: Math.min(...distances)});
+        } else if (scmToolkitIsNativeRateLimitStatus(candidate)) {
+            remote.push(candidate);
+        }
+    }
+    if (local.length) {
+        local.sort((a, b) => a.distance - b.distance);
+        if (local.length > 1 && local[0].distance === local[1].distance)
+            return {card: null, notices, rich: false};
+        return {card: local[0].candidate, notices, rich: true};
+    }
+    if (remote.length === 1) return {card: remote[0], notices, rich: true};
+    return {card: null, notices, rich: false};
 }
 function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
     for (const notice of notices) {
