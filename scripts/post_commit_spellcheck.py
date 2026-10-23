@@ -663,9 +663,10 @@ def run_post_commit_job() -> int:
         and index_is_clean(global_args)
         and proposal_is_untouched(global_args, proposals)
     ):
-        title = spellcheck_title(core, model, proposals)
+        # Reserve the normal commit-message generator for the approved and
+        # staged changes, rather than drafting a special low-effort title now.
         if head_sha(global_args) == expected_head and index_is_clean(global_args) and proposal_is_untouched(global_args, proposals):
-            write_spellcheck_notice(global_args, expected_head, list(proposals), model, title)
+            write_spellcheck_notice(global_args, expected_head, list(proposals), model)
     return 0
 
 

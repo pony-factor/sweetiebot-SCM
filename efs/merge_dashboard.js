@@ -15,6 +15,18 @@ function configuredTimelineMode(vscode) {
   return TIMELINE_MODES.includes(value) ? value : 'hidden';
 }
 
+function configuredLayout(vscode) {
+  const config = vscode.workspace?.getConfiguration('scmToolkit');
+  const percent = (key, fallback, max) => {
+    const value = config?.get(key, fallback);
+    return Number.isInteger(value) && value >= 15 && value <= max ? value : fallback;
+  };
+  return {
+    sidebar: percent('mergeSidebarWidthPercent', 37, 75),
+    timeline: percent('mergeTimelineHeightPercent', 34, 80)
+  };
+}
+
 function validateSelection(selection) {
   if (!REPO.test(selection?.repository || '') ||
       !Array.isArray(selection.pullRequests) ||
@@ -150,6 +162,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository, prs, events, error,
       timestampMode: configuredTimelineMode(vscode),
+      layoutPreferences: configuredLayout(vscode),
       nextRefreshSeconds: Math.ceil(actualInterval / 1000)
     });
   }
@@ -274,9 +287,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
   const actualInterval = intervalMs || Math.max(15000, prs.length * 4000);
   const timer = setTimer(() => { void refresh(); }, actualInterval);
+  const configurationListener = vscode.workspace?.onDidChangeConfiguration?.(event => {
+    if (['mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
+      .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
+  });
   panel.onDidDispose(() => {
     disposed = true;
     clearTimer(timer);
+    configurationListener?.dispose();
   });
   publish();
   void refresh();

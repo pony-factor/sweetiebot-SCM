@@ -13,6 +13,8 @@ const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = requi
 const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
 const { resolvePythonExecutable } = require('./python_runtime');
 const { recoveryPlan } = require('./finalized_commit_recovery');
+const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
+const { routeBranch } = require('./shared_main');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -498,20 +500,34 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
       throw new Error('The active branch changed while preparing the new branch.');
     }
   };
-  const temporary = await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-branch-'));
-  const worktree = path.join(temporary, 'worktree');
+  const worktrees = (await git(root, ['worktree', 'list', '--porcelain', '-z'])).split('\0\0');
+  const occupied = worktrees.find(block => block.split('\0').includes(`branch refs/heads/${defaultBranch}`));
+  const existing = occupied?.split('\0').find(line => line.startsWith('worktree '))?.slice(9);
+  const temporary = existing ? null : await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-branch-'));
+  const worktree = existing || path.join(temporary, 'worktree');
   let added = false;
+  const checkMain = async () => {
+    if (await git(worktree, ['branch', '--show-current']) !== defaultBranch) {
+      throw new Error(`The ${defaultBranch} worktree changed branches while preparing the new branch.`);
+    }
+    return await git(worktree, ['status', '--porcelain', '--untracked-files=all']) === '';
+  };
   try {
     await checkBranch();
-    // Checking the default branch out in a separate worktree reserves it without switching
-    // the user's editor or disturbing their working files.
-    await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
-    added = true;
+    // A shared main window already reserves this branch. Reuse that checkout
+    // only while clean; pending edits must never be merged or carried away.
+    if (existing) {
+      if (!await checkMain()) return await git(root, ['rev-parse', `refs/heads/${defaultBranch}`]);
+    } else {
+      await git(root, ['worktree', 'add', '--quiet', worktree, defaultBranch]);
+      added = true;
+    }
     for (let attempt = 0; ; attempt++) {
       await retryFetch(() => git(worktree, ['fetch', remote, `+refs/heads/${upstream.slice(prefix.length)}:${upstream}`]));
       await checkBranch();
+      if (existing && !await checkMain()) return await git(root, ['rev-parse', `refs/heads/${defaultBranch}`]);
       try {
-        await git(worktree, ['merge', '--no-edit', upstream]);
+        await git(worktree, ['merge', existing ? '--ff-only' : '--no-edit', upstream]);
       } catch (error) {
         throw new Error(`Could not sync ${defaultBranch} in the background. ${errorText(error).includes('CONFLICT') ? 'Its local and remote changes conflict; sync and resolve them before creating a new branch.' : error.stderr?.trim() || error.message} Your current branch was preserved.`, { cause: error });
       }
@@ -528,18 +544,31 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
     }
   } finally {
     if (added) await git(root, ['worktree', 'remove', '--force', worktree]);
-    await rm(temporary, { recursive: true, force: true });
+    if (temporary) await rm(temporary, { recursive: true, force: true });
   }
 }
 
-async function createBranch(repository, { defaultBranch, remote, names }, secureRandomInt) {
+async function createBranch(repository, { defaultBranch, remote, names, isolateBranch }, secureRandomInt) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
   if (repository.state.mergeChanges?.length) {
     throw new Error('Resolve the merge conflicts before creating a new branch.');
   }
+  const merged = await mergedBranchStatus(repository, remote);
+  if (merged) {
+    const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
+    const used = new Set(refs.flatMap(ref => [ref.name, ref.name?.replace(`${remote}/`, '')]));
+    const history = await loadBranchNameHistory(repository);
+    const { branch, selected } = chooseBranchName([...new Set(names)].filter(name => !used.has(name)),
+      history.selected, secureRandomInt);
+    await mergedBranchAction(repository, '--new-branch', branch, remote);
+    await saveBranchNameHistory(history.file, selected);
+    await repository.status();
+    return branch;
+  }
   let original = repository.state.HEAD?.name;
   let start;
+  let forkScript;
   let unfinishedBase = false;
   if (repository.rootUri?.fsPath && existsSync(path.join(repository.rootUri.fsPath, '.git'))) {
     const { stdout } = await promisify(execFile)('git', [
@@ -555,20 +584,20 @@ async function createBranch(repository, { defaultBranch, remote, names }, secure
   if (unfinishedBase || await asyncCommitPending(repository, { refs: [`refs/heads/${defaultBranch}`] })) {
     const installedScript = path.join(__dirname, 'background_commit.py');
     const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
-    const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
-      script, '--branch-base', `refs/heads/${defaultBranch}`
-    ], { cwd: repository.rootUri.fsPath, timeout: 10000 });
-    start = stdout.trim();
-    if (!/^[0-9a-f]{40,64}$/.test(start)) throw new Error('Could not resolve a completed branch base.');
+    forkScript = script;
   } else if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
     // Preserve pending edits and their staging by avoiding a remote merge.
-    await repository.checkout(defaultBranch);
-    await repository.status();
-    if (repository.state.HEAD?.name !== defaultBranch) {
-      throw new Error(`Could not switch to ${defaultBranch}.`);
+    if (isolateBranch) {
+      start = `refs/heads/${defaultBranch}`;
+    } else {
+      await repository.checkout(defaultBranch);
+      await repository.status();
+      if (repository.state.HEAD?.name !== defaultBranch) {
+        throw new Error(`Could not switch to ${defaultBranch}.`);
+      }
+      original = defaultBranch;
+      start = 'HEAD';
     }
-    original = defaultBranch;
-    start = 'HEAD';
   } else {
     start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
   }
@@ -583,7 +612,19 @@ async function createBranch(repository, { defaultBranch, remote, names }, secure
   const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
   await repository.status();
   if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
-  await repository.createBranch(branch, true, start);
+  const isolated = isolateBranch && await isolateBranch(branch, start, {
+    forkScript, source: `refs/heads/${defaultBranch}`, expectedHead: `refs/heads/${original}`
+  });
+  if (isolated) {
+    // The shared main checkout stays on main even while its title jobs finish.
+  } else if (forkScript) {
+    await promisify(execFile)(resolvePythonExecutable(), [
+      forkScript, '--fork-branch', `refs/heads/${defaultBranch}`, branch, `refs/heads/${original}`
+    ], { cwd: repository.rootUri.fsPath, timeout: 120000 });
+    await repository.status();
+  } else {
+    await repository.createBranch(branch, true, start);
+  }
   try {
     await saveBranchNameHistory(history.file, selected);
   } catch (error) {
@@ -968,30 +1009,72 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   const message = defaultBranch === 'main'
     ? '🔄 Sync brach to main'
     : `🔄 Sync branch to ${defaultBranch}`;
+  // A routine sync has no generated prose: only its fixed title and the
+  // required authorship trailer. Proposed substantive edits need their own
+  // human-reviewed commit before the sync is retried.
+  const routineCommitMessage = message + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
   repository.inputBox.value = message;
   try {
-    if (strategy === 'merge') {
-      // Keep ordinary Git ancestry as an explicit alternative.
-      await repository.merge(`${remote}/${defaultBranch}`);
-    } else {
-      const root = repository.rootUri.fsPath;
-      const git = async args => (await promisify(execFile)('git', args, {
-        cwd: root, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-      })).stdout.trim();
-      // Squash must not consume the user's index, working tree, or unresolved conflicts.
-      if (await git(['status', '--porcelain'])) {
-        throw new Error('Commit or stash your changes before squashing the default branch.');
+    const root = repository.rootUri?.fsPath;
+    const git = root ? async args => (await promisify(execFile)('git', args, {
+      cwd: root, timeout: 120000, env: {
+        ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no'
       }
-      const target = `refs/remotes/${remote}/${defaultBranch}`;
+    })).stdout.trim() : null;
+    if (git && await git(['status', '--porcelain'])) {
+      throw new Error('Commit or stash your changes before syncing the default branch. Unrelated edits must be reviewed and committed separately.');
+    }
+    const target = `refs/remotes/${remote}/${defaultBranch}`;
+    const isAncestor = async () => promisify(execFile)('git',
+      ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
+      .then(() => true, error => {
+        if (error.code === 1) return false;
+        throw error;
+      });
+    const proposedMergeTree = async head => {
+      try {
+        const output = await git(['merge-tree', '--write-tree', head, target]);
+        const tree = output.split('\n')[0].trim();
+        if (!/^[a-f0-9]{40,64}$/i.test(tree)) {
+          throw new Error('Git did not provide a verifiable automatic merge tree.');
+        }
+        return tree;
+      } catch (error) {
+        // An actual conflict is resolved by the existing review/editor flow.
+        // It must never be silently committed as routine sync work.
+        if (error.code === 1) return null;
+        throw error;
+      }
+    };
+    const verifyAutomaticResult = async expected => {
+      if (expected && await git(['write-tree']) !== expected) {
+        throw new Error('Sync staged changes outside the automatic Git merge result. Review and commit substantive edits in their own human-authored commit before retrying.');
+      }
+    };
+    if (strategy === 'merge') {
+      if (!git) {
+        // Allow VS Code Git API fixtures that do not expose a real checkout.
+        await repository.merge(`${remote}/${defaultBranch}`);
+      } else if (!await isAncestor()) {
+        const headBefore = await git(['rev-parse', 'HEAD']);
+        const expectedTree = await proposedMergeTree(headBefore);
+        // Do not let Git auto-commit with an arbitrary/generated description.
+        await git(['merge', '--no-ff', '--no-commit', '-m', message, target]);
+        await checkBranch();
+        if (await git(['rev-parse', 'HEAD']) !== headBefore) {
+          throw new Error('The branch advanced during synchronization; no sync commit was created.');
+        }
+        const mergeHead = await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).catch(() => '');
+        if (!mergeHead) throw new Error('Git did not leave a verifiable merge to commit.');
+        await verifyAutomaticResult(expectedTree);
+        await git(['commit', '-m', routineCommitMessage]);
+      }
+    } else {
+      if (!git) throw new Error('A local Git checkout is required for squash synchronization.');
       const headBefore = await git(['rev-parse', 'HEAD']);
       // If the target is already an ancestor there is nothing to incorporate.
-      const ancestor = await promisify(execFile)('git',
-        ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
-        .then(() => true, error => {
-          if (error.code === 1) return false;
-          throw error;
-        });
-      if (!ancestor) {
+      if (!await isAncestor()) {
+        const expectedTree = await proposedMergeTree(headBefore);
         await checkBranch();
         // A conflict intentionally leaves the index and worktree available to resolve.
         await git(['merge', '--squash', target]);
@@ -1006,7 +1089,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           if (await git(['rev-parse', 'HEAD']) !== headBefore) {
             throw new Error('The branch advanced during synchronization; changes were left staged.');
           }
-          await git(['commit', '-m', `${message}\n\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+          await verifyAutomaticResult(expectedTree);
+          await git(['commit', '-m', routineCommitMessage]);
         }
       }
     }
@@ -1042,7 +1126,7 @@ function registerBranchCommands(vscode, context) {
     ['sweetiebot.deleteBranch', deleteBranch],
     ['sweetiebot.syncBranch', syncBranch]
   ]) {
-    context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options) => {
+    context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
       try {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
@@ -1053,12 +1137,21 @@ function registerBranchCommands(vscode, context) {
           // Switching to an unpublished branch can trigger automatic publishing.
           // Let a later status refresh retry after the background queue drains.
           if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository, { refs })) return false;
-          if (command !== 'sweetiebot.autoPullClean') {
+          if (command === 'sweetiebot.publishBranch') {
+            const merged = await mergedBranchStatus(repository, options.remote, options.branch);
+            if (merged) return warnMergedBranch(vscode, repository, merged);
+          }
+          if (command !== 'sweetiebot.autoPullClean' && command !== 'sweetiebot.createBranch') {
             await requireFinalizedCommit(repository, {
               background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command), refs
             });
           }
           if (!needsDefaultBranch.has(command)) return action(repository, options);
+          if (command === 'sweetiebot.returnHome' && defaultBranch === 'main' &&
+              await routeBranch(vscode, repository, { branch: 'main' })) return 'main';
+          if (command === 'sweetiebot.createBranch' && !options.names?.length) {
+            options = { ...options, names: await mergedBranchAction(repository, '--names') };
+          }
           if (command === 'sweetiebot.deleteBranch' && options?.branch
               && options.branch !== defaultBranch && repository.rootUri?.fsPath) {
             const tip = await remoteBranchTip(repository, options.branch, remote);
@@ -1076,6 +1169,9 @@ function registerBranchCommands(vscode, context) {
           }
           return action(repository, {
             ...options, defaultBranch,
+            ...(command === 'sweetiebot.createBranch' && defaultBranch === 'main' ? {
+              isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork })
+            } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, repository, {
                 branch: options?.branch, defaultBranch, remote
@@ -1111,6 +1207,7 @@ function registerBranchCommands(vscode, context) {
         const repository = await resolveRepository(uri);
         return await queueRepositoryOperation(repository, async () => {
           await requireFinalizedCommit(repository, { background: false });
+          if (await routeBranch(vscode, repository, options)) return options.branch;
           return checkoutBranchStrip(repository, options);
         });
       } catch (error) {

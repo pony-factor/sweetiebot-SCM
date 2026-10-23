@@ -12,6 +12,8 @@ async function run() {
   const notices = [], progress = [], completed = [], errors = [];
   const errorActions = [], details = [];
   let nextChoice;
+  let merged = null;
+  const mergedWarnings = [];
   const noticeTimers = [];
   let resumes = 0;
   const root = { scheme: 'file', fsPath: '/repo' };
@@ -35,6 +37,10 @@ async function run() {
     setInterval(callback) { poll = callback; return 1; }, clearInterval() {},
     require(name) {
       if (name === './python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
+      if (name === './merged_branch') return {
+        mergedBranchStatus: async () => merged,
+        warnMergedBranch: async (_vscode, _repository, info) => { mergedWarnings.push(info); return false; }
+      };
       assert.equal(name, 'node:child_process');
       return { execFile(_exe, _args, _options, callback) { callback(null, JSON.stringify(status)); }, spawn(_exe, args) {
         if (args.includes('--resume')) resumes++;
@@ -100,6 +106,12 @@ async function run() {
   assert.equal(notices.pop(), 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
   status = {};
   const commit = commands.get('sweetiebot.queueCommit');
+  merged = { branch: 'old', number: 61, defaultBranch: 'main', remote: 'origin' };
+  assert.equal((await push(root)).cancelled, true);
+  assert.equal((await commit(root, { push: true })).cancelled, true);
+  assert.equal(mergedWarnings.length, 2);
+  assert.deepEqual(events, [], 'merged-branch warning happens before staging or enqueueing');
+  merged = null;
   const notQueued = await commit(root, { message: 'Manual', onlyIfPending: true });
   assert.equal(notQueued.queued, false);
   assert.deepEqual(events, [], 'checking an empty queue never stages or commits');

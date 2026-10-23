@@ -96,6 +96,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     }
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
+    files[Path("commit_diagnostics_dashboard.py")] = here / "commit_diagnostics_dashboard.py"
     files[Path("commit_hotkey.py")] = here / "commit_hotkey.py"
     files[Path("toolkit_settings.py")] = here / "toolkit_settings.py"
     files[Path("message_bar.py")] = here / "message_bar.py"
@@ -103,6 +104,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("codex_colors.py")] = here / "codex_colors.py"
     files[Path("ai_commit.py")] = here / "ai_commit.py"
     files[Path("background_commit.py")] = here / "background_commit.py"
+    files[Path("merged_branch.py")] = here / "merged_branch.py"
     files[Path("post_commit_spellcheck.py")] = here / "post_commit_spellcheck.py"
     files[Path("sweetiebot_async_commit.py")] = here / "sweetiebot_async_commit.py"
     files[Path("sweetiebot_diagnostics.py")] = here / "sweetiebot_diagnostics.py"

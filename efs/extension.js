@@ -17,6 +17,8 @@ const { registerLocalPullRequestCommand } = require('./local_pull_request');
 const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
 const { registerNewWorkspaceCommand } = require('./new_workspace');
+const { registerSharedMain } = require('./shared_main');
+const { registerCodexWorkspaceHandoff } = require('./codex_workspace_handoff');
 const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
@@ -118,7 +120,11 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
+      mergeTimelineTimestampMode: scm.get('mergeTimelineTimestampMode', 'hidden'),
+      mergeSidebarWidthPercent: scm.get('mergeSidebarWidthPercent', 37),
+      mergeTimelineHeightPercent: scm.get('mergeTimelineHeightPercent', 34),
       kefaniaShowCloseButton: scm.get('kefaniaShowCloseButton', true),
+      kefaniaCloseAfterMerge: scm.get('kefaniaCloseAfterMerge', false),
       kefaniaCloseButtonPosition: kefaniaClosePosition(scm),
       chatgptProjectUrl: scm.get('chatgptProjectUrl', '')
     },
@@ -342,6 +348,7 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
@@ -353,6 +360,7 @@ async function activate(context) {
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
   registerNewWorkspaceCommand(vscode, context);
+  registerSharedMain(vscode, context);
   // Register an active-window marker before any independent clone is eligible
   // for background pruning. Restricted Mode cannot create the marker.
   await registerManagedWindowActivity(vscode, context);

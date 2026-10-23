@@ -1,8 +1,17 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {squashMessage,readCommits}=require('../efs/squash_attribution');
+const {SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits}=require('../efs/squash_attribution');
 async function run(){
  const commits=[{commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},committer:{name:'GitHub',email:'noreply@github.com'},message:'Change\n\nCo-authored-by: Codex <noreply@openai.com>'}},{commit:{author:{name:'John Wooten',email:'60260750+JFWooten4@users.noreply.github.com'},message:'Sync\n\nCo-authored-by: Codex Web <noreply@openai.com>'}}];
+ assert.equal(SQUASH_SEPARATOR, '__________');
+ assert.equal(SQUASH_SEPARATOR.length, 10);
+ assert.equal(exactSquashTitle('🖌️ Show final commit titles beside generation times', 393),
+   '🖌️ Show final commit titles beside generation times (#393)');
+ assert.equal(exactSquashTitle('🖌️ Show final commit titles beside generation times (#393)', 393),
+   '🖌️ Show final commit titles beside generation times (#393)', 'Do not duplicate the exact suffix');
+ assert.equal(exactSquashTitle('🖌️ Show final commit titles beside generation times (#42)', 393),
+   '🖌️ Show final commit titles beside generation times (#42) (#393)',
+   'Preserve the exact original PR title when it contains a different issue number');
  const prepared=squashMessage('🐛 Repair retries',269,commits);
  assert.equal(prepared.title,'🐛 Repair retries (#269)');
  assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex','Codex Web']);
@@ -10,7 +19,7 @@ async function run(){
   '- Change',
   '- Sync',
   '',
-  '---------',
+  '__________',
   '',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Codex <noreply@openai.com>',
@@ -28,7 +37,7 @@ async function run(){
   '  More context.',
   '- ➕ Add IBM Redbooks reference',
   '',
-  '---------',
+  '__________',
   '',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Codex <noreply@openai.com>',
@@ -49,6 +58,57 @@ async function run(){
  assert(!legacy.message.includes('Co-authored-by: Ollama <'));
  assert.throws(()=>squashMessage('Wrong',269,[]),/history/);
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{}}}]),/Git author/);
+ const syncCommit={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'🔄 Sync brach to main\n\nKeep the latest request timeout changes.\n\nCo-authored-by: Codex <noreply@openai.com>'}};
+ const correctSpelling={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'🔄 Sync branch to main\n\nUpdate from upstream.'}};
+ const feature={commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'🖌️ Update merge settings'}};
+ const pr393=squashMessage('🖌️ Show final commit titles beside generation times',393,[feature,syncCommit],
+   {filterSyncCommitSummaries:true});
+ assert.equal(pr393.title,'🖌️ Show final commit titles beside generation times (#393)');
+ assert(pr393.message.includes('\n\n__________\n\n'));
+ assert(!pr393.message.includes('---------'));
+ assert(!pr393.message.includes('Sync brach to main'));
+ const filtered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:true});
+ assert(filtered.message.includes('- 🖌️ Update merge settings'));
+ assert(!filtered.message.includes('Sync brach to main'));
+ assert(!filtered.message.includes('Sync branch to main'));
+ assert(!filtered.message.includes('latest request timeout changes'));
+ assert(filtered.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'),
+   'Filtering sync summaries never loses co-author attribution');
+ const unfiltered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:false});
+ assert(unfiltered.message.includes('- 🔄 Sync brach to main'));
+ assert(unfiltered.message.includes('- 🔄 Sync branch to main'));
+ assert(unfiltered.message.includes('Keep the latest request timeout changes.'));
+ const onlySync=squashMessage('🔧 Apply settings',394,[syncCommit],{filterSyncCommitSummaries:true});
+ assert(!onlySync.message.includes('Sync brach to main'));
+ assert(onlySync.message.startsWith('Co-authored-by: '),
+   'An all-sync PR must retain co-author trailers without an empty separator');
+ const emojiTitles=[
+   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🐛 Fix panel resizing\n\nAvoid overflowing the viewport.'}},
+   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🧪 Cover small windows'}},
+   syncCommit
+ ];
+ const emojiOnly=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
+   {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:true});
+ assert(emojiOnly.message.startsWith('🐛 Fix panel resizing\n  Avoid overflowing the viewport.\n\n🧪 Cover small windows'));
+ assert(!emojiOnly.message.includes('- 🐛'));
+ assert(!emojiOnly.message.includes('Sync brach to main'));
+ assert(emojiOnly.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'));
+ const legacyBullets=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
+   {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:false});
+ assert(legacyBullets.message.includes('- 🐛 Fix panel resizing'));
+ assert(legacyBullets.message.includes('- 🧪 Cover small windows'));
+ const mixed=squashMessage('🖌️ Improve resize handling',395,[...emojiTitles,
+   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'Document keyboard shortcuts'}}],
+   {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:true});
+ assert(mixed.message.includes('- 🐛 Fix panel resizing'));
+ assert(mixed.message.includes('- Document keyboard shortcuts'));
+ const includedSync=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
+   {filterSyncCommitSummaries:false,omitBulletsForEmojiTitles:true});
+ assert(includedSync.message.includes('🔄 Sync brach to main'));
+ assert(!includedSync.message.includes('- 🔄 Sync brach to main'));
  let calls=0;
  assert.equal((await readCommits(async()=>{calls++;return commits},'owner/repo',269)).length,2);
  assert.equal(calls,1);

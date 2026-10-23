@@ -5,6 +5,8 @@ const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { createWorkspaceDirectory } = require('./workspace_layout');
+const { openSharedMainWorkspace } = require('./shared_main');
 
 const OPEN_WORKSPACE_COMMAND = 'sweetiebot.openIndependentWorkspace';
 const execFileAsync = promisify(execFile);
@@ -20,10 +22,11 @@ async function describeRepository(folder, git) {
   if (folder.uri.scheme !== 'file' || !folder.uri.fsPath) {
     throw new Error('Independent workspaces require local Git folders.');
   }
-  const location = path.resolve(folder.uri.fsPath);
+  let location = path.resolve(folder.uri.fsPath);
   let root;
   try {
-    root = path.resolve(await git(['-C', location, 'rev-parse', '--show-toplevel']));
+    root = await fs.realpath(await git(['-C', location, 'rev-parse', '--show-toplevel']));
+    location = await fs.realpath(location);
   } catch {
     throw new Error('"' + (folder.name || location) + '" is not inside a local Git repository.');
   }
@@ -70,7 +73,7 @@ async function copyRemotes(source, destination, git) {
   }
 }
 
-async function openIndependentWorkspace(vscode, {
+async function openIndependentClone(vscode, {
   git = runGit,
   io = fs,
   baseDirectory = independentWorkspaceParent()
@@ -91,13 +94,9 @@ async function openIndependentWorkspace(vscode, {
   const labelFor = root =>
     path.basename(root).replace(/[^a-zA-Z0-9._-]/g, '-') || 'repo';
 
-  // Name the persistent workspace for its source repository, rather than
-  // creating an opaque workspace-... folder with 1-repo / 2-repo children.
-  // mkdtemp still guarantees distinct directories across repeated launches.
+  // Multi-root workspaces are grouped under their first repository.
   const firstLabel = labelFor(roots.values().next().value);
-  const groupSuffix = roots.size > 1 ? '-group' : '';
-  await io.mkdir(baseDirectory, { recursive: true });
-  const directory = await io.mkdtemp(path.join(baseDirectory, firstLabel + groupSuffix + '-'));
+  const directory = await createWorkspaceDirectory(baseDirectory, firstLabel, io);
   try {
     const destinations = new Map();
     const usedNames = new Set();
@@ -156,7 +155,7 @@ function registerNewWorkspaceCommand(vscode, context) {
     if (opening) return;
     opening = true;
     try {
-      return await openIndependentWorkspace(vscode);
+      return await openSharedMainWorkspace(vscode);
     } catch (error) {
       vscode.window.showErrorMessage('Could not open an independent workspace: ' + error.message);
       throw error;
@@ -166,4 +165,5 @@ function registerNewWorkspaceCommand(vscode, context) {
   }));
 }
 
-module.exports = { OPEN_WORKSPACE_COMMAND, openIndependentWorkspace, registerNewWorkspaceCommand };
+module.exports = { OPEN_WORKSPACE_COMMAND, openIndependentWorkspace: openSharedMainWorkspace,
+  openIndependentClone, registerNewWorkspaceCommand };
