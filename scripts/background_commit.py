@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,13 +17,15 @@ import time
 from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
-from sweetiebot_async_commit import write_journal as _write_journal, read_journal, PLACEHOLDER, alive
+from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER, alive,
+                                    related_pending_jobs)
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
-PARALLEL_JOBS = 4
+FORKS = 'sweetiebot-background-forks.json'
+PARALLEL_JOBS = 6
 
 
 class SyncConflicts(RuntimeError):
@@ -36,6 +39,14 @@ class SyncConflicts(RuntimeError):
 @contextmanager
 def repository_lock(meta):
     with (Path(meta) / (MARKER + '.lock')).open('a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+@contextmanager
+def branch_sync_lock(meta, branch):
+    name = 'sweetiebot-sync-' + hashlib.sha256(branch.encode()).hexdigest() + '.lock'
+    with (Path(meta) / name).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
 
@@ -73,24 +84,27 @@ def recover_finalization(meta):
                 job.update(sha=job.pop('replacement_sha'), provisional=False, phase='committed')
                 write_journal(journal, job)
         return
-    branch = transaction['branch']
-    actual = branch_tip(branch)
-    if actual not in (transaction['before'], transaction['after']):
-        raise RuntimeError('The branch changed during message finalization; recovery was paused.')
-    if actual != transaction['after']:
-        if transaction.get('checkout'):
+    moves = transaction.get('refs', [transaction])
+    commands = ['start']
+    for move in moves:
+        actual = branch_tip(move['branch'])
+        if actual not in (move['before'], move['after']):
+            raise RuntimeError('The branch changed during message finalization; recovery was paused.')
+        if transaction.get('checkout') and actual != move['after'] and move['branch'] == transaction['branch']:
             env = os.environ.copy()
             env.pop('GIT_INDEX_FILE', None)
             active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
-            if active == branch:
+            if active == move['branch']:
                 # Two-tree checkout refuses overlapping edits and is replayable
                 # if a crash occurs before the compare-and-swap below.
-                result = git('read-tree', '-u', '-m', transaction['before'], transaction['after'],
+                result = git('read-tree', '-u', '-m', move['before'], move['after'],
                              check=False, env=env)
                 if result.returncode:
                     raise RuntimeError('Local edits changed during Lindsey sync; publication was paused.')
-        git('update-ref', '-m', 'sweetiebot: finalize queued commit messages',
-            branch, transaction['after'], transaction['before'])
+        commands.append(f"update {move['branch']} {move['after']} {actual}")
+    commands += ['prepare', 'commit']
+    git('update-ref', '-m', 'sweetiebot: finalize queued commit messages', '--stdin',
+        input='\n'.join(commands) + '\n')
     for update in transaction['updates']:
         journal = Path(update['directory']) / 'job.json'
         job = read_journal(journal)
@@ -99,7 +113,42 @@ def recover_finalization(meta):
         write_journal(journal, job)
         if 'tree' in update['values']:
             git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
+    if 'forks' in transaction:
+        write_journal(Path(meta) / FORKS, transaction['forks'])
     file.unlink()
+
+
+def fork_branch(source, name, expected_head, destination=None):
+    """Capture a pending base and its subscription under the finalizer's lock."""
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    with repository_lock(meta):
+        recover_finalization(meta)
+        if state()[0] != expected_head:
+            raise RuntimeError('The active branch changed while preparing the new branch.')
+        if (meta / 'sweetiebot-async-commit.json').exists():
+            raise RuntimeError('Wait for the existing commit message to finish before branching.')
+        git('check-ref-format', '--branch', name)
+        branch = 'refs/heads/' + name
+        if branch_tip(branch):
+            raise RuntimeError('The new branch already exists.')
+        base = git('rev-parse', '--verify', source + '^{commit}')
+        # Reject orphaned placeholders: there must be a live job to finish them.
+        jobs = [read_journal(Path(entry['directory']) / 'job.json')
+                for entry in queue_entries(meta / MARKER)]
+        pending = {job['sha'] for job in jobs if job and job.get('provisional')}
+        for line in git('log', '--format=%H%x00%s', base).splitlines():
+            sha, _, subject = line.partition('\x00')
+            if re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject) and sha not in pending:
+                raise RuntimeError('The branch base contains an unfinished commit without a background job.')
+        forks = read_journal(meta / FORKS) or {}
+        forks[branch] = base
+        # Save before creating the ref: a crash must never leave an untracked fork.
+        write_journal(meta / FORKS, forks)
+        if destination:
+            git('worktree', 'add', '-b', name, '--', destination, base)
+        else:
+            git('checkout', '-b', name, base)
+        return base
 
 
 def captured_chain(marker, branch):
@@ -156,7 +205,7 @@ def runtime():
     target = jobs_home() / 'runtime'
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     for name in ('background_commit.py', 'ai_commit.py', 'sweetiebot_async_commit.py',
-                 'sweetiebot_diagnostics.py', 'post_commit_spellcheck.py'):
+                 'sweetiebot_diagnostics.py', 'post_commit_spellcheck.py', 'merged_branch.py'):
         source = Path(__file__).with_name(name)
         if source.resolve() == (target / name).resolve():
             continue
@@ -194,11 +243,13 @@ def enqueue(request, start=True):
     marker = meta / MARKER
     with (meta / (MARKER + '.lock')).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if (meta / 'sweetiebot-async-commit.json').exists():
+        branch, parent = state()
+        dependencies = related_pending_jobs(core.REAL_GIT, [])
+        if any(record['kind'] == 'legacy' or record['directory'] != meta or record['job'].get('branch') != branch
+               for record in dependencies):
             raise RuntimeError('Wait for the existing commit message to finish before queuing another commit.')
         recover_finalization(meta)
         entries = queue_entries(marker)
-        branch, parent = state()
         if any(read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch
                for entry in entries):
             captured_chain(marker, branch)
@@ -326,16 +377,54 @@ def finalize_message(directory, job):
         before = jobs[-1]['sha']
         parent = current['parent']
         updates = []
+        replacements = {}
         for entry, item in zip(entries[position:], jobs[position:]):
             message = current['message'] if item['id'] == job['id'] else git('show', '-s', '--format=%B', item['sha'])
             sha = rewritten_commit(item, parent, message)
+            replacements[item['sha']] = sha
             values = {'sha': sha, 'parent': parent}
             if item['id'] == job['id']:
                 values.update(provisional=False, phase='committed')
             updates.append({'directory': entry['directory'], 'values': values})
             parent = sha
+        moves = [dict(branch=current['branch'], before=before, after=parent)]
+        forks = read_journal(meta / FORKS) or {}
+        remaining = dict(forks)
+        while remaining:
+            advanced = False
+            for branch, base in list(remaining.items()):
+                if base not in replacements:
+                    continue
+                tip = branch_tip(branch)
+                if not tip or git('merge-base', '--is-ancestor', base, tip, check=False).returncode == 1:
+                    forks.pop(branch, None)  # Deleted or deliberately reset fork.
+                    del remaining[branch]
+                    continue
+                for sha in git('rev-list', '--reverse', base + '..' + tip).splitlines():
+                    if sha in replacements:
+                        continue
+                    parents = git('show', '-s', '--format=%P', sha).split()
+                    if len(parents) != 1 or parents[0] not in replacements:
+                        raise RuntimeError('A fork contains merged or changed history; message finalization was paused.')
+                    item = dict(sha=sha, tree=git('show', '-s', '--format=%T', sha), sign=False)
+                    replacements[sha] = rewritten_commit(item, replacements[parents[0]],
+                                                          git('show', '-s', '--format=%B', sha))
+                moves.append(dict(branch=branch, before=tip, after=replacements[tip]))
+                forks[branch] = replacements[base]
+                del remaining[branch]
+                advanced = True
+            if not advanced:
+                break
+        updated = {entry['directory'] for entry in updates}
+        for entry in queue_entries(marker):
+            if entry['directory'] in updated:
+                continue
+            item = read_journal(Path(entry['directory']) / 'job.json')
+            if item.get('sha') in replacements:
+                updates.append(dict(directory=entry['directory'], values=dict(
+                    sha=replacements[item['sha']], parent=replacements.get(item['parent'], item['parent']))))
         write_journal(meta / TRANSACTION, dict(branch=current['branch'], before=before,
-                                             after=parent, updates=updates))
+                                             after=parent, updates=updates, refs=moves, forks=forks))
         recover_finalization(meta)
         job.update(read_journal(directory / 'job.json'))
 
@@ -384,11 +473,14 @@ def rejected_push_error(job, result, remote_tip):
 def sync_with_lindsey(job, remote_tip):
     """Replay unpublished history through Lindsey, then atomically adopt its plan."""
     meta = Path(job['gitdir'])
-    with repository_lock(meta):
-        recover_finalization(meta)
-        entries, jobs = captured_chain(meta / MARKER, job['branch'])
-        if any(item.get('provisional') for item in jobs):
-            return False  # Let all queued titles finish before rebasing the chain.
+    with branch_sync_lock(meta, job['branch']):
+        with repository_lock(meta):
+            recover_finalization(meta)
+            entries, jobs = captured_chain(meta / MARKER, job['branch'])
+            if any(item.get('provisional') for item in jobs):
+                return False  # Let all queued titles finish before rebasing the chain.
+            before = branch_tip(job['branch'])
+        # Network and replay planning must not hold the shared queue lock.
         configured = os.environ.get('LINDSEY_SYNC_REPO')
         candidates = ([Path(configured)] if configured else []) + [
             Path(job['root']).parent / 'lindsey-sync',
@@ -405,15 +497,15 @@ def sync_with_lindsey(job, remote_tip):
             if git('fetch', '--no-tags', '--no-write-fetch-head', job['remote'], remote_tip,
                    check=False, timeout=120).returncode:
                 raise RuntimeError('Lindsey could not fetch the remote branch; retry when it is reachable.')
-        before = branch_tip(job['branch'])
         env = os.environ.copy()
         env.pop('GIT_INDEX_FILE', None)
-        active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
         # Do not update a branch checked out in another linked worktree.
-        worktrees = git('worktree', 'list', '--porcelain').split('\n\n')
-        for worktree in worktrees:
-            if '\nbranch ' + job['branch'] in worktree and not worktree.startswith('worktree ' + job['root'] + '\n'):
-                raise RuntimeError('Lindsey sync paused because the branch is open in another worktree.')
+        def check_worktrees():
+            worktrees = git('worktree', 'list', '--porcelain').split('\n\n')
+            for worktree in worktrees:
+                if '\nbranch ' + job['branch'] in worktree and not worktree.startswith('worktree ' + job['root'] + '\n'):
+                    raise RuntimeError('Lindsey sync paused because the branch is open in another worktree.')
+        check_worktrees()
         result = subprocess.run([node, str(script), job['root'], before, remote_tip, core.REAL_GIT],
                                 capture_output=True, text=True, timeout=180, env=env)
         if result.returncode:
@@ -425,29 +517,32 @@ def sync_with_lindsey(job, remote_tip):
         if (plan.get('version') != 1 or plan.get('status') != 'ready'
                 or plan.get('before') != before or plan.get('onto') != remote_tip):
             raise RuntimeError('Lindsey could not safely replay this history; manual sync is required.')
-        if active == job['branch'] and git('status', '--porcelain', env=env):
-            raise RuntimeError('Lindsey sync is waiting for your uncommitted changes. Commit or stash them before retrying; your files are preserved.')
         replacements = {item['before']: item for item in plan['commits']}
         after = plan['after']
         if git('merge-base', '--is-ancestor', remote_tip, after, check=False).returncode:
             raise RuntimeError('Lindsey returned a sync that does not contain the remote changes.')
-        updates = []
-        for entry, item in zip(entries, jobs):
-            replacement = replacements.get(item['sha'])
-            if replacement:
-                updates.append({'directory': entry['directory'], 'values': dict(
-                    sha=replacement['after'], parent=replacement['parent'], tree=replacement['tree'])})
-        # Retain the exact old history before adopting any replacement refs.
-        git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before, before)
-        if branch_tip(job['branch']) != before:
-            raise RuntimeError('The branch changed while Lindsey prepared the sync; publication was paused.')
-        if active == job['branch'] and git('status', '--porcelain', env=env):
-            raise RuntimeError('Local files changed while Lindsey prepared the sync; publication was paused.')
-        write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
-                      after=after, updates=updates, checkout=True))
-        recover_finalization(meta)
-        job.update(read_journal(Path(next(entry['directory'] for entry in entries
-                                         if entry['id'] == job['id'])) / 'job.json'))
+        with repository_lock(meta):
+            recover_finalization(meta)
+            if branch_tip(job['branch']) != before:
+                raise RuntimeError('The branch changed while Lindsey prepared the sync; publication was paused.')
+            check_worktrees()
+            active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
+            entries, jobs = captured_chain(meta / MARKER, job['branch'])
+            updates = []
+            for entry, item in zip(entries, jobs):
+                replacement = replacements.get(item['sha'])
+                if replacement:
+                    updates.append({'directory': entry['directory'], 'values': dict(
+                        sha=replacement['after'], parent=replacement['parent'], tree=replacement['tree'])})
+            # Retain the exact old history before adopting any replacement refs.
+            git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before, before)
+            if active == job['branch'] and git('status', '--porcelain', env=env):
+                raise RuntimeError('Lindsey sync is waiting for your uncommitted changes. Commit or stash them before retrying; your files are preserved.')
+            write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
+                          after=after, updates=updates, checkout=True))
+            recover_finalization(meta)
+            job.update(read_journal(Path(next(entry['directory'] for entry in entries
+                                             if entry['id'] == job['id'])) / 'job.json'))
         return True
 
 
@@ -567,6 +662,14 @@ def work(directory, commit_only=False):
                 position = next(i for i, item in enumerate(pending) if item['id'] == job['id'])
                 if any(item.get('provisional') for item in pending[:position]):
                     return
+                # A fork may have its own ready title while its inherited base
+                # is still provisional. Never finalize or publish it first.
+                for entry in queue_entries(marker):
+                    ancestor = read_journal(Path(entry['directory']) / 'job.json')
+                    if (ancestor and ancestor.get('provisional') and ancestor['id'] != job['id']
+                            and ancestor['branch'] != job['branch']
+                            and git('merge-base', '--is-ancestor', ancestor['sha'], job['sha'], check=False).returncode == 0):
+                        return
             if job.get('provisional'):
                 job['phase'] = 'finalizing'
                 write_journal(file, job)
@@ -576,6 +679,8 @@ def work(directory, commit_only=False):
                 job = read_journal(file)
             pushed = job['push']
             if pushed:
+                from merged_branch import require_unmerged
+                require_unmerged(job['branch'], job['remote'])
                 job['phase'] = 'pushing'
                 write_journal(file, job)
                 env = os.environ.copy()
@@ -639,6 +744,9 @@ def work(directory, commit_only=False):
                 current.pop('conflictPaths', None)
                 if isinstance(exc, SyncConflicts):
                     current['conflictPaths'] = exc.paths
+                if getattr(exc, 'info', None):
+                    current['mergedBranch'] = exc.info
+                    current['push'] = False
                 write_journal(file, current)
             log_event('background_commit', 'blocked', error_type=type(exc).__name__, outcome='blocked')
         finally:
@@ -743,6 +851,11 @@ def resume(parallel=True):
     for file in jobs_home().glob('*/job.json'):
         job = read_journal(file)
         meta = job['gitdir']
+        # Archived jobs can outlive a checkout or its conversion to a linked
+        # worktree, where the old .git directory is now a pointer file.
+        # Never let that stale location prevent other repositories resuming.
+        if not Path(meta).is_dir():
+            continue
         if meta in repositories:
             continue
         repositories.add(meta)
@@ -775,8 +888,6 @@ def request_push(request, start=True):
                   else 'refs/heads/' + requested_branch)
         if not any(read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch
                    for entry in queue_entries(marker)):
-            if requested_branch and branch != git('symbolic-ref', '--quiet', 'HEAD'):
-                raise RuntimeError('Pending commit messages belong to a different push branch.')
             return {'queued': False}
         entries, jobs = captured_chain(marker, branch)
         remote = request.get('remote')
@@ -794,13 +905,34 @@ def request_push(request, start=True):
     return {'queued': True}
 
 
-def queue_plain_push(args):
+def queue_plain_push(args, global_args=()):
     # Only defer the ordinary push supported by the durable queue. Preserve
     # specialized pushes (tags, deletes, force, alternate refspecs) as guarded.
     positional = [arg for arg in args if arg not in ('-u', '--set-upstream')]
     if any(arg.startswith('-') for arg in positional) or len(positional) > 2:
         return False
-    return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+    if len(positional) < 2:
+        # Custom default refspecs/destinations must reach the source-aware gate,
+        # rather than silently turning into a push of the current queued branch.
+        configured = subprocess.run([core.REAL_GIT, *global_args, 'config', '--get-regexp',
+                                     r'^(remote\..*\.push|remote\.pushDefault|branch\..*\.pushRemote)$'],
+                                    capture_output=True, text=True)
+        mode = subprocess.run([core.REAL_GIT, *global_args, 'config', '--get', 'push.default'],
+                              capture_output=True, text=True)
+        if configured.returncode == 0 or (mode.returncode == 0 and mode.stdout.strip() not in ('simple', 'upstream')):
+            return False
+    if not global_args:
+        return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+    result = subprocess.run([core.REAL_GIT, *global_args, 'rev-parse', '--show-toplevel'],
+                            capture_output=True, text=True)
+    if result.returncode:
+        return False
+    previous = os.getcwd()
+    try:
+        os.chdir(result.stdout.strip())
+        return request_push(dict(zip(('remote', 'branch'), positional)))['queued']
+    finally:
+        os.chdir(previous)
 
 
 def completed_branch_base(real_git, global_args, ref):
@@ -849,18 +981,35 @@ def completed_branch_base(real_git, global_args, ref):
         return candidate
 
 
-def wait_for_background(real_git, global_args, branch_base=None):
+def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',)):
     result = subprocess.run([real_git, *global_args, 'rev-parse', '--absolute-git-dir'],
                             capture_output=True, text=True)
     if result.returncode:
         return
     marker = Path(result.stdout.strip()) / MARKER
     entries = queue_entries(marker)
-    if entries and not any(os.environ.get('SWEETIEBOT_BACKGROUND_JOB') == entry['id'] for entry in entries):
-        # Only an explicit immutable, already completed base may bypass the gate.
-        if branch_base and completed_branch_base(real_git, global_args, branch_base) == branch_base:
-            return
-        job = read_journal(Path(entries[0]['directory']) / 'job.json')
+    own_job = os.environ.get('SWEETIEBOT_BACKGROUND_JOB')
+    if own_job and any(own_job == entry.get('id') for entry in entries):
+        return
+    dependencies = related_pending_jobs(real_git, global_args, (branch_base,) if branch_base else refs)
+    dependencies = [record for record in dependencies
+                    if record['kind'] == 'background' or record['directory'] != marker.parent]
+    # Pin named bases even when the jobs we found belong to unrelated branches.
+    # A later enqueue or ref move must not change the history being copied.
+    if branch_base:
+        resolved = subprocess.run([real_git, *global_args, 'rev-parse', '--verify', branch_base + '^{commit}'],
+                                  capture_output=True, text=True)
+        current = subprocess.run([real_git, *global_args, 'symbolic-ref', '--quiet', 'HEAD'],
+                                 capture_output=True, text=True)
+        jobs = [record['job'] for record in dependencies]
+        current_pending = any(not job or job.get('branch') == current.stdout.strip() for job in jobs)
+        if (resolved.returncode == 0 and (branch_base != 'HEAD' or not current_pending)
+                and completed_branch_base(real_git, global_args, resolved.stdout.strip()) == resolved.stdout.strip()):
+            return resolved.stdout.strip()
+        if not dependencies and resolved.returncode == 0:
+            raise RuntimeError('The selected branch base contains unfinished commit history.')
+    if dependencies:
+        job = dependencies[0]['job']
         name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
         branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''
         label = name + (' (' + branch + ')' if branch else '')
@@ -874,10 +1023,17 @@ if __name__ == '__main__':
     try:
         if len(sys.argv) == 3 and sys.argv[1] == '--branch-base':
             print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
+        elif len(sys.argv) == 5 and sys.argv[1] == '--fork-branch':
+            print(fork_branch(*sys.argv[2:]))
+        elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
+            print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
             print(json.dumps(request_push(json.load(sys.stdin))))
+        elif len(sys.argv) >= 2 and sys.argv[1] in ('--pending', '--pending-legacy'):
+            print(json.dumps(bool(related_pending_jobs(core.REAL_GIT, [], sys.argv[2:] or ['HEAD'],
+                                                      background=sys.argv[1] == '--pending'))))
         elif sys.argv[1:] == ['--resume']:
             resume()
         elif len(sys.argv) == 3 and sys.argv[1] == '--work':
@@ -890,7 +1046,7 @@ if __name__ == '__main__':
             marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
-            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths') if key in job} if job else {}
+            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths', 'mergedBranch') if key in job} if job else {}
             recoverable = False
             if job and job['phase'] == 'blocked' and branch_recovery_candidate(job):
                 try:

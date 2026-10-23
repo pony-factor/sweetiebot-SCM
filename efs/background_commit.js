@@ -2,6 +2,7 @@
 
 const { spawn, execFile } = require('node:child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
+const { mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
 
 function enqueue(script, cwd, request, action = '--enqueue') {
   return new Promise((resolve, reject) => {
@@ -130,6 +131,11 @@ function registerBackgroundCommit(vscode, context) {
           if (!previous?.recoverable || previous.id !== status.id) resume();
         } else if (status.phase === 'blocked'
             && (previous?.phase !== 'blocked' || previous?.recoverable || previous?.id !== status.id)) {
+          if (status.mergedBranch) {
+            void warnMergedBranch(vscode, repository, status.mergedBranch).catch(error =>
+              vscode.window.showErrorMessage(error.message));
+            continue;
+          }
           const notice = blockedNotification(root, status);
           void vscode.window.showErrorMessage(notice.message,
             notice.action, 'Retry sync and push', 'Stop background push').then(choice => {
@@ -162,6 +168,11 @@ function registerBackgroundCommit(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queuePush', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') return { queued: false };
+    const merged = await mergedBranchStatus({ rootUri: root }, options.remote, options.branch);
+    if (merged) {
+      await warnMergedBranch(vscode, { rootUri: root }, merged);
+      return { queued: false, cancelled: true };
+    }
     const result = await enqueue(script, root.fsPath, options, '--request-push');
     if (result.queued) {
       void vscode.window.showInformationMessage(
@@ -182,6 +193,15 @@ function registerBackgroundCommit(vscode, context) {
     const git = await extension.activate();
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected repository is unavailable.');
+    const config = vscode.workspace.getConfiguration('git', root);
+    if (options.push ?? config.get('postCommitCommand') === 'push') {
+      const remote = vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin');
+      const merged = await mergedBranchStatus(repository, remote);
+      if (merged) {
+        await warnMergedBranch(vscode, repository, merged);
+        return { cancelled: true };
+      }
+    }
     await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
     if (!repository.state.indexChanges.length || options.all) {

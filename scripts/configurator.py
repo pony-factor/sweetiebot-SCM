@@ -20,6 +20,9 @@ from pathlib import Path
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from toolkit_settings import load_settings, VSCODE_SETTINGS
+from commit_diagnostics_dashboard import (
+    DIAGNOSTICS_PANEL, DIAGNOSTICS_SCRIPT, DIAGNOSTICS_STYLE, read_diagnostics,
+)
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
@@ -45,11 +48,6 @@ COMMIT_HOTKEY_STYLE = """
 .hotkey-status.error-state{color:#ffb3ad}
 """
 COMMIT_HOTKEY_SCRIPT = r"""
-const hotkeyChange = document.getElementById('commit-hotkey-change');
-const hotkeyReset = document.getElementById('commit-hotkey-reset');
-const hotkeyValue = document.getElementById('commit-hotkey-value');
-const hotkeyStatus = document.getElementById('commit-hotkey-status');
-let hotkeyListening = false;
 const hotkeyNames = {
   Space:'space', Enter:'enter', Tab:'tab', Escape:'escape',
   Backspace:'backspace', Delete:'delete', Home:'home', End:'end',
@@ -60,61 +58,71 @@ const hotkeyNames = {
   Backslash:'backslash', Semicolon:'semicolon', Quote:'quote',
   Comma:'comma', Period:'period', Slash:'slash'
 };
-function finishHotkeyRecording() {
-  hotkeyListening = false;
-  document.removeEventListener('keydown', captureCommitHotkey, true);
-  if (hotkeyChange) hotkeyChange.textContent = 'Change';
-}
-async function saveCommitHotkey(key) {
-  hotkeyChange.disabled = true;
-  hotkeyReset.disabled = true;
-  hotkeyStatus.classList.remove('error-state');
-  hotkeyStatus.textContent = 'Saving…';
-  try {
-    const response = await fetch('/commit-hotkey' + location.search, {
-      method:'POST', body:new URLSearchParams({key})
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
-    hotkeyValue.textContent = result.key || 'Unbound';
-    hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
-  } catch (error) {
-    hotkeyStatus.textContent = error.message;
-    hotkeyStatus.classList.add('error-state');
-  } finally {
-    hotkeyChange.disabled = false;
-    hotkeyReset.disabled = false;
+let activeStopHotkey = null;
+function setupCommitHotkey(prefix, command) {
+  const hotkeyChange = document.getElementById(prefix + '-change');
+  const hotkeyReset = document.getElementById(prefix + '-reset');
+  const hotkeyValue = document.getElementById(prefix + '-value');
+  const hotkeyStatus = document.getElementById(prefix + '-status');
+  if (!hotkeyChange || !hotkeyReset || !hotkeyValue || !hotkeyStatus) return;
+  let hotkeyListening = false;
+  function finishHotkeyRecording() {
+    hotkeyListening = false;
+    document.removeEventListener('keydown', captureCommitHotkey, true);
+    hotkeyChange.textContent = 'Change';
+    if (activeStopHotkey === finishHotkeyRecording) activeStopHotkey = null;
   }
-}
-function captureCommitHotkey(event) {
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (event.key === 'Escape') {
+  async function saveCommitHotkey(key) {
+    hotkeyChange.disabled = true;
+    hotkeyReset.disabled = true;
+    hotkeyStatus.classList.remove('error-state');
+    hotkeyStatus.textContent = 'Saving…';
+    try {
+      const response = await fetch('/commit-hotkey' + location.search, {
+        method:'POST', body:new URLSearchParams({key, command})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
+      hotkeyValue.textContent = result.key || 'Unbound';
+      hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
+    } catch (error) {
+      hotkeyStatus.textContent = error.message;
+      hotkeyStatus.classList.add('error-state');
+    } finally {
+      hotkeyChange.disabled = false;
+      hotkeyReset.disabled = false;
+    }
+  }
+  function captureCommitHotkey(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.key === 'Escape') {
+      finishHotkeyRecording();
+      hotkeyStatus.textContent = 'Recording cancelled.';
+      return;
+    }
+    if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
+    let key = hotkeyNames[event.code];
+    if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
+    if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
+    if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
+    if (!key) {
+      hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
+      return;
+    }
+    const mods = [];
+    if (event.ctrlKey) mods.push('ctrl');
+    if (event.altKey) mods.push('alt');
+    if (event.shiftKey) mods.push('shift');
+    if (event.metaKey) mods.push('cmd');
     finishHotkeyRecording();
-    hotkeyStatus.textContent = 'Recording cancelled.';
-    return;
+    void saveCommitHotkey([...mods, key].join('+'));
   }
-  if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
-  let key = hotkeyNames[event.code];
-  if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
-  if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
-  if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
-  if (!key) {
-    hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
-    return;
-  }
-  const mods = [];
-  if (event.ctrlKey) mods.push('ctrl');
-  if (event.altKey) mods.push('alt');
-  if (event.shiftKey) mods.push('shift');
-  if (event.metaKey) mods.push('cmd');
-  finishHotkeyRecording();
-  void saveCommitHotkey([...mods, key].join('+'));
-}
-if (hotkeyChange) {
   hotkeyChange.addEventListener('click', () => {
     if (hotkeyListening) { finishHotkeyRecording(); return; }
+    if (activeStopHotkey) activeStopHotkey();
     hotkeyListening = true;
+    activeStopHotkey = finishHotkeyRecording;
     hotkeyChange.textContent = 'Cancel';
     hotkeyStatus.textContent = 'Press the desired key combination. Escape cancels.';
     hotkeyStatus.classList.remove('error-state');
@@ -131,8 +139,17 @@ if (hotkeyChange) {
     }
   });
 }
+setupCommitHotkey('commit-hotkey', 'sweetiebot.commit');
+setupCommitHotkey('codex-commit-hotkey', 'sweetiebot.commitWithCodex');
 """
-def _commit_hotkey_control(key: str | None) -> str:
+def _commit_hotkey_control(
+    key: str | None,
+    *,
+    prefix: str = "commit-hotkey",
+    label: str = "Commit hotkey",
+    description: str = ("Run the same action as the Source Control Commit button. "
+                        "Unbound by default; Reset removes the assignment."),
+) -> str:
     available = key is not None
     shown = html.escape(key or "Unbound")
     disabled = "" if available else " disabled"
@@ -140,17 +157,15 @@ def _commit_hotkey_control(key: str | None) -> str:
             "shortcuts may still take precedence." if available else
             "Open this page from Sweetiebot in VS Code to edit its shortcut.")
     return (
-        '<div class="setting"><span><strong>Commit hotkey</strong>'
-        '<small>Run the same action as the Source Control Commit button. '
-        'Unbound by default; Reset removes the assignment.</small></span>'
+        f'<div class="setting"><span><strong>{html.escape(label)}</strong>'
+        f'<small>{html.escape(description)}</small></span>'
         '<div class="hotkey-actions">'
-        f'<output id="commit-hotkey-value" class="hotkey-value">{shown}</output>'
-        f'<button type="button" id="commit-hotkey-change"{disabled}>Change</button>'
-        f'<button type="button" id="commit-hotkey-reset"{disabled}>Reset</button>'
-        f'<small id="commit-hotkey-status" class="hotkey-status" role="status" aria-live="polite">'
+        f'<output id="{prefix}-value" class="hotkey-value">{shown}</output>'
+        f'<button type="button" id="{prefix}-change"{disabled}>Change</button>'
+        f'<button type="button" id="{prefix}-reset"{disabled}>Reset</button>'
+        f'<small id="{prefix}-status" class="hotkey-status" role="status" aria-live="polite">'
         f'{html.escape(hint)}</small></div></div>'
     )
-
 
 
 @dataclass(frozen=True)
@@ -170,7 +185,7 @@ SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh only while visible and focused; pause after GitHub rate limits.", "GitHub"),
     Setting("pullRequestRefreshIntervalSeconds", "scm-toolkit.pull-request-refresh-interval-seconds", "Pull-request refresh interval (seconds)", "Default 120 seconds; choose 30–3600. Manual refresh is unaffected.", "GitHub", "integer", minimum=30, maximum=3600),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR actions", "Optional project context for ChatGPT pull-request drafting and batch squash-merging. Paste a project URL; leave blank for a regular chat.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR and pony research", "Use this ChatGPT project for PR drafting, independent pony-profile research, and batch squash-merging. Paste the project URL; leave blank for regular chats.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("horizontalBranchSelector", "scm-toolkit.horizontal-branch-selector", "Horizontal branch selector", "Click the branch box beside the message field to open horizontal branch options in the bottom panel. Turn off to open the native branch picker instead.", "Source control"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
@@ -179,11 +194,11 @@ SETTINGS = (
     Setting("commitButtonLabel", "scm-toolkit.commit-button-label", "Commit button label", "Text shown on the primary Source Control commit action.", "Message bar", "text"),
     Setting("commitAndSendButtonLabel", "scm-toolkit.commit-and-send-button-label", "Commit and send button label", "Text shown on the primary commit action when git.postCommitCommand is push.", "Message bar", "text"),
     Setting("sourceControlLabel", "scm-toolkit.source-control-label", "Source Control label", "Override the Source Control view label shown in the app bar.", "Source control", "text"),
-    Setting("nativeAppUpdateMode", "scm-toolkit.native-app-update-mode", "VS Code app updates", "Use default for automatic update checks, start to check only at startup, manual to check on demand, or none to disable updates. VS Code keeps its normal update notices.", "Updates", "select", ("default", "start", "manual", "none")),
-    Setting("nativeExtensionAutoCheckUpdates", "scm-toolkit.native-extension-auto-check-updates", "Automatically check for extension updates", "Use VS Code's built-in checks for installed extension updates.", "Updates"),
-    Setting("nativeExtensionAutoUpdate", "scm-toolkit.native-extension-auto-update", "Automatically update extensions", "Let VS Code install extension updates automatically. Per-extension overrides and administrator policies still apply.", "Updates"),
-    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; automatically reload the focused window when ready.", "Startup and repository"),
-    Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Startup and repository"),
+    Setting("nativeAppUpdateMode", "scm-toolkit.native-app-update-mode", "VS Code app updates", "Use default for automatic update checks, start to check only at startup, manual to check on demand, or none to disable updates. VS Code keeps its normal update notices.", "Initialization", "select", ("default", "start", "manual", "none")),
+    Setting("nativeExtensionAutoCheckUpdates", "scm-toolkit.native-extension-auto-check-updates", "Automatically check for extension updates", "Use VS Code's built-in checks for installed extension updates.", "Initialization"),
+    Setting("nativeExtensionAutoUpdate", "scm-toolkit.native-extension-auto-update", "Automatically update extensions", "Let VS Code install extension updates automatically. Per-extension overrides and administrator policies still apply.", "Initialization"),
+    Setting("automaticAppRepair", "scm-toolkit.automatic-app-repair", "Automatically update and restore app customizations", "Check for Sweetie Bot updates and restore patches after VS Code or extension updates; automatically reload the focused window when ready.", "Initialization"),
+    Setting("openPanelOnStartup", "scm-toolkit.open-panel-on-startup", "Open Sweetie Bot on startup", "Open Sweetie Bot / Source Control automatically when each VS Code window starts.", "Initialization"),
     Setting("notificationPosition", "scm-toolkit.notification-position", "Notification position", "Choose where VS Code notification toasts and the Notification Center appear.", "Source control", "select", ("bottom-left", "bottom-right", "top-right")),
     Setting("filledButtons", "scm-toolkit.filled-buttons", "Accent-filled buttons", "Fill the branch and Commit controls with the theme accent instead of outlining them.", "Source control"),
     Setting("commitAndPush", "scm-toolkit.commit-and-push", "Show push checkbox", "Show the push-after-committing checkbox beside the message field.", "Message bar"),
@@ -232,29 +247,44 @@ SETTINGS = (
     Setting("workspaceSearchMaxFiles", "scm-toolkit.workspace-search-max-files", "Search file limit", "Maximum number of workspace files considered for indexing.", "Search", "integer", minimum=1, maximum=50000),
     Setting("workspaceSearchMaxFileSizeMB", "scm-toolkit.workspace-search-max-file-size-mb", "Maximum indexed file size (MB)", "Maximum file size indexed directly.", "Search", "number", minimum=0.1, maximum=100),
     Setting("workspaceSearchExclude", "scm-toolkit.workspace-search-exclude", "Search exclusions", "Glob of paths excluded from workspace indexing. Leave blank to use no exclusions.", "Search", "optional_text"),
-    Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Startup and repository", "text"),
-    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Startup and repository", "text"),
+    Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Initialization", "text"),
+    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Initialization", "text"),
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
-    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Automatic draft commit spellcheck", "After 1.5 seconds without typing, correct obvious spelling errors in manual commit subjects using local Ollama. Never blocks a commit, replaces the body, or alters Codex-attributed messages. The manual preview action remains available. Off by default.", "Ollama"),
-    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Ollama", "model"),
-    Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Ollama"),
-    Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Ollama"),
-    Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Ollama", "textarea"),
+    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Automatic draft commit spellcheck", "After 1.5 seconds without typing, correct obvious spelling errors in manual commit subjects using local Ollama. Never blocks a commit, replaces the body, or alters Codex-attributed messages. The manual preview action remains available. Off by default.", "Spellcheck Changes"),
+    Setting("draftCommitEmoji", "scm-toolkit.draft-commit-emoji", "Add professional emoji to drafted commit titles", "After 1.5 seconds without typing, prefix manual commit subjects with a change-appropriate emoji when they have none. Independent of automatic spelling correction; preserves your emoji, body, and Codex-attributed messages. Uses the built-in title classifier without a second Ollama call. Off by default.", "Spellcheck Changes"),
+    Setting("draftSpellcheckAction", "scm-toolkit.draft-spellcheck-action", "Correction handling", "Apply verified corrections automatically, or ask for approval in a before-and-after confirmation after typing stops.", "Spellcheck Changes", "select", ("automatic", "review")),
+    Setting("draftSpellcheckDelaySeconds", "scm-toolkit.draft-spellcheck-delay-seconds", "Idle delay (seconds)", "Wait 0.5–10 seconds after typing before checking the current commit subject. Does not delay Commit.", "Spellcheck Changes", "number", minimum=0.5, maximum=10),
+    Setting("draftSpellcheckStyle", "scm-toolkit.draft-spellcheck-style", "Correction scope", "Spelling only preserves word and punctuation structure; spelling and grammar also permits small grammatical fixes subject to safety checks.", "Spellcheck Changes", "select", ("spelling", "grammar")),
+    Setting("draftSpellcheckVocabulary", "scm-toolkit.draft-spellcheck-vocabulary", "Protected vocabulary", "One term or phrase per line. When present, these exact words, brands or technical expressions must remain unchanged.", "Spellcheck Changes", "textarea"),
+    Setting("draftSpellcheckGuidance", "scm-toolkit.draft-spellcheck-guidance", "Additional correction guidance", "Optional preferences or specialist terminology for the local model. Safety checks, protected tokens and user-selected emoji always take precedence.", "Spellcheck Changes", "textarea"),
+    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Spellcheck Changes", "model"),
+    Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellcheck Changes"),
+    Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
+    Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
-    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After three failed Ollama generation attempts, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
+    Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
+    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
+    Setting("aiCommitRequestTimeoutSeconds", "scm-toolkit.ai-commit-request-timeout-seconds", "Commit request timeout (seconds)", "Maximum wait for one model request. Choose 1–900 seconds. The overall generation budget is this timeout multiplied by the attempt count.", "Ollama", "integer", minimum=1, maximum=900),
+    Setting("aiCommitAttempts", "scm-toolkit.ai-commit-attempts", "Attempts per model step", "Maximum attempts for each emoji check or title-generation step. Choose 1–10. All steps and retries share the calculated overall budget; changes apply to new jobs immediately.", "Ollama", "integer", minimum=1, maximum=10),
     Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
     Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. On by default.", "Ollama"),
     Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
+    Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Hide bullets for emoji-only squash summaries", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
+    Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
+    Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
+    Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
+    Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
     Setting("kefaniaUseThemeColors", "scm-toolkit.kefania-use-theme-colors", "Use VS Code theme colors", "Use the current theme for Kefania buttons, close icons, image controls, and page colors.", "Kefania"),
+    Setting("kefaniaCloseAfterMerge", "scm-toolkit.kefania-close-after-merge", "Close Kefania after squash and merge", "Close the Kefania confirmation window after GitHub confirms a successful squash and merge.", "Kefania"),
     Setting("kefaniaShowCloseButton", "scm-toolkit.kefania-show-close-button", "Show Kefania X button", "Show the close-window X after publishing a PR in Kefania.", "Kefania"),
     Setting("kefaniaCloseButtonPosition", "scm-toolkit.kefania-close-button-position", "Kefania X button", "Hide the close-window X or place it on the left, middle (above the pony card), or right after publishing a PR.", "Kefania", "select", ("hidden", "left", "middle", "right")),
     Setting("autoPublishPullRequests", "scm-toolkit.auto-publish-pull-requests", "Automatically publish PR drafts", "Publish a completed Kefania PR draft automatically, without clicking the confirmation button. Pony research runs independently.", "Pull requests"),
@@ -386,6 +416,13 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
         if setting.kind == "textarea":
             if "\x00" in raw_value:
                 raise ValueError(f"{setting.label} contains an invalid null byte.")
+            limit = 5000 if setting.name == "draftSpellcheckVocabulary" else (
+                2000 if setting.name == "draftSpellcheckGuidance" else None
+            )
+            if limit is not None and len(raw_value) > limit:
+                raise ValueError(f"{setting.label} must be at most {limit} characters.")
+            if setting.name == "draftSpellcheckVocabulary" and len(raw_value.splitlines()) > 100:
+                raise ValueError("Protected vocabulary supports at most 100 lines.")
             parsed[setting.name] = raw_value.strip()
             continue
 
@@ -682,9 +719,11 @@ def _setting_control(setting: Setting, current: object) -> str:
             f'<button type="button" class="download-model" data-model="{name}">Download</button></div>'
         )
     input_class = ' class="compact-number"' if setting.name == "aiLowMemoryGiB" else ""
+    budget_output = ('<small><output id="commit-generation-budget" aria-live="polite"></output></small>'
+                     if setting.name == 'aiCommitAttempts' else '')
     return (
         '<label class="setting field-row">'
-        f'<span><strong>{label}</strong><small>{description}</small></span>'
+        f'<span><strong>{label}</strong><small>{description}</small>{budget_output}</span>'
         f'<input{attrs}{input_class} name="{name}" value="{value}"{list_attr}{required}></label>'
     )
 
@@ -751,6 +790,7 @@ def render_form(
     finish_on_save: bool = True,
     server_instance: str = "",
     commit_hotkey: str | None = None,
+    codex_commit_hotkey: str | None = None,
 ) -> str:
     current = dict(current)
     if current.get("kefaniaShowCloseButton") is False:
@@ -760,12 +800,15 @@ def render_form(
     section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))
     section_names.remove("GitHub")
     section_names.insert(section_names.index("Codex"), "GitHub")
+    section_names.append("Diagnostics")
     for index, section in enumerate(section_names):
         controls = "".join(
             _setting_control(setting, current.get(setting.name, ""))
             for setting in SETTINGS
             if setting.section == section
         )
+        if section == "Diagnostics":
+            controls = DIAGNOSTICS_PANEL
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
@@ -796,14 +839,22 @@ def render_form(
             )
         if section == "Message bar":
             controls += _commit_hotkey_control(commit_hotkey)
+            controls += _commit_hotkey_control(
+                codex_commit_hotkey,
+                prefix="codex-commit-hotkey",
+                label="Commit with Codex co-author hotkey",
+                description=("Run the same action as the Codex co-author commit button, "
+                             "including its configured trailer and commit flow. "
+                             "Independently configurable and unbound by default."),
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
             controls += (
-                '<div class="setting"><span><strong>Commit hotkey</strong>'
-                '<small>Set or clear this shortcut using Change or Reset in the Message bar tab. '
-                'New installations start unbound. The shortcut performs the same action '
-                'as the Source Control Commit button.</small></span></div>'
+                '<div class="setting"><span><strong>Commit hotkeys</strong>'
+                '<small>Configure the normal Commit and Commit with Codex co-author '
+                'shortcuts independently in the Message bar tab. Both start unbound.</small>'
+                '</span></div>'
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
@@ -815,8 +866,24 @@ def render_form(
                 'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
             ) + controls
         status = ""
-        if section in {"Ollama", "Search"}:
+        if section in {"Ollama", "Search", "Spellcheck Changes"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
+        if section == "Spellcheck Changes":
+            draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",
+                              "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
+                              "draftSpellcheckVocabulary", "draftSpellcheckGuidance",
+                              "draftCommitEmoji", "spellcheckModel"}
+            controls = (
+                '<div class="settings-group"><h3>While drafting a commit</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name in draft_controls)
+                + '</div><div class="settings-group"><h3>After committing</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name not in draft_controls)
+                + '</div>'
+            )
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"
         selected = "true" if index == 0 else "false"
@@ -853,6 +920,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
 {COMMIT_HOTKEY_STYLE}
+{DIAGNOSTICS_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
 @media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
@@ -864,8 +932,22 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
+{DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
+const commitRequestTimeout = settingsForm.elements.namedItem('aiCommitRequestTimeoutSeconds');
+const commitAttempts = settingsForm.elements.namedItem('aiCommitAttempts');
+function updateCommitGenerationBudget() {{
+  const output = document.getElementById('commit-generation-budget');
+  const seconds = Number(commitRequestTimeout.value);
+  const attempts = Number(commitAttempts.value);
+  output.textContent = commitRequestTimeout.checkValidity() && commitAttempts.checkValidity()
+    ? `Overall budget: ${{seconds * attempts}} seconds (${{seconds}} × ${{attempts}}).`
+    : 'Enter a valid timeout and attempt count to calculate the overall budget.';
+}}
+commitRequestTimeout.addEventListener('input', updateCommitGenerationBudget);
+commitAttempts.addEventListener('input', updateCommitGenerationBudget);
+updateCommitGenerationBudget();
 let autosaveTimer = null;
 let saveChain = Promise.resolve();
 let editVersion = 0;
@@ -1333,6 +1415,8 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
     payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
+    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent"):
+        payload["vscodeSettings"][key] = int(settings[key])
     return payload
 
 
@@ -1439,6 +1523,9 @@ def run_configurator(
             if path == "/health":
                 self._send_json({"instance": server_instance})
                 return
+            if path == "/diagnostics":
+                self._send_json(read_diagnostics())
+                return
             if path == "/models":
                 names, status = fetch_ollama_models()
                 self._send_json({"models": names, "status": status})
@@ -1448,6 +1535,12 @@ def run_configurator(
                 hotkey = read_commit_hotkey(keybindings_file) if keybindings_file else None
             except (OSError, ValueError):
                 hotkey = None
+            try:
+                codex_hotkey = read_commit_hotkey(
+                    keybindings_file, "sweetiebot.commitWithCodex"
+                ) if keybindings_file else None
+            except (OSError, ValueError):
+                codex_hotkey = None
             self._send(render_form(
                 session_settings,
                 names,
@@ -1457,6 +1550,7 @@ def run_configurator(
                 finish_on_save=open_browser,
                 server_instance=server_instance,
                 commit_hotkey=hotkey,
+                codex_commit_hotkey=codex_hotkey,
             ))
 
         def do_POST(self) -> None:
@@ -1511,7 +1605,10 @@ def run_configurator(
                     return
                 try:
                     with hotkey_lock:
-                        key = update_commit_hotkey(keybindings_file, values.get("key", [""])[0])
+                        key = update_commit_hotkey(
+                            keybindings_file, values.get("key", [""])[0],
+                            values.get("command", ["sweetiebot.commit"])[0],
+                        )
                     self._send_json({"saved": True, "key": key})
                 except (OSError, RuntimeError, ValueError) as error:
                     self._send_json({"error": str(error)}, 400)
