@@ -90,6 +90,7 @@ async function run() {
     assert.notEqual(scoped.storageUri.toString(), index.storageUri.toString());
     const matches = await scoped.search('Wormhole', 'exact');
     assert.ok(matches.results.some(item => item.relative === 'beta/Wormhole.md'));
+    assert.match(matches.warning, /file limit/, 'Capped cross-repository contents should be disclosed');
   } finally {
     fs.rmSync(githubFolder, {recursive: true, force: true});
   }
