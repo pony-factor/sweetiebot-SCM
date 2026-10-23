@@ -1923,6 +1923,14 @@ def main() -> None:
                 include_description=should_add_default_branch_description(),
                 file_context=staged_file_context(paths),
             )
+            # Do not reduce or bypass normal AI title generation. This
+            # independent formatting preference only controls the emoji in
+            # an accepted Spellcheck Changes commit, not ordinary commits or
+            # manual draft titles.
+            if not git_config_bool("scm-toolkit.spellcheck-changes-emoji", True):
+                title = re.sub(r"^(?:" + EMOJI_PATTERN + r"\s*)+", "", title).strip()
+                if not title:
+                    raise ValueError("Generated title contains no words after its emoji")
             print(json.dumps({"title": title, "description": description}, ensure_ascii=False))
         except (ValueError, KeyError, TypeError, RuntimeError) as exc:
             print(f"Sweetiebot: cannot generate spellcheck commit title ({exc})", file=sys.stderr)

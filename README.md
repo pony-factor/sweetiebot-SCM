@@ -575,6 +575,14 @@ description is appended before the spellchecker attribution. If generation
 fails, staged corrections remain visible for manual recovery without a
 fallback special-purpose title.
 
+The independent **Add professional emoji to spellcheck commits** switch (on by
+default, `scm-toolkit.spellcheck-changes-emoji`) controls whether the normal
+model-generated emoji appears at the start of the accepted spellcheck commit.
+Turning it off removes only that leading emoji **after** ordinary commit-title
+generation. It does not change the model, generation effort, generated
+description, spellchecker co-author trailer, or professional emoji settings for
+manually drafted or other AI-generated commits.
+
 The **Spellcheck Changes** settings tab groups draft-time and post-commit controls. The
 **Automatic draft commit spellcheck** toggle is off by default. Draft checks can be
 configured independently of **Add professional emoji to drafted commit titles**
