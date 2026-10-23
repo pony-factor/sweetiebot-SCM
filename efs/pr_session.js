@@ -174,9 +174,24 @@ async function resumePRSession(vscode, context) {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (selection) {
       const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-      const { invokeResolutionCLI, resolutionInstructions } = require('./merge_resolution');
-      handoff = await require('./merge_handoff').createMergeHandoff(selection, {
+      const { invokeResolutionCLI } = require('./merge_resolution');
+      const { githubGet } = require('./merge_dashboard');
+      const prefix = 'repos/' + selection.repository;
+      const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
+      handoff = await require('./merge_batch').createMergeBatch(selection, {
+        api: endpoint => {
+          if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
+          return githubGet(globalThis.fetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
+        },
+        destination: url.origin + url.pathname,
+        makePrompt: snapshot => require('./pull_request_batch').batchMergePrompt({
+          repositoryUrl: 'https://github.com/' + snapshot.repository,
+          pullRequests: snapshot.pullRequests, localHandoff: true,
+          filterSyncCommitSummaries: !initialPrompt.includes('SYNC COMMIT FILTER DISABLED'),
+          omitBulletsForEmojiTitles: initialPrompt.includes('EMOJI-ONLY SUBJECT LINES ENABLED')
+        }),
         execute: (result, snapshot) => invokeResolutionCLI(result, snapshot, auth.accessToken),
+        onState: state => fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 }),
         onResult: async result => {
           const controller = await resumeMergeDashboard(vscode, directory, context);
           controller?.recordLocalResult?.(result);
@@ -184,14 +199,8 @@ async function resumePRSession(vscode, context) {
         }
       });
       context.subscriptions?.push(handoff);
-      const fragment = new URLSearchParams(url.hash.slice(1));
-      fragment.set('return_to', handoff.url);
-      fragment.set('q', fragment.get('q') + '\n\n' + resolutionInstructions(selection, handoff.url));
-      url.hash = fragment.toString();
-      if (Buffer.byteLength(url.href) > 70000) {
-        handoff.dispose();
-        throw Error('Merge prompt including local handoff exceeds the 70 KB launch budget. Select fewer PRs.');
-      }
+      if (!handoff.url) return;
+      url.href = handoff.url;
     }
     try { await require('./pr_workflows').openWorkflow(vscode, url.href); }
     catch (error) { handoff?.dispose(); throw error; }

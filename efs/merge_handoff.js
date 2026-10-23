@@ -7,7 +7,8 @@ const path = require('node:path');
 const { validateSelection } = require('./merge_dashboard');
 const { validateResolution, executeResolution } = require('./merge_resolution');
 
-async function createMergeHandoff(rawSelection, { execute = executeResolution, onResult = () => {}, ttlMs = 3600000 } = {}) {
+async function createMergeHandoff(rawSelection, { execute = executeResolution, validate = validateResolution,
+  onResult = () => {}, ttlMs = 3600000 } = {}) {
   const selection = validateSelection(rawSelection);
   const route = '/lindsey-merge/' + randomUUID();
   const page = readFileSync(path.join(__dirname, 'merge_handoff.html'), 'utf8');
@@ -37,7 +38,7 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, o
         chunks.push(chunk);
       }
       input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      validateResolution(input, selection);
+      validate(input, selection);
     } catch (error) { return json(400, { error: error.message }); }
     // Claim synchronously after body validation: concurrent tabs cannot execute twice.
     if (attempted) return json(409, { error: 'Local merge already attempted.' });
@@ -45,7 +46,10 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, o
     try {
       outcome = await execute(input, selection);
       // A closed dashboard must not turn a verified merge into an apparent failure.
-      try { await onResult(outcome); } catch { /* GitHub remains authoritative. */ }
+      try {
+        const continuation = await onResult(outcome);
+        if (continuation && typeof continuation === 'object') outcome = { ...outcome, ...continuation };
+      } catch (error) { outcome = { ...outcome, continuationError: error.message }; }
       json(200, outcome);
     } catch (error) {
       failure = error.message;

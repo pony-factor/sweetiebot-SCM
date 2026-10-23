@@ -20,6 +20,20 @@
       ? 'Local execution finished. GitHub results:'
       : 'No pull requests were delegated. Review the merge report in Lindsey for any blockers.';
     document.getElementById('results').textContent = result.results.map(pr => '#' + pr.number + ' · ' + pr.status + '\n' + (pr.url || pr.reason || '')).join('\n\n');
+    if (result.batch) {
+      const summary = '\n\nBatch: ' + result.batch.merged.length + ' merged · ' + result.batch.deferred.length + ' need attention';
+      document.getElementById('results').textContent += summary;
+    }
+    if (result.continueUrl) {
+      const next = new URL(result.continueUrl);
+      if (next.origin !== 'https://chatgpt.com' || new URLSearchParams(next.hash.slice(1)).get('sweetiebot_merge') !== '1') {
+        throw Error('Invalid batch continuation destination.');
+      }
+      document.getElementById('status').textContent = 'Continuing the batch against the refreshed base…';
+      setTimeout(() => location.assign(next.href), 1500);
+    } else if (result.continuationError) {
+      document.getElementById('status').textContent = 'Local result verified; automatic continuation stopped: ' + result.continuationError;
+    }
   } catch (error) { document.getElementById('status').textContent = error.message; }
 })();
 </script></html>

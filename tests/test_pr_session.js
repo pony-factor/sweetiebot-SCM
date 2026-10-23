@@ -141,6 +141,16 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       } },
       commands: { async executeCommand(...args) { dashboardCalls.push(args); } }
     };
+    const priorFetch = globalThis.fetch;
+    globalThis.fetch = async address => {
+      const endpoint = new URL(address).pathname;
+      const pr = selection.pullRequests[0];
+      const result = endpoint.endsWith('/branches/main') ? { commit: { sha: 'b'.repeat(40) } } : {
+        number: pr.number, state: 'open', draft: false, title: pr.title, mergeable: true,
+        head: { ref: pr.head, sha: pr.headSha, repo: { full_name: selection.repository } }, base: { ref: pr.base }
+      };
+      return { ok: true, json: async () => result };
+    };
     try {
       await resumePRSession(instrumented, context);
       const launchPayload = new URLSearchParams(new URL(dashboardCalls[3][1].url).hash.slice(1));
@@ -155,6 +165,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       assert.equal(launches, 1, 'Reload/restore must not duplicate a running dashboard');
       assert.equal(dashboardCalls.length, 5, 'Reload must not resubmit ChatGPT');
     } finally {
+      globalThis.fetch = priorFetch;
       for (const disposable of context.subscriptions) disposable.dispose();
       if (previousDashboard) require.cache[dashboardModulePath] = previousDashboard;
       else delete require.cache[dashboardModulePath];
