@@ -179,18 +179,16 @@ async function resumePRSession(vscode, context) {
       const prefix = 'repos/' + selection.repository;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
       if (input.options?.syncOnly) {
-        const { validateResolution, resolutionInstructions } = require('./merge_resolution');
+        const { validateSyncResolution, resolutionInstructions } = require('./merge_resolution');
         handoff = await require('./merge_handoff').createMergeHandoff(selection, {
-          validate: (result, snapshot) => {
-            const items = validateResolution(result, snapshot);
-            if (items.some(item => item.operation !== 'sync')) throw Error('This implementation session can only synchronize the selected PR branch; merging is not authorized.');
-          },
+          validate: validateSyncResolution,
           execute: (result, snapshot) => invokeResolutionCLI(result, snapshot, auth.accessToken)
         });
         url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: handoff.url,
           q: initialPrompt + '\n\nBRANCH-ONLY EXECUTION: Use operation:"sync". Main is read-only. Append the per-file conflict decision commits to the PR branch before syncing remaining incoming changes. Do not merge or close the PR.\n\n' +
             resolutionInstructions(selection, handoff.url) }).toString();
         handoff.url = url.href;
+        if (Buffer.byteLength(url.href) > 70000) { handoff.dispose(); throw Error('Branch synchronization prompt exceeds the browser launch budget.'); }
       } else handoff = await require('./merge_batch').createMergeBatch(selection, {
         api: endpoint => {
           if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');

@@ -50,6 +50,13 @@ const run = promisify(execFile);
       if (endpoint.includes('/status?')) return { statuses: [] };
       if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
       if (endpoint.includes('/pulls?')) return [];
+      if (endpoint.includes('/commits?') && pushed) {
+        const shas = (await git('--git-dir=' + remote, 'rev-list', '--reverse', 'main..feature')).split('\n');
+        return Promise.all(shas.map(async sha => ({ sha,
+          author: { type: sha === headSha ? 'Bot' : 'User', login: sha === headSha ? 'codex-pony[bot]' : 'human' },
+          commit: { author: sha === headSha ? { name: 'codex-pony[bot]', email: '326443430+codex-pony[bot]@users.noreply.github.com' } : author,
+            message: await git('--git-dir=' + remote, 'show', '-s', '--format=%B', sha) } })));
+      }
       if (endpoint.includes('/commits?')) return [
         { sha: firstSha, author: { type: 'User', login: 'human' }, commit: { author, message: firstMessage } },
         { sha: headSha, author: { type: 'Bot', login: 'codex-pony[bot]' }, commit: {
@@ -83,9 +90,11 @@ const run = promisify(execFile);
     };
     const completePatch = 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-base update\n+feature and base update\n';
     const resolutionPatch = resolving ? completePatch : null;
+    const decisions = resolving ? [{ path: 'file.txt', title: '🛠️ Preserve the feature and base update',
+      description: 'Keep the updated base behavior and the feature continuation together rather than discarding either side.' }] : [];
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
-      api, git: localGit, expected, resolutionPatch,
+      api, git: localGit, expected, resolutionPatch, decisions,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
     await assert.rejects(attempt({ expected: { ...expected, headSha: 'a'.repeat(40) } }), /changed/);
@@ -117,10 +126,19 @@ const run = promisify(execFile);
     } }), /stale info|rejected/);
     assert.equal(await branch('feature'), baseSha, 'The lease preserves the competing head');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, baseSha);
-    const result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
-      expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch,
+    let result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
+      expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch, decisions,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
-    assert(result.merged);
+    if (resolving) {
+      assert.equal(result.status, 'synced');
+      assert.equal(await branch('main'), baseSha, 'Resolution preparation only reads main');
+      assert.equal(await git('--git-dir=' + remote, 'rev-parse', result.sha + '^^'), headSha, 'The original PR history is preserved');
+      assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', result.sha + '^'), decisions[0].title);
+      result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
+        expected: { ...expected, headSha: result.sha },
+        temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
+    }
+    assert(result.merged, JSON.stringify(result));
     assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'), resolving ? 'feature and base update' : 'feature continued');
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
@@ -162,6 +180,8 @@ async function successiveMerges() {
      [2, 'function price(n, tax = 0) { return n * 2 + tax; }\n']]) {
      await repo('checkout', '--quiet', '-B', 'feature-' + number, initial);
      await fs.writeFile(file, code);
+     if (number === 1) await fs.writeFile(path.join(working, 'main-only.txt'), 'Independent incoming main work\n');
+     if (number === 1) await repo('add', 'main-only.txt');
      await repo('commit', '--quiet', '-am', 'Feature fixture\n\nCo-authored-by: Codex <noreply@openai.com>');
      heads[number] = await repo('rev-parse', 'HEAD');
    }
@@ -190,7 +210,10 @@ async function successiveMerges() {
      if (endpoint.includes('/check-suites?')) return { check_suites: [] };
      if (endpoint.includes('/status?')) return { statuses: [] };
      if (endpoint.includes('/pulls?')) return [];
-     if (endpoint.includes('/commits?')) return [await commit(await branch('feature-' + endpoint.split('/')[4]))];
+     if (endpoint.includes('/commits?')) {
+       const shas = (await git('--git-dir=' + remote, 'rev-list', '--reverse', 'main..feature-' + endpoint.split('/')[4])).split('\n');
+       return Promise.all(shas.map(commit));
+     }
      if (endpoint.includes('/commits/')) return commit(endpoint.split('/').at(-1));
      const number = Number(endpoint.split('/')[4]);
      if (endpoint.endsWith('/merge') && method === 'PUT') {
@@ -218,7 +241,9 @@ async function successiveMerges() {
      const response = await fetch(callback, { method: 'POST', headers: {
        Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
        version: 1, repository: 'owner/repo', results: [{ number, headSha: heads[number], baseSha: await branch('main'),
-         patch, explanation: number === 1 ? 'Correct the multiplier to three.' : 'Keep multiplier three and add optional tax.' }] }) });
+         patch, ...(patch ? { decisions: [{ path: 'price.js', title: '🛠️ Retain multiplier three while adding tax',
+           description: 'Main corrected the multiplier. Preserve that correction while adding the PR’s optional tax argument; do not restore multiplier two.' }] } : {}),
+         explanation: number === 1 ? 'Correct the multiplier to three.' : 'Keep multiplier three and add optional tax.' }] }) });
      assert.equal(response.status, 200);
      return response.json();
    };
@@ -229,7 +254,16 @@ async function successiveMerges() {
    assert.deepEqual(conflict.results[0].conflictPaths, ['price.js']);
    assert.equal(await branch('feature-2'), heads[2], 'A detected conflict does not push a partial tree');
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
-   const final = await submit(conflict.continueUrl, 2, patch);
+   const synced = await submit(conflict.continueUrl, 2, patch);
+   assert.equal(synced.results[0].status, 'synced');
+   assert.equal(await branch('main'), first.results[0].sha, 'Per-file preparation cannot modify main');
+   assert.equal(await git('--git-dir=' + remote, 'rev-parse', synced.results[0].sha + '^^'), heads[2]);
+   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', synced.results[0].sha + '^'), '🛠️ Retain multiplier three while adding tax');
+   assert.equal(await git('--git-dir=' + remote, 'diff-tree', '--no-commit-id', '--name-only', '-r', synced.results[0].sha + '^'), 'price.js', 'Decision commit changes only its conflicted file');
+   assert.equal(await git('--git-dir=' + remote, 'diff', '--name-only', synced.results[0].sha + '^', synced.results[0].sha), 'main-only.txt', 'The following sync includes only remaining incoming files');
+   assert((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha + '^')).includes('do not restore multiplier two'));
+   heads[2] = synced.results[0].sha;
+   const final = await submit(synced.continueUrl, 2);
    assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
    assert.equal(final.batch.merged.length, 2);
    assert.deepEqual(final.batch.deferred, []);

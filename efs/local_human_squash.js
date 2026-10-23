@@ -248,8 +248,10 @@ async function humanSquashMerge(repository, number, {
           fresh.head?.ref !== head || fresh.base?.ref !== base) throw Error('PR changed before branch synchronization.');
       if (await readBaseTip() !== baseSha) throw refreshBase();
       await checkHeadIsolation();
-      // A normal fast-forward push rejects competing remote commits.
-      await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
+      // An exact-head lease plus the ancestry check above guarantees this is
+      // an append-only update, including if someone rewinds the remote ref.
+      await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
+        'origin', prepared.sha + ':refs/heads/' + head);
       const updated = await api(prPath);
       if (updated.state !== 'open' || updated.head?.sha !== prepared.sha) throw Error('Could not verify the synchronized PR head.');
       return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,

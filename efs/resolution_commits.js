@@ -30,10 +30,11 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
   }
   const messageFile = path.join(directory, '.git', 'sweetiebot-resolution-message');
-  const commit = async (tree, parent, message) => {
+  const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
     return git('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      '-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', parent, '-F', messageFile);
+      '-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', parent,
+      ...(incoming ? ['-p', incoming] : []), '-F', messageFile);
   };
   await git('read-tree', headSha);
   let tip = headSha;
@@ -55,7 +56,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
   // Keep an empty sync marker if all incoming changes were resolved above.
   tip = await commit(finalTree, tip, '🔄 Sync branch to ' + base +
     '\n\nIncorporate the remaining incoming changes after the per-file conflict decisions.' +
-    '\nSource: ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>');
+    '\nSource: ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>', baseSha);
   return { sha: tip, commits };
 }
 

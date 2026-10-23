@@ -189,7 +189,8 @@
         "efs/merge_patch.js",
         "efs/merge_resolution.js",
         "efs/merge_resolution_cli.js",
-        "efs/pull_request_batch.js"
+        "efs/pull_request_batch.js",
+        "efs/resolution_commits.js"
       ]
     },
     "browser-ui": {

@@ -180,8 +180,23 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     const actionPrompt = new URLSearchParams(new URL(actionRequest.mergeUrl).hash.slice(1)).get('q');
     assert(actionPrompt.includes('Preserve what is already on the current main branch'));
     assert(actionPrompt.includes('does not authorize merging or closing'));
-    await assert.rejects(fs.stat(path.join(actionDirectory, 'merge-selection.json')), /ENOENT/,
-      'Implementation follow-ups do not receive a bulk merge capability');
+    assert.equal(actionRequest.options.syncOnly, true, 'Implementation follow-ups receive only branch synchronization authority');
+    const branchSelection = JSON.parse(await fs.readFile(path.join(actionDirectory, 'merge-selection.json'), 'utf8'));
+    assert.deepEqual(branchSelection.pullRequests.map(item => item.number), [12]);
+    try {
+      await resumePRSession({ ...instrumented,
+        workspace: { workspaceFile: actionWorkspace, workspaceFolders: [{ uri: root }] } }, context);
+      const branchLaunch = new URLSearchParams(new URL(dashboardCalls.at(-1)[1].url).hash.slice(1));
+      assert(branchLaunch.get('q').includes('BRANCH-ONLY EXECUTION'));
+      const callback = branchLaunch.get('return_to');
+      const rejected = await fetch(callback, { method: 'POST', headers: {
+        Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
+          version: 1, repository: selection.repository, results: [{ number: 12,
+            headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), operation: 'merge', patch: null,
+            explanation: 'Attempt to merge from a branch-only task.' }] }) });
+      assert.equal(rejected.status, 400, 'Branch-only handoffs reject merging before the Git executor can run');
+      assert((await rejected.json()).error.includes('merging is not authorized'));
+    } finally { for (const disposable of context.subscriptions) disposable.dispose(); }
 
     // Exercise an actual independent clone and verify the task resumes only
     // in its selected branch, leaving the source checkout unchanged.

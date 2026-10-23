@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
-const { validateResolution, executeResolution, invokeResolutionCLI } = require('../efs/merge_resolution');
+const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI } = require('../efs/merge_resolution');
 const { createMergeHandoff } = require('../efs/merge_handoff');
 const { patchPaths, safePatchPath } = require('../efs/merge_patch');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
@@ -37,6 +37,19 @@ const input = { version: 1, repository: 'owner/repo', results: [{
     return { merged: true, sha: 'c'.repeat(40) };
   } });
   assert.equal(calls, 1); assert.equal(result.results[0].status, 'merged');
+  for (const decisions of [[{ path: '../outside', title: '🛠️ Preserve behavior', description: 'why' }],
+    [{ path: 'file.txt', title: 'Resolve conflicts', description: 'why' }],
+    [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: '' }]]) {
+    assert.throws(() => validateResolution({ ...input, results: [{ ...input.results[0], decisions }] }, selection));
+  }
+  const branchOnly = { ...input, results: [{ ...input.results[0], operation: 'sync' }] };
+  assert.equal(validateSyncResolution(branchOnly, selection)[0].operation, 'sync');
+  assert.throws(() => validateSyncResolution(input, selection), /merging is not authorized/);
+  const synced = await executeResolution(branchOnly, selection, { merge: async (repo, number, options) => {
+    assert.equal(options.operation, 'sync');
+    return { merged: false, status: 'synced', sha: 'c'.repeat(40) };
+  } });
+  assert.equal(synced.results[0].status, 'synced', 'Branch preparation is never reported as merged');
   const blocked = await executeResolution(input, selection, { merge: async () => { throw Error('Stale base'); } });
   assert.equal(blocked.results[0].status, 'blocked');
   assert.match(blocked.results[0].reason, /Stale/);
