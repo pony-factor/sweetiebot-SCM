@@ -98,22 +98,24 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
 }
 
 let mergeDashboardStarted = false;
+let mergeDashboardController;
 
 async function resumeMergeDashboard(vscode, directory, context) {
-  if (mergeDashboardStarted) return;
+  if (mergeDashboardStarted) return mergeDashboardController;
   let selection;
   try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
   const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
   const dashboard = require('./merge_dashboard');
   // A dedicated merge workspace owns this layout; no edits to the source window.
-  dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
+  mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
     context, rootUri: vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri
   });
   await vscode.commands.executeCommand('vscode.setEditorLayout', {
     orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }]
   });
   mergeDashboardStarted = true;
+  return mergeDashboardController;
 }
 
 async function resumePRSession(vscode, context) {
@@ -154,6 +156,7 @@ async function resumePRSession(vscode, context) {
     await vscode.commands.executeCommand('sweetiebot.codex.startBlockerTask', { cwd: root.fsPath, prompt: task.prompt });
     return;
   }
+
   for (const command of ['workbench.action.closeSidebar', 'workbench.action.closeAuxiliaryBar', 'workbench.action.closePanel']) {
     await vscode.commands.executeCommand(command);
   }
@@ -163,7 +166,35 @@ async function resumePRSession(vscode, context) {
         new URLSearchParams(url.hash.slice(1)).get('sweetiebot_merge') !== '1') {
       throw new Error('Invalid bulk merge chat URL.');
     }
-    await require('./pr_workflows').openWorkflow(vscode, input.mergeUrl);
+    let handoff;
+    // Only a fresh, explicitly selected batch gets a local mutation capability.
+    // Restoring a dashboard never resubmits a chat or executes an old result.
+    let selection;
+    try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (selection) {
+      const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+      const { invokeResolutionCLI, resolutionInstructions } = require('./merge_resolution');
+      handoff = await require('./merge_handoff').createMergeHandoff(selection, {
+        execute: (result, snapshot) => invokeResolutionCLI(result, snapshot, auth.accessToken),
+        onResult: async result => {
+          const controller = await resumeMergeDashboard(vscode, directory, context);
+          controller?.recordLocalResult?.(result);
+          await controller?.refresh?.();
+        }
+      });
+      context.subscriptions?.push(handoff);
+      const fragment = new URLSearchParams(url.hash.slice(1));
+      fragment.set('return_to', handoff.url);
+      fragment.set('q', fragment.get('q') + '\n\n' + resolutionInstructions(selection, handoff.url));
+      url.hash = fragment.toString();
+      if (Buffer.byteLength(url.href) > 70000) {
+        handoff.dispose();
+        throw Error('Merge prompt including local handoff exceeds the 70 KB launch budget. Select fewer PRs.');
+      }
+    }
+    try { await require('./pr_workflows').openWorkflow(vscode, url.href); }
+    catch (error) { handoff?.dispose(); throw error; }
     await resumeMergeDashboard(vscode, directory, context);
     return;
   }
