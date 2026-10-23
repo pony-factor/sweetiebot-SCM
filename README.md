@@ -72,7 +72,10 @@ those files. Direct terminal Git commands still act on the folder they run in.
 
 Clean legacy main clones reconnect on activation only when all their commits
 already exist in the original main. Separate edits or commits are preserved and
-reported instead of silently hidden. The original folder must be on main.
+reported instead of silently hidden. Reconnecting requires the original folder
+to be on main. When it is on a topic branch, New Window opens a separate main
+clone and preserves the original branch, files, and staging. That clone waits
+to reconnect until the original returns to main.
 
 VS Code's Workspace Trust may
 otherwise start these windows in **Restricted Mode**, disabling extensions,

@@ -149,13 +149,23 @@ async function openIndependentClone(vscode, {
   }
 }
 
+async function openIndependentWorkspace(vscode, options = {}) {
+  try { return await openSharedMainWorkspace(vscode, options); }
+  catch (error) {
+    // Older checkouts can still have their topic checked out in the original
+    // folder. Preserve that window and open main in a separate clone.
+    if (error.code !== 'SWEETIEBOT_ORIGINAL_ON_TOPIC') throw error;
+    return openIndependentClone(vscode, options);
+  }
+}
+
 function registerNewWorkspaceCommand(vscode, context) {
   let opening = false;
   context.subscriptions.push(vscode.commands.registerCommand(OPEN_WORKSPACE_COMMAND, async () => {
     if (opening) return;
     opening = true;
     try {
-      return await openSharedMainWorkspace(vscode);
+      return await openIndependentWorkspace(vscode);
     } catch (error) {
       vscode.window.showErrorMessage('Could not open an independent workspace: ' + error.message);
       throw error;
@@ -165,5 +175,5 @@ function registerNewWorkspaceCommand(vscode, context) {
   }));
 }
 
-module.exports = { OPEN_WORKSPACE_COMMAND, openIndependentWorkspace: openSharedMainWorkspace,
+module.exports = { OPEN_WORKSPACE_COMMAND, openIndependentWorkspace,
   openIndependentClone, registerNewWorkspaceCommand };
