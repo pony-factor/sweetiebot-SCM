@@ -16,6 +16,11 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false } = 
   const runs = await checkPages(api, root + '/check-runs', 'check_runs');
   const suites = await checkPages(api, root + '/check-suites', 'check_suites');
   const statuses = await checkPages(api, root + '/status', 'statuses');
+  // Installed apps can leave queued suites with no jobs indefinitely. These
+  // are not checks to wait for; GitHub's merge endpoint still enforces any
+  // required checks that have not been created. Keep running/failed suites.
+  const activeSuites = suites.filter(suite =>
+    suite.status !== 'queued' || suite.latest_check_runs_count !== 0);
   // Reruns and legacy statuses can contain older failures for the same check.
   const latest = (items, key) => {
     const map = new Map();
@@ -36,9 +41,9 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false } = 
   failed.push(...suites.filter(suite => suite.status === 'completed' && suite.conclusion && !passing.has(suite.conclusion) &&
     !runs.some(run => suite.id && run.check_suite?.id === suite.id)).map(suite => String(suite.app?.name || 'GitHub check suite')));
   if (failed.length) return { state: 'failed', names: [...new Set(failed)], hasChecks: true };
-  const hasChecks = Boolean(runs.length || suites.length || statuses.length);
+  const hasChecks = Boolean(runs.length || activeSuites.length || statuses.length);
   const pending = activeRuns.some(run => run.status !== 'completed') ||
-    suites.some(suite => suite.status !== 'completed') ||
+    activeSuites.some(suite => suite.status !== 'completed') ||
     activeStatuses.some(status => status.state !== 'success') ||
     (expectChecks && !hasChecks);
   return { state: pending ? 'pending' : 'passed', names: [], hasChecks };
