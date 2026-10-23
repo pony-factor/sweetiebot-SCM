@@ -1399,7 +1399,19 @@ if (settingsServerInstance) {{
       const response = await fetch('/health' + location.search, {{cache: 'no-store'}});
       if (!response.ok) return;
       const status = await response.json();
-      if (status.instance && status.instance !== settingsServerInstance) location.reload();
+      if (status.instance && status.instance !== settingsServerInstance) {{
+        location.reload();
+        return;
+      }}
+      // Respect in-progress edits while reflecting changes made in VS Code itself.
+      if (!autosaveTimer && saveStatus.textContent === 'Saved') {{
+        for (const [name, value] of Object.entries(status.windowSettings || {{}})) {{
+          const input = settingsForm.elements.namedItem(name);
+          if (input && input !== document.activeElement && typeof value === 'string') {{
+            input.value = value;
+          }}
+        }}
+      }}
     }} catch {{
       // The extension may be reloading. Keep the page and retry the same stable URL.
     }}
@@ -1524,7 +1536,13 @@ def run_configurator(
                 self._send_json(status)
                 return
             if path == "/health":
-                self._send_json({"instance": server_instance})
+                self._send_json({
+                    "instance": server_instance,
+                    "windowSettings": {
+                        name: session_settings.get(name, "")
+                        for name in ("windowHeading", "windowName")
+                    },
+                })
                 return
             if path == "/diagnostics":
                 self._send_json(read_diagnostics())
@@ -1571,6 +1589,18 @@ def run_configurator(
             values = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8"), keep_blank_values=True
             )
+            if urllib.parse.urlsplit(self.path).path == "/sync-window-settings":
+                # The live VS Code user configuration is authoritative for these fields.
+                names = ("windowHeading", "windowName")
+                if any(len(values.get(name, [])) != 1 or
+                       len(values[name][0]) > 4096 or
+                       "\n" in values[name][0] or "\r" in values[name][0]
+                       for name in names):
+                    self._send_json({"error": "Invalid window settings."}, 400)
+                    return
+                session_settings.update({name: values[name][0] for name in names})
+                self._send_json({"synced": True})
+                return
             if urllib.parse.urlsplit(self.path).path == "/rebuild":
                 with rebuild_lock:
                     if rebuild_status["running"]:

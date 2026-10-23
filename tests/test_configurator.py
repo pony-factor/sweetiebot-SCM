@@ -1222,6 +1222,29 @@ class ServerTests(unittest.TestCase):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
             with urllib.request.urlopen(endpoint("/models"), timeout=5) as response:
                 self.assertEqual(json.load(response)["models"], [])
+            # A change to VS Code's user settings reaches the already-open page.
+            changes = urllib.parse.urlencode({
+                "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                "windowName": "${activeEditorShort}",
+            }).encode()
+            with urllib.request.urlopen(urllib.request.Request(
+                endpoint("/sync-window-settings"), data=changes, method="POST"
+            )) as response:
+                self.assertTrue(json.load(response)["synced"])
+            with urllib.request.urlopen(endpoint("/health")) as response:
+                self.assertEqual(json.load(response)["windowSettings"], {
+                    "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                    "windowName": "${activeEditorShort}",
+                })
+            with urllib.request.urlopen(endpoint("/")) as response:
+                updated_page = response.read().decode()
+            self.assertIn('value="${rootName} — ${activeRepositoryBranchName}"', updated_page)
+            self.assertIn('value="${activeEditorShort}"', updated_page)
+            with self.assertRaises(urllib.error.HTTPError) as bad:
+                urllib.request.urlopen(urllib.request.Request(
+                    endpoint("/sync-window-settings"), data=b"windowHeading=x", method="POST"
+                ))
+            self.assertEqual(bad.exception.code, 400)
             request = urllib.request.Request(endpoint("/pull"), data=b"model=embed:test", method="POST")
             with patch("configurator.ollama_request", return_value=io.BytesIO(b'{"status":"downloading","completed":1,"total":2}\n{"status":"success"}\n')) as pull:
                 with urllib.request.urlopen(request, timeout=5) as response:
