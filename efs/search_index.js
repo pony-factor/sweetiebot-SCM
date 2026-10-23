@@ -2,6 +2,61 @@
 
 const vscode = require('vscode');
 const crypto = require('crypto');
+
+const fs = require('node:fs/promises');
+const path = require('node:path');
+
+// Apply EFS exclusions before traversing dependencies and metadata.
+function githubGlobRegex(pattern) {
+  let source = '^';
+  const escape = ch => '\\^$+?.()|[]{}'.includes(ch) ? '\\' + ch : ch;
+  for (let i = 0; i < pattern.length;) {
+    if (pattern.startsWith('**/', i)) { source += '(?:.*/)?'; i += 3; }
+    else if (pattern.startsWith('**', i)) { source += '.*'; i += 2; }
+    else if (pattern[i] === '*') { source += '[^/]*'; i++; }
+    else if (pattern[i] === '?') { source += '[^/]'; i++; }
+    else if (pattern[i] === '{' && pattern.indexOf('}', i + 1) !== -1) {
+      const end = pattern.indexOf('}', i + 1);
+      source += '(?:' + pattern.slice(i + 1, end).split(',').map(word =>
+        [...word].map(escape).join('')).join('|') + ')';
+      i = end + 1;
+    } else { source += escape(pattern[i]); i++; }
+  }
+  return new RegExp(source + '$');
+}
+
+async function listGithubFolderFiles(folder, exclude, maxFiles = 100000) {
+  const root = path.resolve(folder);
+  let stat;
+  try { stat = await fs.stat(root); } catch (error) {
+    if (error.code === 'ENOENT') throw new Error('GitHub folder not found: ' + root);
+    throw error;
+  }
+  if (!stat.isDirectory()) throw new Error('GitHub folder is not a directory: ' + root);
+  const matcher = exclude ? githubGlobRegex(String(exclude).replace(/\\/g, '/')) : null;
+  const limit = Math.max(1, Math.min(100000, Number(maxFiles) || 100000));
+  const files = [], directories = [root];
+  // Breadth-first traversal avoids one repository dominating the index cap.
+  for (let cursor = 0; cursor < directories.length && files.length < limit; cursor++) {
+    let entries;
+    try { entries = await fs.readdir(directories[cursor], { withFileTypes: true }); }
+    catch (error) { if (cursor === 0) throw error; continue; }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const absolute = path.join(directories[cursor], entry.name);
+      const relative = path.relative(root, absolute).split(path.sep).join('/');
+      if (entry.isDirectory()) {
+        if (entry.name !== '.git' && !(matcher && matcher.test(relative + '/'))) directories.push(absolute);
+      } else if (entry.isFile() && !(matcher && matcher.test(relative))) {
+        files.push(absolute);
+        if (files.length === limit) break;
+      }
+    }
+  }
+  return files;
+}
+
 const { chunkText, keywordScore, bestMatchingLine, cosine } = require('./core');
 const { extractText } = require('./extract');
 const { embedTexts } = require('./ollama');
@@ -27,7 +82,8 @@ function workspaceKey() {
 }
 
 class SearchIndex {
-  constructor(context, getSettings) {
+  constructor(context, getSettings, options = {}) {
+    this.githubFolder = options.githubFolder || '';
     this.context = context;
     this.getSettings = getSettings;
     this.files = new Map();
@@ -49,12 +105,30 @@ class SearchIndex {
     this.persistPromise = undefined;
   }
 
+  cacheKey() {
+    return this.githubFolder
+      ? crypto.createHash('sha1').update(workspaceKey() + '\ngithub:' + this.githubFolder).digest('hex')
+      : workspaceKey();
+  }
+
+  relativeUri(uri) {
+    return this.githubFolder
+      ? path.relative(this.githubFolder, uri.fsPath).split(path.sep).join('/')
+      : vscode.workspace.asRelativePath(uri, false);
+  }
+
+  async listFiles(maxFiles) {
+    if (!this.githubFolder) return vscode.workspace.findFiles('**/*', this.getSettings().exclude || undefined, maxFiles);
+    const files = await listGithubFolderFiles(this.githubFolder, this.getSettings().exclude, maxFiles);
+    return files.map(file => vscode.Uri.file(file));
+  }
+
   get storageUri() {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${workspaceKey()}.json`);
+    return vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${this.cacheKey()}.json`);
   }
 
   get cacheDirectoryUri() {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${workspaceKey()}-parts`);
+    return vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${this.cacheKey()}-parts`);
   }
 
   shardUri(uri, generation, part) {
@@ -151,7 +225,7 @@ class SearchIndex {
     const payload = JSON.stringify({
       version: INDEX_VERSION, embeddingModel: this.embeddingModel, files: [...entries.values()]
     });
-    const temp = vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${workspaceKey()}.tmp`);
+    const temp = vscode.Uri.joinPath(this.context.globalStorageUri, `workspace-search-${this.cacheKey()}.tmp`);
     await vscode.workspace.fs.writeFile(temp, Buffer.from(payload));
     try { await vscode.workspace.fs.delete(this.storageUri, { useTrash: false }); } catch {}
     await vscode.workspace.fs.rename(temp, this.storageUri, { overwrite: true });
@@ -250,7 +324,7 @@ class SearchIndex {
       this.embeddingWarning = '';
     }
     const settings = this.getSettings();
-    const uris = await vscode.workspace.findFiles('**/*', settings.exclude || undefined, settings.maxFiles);
+    const uris = await this.listFiles(settings.maxFiles);
     const seen = new Set();
     let processed = 0;
     for (const uri of uris) {
@@ -286,7 +360,7 @@ class SearchIndex {
     if (this.filenameScanPromise) return this.filenameScanPromise;
 
     // Unlike content indexing, filename discovery must not use maxFiles.
-    const work = vscode.workspace.findFiles('**/*', exclude);
+    const work = this.listFiles();
     this.filenameScanPromise = work;
     try {
       const uris = await work;
@@ -306,13 +380,15 @@ class SearchIndex {
 
     const work = (async () => {
       // Discover folder paths without the passage index's maxFiles limit.
-      const files = await vscode.workspace.findFiles('**/*', exclude);
+      const files = await this.listFiles();
       const folders = new Map();
-      for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
+      const githubRootUri = this.githubFolder ? vscode.Uri.file(this.githubFolder) : null;
+      if (githubRootUri) folders.set(githubRootUri.toString(), githubRootUri);
+      else for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
         folders.set(workspaceFolder.uri.toString(), workspaceFolder.uri);
       }
       for (const uri of files) {
-        const workspaceRoot = vscode.workspace.getWorkspaceFolder(uri)?.uri;
+        const workspaceRoot = githubRootUri || vscode.workspace.getWorkspaceFolder(uri)?.uri;
         if (!workspaceRoot) continue;
         let parent = vscode.Uri.joinPath(uri, '..');
         while (parent.toString() !== workspaceRoot.toString()) {
@@ -366,7 +442,7 @@ class SearchIndex {
     const normalizedQuery = normalizedName(query);
     const literalUrlQuery = /^https?:\/\/\S+$/i.test(String(query || '').trim());
     for (const folderUri of await this.discoverFolders(settings)) {
-      const relative = vscode.workspace.asRelativePath(folderUri, false);
+      const relative = this.relativeUri(folderUri);
       const name = relative.split(/[\\/]/).pop() || relative;
       const nameScore = keywordScore(query, name, { fuzzy: fuzzy });
       const pathScore = keywordScore(query, relative, { fuzzy: fuzzy });
@@ -385,7 +461,7 @@ class SearchIndex {
     }
     const filenames = await this.discoverFilenames(settings);
     for (const uri of filenames) {
-      const relative = vscode.workspace.asRelativePath(uri, false);
+      const relative = this.relativeUri(uri);
       const filename = relative.split(/[\\/]/).pop() || relative;
       const filenameScore = keywordScore(query, filename, { fuzzy });
       const pathScore = keywordScore(query, relative, { fuzzy });
@@ -427,7 +503,7 @@ class SearchIndex {
           const line = literalUrlOffset >= 0
             ? chunk.line + (chunk.text.slice(0, literalUrlOffset).match(/\n/g) || []).length
             : bestMatchingLine(query, chunk.text, chunk.line, { fuzzy });
-          scored.push({ uri: file.uri, relative: vscode.workspace.asRelativePath(vscode.Uri.parse(file.uri), false), line, text: chunk.text, score });
+          scored.push({ uri: file.uri, relative: this.relativeUri(vscode.Uri.parse(file.uri)), line, text: chunk.text, score });
         }
       }
     }
@@ -444,4 +520,4 @@ class SearchIndex {
   }
 }
 
-module.exports = { SearchIndex };
+module.exports = { SearchIndex, listGithubFolderFiles, githubGlobRegex };
