@@ -10,7 +10,9 @@ const source = fs.readFileSync(path.join(__dirname, '../assets/workbench/branch_
 const context = vm.createContext({});
 vm.runInContext(source, context);
 const filter = context.scmToolkitFilterBranchStrip;
+const sortRecent = context.scmToolkitSortBranchStrip;
 assert.equal(typeof filter, 'function');
+assert.equal(typeof sortRecent, 'function');
 
 const branches = [
     { name: 'main' },
@@ -33,4 +35,15 @@ const all = filter(branches, 3, '');
 assert.equal(all.branches, branches, 'Clearing search restores the cached list');
 assert.equal(all.featuredCount, 3);
 assert.deepEqual(branches.map(item => item.name), originalNames, 'Filtering never mutates the cache');
-console.log('branch strip type-to-filter tests passed');
+const visits = { 'feature/green': 500, 'main': 1000, 'feature/Blue': 200 };
+const byRecent = sortRecent([
+    { name: 'feature/Blue', modified: 20000 },
+    { name: 'feature/green', modified: 2 },
+    { name: 'main', modified: 1 },
+    { name: 'new-unvisited', modified: 30000 }
+], visits);
+assert.deepEqual(Array.from(byRecent, item => item.name),
+    ['main', 'feature/green', 'feature/Blue', 'new-unvisited'],
+    'Use recency before commit dates, then keep unvisited branches in commit order');
+assert.equal(byRecent[0].name, 'main');
+console.log('branch strip type-to-filter and recent-order tests passed');
