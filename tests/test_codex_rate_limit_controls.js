@@ -445,4 +445,28 @@ mutationCallback([{target: observerText, addedNodes: []}]);
 assert.equal(observerMessage.textContent, 'Rate limited');
 assert.equal(queuedSyncCount, 2);
 
+// Disabling the optional sticker must preserve compaction and avoid image
+// creation or mutating the composer notice into a sticker card.
+const disabledContext = vm.createContext({});
+vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '../assets/codex/rate-limit-controls.js'), 'utf8')
+        .replace('"__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__"', 'false'),
+    disabledContext
+);
+const disabledFooter = makeNode('Rate limited', rect(0, 0, 10, 10));
+disabledFooter.parentElement = composerRegion;
+const disabledLabel = makeNode('Rate limited', rect(0, 0, 10, 10), disabledFooter);
+let disabledImages = 0;
+const disabledRoot = {
+    querySelectorAll(selector) {
+        if (selector.startsWith('textarea,')) return [editor];
+        if (selector.startsWith('span,')) return [disabledLabel];
+        return [];
+    },
+    createElement() { disabledImages++; throw Error('No images when sticker disabled'); },
+};
+disabledContext.scmToolkitSyncRateLimitPony(disabledRoot);
+assert.equal(disabledImages, 0);
+assert.equal(disabledFooter.textContent, 'Rate limited');
+
 console.log('Codex reset shortcut, persistent compact rate-limit text, and composer sticker checks passed.');

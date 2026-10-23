@@ -139,6 +139,7 @@
         "test_codex_keep_awake.py",
         "test_codex_label.py",
         "test_codex_rate_limit_controls.js",
+        "test_codex_sticker.py",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
         "test_codex_short_model_labels.js",

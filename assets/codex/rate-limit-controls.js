@@ -78,6 +78,7 @@ function scmToolkitSyncResetShortcut(root) {
 // In-chat rate-limit notices are redundant, not alternative sticker placements.
 // The installer replaces this literal with the repository's verified PNG as a data URI.
 const scmToolkitTwilightStopSource = "__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__";
+const scmToolkitRateLimitStickerEnabled = "__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__";
 // Codex may rerender the original untranslated no-reset transcript warning
 // after the installer has compacted its defaultMessage. Reapply the compact
 // presentation as soon as the message's text changes, before the next paint.
@@ -301,6 +302,7 @@ function scmToolkitSyncRateLimitPony(root) {
     const {card, notices, rich} = scmToolkitFooterRateLimitNotice(root);
     if (!card) return;
     scmToolkitNormalizeRateLimitTypo(card);
+    if (!scmToolkitRateLimitStickerEnabled) return;
     scmToolkitHideDuplicateRateLimitNotices(notices, card);
     if (card.dataset.scmToolkitRateLimitPonyPending === 'true'
         || card.dataset.scmToolkitRateLimitPonyUnavailable === 'true'

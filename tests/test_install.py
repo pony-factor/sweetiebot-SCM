@@ -912,6 +912,16 @@ class CodexCountdownTests(unittest.TestCase):
     def test_installer_app_includes_bundled_twilight_artwork(self):
         self.assertIn(Path("assets/imgs/twi-stop.png"), build_installer_app.source_files())
 
+    def test_sticker_can_be_disabled_without_disabling_compaction(self):
+        original = 'const modernStatus = "You’re out of Codex messages";'
+        disabled = install.transform_codex(original, sticker_enabled=False)
+        self.assertIn(install.CODEX_LIMIT_START, disabled)
+        self.assertIn("scmToolkitCompactUntimedRateLimitBranch", disabled)
+        self.assertIn("const scmToolkitRateLimitStickerEnabled = false;", disabled)
+        self.assertNotIn("data:image/png;base64,", disabled)
+        self.assertEqual(install.transform_codex(disabled, sticker_enabled=False), disabled)
+        self.assertEqual(install.transform_codex(disabled, remove=True), original)
+
     def test_rate_limit_sticker_works_without_legacy_transcript_ids(self):
         original = 'const modernStatus = "You’re out of Codex messages";'
         patched = install.transform_codex(original)

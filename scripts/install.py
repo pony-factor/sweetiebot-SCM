@@ -17,6 +17,7 @@ import codex_keep_awake
 import codex_image_drop
 import codex_recent_chats
 import codex_startup
+import codex_sticker
 import github_pr
 import browser_pr
 from pathlib import Path
@@ -703,17 +704,26 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
-def codex_rate_limit_script():
-    """Inline the bundled Twilight PNG instead of relying on an external image host."""
+def codex_rate_limit_script(sticker_enabled=True):
+    """Embed user-private cached artwork or bundled Twilight in the local Codex webview."""
     script = (CODEX_ASSETS / "rate-limit-controls.js").read_text()
     placeholder = '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"'
-    if script.count(placeholder) != 1:
-        raise ValueError("Codex Twilight image placeholder must occur exactly once.")
-    png = TWILIGHT_STOP_PNG.read_bytes()
-    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ValueError("Codex Twilight sticker is not a PNG.")
-    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
-    return script.replace(placeholder, json.dumps(data_url))
+    enabled_placeholder = '"__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__"'
+    if script.count(placeholder) != 1 or script.count(enabled_placeholder) != 1:
+        raise ValueError("Codex sticker placeholders must each occur exactly once.")
+    data_url = ""
+    if sticker_enabled:
+        custom = codex_sticker.load_sticker()
+        if custom is None:
+            png = TWILIGHT_STOP_PNG.read_bytes()
+            if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("Codex bundled Twilight sticker is not a PNG.")
+            mime, data = "image/png", png
+        else:
+            mime, data = custom
+        data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+    return (script.replace(placeholder, json.dumps(data_url))
+            .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
 
 
 def codex_transcript_compact_edits(js):
@@ -782,7 +792,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex"):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -867,7 +877,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + codex_rate_limit_script()
+               + codex_rate_limit_script(sticker_enabled=sticker_enabled)
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:
@@ -1378,6 +1388,7 @@ def main():
                 hide_dictation=settings["codexHideDictation"],
                 short_model_labels=settings["codexShortModelLabels"],
                 window_label=settings["codexWindowLabel"],
+                sticker_enabled=settings["codexRateLimitSticker"],
                 remove=args.uninstall,
             )
         except ValueError as error:

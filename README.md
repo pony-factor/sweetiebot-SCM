@@ -725,6 +725,16 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 
 ### Compact Codex rate-limit notices
 
+The **Rate-limit sticker** toggle lives in **Settings → Codex → Customization**
+and is enabled by default. Select a personal PNG, JPEG, GIF, or WebP (up to 2 MB)
+in **Rate-limit sticker image** to cache the artwork under the current user's
+private local application data folder, never in the Git repository or settings
+sync. The bundled `assets/imgs/twi-stop.png` remains the default; **Use bundled
+image** deletes the cached override. Uploads and resets require a rebuild and
+Codex reload to update the patched webview. Turning the sticker off does not
+disable usage-message compaction, reset shortcuts or countdown settings.
+
+
 Repeated transcript notices without a usable reset time are shortened to
 **Rate limited**, rather than duplicating the upgrade/credit warning already
 shown in Codex's main limit card. A narrowly scoped DOM observer reapplies

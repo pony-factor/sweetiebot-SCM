@@ -25,6 +25,7 @@ from commit_diagnostics_dashboard import (
 )
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
+import codex_sticker
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from local_setup import (
     configure_signing_key,
@@ -40,6 +41,50 @@ from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, rend
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 MAX_FORM_BYTES = 512 * 1024
+STICKER_UPLOAD_LIMIT = codex_sticker.MAX_STICKER_BYTES
+
+STICKER_SCRIPT = r"""
+const stickerPicker = document.getElementById('sticker-upload');
+const stickerReset = document.getElementById('sticker-reset');
+const stickerStatus = document.getElementById('sticker-status');
+stickerPicker?.addEventListener('change', async () => {
+  const file = stickerPicker.files?.[0];
+  if (!file) return;
+  stickerPicker.disabled = true;
+  stickerReset.disabled = true;
+  stickerStatus.textContent = 'Caching image locally…';
+  try {
+    if (file.size > 2 * 1024 * 1024) throw new Error('Choose an image under 2 MB.');
+    const response = await fetch('/sticker-upload' + location.search, {
+      method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to cache the image.');
+    stickerStatus.textContent = 'Cached privately. Rebuild and reload Codex to display it.';
+  } catch (error) {
+    stickerStatus.textContent = 'Image not saved: ' + error.message;
+  } finally {
+    stickerPicker.value = '';
+    stickerPicker.disabled = false;
+    stickerReset.disabled = false;
+  }
+});
+stickerReset?.addEventListener('click', async () => {
+  stickerPicker.disabled = true;
+  stickerReset.disabled = true;
+  try {
+    const response = await fetch('/sticker-reset' + location.search, {method: 'POST'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to reset sticker.');
+    stickerStatus.textContent = 'Bundled Twilight image selected. Rebuild and reload Codex.';
+  } catch (error) {
+    stickerStatus.textContent = 'Reset failed: ' + error.message;
+  } finally {
+    stickerPicker.disabled = false;
+    stickerReset.disabled = false;
+  }
+});
+"""
 
 COMMIT_HOTKEY_STYLE = """
 .hotkey-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -292,6 +337,7 @@ SETTINGS = (
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
+    Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Usage pie indicator", "Replace the Codex remaining-usage percentage with a circular indicator that empties as the five-hour allowance is used.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
@@ -824,6 +870,20 @@ def render_form(
                 + '</div>'
                 for heading, is_time in (("Time", True), ("Customization", False))
             )
+        if section == "Codex":
+            image_status = ("Custom image cached on this computer" if codex_sticker.sticker_path().is_file()
+                            else "Bundled Twilight image")
+            controls += (
+                '<div class="setting sticker-setting"><span><strong>Rate-limit sticker image</strong>'
+                '<small>PNG, JPEG, GIF or WebP up to 2 MB. Stored in your private local app data, '
+                'not in Git, settings sync or a remote URL. Rebuild/reload Codex after changing.</small></span>'
+                '<div class="sticker-actions"><input type="file" id="sticker-upload" '
+                'accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" '
+                'aria-label="Choose rate-limit sticker artwork">'
+                '<button type="button" id="sticker-reset">Use bundled image</button>'
+                f'<output id="sticker-status" role="status" aria-live="polite">{html.escape(image_status)}</output>'
+                '</div></div>'
+            )
         if section == "Message bar":
             layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
             controls = render_message_bar_control(
@@ -913,6 +973,7 @@ def render_form(
 main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}.settings-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}}.settings-header>div:first-child{{min-width:0}}.rebuild-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:160px}}.rebuild-actions output{{font-size:12px;max-width:290px;text-align:right;color:var(--muted)}}.rebuild-actions output.error-state{{color:#ffb3ad}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .settings-group h3{{font-size:14px;margin:14px 0 4px;color:var(--muted)}}.settings-group+.settings-group{{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}}
+.sticker-actions{{display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:55%}}.sticker-actions input{{max-width:100%;font:inherit}}.sticker-actions output{{font-size:12px;color:var(--muted)}}.sticker-setting{{align-items:flex-start}}
 .setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
 .field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.signing-actions{{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;width:min(520px,56%)}}.signing-actions select{{flex:1 1 240px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.field-row input.compact-number{{width:76px;min-width:76px;flex:none;text-align:right;font-variant-numeric:tabular-nums}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
@@ -932,6 +993,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
+{STICKER_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
@@ -1562,12 +1624,32 @@ def run_configurator(
             except ValueError:
                 self._send("<h1>Invalid request</h1>", 400)
                 return
-            if length < 0 or length > MAX_FORM_BYTES:
-                self._send("<h1>Request too large</h1>", 413)
+            path = urllib.parse.urlsplit(self.path).path
+            max_length = STICKER_UPLOAD_LIMIT if path == "/sticker-upload" else MAX_FORM_BYTES
+            if length < 0 or length > max_length:
+                self._send_json({"error": "Request too large."}, 413)
                 return
-            values = urllib.parse.parse_qs(
-                self.rfile.read(length).decode("utf-8"), keep_blank_values=True
-            )
+            data = self.rfile.read(length)
+            if path == "/sticker-upload":
+                # Reject cross-origin requests; the token is required as well.
+                origin = self.headers.get("Origin")
+                if origin and origin != f"http://127.0.0.1:{self.server.server_port}":
+                    self._send_json({"error": "Invalid origin."}, 403)
+                    return
+                try:
+                    codex_sticker.save_sticker(data)
+                    self._send_json({"saved": True})
+                except (OSError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path == "/sticker-reset":
+                try:
+                    codex_sticker.clear_sticker()
+                    self._send_json({"saved": True})
+                except (OSError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            values = urllib.parse.parse_qs(data.decode("utf-8"), keep_blank_values=True)
             if urllib.parse.urlsplit(self.path).path == "/rebuild":
                 with rebuild_lock:
                     if rebuild_status["running"]:
