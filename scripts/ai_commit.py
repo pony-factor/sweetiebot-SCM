@@ -1968,6 +1968,13 @@ def main() -> None:
                     head = subprocess.check_output([REAL_GIT, *GIT_GLOBAL_ARGS, 'symbolic-ref', '--quiet', 'HEAD'], text=True).strip()
                     source = subprocess.check_output([REAL_GIT, *GIT_GLOBAL_ARGS, 'rev-parse', '--verify',
                                                       (args[2] if len(args) == 3 else 'HEAD') + '^{commit}'], text=True).strip()
+                    # An explicit start point must already be finalized. Only
+                    # implicit HEAD forks can subscribe to unfinished ancestry;
+                    # copying a named provisional branch would strand its title.
+                    if len(args) == 3 and not re.fullmatch(r"[0-9a-f]{40,64}", args[2]):
+                        from background_commit import completed_branch_base
+                        if completed_branch_base(REAL_GIT, GIT_GLOBAL_ARGS, source) != source:
+                            raise RuntimeError('The selected branch base contains an unfinished commit message.')
                     os.chdir(root)
                     fork_branch(source, args[1], head)
                     return

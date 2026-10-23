@@ -44,46 +44,68 @@ async function run() {
   provider.acceptInputCommand = { id: 'provider.updatedCommit', arguments: ['updated-repository'] };
   await context.commit({ stopPropagation() {} });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].id, 'sweetiebot.queueCommit');
+  assert.equal(calls[0].id, 'sweetiebot.commitWithCodex');
   assert.equal(calls[0].args[0], context.currentRepositoryUri);
   assert.equal(calls[0].args[1].message, 'Fix button');
   assert.equal(calls[0].args[1].trailer, 'Co-authored-by: Codex <noreply@openai.com>');
-  assert.equal(calls[0].args[1].push, true);
-  assert.equal(input.value, 'Fix button', 'queueing does not overwrite the input');
+  assert.equal(calls[0].args[1].codexCommitContext, undefined);
+  assert.equal(input.value, 'Fix button', 'No unconfirmed backend result clears the message');
   assert.deepEqual(errors, []);
+
+  // Empty messages are allowed only when the backend will generate from Codex context.
   calls.length = 0;
   input.setValue('');
   context.settings.codexCommitContext = true;
   await context.commit({ stopPropagation() {} });
-  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.queueCommit']);
+  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.commitWithCodex']);
   assert.equal(calls[0].args[1].message, '');
-  assert.equal(calls[0].args[1].codex, true, 'generation and context belong to the durable job');
+  assert.equal(calls[0].args[1].codexCommitContext, true);
   assert.equal(input.value, '');
-  context.commands.executeCommand = async () => { throw new Error('Queue failed'); };
+
+  context.commands.executeCommand = async () => { throw new Error('Commit failed'); };
   await context.commit({ stopPropagation() {} });
-  assert.equal(errors.at(-1).message, 'Queue failed');
+  assert.equal(errors.at(-1).message, 'Commit failed');
   assert.equal(context.codexButton.disabled, false);
 
-  // The default direct path commits synchronously and preserves custom attribution.
-  context.durable = false;
+  // The extension owns generation, queueing, signing, and pushing; the picker
+  // only clears an unchanged message after an explicitly completed commit.
   context.commands.executeCommand = async (id, ...args) => {
     calls.push({ id, args, message: input.value });
-    if (id === 'sweetiebot.generateCodexCommitMessage') return '🧪 Document captured changes';
+    return { committed: true, queued: false };
   };
   calls.length = 0;
   input.setValue('Fast explicit subject');
   await context.commit({ stopPropagation() {} });
-  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.commitWithMessage']);
-  assert.match(calls[0].args[1], /Fast explicit subject/);
-  assert.match(calls[0].args[1], /Co-authored-by: Codex/);
-  assert.equal(input.value, '', 'Direct commit clears only the unchanged input');
-  calls.length = 0;
+  assert.deepEqual(calls.map(call => call.id), ['sweetiebot.commitWithCodex']);
+  assert.equal(calls[0].args[1].message, 'Fast explicit subject');
+  assert.equal(input.value, '', 'Confirmed direct commit clears the unchanged input');
+
+  context.commands.executeCommand = async (id, ...args) => {
+    calls.push({ id, args, message: input.value });
+    return { committed: false, queued: true };
+  };
+  input.setValue('Preserve while queued');
+  await context.commit({ stopPropagation() {} });
+  assert.equal(input.value, 'Preserve while queued', 'Queued commit keeps its original message');
+
+  context.commands.executeCommand = async (id, ...args) => {
+    calls.push({ id, args, message: input.value });
+    input.setValue('Edited while committing');
+    return { committed: true, queued: false };
+  };
+  await context.commit({ stopPropagation() {} });
+  assert.equal(input.value, 'Edited while committing', 'An updated draft is never erased');
+
+  context.settings.codexCommitContext = false;
+  const countBefore = calls.length;
   input.setValue('');
   await context.commit({ stopPropagation() {} });
-  assert.deepEqual(calls.map(call => call.id), [
-    'sweetiebot.generateCodexCommitMessage', 'sweetiebot.commitWithMessage'
-  ]);
-  assert.match(calls[1].args[1], /Document captured changes/);
+  assert.equal(calls.length, countBefore, 'Empty messages without context are blocked');
+  assert.match(String(errors.at(-1)), /Enter a commit message/);
+  context.settings.codexCoauthor = false;
+  input.setValue('Disabled control');
+  await context.commit({ stopPropagation() {} });
+  assert.equal(calls.length, countBefore, 'Disabled co-author button cannot commit');
   console.log('Codex commit startup regression checks passed.');
 }
 
