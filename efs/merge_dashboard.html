@@ -315,6 +315,9 @@ __TIMESTAMP_FORMATTER__
           headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
         if (option.description) show('div', 'muted', option.description, row);
         if (option.suggested) show('div', 'muted', 'Suggested in the blocker report', row);
+        const instructions = show('details', '', undefined, row);
+        show('summary', 'muted', 'View instructions', instructions);
+        show('p', '', option.prompt, instructions);
       }
       if (pr.actionPending) show('p', 'muted', 'Opening the selected implementation…', choices);
     }

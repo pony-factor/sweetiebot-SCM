@@ -9,6 +9,7 @@ const {
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
+const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/merge_blocker_actions');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -30,6 +31,23 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     { id: 7, html_url: url + '#comment-7', body: REPORT_MARKER + '\nNew report' },
   ];
   const notes = reportFromComments(comments);
+  const optionsBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
+    { id: 'preserve-api', label: 'Keep the current API', description: 'Add compatibility for the PR.', prompt: 'Preserve the current API and add the proposed compatibility layer.', engine: 'shell' },
+    { id: '../unsafe', label: 'Bad', prompt: 'bad' },
+    { id: 'invalid', label: 'Empty prompt', prompt: '' }
+  ] }) + '\n-->';
+  const parsedOptions = parseReportOptions(optionsBlock);
+  assert.equal(parsedOptions.length, 1);
+  assert.equal(parsedOptions[0].engine, undefined, 'Report content cannot select an execution engine');
+  const actionable = reportFromComments([{ id: 8, body: REPORT_MARKER + '\nKeep main.\n' + optionsBlock }]);
+  assert.equal(actionable.report.text, 'Keep main.', 'Machine-readable choices are not rendered as report text');
+  const choices = blockerOptions({ state: 'blocked', report: actionable.report });
+  assert.equal(choices[0].id, 'keep-main');
+  assert(choices.some(option => option.id === 'report-preserve-api'));
+  assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
+  const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[1]);
+  assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
+  assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
@@ -95,7 +113,7 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     env: { async openExternal(target) { openings.push(target); } }
   };
   let info = {
-    number: 12, base: { ref: 'main' }, head: { sha }, html_url: url,
+    number: 12, base: { ref: 'main' }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
     state: 'open', merged: false, mergeable: false, mergeable_state: 'dirty', body: 'Why this PR exists'
   };
   let commentsForPr = [];
@@ -113,7 +131,9 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     else throw new Error('Unexpected URL ' + address);
     return { ok: true, json: async () => result };
   };
+  const actionLaunches = [];
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
+    launchAction: async (...args) => { actionLaunches.push(args); return true; },
     fetchImpl: fakeFetch,
     intervalMs: 25000,
     setTimer(callback) { pollCallback = callback; return 17; },
@@ -172,7 +192,7 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   assert.deepEqual(savedModes, ['relative', 'clock', 'hidden'],
     'Reject unrecognized timestamp modes without changing persisted settings');
 
-  info = { ...info, head: { sha: nextSha }, mergeable: true, mergeable_state: 'clean' };
+  info = { ...info, head: { ...info.head, sha: nextSha }, mergeable: true, mergeable_state: 'clean' };
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nMechanically reconciled both changes.' }];
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'resolved');
@@ -194,6 +214,21 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'blocked');
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; checks are not passing');
+  const selectedAction = events.at(-1).prs[0].blockerOptions[0];
+  const actionMessage = { type: 'blocker-action', number: 12, headSha: nextSha,
+    actionId: selectedAction.id, optionKey: selectedAction.key };
+  await messageHandler(actionMessage);
+  assert.equal(actionLaunches.length, 1);
+  assert.equal(actionLaunches[0][6], 'web', 'GPT web is the default destination');
+  assert.equal(actionLaunches[0][5].id, 'keep-main');
+  await messageHandler({ ...actionMessage, engine: 'codex' });
+  assert.equal(actionLaunches[1][6], 'codex');
+  await messageHandler({ ...actionMessage, optionKey: 'forged' });
+  assert.equal(actionLaunches.length, 2, 'Unknown or modified options never launch');
+  info = { ...info, head: { ...info.head, sha } };
+  await messageHandler(actionMessage);
+  assert.equal(actionLaunches.length, 2, 'A stale selected head never launches');
+  info = { ...info, head: { ...info.head, sha: nextSha } };
   info = { ...info, mergeable_state: 'blocked' };
   await dashboard.refresh();
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
