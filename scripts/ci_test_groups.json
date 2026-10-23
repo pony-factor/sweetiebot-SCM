@@ -50,6 +50,7 @@
         "test_branch_maintenance.js",
         "test_branch_strip.js",
         "test_branch_strip_filter.js",
+        "test_branch_strip_refresh.js",
         "test_cloud_repo_sync.py",
         "test_default_branch.js",
         "test_default_branch_recovery.js",
@@ -63,9 +64,12 @@
         "test_routine_sync.js",
         "test_shared_main.js",
         "test_sync_arrows_browser.js",
-        "test_sync_labels.js"
+        "test_sync_labels.js",
+        "test_sync_review.js"
       ],
-      "syntax": []
+      "syntax": [
+        "efs/sync_review.js"
+      ]
     },
     "branch-names": {
       "label": "Branch names and pony packs",

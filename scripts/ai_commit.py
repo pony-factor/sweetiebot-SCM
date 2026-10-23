@@ -1948,7 +1948,7 @@ def main() -> None:
         sys.modules.setdefault("ai_commit", sys.modules.get(__name__, sys.modules["__main__"]))
         # A push, another commit, or a ref-changing operation must wait until
         # the provisional commit has been atomically rewritten.
-        from sweetiebot_async_commit import wait_for_completion
+        from sweetiebot_async_commit import wait_for_completion, operation_refs
         from background_commit import wait_for_background, queue_plain_push
         try:
             if subcommand == "push":
@@ -1971,7 +1971,8 @@ def main() -> None:
                     os.chdir(root)
                     fork_branch(source, args[1], head)
                     return
-            if subcommand == "push" and queue_plain_push(argv[index + 1:]):
+            affected_refs = operation_refs(REAL_GIT, GIT_GLOBAL_ARGS, subcommand, argv[index + 1:])
+            if subcommand == "push" and queue_plain_push(argv[index + 1:], GIT_GLOBAL_ARGS):
                 print("🤖 Commit message generation is in progress. Your changes will be pushed as soon as it completes.")
                 return
             # Existing checkouts leave the captured ref intact. Other branch
@@ -1981,13 +1982,19 @@ def main() -> None:
                                  for arg in argv[index + 1:])
             if subcommand not in {"switch", "checkout"} or creates_branch:
                 args = argv[index + 1:]
-                # Sweetiebot passes a fixed completed base when creating a new
-                # branch while the original branch's messages are generating.
-                branch_base = (args[2] if subcommand in {"switch", "checkout"}
-                               and len(args) == 3 and args[0] in {"-b", "-c"}
-                               and re.fullmatch(r"[0-9a-f]{40,64}", args[2]) else None)
-                wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base)
-            wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS)
+                # Verify ordinary creation against its actual selected base,
+                # including named refs and HEAD on an unrelated branch.
+                branch_base = ((args[2] if len(args) == 3 else 'HEAD')
+                               if subcommand in {"switch", "checkout"}
+                               and len(args) in {2, 3} and args[0] in {"-b", "-c"} else None)
+                verified_base = wait_for_background(REAL_GIT, GIT_GLOBAL_ARGS, branch_base=branch_base,
+                                                    refs=affected_refs)
+                if isinstance(verified_base, str) and re.fullmatch(r"[0-9a-f]{40,64}", verified_base):
+                    # Pin the checked ref so concurrent finalization or checkout
+                    # cannot change which history the new branch inherits.
+                    argv = argv[:index + 1] + args[:2] + [verified_base]
+            wait_for_completion(REAL_GIT, GIT_GLOBAL_ARGS, refs=([branch_base] if subcommand in {'switch', 'checkout'}
+                                                             and creates_branch and branch_base else affected_refs))
         except RuntimeError as exc:
             print(f"Sweetiebot: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
