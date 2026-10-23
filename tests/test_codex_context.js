@@ -45,6 +45,41 @@ async function run() {
   receive({ data: { type: 'scm-toolkit-context-request', id: 'hidden' } });
   assert.equal(responses[1].text, 'Retained hidden chat');
 
+  let mounted, changed;
+  const frames = [], clicks = [];
+  const anchor = {
+    parentElement: {}, getAttribute: () => 'Chat actions',
+    getClientRects: () => [1], closest: () => null,
+    before(button) { mounted = button; button.parentElement = this.parentElement; button.nextElementSibling = this; }
+  };
+  const location = { hash: `#/local/${conversationId}` };
+  const ui = vm.createContext({
+    window: { location, addEventListener() {} },
+    MutationObserver: class { constructor(callback) { changed = callback; } observe() {} },
+    requestAnimationFrame: callback => frames.push(callback),
+    document: {
+      documentElement: {},
+      querySelectorAll: selector => selector === 'button' ? [anchor] : [],
+      getElementById: () => mounted,
+      createElement: () => ({ style: {}, setAttribute() {},
+        addEventListener(type, callback) { if (type === 'click') this.click = callback; },
+        remove() { mounted = undefined; }
+      })
+    }
+  });
+  load('context-webview.js', ui);
+  ui.scmToolkitRegisterCodexSnapshot({ postMessage: message => clicks.push(message) });
+  frames.shift()();
+  assert.equal(mounted.title, 'Open chat checkout in a new window');
+  const nextChat = '019c56c3-06fc-7db3-a928-9c3607e17130';
+  location.hash = `#/local/${nextChat}`;
+  mounted.click();
+  assert.equal(clicks[0].threadId, nextChat, 'Resolve the current chat when clicked, not when mounted');
+  assert.equal(clicks[0].type, 'scm-toolkit-open-chat-checkout');
+  location.hash = '/';
+  changed(); frames.shift()();
+  assert.equal(mounted, undefined, 'Hide the button when there is no identifiable chat');
+
   const registered = new Map();
   let listener;
   const messages = [];

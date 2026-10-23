@@ -68,4 +68,43 @@ function scmToolkitRegisterCodexSnapshot(api) {
             conversationId: conversationId(),
         });
     });
+
+    // Place the action beside the existing chat actions, outside the transcript.
+    if (typeof MutationObserver === 'undefined') return;
+    const buttonId = 'scm-toolkit-open-chat-checkout';
+    let scheduled = false;
+    function mountCheckoutButton() {
+        scheduled = false;
+        const threadId = conversationId();
+        const anchor = [...document.querySelectorAll('button')].find(button =>
+            /^(Chat actions|Recent chats)(\b|\.)/i.test(button.getAttribute('aria-label') || '')
+            && button.getClientRects().length
+            && !button.closest('[data-thread-user-message-navigation-content]'));
+        let button = document.getElementById(buttonId);
+        if (!threadId || !anchor) { button?.remove(); return; }
+        if (!button) {
+            button = document.createElement('button');
+            button.id = buttonId;
+            button.type = 'button';
+            button.title = 'Open chat checkout in a new window';
+            button.setAttribute('aria-label', 'Open chat checkout in a new window');
+            button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;flex:0 0 auto;border:0;border-radius:6px;background:transparent;color:inherit;cursor:pointer';
+            button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h7l2 2h9v11H3zM14 3h7v7M21 3l-8 8"/></svg>';
+            button.addEventListener('click', () => {
+                const current = conversationId();
+                if (current) api.postMessage({ type: 'scm-toolkit-open-chat-checkout', threadId: current });
+            });
+        }
+        if (button.parentElement !== anchor.parentElement || button.nextElementSibling !== anchor) anchor.before(button);
+    }
+    function scheduleCheckoutButton() {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(mountCheckoutButton);
+    }
+    new MutationObserver(scheduleCheckoutButton).observe(document.documentElement, {
+        childList: true, subtree: true, attributes: true, attributeFilter: ['aria-label'],
+    });
+    window.addEventListener('hashchange', scheduleCheckoutButton);
+    scheduleCheckoutButton();
 }
