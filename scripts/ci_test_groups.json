@@ -62,9 +62,12 @@
         "test_routine_sync.js",
         "test_shared_main.js",
         "test_sync_arrows_browser.js",
-        "test_sync_labels.js"
+        "test_sync_labels.js",
+        "test_sync_review.js"
       ],
-      "syntax": []
+      "syntax": [
+        "efs/sync_review.js"
+      ]
     },
     "branch-names": {
       "label": "Branch names and pony packs",
