@@ -214,7 +214,6 @@ async function humanSquashMerge(repository, number, {
         if (!conflicts.length) throw error;
         if (conflicts.some(name => !safePatchPath(name))) throw Error('Conflict involves an unsafe or secret-bearing path.');
       }
-      await inRepo('reset', '--hard', liveBase);
       if (conflicts.length && (conflicts.length !== decisions.length ||
           conflicts.some(file => !decisions.some(item => item.path === file)))) {
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
@@ -224,9 +223,24 @@ async function humanSquashMerge(repository, number, {
       await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
       const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
       resolvedFiles = patchPaths(resolutionPatch, numstat, originalFiles);
-      if (requiredFiles.some(name => !resolvedFiles.includes(name))) {
-        throw Error('Complete resolution patch must cover every PR file not already present on the current base.');
+      const missing = requiredFiles.filter(name => !resolvedFiles.includes(name));
+      if (missing.some(name => conflicts.includes(name))) {
+        throw Error('Resolution patch must cover every conflicted PR file.');
       }
+      // Keep Git's clean integration for PR files outside the supplied patch.
+      // This diff is generated from the isolated three-way index, never from
+      // the old PR tree, which could discard newer base changes.
+      let supplementalFile;
+      if (missing.length) {
+        const supplemental = await inRepo('diff', '--cached', '--binary', liveBase, '--', ...missing);
+        if (supplemental) {
+          supplementalFile = path.join(temp, '.git', 'sweetiebot-clean-integration.patch');
+          await fs.writeFile(supplementalFile, supplemental + '\n', { mode: 0o600 });
+          const stat = await inRepo('apply', '--numstat', '-z', '--', supplementalFile);
+          resolvedFiles = [...resolvedFiles, ...patchPaths(supplemental, stat, originalFiles)].sort();
+        }
+      }
+      await inRepo('reset', '--hard', liveBase);
       const baseEntries = await inRepo('ls-tree', '-z', liveBase, '--', ...resolvedFiles);
       if (baseEntries.split('\0').filter(Boolean).some(entry => !/^100(?:644|755) blob [a-f0-9]{40}\t/.test(entry))) {
         throw Error('Resolution patches cannot modify existing symlinks or submodules.');
@@ -234,6 +248,10 @@ async function humanSquashMerge(repository, number, {
       progress('applying-resolution');
       await inRepo('apply', '--check', '--index', '--', patchFile);
       await inRepo('apply', '--index', '--', patchFile);
+      if (supplementalFile) {
+        await inRepo('apply', '--check', '--index', '--', supplementalFile);
+        await inRepo('apply', '--index', '--', supplementalFile);
+      }
       await inRepo('diff', '--cached', '--check');
     } else {
       progress('integrating');
