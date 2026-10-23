@@ -298,7 +298,7 @@ async function closeMergedPullRequestTab(vscode, result) {
 
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
-  const handler = async node => {
+  const processMerge = async (node, progress) => {
     // Resolve the exact clicked PR row for both command entry points. A row
     // without a URL may expose it only through its asynchronous TreeItem.
     const model = await resolveMergeTarget(vscode, node);
@@ -308,6 +308,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     try {
       // Never invoke a merge with an unresolved or mismatched PR identity.
       if (!url) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
+      progress?.report?.({ message: `PR #${model.number}: checking merge eligibility…` });
       const confirmNonMain = async ({ number, base }) => {
         const action = `Squash into ${base}`;
         const choice = await vscode.window.showWarningMessage(
@@ -317,10 +318,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         );
         return choice === action;
       };
-      const result = await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Window,
-        title: `Squash-merging PR #${model?.number ?? ''}`, cancellable: false
-      }, () => merge(url, undefined, confirmNonMain));
+      const result = await merge(url, undefined, confirmNonMain);
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {
@@ -370,6 +368,18 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       busy.delete(url);
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
     }
+  };
+  const handler = node => {
+    // Open progress on the click, including while the GitHub PR extension is
+    // still resolving the exact row. This is a single ongoing notification,
+    // not an early claim that the merge succeeded.
+    const clicked = pullRequestFromTreeNode(node);
+    if (clicked.url && busy.has(clicked.url)) return;
+    return vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: clicked.number ? `Starting squash merge for PR #${clicked.number}…` : 'Starting squash merge…',
+      cancellable: false
+    }, progress => processMerge(node, progress));
   };
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
