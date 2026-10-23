@@ -56,6 +56,20 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
     } : undefined;
     if (guardedSend) connection.sendProviderRequest = guardedSend;
 
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.openChatCheckout', async expectedThreadId => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (!identity?.threadId || identity.threadId !== expectedThreadId) {
+            throw new Error('The visible chat changed. Try the button again.');
+        }
+        const thread = await read(identity.threadId);
+        const cwd = await canonical(thread.cwd);
+        if (!(await fs.stat(cwd)).isDirectory()) throw new Error('The recorded checkout is not a folder.');
+        // Opening the existing folder does not checkout a branch, interrupt a turn,
+        // or rebind the worker. Keep this window and its drafts intact.
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(cwd), { forceNewWindow: true });
+        return { threadId: identity.threadId, cwd };
+    }));
+
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.startBlockerTask', async ({ cwd, prompt }) => {
         const root = await canonical(cwd);
         const folders = vscode.workspace.workspaceFolders || [];
