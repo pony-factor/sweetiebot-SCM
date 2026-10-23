@@ -16,6 +16,7 @@ const { resolvePythonExecutable } = require('./python_runtime');
 const { recoveryPlan } = require('./finalized_commit_recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
 const { routeBranch } = require('./shared_main');
+const { createStackedBranch } = require('./stacked_branch');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -1150,13 +1151,14 @@ function registerBranchCommands(vscode, context) {
   };
 
   const needsDefaultBranch = new Set([
-    'sweetiebot.returnHome', 'sweetiebot.createBranch',
+    'sweetiebot.returnHome', 'sweetiebot.createBranch', 'sweetiebot.createStackedBranch',
     'sweetiebot.deleteBranch', 'sweetiebot.syncBranch'
   ]);
   for (const [command, action] of [
     ['sweetiebot.returnHome', returnHome],
     ['sweetiebot.autoPullClean', autoPullClean],
     ['sweetiebot.createBranch', createBranch],
+    ['sweetiebot.createStackedBranch', (repository, options) => createStackedBranch(vscode, repository, options)],
     ['sweetiebot.publishBranch', publishBranch],
     ['sweetiebot.deleteBranch', deleteBranch],
     ['sweetiebot.syncBranch', syncBranch]

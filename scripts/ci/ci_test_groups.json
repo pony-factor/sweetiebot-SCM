@@ -51,6 +51,7 @@
         "test_branch_strip.js",
         "test_branch_strip_filter.js",
         "test_branch_strip_refresh.js",
+        "test_stacked_branch.js",
         "test_cloud_repo_sync.py",
         "test_default_branch.js",
         "test_default_branch_recovery.js",
@@ -139,6 +140,7 @@
         "test_codex_keep_awake.py",
         "test_codex_label.py",
         "test_codex_rate_limit_controls.js",
+        "test_codex_sticker.py",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
         "test_codex_short_model_labels.js",
@@ -157,29 +159,49 @@
     "kefania": {
       "label": "Kefania",
       "tests": [
+        "test_github_app_identity.js",
+        "test_github_app_settings.js",
+        "test_kefania_app_environment.js",
         "test_kefania_chat_window.js",
         "test_kefania_close_position.js",
         "test_kefania_paths.js",
         "test_kefania_runner.js"
       ],
-      "syntax": []
+      "syntax": [
+        "efs/github_app_identity.js",
+        "efs/github_app_settings.js",
+        "efs/kefania_runner.js"
+      ]
     },
     "lindsey": {
       "label": "Lindsey bulk merge",
       "tests": [
         "test_lindsey_bulk_merge.js",
         "test_lindsey_conflicts.js",
+        "test_merge_batch.js",
         "test_merge_dashboard.js",
         "test_merge_dashboard_resize.js",
+        "test_merge_reaction_choices.js",
+        "test_merge_resolution.js",
+        "test_merge_resolution_git.js",
         "test_pr_session.js",
         "test_pull_request_batch.js"
       ],
       "syntax": [
         "efs/lindsey_bulk_merge.js",
+        "efs/local_human_squash.js",
+        "efs/merge_batch.js",
+        "efs/merge_checks.js",
         "efs/merge_dashboard.js",
         "efs/merge_dashboard_diff.js",
         "efs/merge_dashboard_markdown.js",
-        "efs/pull_request_batch.js"
+        "efs/merge_reaction_choices.js",
+        "efs/merge_handoff.js",
+        "efs/merge_patch.js",
+        "efs/merge_resolution.js",
+        "efs/merge_resolution_cli.js",
+        "efs/pull_request_batch.js",
+        "efs/resolution_commits.js"
       ]
     },
     "browser-ui": {
@@ -197,14 +219,16 @@
         "test_settings_browser.js",
         "test_spellcheck_popup.js",
         "test_spellcheck_popup_viewport.js",
-        "test_terminal_actions.js"
+        "test_terminal_actions.js",
+        "test_window_title_configurator.py"
       ],
       "syntax": [
         "assets/workbench/message_bar.js",
         "assets/workbench/picker.js",
         "scripts/message_bar.py",
         "scripts/message_bar_configurator.py",
-        "scripts/model_picker.py"
+        "scripts/model_picker.py",
+        "scripts/window_title_configurator.py"
       ]
     },
     "efs-search": {
@@ -232,6 +256,7 @@
         "test_configurator.py",
         "test_diagnostics.py",
         "test_extension_cache.js",
+        "test_github_apps.py",
         "test_install.py",
         "test_local_setup.py",
         "test_python_runtime.js",
@@ -243,6 +268,8 @@
       "syntax": [
         "efs/extension.js",
         "scripts/configurator.py",
+        "scripts/github_apps.py",
+        "scripts/github_apps_ui.py",
         "scripts/install.py"
       ]
     },

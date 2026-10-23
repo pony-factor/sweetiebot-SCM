@@ -17,6 +17,7 @@ import codex_keep_awake
 import codex_image_drop
 import codex_recent_chats
 import codex_startup
+import codex_sticker
 import github_pr
 import browser_pr
 from pathlib import Path
@@ -26,7 +27,7 @@ from branch_names import resolve_runtime_settings
 HERE = Path(__file__).resolve().parent
 WORKBENCH_ASSETS = HERE.parent / "assets/workbench"
 CODEX_ASSETS = HERE.parent / "assets/codex"
-TWILIGHT_STOP_PNG = HERE.parent / "assets/images/twi-stop.png"
+TWILIGHT_STOP_PNG = HERE.parent / "assets/imgs/twi-stop.png"
 START = '\n/* scm-toolkit:start */\n'
 END = '\n/* scm-toolkit:end */\n'
 CODEX_START = '\n/* scm-toolkit-codex-countdown:start */\n'
@@ -396,6 +397,96 @@ def extension_update_toolbar_edits(js):
     return changes
 
 
+def window_title_status_edits(js):
+    # Accessibility can append activeEditorState implicitly. Native VS Code only
+    # listens for decoration changes when the title template includes it
+    # explicitly, leaving e.g. "Modified" behind after an external commit.
+    # Subscribe for every active editor, including accessibility mode changes.
+    original = (
+        'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+        'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+    )
+    if original not in js:
+        if 'checkTitleVariables(){' in js:
+            raise ValueError("Unsupported VS Code build: window title status listener does not match.")
+        return []  # Older builds and synthetic fixtures without the title service.
+    if js.count(original) != 1:
+        raise ValueError("Unsupported VS Code build: window title status listener is ambiguous.")
+    return [(original, original.removeprefix('this.titleIncludesEditorState&&'))]
+
+
+def window_title_push_edits(js):
+    if 'getFullWindowTitle(){' not in js:
+        return []
+    registration = 'this.checkTitleVariables(),this.registerListeners()'
+    pattern = re.compile(
+        r'getFullWindowTitle\(\)\{let\{prefix:([\w$]+),suffix:([\w$]+)\}'
+        r'=this\.getTitleDecorations\(\),([\w$]+)='
+        r'this\.getWindowTitle\(\)\|\|this\.productService\.nameLong;'
+    )
+    matches = list(pattern.finditer(js))
+    if len(matches) != 1 or js.count(registration) != 1:
+        raise ValueError("Unsupported VS Code build: window push title does not match.")
+    original = matches[0].group(0)
+    replacement = original.replace(
+        'this.getWindowTitle()||this.productService.nameLong;',
+        '(this.getWindowTitle(this.configurationService.getValue("scmToolkit.windowName")'
+        '||this.configurationService.getValue("window.title"))||this.productService.nameLong)'
+        '+(this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&'
+        'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"");',
+    )
+    return [
+        (registration, 'this.checkTitleVariables(),'
+         'this.registerVariables([{name:"sweetiebotPushPending",contextKey:"sweetiebot.pushPending"}]),'
+         'this.registerListeners()'),
+        (original, replacement),
+    ]
+
+
+def window_title_naming_edits(js):
+    if 'getWindowTitle(){' not in js:
+        return []
+    start = js.index('getWindowTitle(){')
+    end = js.find('isCustomTitleFormat(){', start)
+    if end < 0 or js.count('getWindowTitle(){') != 1:
+        raise ValueError("Unsupported VS Code build: window naming API does not match.")
+    original = js[start:end]
+    template = re.search(r'let ([\w$]+)=this.configurationService.getValue\("window.title"\);', original)
+    render = re.search(r'return ([\s\S]*)\}$', original)
+    if not template or not render:
+        raise ValueError("Unsupported VS Code build: window naming template does not match.")
+    replacement = original[:render.start()] + (
+        f'return ({render.group(1)})+(scmToolkitTitle===undefined&&'
+        'this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&'
+        'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"")}')
+    replacement = replacement.replace('getWindowTitle(){', 'getWindowTitle(scmToolkitTitle){', 1)
+    replacement = replacement.replace(template.group(0),
+        f'let {template.group(1)}=scmToolkitTitle??('
+        'this.configurationService.getValue("scmToolkit.windowHeading")'
+        '||this.configurationService.getValue("window.title"));'
+        'if(this.configurationService.getValue("scmToolkit.windowShowModifiedStatus")===false)'
+        f'{template.group(1)}={template.group(1)}.split("${{activeEditorState}}").join("");', 1)
+    replacement = replacement.replace('!this.titleIncludesEditorState&&',
+        f'this.configurationService.getValue("scmToolkit.windowShowModifiedStatus")!==false&&!{template.group(1)}.includes("${{activeEditorState}}")&&', 1)
+    config = re.search(r'onConfigurationChanged\(([\w$]+)\)\{let ([\w$]+)=\1.affectsConfiguration\("window.title"\)', js)
+    variables = re.search(r'checkTitleVariables\(\)\{let ([\w$]+)=this.configurationService.getValue\("window.title"\)', js)
+    update = re.search(r'doUpdateTitle\(\)\{let ([\w$]+)=this.getFullWindowTitle\(\);if\(\1!==this.title\)\{', js)
+    if not config or not variables or not update:
+        raise ValueError("Unsupported VS Code build: window naming listeners do not match.")
+    focused = f'this.titleIncludesFocusedView={variables.group(1)}.includes("${{focusedView}}")'
+    if js.count(focused) != 1:
+        raise ValueError("Unsupported VS Code build: window naming focus listener does not match.")
+    return [
+        (original, replacement),
+        (update.group(0), f'doUpdateTitle(){{let {update.group(1)}=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle();if({update.group(1)}!==this.title||scmToolkitHeading!==this.scmToolkitHeading){{this.scmToolkitHeading=scmToolkitHeading;'),
+        ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("scmToolkit.windowHeading")||(this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")))return!0;'),
+        (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("scmToolkit.windowHeading")||{config.group(1)}.affectsConfiguration("scmToolkit.windowName")||{config.group(1)}.affectsConfiguration("scmToolkit.windowShowModifiedStatus")||{config.group(1)}.affectsConfiguration("scmToolkit.windowShowPushingStatus")'),
+        (variables.group(0), variables.group(0).replace('this.configurationService.getValue("window.title")',
+            '(this.configurationService.getValue("scmToolkit.windowHeading")||this.configurationService.getValue("window.title"))')),
+        (focused, f'this.titleIncludesFocusedView=({variables.group(1)}+" "+(this.configurationService.getValue("scmToolkit.windowName")||"")).includes("${{focusedView}}")'),
+    ]
+
+
 def compact_window_edits(js, command="fe", configuration="Xe"):
     # Match the native titlebar layout rather than relying on SCM activation.
     ident = r"[A-Za-z_$][\w$]*"
@@ -556,6 +647,9 @@ def edits(js=None, settings=None):
 
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
+        changes.extend(window_title_status_edits(js))
+        changes.extend(window_title_push_edits(js))
+        changes.extend(window_title_naming_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))
@@ -703,17 +797,26 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
-def codex_rate_limit_script():
-    """Inline the bundled Twilight PNG instead of relying on an external image host."""
+def codex_rate_limit_script(sticker_enabled=True):
+    """Embed user-private cached artwork or bundled Twilight in the local Codex webview."""
     script = (CODEX_ASSETS / "rate-limit-controls.js").read_text()
     placeholder = '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"'
-    if script.count(placeholder) != 1:
-        raise ValueError("Codex Twilight image placeholder must occur exactly once.")
-    png = TWILIGHT_STOP_PNG.read_bytes()
-    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ValueError("Codex Twilight sticker is not a PNG.")
-    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
-    return script.replace(placeholder, json.dumps(data_url))
+    enabled_placeholder = '"__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__"'
+    if script.count(placeholder) != 1 or script.count(enabled_placeholder) != 1:
+        raise ValueError("Codex sticker placeholders must each occur exactly once.")
+    data_url = ""
+    if sticker_enabled:
+        custom = codex_sticker.load_sticker()
+        if custom is None:
+            png = TWILIGHT_STOP_PNG.read_bytes()
+            if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("Codex bundled Twilight sticker is not a PNG.")
+            mime, data = "image/png", png
+        else:
+            mime, data = custom
+        data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+    return (script.replace(placeholder, json.dumps(data_url))
+            .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
 
 
 def codex_transcript_compact_edits(js):
@@ -782,7 +885,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex"):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -867,7 +970,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + codex_rate_limit_script()
+               + codex_rate_limit_script(sticker_enabled=sticker_enabled)
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:
@@ -1002,6 +1105,27 @@ def transform(js, css, remove=False, settings=None):
 
         for edit in previous:
             original, replacement, expected_count = unpack_edit(edit)
+            # An earlier Explorer title repair updated the code without its
+            # saved metadata. Accept only that exact, known toolkit revision.
+            if expected_count == 1 and js.count(replacement) == 0:
+                native_title = re.fullmatch(
+                    r'get singleViewPaneContainerTitle\(\)\{return this\.name\}'
+                    r'get autoReveal\(\)\{return this\._autoReveal\}'
+                    r'set autoReveal\((?P<arg>[A-Za-z_$][\w$]*)\)\{this\._autoReveal=(?P=arg)\}'
+                    r'get name\(\)\{return this\.labelService\.getWorkspaceLabel\(this\.contextService\.getWorkspace\(\)\)\}',
+                    original,
+                )
+                legacy_title = original.replace(
+                    'get name(){return ',
+                    'get name(){return this.contextService.getWorkspace().folders.length===1?"Contents":',
+                    1,
+                )
+                if native_title and replacement == legacy_title:
+                    replacement = legacy_title.replace(
+                        '?"Contents":',
+                        '?this.contextService.getWorkspace().folders[0].name:',
+                        1,
+                    )
             if js.count(replacement) != expected_count:
                 raise ValueError(
                     "Installed toolkit patch changed; refusing to remove unrelated edits."
@@ -1074,6 +1198,13 @@ def codex_bundle_matches(text):
         return True
 
     # Discover by feature, independently of compiler output and patch support.
+    # Allow a renamed/portaled rate-limit alert in the composer bundle even
+    # when its wording and React markup changed. Do not match bare translation
+    # dictionaries or arbitrary unrelated pages on a single keyword.
+    if (re.search(r'(?:rate[-_]?limit|usage[-_]?limit|quota[-_]?exhaust|rateLimit|usageLimit)', text, re.I)
+            and ('data-composer-navigation-target' in text
+                 or ('data-testid' in text and ('role:' in text or 'aria-live' in text)))):
+        return True
     # Translation dictionaries contain the same IDs, but no defaultMessage.
     if ("You’re out of Codex messages" in text
             or ('codex.rateLimitUpsellBanner.dismiss' in text
@@ -1378,6 +1509,7 @@ def main():
                 hide_dictation=settings["codexHideDictation"],
                 short_model_labels=settings["codexShortModelLabels"],
                 window_label=settings["codexWindowLabel"],
+                sticker_enabled=settings["codexRateLimitSticker"],
                 remove=args.uninstall,
             )
         except ValueError as error:

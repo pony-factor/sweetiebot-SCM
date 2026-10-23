@@ -10,6 +10,7 @@ async function run() {
   let poll;
   let status = {};
   const notices = [], progress = [], completed = [], errors = [];
+  const titleContexts = [];
   const errorActions = [], details = [];
   let nextChoice;
   let merged = null;
@@ -89,6 +90,11 @@ async function run() {
     commands: {
       registerCommand(id, handler) { commands.set(id, handler); return { dispose() {} }; },
       async executeCommand(id, uri, options) {
+        if (id === 'setContext') {
+          assert.equal(uri, 'sweetiebot.pushPending');
+          titleContexts.push(options);
+          return;
+        }
         assert.equal(uri, root);
         if (id === 'sweetiebot.prepareCodexCommit') {
           preparations.push(options); events.push('stage');
@@ -103,6 +109,7 @@ async function run() {
   assert.deepEqual(notices, [], 'ordinary pushes do not create a waiting notice');
   status = { id: 'older', phase: 'generating' };
   assert.equal((await push(root)).queued, true);
+  assert.equal(titleContexts.at(-1), true, 'title shows Pushing while a queued push waits for naming');
   assert.equal(notices.pop(), 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
   status = {};
   const commit = commands.get('sweetiebot.queueCommit');
@@ -131,7 +138,8 @@ async function run() {
   await assert.rejects(commit(root), /Resolve conflicts/);
   assert.equal(jobs.length, 4, 'conflicts never stage or enqueue');
   repository.state.mergeChanges = [];
-  await commit(root);
+  await commit(root, { push: true });
+  assert.equal(titleContexts.at(-1), true, 'Commit & Push sets the title before the next status poll');
   await commit(root);
   assert.equal(progress.length, 1, 'parallel title jobs share the original generation box');
   assert.equal(progress[0].title, 'Generating commit message asynchronously');
@@ -140,19 +148,21 @@ async function run() {
   noticeTimers[0].callback();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(completed.length, 1, 'notification closes after one second while generation continues');
-  status = { id: '1', phase: 'pushing', titleJobs: ['5'] };
+  status = { id: '1', phase: 'pushing', titleJobs: ['5'], pushPending: true };
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(completed.length, 1, 'pending title jobs do not reopen the expired notification');
   assert.equal(progress.length, 1, 'polling must not show the same notification again');
-  status = { id: '1', phase: 'pushing', titleJobs: [] };
+  status = { id: '1', phase: 'pushing', titleJobs: [], pushPending: true };
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(completed.length, 1, 'title application closes progress without waiting for push');
   assert.equal(noticeTimers[0].cancelled, true, 'finished jobs clean up their expiry timer');
+  assert.equal(titleContexts.at(-1), true, 'Pushing survives title generation finishing');
   status = {};
   poll();
   await new Promise(resolve => setImmediate(resolve));
+  assert.equal(titleContexts.at(-1), false, 'empty queue clears Pushing');
   assert.deepEqual(notices, ['repo: Push is pending and will retry automatically.'],
     'no local-save or completion notifications');
   const beforeRecovery = resumes;
@@ -168,6 +178,7 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1, 'a genuine branch mismatch remains visible');
+  assert.equal(titleContexts.at(-1), false, 'blocked jobs do not leave Pushing behind');
   status = { id: 'rejected-push', phase: 'blocked', titleJobs: [], branch: 'refs/heads/hoofar',
     conflictPaths: ['Sources/RepoLauncher.swift', 'Repository Launcher.app/Contents/MacOS/RepositoryLauncher'],
     error: 'Push rejected: local and remote changes have merge conflicts.' };

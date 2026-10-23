@@ -233,6 +233,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
             self.assertTrue((destination / "configurator.py").is_file())
+            self.assertTrue((destination / "codex_sticker.py").is_file())
             self.assertTrue((destination / "commit_hotkey.py").is_file())
             self.assertTrue((destination / "toolkit_settings.py").is_file())
             # Run outside the source tree so missing packaged imports cannot
