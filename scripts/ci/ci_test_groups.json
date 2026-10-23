@@ -29,13 +29,15 @@
         "test_post_commit_spellcheck_toggle.js",
         "test_push_recovery.js",
         "test_push_retry.js",
-        "test_spellcheck_preview.js"
+        "test_spellcheck_preview.js",
+        "test_coreml_backend.py"
       ],
       "syntax": [
         "efs/ollama.js",
         "scripts/ai_commit.py",
         "scripts/commit_diagnostics_dashboard.py",
-        "scripts/sweetiebot_async_commit.py"
+        "scripts/sweetiebot_async_commit.py",
+        "scripts/coreml_backend.py"
       ]
     },
     "branches": {

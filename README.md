@@ -157,7 +157,7 @@ output channel. No automatic migration or cleanup is performed on the old
 - Python 3 (Sweetiebot resolves system, Xcode, Homebrew, or `SWEETIEBOT_PYTHON` interpreters on macOS)
 - Git, if you want to configure feature flags through global Git config
 - GnuPG, only if you want the configurator to import a PGP signing key
-- Ollama is required for local AI commit-title generation and semantic Workspace Search; exact Workspace Search still works if embeddings are unavailable
+- Ollama remains the default for local AI commit titles and semantic Workspace Search. An optional, separately installed CoreML-LLM Neural Engine bridge can replace Ollama for commit titles only; see [Core ML bridge setup](native/coreml-llm-bridge/README.md). Exact Workspace Search works without embeddings.
 
 The installer modifies the installed VS Code workbench files. VS Code updates can replace those files. After installing this version once, the companion extension automatically restores supported patches at startup, after extension changes, and every hour. VS Code may also show an installation-integrity warning after its application files are modified.
 

@@ -17,6 +17,7 @@ import urllib.request
 from urllib.parse import urlsplit
 
 from sweetiebot_diagnostics import log_event
+import coreml_backend
 
 REAL_GIT = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
 GIT_GLOBAL_ARGS: list[str] = []
@@ -241,6 +242,13 @@ def should_add_default_branch_description() -> bool:
 
 
 def configured_models() -> tuple[str, str]:
+    if coreml_backend_enabled():
+        return (
+            os.environ.get("SWEETIEBOT_ANE_MODEL") or git_config_string(
+                "scm-toolkit.ai-coreml-model", "qwen3.5-2b"),
+            os.environ.get("SWEETIEBOT_ANE_LOW_MEMORY_MODEL") or git_config_string(
+                "scm-toolkit.ai-coreml-low-memory-model", "qwen3.5-0.8b"),
+        )
     primary = os.environ.get("SCM_TOOLKIT_AI_MODEL") or git_config_string(
         "scm-toolkit.ai-commit-model", DEFAULT_MODEL
     )
@@ -1317,12 +1325,37 @@ def emoji_for_change(title: str, files: list[str]) -> str:
     return fallback_emoji(files)
 
 
+def coreml_backend_enabled() -> bool:
+    backend = os.environ.get("SWEETIEBOT_AI_BACKEND") or git_config_string(
+        "scm-toolkit.ai-backend", "ollama")
+    # Unknown legacy settings retain the existing Ollama behavior. In
+    # particular, querying this optional preference must not break callers
+    # that override only unrelated Git configuration values.
+    return backend == "coreml"
+
+
+def coreml_command() -> str:
+    return os.environ.get("SWEETIEBOT_ANE_COMMAND") or git_config_string(
+        "scm-toolkit.ai-coreml-command",
+        "~/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane")
+
+
 def ollama_json(path: str, payload: dict | None = None, timeout: int | None = None) -> dict:
     remaining = remaining_generation_time()
     if timeout is None:
         timeout = generation_request_seconds() if remaining is not None else 300
     if remaining is not None:
         timeout = min(timeout, generation_request_seconds(), remaining)
+    if coreml_backend_enabled():
+        if path == "/api/tags":
+            primary, low_memory = configured_models()
+            names = (primary, low_memory) if coreml_backend.available(coreml_command()) else ()
+            return {"models": [{"name": name} for name in dict.fromkeys(names)]}
+        if path == "/api/show":
+            return {"thinking": {}}
+        if path == "/api/generate" and isinstance(payload, dict):
+            return coreml_backend.generate(coreml_command(), payload, timeout)
+        raise ValueError("Core ML commit backend does not support " + path)
     base = os.environ.get("SCM_TOOLKIT_AI_OLLAMA_URL") or git_config_string(
         "scm-toolkit.ai-ollama-url", OLLAMA_BASE
     )
@@ -1706,6 +1739,8 @@ def generate_message(
             reason="model_not_installed", outcome="blocked" if require_model else "fallback",
         )
         if require_model:
+            if coreml_backend_enabled():
+                raise RuntimeError("Install the Core ML bridge and prepare its configured model before generating a commit message.")
             raise RuntimeError("Install the configured Ollama commit model before generating a commit message.")
         log_event(
             "commit_title", "fallback_used",
@@ -1845,7 +1880,7 @@ def generate_message(
                 if priority_emoji:
                     payload["prompt"] += f"\nThe subject MUST start with {priority_emoji} followed by one space."
         if require_model:
-            raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {attempts} attempts. Try again or enter an explicit message.")
+            raise RuntimeError(f"Local AI did not produce a valid, content-based commit summary after {attempts} attempts. Try again or enter an explicit message.")
         log_event("commit_title", "fallback_used", model=model, reason="invalid_message", outcome="fallback")
         print("Sweetiebot: invalid model output; using factual staged-change summary", file=sys.stderr)
         return fallback_message(files, include_description, file_context)
@@ -1877,7 +1912,7 @@ def generate_message(
                 detail = "Could not connect to the local Ollama service. Check that Ollama is running, then try again."
             else:
                 detail = "Ollama returned an invalid response. Try again."
-            raise RuntimeError(f"Local Ollama could not generate a commit message. {detail}") from exc
+            raise RuntimeError(f"Local AI could not generate a commit message. {detail}") from exc
         log_event("commit_title", "fallback_used", model=model, reason="request_failed", outcome="fallback")
         print(
             f"Sweetiebot: local model unavailable ({exc}); using fallback title",
@@ -1897,7 +1932,7 @@ def generate_message(
         )
 
     if require_model:
-        raise RuntimeError("Local Ollama returned an empty commit message.")
+        raise RuntimeError("Local AI returned an empty commit message.")
     return fallback_message(files, include_description, file_context)
 
 
