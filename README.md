@@ -400,6 +400,30 @@ python3 scripts/install.py
 
 Then reload Visual Studio Code. The installer resolves the Git-config values and embeds that configuration into the installed patch.
 
+### Native stacked pony branches
+
+The **git-branch-create** button still creates a random pony branch from the
+default branch. Beside it, the accent-colored **layers** button creates a
+stacked branch from the currently selected topic branch using the same pony
+name pool. It is disabled on `main` and while other branch operations run.
+
+Install [GitHub CLI](https://cli.github.com/) and GitHub's
+[`gh-stack` extension](https://github.com/github/gh-stack):
+
+```sh
+gh extension install github/gh-stack
+```
+
+The parent checkout must be clean. Sweetiebot checks its exact HEAD, adopts
+an untracked parent into a local native stack, adds the child with
+`gh stack add`, restores the parent's checkout, then opens the child through
+the managed worktree flow. Branch creation **does not submit a pull request**
+or force-push. The New PR button continues through Kafania, with the child
+targeting its recorded parent rather than `main`. Once both PRs exist, the
+Kafania publication callback attempts to link them into a native remote stack
+without allowing `gh stack link` to create another PR. If the parent PR does
+not yet exist, publish it first and link the stack later.
+
 ### Branch-name packs
 
 Random branch names are data-driven. Built-in packs live in `scripts/branch_name_packs.json`, and every pack uses the same small schema: The G4 roster has separate packs for mares, stallions, fillies, colts, and major non-pony creatures. An opt-in **G4 pets** pack holds only named pets and animal companions, distinct from the **G4 creatures** pack. A dedicated **Rainbow Roadtrip** pack groups 11 ponies from the 2019 special, moved out of the general G4 mares, stallions, fillies, and colts packs. The dedicated **G4 caricatures** pack includes the six Equestrian founders, six Power Ponies, Humdrum, Smash Fortune, Grogar, and the seven historical Wonderbolts names featured in *Testing Testing 1, 2, 3*; Wind Rider and Coiffed Waiter Pony remain in G4 stallions, Forward-Thinking Friendship Student is in G4 mares, and Tirek and Scorpan are in G4 creatures. The two finale-era pony labels come from the Gameloft game rather than dialogue in the show.

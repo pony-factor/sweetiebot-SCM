@@ -1547,6 +1547,15 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     ponyBranchTooltip.setAttribute('aria-hidden', 'true');
     ponyBranchButton.append(ponyBranchTooltip);
 
+    const stackedBranchButton = doc.createElement('button');
+    stackedBranchButton.type = 'button';
+    stackedBranchButton.className = 'scm-toolkit-stacked-branch codicon codicon-layers';
+    stackedBranchButton.hidden = true;
+    const stackedBranchTooltip = doc.createElement('span');
+    stackedBranchTooltip.className = 'scm-toolkit-tooltip';
+    stackedBranchTooltip.setAttribute('aria-hidden', 'true');
+    stackedBranchButton.append(stackedBranchTooltip);
+
     const settingsButton = doc.createElement('button');
     settingsButton.type = 'button';
     settingsButton.className = 'scm-toolkit-settings';
@@ -1574,7 +1583,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         secondDivider,
         homeButton,
         pullRequestButton,
-        ponyBranchButton
+        ponyBranchButton,
+        stackedBranchButton
     );
 
     const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
@@ -2011,6 +2021,40 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         ponyBranchTooltip.textContent = description;
     };
 
+    const refreshStackedBranch = () => {
+        stackedBranchButton.hidden = !settings.ponyBranch;
+        stackedBranchButton.disabled = pending || deletingBranch || creatingPullRequest
+            || creatingPonyBranch || !currentRepositoryUri || !currentDefaultBranch
+            || !currentBranch || currentBranch === currentDefaultBranch;
+        const description = currentBranch && currentBranch !== currentDefaultBranch
+            ? `Create a stacked pony branch from ${currentBranch} (requires gh stack)`
+            : 'Select a topic branch to create a stacked GitHub PR';
+        stackedBranchButton.setAttribute('aria-label', description);
+        stackedBranchTooltip.textContent = description;
+    };
+
+    const createStackedBranch = async event => {
+        event.stopPropagation();
+        const repository = currentRepositoryUri;
+        const parent = currentBranch;
+        if (!settings.ponyBranch || !repository || !parent || parent === currentDefaultBranch
+            || pending || deletingBranch || creatingPullRequest || creatingPonyBranch) return;
+        creatingPonyBranch = true;
+        pushCheckbox.disabled = true;
+        refreshBranchControls();
+        try {
+            await commands.executeCommand('sweetiebot.createStackedBranch', repository, {
+                parent, remote: settings.remote, names: scmToolkitBranchNamePool()
+            });
+        } catch (error) {
+            notifications.error(error);
+        } finally {
+            creatingPonyBranch = false;
+            pushCheckbox.disabled = updatingPush;
+            refreshBranchControls();
+        }
+    };
+
     const createPonyBranch = async event => {
         event.stopPropagation();
 
@@ -2159,6 +2203,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
         refreshPullRequest();
         refreshPonyBranch();
+        refreshStackedBranch();
     };
 
     const returnHome = async event => {
@@ -2328,6 +2373,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     codexButton.addEventListener('click', commitWithCodex);
     pullRequestButton.addEventListener('click', createPullRequest);
     ponyBranchButton.addEventListener('click', createPonyBranch);
+    stackedBranchButton.addEventListener('click', createStackedBranch);
     settingsButton.addEventListener('click', openSettings);
     widget.disposables.add({
         dispose() {
@@ -2352,6 +2398,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             codexButton.removeEventListener('click', commitWithCodex);
             pullRequestButton.removeEventListener('click', createPullRequest);
             ponyBranchButton.removeEventListener('click', createPonyBranch);
+            stackedBranchButton.removeEventListener('click', createStackedBranch);
             settingsButton.removeEventListener('click', openSettings);
             homeButton.remove();
             branchButton.remove();
@@ -2367,6 +2414,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             secondDivider.remove();
             pullRequestButton.remove();
             ponyBranchButton.remove();
+            stackedBranchButton.remove();
             settingsButton.remove();
         }
     });
@@ -2415,9 +2463,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const ponyBranchWidth = ponyBranchButton.hidden
                 ? 0
                 : ponyBranchButton.getBoundingClientRect().width;
+            const stackedBranchWidth = stackedBranchButton.hidden
+                ? 0
+                : stackedBranchButton.getBoundingClientRect().width;
             return homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
                 + autocompleteWidth + spellcheckWidth + postSpellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
-                + pullRequestWidth + ponyBranchWidth;
+                + pullRequestWidth + ponyBranchWidth + stackedBranchWidth;
         },
 
         bind(input) {
@@ -2550,6 +2601,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             if (settings.ponyBranch) {
                 ponyBranchButton.hidden = false;
                 refreshPonyBranch();
+                stackedBranchButton.hidden = false;
+                refreshStackedBranch();
             }
 
             syncButton.classList.toggle(
@@ -2586,8 +2639,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             );
             pullRequestButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !ponyBranchButton.hidden
+                !ponyBranchButton.hidden || !stackedBranchButton.hidden
             );
+            ponyBranchButton.classList.toggle('scm-toolkit-has-following-control', !stackedBranchButton.hidden);
 
             scmToolkitCustomizeMessagePlaceholder(
                 widget,
