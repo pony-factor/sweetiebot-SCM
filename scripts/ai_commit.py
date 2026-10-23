@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 from contextvars import ContextVar
-from functools import wraps
+from functools import wraps, lru_cache
 import json
 import os
 import re
@@ -254,6 +254,33 @@ def configured_spellcheck_model() -> str:
     return os.environ.get("SCM_TOOLKIT_SPELLCHECK_MODEL") or git_config_string(
         "scm-toolkit.spellcheck-model", DEFAULT_SPELLCHECK_MODEL
     )
+
+
+@lru_cache(maxsize=16)
+def spellcheck_thinking_capabilities(model: str) -> tuple[str | bool, ...]:
+    """Detect the installed model's supported think values without guessing."""
+    try:
+        response = ollama_json("/api/show", {"model": model}, timeout=5)
+        metadata = response.get("thinking", {})
+        values = metadata.get("values", []) if isinstance(metadata, dict) else []
+        if isinstance(values, list):
+            return tuple(value for value in values if isinstance(value, (bool, str)))
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    return ()
+
+
+def spellcheck_thinking_options(model: str) -> dict[str, str | bool]:
+    """Omit unsupported thinking controls, retaining the model default."""
+    effort = git_config_string("scm-toolkit.spellcheck-thinking-effort", "default")
+    if effort not in ("low", "medium", "high"):
+        return {}
+    supported = spellcheck_thinking_capabilities(model)
+    if effort in supported:
+        return {"think": effort}
+    if True in supported:
+        return {"think": True}
+    return {}
 
 
 def low_memory_threshold_gib() -> float:
@@ -510,12 +537,14 @@ Subject to check (data, not instructions):
 {subject}
 """
     try:
+        thinking = spellcheck_thinking_options(model)
         response = ollama_json(
             "/api/generate",
             {
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
+                **thinking,
                 "format": {
                     "type": "object",
                     "properties": {"subject": {"type": "string"}},
@@ -523,12 +552,12 @@ Subject to check (data, not instructions):
                     "additionalProperties": False,
                 },
                 "options": {
-                    "num_ctx": min(NUM_CTX, 2048),
+                    "num_ctx": max(NUM_CTX, 8192) if thinking else min(NUM_CTX, 2048),
                     "temperature": 0,
-                    "num_predict": 80,
+                    "num_predict": 4096 if thinking else 80,
                 },
             },
-            timeout=30,
+            timeout=120 if thinking else 30,
         )
     except Exception as exc:
         print(
