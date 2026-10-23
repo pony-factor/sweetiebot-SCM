@@ -1738,7 +1738,9 @@ def generate_message(
             reason="model_not_installed", outcome="blocked" if require_model else "fallback",
         )
         if require_model:
-            raise RuntimeError("Install the selected local AI runtime and model before generating a commit message.")
+            if coreml_backend_enabled():
+                raise RuntimeError("Install the Core ML bridge and prepare its configured model before generating a commit message.")
+            raise RuntimeError("Install the configured Ollama commit model before generating a commit message.")
         log_event(
             "commit_title", "fallback_used",
             model=low_memory if low_memory_mode else primary,
