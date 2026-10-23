@@ -513,8 +513,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
         self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.spellcheck-changes-emoji")
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
-        self.assertTrue(configurator.parse_submission({**values, key: ["true"]})[key])
-        self.assertFalse(configurator.parse_submission(values)[key])
+        self.assertTrue(configurator.parse_submission(values)[key])
+        unchecked = dict(values)
+        unchecked.pop(key)
+        self.assertFalse(configurator.parse_submission(unchecked)[key])
         values[key] = ["true"]
         rendered = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
         self.assertIn('name="spellcheckChangesEmoji" value="true" checked', rendered)
