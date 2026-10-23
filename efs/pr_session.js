@@ -213,8 +213,7 @@ async function resumePRSession(vscode, context) {
         execute: runLocal,
         onState: async state => {
           await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 });
-          const controller = await resumeMergeDashboard(vscode, directory, context);
-          controller?.recordBatchState?.(state);
+          mergeDashboardController?.recordBatchState?.(state);
         },
         onResult: async result => {
           const controller = await resumeMergeDashboard(vscode, directory, context);
