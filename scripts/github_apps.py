@@ -38,6 +38,14 @@ def store_key(role, key):
     if len(data) > 32768 or not re.fullmatch(
             r"-----BEGIN (RSA )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]+-----END (RSA )?PRIVATE KEY-----\s*", key):
         raise ValueError("Choose an unencrypted GitHub App PEM private key.")
+    validation = subprocess.run(["node", "-e", """
+try {
+  const key = require('node:crypto').createPrivateKey(require('node:fs').readFileSync(0));
+  if (key.asymmetricKeyType !== 'rsa' || key.asymmetricKeyDetails.modulusLength < 2048) process.exit(1);
+} catch { process.exit(1); }
+"""], input=data, capture_output=True, timeout=10)
+    if validation.returncode:
+        raise ValueError("Choose a valid RSA GitHub App private key (2048 bits or larger).")
     security = ctypes.CDLL("/System/Library/Frameworks/Security.framework/Security")
     core = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
     pointer = ctypes.c_void_p

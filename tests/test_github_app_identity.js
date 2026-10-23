@@ -65,6 +65,19 @@ async function run() {
     const header = fake.requests[0].init.headers.Authorization;
     assert.equal(header.split('.').length, 3, 'App JWT is signed');
   }
+  const keychainEnv = { ...env, SWEETIEBOT_KEFANIA_APP_PRIVATE_KEY: undefined,
+    SWEETIEBOT_KEFANIA_APP_KEYCHAIN: 'true' };
+  let retrievedRole;
+  const keychainResult = await getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM', {
+    env: keychainEnv, now, fetchImpl: mockGitHub('kefania').fetchImpl,
+    keychainKey: async role => { retrievedRole = role; return privateKey; },
+    readKey: () => { throw new Error('Keychain mode must not read a key file'); }
+  });
+  assert.equal(retrievedRole, 'kefania');
+  assert.equal(keychainResult.login, 'kefania-pony[bot]');
+  await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM', {
+    env: keychainEnv, now, keychainKey: async () => { throw new Error('Keychain locked'); }
+  }), /Keychain locked/);
   await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM',
     { env, now, fetchImpl: mockGitHub('kefania', {wrongSlug: true}).fetchImpl }), /different GitHub App/);
   await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM',

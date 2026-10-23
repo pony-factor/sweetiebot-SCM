@@ -838,7 +838,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("function activateSettingsCategory", page)
         tab_markup = page.split('<button class="settings-tab"')[1:]
         panel_markup = page.split('<section class="settings-panel"')[1:]
-        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 1  # Diagnostics is a read-only tab, not a persisted setting.
+        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 2  # Diagnostics and GitHub Apps manage their own state.
         self.assertEqual(len(tab_markup), expected_sections)
         self.assertEqual(len(panel_markup), expected_sections)
         self.assertEqual(

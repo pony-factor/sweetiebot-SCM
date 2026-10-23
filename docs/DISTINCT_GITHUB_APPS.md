@@ -21,7 +21,33 @@ Grant only the repositories and privileges needed. Each app needs its **App ID**
 covering the repository. Keep keys out of source control, logs, issue bodies
 and public review comments.
 
-Set the following in the **Sweetiebot extension host's environment**, then
+## Configure in Magic Settings
+
+Open **Magic Settings → GitHub Apps**. Each App has an **Install App** link;
+select your organization and include the intended repositories. Use **Manage
+organization installations** to review access later.
+
+Enter each App's numeric **App ID** and actual **App slug**, choose its downloaded
+PEM, and click **Save App**. On macOS the private key goes directly into Keychain;
+only public configuration is saved in global Git config. The page never reads a
+saved key back. Choose another PEM and save to replace a key. Keychain may ask
+permission when a local runner first accesses it.
+
+Enter an `owner/repository` and click **Check connection** for each App. This
+verifies the App identity, installation and requested repository permissions
+without creating PRs, comments or merges. It temporarily obtains an installation
+token without returning it to the page. After both checks succeed, choose
+**Separate Kefania and Lindsey Apps** and click **Apply mode**. New local actions
+read this configuration immediately. Choose **Legacy** to roll back.
+
+Credential imports use a separate save action and never enter normal settings
+autosave. Environment variables take precedence over saved configuration.
+The Keychain import UI currently requires macOS; other platforms can use the
+environment configuration below. Hosted services still require their own setup.
+
+## Environment configuration
+
+Alternatively, set the following in the **Sweetiebot extension host's environment**, then
 restart VS Code. A private key can be provided as PEM text or the path to a
 secret file (one form per app); keep key files private (e.g. mode 0600).
 Use the real app slugs; the names below are examples:
@@ -84,6 +110,6 @@ merge policy.
   `SWEETIEBOT_BOT_IDENTITY_MODE=legacy` to roll back.
 
 References:
-- https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation
+- [GitHub installation authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)
 - https://github.com/pony-factor/kefania/blob/main/src/github.js
 - https://github.com/pony-factor/lindsey-sync/blob/main/README.md
