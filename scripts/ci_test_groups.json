@@ -23,6 +23,7 @@
         "test_local_codex_commit.py",
         "test_ollama_concurrency.py",
         "test_pony_git_publish.js",
+        "test_pony_publish_retry.js",
         "test_post_commit_spellcheck.py",
         "test_post_commit_spellcheck_notice.js",
         "test_post_commit_spellcheck_toggle.js",
@@ -158,7 +159,8 @@
       "tests": [
         "test_kefania_chat_window.js",
         "test_kefania_close_position.js",
-        "test_kefania_paths.js"
+        "test_kefania_paths.js",
+        "test_kefania_runner.js"
       ],
       "syntax": []
     },
