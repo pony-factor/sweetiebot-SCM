@@ -120,3 +120,112 @@ test('explicit VS Code command opens only the native browser and returns a revie
   assert.equal(calls[2][0], 'show');
   subscriptions.forEach(x => x.dispose());
 });
+
+
+test('the scoped native preload exchanges a real authenticated job without Chrome extensions', async () => {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  const path = require('node:path');
+  const script = fs.readFileSync(path.join(__dirname, '../assets/browser/spellcheck_bridge.js'), 'utf8');
+  const session = await startNativeSpellcheckBridge({title: '', body: 'Fxi teh wrds.'}, {timeoutMs: 10000});
+  const location = new URL(session.url);
+  const revisions = [], sent = [], messages = [], observers = [];
+  let mentioned = false;
+  const mention = {
+    getAttribute(key) {return key === 'app-mention-path' ? 'app://spellcheck-only' :
+      key === 'app-mention-display-name' ? 'Spellcheck Only' : null;},
+    textContent: 'Spellcheck Only'
+  };
+  const composer = {
+    isContentEditable: true, innerText: '', textContent: '',
+    focus() {},
+    querySelectorAll() {return mentioned ? [mention] : [];},
+    closest() {return {querySelector() {return send;}};}
+  };
+  const option = {
+    isConnected: true, textContent: 'Spellcheck Only',
+    getClientRects() {return [1];},
+    getAttribute() {return null;},
+    click() {mentioned = true;}
+  };
+  const surface = {
+    isConnected: true,
+    getClientRects() {return [1];},
+    closest() {return null;},
+    querySelectorAll() {return [option];}
+  };
+  const send = {
+    disabled: false,
+    isConnected: true,
+    getClientRects() {return [1];},
+    getAttribute(name) {return name === 'aria-disabled' ? 'false' : null;},
+    click() {
+      sent.push(composer.innerText);
+      messages.push({innerText: '{"title":"","body":"Fix the words."}'});
+      for (const observer of observers) observer.check();
+    }
+  };
+  const selection = {removeAllRanges() {}, addRange() {}};
+  const document = {
+    documentElement: {},
+    querySelector(selector) {
+      return selector.includes('#prompt-textarea') ? composer : null;
+    },
+    querySelectorAll(selector) {
+      if (selector.includes('data-mention-list-scroll-area')) return [surface];
+      if (selector.includes('data-message-author-role')) return messages;
+      return [];
+    },
+    createRange() {return {selectNodeContents() {}, collapse() {}};},
+    execCommand(action, _ui, value) {
+      if (action !== 'insertText') return false;
+      composer.innerText += value;
+      return true;
+    }
+  };
+  const window = {location, getSelection() {return selection;}};
+  window.top = window;
+  const history = {replaceState(_state, _title, url) {
+    revisions.push(url);
+    location.href = url;
+  }, state: null};
+  class Observer {
+    constructor(check) {this.check = check;}
+    observe() {observers.push(this);}
+    disconnect() {const index = observers.indexOf(this); if (index !== -1) observers.splice(index, 1);}
+  }
+  const context = {
+    window, document, history, MutationObserver: Observer,
+    HTMLTextAreaElement: class {}, HTMLInputElement: class {},
+    Buffer, require, URL, URLSearchParams, setTimeout, clearTimeout
+  };
+  vm.runInNewContext(script, context, {filename: 'spellcheck_bridge.js'});
+  const result = await session.completed;
+  assert.deepEqual(result, {title: '', body: 'Fix the words.'});
+  assert.equal(revisions.length, 1);
+  assert.equal(location.hash, '', 'transient bearer credentials must be removed from the URL');
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Spellcheck this text/);
+  assert.match(sent[0], /Fxi teh wrds\./);
+  assert.doesNotMatch(sent[0], /Bearer|127\.0\.0\.1|sweetiebot_spellcheck/);
+});
+
+test('the preload refuses unrelated sites and malformed launch credentials', async () => {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  const path = require('node:path');
+  const script = fs.readFileSync(path.join(__dirname, '../assets/browser/spellcheck_bridge.js'), 'utf8');
+  for (const href of [
+    'https://evil.example/#sweetiebot_spellcheck=1&port=1&ticket=' + 'a'.repeat(64),
+    'https://chatgpt.com/#sweetiebot_spellcheck=1&port=1&ticket=bad',
+    'https://chatgpt.com/c/private#sweetiebot_spellcheck=1&port=1&ticket=' + 'a'.repeat(64),
+    'https://chatgpt.com/'
+  ]) {
+    const window = {location: {href}}; window.top = window;
+    vm.runInNewContext(script, {
+      window, URL, URLSearchParams,
+      require() {throw new Error('Unexpected native credential or network access');},
+      history: {replaceState() {throw new Error('Unexpected URL mutation');}}
+    }, {filename: 'spellcheck_bridge.js'});
+  }
+});
