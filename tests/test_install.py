@@ -143,6 +143,7 @@ class TransformTests(unittest.TestCase):
                     assert.equal(key, 'sweetiebot.pushPending'); return pending;
                 }},
                 productService: {nameLong: 'Code'},
+                configurationService: {getValue: () => ''},
                 getFullWindowTitle() ''' + method + '''
             };
             assert.equal(title.getFullWindowTitle(), 'repository (branch)');

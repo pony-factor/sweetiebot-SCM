@@ -230,6 +230,8 @@ SETTINGS = (
     Setting("normalizeStagedWhitespace", "scm-toolkit.normalize-staged-whitespace", "Normalize line endings and whitespace", "Remove trailing spaces on added lines and ensure exactly one final newline in eligible staged text files, preserving LF or CRLF. Applies to ordinary commits and Commit with Codex, including typed messages. Disable to preserve staged file formatting.", "Source control"),
     Setting("compactWindowButton", "scm-toolkit.compact-window-button", "Show compact-window button", "Show the title-bar button that switches between compact and restored window sizes.", "Window"),
     Setting("newWorkspaceWindowButton", "scm-toolkit.new-workspace-window-button", "Show new-workspace-window button", "Show the title-bar button that opens the same repository folders in a new workspace window.", "Window"),
+    Setting("windowHeading", "scm-toolkit.window-heading", "Title-bar heading", "Leave blank to follow VS Code's window.title setting. Use VS Code title variables, e.g. ${rootName} (${activeRepositoryBranchName}). This changes the visible heading independently of the window name.", "Window", "optional_text"),
+    Setting("windowName", "scm-toolkit.window-name", "Window name", "Name shown in macOS and window switchers. Leave blank to follow VS Code's window.title setting. Use the same title variables as the heading; Pushing is added automatically while publication is pending.", "Window", "optional_text"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
     Setting("browserGlobeNewTab", "scm-toolkit.browser-globe-new-tab", "Globe opens a new browser tab", "Click the title-bar globe to open a new Integrated Browser tab directly. Turn off to show the browser URL or tab picker.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
@@ -695,7 +697,8 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.kind == "color":
         required = ' placeholder="#43AF49"'
     elif setting.kind == "optional_text":
-        required = ""
+        required = (' placeholder="VS Code default"'
+                    if setting.name in {"windowHeading", "windowName"} else "")
     elif setting.kind == "chatgpt_project_url":
         required = ' placeholder="https://chatgpt.com/g/g-p-.../project"'
     elif setting.kind == "browser_url":

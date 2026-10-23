@@ -429,7 +429,8 @@ def window_title_push_edits(js):
     original = matches[0].group(0)
     replacement = original.replace(
         'this.getWindowTitle()||this.productService.nameLong;',
-        '(this.getWindowTitle()||this.productService.nameLong)'
+        '(this.getWindowTitle(this.configurationService.getValue("scmToolkit.windowName")'
+        '||this.configurationService.getValue("window.title"))||this.productService.nameLong)'
         '+(this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"");',
     )
     return [
@@ -437,6 +438,45 @@ def window_title_push_edits(js):
          'this.registerVariables([{name:"sweetiebotPushPending",contextKey:"sweetiebot.pushPending"}]),'
          'this.registerListeners()'),
         (original, replacement),
+    ]
+
+
+def window_title_naming_edits(js):
+    if 'getWindowTitle(){' not in js:
+        return []
+    start = js.index('getWindowTitle(){')
+    end = js.find('isCustomTitleFormat(){', start)
+    if end < 0 or js.count('getWindowTitle(){') != 1:
+        raise ValueError("Unsupported VS Code build: window naming API does not match.")
+    original = js[start:end]
+    template = re.search(r'let ([\w$]+)=this.configurationService.getValue\("window.title"\);', original)
+    render = re.search(r'return ([\s\S]*)\}$', original)
+    if not template or not render:
+        raise ValueError("Unsupported VS Code build: window naming template does not match.")
+    replacement = original[:render.start()] + (
+        f'return ({render.group(1)})+(scmToolkitTitle===undefined&&'
+        'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"")}')
+    replacement = replacement.replace('getWindowTitle(){', 'getWindowTitle(scmToolkitTitle){', 1)
+    replacement = replacement.replace(template.group(0),
+        f'let {template.group(1)}=scmToolkitTitle??('
+        'this.configurationService.getValue("scmToolkit.windowHeading")'
+        '||this.configurationService.getValue("window.title"));', 1)
+    replacement = replacement.replace('!this.titleIncludesEditorState&&',
+        f'!{template.group(1)}.includes("${{activeEditorState}}")&&', 1)
+    config = re.search(r'onConfigurationChanged\(([\w$]+)\)\{let ([\w$]+)=\1.affectsConfiguration\("window.title"\)', js)
+    variables = re.search(r'checkTitleVariables\(\)\{let ([\w$]+)=this.configurationService.getValue\("window.title"\)', js)
+    if not config or not variables:
+        raise ValueError("Unsupported VS Code build: window naming listeners do not match.")
+    focused = f'this.titleIncludesFocusedView={variables.group(1)}.includes("${{focusedView}}")'
+    if js.count(focused) != 1:
+        raise ValueError("Unsupported VS Code build: window naming focus listener does not match.")
+    return [
+        (original, replacement),
+        ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("scmToolkit.windowHeading")||this.contextKeyService.getContextKeyValue("sweetiebot.pushPending"))return!0;'),
+        (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("scmToolkit.windowHeading")||{config.group(1)}.affectsConfiguration("scmToolkit.windowName")'),
+        (variables.group(0), variables.group(0).replace('this.configurationService.getValue("window.title")',
+            '(this.configurationService.getValue("scmToolkit.windowHeading")||this.configurationService.getValue("window.title"))')),
+        (focused, f'this.titleIncludesFocusedView=({variables.group(1)}+" "+(this.configurationService.getValue("scmToolkit.windowName")||"")).includes("${{focusedView}}")'),
     ]
 
 
@@ -602,6 +642,7 @@ def edits(js=None, settings=None):
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(window_title_status_edits(js))
         changes.extend(window_title_push_edits(js))
+        changes.extend(window_title_naming_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))

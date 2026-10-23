@@ -103,6 +103,8 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
     vscodeSettings: {
       compactWindowButton: scm.get('compactWindowButton', true),
       newWorkspaceWindowButton: scm.get('newWorkspaceWindowButton', true),
+      windowHeading: scm.get('windowHeading', ''),
+      windowName: scm.get('windowName', ''),
       openPanelOnStartup,
       automaticAppRepair: scm.get('automaticAppRepair', true),
       messagePlaceholder: scm.get('messagePlaceholder', 'Message'),

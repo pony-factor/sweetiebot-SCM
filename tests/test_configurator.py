@@ -34,6 +34,32 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
+        values = form_values()
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(install.DEFAULT_SETTINGS[name], '')
+        values.update(windowHeading=['${rootName} (${activeRepositoryBranchName})'],
+                      windowName=['${activeEditorShort}${separator}${appName}'])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(current[name], values[name][0])
+            self.assertEqual(payload['vscodeSettings'][name], values[name][0])
+        page = configurator.render_form(current, [], 'Ready', 'test-token', 'Save')
+        for name in ('windowHeading', 'windowName'):
+            self.assertIn(f'name="{name}"', page)
+        self.assertIn('placeholder="VS Code default"', page)
+        self.assertIn("window.title", page)
+        values.update(windowHeading=[''], windowName=[''])
+        restored = configurator.parse_submission(values)
+        self.assertEqual(restored['windowHeading'], '')
+        self.assertEqual(restored['windowName'], '')
+        values['windowName'] = ['one\ntwo']
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_lindsey_has_its_own_dashboard_settings_page(self):
         names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent"}
         controls = [setting for setting in configurator.SETTINGS if setting.name in names]
