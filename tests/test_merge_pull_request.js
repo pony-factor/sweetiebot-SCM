@@ -39,21 +39,131 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   }
   const input = {repository:'owner/repo',head:'pony',base:'main',
     result:{number:12,url:'https://github.com/owner/repo/pull/12'}};
-  const pr = {html_url:input.result.url,state:'open',draft:false,merged_at:null,
+  const pr = {html_url:input.result.url,title:'🖌️ Improve settings',state:'open',draft:false,merged_at:null,
     user:{login:'JFWooten4',type:'User'},
     head:{ref:'pony',sha:'a'.repeat(40),repo:{full_name:'owner/repo'}},
-    base:{ref:'main',repo:{full_name:'owner/repo'}}};
+    base:{ref:'main',sha:'c'.repeat(40),repo:{full_name:'owner/repo'}}};
   const calls = [];
   const api = async (endpoint,options) => {
     calls.push([endpoint,options]);
-    if(!options)return pr;
+    if(!options) {
+      if(endpoint==='repos/owner/repo/branches/main') return {commit:{sha:'d'.repeat(40)}};
+      if(endpoint==='repos/owner/repo/git/commits/'+'b'.repeat(40))
+        return {message:'🖌️ Improve settings (#12)\n\nVerified subject'};
+      if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
+        {author:{login:'JFWooten4',type:'User'},commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+          message:'🖌️ Improve settings\n\nCo-authored-by: Codex Web <noreply@openai.com>'}},
+        {author:{login:'JFWooten4',type:'User'},commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
+          message:'🔄 Sync brach to main\n\nKeep settings in sync.'}}
+      ];
+      return pr;
+    }
     assert.equal(options.method,'PUT');
     assert.equal(options.body.sha,pr.head.sha);
     assert.equal(options.body.merge_method,'squash');
+    assert.equal(options.body.commit_title,'🖌️ Improve settings (#12)');
+    assert(options.body.commit_message.includes('- 🖌️ Improve settings'));
+    assert(options.body.commit_message.includes('\n\n__________\n\n'));
+    assert(!options.body.commit_message.includes('---------'));
+    assert(!options.body.commit_message.includes('Sync brach to main'));
     return {merged:true,sha:'b'.repeat(40)};
   };
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,7, 'PR and live base snapshots, history, merge, and landed commit');
+  // Bot-opened PRs use the local commit preparation path with an exact snapshot.
+  const botPR = {...pr, user:{login:'codex-pony[bot]',type:'Bot'}};
+  const localCalls = [];
+  const localRequest = async (endpoint, options) => {
+    localCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/pulls/12' && !options) return botPR;
+    return api(endpoint, options);
+  };
+  let prepared = 0;
+  const humanMerge = async (repository, number, options) => {
+    prepared++;
+    assert.equal(repository, input.repository);
+    assert.equal(number, 12);
+    assert.deepEqual(options.expected, {headSha:pr.head.sha,baseSha:'d'.repeat(40),
+      head:'pony',base:'main',title:pr.title});
+    assert.equal((await options.api('repos/owner/repo/pulls/12')).user.type, 'Bot');
+    await options.api('repos/owner/repo/pulls/12/merge', 'PUT',
+      ['-f','sha='+'e'.repeat(40),'-f','merge_method=rebase']);
+    return {merged:true,sha:'b'.repeat(40),author:{name:'John Wooten'}};
+  };
+  // Verify the helper's write is forwarded using the button's authenticated API.
+  const localTransport = async (endpoint, options) => {
+    if (options) {
+      assert.deepEqual(options, {method:'PUT',body:{sha:'e'.repeat(40),merge_method:'rebase'}});
+      return {merged:true,sha:'b'.repeat(40)};
+    }
+    return localRequest(endpoint);
+  };
+  assert((await squashMergePullRequest(input, localTransport, {humanMerge})).merged);
+  assert.equal(prepared, 1);
+  for (const status of ['waiting','checks_failed','needs_resolution']) {
+    await assert.rejects(squashMergePullRequest(input, localRequest, {
+      humanMerge:async()=>({merged:false,status,reason:'Specific '+status})
+    }), new RegExp('Specific '+status));
+  }
+  await assert.rejects(squashMergePullRequest(input, localRequest, {
+    humanMerge:async()=>({merged:true,sha:'invalid'})
+  }), /did not confirm/);
+  // A human opener differing from the original author uses the same local path.
+  let differentAuthorPrepared = false;
+  assert((await squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/pulls/12')
+      return {...pr,user:{login:'another-user',type:'User'}};
+    return api(endpoint, options);
+  }, {humanMerge:async()=>{
+    differentAuthorPrepared = true;
+    return {merged:true,sha:'b'.repeat(40)};
+  }})).merged);
+  assert(differentAuthorPrepared);
+  // PR metadata may catch up while the actual branch remains unchanged.
+  let metadataReads = 0;
+  assert((await squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/pulls/12' && ++metadataReads === 2)
+      return {...pr, base:{...pr.base, sha:'d'.repeat(40)}};
+    return api(endpoint, options);
+  })).merged);
+  for (const invalid of [false, true]) {
+    let baseReads = 0;
+    const attempts = [];
+    await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+      attempts.push([endpoint, options]);
+      if (endpoint === 'repos/owner/repo/branches/main') {
+        return {commit:{sha: invalid ? 'invalid' : (++baseReads === 1 ? 'd' : 'e').repeat(40)}};
+      }
+      return api(endpoint, options);
+    }), invalid ? /Cannot verify/ : /changed before squash merge/);
+    assert(!attempts.some(([, options]) => options?.method === 'PUT'));
+  }
+  const changedTitleCalls = [];
+  let refreshed = 0;
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    changedTitleCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/pulls/12' && ++refreshed === 2)
+      return {...pr, title:'🖌️ Renamed settings'};
+    return api(endpoint, options);
+  }), /changed before squash merge/);
+  assert(!changedTitleCalls.some(([, options]) => options?.method === 'PUT'));
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/git/commits/'+'b'.repeat(40))
+      return {message:'🗣️ Original commit title'};
+    return api(endpoint, options);
+  }), /squash commit title differs/);
+  const blockedCalls = [];
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    blockedCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/branches/main') return api(endpoint, options);
+    if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
+      {author:{login:'codex-pony[bot]',type:'Bot'},
+       commit:{author:{name:'codex-pony[bot]',email:'bot@example.org'},message:'Bot-only change'}}];
+    if(options?.method === 'PUT') throw Error('A native merge must not run without a person');
+    return pr;
+  }), /No verified original human Git author/);
+  assert.equal(blockedCalls.filter(([,options]) => options?.method === 'PUT').length, 0,
+    'A human PR opener without a linked human original author is not mergeable');
   for(const [update,message] of [
     [{state:'closed'},'no longer open'],
     [{draft:true},'ready for review'],

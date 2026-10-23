@@ -82,7 +82,17 @@
     }
 
     function readText(editor) {
-        if (editor.__scmToolkitComposer) return editor.__scmToolkitComposer.getPersistedText();
+        const composer = editor.__scmToolkitComposer;
+        if (composer) {
+            // ProseMirror's current document updates before Codex persists its
+            // React draft. Reading the persisted text here can return the old
+            // (often empty) prompt even after setPromptText succeeds.
+            const doc = composer.view?.state?.doc;
+            if (doc && typeof doc.textBetween === 'function') {
+                return doc.textBetween(0, doc.content.size, '\n');
+            }
+            return composer.getPersistedText();
+        }
         return 'value' in editor ? editor.value : (editor.innerText ?? editor.textContent ?? '');
     }
 
@@ -93,7 +103,9 @@
             // Update ProseMirror through Codex's own plain-text import path.
             // Browser editing commands can fail or leave React's draft stale.
             composer.setPromptText(text, { format: 'plain' });
-            return Boolean(readText(editor).trim());
+            // Insertion may propagate to the view and persisted state on a
+            // later render. Validate the actual draft before clicking Send.
+            return true;
         }
         if ('value' in editor) {
             const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor), 'value');
@@ -146,14 +158,22 @@
                 message(button, 'Could not insert clipboard text into Codex');
                 return;
             }
-            // The native editor may serialize Markdown differently from the
-            // input. Guard subsequent edits against the text it actually stored.
-            const insertedText = readText(editor);
-
-            // Codex may render the text before React enables its native Send
-            // control. Wait for that state instead of giving up after one tick.
-            // A plain-text draft is intentionally replaced, never restored.
+            // Codex can serialize rich-looking plain text differently from
+            // the clipboard. Accept its resulting draft only if it is new,
+            // or if it equals the intended clipboard text exactly.
             const normalized = text => text.replace(/\r\n/g, '\n').trim();
+            const insertedText = readText(editor);
+            const expectedText = normalized(clipboard);
+            const priorText = normalized(previousText);
+            const serializedText = normalized(insertedText);
+            const matchesInsertion = value => {
+                const actual = normalized(value);
+                return actual === expectedText
+                    || (serializedText !== priorText && actual === serializedText);
+            };
+
+            // Wait for Codex's editor state and enabled native Send/Queue
+            // control. A plain-text draft is replaced, never restored.
             for (let attempt = 0; attempt < 25; attempt++) {
                 await new Promise(resolve => setTimeout(resolve, 80));
                 const current = findSurface();
@@ -161,12 +181,15 @@
                     message(button, 'Composer changed; clipboard text was not submitted');
                     return;
                 }
-                if (normalized(readText(editor)) !== normalized(insertedText)) {
-                    // React can briefly restore a stale controlled draft after
-                    // an input event. Retry replacing it once, without ever
-                    // restoring that draft after the clipboard is submitted.
-                    if (attempt < 2 && readText(editor) === previousText
-                        && !hasRichContext(editor) && setText(editor, clipboard)) continue;
+                if (!matchesInsertion(readText(editor))) {
+                    // React may not have applied the new text yet. Allow it to
+                    // settle and retry insertion once if the old draft remains.
+                    if (normalized(readText(editor)) === priorText) {
+                        if (attempt === 2 && !hasRichContext(editor)) {
+                            setText(editor, clipboard);
+                        }
+                        continue;
+                    }
                     message(button, 'Composer changed; clipboard text was not submitted');
                     return;
                 }

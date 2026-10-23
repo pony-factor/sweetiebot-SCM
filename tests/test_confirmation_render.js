@@ -2,7 +2,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8');
+const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8')
+  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
@@ -10,6 +11,8 @@ class Element {
   get textContent(){return this._text+this.children.map(node=>String(node.textContent??'')).join('');}
   set textContent(value){this._text=String(value);this.children=[];}
   append(...nodes){this.children.push(...nodes);}
+  appendChild(node){this.children.push(node);return node;}
+  get ownerDocument(){return document;}
   replaceChildren(...nodes){this._text='';this.children=nodes;}
   setAttribute(name,value){this[name]=value;}
   addEventListener(name,listener){(this.listeners[name]??=[]).push(listener);}
@@ -27,6 +30,16 @@ const images=getElementById('images');
 const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
 const context=vm.createContext({URL,URLSearchParams,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
 vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
+// The clip follows the fitted image edges rather than the letterboxed element.
+const artwork={clientWidth:1000,clientHeight:600,naturalWidth:400,naturalHeight:600,style:{}};
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 300px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:1000,naturalWidth:600,naturalHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(300px 0px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 0px round 64pt)');
 // Theme colors update in place, and disabling the option removes stale tokens.
 const themeProperties=new Map();
 document.documentElement={
@@ -47,9 +60,12 @@ assert.equal(context.safeLink('javascript:alert(1)'),null);
 assert.equal(context.safeLink('https://user:password@example.com'),null);
 const output=new Element('div');
 context.renderMarkdown(output,'## Profile\n\nA **recognizable** pony with <script>alert(1)</script>.\n\n- [Source](https://example.com/pony)');
-assert.equal(output.children[0].tag,'h3');
-assert.equal(output.children[1].children[1].tag,'strong');
-assert(output.children[1].children.some(node=>node.textContent.includes('<script>')),'Raw HTML remains inert text');
+assert.equal(output.children[0].tag,'h2');
+assert(output.children[1].children.some(node=>node.tag==='strong'));
+assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
+assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
+context.renderMarkdown(output,'Source: <https://example.com/pony>.');
+assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
 const inlineNodes=output.children[0].children;
 assert.deepEqual(inlineNodes.filter(node=>node.tag==='em').map(node=>node.textContent),['Friendship Is Magic','Rock Solid Friendship']);
@@ -125,8 +141,8 @@ assert.equal(getElementById('lightbox-prev').hidden,true);
 assert.equal(getElementById('lightbox-next').hidden,true);
 getElementById('lightbox-image').fire('error');
 assert.equal(getElementById('lightbox-error').hidden,false,'Failed full images offer a source fallback');
-getElementById('lightbox-close').fire('click');
-assert.equal(lightbox.open,false,'Close button dismisses modal');
+lightbox.fire('click',{target:getElementById('lightbox-error')});
+assert.equal(lightbox.open,false,'Clicking outside artwork dismisses the modal');
 assert.equal(focused.focused,true,'Focus returns to thumbnail');
 img.onerror();
 assert.equal(images.children.length,0,'Failed thumbnails disappear entirely, including their attribution-only cards');
@@ -163,8 +179,26 @@ assert.equal(images.children[1].children[1].textContent,'Second');
 assert.equal(getElementById('lightbox-caption').textContent,'Second · 2 of 2','Loading a preceding image preserves the displayed artwork');
 assert.equal(getElementById('lightbox-prev').hidden,false);
 const galleryHeight=lightbox.style.height;
+const galleryWidth=lightbox.style.width;
 getElementById('lightbox-next').fire('click');
 assert.equal(lightbox.style.height,galleryHeight,'The viewer never changes height on previous/next navigation');
+assert.equal(lightbox.style.width,galleryWidth,'The widest fitted image fixes both arrow positions across navigation');
+const envelope=vm.runInContext(`(()=>{
+  const saved=imageSources;
+  try{
+    imageSources=[{width:400,height:1600}];
+    fitLightboxToGallery();
+    const portraitWidth=parseFloat(lightbox.style.width);
+    imageSources.push({width:1600,height:400});
+    fitLightboxToGallery();
+    return {portraitWidth,width:parseFloat(lightbox.style.width),height:parseFloat(lightbox.style.height)};
+  }finally{imageSources=saved;fitLightboxToGallery()}
+})()`,context);
+const arrowGutters=2*(48+12);
+const fittedPortraitWidth=(1920*.95-48-16)/4;
+assert.equal(envelope.portraitWidth,Math.ceil(fittedPortraitWidth+arrowGutters),'Portrait-only galleries collapse to their fitted artwork plus external arrow gutters');
+assert.equal(envelope.width,960*.72,'A wide image sets the common outer boundary within the viewport budget');
+assert.equal(envelope.height,1920*.95,'The tallest fitted image sets a stable common height');
 mockWindow.innerHeight=1100;
 mockWindow.listeners.resize();
 assert(Number.parseInt(lightbox.style.height,10)<=mockWindow.innerHeight*0.95,'Resizing keeps the viewer within the viewport');
@@ -173,8 +207,16 @@ lightbox.fire('keydown',{key:'ArrowRight'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/second.png','Next wraps');
 lightbox.fire('keydown',{key:'ArrowLeft'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/first.png','Previous wraps');
-lightbox.fire('click',{clientX:400,clientY:400});
-assert.equal(lightbox.open,true,'Interior clicks do not dismiss');
+for(const id of ['lightbox-image','lightbox-prev','lightbox-next']){
+  lightbox.fire('click',{target:getElementById(id)});
+  assert.equal(lightbox.open,true,'Artwork and arrow clicks do not dismiss');
+}
+lightbox.fire('click',{target:new Element('div'),clientX:400,clientY:400});
+assert.equal(lightbox.open,false,'Empty space inside the viewer dismisses');
+trigger.fire('click');
+lightbox.fire('click',{target:getElementById('lightbox-caption')});
+assert.equal(lightbox.open,false,'The credits strip also dismisses');
+trigger.fire('click');
 lightbox.fire('click',{clientX:40,clientY:40});
 assert.equal(lightbox.open,false,'Backdrop click closes');
 const blockedStart=pendingImages.length;
@@ -196,8 +238,9 @@ pendingImages[staleStart+1].naturalWidth=400;
 pendingImages[staleStart+1].onload();
 assert.equal(images.children.length,1);
 assert.equal(images.children[0].children[1].textContent,'New result');
-assert.match(html, /id="close-confirmation"[^>]*hidden/, 'Close action initially hidden');
-assert.match(html, /const closeVisible=!!state\.result&&state\.showKefaniaCloseButton!==false/, 'Close is optional after publication');
+assert.match(html, /id="close-confirmation"[^>]*title="Close window">×<\/button>/, 'Close action appears in the initial page HTML');
+assert.doesNotMatch(html, /id="close-confirmation"[^>]*\shidden(?:\s|>)/, 'Close must not wait for draft publication');
+assert.match(html, /const closeVisible=state\.showKefaniaCloseButton!==false/, 'Close visibility follows the existing preference at every generation stage');
 assert.match(html, /root\+'\/close'/, 'Close action uses local handoff');
 assert.match(html, /grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/, 'Pony takes 60% on the left of the wide confirmation layout');
 assert.match(html, /\.layout:has\(#pony-section\[hidden\]\)\{grid-template-columns:minmax\(0,1fr\)\}/, 'PR-only confirmation uses the full grid width');
@@ -217,10 +260,13 @@ assert.match(html, /for\(const position of \['left','middle','right'\]\)document
 assert.match(html, /\.close-button-left header\{padding-left:44px\}/, 'Only visible left X reserves header space');
 assert.match(html, /\.lightbox\[open\]\{display:grid;grid-template-rows:minmax\(0,1fr\) auto\}/, 'Lightbox has only image and footer rows');
 assert.doesNotMatch(html, /class="lightbox-toolbar"/, 'No empty top banner');
+assert.doesNotMatch(html, /lightbox-close/, 'The image viewer has no X button');
 assert.match(html, /\.lightbox-nav\{[^}]*position:absolute;top:50%[^}]*height:min\(75%,560px\)/, 'Arrows resize with the compact image stage instead of spanning empty space');
 assert.match(html, /function fitLightboxToGallery\(\)/, 'Artwork dimensions determine a common height across the carousel');
 assert.match(html, /source\.height=img\.naturalHeight/, 'Natural image dimensions are retained for fitting');
 assert.match(html, /\.lightbox-stage img\{[^}]*width:0;height:100%[^}]*object-fit:contain/, 'All images use one contained stage size');
+assert.match(html, /padding:8px calc\(var\(--arrow-width\) \+ var\(--arrow-gap\)\)/, 'Image padding reserves the full arrow width plus a gap on each side');
+assert.match(html, /\.lightbox-nav\{[^}]*width:var\(--arrow-width\)/, 'Arrow widths match the reserved gutters');
 assert.doesNotMatch(html, /PR drafting and pony research finish independently\./, 'Redundant footer is removed');
 assert.match(html, /state\.pony\?' and supporting character research':''/, 'Pony research is named only when there is a matching pony');
 assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');
@@ -232,6 +278,13 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   let layoutState={errors:{}};
   context.fetch=async()=>({ok:true,json:async()=>layoutState});
   await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,false,'The close X is visible while the PR is still being drafted');
+  layoutState={errors:{},showKefaniaCloseButton:false};
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,true,'The existing hide-X preference applies during generation');
+  layoutState={errors:{},showKefaniaCloseButton:true};
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,false,'Enabling the preference restores the X before publication');
   assert.equal(getElementById('pony-section').hidden,true,'An ordinary branch hides the pony section');
   assert.equal(getElementById('subtitle').textContent,'Review the pull request draft.');
   layoutState={errors:{},pony:{name:'Kefania',slug:'kefania'},result:{number:23,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/23'}};

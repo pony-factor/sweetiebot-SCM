@@ -64,8 +64,10 @@ async function run() {
     requested.push({ url, options });
     return { ok: true, status: 200, async json() { return apiPulls; } };
   });
-  assert.deepEqual(pulls.map(pr => pr.number), [12, 10, 9]);
-  assert.deepEqual(pulls.map(pr => pr.base), ['main', 'main', 'develop']);
+  assert.deepEqual(pulls.map(pr => pr.number), [9, 10, 12]);
+  const newestPull = pulls.find(pr => pr.number === 12);
+  const nonMainPull = pulls.find(pr => pr.number === 9);
+  assert.deepEqual(pulls.map(pr => pr.base), ['develop', 'main', 'main']);
   assert.match(requested[0].url, /state=open&per_page=100/);
   assert(!requested[0].url.includes('base=main'));
   assert.equal(requested[0].options.headers.Authorization, 'Bearer token');
@@ -120,12 +122,12 @@ async function run() {
     assert.equal(picker.items.some(item => item.selectAll), false);
     assert.equal(picker.buttons.length, 0);
   });
-  assert.deepEqual(await pickPullRequests(allPicker.vscode, pulls), pulls);
+  assert.deepEqual((await pickPullRequests(allPicker.vscode, pulls)).map(pr => pr.number), [10, 12, 9]);
   assert.equal(allPicker.disposed, true);
 
   const onePicker = pickerHarness('one');
   const oneResult = await pickPullRequests(onePicker.vscode, pulls);
-  assert.deepEqual(oneResult.map(pr => pr.number), [10]);
+  assert.deepEqual(oneResult.map(pr => pr.number), [12]);
   assert.equal(onePicker.disposed, true);
 
   const emptyPicker = pickerHarness('empty');
@@ -136,13 +138,13 @@ async function run() {
 
   const prompt = batchMergePrompt({
     repositoryUrl: 'https://github.com/owner/repo',
-    pullRequests: [pulls[0]],
+    pullRequests: [newestPull],
     base: 'main'
   });
   assert.match(prompt, /Squash and merge the following selected pull request into each PR's explicitly listed base branch/);
   assert.match(prompt, /base: "main"/);
   const mixedPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
-    pullRequests: [pulls[0], pulls[2]] });
+    pullRequests: [newestPull, nonMainPull] });
   assert.match(mixedPrompt, /#9: Wrong base/);
   assert.match(mixedPrompt, /base: "develop"/);
   assert.match(mixedPrompt, /ONLY into their originally listed base branch/);
@@ -150,35 +152,58 @@ async function run() {
   assert.match(prompt, /#12: Newest ready change/);
   assert(!prompt.includes('#10: Ready change'));
   assert.match(prompt, /Never merge, close, edit, or implicitly include an unselected PR/);
-  assert.match(prompt, /force-with-lease/);
+  assert.match(prompt, /Never force-push or rewrite any branch/);
+  assert.match(prompt, /fast-forward-only push/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries' }),
     '🐛 Repair retries (#269)');
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#269)' }),
     '🐛 Repair retries (#269)', 'Do not repeat an existing PR-number suffix');
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#42)' }),
-    '🐛 Repair retries (#269)', 'Replace a stale PR-number suffix');
+    '🐛 Repair retries (#42) (#269)', 'Retain the exact PR title even when it references another PR');
+  assert.equal(squashCommitTitle({ number: 393, title: '🖌️ Show final commit titles beside generation times' }),
+    '🖌️ Show final commit titles beside generation times (#393)');
   assert.throws(() => squashCommitTitle({ number: 0, title: 'Invalid' }), /valid pull-request number/);
   assert.throws(() => squashCommitTitle({ number: 269, title: '' }), /pull-request title/);
   assert.match(prompt, /squash title: "Newest ready change \(#12\)"/);
   assert.match(prompt, /read ALL original PR commits \(paginate the commits endpoint\)/);
   assert.match(prompt, /linked GitHub author\/committer accounts/);
+  assert.match(prompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
+  assert.match(prompt, /preserve every verified Git author, committer and Co-authored-by trailer/);
+  const syncIncludedPrompt=batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [newestPull], filterSyncCommitSummaries: false });
+  assert.match(syncIncludedPrompt, /SYNC COMMIT FILTER DISABLED/);
+  assert.match(syncIncludedPrompt, /explanatory bodies in the squash summary/);
+  assert(!syncIncludedPrompt.includes('SYNC COMMIT FILTER ENABLED'));
+  assert.match(prompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
+  const emojiPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [newestPull], omitBulletsForEmojiTitles: true });
+  assert.match(emojiPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
+  assert.match(emojiPrompt, /if EVERY remaining commit subject begins with an emoji/);
+  assert.match(emojiPrompt, /If any retained subject lacks an emoji, keep the normal hyphen bullets/);
   assert.match(prompt, /bot-opened PR/);
   assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
   assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);
   assert.match(prompt, /compact chronological '- ' bullet list/);
+  assert.match(prompt, /exact selected PR title VERBATIM/);
+  assert.match(prompt, /never an individual commit title/);
   assert.match(prompt, /hyphen bullets, not '\*'/);
   assert.match(prompt, /indented continuation lines directly under its corresponding bullet/);
   assert.match(prompt, /relocate all such credits into ONE final trailer block/);
-  assert.match(prompt, /conventional GitHub separator ---------/);
-  assert.match(prompt, /only one final trailer block after ---------/);
+  assert.match(prompt, /separator of EXACTLY TEN underscores __________/);
+  assert.match(prompt, /only one final trailer block after exactly ten underscores __________/);
+  assert.doesNotMatch(prompt, /separator ---------/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
   assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(prompt, /HUMAN AUTHOR PRE-MERGE GATE \(NON-OPTIONAL\)/);
+  assert.match(prompt, /If no original linked human can be verified, STOP/);
+  assert.match(prompt, /NEVER invoke the GitHub connector native squash operation/);
   assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
-  assert.match(prompt, /git commit --author/);
+  assert.doesNotMatch(prompt, /git commit --author/);
+  assert.match(prompt, /NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED/);
   assert(prompt.includes('node efs/human_squash_merge.js'));
   assert.match(prompt, /NEVER push a squash commit directly to main/);
-  assert.match(prompt, /original bot-opened PR as merged/);
+  assert.match(prompt, /This uses no git push and does not rewrite the PR branch/);
   assert(prompt.includes('NEVER use that route when the PR opener is codex-pony[bot]'));
   assert.match(prompt, /Git author is the verified original HUMAN/);
   const priorities = [
@@ -220,9 +245,11 @@ async function run() {
   assert.match(prompt, /first line exactly matches/);
   assert.match(prompt, /Resolve straightforward mechanical conflicts on the selected PR branch/);
   assert.match(prompt, /Re-read the updated head SHA/);
-  assert.match(prompt, /leave a focused GitHub PR comment/);
+  assert.match(prompt, /leave a focused inline GitHub PR review comment on the actual conflicting code/);
   assert.match(prompt, /asking the specific question a maintainer must answer/);
-  assert.match(prompt, /Check existing comments to avoid duplicate feedback/);
+  assert.match(prompt, /Check existing review threads and update the matching comment to avoid duplicate feedback/);
+  assert.match(prompt, /exact current head commit_id, file path, line and side/);
+  assert.match(prompt, /Do not substitute a top-level PR Conversation comment/);
   assert.match(prompt, /continue with unrelated safe selected PRs/);
 
   // Complete stacks reach main with separate squash commits; partial stacks
@@ -236,6 +263,12 @@ async function run() {
     branchPr(42, 'middle', 'bottom')
   ];
   const stackPlan = planStackMerges(stackPulls, 'owner/repo');
+  assert.deepEqual(planStackMerges([
+    branchPr(428, 'newest', 'main'), branchPr(407, 'oldest', 'main'), branchPr(412, 'middle', 'main')
+  ], 'owner/repo').ordered.map(pr => pr.number), [407, 412, 428], 'Independent PRs run oldest first');
+  assert.deepEqual(planStackMerges([
+    branchPr(42, 'child', 'parent'), branchPr(45, 'parent', 'main')
+  ], 'owner/repo').ordered.map(pr => pr.number), [45, 42], 'Dependencies precede even an older-numbered child');
   assert.deepEqual(stackPlan.ordered.map(pr => pr.number), [41, 42, 43]);
   assert.deepEqual(stackPlan.stacked.map(pr => pr.stackParent), [41, 42]);
   assert.equal(stackPlan.nonMain.length, 0);
@@ -267,7 +300,7 @@ async function run() {
   assert.deepEqual(planStackMerges([
     branchPr(41, 'bottom', 'main'), branchPr(42, 'middle', 'bottom'),
     branchPr(43, 'other', 'bottom')
-  ], 'owner/repo').nonMain.map(pr => pr.number), [43, 42]);
+  ], 'owner/repo').nonMain.map(pr => pr.number), [42, 43]);
   assert.equal(planStackMerges([branchPr(44, 'x', 'y'), branchPr(45, 'y', 'x')],
     'owner/repo').nonMain.length, 2);
 
@@ -282,6 +315,8 @@ async function run() {
   };
   let mergeAllHandler;
   let configuredProject = '';
+  let filterSyncSummaries = true;
+  let emojiOnlySummaries = false;
   let pickerAction = 'first';
   let includeNonMain = false;
   let includeStack = false;
@@ -291,7 +326,13 @@ async function run() {
     ThemeIcon: class { constructor(id) { this.id = id; } },
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) {
+        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles'].includes(key),
+          'Unexpected SCM configuration key: ' + key);
+        if (key === 'chatgptProjectUrl') return configuredProject || fallback;
+        if (key === 'filterSyncCommitSummaries') return filterSyncSummaries;
+        return emojiOnlySummaries;
+      } };
     } },
     extensions: {
       getExtension(id) {
@@ -383,13 +424,24 @@ async function run() {
     return fragment.get('q');
   };
   const sentPrompt = mergePromptFromUrl(chat);
-  assert.match(sentPrompt, /pull\/41/);
-  assert.match(sentPrompt, /squash title: "Selected PR \(#41\)"/);
+  assert.match(sentPrompt, /pull\/40/);
+  assert.match(sentPrompt, /squash title: "Unselected PR \(#40\)"/);
   assert.match(sentPrompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
   assert.match(sentPrompt, /CONFLICT RESOLUTION/);
   assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
   assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
-  assert(!sentPrompt.includes('pull/40'));
+  assert(!sentPrompt.includes('pull/41'));
+  assert.match(sentPrompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
+  assert.match(sentPrompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
+  filterSyncSummaries = false;
+  emojiOnlySummaries = true;
+  await handler();
+  const alteredChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
+  const alteredPrompt = mergePromptFromUrl(alteredChat);
+  assert.match(alteredPrompt, /SYNC COMMIT FILTER DISABLED/);
+  assert.match(alteredPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
+  filterSyncSummaries = true;
+  emojiOnlySummaries = false;
   assert.equal(browserCalls[0].options.openToSide, undefined);
 
   pickerAction = 'cancel';
@@ -397,13 +449,16 @@ async function run() {
   const allChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.match(mergePromptFromUrl(allChat), /pull\/41/);
   assert.match(mergePromptFromUrl(allChat), /pull\/40/);
+  assert(mergePromptFromUrl(allChat).indexOf('#40:') < mergePromptFromUrl(allChat).indexOf('#41:'),
+    'Merge All submits the oldest PR first');
+  assert.match(mergePromptFromUrl(allChat), /oldest selected PRs first/);
   assert(browserCalls.every(call => call.id === 'vscode.openFolder'),
     'Merge All launches an independent workspace');
   includeNonMain = true;
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';
   await handler();
-  assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
+  assert.equal(browserCalls.length, 3, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(modalWarnings.length, 1);
   assert.match(modalWarnings[0].message, /kefania.*not main/);
   assert.equal(modalWarnings[0].options.modal, true);
@@ -415,14 +470,14 @@ async function run() {
   approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
-  assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
+  assert.equal(browserCalls.length, 4, 'Cancelling must not submit a merge request');
   pickerAction = 'first';
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';
   await handler();
   const scopedChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
   assert.equal(scopedChat.pathname, '/g/g-p-example/project');
-  assert.match(mergePromptFromUrl(scopedChat), /pull\/41/);
+  assert.match(mergePromptFromUrl(scopedChat), /pull\/40/);
   configuredProject = '';
 
   const modalCountBeforeStack = modalWarnings.length;

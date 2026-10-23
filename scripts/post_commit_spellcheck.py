@@ -371,19 +371,22 @@ def request_correction(core: ModuleType, model: str, path: str, target: str, bef
         preserve_line_breaks = getattr(core, "git_config_bool", lambda key, default: default)(
             "scm-toolkit.spellcheck-preserve-line-breaks", False
         )
+        thinking = getattr(core, "spellcheck_thinking_options", lambda _model: {})(model)
         response = core.ollama_json(
             "/api/generate",
             {
                 "model": model,
                 "prompt": spellcheck_prompt(path, target, before, after, instructions[:4000], preserve_line_breaks),
                 "stream": False,
+                **thinking,
                 "format": "json",
                 "options": {
-                    "num_ctx": SPELLCHECK_NUM_CTX,
+                    "num_ctx": max(SPELLCHECK_NUM_CTX, 16384) if thinking else SPELLCHECK_NUM_CTX,
                     "temperature": 0,
-                    "num_predict": 4096,
+                    "num_predict": 8192 if thinking else 4096,
                 },
             },
+            **({"timeout": 300} if thinking else {}),
         )
         payload = json.loads(str(response.get("response", "")))
         corrected = payload.get("text")
@@ -663,9 +666,10 @@ def run_post_commit_job() -> int:
         and index_is_clean(global_args)
         and proposal_is_untouched(global_args, proposals)
     ):
-        title = spellcheck_title(core, model, proposals)
+        # Reserve the normal commit-message generator for the approved and
+        # staged changes, rather than drafting a special low-effort title now.
         if head_sha(global_args) == expected_head and index_is_clean(global_args) and proposal_is_untouched(global_args, proposals):
-            write_spellcheck_notice(global_args, expected_head, list(proposals), model, title)
+            write_spellcheck_notice(global_args, expected_head, list(proposals), model)
     return 0
 
 

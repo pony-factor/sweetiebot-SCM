@@ -16,32 +16,30 @@
 .image-trigger:hover{filter:none;background:#33283d}
 .image-trigger:focus-visible{outline:2px solid #f5d4ff;outline-offset:-3px}
 .image-trigger img{pointer-events:none}
-.lightbox{position:fixed;inset:0;margin:auto;width:96vw;height:95vh;max-width:96vw;max-height:95vh;padding:0;border:1px solid #6b5278;border-radius:12px;background:#1c1725;color:var(--text);box-shadow:0 25px 80px #000a}
+.lightbox{--arrow-width:clamp(44px,5vw,72px);--arrow-gap:12px;position:fixed;inset:0;margin:auto;width:min(72vw,1100px);height:95vh;max-width:96vw;max-height:95vh;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);box-shadow:none}
 .lightbox[open]{display:grid;grid-template-rows:minmax(0,1fr) auto}
 .lightbox::backdrop{background:#08060edb}
-.lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px 42px}
+.lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px calc(var(--arrow-width) + var(--arrow-gap))}
 .lightbox-stage img{flex:1;min-width:0;width:0;height:100%;min-height:0;max-height:100%;object-fit:contain;margin:auto}
 .lightbox-stage .image-error{flex:1}
-.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;min-height:48px;padding:8px 12px;border-top:1px solid var(--line);font-size:13px;overflow:hidden}
+.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;min-height:48px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);font-size:13px;overflow:hidden}
 .lightbox-footer span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.lightbox-footer a{flex:none;white-space:nowrap}
-.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:var(--arrow-width);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
 .lightbox-nav:hover{filter:none;background:#50385ddd}
 #lightbox-prev{left:0}#lightbox-next{right:0}
-.lightbox-close{position:absolute;top:8px;right:8px;z-index:2;display:grid;place-items:center;width:38px;height:38px;padding:0;border:1px solid #6b5278;border-radius:8px;background:#35263f;color:#fff;box-shadow:none;font-size:25px;line-height:1}
-.lightbox-close:hover{filter:none;background:#50385d}
 .lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:2px}
-@media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
+@media(max-width:600px){.lightbox{--arrow-width:38px;--arrow-gap:8px;width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px calc(var(--arrow-width) + var(--arrow-gap))}.lightbox-nav{height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
 
 /* Theme mode uses the same resolved colors as the surrounding workbench. */
 :root[data-theme-colors]{color-scheme:light dark;--bg:var(--kefania-bg);--panel:var(--kefania-panel,var(--bg));--line:var(--kefania-line,var(--muted));--text:var(--kefania-text);--muted:var(--kefania-muted,var(--text));--accent:var(--kefania-accent,var(--text))}
 [data-theme-colors] body{background:var(--bg)}
-[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox{background:var(--panel);border-color:var(--line)}
+[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox-footer{background:var(--panel);border-color:var(--line)}
 [data-theme-colors] .content pre{background:var(--kefania-code,var(--bg))}
 [data-theme-colors] a{color:var(--accent);text-decoration-color:currentColor}
 [data-theme-colors] button{background:var(--kefania-button,var(--accent));color:var(--kefania-buttonText,var(--bg));border-color:var(--line)}
 [data-theme-colors] button:hover{filter:none;background:var(--kefania-buttonHover,var(--kefania-button,var(--accent)))}
-[data-theme-colors] .close-confirmation,[data-theme-colors] .lightbox-close,[data-theme-colors] .lightbox-nav{background:var(--kefania-control,var(--panel));color:var(--kefania-controlText,var(--text));border-color:var(--line)}
-[data-theme-colors] .close-confirmation:hover,[data-theme-colors] .lightbox-close:hover,[data-theme-colors] .lightbox-nav:hover{background:var(--kefania-controlHover,var(--bg))}
+[data-theme-colors] .close-confirmation,[data-theme-colors] .lightbox-nav{background:var(--kefania-control,var(--panel));color:var(--kefania-controlText,var(--text));border-color:var(--line)}
+[data-theme-colors] .close-confirmation:hover:hover,[data-theme-colors] .lightbox-nav:hover{background:var(--kefania-controlHover,var(--bg))}
 [data-theme-colors] button:disabled{background:var(--panel);color:var(--muted);opacity:.6}
 [data-theme-colors] .image-trigger{background:transparent;color:inherit;border:0}
 [data-theme-colors] .image-trigger:hover{background:var(--kefania-controlHover,var(--panel))}
@@ -49,16 +47,17 @@
 [data-theme-colors] .merge-controls .publication{color:var(--kefania-error,var(--text))}
 [data-theme-colors] .status:before,[data-theme-colors] .status.ready:before{background:var(--accent);box-shadow:none}
 </style>
-<main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window" hidden>×</button></header>
+<main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window">×</button></header>
 <div class="layout">
 <div class="pony-column"><section id="pony-section" class="card" hidden><div class="card-head"><p class="eyebrow">Meet the pony</p><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
 <section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><h2 id="title">Preparing your draft</h2><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><p id="merge-error" class="publication" role="alert"></p></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 </div>
 <dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
-<div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button><button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close image viewer">×</button></div>
+<div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button></div>
 <div class="lightbox-footer"><span id="lightbox-caption"></span><a id="lightbox-source" target="_blank" rel="noopener noreferrer">View source ↗</a></div>
 </dialog></main>
 <script>
+__MARKDOWN_RENDERER__
 const intake = /\/(draft|pony)$/.exec(location.pathname);
 const root = location.pathname.replace(/\/(draft|pony)$/, '');
 const confirmationToken = root.split('/').pop().slice(0,8);
@@ -69,6 +68,20 @@ const el = id => document.getElementById(id);
 let lastProfile, lastBody;
 let imageSources=[],currentImage=-1,focusBeforeLightbox,imageGeneration=0;
 const lightbox=el('image-lightbox');
+// Round expanded artwork only, including when object-fit adds letterboxing.
+function roundArtwork(img){
+  const width=img.clientWidth,height=img.clientHeight;
+  if(!width||!height||!img.naturalWidth||!img.naturalHeight)return;
+  const scale=Math.min(width/img.naturalWidth,height/img.naturalHeight);
+  const x=Math.max(0,(width-img.naturalWidth*scale)/2);
+  const y=Math.max(0,(height-img.naturalHeight*scale)/2);
+  img.style.clipPath='inset('+y+'px '+x+'px round 64pt)';
+}
+const artworkObserver=typeof ResizeObserver==='function'?new ResizeObserver(entries=>{
+  for(const entry of entries)roundArtwork(entry.target);
+}):null;
+el('lightbox-image').addEventListener('load',()=>roundArtwork(el('lightbox-image')));
+artworkObserver?.observe(el('lightbox-image'));
 function safeLink(url){try{const value=new URL(url);return ['https:','http:'].includes(value.protocol)&&!value.username&&!value.password?value.href:null}catch{return null}}
 function imageSourcePage(url){
   const value=new URL(url);
@@ -76,87 +89,35 @@ function imageSourcePage(url){
   const id=/^\/img\/(?:view\/|download\/)?\d{4}\/\d{1,2}\/\d{1,2}\/(\d+)(?:[_/.]|$)/.exec(value.pathname)?.[1];
   return host&&id?'https://'+host+'/images/'+id:url;
 }
-function inline(parent,text,depth=0){
-  // Parse complete emphasis delimiter runs: matching a single star inside bold markup breaks nesting.
-  if(depth>12){parent.append(document.createTextNode(text));return}
-  const tick=String.fromCharCode(96);
-  let i=0,pending='';
-  const flush=()=>{if(pending){parent.append(document.createTextNode(pending));pending=''}};
-  const closing=(marker,start)=>{
-    for(let at=start+marker.length;at<text.length;at++){
-      if(text[at]==='\\'){at++;continue}
-      if(text[at]===tick){const end=text.indexOf(tick,at+1);if(end>=0){at=end;continue}}
-      if(!text.startsWith(marker,at))continue;
-      const ch=marker[0];
-      if(marker.length===1&&(text[at-1]===ch||text[at+1]===ch))continue;
-      if(marker.length===2&&text[at+2]===ch)continue;
-      if(/\s/.test(text[at-1]))continue;
-      if(ch==='_'&&/\w/.test(text[at+marker.length]||''))continue;
-      return at;
-    }
-    return -1;
-  };
-  while(i<text.length){
-    if(text[i]==='\\'&&i+1<text.length){pending+=text[i+1];i+=2;continue}
-    const link=text[i]==='['&&/^\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)/.exec(text.slice(i));
-    if(link){
-      const safe=safeLink(link[2]);
-      if(safe){
-        flush();
-        const a=document.createElement('a');
-        a.href=imageSourcePage(safe);a.target='_blank';a.rel='noopener noreferrer';a.textContent=link[1];
-        parent.append(a);i+=link[0].length;continue;
-      }
-    }
-    if(text[i]===tick){
-      const end=text.indexOf(tick,i+1);
-      if(end>i+1){flush();const code=document.createElement('code');code.textContent=text.slice(i+1,end);parent.append(code);i=end+1;continue}
-    }
-    const bare=/^https?:\/\/[^\s<>]+/.exec(text.slice(i));
-    if(bare){
-      const safe=safeLink(bare[0]);
-      if(safe){
-        flush();
-        const a=document.createElement('a');
-        a.href=imageSourcePage(safe);a.target='_blank';a.rel='noopener noreferrer';a.textContent=bare[0];
-        parent.append(a);i+=bare[0].length;continue;
-      }
-    }
-    let matched=false;
-    for(const [marker,tag,nestedTag] of [['***','strong','em'],['___','strong','em'],['**','strong'],['__','strong'],['*','em'],['_','em']]){
-      if(!text.startsWith(marker,i))continue;
-      if(marker[0]==='_'&&i>0&&/\w/.test(text[i-1]))continue;
-      if(/\s/.test(text[i+marker.length]||''))continue;
-      const end=closing(marker,i);
-      if(end<0)continue;
-      flush();
-      const node=document.createElement(tag),inner=nestedTag?document.createElement(nestedTag):node;
-      inline(inner,text.slice(i+marker.length,end),depth+1);
-      if(nestedTag)node.append(inner);
-      parent.append(node);i=end+marker.length;matched=true;break;
-    }
-    if(matched)continue;
-    pending+=text[i++];
-  }
-  flush();
+function renderMarkdown(target, markdown) {
+  target.replaceChildren();
+  renderMergeMarkdown(target, markdown, {
+    baseUrl: 'https://github.com/',
+    mapLink: imageSourcePage
+  });
 }
-function renderMarkdown(target,markdown){target.replaceChildren();let paragraph=[],list,code;const flush=()=>{if(paragraph.length){const p=document.createElement('p');inline(p,paragraph.join(' '));target.append(p);paragraph=[]}list=undefined};for(const line of markdown.split('\n')){if(/^\s*```/.test(line)){flush();if(code){target.append(code);code=undefined}else code=document.createElement('pre');continue}if(code){code.append(document.createTextNode(line+'\n'));continue}if(!line.trim()){flush();continue}const heading=/^#{1,6}\s+(.+)$/.exec(line),item=/^\s*(?:[-*]|\d+\.)\s+(.+)$/.exec(line);if(heading){flush();const h=document.createElement('h3');inline(h,heading[1]);target.append(h)}else if(item){if(paragraph.length)flush();if(!list){list=document.createElement('ul');target.append(list)}const li=document.createElement('li');inline(li,item[1]);list.append(li)}else{list=undefined;paragraph.push(line)}}flush();if(code)target.append(code)}
 
-// Size the dialog once for the tallest currently loaded image at the gallery's
-// available width. A shared height prevents jumps when cycling aspect ratios.
-// The 48px footer and 16px image-stage padding are included in the budget.
+// Fit every image to the same viewport budget, then use their shared envelope.
+// Dedicated arrow gutters sit outside even the widest fitted artwork.
 function fitLightboxToGallery(){
   const narrow=window.innerWidth<=600;
   const maxDialogHeight=window.innerHeight*(narrow?0.94:0.95);
-  const imageWidth=Math.max(1,window.innerWidth*0.96-(narrow?72:84));
-  const stageMax=Math.max(1,maxDialogHeight-48-2);
-  const needed=imageSources.reduce((height,source)=>{
-    const width=Number(source.width),imageHeight=Number(source.height);
-    if(!(width>0&&imageHeight>0))return height;
-    return Math.max(height,imageWidth*imageHeight/width+16);
-  },0);
-  const stageHeight=Math.min(stageMax,Math.max(Math.min(220,stageMax),needed));
-  lightbox.style.height=Math.round(stageHeight+48+2)+'px';
+  const maxDialogWidth=narrow?window.innerWidth*0.96:Math.min(window.innerWidth*0.72,1100);
+  const arrowWidth=narrow?38:Math.min(72,Math.max(44,window.innerWidth*0.05));
+  const gutters=2*(arrowWidth+(narrow?8:12));
+  const verticalPadding=narrow?12:16;
+  const maxWidth=Math.max(1,maxDialogWidth-gutters);
+  const maxHeight=Math.max(1,maxDialogHeight-48-verticalPadding);
+  let fittedWidth=0,fittedHeight=0;
+  for(const source of imageSources){
+    const width=Number(source.width),height=Number(source.height);
+    if(!(width>0&&height>0))continue;
+    const scale=Math.min(maxWidth/width,maxHeight/height);
+    fittedWidth=Math.max(fittedWidth,width*scale);
+    fittedHeight=Math.max(fittedHeight,height*scale);
+  }
+  lightbox.style.width=Math.min(maxDialogWidth,Math.ceil((fittedWidth||maxWidth)+gutters))+'px';
+  lightbox.style.height=Math.min(maxDialogHeight,Math.ceil((fittedHeight||Math.min(220,maxHeight))+verticalPadding+48))+'px';
 }
 window.addEventListener('resize',()=>{if(lightbox.open)fitLightboxToGallery()});
 function showImage(index){
@@ -247,7 +208,6 @@ el('lightbox-image').addEventListener('error',()=>{
   el('lightbox-image').hidden=true;
   el('lightbox-error').hidden=false;
 });
-el('lightbox-close').addEventListener('click',()=>lightbox.close());
 el('lightbox-prev').addEventListener('click',()=>stepImage(-1));
 el('lightbox-next').addEventListener('click',()=>stepImage(1));
 lightbox.addEventListener('keydown',event=>{
@@ -258,9 +218,8 @@ lightbox.addEventListener('keydown',event=>{
   }
 });
 lightbox.addEventListener('click',event=>{
-  if(event.target!==lightbox)return;
-  const rect=lightbox.getBoundingClientRect();
-  if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)lightbox.close();
+  if(event.target===el('lightbox-image')||event.target===el('lightbox-prev')||event.target===el('lightbox-next'))return;
+  lightbox.close();
 });
 lightbox.addEventListener('close',()=>{
   currentImage=-1;
@@ -284,7 +243,7 @@ applyAppearance(state.appearance);
 if(state.draft){el('title').textContent=state.draft.title;if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
 el('publish').disabled=!state.draft||state.attempted||state.publishing;
 el('publish').hidden=state.autoPublish||!!state.result;
-const closeVisible=!!state.result&&state.showKefaniaCloseButton!==false;
+const closeVisible=state.showKefaniaCloseButton!==false;
 const closePosition=['left','middle','right'].includes(state.kefaniaCloseButtonPosition)?state.kefaniaCloseButtonPosition:'left';
 el('close-confirmation').hidden=!closeVisible;
 el('close-confirmation').classList.toggle('on-right',closePosition==='right');

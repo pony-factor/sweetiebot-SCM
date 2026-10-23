@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean } = require('../efs/branch_actions');
+const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean, beginRepositoryCommit, endRepositoryCommit, commitInProgress } = require('../efs/branch_actions');
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 
@@ -32,6 +32,19 @@ function fixture(onMain = false) {
 }
 
 async function run() {
+  {
+    const { repository } = fixture(true);
+    const main = beginRepositoryCommit(repository);
+    assert.equal(commitInProgress(repository), true);
+    repository.state.HEAD = { name: 'other' };
+    assert.equal(commitInProgress(repository), false, 'A push on main does not pause other');
+    const other = beginRepositoryCommit(repository);
+    assert.equal(commitInProgress(repository), true);
+    endRepositoryCommit(repository, main);
+    assert.equal(commitInProgress(repository), true, 'Finishing main must not release the other commit');
+    endRepositoryCommit(repository, other);
+    assert.equal(commitInProgress(repository), false);
+  }
   for (const state of [
     { ahead: 0, behind: 1 },
     { ahead: 1, behind: 1 },
@@ -100,14 +113,14 @@ async function run() {
   {
     const { repository, calls } = fixture();
     assert.equal(await syncBranch(repository, { ...options, branch: 'topic', strategy: 'merge' }), 'topic');
-    assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin' }], ['status'], ['merge', 'origin/main'], ['status']]);
+    assert.deepEqual(calls, [['status'], ['fetch', { remote: 'origin', ref: 'main' }], ['status'], ['merge', 'origin/main'], ['status']]);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
   for (const ahead of [0, 2]) {
     const { repository, calls } = fixture(true);
     repository.state.HEAD = { name: 'main', upstream: { remote: 'upstream', name: 'trunk' }, ahead };
     assert.equal(await syncBranch(repository, { ...options, branch: 'main' }), 'main');
-    assert.deepEqual(calls.filter(call => call[0] === 'fetch'), [['fetch', { remote: 'upstream' }]]);
+    assert.deepEqual(calls.filter(call => call[0] === 'fetch'), [['fetch', { remote: 'upstream', ref: 'trunk' }]]);
     assert.deepEqual(calls.filter(call => call[0] === 'merge'), [['merge', 'upstream/trunk']]);
     assert.deepEqual(calls.filter(call => call[0] === 'push'), ahead ? [['push', 'upstream', 'main:trunk']] : []);
     assert(!calls.some(call => call[0] === 'checkout'), 'Sync must stay on main');
@@ -210,6 +223,20 @@ async function run() {
     assert.equal(repository.inputBox.value, 'Existing draft');
     assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
     assert(!calls.some(call => ['fetch', 'merge', 'push'].includes(call[0])));
+  }
+  for (const dirty of ['indexChanges', 'workingTreeChanges']) {
+    const { repository, calls } = fixture();
+    repository.state[dirty] = [{}];
+    repository.checkout = async () => { throw new Error('main is already used by worktree'); };
+    let isolated;
+    assert.equal(await createBranch(repository, {
+      ...options, isolateBranch: async (...args) => { isolated = args; return true; }
+    }, () => 0), 'fresh');
+    assert.equal(isolated[0], 'fresh');
+    assert.equal(isolated[1], 'refs/heads/main');
+    assert.equal(isolated[2].expectedHead, 'refs/heads/topic');
+    assert.equal(repository.state.HEAD.name, 'topic');
+    assert(!calls.some(call => ['checkout', 'create', 'fetch', 'merge', 'push'].includes(call[0])));
   }
   {
     const { repository, calls } = fixture();
@@ -350,12 +377,28 @@ async function run() {
     assert.equal(attempts, 2);
     assert.equal(repository.inputBox.value, 'Existing draft');
   }
-  for (const failure of ['timeout', 'Authentication failed']) {
+  {
+    const { repository, calls } = fixture(true);
+    let attempts = 0;
+    repository.fetch = async opts => {
+      calls.push(['fetch', opts]);
+      if (++attempts === 1) throw Object.assign(new Error('Failed to execute git'), {
+        stderr: "cannot lock ref 'refs/remotes/origin/night-shade': is at 15597c451d054e3e58d3439ede69b067e3f1eb15 but expected aedc7d949f2f1576de1cd1ea1a42572ad2c18612"
+      });
+    };
+    assert.equal(await createBranch(repository, options, () => 0), 'fresh');
+    assert.equal(attempts, 2);
+    assert(calls.filter(call => call[0] === 'fetch').every(call => call[1].ref === 'main'));
+    assert.equal(calls.filter(call => call[0] === 'create').length, 1);
+  }
+  for (const failure of ['timeout', 'Authentication failed',
+    "cannot lock ref 'refs/remotes/origin/main': Unable to create 'main.lock': File exists",
+    "cannot lock ref 'refs/remotes/origin/main': is at abcdef but expected fedcba"]) {
     const { repository, calls } = fixture(true);
     let attempts = 0;
     repository.fetch = async () => { attempts++; throw new Error(failure); };
-    await assert.rejects(createBranch(repository, options), new RegExp(failure));
-    assert.equal(attempts, failure === 'timeout' ? 3 : 1);
+    await assert.rejects(createBranch(repository, options), error => error.message === failure);
+    assert.equal(attempts, failure === 'timeout' || failure.includes('but expected') ? 3 : 1);
     assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge' || call[0] === 'push'));
   }
   {
@@ -479,6 +522,24 @@ async function run() {
       assert.equal(forks['refs/heads/fresh'], git('rev-parse', 'main').toString().trim());
       assert(!calls.slice(callCount).some(call => ['merge', 'fetch', 'push'].includes(call[0])),
         'Do not sync or publish pending history while creating a branch');
+      const busy = git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+        'commit-tree', git('rev-parse', `${base}^{tree}`).toString().trim(), '-p', base,
+        '-m', 'placeholder_0123456789abcdef').toString().trim();
+      git('update-ref', 'refs/heads/busy', busy);
+      fs.writeFileSync(path.join(jobDirectory, 'job.json'), JSON.stringify({
+        branch: 'refs/heads/busy', sha: busy, parent: base, provisional: true, phase: 'generating'
+      }));
+      repository.state.HEAD = { name: 'main' };
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'main', remote: 'origin'
+      }), true, 'Publishing main is independent of the busy branch');
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'busy', remote: 'origin'
+      }), false, 'The selected pending branch stays protected');
+      repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0 };
+      assert.equal(await commands.get('sweetiebot.syncBranch')(uri, {
+        ...options, branch: 'main', strategy: 'merge'
+      }), 'main', 'Syncing main is independent of the busy branch');
       fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');
       await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /still being finalized/,
         'Keep the legacy worker guard until it supports inactive refs');

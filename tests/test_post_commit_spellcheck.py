@@ -17,6 +17,30 @@ class CorrectionTests(unittest.TestCase):
         text = "Alpine’s “fast”—really…"
         self.assertEqual(worker.request_correction(self.core(text), "model", "note.md", text, "", ""), "Alpine's \"fast\"-really...")
 
+    def test_heavier_reasoning_uses_model_thinking_capability_and_preserves_guardrails(self):
+        requests = []
+        def generate(endpoint, payload, **kwargs):
+            requests.append((endpoint, payload, kwargs))
+            return {"response": '{"text":"A spelling mistake."}'}
+        core = SimpleNamespace(
+            git_config_string=lambda key, default: default,
+            git_config_bool=lambda key, default: default,
+            spellcheck_thinking_options=lambda model: {"think": "high"} if model == "thinking" else {},
+            ollama_json=generate,
+        )
+        self.assertEqual(worker.request_correction(
+            core, "thinking", "report.md", "A speling mistake.", "", ""
+        ), "A spelling mistake.")
+        payload = requests[0][1]
+        self.assertEqual(payload["think"], "high")
+        self.assertGreaterEqual(payload["options"]["num_ctx"], 16384)
+        self.assertEqual(requests[0][2]["timeout"], 300)
+        requests.clear()
+        self.assertIsNone(worker.request_correction(
+            core, "thinking", "report.md", "Price 100", "", ""
+        ))
+        self.assertEqual(requests[0][1]["think"], "high")
+
     def test_protected_tokens_line_count_and_markdown_prefixes(self):
         for original, corrected in [
             ("Visit https://example.com/a", "Visit https://example.com/b"),
@@ -264,9 +288,10 @@ class ProposalTests(unittest.TestCase):
             worker, "apply_spellcheck", return_value=proposals
         ), patch.object(worker, "proposal_is_untouched", return_value=True), patch.object(
             worker, "write_spellcheck_notice"
-        ) as notice, patch.object(worker, "spellcheck_title", return_value="Spellcheck Instinet trading and citations"), patch.object(worker, "git_run") as git:
+        ) as notice, patch.object(worker, "spellcheck_title") as title, patch.object(worker, "git_run") as git:
             self.assertEqual(worker.run_post_commit_job(), 0)
-            notice.assert_called_once_with([], "expected", ["note.md"], "model", "Spellcheck Instinet trading and citations")
+            notice.assert_called_once_with([], "expected", ["note.md"], "model")
+            title.assert_not_called()
             git.assert_not_called()
 
     def test_changed_head_preserves_proposals_without_showing_stale_notice(self):

@@ -1,9 +1,7 @@
 'use strict';
-const { spawn } = require('node:child_process');
-const path = require('node:path');
 const { pendingPRCommits } = require('./pr_commit_wait');
-const { resolveKefaniaFile } = require('./kefania_paths');
-const { githubRepository, normalizeConversationSource, readCodexConversation } = require('./pull_request');
+const { runKefania } = require('./kefania_runner');
+const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl, readCodexConversation } = require('./pull_request');
 
 function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.createLocalPullRequest', async (uri, options) => {
@@ -23,26 +21,13 @@ function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
     if (!url) throw new Error('The selected remote must identify a GitHub repository.');
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
     if (waitForCommits) await waitForCommits();
-    const runner = await resolveKefaniaFile(repository.rootUri.fsPath, path.join('src', 'local-pr.js'));
-    const source = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
+    const suppliedSource = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
+    const source = sourceWithSharedConversationUrl(context, suppliedSource);
+    const run = dependencies.runKefania || runKefania;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
-      title: 'Creating new pull request with Kefania instructions', cancellable: false }, async () => {
-      return new Promise((resolve, reject) => {
-        const env = { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter) };
-        const child = spawn('node', [runner], { cwd: repository.rootUri.fsPath, env, stdio: ['pipe', 'pipe', 'pipe'] });
-        let output = '', error = '';
-        child.stdout.on('data', chunk => { output += chunk; });
-        child.stderr.on('data', chunk => { error = (error + chunk).slice(-4000); });
-        child.stdin.on('error', () => {});
-        child.on('error', () => reject(new Error('Node is unavailable on the VS Code PATH.')));
-        child.on('close', code => {
-          if (code !== 0) return reject(new Error(error.trim() || 'Kefania was interrupted. Check GitHub for an existing PR before retrying.'));
-          try { resolve(JSON.parse(output)); } catch { reject(new Error('Kefania returned an invalid PR result.')); }
-        });
-        child.stdin.end(JSON.stringify({ repository: url.slice('https://github.com/'.length), head: options.branch,
-          base: options.base, source }));
-      });
-    });
+      title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
+      run(repository.rootUri.fsPath, { repository: url.slice('https://github.com/'.length),
+        head: options.branch, base: options.base, source }, { botOnly: false }));
     if (result?.url) {
       // Opening the result supplies confirmation without a redundant toast
       // in the independent PR workspace.

@@ -67,7 +67,8 @@ async function fixture(run) {
     assert.equal(execFileSync('git', ['--git-dir', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim(), result.commit);
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'README.md'), 'M  README.md');
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'scratch.txt'), '?? scratch.txt');
-    await assert.rejects(publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'), /not a new/);
+    assert.deepEqual(await publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'),
+      { pushed: false, reason: 'existing-profile-preserved' });
     assert.equal(git(root, 'rev-parse', 'HEAD'), result.commit, 'No duplicate or empty commit');
   });
 

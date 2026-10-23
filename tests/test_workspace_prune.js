@@ -12,8 +12,9 @@ const BASE_OID = 'a'.repeat(40);
 function fixture({
   activated = true, ageHours = 2, active = false, dirty = false,
   merged = true, extra = false, unrecognized = false, missingProof = false,
-  openPr = false, offline = false, extraBranch = false, stash = false
+  openPr = false, offline = false, extraBranch = false, stash = false, nested = false, symlinkParent = false
 } = {}) {
+  const GROUP = nested ? path.join(BASE, 'pony', 'ABC123') : path.join(BASE, 'pony-ABC123');
   const deleted = [], invocations = [];
   const names = ['pony'];
   const manifest = { version: 1, kind: 'independent-clone', repositories: names };
@@ -43,6 +44,11 @@ function fixture({
       ...(active ? ['.sweetiebot-session-999-test.json'] : []),
       ...(extra ? ['private-note.txt'] : [])]]
   ]);
+  if (nested) {
+    nodes.set(path.join(BASE, 'pony'), symlinkParent ? 'symlink' : 'dir');
+    listing.set(BASE, ['pony']);
+    listing.set(path.join(BASE, 'pony'), ['ABC123']);
+  }
   function typeInfo(file) {
     const type = nodes.get(file);
     if (!type) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
@@ -112,6 +118,13 @@ function fixture({
   const good = fixture();
   assert.deepEqual(await good.scan(), [GROUP], 'Only verified, idle, clean clones are pruned');
   assert(good.deleted.some(([file, options]) => file === GROUP && options.recursive));
+
+  const nested = fixture({ nested: true });
+  assert.deepEqual(await nested.scan(), [path.join(BASE, 'pony', 'ABC123')]);
+  const linked = fixture({ nested: true, symlinkParent: true });
+  assert.deepEqual(await linked.scan(), [], 'Symlinked repository parents are preserved');
+  const nestedDirty = fixture({ nested: true, dirty: true });
+  assert.deepEqual(await nestedDirty.scan(), [], 'Nested dirty clones are preserved');
 
   for (const [label, config] of Object.entries({
     neverActivated: { activated: false },
