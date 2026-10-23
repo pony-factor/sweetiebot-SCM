@@ -28,10 +28,14 @@ header,.bar,.notice{flex-shrink:0}
 .layout{display:grid;grid-template-columns:minmax(0,var(--sidebar-width,37%)) 6px minmax(0,1fr);flex:1;min-height:0}
 aside{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 .section-heading{flex-shrink:0}
-.splitter{background:var(--vscode-panel-border,#555);touch-action:none;flex-shrink:0;outline-offset:-2px}
-.splitter:hover,.splitter:focus-visible,.splitter.dragging{background:var(--vscode-focusBorder,#468cdb);outline:none}
+.splitter{position:relative;background:transparent;touch-action:none;flex-shrink:0;outline-offset:-2px}
+.splitter::before{content:"";position:absolute;background:var(--vscode-panel-border,#555);opacity:.6;pointer-events:none}
+.splitter:hover,.splitter:focus-visible,.splitter.dragging{outline:none}
+.splitter:hover::before,.splitter:focus-visible::before,.splitter.dragging::before{background:var(--vscode-focusBorder,#468cdb);opacity:1}
 .splitter.vertical{cursor:col-resize}
+.splitter.vertical::before{top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%)}
 .splitter.horizontal{height:6px;cursor:row-resize}
+.splitter.horizontal::before{left:0;right:0;top:50%;height:2px;transform:translateY(-50%)}
 body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cursor)!important}
 .section-heading{padding:14px 16px 6px}
 .prs{overflow-y:auto;min-height:100px;flex:1;padding:4px 10px}
