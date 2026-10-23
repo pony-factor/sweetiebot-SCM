@@ -411,7 +411,9 @@ async function activate(context) {
   registerCloudRepoSync(vscode, context);
   registerWorkspaceCleanup(vscode, context);
   const index = new SearchIndex(context, settings);
-  const provider = new WorkspaceSearchViewProvider(index, settings);
+  // Keep all ~/GitHub checkout directories out of VS Code's source-control roots.
+  const githubIndex = new SearchIndex(context, settings, { githubFolder: path.join(os.homedir(), 'GitHub') });
+  const provider = new WorkspaceSearchViewProvider(index, settings, githubIndex);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
@@ -452,7 +454,7 @@ async function activate(context) {
   const indexSyncTimer = setInterval(() => {
     if (indexSyncRunning || !settings().autoReindex) return;
     indexSyncRunning = true;
-    void index.refresh().catch(error => {
+    void Promise.all([index.refresh(), ...(githubIndex.loaded ? [githubIndex.refresh()] : [])]).catch(error => {
       console.error('Workspace Search automatic index sync failed:', error);
     }).finally(() => {
       indexSyncRunning = false;
@@ -461,7 +463,7 @@ async function activate(context) {
   context.subscriptions.push({ dispose: () => clearInterval(indexSyncTimer) });
 
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.workspaceSearch.clearIndex', async () => {
-    await index.clear();
+    await Promise.all([index.clear(), githubIndex.clear()]);
     provider.lastResults = [];
     provider.post({ type: 'results', results: [], warning: '', mode: settings().mode });
     vscode.window.showInformationMessage('Workspace Search index cleared.');
