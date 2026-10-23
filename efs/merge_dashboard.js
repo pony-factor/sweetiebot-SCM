@@ -165,6 +165,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let error = '';
   const events = [];
   const launchingActions = new Set();
+  const inlineComments = new Map();
   const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
     storageDirectory: context?.globalStorageUri?.fsPath,
     launch: async (pr, comment, option) => {
@@ -210,7 +211,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   async function refreshOne(item) {
-    let decisionComments = [];
+    let decisionComments = inlineComments.get(item.number) || [];
     const info = await githubGet(fetchImpl, token, selection.repository,
       '/pulls/' + item.number);
     // Never follow a moved PR base silently, and do not treat an unrelated PR as selected.
@@ -239,6 +240,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (cycle === 1 || cycle % 3 === 0 || changed || info.merged) {
       const notes = await readReports(fetchImpl, token, selection.repository, item.number);
       decisionComments = notes.inlineComments;
+      inlineComments.set(item.number, decisionComments);
       if (notes.report?.id !== item.report?.id && notes.report) {
         addEvent(item, 'reported', 'AI merge explanation recorded on the pull request');
       }

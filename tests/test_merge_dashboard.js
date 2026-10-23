@@ -126,12 +126,16 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   };
   let commentsForPr = [];
   let inlineCommentsForPr = [];
+  let reactionVotes = [];
   let fileRequests = 0;
   const fakeFetch = async (address, options) => {
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
     let result;
-    if (pathname.endsWith('/pulls/12')) result = info;
+    if (pathname === '/user') result = { id: 41, type: 'User' };
+    else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
+    else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
+    else if (pathname.endsWith('/pulls/12')) result = info;
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
@@ -142,7 +146,9 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     return { ok: true, json: async () => result };
   };
   const actionLaunches = [];
+  const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
+    context: { globalStorageUri: { fsPath: reactionStorage } },
     launchAction: async (...args) => { actionLaunches.push(args); return true; },
     fetchImpl: fakeFetch,
     intervalMs: 25000,
@@ -261,6 +267,23 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   inlineCommentsForPr = [];
   await messageHandler(inlineAction);
   assert.equal(actionLaunches.length, 3, 'Removed inline choices cannot execute from a stale dashboard');
+  const reactionBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({
+    version: 1, headSha: nextSha, baseSha: 'c'.repeat(40), options: [
+      { id: 'adapter', label: 'Keep both APIs', prompt: 'Add an adapter.', reaction: '+1' },
+      { id: 'new-api', label: 'Adopt new API', prompt: 'Update callers.', reaction: 'heart' }
+    ] }) + '\n-->';
+  inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
+    commit_id: nextSha, updated_at: '2026-10-23T12:00:00Z', html_url: url + '#discussion_r90',
+    body: REVIEW_MARKER + '\nChoose the API.\n' + reactionBlock }];
+  reactionVotes = [{ id: 100, user: { id: 41, type: 'User' }, content: 'heart', created_at: '2026-10-23T12:01:00Z' }];
+  info = { ...info, head: { ...info.head, sha: nextSha }, base: { ...info.base, sha: 'c'.repeat(40) } };
+  await dashboard.refresh();
+  assert.equal(actionLaunches.length, 4, 'Dashboard polling dispatches the user reaction');
+  assert.equal(actionLaunches[3][5].id, 'report-new-api');
+  assert.equal(actionLaunches[3][6], 'web');
+  assert.equal(actionLaunches[3][4].review.url, url + '#discussion_r90');
+  await dashboard.refresh();
+  assert.equal(actionLaunches.length, 4, 'Polling cannot repeat the reaction task');
   info = { ...info, state: 'closed', merged: false };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'closed');
@@ -276,6 +299,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const countBefore = events.length;
   await dashboard.refresh();
   assert.equal(events.length, countBefore);
+  fs.rmSync(reactionStorage, { recursive: true, force: true });
 
   await assert.rejects(githubGet(async () => ({ ok: false, status: 403 }), 'test-token',
     'pony-factor/example', '/pulls/12'), /HTTP 403/);
