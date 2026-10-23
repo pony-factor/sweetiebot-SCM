@@ -1328,8 +1328,9 @@ def emoji_for_change(title: str, files: list[str]) -> str:
 def coreml_backend_enabled() -> bool:
     backend = os.environ.get("SWEETIEBOT_AI_BACKEND") or git_config_string(
         "scm-toolkit.ai-backend", "ollama")
-    if backend not in {"ollama", "coreml"}:
-        raise ValueError("Unsupported Sweetiebot AI backend: choose ollama or coreml.")
+    # Unknown legacy settings retain the existing Ollama behavior. In
+    # particular, querying this optional preference must not break callers
+    # that override only unrelated Git configuration values.
     return backend == "coreml"
 
 
