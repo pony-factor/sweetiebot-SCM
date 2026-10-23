@@ -283,8 +283,9 @@ __TIMESTAMP_FORMATTER__
     show('h2', '', '#' + pr.number + ' ' + pr.title, top);
     show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
     if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
-    show('div', 'muted', pr.head + ' → ' + pr.base +
+    const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base) +
       (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
+    branchLine.title = pr.head + ' → ' + pr.base;
     const actions = show('div', 'actions', undefined, parent);
     for (const item of [['open-pr', 'View PR'], ['open-diff', 'GitHub file diff']]) {
       const button = show('button', 'secondary', item[1], actions);
@@ -363,7 +364,8 @@ __TIMESTAMP_FORMATTER__
       const row = show('div', 'row', undefined, button);
       show('span', 'name', '#' + pr.number + ' ' + pr.title, row);
       show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
-      show('div', 'muted', pr.head + ' → ' + pr.base, button);
+      const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
+      branchLine.title = pr.head + ' → ' + pr.base;
       button.addEventListener('click', () => { selected = pr.number; render(); });
     }
     list.scrollTop = listScroll;

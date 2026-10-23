@@ -12,6 +12,20 @@ const SHA = /^[0-9a-f]{40,64}$/i;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const TIMELINE_MODES = ['hidden', 'relative', 'clock'];
 
+function branchDisplayLabel(branch, catalog) {
+  if (branch === 'main') return '🏠';
+  const pony = require('./pull_request').matchSweetiebotPonyCatalog(branch, catalog);
+  return pony ? '✨ ' + (pony.name || require('./pony_profile').displayName(pony.canonicalSlug)) : branch;
+}
+
+function ponyCatalog() {
+  for (const file of [path.join(__dirname, 'branch_name_packs.json'),
+    path.join(__dirname, '..', 'scripts', 'branch_name_packs.json')]) {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* Optional display enrichment. */ }
+  }
+  return undefined;
+}
+
 function configuredTimelineMode(vscode) {
   const value = vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden');
   return TIMELINE_MODES.includes(value) ? value : 'hidden';
@@ -153,8 +167,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
+  const catalog = ponyCatalog();
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
+    headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
     files: [], report: null, review: null, sawConflict: false, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
@@ -441,4 +457,4 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
 }
 
 module.exports = { REPORT_MARKER, REVIEW_MARKER, validateSelection,
-  reportFromComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard };
+  reportFromComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard, branchDisplayLabel };
