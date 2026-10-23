@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { lindseyScript } = require('./lindsey_conflicts');
+const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('./github_app_identity');
 
 const exec = promisify(execFile);
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
@@ -56,7 +57,12 @@ function validateResult(result, selection) {
   return result;
 }
 
-async function invokeLindseyBulkMerge(script, selection, token, runner = exec) {
+async function invokeLindseyBulkMerge(script, selection, token, runner = exec,
+  { env = process.env, roleToken = getRoleInstallationToken } = {}) {
+  const appToken = separateAppsEnabled(env)
+    ? (await roleToken('lindsey', selection.repository, { env })).token : token;
+  if (typeof appToken !== 'string' || !appToken) throw new Error('Lindsey GitHub authentication is unavailable.');
+  const childEnv = stripAppSecrets(env);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-lindsey-merge-'));
   try {
     const input = path.join(temporary, 'selection.json');
@@ -68,8 +74,8 @@ async function invokeLindseyBulkMerge(script, selection, token, runner = exec) {
       : process.env.PATH;
     const { stdout } = await runner(process.execPath, [script, '--input', input], {
       timeout: 15 * 60 * 1000, maxBuffer: 4 * 1024 * 1024,
-      env: { ...process.env, PATH: executablePath, GH_TOKEN: token,
-        GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' }
+      env: { ...childEnv, PATH: executablePath, GH_TOKEN: appToken,
+        GITHUB_TOKEN: appToken, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' }
     });
     return validateResult(JSON.parse(stdout), selection);
   } finally {

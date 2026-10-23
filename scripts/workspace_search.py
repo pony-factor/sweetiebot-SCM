@@ -96,6 +96,8 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     }
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
+    files[Path("github_apps.py")] = here / "github_apps.py"
+    files[Path("github_apps_ui.py")] = here / "github_apps_ui.py"
     files[Path("codex_sticker.py")] = here / "codex_sticker.py"
     files[Path("commit_diagnostics_dashboard.py")] = here / "commit_diagnostics_dashboard.py"
     files[Path("commit_hotkey.py")] = here / "commit_hotkey.py"

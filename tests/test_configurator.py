@@ -924,7 +924,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("function activateSettingsCategory", page)
         tab_markup = page.split('<button class="settings-tab"')[1:]
         panel_markup = page.split('<section class="settings-panel"')[1:]
-        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 1  # Diagnostics is a read-only tab, not a persisted setting.
+        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 2  # Diagnostics and GitHub Apps manage their own state.
         self.assertEqual(len(tab_markup), expected_sections)
         self.assertEqual(len(panel_markup), expected_sections)
         self.assertEqual(
@@ -1201,6 +1201,45 @@ class ManualRebuildTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
+    def test_app_credential_endpoint_requires_exact_origin_and_token(self):
+        opened = threading.Event()
+        captured = {}
+
+        def open_browser(url):
+            captured['url'] = url
+            opened.set()
+            return True
+
+        with patch('configurator.webbrowser.open', side_effect=open_browser), \
+                patch('configurator.print'), \
+                patch('configurator.save_app', return_value={'message': 'Saved'}) as save:
+            thread = threading.Thread(target=configurator.run_configurator,
+                                      args=(install.DEFAULT_SETTINGS,), daemon=True)
+            thread.start()
+            self.assertTrue(opened.wait(5))
+            parsed = urllib.parse.urlsplit(captured['url'])
+            origin = f'{parsed.scheme}://{parsed.netloc}'
+            endpoint = origin + '/github-apps/save?' + parsed.query
+            try:
+                for headers, url in [({}, endpoint), ({'Origin': 'https://other.example'}, endpoint),
+                                     ({'Origin': origin}, origin + '/github-apps/save')]:
+                    request = urllib.request.Request(url, data=b'role=kefania', headers=headers)
+                    with self.assertRaises(urllib.error.HTTPError) as denied:
+                        urllib.request.urlopen(request, timeout=5)
+                    denied.exception.close()
+                save.assert_not_called()
+                request = urllib.request.Request(endpoint, data=b'role=kefania',
+                                                 headers={'Origin': origin})
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertEqual(json.load(response), {'message': 'Saved'})
+                save.assert_called_once_with({'role': ['kefania']})
+            finally:
+                request = urllib.request.Request(origin + '/save?' + parsed.query, data=b'action=cancel')
+                with urllib.request.urlopen(request, timeout=5):
+                    pass
+                thread.join(5)
+            self.assertFalse(thread.is_alive())
+
     @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
     def test_rebuild_endpoint_requires_token_and_prevents_overlap(self, _models):
         opened = threading.Event()

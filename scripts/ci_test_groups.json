@@ -159,12 +159,19 @@
     "kefania": {
       "label": "Kefania",
       "tests": [
+        "test_github_app_identity.js",
+        "test_github_app_settings.js",
+        "test_kefania_app_environment.js",
         "test_kefania_chat_window.js",
         "test_kefania_close_position.js",
         "test_kefania_paths.js",
         "test_kefania_runner.js"
       ],
-      "syntax": []
+      "syntax": [
+        "efs/github_app_identity.js",
+        "efs/github_app_settings.js",
+        "efs/kefania_runner.js"
+      ]
     },
     "lindsey": {
       "label": "Lindsey bulk merge",
@@ -249,6 +256,7 @@
         "test_configurator.py",
         "test_diagnostics.py",
         "test_extension_cache.js",
+        "test_github_apps.py",
         "test_install.py",
         "test_local_setup.py",
         "test_python_runtime.js",
@@ -260,6 +268,8 @@
       "syntax": [
         "efs/extension.js",
         "scripts/configurator.py",
+        "scripts/github_apps.py",
+        "scripts/github_apps_ui.py",
         "scripts/install.py"
       ]
     },
