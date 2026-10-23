@@ -6,7 +6,8 @@
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
-    height: 36px;
+    max-height: calc(100vh - 16px);
+    overflow: hidden;
     align-items: stretch;
     border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
     border-radius: 4px;
@@ -41,14 +42,14 @@
     box-sizing: border-box;
     flex: 1;
     min-width: 0;
-    white-space: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
     align-items: center;
     gap: 3px;
-    padding: 2px 8px;
+    padding: 5px 8px;
 }
 .scm-toolkit-branch-strip-scroll:focus-visible {
     outline: 1px solid var(--vscode-focusBorder);
@@ -61,6 +62,7 @@
     justify-content: center;
     flex: 0 0 auto;
     min-width: 0;
+    max-width: 100%;
     height: 25px;
     gap: 4px;
     padding: 0 9px;
@@ -88,6 +90,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 230px;
+    min-width: 0;
+    white-space: nowrap;
 }
 .scm-toolkit-branch-strip-separator {
     display: inline-flex;
@@ -104,12 +108,16 @@
     border-left: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
 }
 .scm-toolkit-branch-strip-note {
-    white-space: nowrap;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     color: var(--vscode-descriptionForeground);
     font-size: 11px;
     padding: 0 8px;
 }
 .scm-toolkit-branch-strip-native {
+    flex: 0 0 32px;
+    align-self: stretch;
+    height: auto;
     width: 32px;
     padding: 0;
     border-left: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
