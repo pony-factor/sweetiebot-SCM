@@ -178,4 +178,105 @@ footer.textContent = 'Rated Limited · reset available';
 imageEvents.load();
 assert.equal(footer.child, undefined);
 assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], undefined);
-console.log('Codex reset shortcut and composer-only rate-limit sticker checks passed.');
+// React can restore the original long no-reset text after the initial build
+// substitution. Compact it again on every relevant DOM mutation.
+const warningCopy = "You've hit your usage limit. Upgrade your plan or add credits to continue, or Try again later.";
+assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy), true);
+assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy.replace('Try', 'try')), true);
+assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), false);
+assert.equal(context.scmToolkitIsUntimedRateLimitWarning('Upgrade your plan or add credits'), false);
+const warningParts = [
+    {nodeType: 3, textContent: "You've hit your usage limit. "},
+    {nodeType: 3, textContent: "Upgrade your plan or add credits to continue, or Try again later."},
+];
+const retainedIcon = {nodeType: 1, childNodes: []};
+const warningParagraph = {
+    nodeType: 1,
+    childNodes: [retainedIcon, {nodeType: 1, childNodes: warningParts}],
+    get textContent() { return warningParts.map(part => part.textContent).join(''); },
+    matches: () => true,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    closest: () => null,
+    parentElement: null,
+};
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), true);
+assert.equal(warningParagraph.textContent, 'Rate limited');
+assert.equal(retainedIcon.childNodes.length, 0);
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), false);
+warningParts[0].textContent = warningCopy; // Simulated fresh React render
+warningParts[1].textContent = '';
+const rootForRerender = {nodeType: 9, querySelectorAll: () => [warningParagraph]};
+context.scmToolkitCompactUntimedRateLimitBranch(rootForRerender);
+assert.equal(warningParagraph.textContent, 'Rate limited');
+warningParts[0].textContent = warningCopy;
+const textChange = {nodeType: 3, parentElement: warningParagraph};
+context.scmToolkitCompactUntimedRateLimitBranch(textChange);
+assert.equal(warningParagraph.textContent, 'Rate limited');
+
+// Preserve actionable cards, reset timestamps, and unrelated messages.
+warningParts[0].textContent = warningCopy;
+warningParagraph.querySelector = () => ({nodeType: 1}); // Native action
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), false);
+assert.equal(warningParagraph.textContent, warningCopy);
+warningParagraph.querySelector = () => null;
+warningParts[0].textContent = 'Rate limited · resets in 2h';
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), false);
+assert.equal(warningParagraph.textContent, 'Rate limited · resets in 2h');
+warningParts[0].textContent = warningCopy;
+warningParagraph.closest = () => ({nodeType: 1}); // Editor or dialog
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), false);
+assert.equal(warningParagraph.textContent, warningCopy);
+
+// Check the actual MutationObserver integration: compaction occurs before
+// general UI work is placed into a microtask.
+const observerText = {nodeType: 3, textContent: warningCopy};
+const observerMessage = {
+    nodeType: 1,
+    childNodes: [observerText],
+    get textContent() { return observerText.textContent; },
+    matches: () => true,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    closest: () => null,
+    parentElement: null,
+};
+observerText.parentElement = observerMessage;
+const syntheticDocument = {
+    nodeType: 9,
+    querySelectorAll(query) {
+        return query.startsWith('p, span, div,') ? [observerMessage] : [];
+    },
+    querySelector: () => null,
+};
+let mutationCallback = null;
+let observedOptions = null;
+let queuedSyncCount = 0;
+class SyntheticObserver {
+    constructor(callback) { mutationCallback = callback; }
+    observe(root, options) {
+        assert.equal(root, syntheticDocument);
+        observedOptions = options;
+    }
+}
+const injectedSource = fs.readFileSync(path.join(__dirname, '../assets/codex/rate-limit-controls.js'), 'utf8');
+new Function('document', 'MutationObserver', 'queueMicrotask', 'globalThis', injectedSource)(
+    syntheticDocument,
+    SyntheticObserver,
+    callback => {
+        queuedSyncCount++;
+        assert.equal(observerMessage.textContent, 'Rate limited');
+        callback();
+    },
+    {},
+);
+assert.equal(observerMessage.textContent, 'Rate limited');
+assert.equal(observedOptions.characterData, true);
+assert.equal(observedOptions.childList, true);
+assert.equal(typeof mutationCallback, 'function');
+observerText.textContent = warningCopy;
+mutationCallback([{target: observerText, addedNodes: []}]);
+assert.equal(observerMessage.textContent, 'Rate limited');
+assert.equal(queuedSyncCount, 2);
+
+console.log('Codex reset shortcut, persistent compact rate-limit text, and composer sticker checks passed.');

@@ -727,7 +727,10 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 
 Repeated transcript notices without a usable reset time are shortened to
 **Rate limited**, rather than duplicating the upgrade/credit warning already
-shown in Codex's main limit card. Messages with an actual reset time retain it.
+shown in Codex's main limit card. A narrowly scoped DOM observer reapplies
+this text after Codex rerenders an untimed warning so the long warning does
+not flicker back into view. Messages with an actual reset time, actionable
+upgrade controls, and editable prompts are left unchanged.
 
 The short **Rate limited** status directly above the composer (including
 older builds that mistakenly show **Rated Limited**) is replaced by the bundled

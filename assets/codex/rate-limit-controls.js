@@ -78,6 +78,56 @@ function scmToolkitSyncResetShortcut(root) {
 // In-chat rate-limit notices are redundant, not alternative sticker placements.
 // The installer replaces this literal with the repository's verified PNG as a data URI.
 const scmToolkitTwilightStopSource = "__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__";
+// Codex may rerender the original untranslated no-reset transcript warning
+// after the installer has compacted its defaultMessage. Reapply the compact
+// presentation as soon as the message's text changes, before the next paint.
+function scmToolkitIsUntimedRateLimitWarning(value) {
+    return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i
+        .test(String(value || '').replace(/\s+/g, ' ').trim());
+}
+
+function scmToolkitCompactUntimedRateLimitNode(node) {
+    if (!scmToolkitIsUntimedRateLimitWarning(node?.textContent)) return false;
+    // Never rewrite user input, dialogs, clickable upgrade cards, or any
+    // notice with a meaningful reset time. The exact message match also
+    // prevents changing timed/otherwise informative rate-limit notices.
+    if (node.closest?.('[contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], [data-scm-toolkit-reset-action]')) return false;
+    if (node.querySelector?.('a, button, input, textarea, select, [role="button"]')) return false;
+    for (const descendant of node.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || []) {
+        if (scmToolkitIsUntimedRateLimitWarning(descendant.textContent)) return false;
+    }
+    // Update only text nodes, preserving status icons and surrounding markup.
+    const textNodes = [];
+    const collect = element => {
+        for (const child of element.childNodes || []) {
+            if (child.nodeType === 3) textNodes.push(child);
+            else if (child.nodeType === 1) collect(child);
+        }
+    };
+    collect(node);
+    if (!textNodes.length) return false;
+    textNodes[0].textContent = 'Rate limited';
+    for (const text of textNodes.slice(1)) text.textContent = '';
+    return true;
+}
+
+function scmToolkitCompactUntimedRateLimitBranch(root) {
+    if (!root) return;
+    const candidates = new Set();
+    // Handle changes to existing text nodes as well as entirely new messages.
+    let ancestor = root.nodeType === 3 ? root.parentElement : root;
+    for (let depth = 0; ancestor && depth < 7; depth++, ancestor = ancestor.parentElement) {
+        if (ancestor.matches?.('p, span, div, [role="status"], [role="alert"]')) candidates.add(ancestor);
+    }
+    for (const descendant of root.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || []) {
+        candidates.add(descendant);
+    }
+    // Deepest elements first, so a wrapper cannot swallow a matching label.
+    for (const candidate of [...candidates].reverse()) {
+        scmToolkitCompactUntimedRateLimitNode(candidate);
+    }
+}
+
 function scmToolkitIsShortRateLimit(value) {
     // Exclude useful reset details and status cards with additional text.
     return /^rate(?:d)? limited$/i.test(String(value || '').trim().replace(/\s+/g, ' '));
@@ -235,6 +285,18 @@ function scmToolkitSyncRateLimitPony(root) {
             scmToolkitSyncRateLimitPony(document);
         });
     };
-    new MutationObserver(sync).observe(document, { childList: true, subtree: true, characterData: true });
+    const onMutations = mutations => {
+        // Respond within the observer's microtask, not in the subsequently
+        // queued general sync, so React rerenders do not flash the full copy.
+        for (const mutation of mutations) {
+            scmToolkitCompactUntimedRateLimitBranch(mutation.target);
+            for (const added of mutation.addedNodes || []) {
+                scmToolkitCompactUntimedRateLimitBranch(added);
+            }
+        }
+        sync();
+    };
+    new MutationObserver(onMutations).observe(document, { childList: true, subtree: true, characterData: true });
+    scmToolkitCompactUntimedRateLimitBranch(document);
     sync();
 })();
