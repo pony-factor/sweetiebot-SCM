@@ -16,13 +16,13 @@
 .image-trigger:hover{filter:none;background:#33283d}
 .image-trigger:focus-visible{outline:2px solid #f5d4ff;outline-offset:-3px}
 .image-trigger img{pointer-events:none}
-.lightbox{position:fixed;inset:0;margin:auto;width:96vw;height:95vh;max-width:96vw;max-height:95vh;padding:0;border:1px solid #6b5278;border-radius:12px;background:#1c1725;color:var(--text);box-shadow:0 25px 80px #000a}
+.lightbox{position:fixed;inset:0;margin:auto;width:min(72vw,1100px);height:95vh;max-width:96vw;max-height:95vh;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);box-shadow:none}
 .lightbox[open]{display:grid;grid-template-rows:minmax(0,1fr) auto}
 .lightbox::backdrop{background:#08060edb}
 .lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px 42px}
 .lightbox-stage img{flex:1;min-width:0;width:0;height:100%;min-height:0;max-height:100%;object-fit:contain;margin:auto}
 .lightbox-stage .image-error{flex:1}
-.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;min-height:48px;padding:8px 12px;border-top:1px solid var(--line);font-size:13px;overflow:hidden}
+.lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;min-height:48px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);font-size:13px;overflow:hidden}
 .lightbox-footer span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.lightbox-footer a{flex:none;white-space:nowrap}
 .lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
 .lightbox-nav:hover{filter:none;background:#50385ddd}
@@ -35,7 +35,7 @@
 /* Theme mode uses the same resolved colors as the surrounding workbench. */
 :root[data-theme-colors]{color-scheme:light dark;--bg:var(--kefania-bg);--panel:var(--kefania-panel,var(--bg));--line:var(--kefania-line,var(--muted));--text:var(--kefania-text);--muted:var(--kefania-muted,var(--text));--accent:var(--kefania-accent,var(--text))}
 [data-theme-colors] body{background:var(--bg)}
-[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox{background:var(--panel);border-color:var(--line)}
+[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox-footer{background:var(--panel);border-color:var(--line)}
 [data-theme-colors] .content pre{background:var(--kefania-code,var(--bg))}
 [data-theme-colors] a{color:var(--accent);text-decoration-color:currentColor}
 [data-theme-colors] button{background:var(--kefania-button,var(--accent));color:var(--kefania-buttonText,var(--bg));border-color:var(--line)}
@@ -106,15 +106,16 @@ function renderMarkdown(target, markdown) {
 function fitLightboxToGallery(){
   const narrow=window.innerWidth<=600;
   const maxDialogHeight=window.innerHeight*(narrow?0.94:0.95);
-  const imageWidth=Math.max(1,window.innerWidth*0.96-(narrow?72:84));
-  const stageMax=Math.max(1,maxDialogHeight-48-2);
+  const dialogWidth=narrow?window.innerWidth*0.96:Math.min(window.innerWidth*0.72,1100);
+  const imageWidth=Math.max(1,dialogWidth-(narrow?72:84));
+  const stageMax=Math.max(1,maxDialogHeight-48);
   const needed=imageSources.reduce((height,source)=>{
     const width=Number(source.width),imageHeight=Number(source.height);
     if(!(width>0&&imageHeight>0))return height;
     return Math.max(height,imageWidth*imageHeight/width+16);
   },0);
   const stageHeight=Math.min(stageMax,Math.max(Math.min(220,stageMax),needed));
-  lightbox.style.height=Math.round(stageHeight+48+2)+'px';
+  lightbox.style.height=Math.round(stageHeight+48)+'px';
 }
 window.addEventListener('resize',()=>{if(lightbox.open)fitLightboxToGallery()});
 function showImage(index){
