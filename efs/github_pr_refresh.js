@@ -148,7 +148,7 @@ function installPullRequestRefresh(vscode, view, owner) {
 
   // Tree command arguments belong to the extension host that owns the view.
   // Resolve them here before handing a serializable URL to Sweetiebot.
-  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', async node => {
+  const mergeTreeRow = async (node, progress) => {
     let model = node ? await resolve(node) : {};
     if (node && !model.url) {
       // A stale row can resolve before GitHub finishes hydrating its model.
@@ -162,9 +162,13 @@ function installPullRequestRefresh(vscode, view, owner) {
     }
     if (mergingUrls.has(model.url)) return;
     mergingUrls.add(model.url);
+    progress?.report?.({ message: `PR #${model.number}: checking merge eligibility…` });
     markMergeRow(model.url, node, 'merging');
     try {
-      const result = await vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', model.url);
+      // The inline action owns the progress notification; avoid a duplicate
+      // notification from the shared single-PR command.
+      const result = await vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', model.url,
+        { progressManaged: true });
       // A queued merge is not yet merged; cancellations and failures clear the row.
       const state = ['merged', 'queued', 'pending'].includes(result?.state) ? result.state : undefined;
       markMergeRow(model.url, node, state);
@@ -175,6 +179,17 @@ function installPullRequestRefresh(vscode, view, owner) {
     } finally {
       mergingUrls.delete(model.url);
     }
+  };
+  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', node => {
+    const clicked = pullRequestFromTreeNode(node);
+    if (clicked.url && mergingUrls.has(clicked.url)) return;
+    // Show feedback synchronously, even when the extension needs to hydrate a
+    // stale row before it can safely identify the requested pull request.
+    return vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: clicked.number ? `Starting squash merge for PR #${clicked.number}…` : 'Starting squash merge…',
+      cancellable: false
+    }, progress => mergeTreeRow(node, progress));
   }));
   let timer;
   let running = false;
