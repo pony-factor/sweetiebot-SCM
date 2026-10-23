@@ -41,7 +41,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const latest = await read();
   if (latest.state !== 'OPEN' || latest.isDraft ||
       latest.baseRefName !== pr.baseRefName || latest.headRefName !== pr.headRefName ||
-      latest.headRefOid !== pr.headRefOid) {
+      latest.headRefOid !== pr.headRefOid || latest.title !== pr.title) {
     throw new Error(`PR #${number} changed since selection. Refresh and try again.`);
   }
   if (latest.mergeable === 'CONFLICTING') throw conflict();

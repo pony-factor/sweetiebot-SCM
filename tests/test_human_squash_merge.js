@@ -22,7 +22,7 @@ const basePR = () => ({
 });
 
 function fixture({ commits = [oneHuman], pr = basePR(), rebase = true,
-  changedBeforeMerge = false, incorrectResultAuthor = false } = {}) {
+  changedBeforeMerge = false, changedTitleBeforeMerge = false, incorrectResultAuthor = false } = {}) {
   const calls = [];
   let merged = false;
   const api = async (endpoint, method = 'GET', fields = []) => {
@@ -32,6 +32,8 @@ function fixture({ commits = [oneHuman], pr = basePR(), rebase = true,
         merged_at: '2026-10-22T00:00:00Z', merge_commit_sha: mergedSha };
       if (changedBeforeMerge && calls.filter(x => x.endpoint === endpoint).length > 1)
         return { ...pr, head: { ...pr.head, sha: 'e'.repeat(40) } };
+      if (changedTitleBeforeMerge && calls.filter(x => x.endpoint === endpoint).length > 1)
+        return { ...pr, title: '🐛 Renamed placement fix' };
       return pr;
     }
     if (endpoint.includes('/commits?per_page=')) return commits;
@@ -94,7 +96,8 @@ async function main() {
     [{pr:{...basePR(),state:'closed'}}, /open, mergeable/],
     [{pr:{...basePR(),draft:true}}, /open, mergeable/],
     [{rebase:false}, /rebase merging is disabled/],
-    [{changedBeforeMerge:true}, /head or base changed/]
+    [{changedBeforeMerge:true}, /head or base changed/],
+    [{changedTitleBeforeMerge:true}, /head or base changed/]
   ]) {
     const blocked = fixture(options);
     await assert.rejects(humanSquashMerge('owner/repo',12,{api:blocked.api,git}),pattern);

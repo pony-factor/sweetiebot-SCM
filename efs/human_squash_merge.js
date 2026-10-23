@@ -100,7 +100,7 @@ async function humanSquashMerge(repository, number, { api } = {}) {
   // merge. This operation never pushes to (or changes the history of) the head.
   const fresh = await api(prPath);
   if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at ||
-      fresh.head?.ref !== head || fresh.head?.sha !== headSha ||
+      fresh.title !== original.title || fresh.head?.ref !== head || fresh.head?.sha !== headSha ||
       fresh.base?.ref !== base || fresh.base?.sha !== baseSha || fresh.stack) {
     throw Error('PR head or base changed before merge; the PR remains untouched.');
   }

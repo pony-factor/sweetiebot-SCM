@@ -117,7 +117,7 @@ async function main() {
   assert.deepEqual(approved.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
 
   // Validate the exact head and destination again after selection, even for main.
-  for (const changed of [{ baseRefName: 'another' }, { headRefOid: 'b'.repeat(40) },
+  for (const changed of [{ baseRefName: 'another' }, { title: '🎨 New PR title' }, { headRefOid: 'b'.repeat(40) },
     { headRefName: 'other' }, { state: 'CLOSED' }, { isDraft: true }]) {
     for (const initial of [open, alternate]) {
       const stale = mockMerge({ views: [initial, { ...initial, ...changed }] });

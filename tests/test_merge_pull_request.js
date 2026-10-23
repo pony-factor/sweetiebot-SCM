@@ -47,6 +47,8 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   const api = async (endpoint,options) => {
     calls.push([endpoint,options]);
     if(!options) {
+      if(endpoint==='repos/owner/repo/git/commits/'+'b'.repeat(40))
+        return {message:'🖌️ Improve settings (#12)\n\nVerified subject'};
       if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
         {author:{login:'JFWooten4',type:'User'},commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
           message:'🖌️ Improve settings\n\nCo-authored-by: Codex Web <noreply@openai.com>'}},
@@ -66,7 +68,21 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
     return {merged:true,sha:'b'.repeat(40)};
   };
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
-  assert.equal(calls.length,3);
+  assert.equal(calls.length,5, 'Initial PR, history, refreshed PR, merge, and landed commit');
+  const changedTitleCalls = [];
+  let refreshed = 0;
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    changedTitleCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/pulls/12' && ++refreshed === 2)
+      return {...pr, title:'🖌️ Renamed settings'};
+    return api(endpoint, options);
+  }), /changed before squash merge/);
+  assert(!changedTitleCalls.some(([, options]) => options?.method === 'PUT'));
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/git/commits/'+'b'.repeat(40))
+      return {message:'🗣️ Original commit title'};
+    return api(endpoint, options);
+  }), /squash commit title differs/);
   const blockedCalls = [];
   await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
     blockedCalls.push([endpoint, options]);

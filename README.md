@@ -1128,6 +1128,13 @@ Proposals open in the **Spellchecks Performed** review popup as unstaged edits. 
 
 ### Bulk merges through ChatGPT
 
+Sweetiebot uses the **current PR title** as the squash-commit subject, appending the
+matching `(#PR)` suffix only if it is not already present. Single-PR merge paths
+check for title changes before submitting, and synchronous Kefania merges also
+verify the resulting Git commit subject. This retains the ten-underscore
+`__________` separator, formatting preferences, verified-human attribution
+checks, and no-history-rewrite merge safeguards.
+
 Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in a dedicated workspace window with its own extension host, matching Kefania’s PR submission workflow, including when a local Lindsey checkout is installed. The Lindsey merge workspace now starts in Sweetiebot's centered 640 × 640 compact window, rather than filling the screen. Its dashboard safely displays formatted Markdown and clickable HTTP(S) links in PR descriptions, AI merge reports, and human-review comments, while leaving untrusted HTML inert. Its progress dashboard stacks the timeline and details when narrow; the titlebar's **Expand to 75% of this display** action provides more space for the 20/80 ChatGPT/dashboard split. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 
 The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. For bot-opened PRs, the prompt requires an original human Git author and the same isolated `git commit --author` plus GitHub-native one-commit rebase route; if the chat lacks an authenticated local Git executor or safe branch rewrite, it stops that PR instead of producing another bot-authored commit. GitHub-native stacks remain blocked where custom human authors cannot be preserved per layer. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
