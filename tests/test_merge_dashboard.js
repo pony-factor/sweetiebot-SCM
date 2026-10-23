@@ -284,6 +284,31 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(actionLaunches[3][4].review.url, url + '#discussion_r90');
   await dashboard.refresh();
   assert.equal(actionLaunches.length, 4, 'Polling cannot repeat the reaction task');
+  const stateBeforeProgress = events.at(-1).prs[0].state;
+  dashboard.recordLocalProgress({ number: 12, stage: 'preparing' });
+  dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
+  dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
+    path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
+  assert(events.at(-1).events.at(-1).details.includes('Keep both APIs'));
+  assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
+  dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha });
+  assert.match(events.at(-1).events.at(-1).message, /not merged/);
+  dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
+    status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
+  assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
+  assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
+  assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
+  const eventCount = events.at(-1).events.length;
+  dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
+  dashboard.recordLocalProgress({ number: 12, stage: 'invented' });
+  assert.equal(events.at(-1).events.length, eventCount);
+  const batchState = { repository: selection.repository,
+    deferred: [{ number: 12, reason: 'Refresh the selected head before another merge attempt.' }] };
+  dashboard.recordBatchState(batchState);
+  assert.match(events.at(-1).events.at(-1).message, /Deferred for this batch/);
+  assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
+  dashboard.recordBatchState(batchState);
+  assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
   info = { ...info, state: 'closed', merged: false };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'closed');

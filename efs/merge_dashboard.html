@@ -373,7 +373,7 @@ __TIMESTAMP_FORMATTER__
     byId('timeline-time-mode').value = timestampMode;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
-    for (const event of model.events.slice(-100).reverse()) {
+    for (const event of model.events.slice(-400).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
       if (event.details) show('div', 'event-details', event.details, node);

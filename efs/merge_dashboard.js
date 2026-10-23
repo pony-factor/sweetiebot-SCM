@@ -166,6 +166,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const events = [];
   const launchingActions = new Set();
   const inlineComments = new Map();
+  const reportedDeferrals = new Set();
   const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
     storageDirectory: context?.globalStorageUri?.fsPath,
     launch: async (pr, comment, option) => {
@@ -384,20 +385,35 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (!pr) return;
     const stages = {
       preparing: 'Preparing the full PR in an isolated checkout',
+      integrating: 'Integrating the full PR with the current base',
+      'applying-resolution': 'Applying the complete conflict-resolution patch',
       prepared: 'Full PR squash prepared locally · not pushed yet',
       'decision-commit': 'Conflict decision recorded as a separate local commit',
       'sync-prepared': 'Branch synchronization prepared locally',
       pushed: 'Prepared commit pushed to the PR branch · not merged',
       'verifying-push': 'Verifying GitHub sees the pushed PR head',
-      'waiting-checks': 'Waiting for checks on the integrated PR head · not merged',
+      'waiting-checks': 'Checking the integrated PR head · waiting for passing checks',
       'checks-passed': 'Integrated-head checks passed · merge not yet confirmed',
       merging: 'Requesting GitHub merge · awaiting confirmation'
     };
     if (!Object.hasOwn(stages, event.stage)) return;
     const sha = SHA.test(event.sha || '') ? event.sha : '';
     const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
+    if (event.stage === 'preparing') pr.lastPushedHead = '';
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
-    addEvent(pr, 'progress', stages[event.stage], [file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '));
+    const decision = event.stage === 'decision-commit' || event.stage === 'preparing'
+      ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
+    addEvent(pr, 'progress', stages[event.stage],
+      [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
+    publish();
+  }, recordBatchState(state) {
+    if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    for (const item of state.deferred) {
+      const pr = byNumber.get(item.number);
+      if (!pr || reportedDeferrals.has(item.number)) continue;
+      reportedDeferrals.add(item.number);
+      addEvent(pr, 'blocked', 'Deferred for this batch · other selected PRs can continue', String(item.reason || '').slice(0, 4000));
+    }
     publish();
   }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;

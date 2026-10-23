@@ -43,7 +43,7 @@ async function humanSquashMerge(repository, number, {
   const progress = (stage, detail = {}) => {
     try { onProgress({ number, stage, ...detail }); } catch { /* Display failures cannot change Git execution. */ }
   };
-  progress('preparing');
+  progress('preparing', { description: expected.explanation });
   const prPath = endpoint + '/pulls/' + number;
   const original = await api(prPath);
   const base = original?.base?.ref;
@@ -221,10 +221,12 @@ async function humanSquashMerge(repository, number, {
       if (baseEntries.split('\0').filter(Boolean).some(entry => !/^100(?:644|755) blob [a-f0-9]{40}\t/.test(entry))) {
         throw Error('Resolution patches cannot modify existing symlinks or submodules.');
       }
+      progress('applying-resolution');
       await inRepo('apply', '--check', '--index', '--', patchFile);
       await inRepo('apply', '--index', '--', patchFile);
       await inRepo('diff', '--cached', '--check');
     } else {
+      progress('integrating');
       try { await inRepo('merge', '--squash', '--no-commit', liveHead); }
       catch (error) {
         const conflicts = (await inRepo('diff', '--name-only', '--diff-filter=U', '-z')).split('\0').filter(Boolean);
@@ -246,9 +248,9 @@ async function humanSquashMerge(repository, number, {
       const finalTree = await inRepo('write-tree');
       const prepared = await require('./resolution_commits').createResolutionCommits({
         git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
-        conflicts, decisions, author, base
+        conflicts, decisions, author, base,
+        onCommit: decision => progress('decision-commit', decision)
       });
-      for (const decision of prepared.commits) progress('decision-commit', { sha: decision.sha, path: decision.path });
       progress('sync-prepared', { sha: prepared.sha });
       // The PR history is append-only. No reference on main is updated here.
       await inRepo('merge-base', '--is-ancestor', originalSha, prepared.sha);
@@ -262,6 +264,7 @@ async function humanSquashMerge(repository, number, {
       await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
         'origin', prepared.sha + ':refs/heads/' + head);
       progress('pushed', { sha: prepared.sha });
+      progress('verifying-push', { sha: prepared.sha });
       const updated = await api(prPath);
       if (updated.state !== 'open' || updated.head?.sha !== prepared.sha) throw Error('Could not verify the synchronized PR head.');
       return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,

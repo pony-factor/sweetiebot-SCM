@@ -126,9 +126,21 @@ const run = promisify(execFile);
     } }), /stale info|rejected/);
     assert.equal(await branch('feature'), baseSha, 'The lease preserves the competing head');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, baseSha);
+    const progress = [];
     let result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
+      onProgress: event => progress.push(event),
       expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch, decisions,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
+    assert.equal(progress[0].stage, 'preparing');
+    const pushedIndex = progress.findIndex(event => event.stage === 'pushed');
+    assert(pushedIndex > progress.findIndex(event => event.stage === (resolving ? 'sync-prepared' : 'prepared')));
+    assert.equal(progress[pushedIndex + 1].stage, 'verifying-push');
+    if (resolving) {
+      assert(progress.some(event => event.stage === 'decision-commit' && event.path === 'file.txt' && event.title === decisions[0].title));
+    } else {
+      assert(progress.findIndex(event => event.stage === 'waiting-checks') > pushedIndex);
+      assert(progress.findIndex(event => event.stage === 'merging') > progress.findIndex(event => event.stage === 'checks-passed'));
+    }
     if (resolving) {
       assert.equal(result.status, 'synced');
       assert.equal(await branch('main'), baseSha, 'Resolution preparation only reads main');

@@ -211,7 +211,11 @@ async function resumePRSession(vscode, context) {
           omitBulletsForEmojiTitles: initialPrompt.includes('EMOJI-ONLY SUBJECT LINES ENABLED')
         }),
         execute: runLocal,
-        onState: state => fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 }),
+        onState: async state => {
+          await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 });
+          const controller = await resumeMergeDashboard(vscode, directory, context);
+          controller?.recordBatchState?.(state);
+        },
         onResult: async result => {
           const controller = await resumeMergeDashboard(vscode, directory, context);
           controller?.recordLocalResult?.(result);

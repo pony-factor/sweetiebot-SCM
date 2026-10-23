@@ -53,6 +53,25 @@ const input = { version: 1, repository: 'owner/repo', results: [{
   const blocked = await executeResolution(input, selection, { merge: async () => { throw Error('Stale base'); } });
   assert.equal(blocked.results[0].status, 'blocked');
   assert.match(blocked.results[0].reason, /Stale/);
+  const pushedFailure = await executeResolution(input, selection, { merge: async () => {
+    throw Object.assign(Error('PR changed after guarded push'), { preparedHead: 'c'.repeat(40), originalHead: head });
+  } });
+  assert.equal(pushedFailure.results[0].preparedHead, 'c'.repeat(40), 'A post-push stop retains structured commit evidence');
+  const progressEvents = [];
+  const stderr = new (require('node:events').EventEmitter)();
+  await invokeResolutionCLI(input, selection, 'test-token', () => {
+    const running = new Promise(resolve => setImmediate(() => {
+      stderr.emit('data', 'LINDSEY_PRO');
+      stderr.emit('data', 'GRESS {"number":12,"stage":"preparing"}\nnot progress\n');
+      stderr.emit('data', 'LINDSEY_PROGRESS {"number":99,"stage":"pushed"}\nLINDSEY_PROGRESS invalid\n');
+      stderr.emit('data', 'LINDSEY_PROGRESS {"number":12,"stage":"pushed","sha":"' + 'c'.repeat(40) + '"}\n');
+      assert.equal(progressEvents.length, 2, 'Progress reaches the timeline before the child exits');
+      resolve({ stdout: JSON.stringify(result) });
+    }));
+    running.child = { stderr };
+    return running;
+  }, event => progressEvents.push(event));
+  assert.deepEqual(progressEvents.map(event => event.stage), ['preparing', 'pushed']);
   let inputFile;
   await invokeResolutionCLI(input, selection, 'session-token', async (binary, args, options) => {
     inputFile = args[2];
