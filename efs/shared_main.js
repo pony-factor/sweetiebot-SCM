@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { createWorkspaceDirectory } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('./python_runtime');
 const { prepareCodexHandoff } = require('./codex_workspace_handoff');
 
@@ -60,9 +61,27 @@ async function mainRoot(root, options = {}) {
 
 async function openFolders(vscode, folders, { forceNewWindow = false,
   baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main', handoff } = {}) {
-  await io.mkdir(baseDirectory, { recursive: true });
-  const label = path.basename(folders[0].path).replace(/[^\w.-]/g, '-') || 'repo';
-  const directory = await io.mkdtemp(path.join(baseDirectory, label + '-window-'));
+  const workspace = vscode.workspace.workspaceFile;
+  if (!forceNewWindow && workspace?.scheme === 'file') {
+    // Keep the existing workbench and workspace identity. Opening a different
+    // workspace file reloads the entire renderer, making a branch switch look
+    // like closing and reopening VS Code. Persist the handoff before updating
+    // folders because changing the first root can restart the extension host.
+    if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', {
+      workspace: workspace.fsPath, plan: handoff
+    });
+    try {
+      const accepted = vscode.workspace.updateWorkspaceFolders(0,
+        vscode.workspace.workspaceFolders.length,
+        ...folders.map(folder => ({ uri: vscode.Uri.file(folder.path), name: folder.name })));
+      if (!accepted) throw new Error('VS Code could not update this workspace’s folders.');
+      return { directory: path.dirname(workspace.fsPath), target: workspace.fsPath, folders };
+    } catch (error) {
+      if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.clear', workspace.fsPath).catch(() => {});
+      throw error;
+    }
+  }
+  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(folders[0].path), io);
   const target = path.join(directory, 'workspace.code-workspace');
   try {
     // A unique workspace file permits separate windows on the SAME main
@@ -175,7 +194,14 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
     await switchRepository(vscode, root, original, options);
     return true;
   }
-  if (root !== original || current !== 'main') return false;
+  if (!create && (root !== original || current !== 'main')) return false;
+  if (create && root !== original) {
+    const common = await Promise.all([root, original].map(directory =>
+      run(['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'])));
+    // Legacy independent clones have their own refs and pending title jobs.
+    // Keep their existing branch flow instead of routing into another Git DB.
+    if (common[0] !== common[1]) return false;
+  }
   await run(['-C', original, 'check-ref-format', '--branch', branch]);
   // Reopening an existing topic must use its existing files, including edits.
   const worktrees = (await run(['-C', original, 'worktree', 'list', '--porcelain'])).split('\n\n');
@@ -186,8 +212,7 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
     return true;
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();
-  await fs.mkdir(baseDirectory, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(baseDirectory, path.basename(original) + '-topic-'));
+  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original));
   const destination = path.join(directory, path.basename(original));
   let added = false;
   let handoff;
@@ -198,8 +223,15 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
     if (create) args.push('-b', branch);
     args.push('--', destination, create ? (start || 'main') : branch);
     if (create && forkScript) {
+      if (expectedHead && await run(['-C', root, 'symbolic-ref', 'HEAD']) !== expectedHead) {
+        throw new Error('The active branch changed while preparing the new branch.');
+      }
+      // Pending main title jobs and fork subscriptions belong to the original
+      // checkout. Validate the source above, then use that job owner's HEAD
+      // for the helper's additional check under its repository lock.
+      const ownerHead = await run(['-C', original, 'symbolic-ref', 'HEAD']);
       await exec(resolvePythonExecutable(), [forkScript, '--fork-worktree',
-        source, branch, expectedHead, destination], { cwd: original, timeout: 120000 });
+        source, branch, ownerHead, destination], { cwd: original, timeout: 120000 });
     } else {
       await run(args);
     }

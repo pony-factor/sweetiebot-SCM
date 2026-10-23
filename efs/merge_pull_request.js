@@ -77,6 +77,13 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       number: result.number, base, author: landed.author };
   }
 
+  // Compare live branch tips, not the potentially stale PR base.sha.
+  const readBaseTip = async () => {
+    const branch = await request('repos/' + repository + '/branches/' + encodeURIComponent(base));
+    if (!SHA.test(branch?.commit?.sha || '')) throw new Error('Cannot verify the current PR base branch tip.');
+    return branch.commit.sha;
+  };
+  const baseSha = await readBaseTip();
   const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
   const human = verifiedHumanAuthor(originalCommits);
   if (human.login.toLowerCase() !== pr.user.login.toLowerCase()) {
@@ -85,10 +92,21 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       number: result.number, base, author: landed.author };
   }
   const prepared = squashMessage(pr.title, result.number, originalCommits);
+  const fresh = await request(endpoint);
+  if (fresh.state !== 'open' || fresh.draft || fresh.merged_at ||
+      fresh.title !== pr.title || fresh.head?.ref !== pr.head.ref ||
+      fresh.base?.ref !== pr.base.ref || fresh.head?.sha !== pr.head.sha ||
+      await readBaseTip() !== baseSha) {
+    throw new Error('Pull request changed before squash merge; refresh and try again.');
+  }
   const merged = await request(endpoint + '/merge', {method: 'PUT',
     body: {sha: pr.head.sha, merge_method: 'squash',
       commit_title: prepared.title, commit_message: prepared.message}});
   if (merged.merged !== true || !SHA.test(merged.sha)) throw new Error('GitHub did not confirm the squash merge. Check the pull request.');
+  const landed = await request('repos/' + repository + '/git/commits/' + merged.sha);
+  if (String(landed?.message || '').replace(/\r\n?/g, '\n').split('\n')[0] !== prepared.title) {
+    throw new Error('GitHub merged the PR, but its squash commit title differs from the PR title. Verify the GitHub commit.');
+  }
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }
 

@@ -211,6 +211,20 @@ async function run() {
     assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
     assert(!calls.some(call => ['fetch', 'merge', 'push'].includes(call[0])));
   }
+  for (const dirty of ['indexChanges', 'workingTreeChanges']) {
+    const { repository, calls } = fixture();
+    repository.state[dirty] = [{}];
+    repository.checkout = async () => { throw new Error('main is already used by worktree'); };
+    let isolated;
+    assert.equal(await createBranch(repository, {
+      ...options, isolateBranch: async (...args) => { isolated = args; return true; }
+    }, () => 0), 'fresh');
+    assert.equal(isolated[0], 'fresh');
+    assert.equal(isolated[1], 'refs/heads/main');
+    assert.equal(isolated[2].expectedHead, 'refs/heads/topic');
+    assert.equal(repository.state.HEAD.name, 'topic');
+    assert(!calls.some(call => ['checkout', 'create', 'fetch', 'merge', 'push'].includes(call[0])));
+  }
   {
     const { repository, calls } = fixture();
     repository.state.mergeChanges = [{}];

@@ -22,7 +22,8 @@ const basePR = () => ({
 });
 
 function fixture({ commits = [oneHuman], pr = basePR(), rebase = true,
-  changedBeforeMerge = false, incorrectResultAuthor = false } = {}) {
+  changedBeforeMerge = false, changedTitleBeforeMerge = false, incorrectResultAuthor = false,
+  liveBaseSha = baseSha, changedBaseBeforeMerge = false, refreshedBaseSha } = {}) {
   const calls = [];
   let merged = false;
   const api = async (endpoint, method = 'GET', fields = []) => {
@@ -32,7 +33,14 @@ function fixture({ commits = [oneHuman], pr = basePR(), rebase = true,
         merged_at: '2026-10-22T00:00:00Z', merge_commit_sha: mergedSha };
       if (changedBeforeMerge && calls.filter(x => x.endpoint === endpoint).length > 1)
         return { ...pr, head: { ...pr.head, sha: 'e'.repeat(40) } };
-      return pr;
+      if (changedTitleBeforeMerge && calls.filter(x => x.endpoint === endpoint).length > 1)
+        return { ...pr, title: '🐛 Renamed placement fix' };
+      return refreshedBaseSha && calls.filter(x => x.endpoint === endpoint).length > 1
+        ? { ...pr, base: { ...pr.base, sha: refreshedBaseSha } } : pr;
+    }
+    if (endpoint === 'repos/owner/repo/branches/main') {
+      const reads = calls.filter(x => x.endpoint === endpoint).length;
+      return { commit: { sha: changedBaseBeforeMerge && reads > 1 ? 'f'.repeat(40) : liveBaseSha } };
     }
     if (endpoint.includes('/commits?per_page=')) return commits;
     if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: rebase };
@@ -72,6 +80,9 @@ async function main() {
   assert(result.merged && result.sha === mergedSha);
   assert.deepEqual(result.author, originalAuthor);
   assert.equal(approved.calls.filter(c => c.method === 'PUT').length, 1);
+  // A stale PR base, including a later metadata refresh, must not block a stable branch.
+  const stale = fixture({ liveBaseSha: 'd'.repeat(40), refreshedBaseSha: 'd'.repeat(40) });
+  assert((await humanSquashMerge('owner/repo', 12, {api: stale.api})).merged);
   const many = fixture({ commits: [oneHuman, secondHuman] });
   await assert.rejects(humanSquashMerge('owner/repo', 12, {api:many.api, git}),
     /No-force-push policy: cannot squash multiple original PR commits/);
@@ -94,7 +105,10 @@ async function main() {
     [{pr:{...basePR(),state:'closed'}}, /open, mergeable/],
     [{pr:{...basePR(),draft:true}}, /open, mergeable/],
     [{rebase:false}, /rebase merging is disabled/],
-    [{changedBeforeMerge:true}, /head or base changed/]
+    [{changedBeforeMerge:true}, /head or base changed/],
+    [{changedBaseBeforeMerge:true}, /head or base changed/],
+    [{liveBaseSha:'invalid'}, /Cannot verify/],
+    [{changedTitleBeforeMerge:true}, /head or base changed/]
   ]) {
     const blocked = fixture(options);
     await assert.rejects(humanSquashMerge('owner/repo',12,{api:blocked.api,git}),pattern);

@@ -42,11 +42,14 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   const pr = {html_url:input.result.url,title:'🖌️ Improve settings',state:'open',draft:false,merged_at:null,
     user:{login:'JFWooten4',type:'User'},
     head:{ref:'pony',sha:'a'.repeat(40),repo:{full_name:'owner/repo'}},
-    base:{ref:'main',repo:{full_name:'owner/repo'}}};
+    base:{ref:'main',sha:'c'.repeat(40),repo:{full_name:'owner/repo'}}};
   const calls = [];
   const api = async (endpoint,options) => {
     calls.push([endpoint,options]);
     if(!options) {
+      if(endpoint==='repos/owner/repo/branches/main') return {commit:{sha:'d'.repeat(40)}};
+      if(endpoint==='repos/owner/repo/git/commits/'+'b'.repeat(40))
+        return {message:'🖌️ Improve settings (#12)\n\nVerified subject'};
       if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
         {author:{login:'JFWooten4',type:'User'},commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},
           message:'🖌️ Improve settings\n\nCo-authored-by: Codex Web <noreply@openai.com>'}},
@@ -66,10 +69,44 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
     return {merged:true,sha:'b'.repeat(40)};
   };
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
-  assert.equal(calls.length,3);
+  assert.equal(calls.length,7, 'PR and live base snapshots, history, merge, and landed commit');
+  // PR metadata may catch up while the actual branch remains unchanged.
+  let metadataReads = 0;
+  assert((await squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/pulls/12' && ++metadataReads === 2)
+      return {...pr, base:{...pr.base, sha:'d'.repeat(40)}};
+    return api(endpoint, options);
+  })).merged);
+  for (const invalid of [false, true]) {
+    let baseReads = 0;
+    const attempts = [];
+    await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+      attempts.push([endpoint, options]);
+      if (endpoint === 'repos/owner/repo/branches/main') {
+        return {commit:{sha: invalid ? 'invalid' : (++baseReads === 1 ? 'd' : 'e').repeat(40)}};
+      }
+      return api(endpoint, options);
+    }), invalid ? /Cannot verify/ : /changed before squash merge/);
+    assert(!attempts.some(([, options]) => options?.method === 'PUT'));
+  }
+  const changedTitleCalls = [];
+  let refreshed = 0;
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    changedTitleCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/pulls/12' && ++refreshed === 2)
+      return {...pr, title:'🖌️ Renamed settings'};
+    return api(endpoint, options);
+  }), /changed before squash merge/);
+  assert(!changedTitleCalls.some(([, options]) => options?.method === 'PUT'));
+  await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/git/commits/'+'b'.repeat(40))
+      return {message:'🗣️ Original commit title'};
+    return api(endpoint, options);
+  }), /squash commit title differs/);
   const blockedCalls = [];
   await assert.rejects(squashMergePullRequest(input, async (endpoint, options) => {
     blockedCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/branches/main') return api(endpoint, options);
     if(endpoint.endsWith('/commits?per_page=100&page=1')) return [
       {author:{login:'codex-pony[bot]',type:'Bot'},
        commit:{author:{name:'codex-pony[bot]',email:'bot@example.org'},message:'Bot-only change'}}];

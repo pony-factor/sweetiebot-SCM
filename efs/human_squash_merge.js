@@ -64,15 +64,23 @@ async function humanSquashMerge(repository, number, { api } = {}) {
   const base = original?.base?.ref;
   const head = original?.head?.ref;
   const headSha = original?.head?.sha;
-  const baseSha = original?.base?.sha;
   if (original?.state !== 'open' || original.draft || original.merged_at ||
       original?.stack || original.mergeable !== true ||
       original?.head?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
       original?.base?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
-      !SHA.test(headSha || '') || !SHA.test(baseSha || '') ||
+      !SHA.test(headSha || '') ||
       !head || !base || head === base || head === 'main' || head === 'master') {
     throw Error('PR must be open, mergeable, unstacked, and have a distinct head and base.');
   }
+
+  // PR base.sha can lag behind the branch even on a fresh PR response.
+  // Snapshot the branch itself and recheck it before the merge write.
+  const readBaseTip = async () => {
+    const branch = await api(root + '/branches/' + encodeURIComponent(base));
+    if (!SHA.test(branch?.commit?.sha || '')) throw Error('Cannot verify the current PR base branch tip.');
+    return branch.commit.sha;
+  };
+  const baseSha = await readBaseTip();
 
   const commits = await readCommits(async ([endpoint]) => api(endpoint), repository, number);
   const author = humanAuthor(commits);
@@ -100,8 +108,8 @@ async function humanSquashMerge(repository, number, { api } = {}) {
   // merge. This operation never pushes to (or changes the history of) the head.
   const fresh = await api(prPath);
   if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at ||
-      fresh.head?.ref !== head || fresh.head?.sha !== headSha ||
-      fresh.base?.ref !== base || fresh.base?.sha !== baseSha || fresh.stack) {
+      fresh.title !== original.title || fresh.head?.ref !== head || fresh.head?.sha !== headSha ||
+      fresh.base?.ref !== base || fresh.stack || await readBaseTip() !== baseSha) {
     throw Error('PR head or base changed before merge; the PR remains untouched.');
   }
   const outcome = await api(prPath + '/merge', 'PUT',

@@ -111,6 +111,7 @@ async function main() {
     // A click immediately changes only that PR's row, even before the remote
     // operation finishes. Duplicate clicks do not dispatch a second merge.
     const rowCommands = new Map(), rowRefreshes = [], rowSubscriptions = [];
+    const rowProgress = [], rowProgressUpdates = [];
     let completeMerge;
     const dispatched = [];
     const rowOwner = {
@@ -121,15 +122,24 @@ async function main() {
     const rowVscode = {
       ...vscode,
       // Keep this isolated test view from replacing the main view's listeners.
-      window: { ...vscode.window, onDidChangeWindowState: () => ({ dispose() {} }) },
+      ProgressLocation: { Notification: 15 },
+      window: {
+        ...vscode.window,
+        onDidChangeWindowState: () => ({ dispose() {} }),
+        withProgress: (options, work) => {
+          rowProgress.push(options);
+          return work({ report: update => rowProgressUpdates.push(update) });
+        }
+      },
       workspace: { ...vscode.workspace, onDidChangeConfiguration: () => ({ dispose() {} }) },
       commands: {
         registerCommand(id, fn) {
           rowCommands.set(id, fn);
           return { dispose() { rowCommands.delete(id); } };
         },
-        executeCommand(id, arg) {
+        executeCommand(id, arg, options) {
           if (id === 'sweetiebot.squashMergePullRequest') {
+            assert.deepEqual(options, { progressManaged: true }, 'The inline button owns its one notification');
             dispatched.push(arg);
             return new Promise(resolve => { completeMerge = resolve; });
           }
@@ -145,6 +155,10 @@ async function main() {
     const another = { pullRequestModel: { url: 'https://github.com/owner/repo/pull/13', number: 13 } };
     const clickMerge = rowCommands.get('sweetiebot.squashMergeTreePullRequest');
     const first = clickMerge(clicked);
+    assert.equal(rowProgress.length, 1, 'Show progress synchronously, before PR row hydration');
+    assert.equal(rowProgress[0].location, 15);
+    assert.equal(rowProgress[0].title, 'Starting squash merge for PR #12…');
+    assert.equal(rowProgress[0].cancellable, false);
     await new Promise(setImmediate);
     const during = await rowOwner.getTreeItem(clicked);
     assert.match(during.description, /by @pony · ⏳ Squash-merging/);
@@ -153,6 +167,8 @@ async function main() {
     assert.equal((await rowOwner.getTreeItem(another)).description, 'by @pony');
     assert.equal(rowRefreshes.at(-1), clicked);
     await clickMerge(clicked);
+    assert.equal(rowProgress.length, 1, 'Duplicate clicks must not create duplicate notifications');
+    assert.deepEqual(rowProgressUpdates, [{ message: 'PR #12: checking merge eligibility…' }]);
     assert.deepEqual(dispatched, [url], 'The second click must not dispatch another merge');
     completeMerge({ state: 'merged' });
     assert.deepEqual(await first, { state: 'merged' });
