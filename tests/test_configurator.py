@@ -34,6 +34,37 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
+        values = form_values()
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(install.DEFAULT_SETTINGS[name], '')
+        values.update(windowHeading=['${rootName} (${activeRepositoryBranchName})'],
+                      windowName=['${activeEditorShort}${separator}${appName}'])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(current[name], values[name][0])
+            self.assertEqual(payload['vscodeSettings'][name], values[name][0])
+        page = configurator.render_form(current, [], 'Ready', 'test-token', 'Save')
+        for name in ('windowHeading', 'windowName'):
+            self.assertIn(f'name="{name}"', page)
+        self.assertIn('placeholder="VS Code default"', page)
+        self.assertIn("window.title", page)
+        self.assertIn('id="heading-layout"', page)
+        self.assertIn('id="heading-available"', page)
+        self.assertIn('id="heading-add-text"', page)
+        self.assertIn('name="windowShowModifiedStatus"', page)
+        self.assertIn('name="windowShowPushingStatus"', page)
+        values.update(windowHeading=[''], windowName=[''])
+        restored = configurator.parse_submission(values)
+        self.assertEqual(restored['windowHeading'], '')
+        self.assertEqual(restored['windowName'], '')
+        values['windowName'] = ['one\ntwo']
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_lindsey_has_its_own_dashboard_settings_page(self):
         names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent"}
         controls = [setting for setting in configurator.SETTINGS if setting.name in names]
@@ -1196,6 +1227,33 @@ class ServerTests(unittest.TestCase):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
             with urllib.request.urlopen(endpoint("/models"), timeout=5) as response:
                 self.assertEqual(json.load(response)["models"], [])
+            # A change to VS Code's user settings reaches the already-open page.
+            changes = urllib.parse.urlencode({
+                "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                "windowName": "${activeEditorShort}",
+                "windowShowModifiedStatus": "false",
+                "windowShowPushingStatus": "false",
+            }).encode()
+            with urllib.request.urlopen(urllib.request.Request(
+                endpoint("/sync-window-settings"), data=changes, method="POST"
+            )) as response:
+                self.assertTrue(json.load(response)["synced"])
+            with urllib.request.urlopen(endpoint("/health")) as response:
+                self.assertEqual(json.load(response)["windowSettings"], {
+                    "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                    "windowName": "${activeEditorShort}",
+                    "windowShowModifiedStatus": False,
+                    "windowShowPushingStatus": False,
+                })
+            with urllib.request.urlopen(endpoint("/")) as response:
+                updated_page = response.read().decode()
+            self.assertIn('value="${rootName} — ${activeRepositoryBranchName}"', updated_page)
+            self.assertIn('value="${activeEditorShort}"', updated_page)
+            with self.assertRaises(urllib.error.HTTPError) as bad:
+                urllib.request.urlopen(urllib.request.Request(
+                    endpoint("/sync-window-settings"), data=b"windowHeading=x", method="POST"
+                ))
+            self.assertEqual(bad.exception.code, 400)
             request = urllib.request.Request(endpoint("/pull"), data=b"model=embed:test", method="POST")
             with patch("configurator.ollama_request", return_value=io.BytesIO(b'{"status":"downloading","completed":1,"total":2}\n{"status":"success"}\n')) as pull:
                 with urllib.request.urlopen(request, timeout=5) as response:

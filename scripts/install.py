@@ -396,6 +396,96 @@ def extension_update_toolbar_edits(js):
     return changes
 
 
+def window_title_status_edits(js):
+    # Accessibility can append activeEditorState implicitly. Native VS Code only
+    # listens for decoration changes when the title template includes it
+    # explicitly, leaving e.g. "Modified" behind after an external commit.
+    # Subscribe for every active editor, including accessibility mode changes.
+    original = (
+        'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+        'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+    )
+    if original not in js:
+        if 'checkTitleVariables(){' in js:
+            raise ValueError("Unsupported VS Code build: window title status listener does not match.")
+        return []  # Older builds and synthetic fixtures without the title service.
+    if js.count(original) != 1:
+        raise ValueError("Unsupported VS Code build: window title status listener is ambiguous.")
+    return [(original, original.removeprefix('this.titleIncludesEditorState&&'))]
+
+
+def window_title_push_edits(js):
+    if 'getFullWindowTitle(){' not in js:
+        return []
+    registration = 'this.checkTitleVariables(),this.registerListeners()'
+    pattern = re.compile(
+        r'getFullWindowTitle\(\)\{let\{prefix:([\w$]+),suffix:([\w$]+)\}'
+        r'=this\.getTitleDecorations\(\),([\w$]+)='
+        r'this\.getWindowTitle\(\)\|\|this\.productService\.nameLong;'
+    )
+    matches = list(pattern.finditer(js))
+    if len(matches) != 1 or js.count(registration) != 1:
+        raise ValueError("Unsupported VS Code build: window push title does not match.")
+    original = matches[0].group(0)
+    replacement = original.replace(
+        'this.getWindowTitle()||this.productService.nameLong;',
+        '(this.getWindowTitle(this.configurationService.getValue("scmToolkit.windowName")'
+        '||this.configurationService.getValue("window.title"))||this.productService.nameLong)'
+        '+(this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&'
+        'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"");',
+    )
+    return [
+        (registration, 'this.checkTitleVariables(),'
+         'this.registerVariables([{name:"sweetiebotPushPending",contextKey:"sweetiebot.pushPending"}]),'
+         'this.registerListeners()'),
+        (original, replacement),
+    ]
+
+
+def window_title_naming_edits(js):
+    if 'getWindowTitle(){' not in js:
+        return []
+    start = js.index('getWindowTitle(){')
+    end = js.find('isCustomTitleFormat(){', start)
+    if end < 0 or js.count('getWindowTitle(){') != 1:
+        raise ValueError("Unsupported VS Code build: window naming API does not match.")
+    original = js[start:end]
+    template = re.search(r'let ([\w$]+)=this.configurationService.getValue\("window.title"\);', original)
+    render = re.search(r'return ([\s\S]*)\}$', original)
+    if not template or not render:
+        raise ValueError("Unsupported VS Code build: window naming template does not match.")
+    replacement = original[:render.start()] + (
+        f'return ({render.group(1)})+(scmToolkitTitle===undefined&&'
+        'this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&'
+        'this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")?" — Pushing":"")}')
+    replacement = replacement.replace('getWindowTitle(){', 'getWindowTitle(scmToolkitTitle){', 1)
+    replacement = replacement.replace(template.group(0),
+        f'let {template.group(1)}=scmToolkitTitle??('
+        'this.configurationService.getValue("scmToolkit.windowHeading")'
+        '||this.configurationService.getValue("window.title"));'
+        'if(this.configurationService.getValue("scmToolkit.windowShowModifiedStatus")===false)'
+        f'{template.group(1)}={template.group(1)}.split("${{activeEditorState}}").join("");', 1)
+    replacement = replacement.replace('!this.titleIncludesEditorState&&',
+        f'this.configurationService.getValue("scmToolkit.windowShowModifiedStatus")!==false&&!{template.group(1)}.includes("${{activeEditorState}}")&&', 1)
+    config = re.search(r'onConfigurationChanged\(([\w$]+)\)\{let ([\w$]+)=\1.affectsConfiguration\("window.title"\)', js)
+    variables = re.search(r'checkTitleVariables\(\)\{let ([\w$]+)=this.configurationService.getValue\("window.title"\)', js)
+    update = re.search(r'doUpdateTitle\(\)\{let ([\w$]+)=this.getFullWindowTitle\(\);if\(\1!==this.title\)\{', js)
+    if not config or not variables or not update:
+        raise ValueError("Unsupported VS Code build: window naming listeners do not match.")
+    focused = f'this.titleIncludesFocusedView={variables.group(1)}.includes("${{focusedView}}")'
+    if js.count(focused) != 1:
+        raise ValueError("Unsupported VS Code build: window naming focus listener does not match.")
+    return [
+        (original, replacement),
+        (update.group(0), f'doUpdateTitle(){{let {update.group(1)}=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle();if({update.group(1)}!==this.title||scmToolkitHeading!==this.scmToolkitHeading){{this.scmToolkitHeading=scmToolkitHeading;'),
+        ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("scmToolkit.windowHeading")||(this.configurationService.getValue("scmToolkit.windowShowPushingStatus")!==false&&this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")))return!0;'),
+        (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("scmToolkit.windowHeading")||{config.group(1)}.affectsConfiguration("scmToolkit.windowName")||{config.group(1)}.affectsConfiguration("scmToolkit.windowShowModifiedStatus")||{config.group(1)}.affectsConfiguration("scmToolkit.windowShowPushingStatus")'),
+        (variables.group(0), variables.group(0).replace('this.configurationService.getValue("window.title")',
+            '(this.configurationService.getValue("scmToolkit.windowHeading")||this.configurationService.getValue("window.title"))')),
+        (focused, f'this.titleIncludesFocusedView=({variables.group(1)}+" "+(this.configurationService.getValue("scmToolkit.windowName")||"")).includes("${{focusedView}}")'),
+    ]
+
+
 def compact_window_edits(js, command="fe", configuration="Xe"):
     # Match the native titlebar layout rather than relying on SCM activation.
     ident = r"[A-Za-z_$][\w$]*"
@@ -556,6 +646,9 @@ def edits(js=None, settings=None):
 
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
+        changes.extend(window_title_status_edits(js))
+        changes.extend(window_title_push_edits(js))
+        changes.extend(window_title_naming_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))

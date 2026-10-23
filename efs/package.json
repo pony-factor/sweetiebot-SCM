@@ -321,6 +321,26 @@
           "default": true,
           "description": "Show a title-bar button that opens an independent local Git checkout on main in a new window."
         },
+        "scmToolkit.windowHeading": {
+          "type": "string",
+          "default": "",
+          "description": "Custom visible title-bar heading using VS Code title variables. Blank follows window.title. Example: ${rootName} (${activeRepositoryBranchName})."
+        },
+        "scmToolkit.windowName": {
+          "type": "string",
+          "default": "",
+          "description": "Custom window name shown by macOS and window switchers using VS Code title variables. Blank follows window.title independently of the heading."
+        },
+        "scmToolkit.windowShowModifiedStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Modified and other active editor states in the heading and window name."
+        },
+        "scmToolkit.windowShowPushingStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Pushing while a background push is pending. Hiding it does not stop the push."
+        },
         "scmToolkit.promptForIndependentWorkspaceTrust": {
           "type": "boolean",
           "default": true,
