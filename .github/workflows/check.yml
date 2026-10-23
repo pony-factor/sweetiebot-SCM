@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.x"
       - name: Verify exhaustive, exclusive test assignments
-        run: python3 scripts/ci_test_runner.py verify
+        run: python3 scripts/ci/ci_test_runner.py verify
 
   suites:
     name: ${{ matrix.label }}
@@ -67,14 +67,14 @@ jobs:
           node-version: "22"
       - name: Detect browser-test dependencies
         id: browser
-        run: python3 scripts/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/ci/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
       - name: Install browser-test dependencies
         if: steps.browser.outputs.required == 'true'
         run: |
           npm install --no-save --no-package-lock playwright@1.64.0
           npx playwright install --with-deps chromium
       - name: Run ${{ matrix.label }} checks
-        run: python3 scripts/ci_test_runner.py run "${{ matrix.group }}"
+        run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
 
   codex-webview-browser:
     name: Chromium CSS and DOM regression

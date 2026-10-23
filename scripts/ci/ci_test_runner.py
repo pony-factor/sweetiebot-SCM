@@ -10,8 +10,8 @@ import re
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "scripts" / "ci_test_groups.json"
+ROOT = Path(__file__).resolve().parents[2]
+CONFIG = Path(__file__).resolve().with_name("ci_test_groups.json")
 
 
 def inventory(verbose=False):

@@ -1353,5 +1353,27 @@ class CodexDictationTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
 
+class InstallerScriptsLayoutTests(unittest.TestCase):
+    def test_install_command_runs_from_checkout_root(self):
+        root = Path(__file__).resolve().parents[1]
+        launcher = root / "scripts/install.command"
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(launcher.stat().st_mode & 0o111)
+        self.assertFalse((root / "Install Sweetiebot.command").exists())
+        source = launcher.read_text(encoding="utf-8")
+        self.assertIn('cd -- "$(dirname -- "$0")/.."', source)
+        self.assertIn("python3 scripts/build_installer_app.py", source)
+        self.assertIn('open "$PWD/Sweetiebot Installer.app"', source)
+
+    def test_ci_runner_and_inventory_share_directory(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertTrue((root / "scripts/ci/ci_test_runner.py").is_file())
+        self.assertTrue((root / "scripts/ci/ci_test_groups.json").is_file())
+        self.assertFalse((root / "scripts/ci_test_runner.py").exists())
+        self.assertFalse((root / "scripts/ci_test_groups.json").exists())
+        workflow = (root / ".github/workflows/check.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("scripts/ci/ci_test_runner.py"), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
