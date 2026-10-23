@@ -181,7 +181,7 @@ async function switchRepository(vscode, root, destination, options) {
   }
 }
 
-async function routeBranch(vscode, repository, { branch, create = false, start,
+async function routeBranch(vscode, repository, { branch, create = false, adoptExisting = false, start,
   forkScript, source, expectedHead, ...options } = {}) {
   const run = options.run || git;
   if (!repository.rootUri?.fsPath || !branch || !vscode.workspace?.workspaceFolders?.length) return false;
@@ -194,8 +194,8 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
     await switchRepository(vscode, root, original, options);
     return true;
   }
-  if (!create && (root !== original || current !== 'main')) return false;
-  if (create && root !== original) {
+  if (!create && !adoptExisting && (root !== original || current !== 'main')) return false;
+  if ((create || adoptExisting) && root !== original) {
     const common = await Promise.all([root, original].map(directory =>
       run(['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'])));
     // Legacy independent clones have their own refs and pending title jobs.
@@ -206,6 +206,7 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
   // Reopening an existing topic must use its existing files, including edits.
   const worktrees = (await run(['-C', original, 'worktree', 'list', '--porcelain'])).split('\n\n');
   const existing = worktrees.find(block => block.split('\n').includes('branch refs/heads/' + branch));
+  if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
     await switchRepository(vscode, root, destination, options);
@@ -220,8 +221,8 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
     handoff = await prepareCodexHandoff(vscode, root);
     const pendingFiles = handoff && create ? await capturePendingFiles(root, run) : null;
     const args = ['-C', original, 'worktree', 'add'];
-    if (create) args.push('-b', branch);
-    args.push('--', destination, create ? (start || 'main') : branch);
+    if (create && !adoptExisting) args.push('-b', branch);
+    args.push('--', destination, create && !adoptExisting ? (start || 'main') : branch);
     if (create && forkScript) {
       if (expectedHead && await run(['-C', root, 'symbolic-ref', 'HEAD']) !== expectedHead) {
         throw new Error('The active branch changed while preparing the new branch.');

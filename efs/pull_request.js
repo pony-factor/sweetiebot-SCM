@@ -16,6 +16,7 @@ const { launchPRSession, closePRSession } = require('./pr_session');
 const { pendingPRCommits } = require('./pr_commit_wait');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('./chatgpt_project');
 const { kefaniaClosePosition } = require('./kefania_close_position');
+const { linkPublishedStack } = require('./stacked_branch');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -207,6 +208,30 @@ function pullRequestPrompt({
   return sections.join('\n\n');
 }
 
+// Branch-specific Git metadata survives switching between linked worktrees.
+async function stackedPullRequestBase(root, branch, fallback) {
+  if (!root || !branch) return fallback;
+  let parent;
+  try {
+    parent = (await promisify(execFile)('git',
+      ['config', '--local', '--get', `branch.${branch}.sweetiebot-stack-parent`],
+      { cwd: root, timeout: 10000 })).stdout.trim();
+  } catch (error) {
+    if ([1, 128, 'ENOENT'].includes(error.code)) return fallback;
+    throw error;
+  }
+  if (!parent) return fallback;
+  if (parent === branch) throw new Error('A stacked PR cannot target its own branch.');
+  try {
+    await promisify(execFile)('git',
+      ['merge-base', '--is-ancestor', `refs/heads/${parent}`, `refs/heads/${branch}`],
+      { cwd: root, timeout: 10000 });
+  } catch {
+    throw new Error(`Restack ${branch} on ${parent} before opening its pull request.`);
+  }
+  return parent;
+}
+
 function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
@@ -241,6 +266,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
+    options = { ...options, base: await stackedPullRequestBase(repository.rootUri.fsPath, options.branch, options.base) };
     if (repository.state.HEAD?.name !== options.branch || options.branch === options.base) {
       throw new Error('The selected branch changed during the PR eligibility check.');
     }
@@ -287,6 +313,20 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
             const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
               title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
               run(pending.repository.rootUri.fsPath, { ...pending.input, preparedDraft: { title, body } }, { botOnly: true }));
+            // Only link PRs Kafania has already published. Do not let
+            // 'gh stack link' create an additional PR outside confirmation.
+            const parent = pending.input.base;
+            if (parent && result?.url && await stackedPullRequestBase(
+              pending.repository.rootUri.fsPath, pending.input.head, '') === parent) {
+              try {
+                await linkPublishedStack(pending.repository.rootUri.fsPath,
+                  'https://github.com/' + pending.input.repository,
+                  pending.input.head, parent, result.url);
+              } catch (linkError) {
+                void vscode.window.showWarningMessage(
+                  'PR published, but native stack linking needs a retry: ' + linkError.message);
+              }
+            }
             // The independent confirmation window displays the publication
             // result. A toast here interrupts that same window, not the
             // original workspace that launched the session.
@@ -325,6 +365,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // the read-only GitHub preflight or independent browser drafting continues.
     // Never retarget publication to the current worktree HEAD.
     const branch = options?.branch;
+    options = { ...options, base: await stackedPullRequestBase(repository.rootUri.fsPath, branch, options?.base) };
     if (typeof branch !== 'string' || !branch || branch === options.base) {
       throw new Error('Select a branch other than the pull-request base.');
     }
