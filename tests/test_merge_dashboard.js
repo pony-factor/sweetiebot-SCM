@@ -44,6 +44,14 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const choices = blockerOptions({ state: 'blocked', report: actionable.report });
   assert.equal(choices[0].id, 'keep-main');
   assert(choices.some(option => option.id === 'report-preserve-api'));
+  const recommendation = parseReportOptions('<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
+    { id: 'compatibility', label: 'Add a compatibility layer', prompt: 'Keep both interfaces with an adapter.', recommended: true },
+    { id: 'replace-api', label: 'Replace the API', prompt: 'Adopt the proposed API.', recommended: true }
+  ] }) + '\n-->');
+  assert.equal(recommendation.filter(option => option.recommended).length, 1);
+  const recommendedChoices = blockerOptions({ state: 'review', review: { options: recommendation } });
+  assert.equal(recommendedChoices[0].id, 'report-compatibility', 'The specific recommendation precedes generic recovery actions');
+  assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[1]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));

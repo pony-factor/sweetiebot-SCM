@@ -50,6 +50,9 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(first.value.batch.merged.length, 1);
     let prompt = new URLSearchParams(new URL(first.value.continueUrl).hash.slice(1)).get('q');
     assert(prompt.includes('Preserve the main calculation fix.'));
+    assert(prompt.includes('sweetiebot-merge-options'), 'Automatic rounds reuse the existing selectable recommendation format');
+    assert(prompt.includes('Before deferring a PR for human review'));
+    assert(prompt.includes('multiple plausible resolutions have materially different behavior'));
     assert(prompt.includes('"baseAdvancedByEarlierWork":true'));
     assert(prompt.includes('"initiallyMergeable":true'));
     const conflict = await submit(first.value.continueUrl, [item(2, d)]);
@@ -129,5 +132,10 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending', 'Wait for the full suite, not only its first finished job');
   checks.check_suites = [{ status: 'completed', conclusion: 'failure' }];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'failed', 'A failed suite cannot pass just because its jobs are absent');
+  checks.check_runs = [{ id: 1, name: 'test', check_suite: { id: 10 }, status: 'completed', conclusion: 'failure' },
+    { id: 2, name: 'test', check_suite: { id: 11 }, status: 'completed', conclusion: 'success' }];
+  checks.check_suites = [{ id: 10, status: 'completed', conclusion: 'failure' },
+    { id: 11, status: 'completed', conclusion: 'success' }];
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'passed', 'An old suite failure does not override a successful job rerun');
   console.log('Sequential merge continuation, intent ledger, current-base resolution, replay and integrated-head check gates passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

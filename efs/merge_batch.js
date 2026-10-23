@@ -118,6 +118,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         initiallyMergeable: pr.initialMergeable, baseAdvancedByEarlierWork: pr.baseAdvanced }))),
       'Reassess remaining PRs after every merge. Do not treat checks from the old PR head as checks on the integrated tree. Local preparation is allowed to incorporate the new base; merging still requires the resulting head’s checks to pass. Actual fresh check failures and ambiguous behavior choices remain blockers. Update existing tagged reports rather than duplicating them.',
       'For a genuine non-routine blocker, include deferred:[{"number":123,"headSha":"exact selected head","kind":"human_review|capability|failed_checks","reason":"specific ambiguity or actual failure"}] in the versioned result JSON. Do not defer routine integration merely because it needs a new Git resolution. Continue unrelated remaining PRs. An unrelated external head/title/base-branch change is outside this batch’s snapshot and must not be overwritten.',
+      require('./merge_blocker_actions').reportOptionsInstructions(),
       resolutionInstructions(selection, bridge.url)
     ].join('\n\n');
     const prompt = (makePrompt ? makePrompt(selection) + '\n\n' : '') + instructions;

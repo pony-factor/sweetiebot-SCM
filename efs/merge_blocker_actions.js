@@ -32,6 +32,7 @@ const DEFAULT_OPTIONS = [
 
 function parseReportOptions(text) {
   const options = [], seen = new Set();
+  let recommended = false;
   for (const match of String(text || '').matchAll(OPTIONS_MARKER)) {
     if (match[1].length > 16000) continue;
     let data;
@@ -43,9 +44,11 @@ function parseReportOptions(text) {
           typeof option.prompt !== 'string' || !option.prompt.trim() || option.prompt.length > 4000 ||
           /[\x00-\x1f]/.test(option.label)) continue;
       seen.add(option.id);
+      const isRecommended = option.recommended === true && !recommended;
+      if (isRecommended) recommended = true;
       options.push({ id: 'report-' + option.id, label: option.label.trim(),
         description: typeof option.description === 'string' ? option.description.slice(0, 400) : '',
-        prompt: option.prompt.trim(), suggested: true });
+        prompt: option.prompt.trim(), suggested: true, ...(isRecommended ? { recommended: true } : {}) });
     }
   }
   return options;
@@ -57,7 +60,8 @@ function blockerOptions(pr) {
   if (['merged', 'closed'].includes(pr.state)) return [];
   if (!['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review) return [];
   const suggestions = [...(pr.review?.options || []), ...(pr.report?.options || [])].slice(0, 6);
-  const primary = suggestions.find(option => option.id === 'report-keep-main') || DEFAULT_OPTIONS[0];
+  const primary = suggestions.find(option => option.recommended) ||
+    suggestions.find(option => option.id === 'report-keep-main') || DEFAULT_OPTIONS[0];
   const choices = [primary, ...suggestions,
     ...DEFAULT_OPTIONS.slice(1).filter(option => option.id !== 'resolve-conflicts' || pr.state === 'conflict' || pr.sawConflict)];
   const seen = new Set(), labels = new Set();
@@ -85,7 +89,7 @@ function blockerPrompt(repository, pr, option) {
 }
 
 function reportOptionsInstructions() {
-  return 'ACTIONABLE BLOCKER OPTIONS: For blocked PRs, give two or three concrete implementation choices, including the tradeoff for each. Include the same choices as a JSON object in this comment block at the end of the tagged report:\n<!-- sweetiebot-merge-options\n{"version":1,"options":[{"id":"keep-main","label":"Keep main and add the proposed features","description":"Preserve main behavior and integrate the PR additions.","prompt":"Preserve current main behavior and integrate the intended features from this PR, resolving overlaps without discarding either intention."}]}\n-->\nUse short unique IDs, concise labels and bounded implementation prompts for this PR only. The dashboard imports these choices as buttons. The user chooses which prompt to run; reporting an option never executes it.';
+  return 'ACTIONABLE BLOCKER OPTIONS: Reuse the existing tagged blocker recommendation flow for complex resolutions that need human judgment. Continue automatically when the common ancestor, current main, earlier batch changes and PR intent support one clear behavior-preserving integration. Escalate when multiple plausible resolutions have materially different behavior and the available evidence cannot establish which is intended, or when required context is missing. Conflict size alone is not uncertainty; do not invent numeric confidence scores. Before deferring a PR for human review, update its existing <!-- sweetiebot-merge-review --> comment (or create one if absent) with the exact unresolved question, the competing intentions, relevant evidence, and two or three concrete implementation choices with tradeoffs. Recommend one choice when evidence supports it, explain why and what remains uncertain, and mark at most one option recommended:true. Reuse existing bot-suggested implementation paths when applicable; refresh them for the current main and PR head rather than replacing them with generic recovery actions. Include the same choices as a JSON object in this comment block at the end of the tagged report:\n<!-- sweetiebot-merge-options\n{"version":1,"options":[{"id":"keep-main","label":"Keep main and add the proposed features","description":"Preserve main behavior and integrate the PR additions.","recommended":true,"prompt":"Preserve current main behavior and integrate the intended features from this PR, resolving overlaps without discarding either intention."}]}\n-->\nUse short unique IDs, concise labels and bounded implementation prompts for this PR only. The dashboard imports these choices as buttons, with the recommendation first. The user chooses which prompt to run; reporting or recommending an option never executes it. The selected option runs in GPT web by default using the existing action route, with Codex available as another destination. Continue unrelated safe PRs while this decision is pending.';
 }
 
 async function defaultGit(root, args) {

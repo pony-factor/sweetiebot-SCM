@@ -314,7 +314,8 @@ __TIMESTAMP_FORMATTER__
         button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
           headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
         if (option.description) show('div', 'muted', option.description, row);
-        if (option.suggested) show('div', 'muted', 'Suggested in the blocker report', row);
+        if (option.recommended) show('div', 'muted', 'Recommended · see the report for reasoning and tradeoffs', row);
+        else if (option.suggested) show('div', 'muted', 'Suggested in the blocker report', row);
         const instructions = show('details', '', undefined, row);
         show('summary', 'muted', 'View instructions', instructions);
         show('p', '', option.prompt, instructions);
