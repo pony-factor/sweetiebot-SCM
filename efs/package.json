@@ -24,6 +24,7 @@
     "onCommand:sweetiebot.openPullRequestChat",
     "onCommand:sweetiebot.pullRequestEligibility",
     "onCommand:sweetiebot.createLocalPullRequest",
+    "onCommand:sweetiebot.setCodexSharedConversationUrl",
     "onCommand:sweetiebot.openPullRequestBatchChat",
     "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
@@ -93,6 +94,12 @@
       ]
     },
     "commands": [
+      {
+        "command": "sweetiebot.setCodexSharedConversationUrl",
+        "title": "Set Shared Codex Conversation Link",
+        "category": "Sweetiebot",
+        "icon": "$(link)"
+      },
       {
         "command": "sweetiebot.commit",
         "title": "Commit (Same as Source Control Button)",
