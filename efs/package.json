@@ -283,6 +283,12 @@
           "scope": "application",
           "description": "Exclude routine Sync brach/branch to main commits from pull-request squash summaries while preserving contributor credits."
         },
+        "scmToolkit.mergePostSummaries": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Post an AI summary to each selected PR after its merge is independently verified. Local explanations are always shown."
+        },
         "scmToolkit.mergeSidebarWidthPercent": {
           "type": "integer",
           "minimum": 15,

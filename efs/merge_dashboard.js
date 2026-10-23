@@ -75,7 +75,7 @@ function reportFromComments(comments) {
   for (const comment of comments || []) {
     const body = String(comment?.body || '');
     if (body.includes(REPORT_MARKER)) {
-      report = { text: stripReportOptions(body.replace(REPORT_MARKER, '')).slice(0, 12000),
+      report = { text: stripReportOptions(body.replace(REPORT_MARKER, '').replace('<!-- sweetiebot-generated-summary -->', '')).slice(0, 12000),
         options: parseReportOptions(body),
         url: comment.html_url || '', id: comment.id };
     }
@@ -221,6 +221,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode),
       nextRefreshSeconds: Math.ceil(actualInterval / 1000)
@@ -328,6 +329,15 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh();
+    if (message?.type === 'post-summaries') {
+      if (typeof message.enabled !== 'boolean') return;
+      try {
+        await vscode.workspace.getConfiguration('scmToolkit').update(
+          'mergePostSummaries', message.enabled, vscode.ConfigurationTarget.Global);
+      } catch (failure) { error = 'Could not save the AI summary preference: ' + failure.message; }
+      publish();
+      return;
+    }
     if (message?.type === 'timestamp-mode') {
       if (!TIMELINE_MODES.includes(message.mode)) return;
       try {
@@ -386,7 +396,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const actualInterval = intervalMs || Math.max(15000, prs.length * 4000);
   const timer = setTimer(() => { void refresh(); }, actualInterval);
   const configurationListener = vscode.workspace?.onDidChangeConfiguration?.(event => {
-    if (['mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
+    if (['mergePostSummaries', 'mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
       .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
   });
   panel.onDidDispose(() => {
@@ -458,6 +468,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
+    for (const failure of result.summaryErrors || []) {
+      const pr = byNumber.get(failure.number);
+      if (pr) addEvent(pr, 'error', 'Merge verified; optional GitHub summary was not posted', String(failure.error).slice(0, 1000));
+    }
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;

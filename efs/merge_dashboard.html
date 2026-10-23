@@ -113,7 +113,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <body>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
-<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div class="overview"><label class="muted"><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="notice" class="notice" hidden></div>
@@ -379,6 +379,7 @@ __TIMESTAMP_FORMATTER__
     const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
       ? model.timestampMode : 'hidden';
     byId('timeline-time-mode').value = timestampMode;
+    byId('post-summaries').checked = model.postSummaries === true;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
     for (const event of model.events.slice(-400).reverse()) {
@@ -428,6 +429,7 @@ __TIMESTAMP_FORMATTER__
     render();
     vscode.postMessage({ type: 'timestamp-mode', mode });
   });
+  byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   setInterval(refreshRelativeEventTimes, 30000);
   dispatch('ready');

@@ -179,7 +179,7 @@ async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
   });
 }
 
-function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummaries = true, omitBulletsForEmojiTitles = false, localHandoff = false }) {
+function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummaries = true, omitBulletsForEmojiTitles = false, localHandoff = false, postMergeSummaries = false }) {
   if (!Array.isArray(pullRequests) || !pullRequests.length) {
     throw new Error('Select at least one pull request.');
   }
@@ -223,6 +223,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummari
     'KNOWN OPTIONAL IDENTITIES: When regular Codex participated, use Co-authored-by: Codex <noreply@openai.com>; separately include Co-authored-by: Codex Web <noreply@openai.com> even when regular Codex is present (do not collapse the two variants). For verified codex-pony[bot] contribution, use its observed GitHub noreply identity Co-authored-by: codex-pony[bot] <326443430+codex-pony[bot]@users.noreply.github.com>. For GitHub Copilot, prefer the GitHub noreply identity actually present in the commits; one known form is Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>, but other Copilot agent identities exist. For evidenced Ollama contributions, preserve only the exact verified co-author name and email from the original commits, including the model-specific name when present. Never invent a generic Ollama email, and omit unverified legacy Ollama trailers rather than substituting an address. Do not add these optional entries just because their examples appear here; other bots and AIs keep their actually recorded name and verified email.',
     'NATIVE STACK METADATA SAFETY: GitHub-native atomic stack merges may not support custom per-layer squash titles, human Git authors, or commit messages. Check support BEFORE submitting the stack. If the chosen operation cannot preserve each layer\'s exact (#number) title and complete ordered human/bot/AI co-author trailers, STOP the affected stack; report this limitation rather than silently losing attribution or rewriting main after the merge.',
     'AFTER EACH COMPLETED MERGE: Fetch the resulting squash commit from its actual destination branch. Verify its first line exactly matches that PR\'s precomputed squash title, its Git author is the verified original HUMAN (never codex-pony[bot] or another bot), and its author plus Co-authored-by trailers cover the verified original human authors and other evidenced contributors in the requested priority order, and that its message includes the required Codex Web trailer in the Codex Web position. Also verify a \'- \' subject list, no \'*\' list markers, no embedded Co-authored-by lines among entries, and only one final trailer block after exactly ten underscores __________. Report any mismatch and its commit URL rather than claiming successful attribution. Queued merges are not complete until their commits can be inspected; never amend or force-push a protected base to repair a merged commit.',
+    postMergeSummaries ? 'OPTIONAL GITHUB SUMMARY ENABLED: Write each handoff explanation as a concise standalone summary of the actual feature or fix, why it matters, and any verified validation or unresolved limitation. This is especially useful when the original PR description is sparse. Avoid executor instructions, SHA inventories and routine attribution bookkeeping. Include each link at most once. The local runner will publish this explanation as one deduplicated AI summary only after it independently verifies the merge. Do not post a summary yourself or claim checks you did not run. The actionable-findings-only policy still applies to other comments.' : '',
     require('./merge_blocker_actions').reportOptionsInstructions(),
     'Report which PRs actually landed on main versus another branch, which were only queued, and which were blocked. Never collapse multiple selected PRs into a single squash commit or claim an intermediate-branch merge reached main.'
   ].filter(Boolean).join('\n\n');
@@ -284,6 +285,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       }
       const prompt = batchMergePrompt({
         localHandoff: true,
+        postMergeSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
         repositoryUrl: selectedRepository.repositoryUrl,
         pullRequests: selected,
         filterSyncCommitSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('filterSyncCommitSummaries', true) !== false,

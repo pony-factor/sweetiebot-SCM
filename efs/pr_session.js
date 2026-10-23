@@ -184,8 +184,13 @@ async function resumePRSession(vscode, context) {
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
       const runLocal = async (result, snapshot) => {
         const controller = await resumeMergeDashboard(vscode, directory, context);
-        return invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
+        const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
           event => controller?.recordLocalProgress?.(event));
+        const summaryErrors = await require('./merge_summary').publishMergeSummaries({
+          enabled: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
+          selection: snapshot, input: result, result: executed, token: auth.accessToken
+        });
+        return { ...executed, summaryErrors };
       };
       if (input.options?.syncOnly) {
         const { validateSyncResolution, resolutionInstructions } = require('./merge_resolution');
@@ -210,6 +215,7 @@ async function resumePRSession(vscode, context) {
         destination: url.origin + url.pathname,
         makePrompt: snapshot => require('./pull_request_batch').batchMergePrompt({
           repositoryUrl: 'https://github.com/' + snapshot.repository,
+          postMergeSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
           pullRequests: snapshot.pullRequests, localHandoff: true,
           filterSyncCommitSummaries: !initialPrompt.includes('SYNC COMMIT FILTER DISABLED'),
           omitBulletsForEmojiTitles: initialPrompt.includes('EMOJI-ONLY SUBJECT LINES ENABLED')
