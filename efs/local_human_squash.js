@@ -278,7 +278,9 @@ async function humanSquashMerge(repository, number, {
       if (updated.state !== 'open' || updated.head?.sha !== prepared.sha) throw Error('Could not verify the synchronized PR head.');
       return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
-        reason: 'Recorded per-file conflict decisions on the PR branch before the remaining main sync; main was not modified.' };
+        reason: prepared.commits.length
+          ? 'Appended per-file conflict decisions followed by the remaining base synchronization; existing PR history was retained.'
+          : 'Appended a base synchronization commit with a normal fast-forward push; existing PR history was retained.' };
     }
     if (!rewriteApproved || repositoryInfo.allow_rebase_merge !== true) {
       throw Error('A history rewrite requires explicit local approval and a verified human-author necessity.');

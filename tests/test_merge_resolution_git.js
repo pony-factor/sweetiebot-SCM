@@ -41,6 +41,7 @@ const run = promisify(execFile);
     const baseSha = await repo('rev-parse', 'HEAD');
     await repo('push', '--quiet', 'origin', 'main', 'feature');
     let merged = false, pushed = false;
+    const pushes = [];
     const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
     const author = { name: 'John Wooten', email: 'human@example.test' };
     const api = async (endpoint, method) => {
@@ -84,6 +85,7 @@ const run = promisify(execFile);
     };
     const localGit = async (...args) => {
       if (args[0] === 'clone') args[3] = remote;
+      if (args.includes('push')) pushes.push(args);
       const output = await git(...args);
       if (args.includes('push')) pushed = true;
       return output;
@@ -129,12 +131,16 @@ const run = promisify(execFile);
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
     const incremental = await attempt();
     assert.equal(incremental.status, 'synced', 'Default integration appends commits');
+    assert(!pushes.at(-1).some(arg => arg.startsWith('--force')), 'Incremental updates use an ordinary push');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
     const needsApproval = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [] });
     assert.equal(needsApproval.status, 'blocked');
     assert.match(needsApproval.reason, /explicit local approval/);
     assert.equal(await branch('feature'), incremental.sha, 'Attribution alone cannot trigger an automatic rewrite');
+    const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null,
+      decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
+    assert.equal(wrongReason.status, 'blocked', 'Convenience does not qualify as rewrite necessity');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, incremental.sha);
     pushed = false;
     const progress = [];

@@ -424,7 +424,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
       const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
       const message = item.status === 'merged' && item.merged === true ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)
-        : item.status === 'synced' ? 'PR branch synchronized after separate per-file decision commits; main was not modified.'
+        : item.status === 'synced' ? item.sha === item.previousHeadSha
+          ? 'PR branch already up to date · no commit or push needed'
+          : 'PR branch synchronized with incremental commits · existing history retained'
         : item.status === 'needs_resolution' ? 'Automatically reconciling overlapping changes against current main: ' + (item.conflictPaths || []).join(', ')
         : item.status === 'needs_refresh' ? 'Main advanced; automatically refreshing the integration.'
         : item.status === 'waiting' ? 'Checks still pending · prepared PR remains unmerged'
