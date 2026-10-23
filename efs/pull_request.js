@@ -24,6 +24,7 @@ const DEFAULT_MCP_SERVER = 'codex-drafter';
 const DEFAULT_MCP_TOOL = 'github_create_pull_request';
 const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
 const CONVERSATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CODEX_SHARED_LINKS_KEY = 'sweetiebot.codexSharedConversationUrls';
 const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item (starting with `- `). Keep each reference as a complete raw HTTPS URL, embedded in the sentence explaining its relationship to the change. Do not turn URLs into Markdown links, label them only by number, put them in normal paragraphs, or leave them as standalone URL-only bullets. This bullet placement takes precedence over conflicting placement guidance in the canonical rules; continue verifying and citing sources as required.';
 
 async function readLudicrousMode(run = promisify(execFile)) {
@@ -125,6 +126,16 @@ function codexConversationUrl(uuid) {
   return `https://vscode.dev/redirect?url=${encodeURIComponent(deepLink)}`;
 }
 
+function validSharedConversationUrl(value) {
+  if (typeof value !== 'string' || value.length > 2000) return undefined;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' && url.hostname === 'chatgpt.com' && !url.username &&
+      !url.password && !url.port && !url.search && !url.hash &&
+      /^\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(url.pathname) ? url.href : undefined;
+  } catch { return undefined; }
+}
+
 function normalizeConversationSource(source) {
   if (!source || typeof source !== 'object') return undefined;
   const kind = String(source.kind || '').toLowerCase();
@@ -133,7 +144,18 @@ function normalizeConversationSource(source) {
   if (!['chatgpt', 'codex'].includes(kind) || !CONVERSATION_UUID.test(uuid) || !/^https:\/\//i.test(url)) {
     return undefined;
   }
-  return { kind, uuid, url };
+  const sharedUrl = validSharedConversationUrl(source.sharedUrl);
+  return { kind, uuid, url, ...(sharedUrl ? { sharedUrl } : {}) };
+}
+
+function sourceWithSharedConversationUrl(context, source) {
+  const normalized = normalizeConversationSource(source);
+  if (!normalized) return undefined;
+  // Keep explicitly shared URLs scoped to their original Codex thread.
+  if (normalized.sharedUrl || normalized.kind !== 'codex') return normalized;
+  const urls = context?.globalState?.get(CODEX_SHARED_LINKS_KEY, {}) || {};
+  const sharedUrl = validSharedConversationUrl(urls[normalized.uuid]);
+  return sharedUrl ? { ...normalized, sharedUrl } : normalized;
 }
 
 async function readCodexConversation(vscode) {
@@ -216,6 +238,30 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   let handoff;
   const pendingDrafts = new Map();
   context.subscriptions.push({ dispose() { pendingDrafts.clear(); } });
+
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.setCodexSharedConversationUrl', async () => {
+    const conversation = await readCodexConversation(vscode);
+    if (conversation?.source?.kind !== 'codex') {
+      await vscode.window.showWarningMessage('Open the originating Codex conversation before attaching its public share link.');
+      return false;
+    }
+    const uuid = conversation.source.uuid;
+    const urls = { ...(context.globalState?.get(CODEX_SHARED_LINKS_KEY, {}) || {}) };
+    const entered = await vscode.window.showInputBox({
+      title: 'Shared Codex conversation link',
+      prompt: 'Paste a ChatGPT shared URL for this Codex thread. It will be published in future PR provenance comments. Clear the field to remove it.',
+      value: urls[uuid] || '', ignoreFocusOut: true,
+      validateInput: value => value.trim() && !validSharedConversationUrl(value)
+        ? 'Enter a ChatGPT shared conversation URL (https://chatgpt.com/s/cx_...).' : null,
+    });
+    if (entered === undefined) return false;
+    const sharedUrl = entered.trim() ? validSharedConversationUrl(entered) : undefined;
+    if (entered.trim() && !sharedUrl) throw new Error('Invalid ChatGPT shared conversation URL.');
+    if (sharedUrl) urls[uuid] = sharedUrl;
+    else delete urls[uuid];
+    await context.globalState.update(CODEX_SHARED_LINKS_KEY, urls);
+    return true;
+  }));
 
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.explainPullRequestSetup', async message => {
     const needsAccess = /Install codex-pony on this repository/.test(String(message));
@@ -339,6 +385,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       source = codex?.source;
       conversationContext = codex?.text || '';
     }
+    source = sourceWithSharedConversationUrl(context, source);
 
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
     const launchSession = dependencies.launchPRSession || launchPRSession;
@@ -533,6 +580,8 @@ module.exports = {
   kefaniaRulesPath,
   matchSweetiebotPonyCatalog,
   normalizeConversationSource,
+  sourceWithSharedConversationUrl,
+  validSharedConversationUrl,
   pullRequestPrompt,
   readKefaniaInstructions,
   readLudicrousMode,

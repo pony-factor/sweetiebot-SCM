@@ -3,7 +3,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { pendingPRCommits } = require('./pr_commit_wait');
 const { resolveKefaniaFile } = require('./kefania_paths');
-const { githubRepository, normalizeConversationSource, readCodexConversation } = require('./pull_request');
+const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl, readCodexConversation } = require('./pull_request');
 
 function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.createLocalPullRequest', async (uri, options) => {
@@ -24,7 +24,8 @@ function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
     if (waitForCommits) await waitForCommits();
     const runner = await resolveKefaniaFile(repository.rootUri.fsPath, path.join('src', 'local-pr.js'));
-    const source = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
+    const suppliedSource = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
+    const source = sourceWithSharedConversationUrl(context, suppliedSource);
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
       title: 'Creating new pull request with Kefania instructions', cancellable: false }, async () => {
       return new Promise((resolve, reject) => {
