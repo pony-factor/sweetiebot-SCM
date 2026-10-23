@@ -30,6 +30,16 @@ const images=getElementById('images');
 const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
 const context=vm.createContext({URL,URLSearchParams,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
 vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
+// The clip follows the fitted image edges rather than the letterboxed element.
+const artwork={clientWidth:1000,clientHeight:600,naturalWidth:400,naturalHeight:600,style:{}};
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 300px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:1000,naturalWidth:600,naturalHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(300px 0px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 0px round 64pt)');
 // Theme colors update in place, and disabling the option removes stale tokens.
 const themeProperties=new Map();
 document.documentElement={
