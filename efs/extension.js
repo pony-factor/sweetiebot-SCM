@@ -10,6 +10,7 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerCommitShortcut } = require('./commit_shortcut');
 const { registerBackgroundCommit } = require('./background_commit');
+const { registerAutoCodexCommit } = require('./auto_codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { resumePRSession } = require('./pr_session');
 const { configureWorkspaceBrowserStorage } = require('./browser_storage');
@@ -133,6 +134,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       incomingSyncLabel: scm.get('incomingSyncLabel', ''),
       outgoingSyncLabel: scm.get('outgoingSyncLabel', ''),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
+      autoCommitWithCodex: scm.get('autoCommitWithCodex', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
@@ -396,6 +398,7 @@ async function activate(context) {
   registerCodexCommitCommand(vscode, context);
   registerCommitShortcut(vscode, context);
   registerBackgroundCommit(vscode, context);
+  registerAutoCodexCommit(vscode, context);
   registerPullRequestCommand(vscode, context);
   // Schedule after activation completes so command execution never waits on
   // the activation promise that is currently registering its own handler.

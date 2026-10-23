@@ -243,6 +243,12 @@
           "scope": "application",
           "description": "Sync existing local main checkouts every 15 minutes when upstream main has commits in the past seven days, even after VS Code closes. Skips local changes and divergence."
         },
+        "scmToolkit.autoCommitWithCodex": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Opt in to automatically committing saved Git changes every 30 seconds with Codex as co-author. Stages modified, deleted and untracked files, creates local commits only, and never pushes automatically. Skips conflicts, empty changes and active commit drafts."
+        },
         "scmToolkit.durableBackgroundCommits": {
           "type": "boolean",
           "default": false,
