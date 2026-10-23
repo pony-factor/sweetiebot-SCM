@@ -436,6 +436,9 @@ async function main() {
   assert.deepEqual(await mergeOperation, { state: 'merged' });
   assert.deepEqual(progressUpdates, [{ message: 'PR #12: checking merge eligibility…' }]);
   assert.deepEqual(successNotices, ['PR #12 merged into main.']);
+  const managedOperation = handler({ url, number: 12 }, { progressManaged: true });
+  assert.equal(progressOptions.length, 1, 'The PR sidebar must not open a nested notification');
+  assert.deepEqual(await managedOperation, { state: 'merged' });
   // Native PR nodes can expose their URI only after rendering. Both the
   // direct command and the inline context action must resolve that clicked row.
   const renderedMerges = [], renderedErrors = [], renderedRefreshes = [];
