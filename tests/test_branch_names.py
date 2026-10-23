@@ -595,7 +595,7 @@ class BranchNamePackTests(unittest.TestCase):
         packs = {pack["id"]: pack for pack in catalog["packs"]}
         names = packs["idw-comics"]["names"]
 
-        self.assertEqual(len(names), 295)
+        self.assertEqual(len(names), 296)
         for name in (
             "acacia-pie",
             "accord",
@@ -626,6 +626,16 @@ class BranchNamePackTests(unittest.TestCase):
         self.assertNotIn("princess-amore", packs["g4-mares"]["names"])
         self.assertEqual(
             sum("princess-amore" in pack["names"] for pack in catalog["packs"]),
+            1,
+        )
+
+    def test_queen_cleopatrot_is_idw_exclusive(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        self.assertIn("queen-cleopatrot", packs["idw-comics"]["names"])
+        self.assertNotIn("queen-cleopatrot", packs["g4-mares"]["names"])
+        self.assertEqual(
+            sum("queen-cleopatrot" in pack["names"] for pack in catalog["packs"]),
             1,
         )
 

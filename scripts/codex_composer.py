@@ -18,10 +18,18 @@ PASTE_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/clipboard-s
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/composer-controls.js'
 PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
 PLACEHOLDER_END = '\nscm-toolkit-codex-placeholders:end */\n'
+PLACEHOLDER_DISPLAY_START = '\n/* scm-toolkit-codex-placeholder-display:start */\n'
+PLACEHOLDER_DISPLAY_END = '\n/* scm-toolkit-codex-placeholder-display:end */\n'
 
 
 def transform_placeholders(source: str, settings: dict) -> str:
     """Replace native placeholder expressions with reversible plain text literals."""
+    if source.count(PLACEHOLDER_DISPLAY_START) != source.count(PLACEHOLDER_DISPLAY_END) or source.count(PLACEHOLDER_DISPLAY_START) > 1:
+        raise ValueError("Incomplete Codex placeholder display patch.")
+    if PLACEHOLDER_DISPLAY_START in source:
+        before, rest = source.split(PLACEHOLDER_DISPLAY_START, 1)
+        _, after = rest.split(PLACEHOLDER_DISPLAY_END, 1)
+        source = before + after
     if source.count(PLACEHOLDER_START) != source.count(PLACEHOLDER_END) or source.count(PLACEHOLDER_START) > 1:
         raise ValueError("Incomplete Codex placeholder patch.")
     if PLACEHOLDER_START in source:
@@ -52,6 +60,13 @@ def transform_placeholders(source: str, settings: dict) -> str:
     if edits:
         metadata = json.dumps(edits, ensure_ascii=True).replace('*', '\\u002a')
         source += PLACEHOLDER_START + metadata + PLACEHOLDER_END
+        payload = (ASSET.parent / 'placeholders.js').read_text().replace(
+            '__SCM_TOOLKIT_PLACEHOLDERS__', json.dumps([
+                str(settings.get(name, '')).strip()
+                for name in ('codexNewChatPlaceholder', 'codexFollowUpPlaceholder')
+                if str(settings.get(name, '')).strip()
+            ], ensure_ascii=True))
+        source += PLACEHOLDER_DISPLAY_START + ';\n' + payload + PLACEHOLDER_DISPLAY_END
     return source
 
 

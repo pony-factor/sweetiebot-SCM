@@ -9,6 +9,8 @@ const {
   kefaniaRulesPath,
   matchSweetiebotPonyCatalog,
   normalizeConversationSource,
+  sourceWithSharedConversationUrl,
+  validSharedConversationUrl,
   pullRequestPrompt,
   readSweetiebotPony,
   readLudicrousMode,
@@ -130,6 +132,19 @@ async function run() {
   assert.deepEqual(normalizeConversationSource(chatSource), chatSource);
   assert.equal(normalizeConversationSource({ ...chatSource, uuid: 'not-a-uuid' }), undefined);
   assert.equal(normalizeConversationSource({ ...chatSource, url: 'file:///tmp/source' }), undefined);
+  const share = 'https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
+  assert.equal(validSharedConversationUrl(share), share);
+  for (const invalid of ['https://evil.example/s/cx_6adb2bd8052c8191a37230ab0c89afde',
+    'https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde?forward=1',
+    'codex://threads/11111111-2222-4333-8444-555555555555']) {
+    assert.equal(validSharedConversationUrl(invalid), undefined);
+  }
+  const codexSource = { kind: 'codex', uuid: '019c56c3-06fc-7db3-a928-9c3607e17129',
+    url: codexConversationUrl('019c56c3-06fc-7db3-a928-9c3607e17129') };
+  const stored = { [codexSource.uuid]: share };
+  assert.deepEqual(sourceWithSharedConversationUrl({ globalState: { get: () => stored } }, codexSource),
+    { ...codexSource, sharedUrl: share });
+  assert.deepEqual(sourceWithSharedConversationUrl({ globalState: { get: () => stored } }, chatSource), chatSource);
 
   const codexUrl = codexConversationUrl('019c56c3-06fc-7db3-a928-9c3607e17129');
   assert.match(codexUrl, /^https:\/\/vscode\.dev\/redirect\?url=/);
@@ -198,6 +213,9 @@ async function run() {
   let callback;
   let eligibilityCallback;
   let setupCallback;
+  let shareCallback;
+  let sharedInput;
+  const sharedState = new Map();
   let uriHandler;
   let browserAvailable = true;
   let codexSnapshot;
@@ -245,6 +263,10 @@ async function run() {
       registerUriHandler(handler) { uriHandler = handler; return { dispose() {} }; },
       async withProgress(_options, task) { return task(); },
       async showInformationMessage(message) { informationMessages.push(message); },
+       async showInputBox(options) {
+         assert.match(options.prompt, /published in future PR provenance/);
+         return sharedInput;
+       },
       async showWarningMessage() {},
       showErrorMessage() { return new Promise(() => {}); },
     },
@@ -261,6 +283,7 @@ async function run() {
         if (id === 'sweetiebot.openPullRequestChat') callback = handler;
         else if (id === 'sweetiebot.pullRequestEligibility') eligibilityCallback = handler;
         else if (id === 'sweetiebot.explainPullRequestSetup') setupCallback = handler;
+         else if (id === 'sweetiebot.setCodexSharedConversationUrl') shareCallback = handler;
         else assert.fail('Unexpected command: ' + id);
         return { dispose() {} };
       },
@@ -275,7 +298,11 @@ async function run() {
       }
     }
   };
-  registerPullRequestCommand(vscode, { subscriptions: [] }, {
+  const context = { subscriptions: [], globalState: {
+    get: (key, fallback) => key === 'scmToolkit.useRegularChatForWebActions' ? true : (sharedState.get(key) ?? fallback),
+    update: async (key, value) => { sharedState.set(key, value); },
+  } };
+  registerPullRequestCommand(vscode, context, {
     pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
     async launchPRSession(_vscode, _context, root, options) {
@@ -324,6 +351,17 @@ async function run() {
       return { hit: false };
     }
   });
+
+  codexSnapshot = { source: codexSource, text: 'A previously shared Codex conversation' };
+  sharedInput = share;
+  assert.equal(await shareCallback(), true);
+  assert.equal(sourceWithSharedConversationUrl(context, codexSource).sharedUrl, share);
+  sharedInput = '';
+  assert.equal(await shareCallback(), true);
+  assert.equal(sourceWithSharedConversationUrl(context, codexSource).sharedUrl, undefined);
+  sharedInput = share;
+  await shareCallback();
+  codexSnapshot = undefined;
 
   launchInSeparateWorkspace = true;
   const sessionResult = await callback({ rootUri: uri }, {

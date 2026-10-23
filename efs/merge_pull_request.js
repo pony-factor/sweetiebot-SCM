@@ -2,7 +2,8 @@
 
 const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
-const { humanSquashMerge, verifiedHumanAuthor } = require('./human_squash_merge');
+const { verifiedHumanAuthor } = require('./human_squash_merge');
+const { humanSquashMerge } = require('./local_human_squash');
 const { squashMessage, readCommits } = require('./squash_attribution');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -50,7 +51,8 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
   });
 }
 
-async function squashMergePullRequest({ repository, head, base, result }, request = githubApi) {
+async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
+  { humanMerge = humanSquashMerge } = {}) {
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||
@@ -71,12 +73,6 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (!pr.user?.login || !['Bot', 'User'].includes(pr.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a bot-authored squash.');
   }
-  if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
-    const landed = await humanSquashMerge(repository, result.number);
-    return { merged: true, sha: landed.sha, url: result.url,
-      number: result.number, base, author: landed.author };
-  }
-
   // Compare live branch tips, not the potentially stale PR base.sha.
   const readBaseTip = async () => {
     const branch = await request('repos/' + repository + '/branches/' + encodeURIComponent(base));
@@ -84,12 +80,35 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     return branch.commit.sha;
   };
   const baseSha = await readBaseTip();
+  const mergeWithHumanAuthor = async () => {
+    // Use the same authenticated transport as the button and bind preparation
+    // to the selected PR, rather than the read-only, already-prepared helper.
+    const api = (endpoint, method = 'GET', fields = []) => {
+      if (method === 'GET') return request(endpoint);
+      const body = {};
+      for (let index = 0; index < fields.length; index += 2) {
+        if (fields[index] !== '-f' || typeof fields[index + 1] !== 'string' ||
+            !fields[index + 1].includes('=')) throw new Error('Invalid local merge API fields.');
+        const split = fields[index + 1].indexOf('=');
+        body[fields[index + 1].slice(0, split)] = fields[index + 1].slice(split + 1);
+      }
+      return request(endpoint, { method, body });
+    };
+    const landed = await humanMerge(repository, result.number, { api,
+      expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
+    if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
+      throw new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.');
+    }
+    return { merged: true, sha: landed.sha, url: result.url,
+      number: result.number, base, author: landed.author };
+  };
+  if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
+    return mergeWithHumanAuthor();
+  }
   const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
   const human = verifiedHumanAuthor(originalCommits);
   if (human.login.toLowerCase() !== pr.user.login.toLowerCase()) {
-    const landed = await humanSquashMerge(repository, result.number);
-    return { merged: true, sha: landed.sha, url: result.url,
-      number: result.number, base, author: landed.author };
+    return mergeWithHumanAuthor();
   }
   const prepared = squashMessage(pr.title, result.number, originalCommits);
   const fresh = await request(endpoint);

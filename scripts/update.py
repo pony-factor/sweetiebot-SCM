@@ -20,7 +20,7 @@ FORMATS = {
     "efs": {".js", ".json", ".svg", ".md", ".html"},
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
-    "assets/images": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"},
+    "assets/imgs": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"},
     "assets/browser": {".js"},
     "assets/github": {".js"},
 }

@@ -34,6 +34,37 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
+        values = form_values()
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(install.DEFAULT_SETTINGS[name], '')
+        values.update(windowHeading=['${rootName} (${activeRepositoryBranchName})'],
+                      windowName=['${activeEditorShort}${separator}${appName}'])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(current[name], values[name][0])
+            self.assertEqual(payload['vscodeSettings'][name], values[name][0])
+        page = configurator.render_form(current, [], 'Ready', 'test-token', 'Save')
+        for name in ('windowHeading', 'windowName'):
+            self.assertIn(f'name="{name}"', page)
+        self.assertIn('placeholder="VS Code default"', page)
+        self.assertIn("window.title", page)
+        self.assertIn('id="heading-layout"', page)
+        self.assertIn('id="heading-available"', page)
+        self.assertIn('id="heading-add-text"', page)
+        self.assertIn('name="windowShowModifiedStatus"', page)
+        self.assertIn('name="windowShowPushingStatus"', page)
+        values.update(windowHeading=[''], windowName=[''])
+        restored = configurator.parse_submission(values)
+        self.assertEqual(restored['windowHeading'], '')
+        self.assertEqual(restored['windowName'], '')
+        values['windowName'] = ['one\ntwo']
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_lindsey_has_its_own_dashboard_settings_page(self):
         names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent"}
         controls = [setting for setting in configurator.SETTINGS if setting.name in names]
@@ -297,6 +328,28 @@ class SubmissionTests(unittest.TestCase):
             self.assertNotIn(f'type="checkbox" name="{name}"', page)
             self.assertIn(f'type="hidden" name="{name}"', page)
 
+    def test_relative_codex_reset_time_setting_explains_conversion(self):
+        setting = next(item for item in configurator.SETTINGS
+                       if item.name == "codexUsageResetCountdown")
+        self.assertEqual(setting.label, "Relative Codex reset times")
+        self.assertIn("absolute reset dates and times", setting.description)
+        self.assertIn("live relative countdowns", setting.description)
+        self.assertEqual(setting.git_key, "scm-toolkit.codex-usage-reset-countdown")
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "token", "Save")
+        self.assertIn("Relative Codex reset times", page)
+        self.assertIn("live relative countdowns", page)
+
+    def test_rate_limit_sticker_toggle_and_local_picker(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["codexRateLimitSticker"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="codexRateLimitSticker"', page)
+        self.assertIn('id="sticker-upload"', page)
+        self.assertIn("Cached", configurator.STICKER_SCRIPT)
+        values.pop("codexRateLimitSticker")
+        self.assertFalse(configurator.parse_submission(values)["codexRateLimitSticker"])
+
     def test_gear_page_covers_every_toolkit_and_extension_setting(self):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
@@ -507,6 +560,21 @@ class SubmissionTests(unittest.TestCase):
         page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
         self.assertIn('name="draftCommitEmoji" value="true" checked', page)
 
+    def test_spellcheck_changes_commit_emoji_setting_is_independent(self):
+        values = form_values()
+        key = "spellcheckChangesEmoji"
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.spellcheck-changes-emoji")
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
+        self.assertTrue(configurator.parse_submission(values)[key])
+        unchecked = dict(values)
+        unchecked.pop(key)
+        self.assertFalse(configurator.parse_submission(unchecked)[key])
+        values[key] = ["true"]
+        rendered = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="spellcheckChangesEmoji" value="true" checked', rendered)
+        self.assertIn("<h3>After committing</h3>", rendered)
+
     def test_spellchecking_suite_defaults_validation_and_grouping(self):
         values = form_values()
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckAction"], "automatic")
@@ -534,6 +602,24 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="draftSpellcheckVocabulary"', page)
         self.assertIn('name="draftSpellcheckGuidance"', page)
         self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
+    def test_spellcheck_thinking_effort_uses_supported_persisted_levels(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckThinkingEffort"], "default")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckThinkingEffort"],
+                         "scm-toolkit.spellcheck-thinking-effort")
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["spellcheckThinkingEffort"], "default")
+        for effort in ("low", "medium", "high"):
+            with self.subTest(effort=effort):
+                values["spellcheckThinkingEffort"] = [effort]
+                configured = configurator.parse_submission(values)
+                self.assertEqual(configured["spellcheckThinkingEffort"], effort)
+                page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
+                self.assertIn('name="spellcheckThinkingEffort"', page)
+                self.assertIn(f'<option value="{effort}" selected>', page)
+        values["spellcheckThinkingEffort"] = ["maximum"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
 
     def test_spellchecking_suite_rejects_invalid_inputs(self):
         invalid = (
@@ -1235,6 +1321,33 @@ class ServerTests(unittest.TestCase):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
             with urllib.request.urlopen(endpoint("/models"), timeout=5) as response:
                 self.assertEqual(json.load(response)["models"], [])
+            # A change to VS Code's user settings reaches the already-open page.
+            changes = urllib.parse.urlencode({
+                "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                "windowName": "${activeEditorShort}",
+                "windowShowModifiedStatus": "false",
+                "windowShowPushingStatus": "false",
+            }).encode()
+            with urllib.request.urlopen(urllib.request.Request(
+                endpoint("/sync-window-settings"), data=changes, method="POST"
+            )) as response:
+                self.assertTrue(json.load(response)["synced"])
+            with urllib.request.urlopen(endpoint("/health")) as response:
+                self.assertEqual(json.load(response)["windowSettings"], {
+                    "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                    "windowName": "${activeEditorShort}",
+                    "windowShowModifiedStatus": False,
+                    "windowShowPushingStatus": False,
+                })
+            with urllib.request.urlopen(endpoint("/")) as response:
+                updated_page = response.read().decode()
+            self.assertIn('value="${rootName} — ${activeRepositoryBranchName}"', updated_page)
+            self.assertIn('value="${activeEditorShort}"', updated_page)
+            with self.assertRaises(urllib.error.HTTPError) as bad:
+                urllib.request.urlopen(urllib.request.Request(
+                    endpoint("/sync-window-settings"), data=b"windowHeading=x", method="POST"
+                ))
+            self.assertEqual(bad.exception.code, 400)
             request = urllib.request.Request(endpoint("/pull"), data=b"model=embed:test", method="POST")
             with patch("configurator.ollama_request", return_value=io.BytesIO(b'{"status":"downloading","completed":1,"total":2}\n{"status":"success"}\n')) as pull:
                 with urllib.request.urlopen(request, timeout=5) as response:

@@ -9,6 +9,7 @@ const {
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
+const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/merge_blocker_actions');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -30,6 +31,31 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     { id: 7, html_url: url + '#comment-7', body: REPORT_MARKER + '\nNew report' },
   ];
   const notes = reportFromComments(comments);
+  const optionsBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
+    { id: 'preserve-api', label: 'Keep the current API', description: 'Add compatibility for the PR.', prompt: 'Preserve the current API and add the proposed compatibility layer.', engine: 'shell' },
+    { id: '../unsafe', label: 'Bad', prompt: 'bad' },
+    { id: 'invalid', label: 'Empty prompt', prompt: '' }
+  ] }) + '\n-->';
+  const parsedOptions = parseReportOptions(optionsBlock);
+  assert.equal(parsedOptions.length, 1);
+  assert.equal(parsedOptions[0].engine, undefined, 'Report content cannot select an execution engine');
+  const actionable = reportFromComments([{ id: 8, body: REPORT_MARKER + '\nKeep main.\n' + optionsBlock }]);
+  assert.equal(actionable.report.text, 'Keep main.', 'Machine-readable choices are not rendered as report text');
+  const choices = blockerOptions({ state: 'blocked', report: actionable.report });
+  assert.equal(choices[0].id, 'keep-main');
+  assert(choices.some(option => option.id === 'report-preserve-api'));
+  const recommendation = parseReportOptions('<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
+    { id: 'compatibility', label: 'Add a compatibility layer', prompt: 'Keep both interfaces with an adapter.', recommended: true },
+    { id: 'replace-api', label: 'Replace the API', prompt: 'Adopt the proposed API.', recommended: true }
+  ] }) + '\n-->');
+  assert.equal(recommendation.filter(option => option.recommended).length, 1);
+  const recommendedChoices = blockerOptions({ state: 'review', review: { options: recommendation } });
+  assert.equal(recommendedChoices[0].id, 'report-compatibility', 'The specific recommendation precedes generic recovery actions');
+  assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
+  assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
+  const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[1]);
+  assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
+  assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
@@ -95,25 +121,35 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     env: { async openExternal(target) { openings.push(target); } }
   };
   let info = {
-    number: 12, base: { ref: 'main' }, head: { sha }, html_url: url,
+    number: 12, base: { ref: 'main' }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
     state: 'open', merged: false, mergeable: false, mergeable_state: 'dirty', body: 'Why this PR exists'
   };
   let commentsForPr = [];
+  let inlineCommentsForPr = [];
+  let reactionVotes = [];
   let fileRequests = 0;
   const fakeFetch = async (address, options) => {
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
     let result;
-    if (pathname.endsWith('/pulls/12')) result = info;
+    if (pathname === '/user') result = { id: 41, type: 'User' };
+    else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
+    else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
+    else if (pathname.endsWith('/pulls/12')) result = info;
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
         additions: 5, deletions: 1, patch: '@@ -1 +1 @@\n-old\n+new' }];
-    } else if (pathname.endsWith('/comments')) result = commentsForPr;
+    } else if (pathname.endsWith('/pulls/12/comments')) result = inlineCommentsForPr;
+    else if (pathname.endsWith('/issues/12/comments')) result = commentsForPr;
     else throw new Error('Unexpected URL ' + address);
     return { ok: true, json: async () => result };
   };
+  const actionLaunches = [];
+  const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
+    context: { globalStorageUri: { fsPath: reactionStorage } },
+    launchAction: async (...args) => { actionLaunches.push(args); return true; },
     fetchImpl: fakeFetch,
     intervalMs: 25000,
     setTimer(callback) { pollCallback = callback; return 17; },
@@ -172,7 +208,7 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   assert.deepEqual(savedModes, ['relative', 'clock', 'hidden'],
     'Reject unrecognized timestamp modes without changing persisted settings');
 
-  info = { ...info, head: { sha: nextSha }, mergeable: true, mergeable_state: 'clean' };
+  info = { ...info, head: { ...info.head, sha: nextSha }, mergeable: true, mergeable_state: 'clean' };
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nMechanically reconciled both changes.' }];
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'resolved');
@@ -194,10 +230,85 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'blocked');
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; checks are not passing');
+  const selectedAction = events.at(-1).prs[0].blockerOptions[0];
+  const actionMessage = { type: 'blocker-action', number: 12, headSha: nextSha,
+    actionId: selectedAction.id, optionKey: selectedAction.key };
+  await messageHandler(actionMessage);
+  assert.equal(actionLaunches.length, 1);
+  assert.equal(actionLaunches[0][6], 'web', 'GPT web is the default destination');
+  assert.equal(actionLaunches[0][5].id, 'keep-main');
+  await messageHandler({ ...actionMessage, engine: 'codex' });
+  assert.equal(actionLaunches[1][6], 'codex');
+  await messageHandler({ ...actionMessage, optionKey: 'forged' });
+  assert.equal(actionLaunches.length, 2, 'Unknown or modified options never launch');
+  info = { ...info, head: { ...info.head, sha } };
+  await messageHandler(actionMessage);
+  assert.equal(actionLaunches.length, 2, 'A stale selected head never launches');
+  info = { ...info, head: { ...info.head, sha: nextSha } };
   info = { ...info, mergeable_state: 'blocked' };
   await dashboard.refresh();
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
     'A changed blocking reason is reported even when the phase stays blocked');
+  inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
+    html_url: url + '#discussion_r90',
+    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + optionsBlock }];
+  info = { ...info, head: { ...info.head, sha }, mergeable_state: 'clean', mergeable: true };
+  await dashboard.refresh();
+  const inlinePr = events.at(-1).prs[0];
+  assert.equal(inlinePr.review.text, 'Which API should this conflict preserve?');
+  assert.equal(inlinePr.review.url, url + '#discussion_r90');
+  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-preserve-api');
+  assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
+  const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
+    actionId: inlineChoice.id, optionKey: inlineChoice.key };
+  await messageHandler(inlineAction);
+  assert.equal(actionLaunches.length, 3, 'Inline options survive the fresh action lookup');
+  assert.equal(actionLaunches[2][4].review.url, url + '#discussion_r90');
+  inlineCommentsForPr = [];
+  await messageHandler(inlineAction);
+  assert.equal(actionLaunches.length, 3, 'Removed inline choices cannot execute from a stale dashboard');
+  const reactionBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({
+    version: 1, headSha: nextSha, baseSha: 'c'.repeat(40), options: [
+      { id: 'adapter', label: 'Keep both APIs', prompt: 'Add an adapter.', reaction: '+1' },
+      { id: 'new-api', label: 'Adopt new API', prompt: 'Update callers.', reaction: 'heart' }
+    ] }) + '\n-->';
+  inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
+    commit_id: nextSha, updated_at: '2026-10-23T12:00:00Z', html_url: url + '#discussion_r90',
+    body: REVIEW_MARKER + '\nChoose the API.\n' + reactionBlock }];
+  reactionVotes = [{ id: 100, user: { id: 41, type: 'User' }, content: 'heart', created_at: '2026-10-23T12:01:00Z' }];
+  info = { ...info, head: { ...info.head, sha: nextSha }, base: { ...info.base, sha: 'c'.repeat(40) } };
+  await dashboard.refresh();
+  assert.equal(actionLaunches.length, 4, 'Dashboard polling dispatches the user reaction');
+  assert.equal(actionLaunches[3][5].id, 'report-new-api');
+  assert.equal(actionLaunches[3][6], 'web');
+  assert.equal(actionLaunches[3][4].review.url, url + '#discussion_r90');
+  await dashboard.refresh();
+  assert.equal(actionLaunches.length, 4, 'Polling cannot repeat the reaction task');
+  const stateBeforeProgress = events.at(-1).prs[0].state;
+  dashboard.recordLocalProgress({ number: 12, stage: 'preparing' });
+  dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
+  dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
+    path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
+  assert(events.at(-1).events.at(-1).details.includes('Keep both APIs'));
+  assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
+  dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha });
+  assert.match(events.at(-1).events.at(-1).message, /not merged/);
+  dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
+    status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
+  assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
+  assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
+  assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
+  const eventCount = events.at(-1).events.length;
+  dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
+  dashboard.recordLocalProgress({ number: 12, stage: 'invented' });
+  assert.equal(events.at(-1).events.length, eventCount);
+  const batchState = { repository: selection.repository,
+    deferred: [{ number: 12, reason: 'Refresh the selected head before another merge attempt.' }] };
+  dashboard.recordBatchState(batchState);
+  assert.match(events.at(-1).events.at(-1).message, /Deferred for this batch/);
+  assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
+  dashboard.recordBatchState(batchState);
+  assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
   info = { ...info, state: 'closed', merged: false };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'closed');
@@ -213,6 +324,7 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   const countBefore = events.length;
   await dashboard.refresh();
   assert.equal(events.length, countBefore);
+  fs.rmSync(reactionStorage, { recursive: true, force: true });
 
   await assert.rejects(githubGet(async () => ({ ok: false, status: 403 }), 'test-token',
     'pony-factor/example', '/pulls/12'), /HTTP 403/);

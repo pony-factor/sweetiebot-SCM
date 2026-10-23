@@ -163,7 +163,7 @@ The installer modifies the installed VS Code workbench files. VS Code updates ca
 - `scripts/`: Python installers, configuration tools, and their branch-name catalog.
 - `assets/workbench/`: JavaScript and CSS injected into the VS Code workbench.
 - `assets/codex/`: JavaScript injected into the Codex extension.
-- `assets/images/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
+- `assets/imgs/`: shared artwork. Add PNG, JPEG, GIF, WebP, SVG, AVIF, or ICO files here; subfolders are supported. Images are automatically included in the installer and update/repair payloads. Feature code selects which images to display.
 - `efs/`: companion VS Code extension code.
 - `tests/`: Python and JavaScript tests.
 
@@ -277,6 +277,8 @@ Every toolkit setting and companion-extension preference is available on this ge
 With **Automatically pull clean branches** enabled, each repository's default branch fetches its tracked upstream once a minute through the extension host, even when the commit input row is hidden. It pulls only with a fast-forward and preserves nonconflicting staged and unstaged edits. Sweetiebot pauses these ref-moving pulls for the full lifetime of a VS Code commit so background syncing cannot advance `HEAD` between Git reading and updating the branch ref. Git refuses to pull when incoming files would overwrite local work; merge conflicts, divergent commits, changed branch tips or upstreams also pause pulling.
 
 When a background **Commit & Push** is rejected because its remote branch advanced, Sweetiebot uses a local Lindsey Sync checkout to replay unpublished commits onto the new remote tip and retry the push once. Lindsey must provide `scripts/sync-local.js`; keep its checkout beside the repository or set `LINDSEY_SYNC_REPO`. Node is required. All queued titles must finish first. Sync preserves commit messages, authors and signatures, and keeps the old history under `refs/sweetiebot/recovery/`. Conflicts report the affected paths without changing the branch or working files. Uncommitted edits, local merge commits and branches checked out in another worktree pause automatic sync. Network failures continue retrying automatically.
+
+If an external merge or push has already published finalized queued commits, Sweetiebot automatically clears those blocked jobs after verifying that the commits remain in the local branch and the live remote destination. It preserves staged and unstaged files and does not rewrite history or push again. Unfinished titles, active workers, pending finalization transactions, and unverifiable publication keep their existing pause; stale remote-tracking refs alone cannot clear a job.
 
 The configurator uses only the Python standard library, binds to a random loopback port, requires a one-time URL token, and sends no settings off the computer. Its UI is cross-platform; the workbench installer remains macOS-specific because it currently targets the Visual Studio Code application-bundle layout.
 
@@ -399,6 +401,30 @@ python3 scripts/install.py
 ```
 
 Then reload Visual Studio Code. The installer resolves the Git-config values and embeds that configuration into the installed patch.
+
+### Native stacked pony branches
+
+The **git-branch-create** button still creates a random pony branch from the
+default branch. Beside it, the accent-colored **layers** button creates a
+stacked branch from the currently selected topic branch using the same pony
+name pool. It is disabled on `main` and while other branch operations run.
+
+Install [GitHub CLI](https://cli.github.com/) and GitHub's
+[`gh-stack` extension](https://github.com/github/gh-stack):
+
+```sh
+gh extension install github/gh-stack
+```
+
+The parent checkout must be clean. Sweetiebot checks its exact HEAD, adopts
+an untracked parent into a local native stack, adds the child with
+`gh stack add`, restores the parent's checkout, then opens the child through
+the managed worktree flow. Branch creation **does not submit a pull request**
+or force-push. The New PR button continues through Kafania, with the child
+targeting its recorded parent rather than `main`. Once both PRs exist, the
+Kafania publication callback attempts to link them into a native remote stack
+without allowing `gh stack link` to create another PR. If the parent PR does
+not yet exist, publish it first and link the stack later.
 
 ### Branch-name packs
 
@@ -539,6 +565,18 @@ The low-memory path never escalates to the larger primary model when the fallbac
 
 ### Spellcheck Changes customization
 
+**Spellcheck reasoning effort** is a separate option for draft subjects and
+reviewed Markdown corrections. It offers **Default**, **Low**, **Medium**, and
+**High**. Sweetiebot asks local Ollama which thinking levels the selected
+spellcheck model supports, uses the exact supported level (or enables thinking
+for on/off-only models), and falls back to the model's normal behavior when
+the level is unavailable. Thinking-capable models get a larger context, output
+budget, and timeout; the normal commit-title pipeline is unchanged. Results
+still go through the original correction safety checks. This is an Ollama
+feature, not a hidden ChatGPT plugin session; corrections and co-author
+attribution remain accurately identified as Ollama unless a separately
+verified ChatGPT integration is implemented.
+
 The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
 simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
 stages only the reviewed Markdown files, runs the **normal Ollama commit-title
@@ -550,6 +588,14 @@ reviewed files; unrelated staged files remain untouched. The review's optional
 description is appended before the spellchecker attribution. If generation
 fails, staged corrections remain visible for manual recovery without a
 fallback special-purpose title.
+
+The independent **Add professional emoji to spellcheck commits** switch (on by
+default, `scm-toolkit.spellcheck-changes-emoji`) controls whether the normal
+model-generated emoji appears at the start of the accepted spellcheck commit.
+Turning it off removes only that leading emoji **after** ordinary commit-title
+generation. It does not change the model, generation effort, generated
+description, spellchecker co-author trailer, or professional emoji settings for
+manually drafted or other AI-generated commits.
 
 The **Spellcheck Changes** settings tab groups draft-time and post-commit controls. The
 **Automatic draft commit spellcheck** toggle is off by default. Draft checks can be
@@ -727,15 +773,38 @@ the webview to show **ChatGPT hit a snag** even after the composer repair.
 
 ### Compact Codex rate-limit notices
 
+The **Rate-limit sticker** toggle lives in **Settings → Codex → Customization**
+and is enabled by default. Select a personal PNG, JPEG, GIF, or WebP (up to 2 MB)
+in **Rate-limit sticker image** to cache the artwork under the current user's
+private local application data folder, never in the Git repository or settings
+sync. The bundled `assets/imgs/twi-stop.png` remains the default; **Use bundled
+image** deletes the cached override. Uploads and resets require a rebuild and
+Codex reload to update the patched webview. Turning the sticker off does not
+disable usage-message compaction, reset shortcuts or countdown settings.
+
+
 Repeated transcript notices without a usable reset time are shortened to
 **Rate limited**, rather than duplicating the upgrade/credit warning already
-shown in Codex's main limit card. Messages with an actual reset time retain it.
+shown in Codex's main limit card. A narrowly scoped DOM observer reapplies
+this text after Codex rerenders an untimed warning so the long warning does
+not flicker back into view. Messages with an actual reset time, actionable
+upgrade controls, and editable prompts are left unchanged.
 
-The empty **Rated Limited** banner directly above the composer is replaced by the
-bundled `assets/images/twi-stop.png` sticker. Installation embeds the artwork as a PNG data URI,
-so it does not fetch an external host. The override also works when the Codex
-bundle lacks older transcript-message IDs. If the image cannot render, the
-native status remains visible; actionable limit cards are not replaced.
+The short **Rate limited** status in the composer's own DOM region (including
+older builds that mistakenly show **Rated Limited**) is replaced by the bundled
+`assets/imgs/twi-stop.png` sticker. Matching first uses composer/status ancestry, and falls back to native
+alert/status roles, accessibility labels, and rate-limit feature identifiers if
+Codex changes its wording, markup, or renders the status in a portal outside
+the composer. It does not require particular screen coordinates, widths or
+icons. The fallback requires one unambiguous native status and preserves the
+original banner; transcript messages and unrelated alerts are excluded.
+Completely unmarked rate limits still cannot be identified reliably. The sticker uses
+a small, independently framed card: for a bare status, its original container
+shrinks around the image. If the native status includes a reset countdown,
+credit details or Upgrade actions, a separate compact sticker card appears
+alongside it, and the original details and buttons remain usable. Installation
+embeds the artwork as a PNG data URI and works without older transcript-message
+IDs. If the image cannot render, the native notice remains intact.
 
 A right-aligned **Use credits** shortcut appears on the main limit card
 when Codex itself renders an available banked-reset control (for example,
@@ -757,11 +826,13 @@ git config --global scm-toolkit.codex-hide-usage-reset-times true
 python3 scripts/install.py --codex-only
 ```
 
-### Codex usage-reset countdown
+### Relative Codex reset times
 
-When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
-Codex extension show the time remaining as a live countdown such as `4h 23m`. The
-display rounds to the nearest minute and refreshes as the countdown changes.
+The **Relative Codex reset times** setting (`codex-usage-reset-countdown`)
+converts absolute reset dates and times in supported Codex usage-limit banners
+into live relative countdowns. For example, "resets October 24 at 3 PM" is
+displayed as "resets in 1d 4h" when that duration remains. Countdown values
+are rounded to the nearest minute and update automatically.
 The local composer label beside the location icon shows the smaller remaining
 percentage of the five-hour and weekly usage limits. Until usage data is available,
 it shows **Work locally**. The usage submenu shows centered reset countdowns;
@@ -1125,7 +1196,7 @@ The installer also applies reversible fixes to supported GitHub Pull Requests ex
 
 Sweetiebot moves both single-PR drafting chats and batch pull-request merge chats to a native floating editor window, without changing the global Integrated Browser tab-placement setting. On macOS, it also attempts to resize the newly focused ChatGPT window to 680 × 720 pixels. That size adjustment requires macOS Accessibility permission and is best-effort; if it is unavailable, the floating window remains resizable manually. If VS Code cannot float the browser tab, the chat remains open in its original tab rather than accidentally starting a second PR run. In the floating window title bar, **Set Compact Mode** can hide the extra window chrome.
 
-The batch ChatGPT merge picker includes ready-for-review PRs targeting any branch and displays complete selected stacks in ancestor-first order. Complete stacks rooted at `main` do not trigger the generic non-`main` warning: the generated chat requests GitHub's native atomic stack squash operation where supported (`gh stack merge <PR> --yes --squash` or the asynchronous REST endpoint), preserving one squash commit per PR. A head/base branch-name chain does not prove native GitHub stack membership, so the merging workflow rechecks it and never adds unselected ancestors. Incomplete stacks and unrelated non-`main` targets still require confirmation and retain their bases. The picker only launches a merge-request chat; it does not itself merge or rebase PRs. Its instructions require each completed squash commit to end its title with that PR's number (for example, `(#269)`), retain verified original human authors/committers and existing co-authors through explicit `Co-authored-by` trailers when necessary, order co-authors as primary original human authors, other human contributors, regular Codex, Codex Web, codex-pony, Copilot, Ollama, other bots, then other AI collaborators; retain the required Codex Web entry at its priority position (not necessarily last); and verify the resulting commit. Ollama uses `hello@ollama.com`, and Copilot uses the verified GitHub noreply identity recorded for the contributor. When a native stacked merge cannot customize each layer's commit metadata, the workflow stops the affected stack rather than silently losing contributor credit. The individual **Squash and Merge Pull Request** button still merges only into the PR's current base. **For bot-opened PRs**, instead of GitHub's squash endpoint (which otherwise credits the PR opener as Git author), Sweetiebot uses `efs/human_squash_merge.js` in an isolated temporary Git checkout: it verifies an original human Git author linked to a GitHub account, creates a single squash with `git commit --author`, keeps all other evidenced co-authors (including Codex Web) in their existing priority order, and pushes the selected unprotected PR head only with `--force-with-lease`. It then asks **GitHub to rebase-merge that one human-authored commit**, preserving the original bot-opened PR and GitHub's permissions, reviews, rulesets and checks. It never force-pushes `main`, directly pushes a squash onto the protected base, or silently substitutes a bot-authored GitHub squash. Shared/stacked or protected head branches, unavailable Git credentials, disabled GitHub rebase merges and unverified human authors block this path. Rewriting a PR head may invalidate approvals or restart checks; if GitHub rejects the merge, leave the human-authored PR branch available for maintainer review rather than bypassing rules. The GitHub Pull Requests list refreshes when visible and focused if the configured interval has elapsed, then every 120 seconds by default. The gear page offers **Pull-request refresh interval (seconds)** (30–3600 seconds); manual refresh remains available. After an API or secondary rate limit, Sweetiebot pauses its own automatic refreshes for at least 15 minutes, increasing the cooldown to at most 60 minutes for repeated limits. Other GitHub API consumers may still exhaust the shared quota. Hover over a PR to use **Squash and Merge Pull Request** without opening its description. The button uses the authenticated GitHub CLI to call GitHub's asynchronous REST merge endpoint (`merge-async`) for an ordinary, individual squash merge, with the selected PR's exact head SHA, `merge_method=squash`, and `merge_action=direct_merge` (with GitHub branch protections still enforced). It rechecks the PR's head and base before submission, polls the returned request ID for up to twelve seconds, distinguishes accepted/pending and merge-queued requests from completed merges, and confirms the PR's merged state and original target before cleanup. A pending merge does not close the PR tab or remove branches. Retrying a matching existing request polls its status and shows that GitHub is still processing; a different head, method, queue policy, or rules-bypass setting is rejected. Since GitHub does not return custom commit metadata with an existing request, Sweetiebot verifies the completed squash commit title and contributor attribution before reporting success or cleaning up branches. The single-PR action also checks native GitHub stack membership and declines stacked PRs, because requesting one stack layer would implicitly include unselected downstack PRs; use the bulk merge workflow for those. The merge button verifies the PR is open and ready for review. PRs targeting a branch other than `main` require an explicit modal confirmation showing the destination and a re-check of the target and head before merging. Merges always use the PR's base branch and the freshly fetched head commit. GitHub branch protections remain in effect. After a completed merge into `main`, guarded cleanup returns an eligible clean local PR branch to the default branch and removes it; non-`main` merges skip that local cleanup; dirty worktrees and changed local heads are preserved. Queued merges skip cleanup until a later operation confirms completion. Direct quick merges show status-bar progress instead of a persistent notification, then one brief toast with a 🎉 icon on confirmation or an ⏳ icon if still queued. Errors and cleanup warnings remain visible. Both features can be toggled in the gear page using `pull-request-auto-refresh` and `pull-request-quick-merge`.
+The batch ChatGPT merge picker includes ready-for-review PRs targeting any branch and displays complete selected stacks in ancestor-first order. Complete stacks rooted at `main` do not trigger the generic non-`main` warning: the generated chat requests GitHub's native atomic stack squash operation where supported (`gh stack merge <PR> --yes --squash` or the asynchronous REST endpoint), preserving one squash commit per PR. A head/base branch-name chain does not prove native GitHub stack membership, so the merging workflow rechecks it and never adds unselected ancestors. Incomplete stacks and unrelated non-`main` targets still require confirmation and retain their bases. The picker only launches a merge-request chat; it does not itself merge or rebase PRs. Its instructions require each completed squash commit to end its title with that PR's number (for example, `(#269)`), retain verified original human authors/committers and existing co-authors through explicit `Co-authored-by` trailers when necessary, order co-authors as primary original human authors, other human contributors, regular Codex, Codex Web, codex-pony, Copilot, Ollama, other bots, then other AI collaborators; retain the required Codex Web entry at its priority position (not necessarily last); and verify the resulting commit. Ollama uses `hello@ollama.com`, and Copilot uses the verified GitHub noreply identity recorded for the contributor. When a native stacked merge cannot customize each layer's commit metadata, the workflow stops the affected stack rather than silently losing contributor credit. The individual **Squash and Merge Pull Request** button still merges only into the PR's current base. **For bot-opened PRs**, instead of GitHub's squash endpoint (which otherwise credits the PR opener as Git author), Sweetiebot uses `efs/human_squash_merge.js` in an isolated temporary Git checkout: it verifies an original human Git author linked to a GitHub account and keeps all other evidenced co-authors (including Codex Web) in their existing priority order. The bulk-merge handoff appends incremental integration commits by default; replacing an existing PR head with a locally authored squash is reserved for an explicitly approved last-resort operation, guarded by an exact-head `--force-with-lease`. It then asks **GitHub to rebase-merge that one human-authored commit**, preserving the original bot-opened PR and GitHub's permissions, reviews, rulesets and checks. It never force-pushes `main`, directly pushes a squash onto the protected base, or silently substitutes a bot-authored GitHub squash. Shared/stacked or protected head branches, unavailable Git credentials, disabled GitHub rebase merges and unverified human authors block this path. Rewriting a PR head may invalidate approvals or restart checks; if GitHub rejects the merge, leave the human-authored PR branch available for maintainer review rather than bypassing rules. The GitHub Pull Requests list refreshes when visible and focused if the configured interval has elapsed, then every 120 seconds by default. The gear page offers **Pull-request refresh interval (seconds)** (30–3600 seconds); manual refresh remains available. After an API or secondary rate limit, Sweetiebot pauses its own automatic refreshes for at least 15 minutes, increasing the cooldown to at most 60 minutes for repeated limits. Other GitHub API consumers may still exhaust the shared quota. Hover over a PR to use **Squash and Merge Pull Request** without opening its description. The button uses the authenticated GitHub CLI to call GitHub's asynchronous REST merge endpoint (`merge-async`) for an ordinary, individual squash merge, with the selected PR's exact head SHA, `merge_method=squash`, and `merge_action=direct_merge` (with GitHub branch protections still enforced). It rechecks the PR's head and base before submission, polls the returned request ID for up to twelve seconds, distinguishes accepted/pending and merge-queued requests from completed merges, and confirms the PR's merged state and original target before cleanup. A pending merge does not close the PR tab or remove branches. Retrying a matching existing request polls its status and shows that GitHub is still processing; a different head, method, queue policy, or rules-bypass setting is rejected. Since GitHub does not return custom commit metadata with an existing request, Sweetiebot verifies the completed squash commit title and contributor attribution before reporting success or cleaning up branches. The single-PR action also checks native GitHub stack membership and declines stacked PRs, because requesting one stack layer would implicitly include unselected downstack PRs; use the bulk merge workflow for those. The merge button verifies the PR is open and ready for review. PRs targeting a branch other than `main` require an explicit modal confirmation showing the destination and a re-check of the target and head before merging. Merges always use the PR's base branch and the freshly fetched head commit. GitHub branch protections remain in effect. After a completed merge into `main`, guarded cleanup returns an eligible clean local PR branch to the default branch and removes it; non-`main` merges skip that local cleanup; dirty worktrees and changed local heads are preserved. Queued merges skip cleanup until a later operation confirms completion. Direct quick merges show status-bar progress instead of a persistent notification, then one brief toast with a 🎉 icon on confirmation or an ⏳ icon if still queued. Errors and cleanup warnings remain visible. Both features can be toggled in the gear page using `pull-request-auto-refresh` and `pull-request-quick-merge`.
 
 
 Automatic staged commits remove trailing spaces and tabs from added or changed text lines and normalize the final newline. Existing untouched lines, LF/CRLF style, file modes, cached attribute exclusions, and unstaged edits are preserved. Explicit-message commits keep their existing behavior.
@@ -1153,7 +1224,7 @@ checks, and no-history-rewrite merge safeguards.
 
 Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in a dedicated workspace window with its own extension host, matching Kefania’s PR submission workflow, including when a local Lindsey checkout is installed. The Lindsey merge workspace now starts in Sweetiebot's centered 640 × 640 compact window, rather than filling the screen. Its dashboard safely displays formatted Markdown and clickable HTTP(S) links in PR descriptions, AI merge reports, and human-review comments, while leaving untrusted HTML inert. Its progress dashboard stacks the timeline and details when narrow; the titlebar's **Expand to 75% of this display** action provides more space for the 20/80 ChatGPT/dashboard split. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 
-The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. For bot-opened PRs, the prompt requires an original human Git author and the same isolated `git commit --author` plus GitHub-native one-commit rebase route; if the chat lacks an authenticated local Git executor or safe branch rewrite, it stops that PR instead of producing another bot-authored commit. GitHub-native stacks remain blocked where custom human authors cannot be preserved per layer. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
+The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. Lindsey preserves existing PR history by default: conflict fixes and synchronization append incremental commits with ordinary fast-forward pushes. Human-opened PRs whose opener matches the verified original human author use GitHub native squash merging with the exact PR title and contributor trailers. An already prepared single human-authored commit can use the existing rebase route without changing its branch. For a bot-opened PR that cannot preserve its human author through those routes, Lindsey stops rather than automatically rewriting the head. A rewrite is a last resort requiring explicit local approval for the human-author necessity; a web handoff cannot grant that approval. It never rewrites a branch just to simplify a squash, adjust a title, or repair attribution. GitHub-native stacks remain blocked where custom human authors cannot be preserved per layer. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
 
 Lindsey's changed-file patch viewer colors added (+) and removed (-) lines, hunk headers, and leading markers using the live VS Code theme. It reads resolved `diffEditor.*` and `diffEditorGutter.*` CSS variables, so the user's `workbench.colorCustomizations` in VS Code `settings.json` (including theme-specific overrides) control the background accents without requiring Sweetiebot to parse or modify user settings. Patch content remains plain text rather than executable HTML. Unchanged lines preserve the editor foreground and monospace font.
 
