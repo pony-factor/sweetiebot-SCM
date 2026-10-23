@@ -141,8 +141,8 @@ assert.equal(getElementById('lightbox-prev').hidden,true);
 assert.equal(getElementById('lightbox-next').hidden,true);
 getElementById('lightbox-image').fire('error');
 assert.equal(getElementById('lightbox-error').hidden,false,'Failed full images offer a source fallback');
-getElementById('lightbox-close').fire('click');
-assert.equal(lightbox.open,false,'Close button dismisses modal');
+lightbox.fire('click',{target:getElementById('lightbox-error')});
+assert.equal(lightbox.open,false,'Clicking outside artwork dismisses the modal');
 assert.equal(focused.focused,true,'Focus returns to thumbnail');
 img.onerror();
 assert.equal(images.children.length,0,'Failed thumbnails disappear entirely, including their attribution-only cards');
@@ -189,8 +189,16 @@ lightbox.fire('keydown',{key:'ArrowRight'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/second.png','Next wraps');
 lightbox.fire('keydown',{key:'ArrowLeft'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/first.png','Previous wraps');
-lightbox.fire('click',{clientX:400,clientY:400});
-assert.equal(lightbox.open,true,'Interior clicks do not dismiss');
+for(const id of ['lightbox-image','lightbox-prev','lightbox-next']){
+  lightbox.fire('click',{target:getElementById(id)});
+  assert.equal(lightbox.open,true,'Artwork and arrow clicks do not dismiss');
+}
+lightbox.fire('click',{target:new Element('div'),clientX:400,clientY:400});
+assert.equal(lightbox.open,false,'Empty space inside the viewer dismisses');
+trigger.fire('click');
+lightbox.fire('click',{target:getElementById('lightbox-caption')});
+assert.equal(lightbox.open,false,'The credits strip also dismisses');
+trigger.fire('click');
 lightbox.fire('click',{clientX:40,clientY:40});
 assert.equal(lightbox.open,false,'Backdrop click closes');
 const blockedStart=pendingImages.length;
@@ -234,6 +242,7 @@ assert.match(html, /for\(const position of \['left','middle','right'\]\)document
 assert.match(html, /\.close-button-left header\{padding-left:44px\}/, 'Only visible left X reserves header space');
 assert.match(html, /\.lightbox\[open\]\{display:grid;grid-template-rows:minmax\(0,1fr\) auto\}/, 'Lightbox has only image and footer rows');
 assert.doesNotMatch(html, /class="lightbox-toolbar"/, 'No empty top banner');
+assert.doesNotMatch(html, /lightbox-close/, 'The image viewer has no X button');
 assert.match(html, /\.lightbox-nav\{[^}]*position:absolute;top:50%[^}]*height:min\(75%,560px\)/, 'Arrows resize with the compact image stage instead of spanning empty space');
 assert.match(html, /function fitLightboxToGallery\(\)/, 'Artwork dimensions determine a common height across the carousel');
 assert.match(html, /source\.height=img\.naturalHeight/, 'Natural image dimensions are retained for fitting');

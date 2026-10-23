@@ -70,6 +70,55 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   };
   assert.equal((await squashMergePullRequest(input,api)).merged,true);
   assert.equal(calls.length,7, 'PR and live base snapshots, history, merge, and landed commit');
+  // Bot-opened PRs use the local commit preparation path with an exact snapshot.
+  const botPR = {...pr, user:{login:'codex-pony[bot]',type:'Bot'}};
+  const localCalls = [];
+  const localRequest = async (endpoint, options) => {
+    localCalls.push([endpoint, options]);
+    if (endpoint === 'repos/owner/repo/pulls/12' && !options) return botPR;
+    return api(endpoint, options);
+  };
+  let prepared = 0;
+  const humanMerge = async (repository, number, options) => {
+    prepared++;
+    assert.equal(repository, input.repository);
+    assert.equal(number, 12);
+    assert.deepEqual(options.expected, {headSha:pr.head.sha,baseSha:'d'.repeat(40),
+      head:'pony',base:'main',title:pr.title});
+    assert.equal((await options.api('repos/owner/repo/pulls/12')).user.type, 'Bot');
+    await options.api('repos/owner/repo/pulls/12/merge', 'PUT',
+      ['-f','sha='+'e'.repeat(40),'-f','merge_method=rebase']);
+    return {merged:true,sha:'b'.repeat(40),author:{name:'John Wooten'}};
+  };
+  // Verify the helper's write is forwarded using the button's authenticated API.
+  const localTransport = async (endpoint, options) => {
+    if (options) {
+      assert.deepEqual(options, {method:'PUT',body:{sha:'e'.repeat(40),merge_method:'rebase'}});
+      return {merged:true,sha:'b'.repeat(40)};
+    }
+    return localRequest(endpoint);
+  };
+  assert((await squashMergePullRequest(input, localTransport, {humanMerge})).merged);
+  assert.equal(prepared, 1);
+  for (const status of ['waiting','checks_failed','needs_resolution']) {
+    await assert.rejects(squashMergePullRequest(input, localRequest, {
+      humanMerge:async()=>({merged:false,status,reason:'Specific '+status})
+    }), new RegExp('Specific '+status));
+  }
+  await assert.rejects(squashMergePullRequest(input, localRequest, {
+    humanMerge:async()=>({merged:true,sha:'invalid'})
+  }), /did not confirm/);
+  // A human opener differing from the original author uses the same local path.
+  let differentAuthorPrepared = false;
+  assert((await squashMergePullRequest(input, async (endpoint, options) => {
+    if (endpoint === 'repos/owner/repo/pulls/12')
+      return {...pr,user:{login:'another-user',type:'User'}};
+    return api(endpoint, options);
+  }, {humanMerge:async()=>{
+    differentAuthorPrepared = true;
+    return {merged:true,sha:'b'.repeat(40)};
+  }})).merged);
+  assert(differentAuthorPrepared);
   // PR metadata may catch up while the actual branch remains unchanged.
   let metadataReads = 0;
   assert((await squashMergePullRequest(input, async (endpoint, options) => {

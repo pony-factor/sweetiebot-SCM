@@ -27,8 +27,6 @@
 .lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
 .lightbox-nav:hover{filter:none;background:#50385ddd}
 #lightbox-prev{left:0}#lightbox-next{right:0}
-.lightbox-close{position:absolute;top:8px;right:8px;z-index:2;display:grid;place-items:center;width:38px;height:38px;padding:0;border:1px solid #6b5278;border-radius:8px;background:#35263f;color:#fff;box-shadow:none;font-size:25px;line-height:1}
-.lightbox-close:hover{filter:none;background:#50385d}
 .lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:2px}
 @media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
 
@@ -40,8 +38,8 @@
 [data-theme-colors] a{color:var(--accent);text-decoration-color:currentColor}
 [data-theme-colors] button{background:var(--kefania-button,var(--accent));color:var(--kefania-buttonText,var(--bg));border-color:var(--line)}
 [data-theme-colors] button:hover{filter:none;background:var(--kefania-buttonHover,var(--kefania-button,var(--accent)))}
-[data-theme-colors] .close-confirmation,[data-theme-colors] .lightbox-close,[data-theme-colors] .lightbox-nav{background:var(--kefania-control,var(--panel));color:var(--kefania-controlText,var(--text));border-color:var(--line)}
-[data-theme-colors] .close-confirmation:hover,[data-theme-colors] .lightbox-close:hover,[data-theme-colors] .lightbox-nav:hover{background:var(--kefania-controlHover,var(--bg))}
+[data-theme-colors] .close-confirmation,[data-theme-colors] .lightbox-nav{background:var(--kefania-control,var(--panel));color:var(--kefania-controlText,var(--text));border-color:var(--line)}
+[data-theme-colors] .close-confirmation:hover:hover,[data-theme-colors] .lightbox-nav:hover{background:var(--kefania-controlHover,var(--bg))}
 [data-theme-colors] button:disabled{background:var(--panel);color:var(--muted);opacity:.6}
 [data-theme-colors] .image-trigger{background:transparent;color:inherit;border:0}
 [data-theme-colors] .image-trigger:hover{background:var(--kefania-controlHover,var(--panel))}
@@ -55,7 +53,7 @@
 <section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><h2 id="title">Preparing your draft</h2><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><p id="merge-error" class="publication" role="alert"></p></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 </div>
 <dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
-<div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button><button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close image viewer">×</button></div>
+<div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button></div>
 <div class="lightbox-footer"><span id="lightbox-caption"></span><a id="lightbox-source" target="_blank" rel="noopener noreferrer">View source ↗</a></div>
 </dialog></main>
 <script>
@@ -205,7 +203,6 @@ el('lightbox-image').addEventListener('error',()=>{
   el('lightbox-image').hidden=true;
   el('lightbox-error').hidden=false;
 });
-el('lightbox-close').addEventListener('click',()=>lightbox.close());
 el('lightbox-prev').addEventListener('click',()=>stepImage(-1));
 el('lightbox-next').addEventListener('click',()=>stepImage(1));
 lightbox.addEventListener('keydown',event=>{
@@ -216,9 +213,8 @@ lightbox.addEventListener('keydown',event=>{
   }
 });
 lightbox.addEventListener('click',event=>{
-  if(event.target!==lightbox)return;
-  const rect=lightbox.getBoundingClientRect();
-  if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)lightbox.close();
+  if(event.target===el('lightbox-image')||event.target===el('lightbox-prev')||event.target===el('lightbox-next'))return;
+  lightbox.close();
 });
 lightbox.addEventListener('close',()=>{
   currentImage=-1;
