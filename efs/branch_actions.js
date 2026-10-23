@@ -19,19 +19,20 @@ const { routeBranch } = require('./shared_main');
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
 const POST_COMMIT_GATE = 'sweetiebot-post-commit-push.json';
-const ASYNC_COMMIT_JOURNAL = 'sweetiebot-async-commit.json';
 
-async function asyncCommitPending(repository, { background = true } = {}) {
+async function asyncCommitPending(repository, { background = true, refs = ['HEAD'] } = {}) {
   const root = repository.rootUri?.fsPath;
   if (!root || !existsSync(path.join(root, '.git'))) return false;
   // A checkout may have a .git directory or a linked-worktree .git file.
   // If a real checkout's metadata cannot be inspected, fail closed.
   try {
-    const { stdout } = await promisify(execFile)('git', ['rev-parse', '--absolute-git-dir'], {
-      cwd: root, timeout: 10000
-    });
-    return existsSync(path.join(stdout.trim(), ASYNC_COMMIT_JOURNAL))
-      || (background && existsSync(path.join(stdout.trim(), 'sweetiebot-background-commit.json')));
+    const installedScript = path.join(__dirname, 'background_commit.py');
+    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
+    const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
+      script, background ? '--pending' : '--pending-legacy', ...refs
+    ], { cwd: root, timeout: 10000 });
+    const pending = JSON.parse(stdout);
+    return typeof pending === 'boolean' ? pending : true;
   } catch {
     return true;
   }
@@ -63,11 +64,10 @@ async function storeSpellcheckPushGate(file, gate) {
   }
 }
 
-async function armSpellcheckPushGate(repository) {
+async function armSpellcheckPushGate(repository, token = randomUUID()) {
   try {
     const file = await spellcheckPushGateFile(repository);
     if (!file) return null;
-    const token = randomUUID();
     // Use Git's actual pre-commit HEAD rather than a potentially stale VS Code
     // status snapshot, so the worker can match this gate to the right commit.
     let previousHead = '';
@@ -102,17 +102,25 @@ async function releaseSpellcheckPushGate(repository, token, pushed) {
 }
 
 function commitInProgress(repository) {
-  return (activeCommits.get(repository) ?? 0) > 0;
+  const branch = repository.state.HEAD?.name;
+  return [...(activeCommits.get(repository)?.values() || [])]
+    .some(owner => !owner || !branch || owner === branch);
 }
 
 function beginRepositoryCommit(repository) {
-  activeCommits.set(repository, (activeCommits.get(repository) ?? 0) + 1);
+  const token = randomUUID();
+  const commits = activeCommits.get(repository) || new Map();
+  commits.set(token, repository.state.HEAD?.name);
+  activeCommits.set(repository, commits);
+  return token;
 }
 
-function endRepositoryCommit(repository) {
-  const remaining = (activeCommits.get(repository) ?? 0) - 1;
-  if (remaining > 0) activeCommits.set(repository, remaining);
-  else activeCommits.delete(repository);
+function endRepositoryCommit(repository, token) {
+  const commits = activeCommits.get(repository);
+  if (!commits) return;
+  if (!token) token = [...commits].find(([, owner]) => owner === repository.state.HEAD?.name)?.[0];
+  commits.delete(token);
+  if (!commits.size) activeCommits.delete(repository);
 }
 
 function queueRepositoryOperation(repository, operation) {
@@ -218,7 +226,7 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   if (!target.remote || !target.name) return false;
   if (fetch) {
     if (repository.state.mergeChanges?.length) return false;
-    await repository.fetch({ remote: target.remote, ref: target.name });
+    await retryFetch(() => repository.fetch({ remote: target.remote, ref: target.name }));
     await repository.status();
     if (commitInProgress(repository) || await asyncCommitPending(repository)) return false;
     const current = repository.state.HEAD;
@@ -417,6 +425,19 @@ async function retryConnection(operation) {
   }
 }
 
+async function retryFetch(operation) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await retryConnection(operation);
+    } catch (error) {
+      // Another fetch or push can update a tracking ref after Git reads it.
+      // Retry Git's comparison; leave persistent locks and other failures alone.
+      if (attempt >= 2 || !/cannot lock ref 'refs\/remotes\/[^']+': is at [0-9a-f]+ but expected [0-9a-f]+/i.test(errorText(error))) throw error;
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
 async function syncDefaultBranch(repository, defaultBranch, remote, checkout = true) {
   if (checkout) await repository.checkout(defaultBranch);
   const checkBranch = async () => {
@@ -433,9 +454,9 @@ async function syncDefaultBranch(repository, defaultBranch, remote, checkout = t
   for (let attempt = 0; ; attempt++) {
     // Fetch and merge explicitly: VS Code's throttled pull can retain a failed
     // queued request after a timeout, preventing later attempts from running.
-    await retryConnection(async () => {
+    await retryFetch(async () => {
       await checkBranch();
-      await repository.fetch({ remote });
+      await repository.fetch({ remote, ref: upstream.name });
     });
     await checkBranch();
     await repository.merge(`${remote}/${upstream.name}`);
@@ -502,7 +523,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
       added = true;
     }
     for (let attempt = 0; ; attempt++) {
-      await retryConnection(() => git(worktree, ['fetch', remote]));
+      await retryFetch(() => git(worktree, ['fetch', remote, `+refs/heads/${upstream.slice(prefix.length)}:${upstream}`]));
       await checkBranch();
       if (existing && !await checkMain()) return await git(root, ['rev-parse', `refs/heads/${defaultBranch}`]);
       try {
@@ -560,7 +581,7 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     });
     unfinishedBase = /^(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])$/.test(stdout.trim());
   }
-  if (unfinishedBase || await asyncCommitPending(repository)) {
+  if (unfinishedBase || await asyncCommitPending(repository, { refs: [`refs/heads/${defaultBranch}`] })) {
     const installedScript = path.join(__dirname, 'background_commit.py');
     const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../scripts/background_commit.py');
     forkScript = script;
@@ -982,7 +1003,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     await syncDefaultBranch(repository, branch, upstream.remote, false);
     return branch;
   }
-  await repository.fetch({ remote });
+  await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
   await checkBranch();
   const previousMessage = repository.inputBox.value;
   const message = defaultBranch === 'main'
@@ -1109,21 +1130,23 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
+          const remote = options?.remote || 'origin';
+          const defaultBranch = needsDefaultBranch.has(command) ? await resolveDefaultBranch(repository, remote) : undefined;
+          const refs = [options?.branch || 'HEAD'];
+          if (command === 'sweetiebot.syncBranch') refs.push(`refs/remotes/${remote}/${defaultBranch}`);
           // Switching to an unpublished branch can trigger automatic publishing.
           // Let a later status refresh retry after the background queue drains.
-          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository)) return false;
+          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository, { refs })) return false;
           if (command === 'sweetiebot.publishBranch') {
             const merged = await mergedBranchStatus(repository, options.remote, options.branch);
             if (merged) return warnMergedBranch(vscode, repository, merged);
           }
           if (command !== 'sweetiebot.autoPullClean' && command !== 'sweetiebot.createBranch') {
             await requireFinalizedCommit(repository, {
-              background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command)
+              background: !['sweetiebot.returnHome', 'sweetiebot.createBranch'].includes(command), refs
             });
           }
           if (!needsDefaultBranch.has(command)) return action(repository, options);
-          const remote = options?.remote || 'origin';
-          const defaultBranch = await resolveDefaultBranch(repository, remote);
           if (command === 'sweetiebot.returnHome' && defaultBranch === 'main' &&
               await routeBranch(vscode, repository, { branch: 'main' })) return 'main';
           if (command === 'sweetiebot.createBranch' && !options.names?.length) {
@@ -1205,7 +1228,7 @@ function registerBranchCommands(vscode, context) {
         'Delete Empty Branch'
       );
       if (choice !== 'Delete Empty Branch') return false;
-      await requireFinalizedCommit(repository);
+      await requireFinalizedCommit(repository, { refs: [branch] });
       return await queueRepositoryOperation(repository, () => deleteEmptyBranch(repository, {
         branch, defaultBranch, remote: options.remote || 'origin'
       }));
@@ -1226,8 +1249,9 @@ function registerBranchCommands(vscode, context) {
     vscode.commands.registerCommand('sweetiebot.beginCommit', async (uri, options) => {
       const repository = await resolveRepository(uri);
       return queueRepositoryOperation(repository, async () => {
-        beginRepositoryCommit(repository);
-        return options?.waitForPush ? armSpellcheckPushGate(repository) : null;
+        const token = beginRepositoryCommit(repository);
+        if (options?.waitForPush) await armSpellcheckPushGate(repository, token);
+        return token;
       });
     }),
     vscode.commands.registerCommand('sweetiebot.endCommit', async (uri, options) => {
@@ -1236,7 +1260,7 @@ function registerBranchCommands(vscode, context) {
         try {
           await releaseSpellcheckPushGate(repository, options?.gateToken, options?.pushed === true);
         } finally {
-          endRepositoryCommit(repository);
+          endRepositoryCommit(repository, options?.gateToken);
         }
       });
     })
