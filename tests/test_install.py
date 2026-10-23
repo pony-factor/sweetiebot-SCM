@@ -684,6 +684,26 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             )
         self.assertEqual(install.pr_workspace_explorer_edits(workbench_fixture()), [])
 
+    def test_explorer_migrates_stale_contents_title_metadata(self):
+        source = workbench_fixture() + pr_explorer_fixture()
+        patched, css = install.transform(source, 'base-css', settings=SETTINGS)
+        before, payload = patched.split(install.START, 1)
+        # Reproduce the installed folder-name code with older Contents metadata.
+        payload = payload.replace(
+            '?this.contextService.getWorkspace().folders[0].name:',
+            '?\\"Contents\\":',
+        )
+        stale = before + install.START + payload
+        self.assertNotEqual(stale, patched)
+        self.assertEqual(install.transform(stale, css, settings=SETTINGS), (patched, css))
+        self.assertEqual(install.transform(stale, css, remove=True), (source, 'base-css'))
+        for unexpected in (
+            before.replace('folders[0].name:', 'folders[0].path:'),
+            before + install.pr_workspace_explorer_edits(source)[1][1],
+        ):
+            with self.assertRaisesRegex(ValueError, 'Installed toolkit patch changed'):
+                install.transform(unexpected + install.START + payload, css, settings=SETTINGS)
+
     def test_pr_explorer_supports_inlined_folder_state(self):
         original = workbench_fixture() + pr_explorer_fixture().replace(
             'WorkbenchState.FOLDER', '2'

@@ -139,7 +139,15 @@ async function capturePendingFiles(root, run) {
     if (!stat.isFile()) throw new Error('Codex handoff preserves source symlinks and special files in their original checkout.');
     files.push({ name, size: stat.size, mtimeMs: stat.mtimeMs });
   }
-  return { patch, files };
+  const head = await run(['-C', root, 'rev-parse', 'HEAD']);
+  const ref = await run(['-C', root, 'symbolic-ref', 'HEAD']);
+  const index = (await exec('git', ['-C', root, 'diff', '--cached', '--binary', 'HEAD', '--'],
+    { maxBuffer: 32 * 1024 * 1024 })).stdout;
+  const tracked = (await run(['-C', root, 'diff', '--name-only', '-z', 'HEAD', '--']))
+    .split('\0').filter(Boolean);
+  const staged = (await run(['-C', root, 'diff', '--cached', '--name-only', '-z', 'HEAD', '--']))
+    .split('\0').filter(Boolean);
+  return { patch, files, head, ref, index, tracked: [...new Set([...tracked, ...staged])] };
 }
 
 async function copyPendingFiles(root, destination, directory, snapshot) {
@@ -165,6 +173,45 @@ async function copyPendingFiles(root, destination, directory, snapshot) {
     const target = path.join(destination, file.name);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.copyFile(source, target, require('node:fs').constants.COPYFILE_EXCL);
+  }
+}
+
+async function removeTransferredFiles(root, destination, directory, snapshot, run) {
+  // Validate both copies before removing anything. A changed source or index
+  // belongs to the user and must stay in place, even if copying succeeded.
+  const current = await capturePendingFiles(root, run);
+  if (JSON.stringify(current) !== JSON.stringify(snapshot)) {
+    throw new Error('Source files or staging changed during checkout handoff; both checkouts were preserved.');
+  }
+  const patchFile = path.join(directory, '.sweetiebot-handoff-verify.patch');
+  if (snapshot.patch) {
+    try {
+      await fs.writeFile(patchFile, snapshot.patch, { mode: 0o600, flag: 'wx' });
+      await exec('git', ['-C', destination, 'apply', '--reverse', '--check', '--binary', patchFile]);
+    } finally { await fs.rm(patchFile, { force: true }); }
+  }
+  for (const file of snapshot.files) {
+    const source = path.join(root, file.name);
+    const target = path.join(destination, file.name);
+    const targetStat = await fs.lstat(target);
+    if (!targetStat.isFile() || !(await fs.readFile(source)).equals(await fs.readFile(target))) {
+      throw new Error('A transferred file differs from its source; both checkouts were preserved.');
+    }
+  }
+  // Remove only transferred tracked paths, including their old staged entries.
+  // The destination remains unstaged; unrelated source paths are untouched.
+  if (snapshot.tracked.length) {
+    await exec('git', ['-C', root, '--literal-pathspecs', 'restore', '--source=' + snapshot.head,
+      '--staged', '--worktree', '--', ...snapshot.tracked]);
+  }
+  for (const file of snapshot.files) {
+    const source = path.join(root, file.name);
+    const stat = await fs.lstat(source);
+    if (!stat.isFile() || stat.size !== file.size || stat.mtimeMs !== file.mtimeMs ||
+        !(await fs.readFile(source)).equals(await fs.readFile(path.join(destination, file.name)))) {
+      throw new Error('A source file changed during cleanup; its remaining changes were preserved.');
+    }
+    await fs.unlink(source);
   }
 }
 
@@ -215,6 +262,7 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
   const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original));
   const destination = path.join(directory, path.basename(original));
   let added = false;
+  let transferred = false;
   let handoff;
   try {
     handoff = await prepareCodexHandoff(vscode, root);
@@ -241,6 +289,10 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
     await fs.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
       version: 1, kind: 'topic-worktree', repositories: [path.basename(original)]
     }, null, 2) + '\n');
+    if (pendingFiles) {
+      await removeTransferredFiles(root, destination, directory, pendingFiles, run);
+      transferred = true;
+    }
     // The user wants this same chat and window to follow the selected branch.
     // Its turn was stopped before creating the checkout; the destination host
     // resumes the same thread only after verifying its execution directory.
@@ -250,10 +302,11 @@ async function routeBranch(vscode, repository, { branch, create = false, start,
   } catch (error) {
     if (handoff) {
       await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
-        { ...handoff, destination: root }).catch(() => {});
+        { ...handoff, destination: transferred ? destination : root }).catch(() => {});
     }
     if (!added) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
     // Once added, retain the checkout and any edits even if opening fails.
+    if (transferred) error.message += ' Transferred edits remain in ' + destination + '; the source checkout was cleaned.';
     throw error;
   }
 }
