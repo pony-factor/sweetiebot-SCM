@@ -245,8 +245,19 @@ def enqueue(request, start=True):
         fcntl.flock(lock, fcntl.LOCK_EX)
         branch, parent = state()
         dependencies = related_pending_jobs(core.REAL_GIT, [])
-        if any(record['kind'] == 'legacy' or record['directory'] != meta or record['job'].get('branch') != branch
-               for record in dependencies):
+        # A branch explicitly forked under the background finalizer may queue
+        # descendants of its inherited provisional commit. This is not an
+        # unrelated branch: the recorded fork tip pins the allowed ancestry.
+        fork_base = (read_journal(meta / FORKS) or {}).get(branch)
+        def owns_pending_ancestor(record):
+            job = record['job']
+            if job.get('branch') == branch:
+                return True
+            return bool(fork_base and job.get('sha') and
+                        git('merge-base', '--is-ancestor', job['sha'], fork_base,
+                            check=False).returncode == 0)
+        if any(record['kind'] == 'legacy' or record['directory'] != meta
+               or not owns_pending_ancestor(record) for record in dependencies):
             raise RuntimeError('Wait for the existing commit message to finish before queuing another commit.')
         recover_finalization(meta)
         entries = queue_entries(marker)

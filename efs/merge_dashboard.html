@@ -237,7 +237,7 @@ __TIMESTAMP_FORMATTER__
   const labels = {
     waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Resolved',
     conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
-    queued: 'Queued', updated: 'Updated'
+    queued: 'Queued', updated: 'Updated', closed: 'Closed'
   };
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -274,6 +274,7 @@ __TIMESTAMP_FORMATTER__
     const top = show('div', 'detail-top', undefined, parent);
     show('h2', '', '#' + pr.number + ' ' + pr.title, top);
     show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
+    if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
     show('div', 'muted', pr.head + ' → ' + pr.base +
       (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
     const actions = show('div', 'actions', undefined, parent);
