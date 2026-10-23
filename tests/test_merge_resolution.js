@@ -53,6 +53,12 @@ const input = { version: 1, repository: 'owner/repo', results: [{
   const blocked = await executeResolution(input, selection, { merge: async () => { throw Error('Stale base'); } });
   assert.equal(blocked.results[0].status, 'blocked');
   assert.match(blocked.results[0].reason, /Stale/);
+  await executeResolution({ ...input, results: [{ ...input.results[0], allowHistoryRewrite: true,
+    rewriteReason: 'preserve-human-author' }] }, selection, { merge: async (repo, number, options) => {
+    assert.equal(options.allowHistoryRewrite, undefined, 'A web result cannot approve its own history rewrite');
+    assert.equal(options.rewriteReason, undefined);
+    return { merged: false, status: 'blocked' };
+  } });
   const pushedFailure = await executeResolution(input, selection, { merge: async () => {
     throw Object.assign(Error('PR changed after guarded push'), { preparedHead: 'c'.repeat(40), originalHead: head });
   } });

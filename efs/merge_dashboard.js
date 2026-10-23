@@ -387,6 +387,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       preparing: 'Preparing the full PR in an isolated checkout',
       integrating: 'Integrating the full PR with the current base',
       'applying-resolution': 'Applying the complete conflict-resolution patch',
+      'rewrite-approved': 'Using an explicitly approved history rewrite as a last resort',
       prepared: 'Full PR squash prepared locally · not pushed yet',
       'decision-commit': 'Conflict decision recorded as a separate local commit',
       'sync-prepared': 'Branch synchronization prepared locally',
@@ -401,7 +402,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
     if (event.stage === 'preparing') pr.lastPushedHead = '';
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
-    const decision = event.stage === 'decision-commit' || event.stage === 'preparing'
+    const decision = ['decision-commit', 'preparing', 'rewrite-approved'].includes(event.stage)
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
     addEvent(pr, 'progress', stages[event.stage],
       [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
