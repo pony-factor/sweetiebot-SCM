@@ -1002,6 +1002,27 @@ def transform(js, css, remove=False, settings=None):
 
         for edit in previous:
             original, replacement, expected_count = unpack_edit(edit)
+            # An earlier Explorer title repair updated the code without its
+            # saved metadata. Accept only that exact, known toolkit revision.
+            if expected_count == 1 and js.count(replacement) == 0:
+                native_title = re.fullmatch(
+                    r'get singleViewPaneContainerTitle\(\)\{return this\.name\}'
+                    r'get autoReveal\(\)\{return this\._autoReveal\}'
+                    r'set autoReveal\((?P<arg>[A-Za-z_$][\w$]*)\)\{this\._autoReveal=(?P=arg)\}'
+                    r'get name\(\)\{return this\.labelService\.getWorkspaceLabel\(this\.contextService\.getWorkspace\(\)\)\}',
+                    original,
+                )
+                legacy_title = original.replace(
+                    'get name(){return ',
+                    'get name(){return this.contextService.getWorkspace().folders.length===1?"Contents":',
+                    1,
+                )
+                if native_title and replacement == legacy_title:
+                    replacement = legacy_title.replace(
+                        '?"Contents":',
+                        '?this.contextService.getWorkspace().folders[0].name:',
+                        1,
+                    )
             if js.count(replacement) != expected_count:
                 raise ValueError(
                     "Installed toolkit patch changed; refusing to remove unrelated edits."
