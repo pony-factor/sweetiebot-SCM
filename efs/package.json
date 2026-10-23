@@ -37,6 +37,7 @@
     "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
     "onCommand:sweetiebot.previewCommitSpellcheck",
+    "onCommand:sweetiebot.spellcheckWithChatGPT",
     "onCommand:sweetiebot.postCommitSpellcheck",
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
@@ -105,6 +106,12 @@
         "title": "Commit (Same as Source Control Button)",
         "category": "Sweetiebot",
         "icon": "$(check)"
+      },
+      {
+        "command": "sweetiebot.spellcheckWithChatGPT",
+        "title": "Review Text with ChatGPT Spellcheck Only",
+        "category": "Sweetiebot",
+        "icon": "$(edit)"
       },
       {
         "command": "sweetiebot.commitWithCodex",
