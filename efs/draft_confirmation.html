@@ -16,19 +16,19 @@
 .image-trigger:hover{filter:none;background:#33283d}
 .image-trigger:focus-visible{outline:2px solid #f5d4ff;outline-offset:-3px}
 .image-trigger img{pointer-events:none}
-.lightbox{position:fixed;inset:0;margin:auto;width:min(72vw,1100px);height:95vh;max-width:96vw;max-height:95vh;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);box-shadow:none}
+.lightbox{--arrow-width:clamp(44px,5vw,72px);--arrow-gap:12px;position:fixed;inset:0;margin:auto;width:min(72vw,1100px);height:95vh;max-width:96vw;max-height:95vh;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);box-shadow:none}
 .lightbox[open]{display:grid;grid-template-rows:minmax(0,1fr) auto}
 .lightbox::backdrop{background:#08060edb}
-.lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px 42px}
+.lightbox-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;padding:8px calc(var(--arrow-width) + var(--arrow-gap))}
 .lightbox-stage img{flex:1;min-width:0;width:0;height:100%;min-height:0;max-height:100%;object-fit:contain;margin:auto}
 .lightbox-stage .image-error{flex:1}
 .lightbox-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;height:48px;min-height:48px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);font-size:13px;overflow:hidden}
 .lightbox-footer span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.lightbox-footer a{flex:none;white-space:nowrap}
-.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:clamp(44px,5vw,72px);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;display:grid;place-items:center;flex:none;width:var(--arrow-width);height:min(75%,560px);min-height:0;padding:0;border:1px solid #6b527877;border-radius:9px;background:#35263f77;color:#fff;box-shadow:none;font-size:36px}
 .lightbox-nav:hover{filter:none;background:#50385ddd}
 #lightbox-prev{left:0}#lightbox-next{right:0}
 .lightbox button:focus-visible{outline:2px solid #f5d4ff;outline-offset:2px}
-@media(max-width:600px){.lightbox{width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px 36px}.lightbox-nav{width:38px;height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
+@media(max-width:600px){.lightbox{--arrow-width:38px;--arrow-gap:8px;width:96vw;height:94vh;max-height:94vh}.lightbox-stage{padding:6px calc(var(--arrow-width) + var(--arrow-gap))}.lightbox-nav{height:75%;font-size:28px}.lightbox-footer{padding:8px;font-size:11px;gap:8px}}
 
 /* Theme mode uses the same resolved colors as the surrounding workbench. */
 :root[data-theme-colors]{color-scheme:light dark;--bg:var(--kefania-bg);--panel:var(--kefania-panel,var(--bg));--line:var(--kefania-line,var(--muted));--text:var(--kefania-text);--muted:var(--kefania-muted,var(--text));--accent:var(--kefania-accent,var(--text))}
@@ -97,22 +97,27 @@ function renderMarkdown(target, markdown) {
   });
 }
 
-// Size the dialog once for the tallest currently loaded image at the gallery's
-// available width. A shared height prevents jumps when cycling aspect ratios.
-// The 48px footer and 16px image-stage padding are included in the budget.
+// Fit every image to the same viewport budget, then use their shared envelope.
+// Dedicated arrow gutters sit outside even the widest fitted artwork.
 function fitLightboxToGallery(){
   const narrow=window.innerWidth<=600;
   const maxDialogHeight=window.innerHeight*(narrow?0.94:0.95);
-  const dialogWidth=narrow?window.innerWidth*0.96:Math.min(window.innerWidth*0.72,1100);
-  const imageWidth=Math.max(1,dialogWidth-(narrow?72:84));
-  const stageMax=Math.max(1,maxDialogHeight-48);
-  const needed=imageSources.reduce((height,source)=>{
-    const width=Number(source.width),imageHeight=Number(source.height);
-    if(!(width>0&&imageHeight>0))return height;
-    return Math.max(height,imageWidth*imageHeight/width+16);
-  },0);
-  const stageHeight=Math.min(stageMax,Math.max(Math.min(220,stageMax),needed));
-  lightbox.style.height=Math.round(stageHeight+48)+'px';
+  const maxDialogWidth=narrow?window.innerWidth*0.96:Math.min(window.innerWidth*0.72,1100);
+  const arrowWidth=narrow?38:Math.min(72,Math.max(44,window.innerWidth*0.05));
+  const gutters=2*(arrowWidth+(narrow?8:12));
+  const verticalPadding=narrow?12:16;
+  const maxWidth=Math.max(1,maxDialogWidth-gutters);
+  const maxHeight=Math.max(1,maxDialogHeight-48-verticalPadding);
+  let fittedWidth=0,fittedHeight=0;
+  for(const source of imageSources){
+    const width=Number(source.width),height=Number(source.height);
+    if(!(width>0&&height>0))continue;
+    const scale=Math.min(maxWidth/width,maxHeight/height);
+    fittedWidth=Math.max(fittedWidth,width*scale);
+    fittedHeight=Math.max(fittedHeight,height*scale);
+  }
+  lightbox.style.width=Math.min(maxDialogWidth,Math.ceil((fittedWidth||maxWidth)+gutters))+'px';
+  lightbox.style.height=Math.min(maxDialogHeight,Math.ceil((fittedHeight||Math.min(220,maxHeight))+verticalPadding+48))+'px';
 }
 window.addEventListener('resize',()=>{if(lightbox.open)fitLightboxToGallery()});
 function showImage(index){

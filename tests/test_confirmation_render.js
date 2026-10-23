@@ -179,8 +179,26 @@ assert.equal(images.children[1].children[1].textContent,'Second');
 assert.equal(getElementById('lightbox-caption').textContent,'Second · 2 of 2','Loading a preceding image preserves the displayed artwork');
 assert.equal(getElementById('lightbox-prev').hidden,false);
 const galleryHeight=lightbox.style.height;
+const galleryWidth=lightbox.style.width;
 getElementById('lightbox-next').fire('click');
 assert.equal(lightbox.style.height,galleryHeight,'The viewer never changes height on previous/next navigation');
+assert.equal(lightbox.style.width,galleryWidth,'The widest fitted image fixes both arrow positions across navigation');
+const envelope=vm.runInContext(`(()=>{
+  const saved=imageSources;
+  try{
+    imageSources=[{width:400,height:1600}];
+    fitLightboxToGallery();
+    const portraitWidth=parseFloat(lightbox.style.width);
+    imageSources.push({width:1600,height:400});
+    fitLightboxToGallery();
+    return {portraitWidth,width:parseFloat(lightbox.style.width),height:parseFloat(lightbox.style.height)};
+  }finally{imageSources=saved;fitLightboxToGallery()}
+})()`,context);
+const arrowGutters=2*(48+12);
+const fittedPortraitWidth=(1920*.95-48-16)/4;
+assert.equal(envelope.portraitWidth,Math.ceil(fittedPortraitWidth+arrowGutters),'Portrait-only galleries collapse to their fitted artwork plus external arrow gutters');
+assert.equal(envelope.width,960*.72,'A wide image sets the common outer boundary within the viewport budget');
+assert.equal(envelope.height,1920*.95,'The tallest fitted image sets a stable common height');
 mockWindow.innerHeight=1100;
 mockWindow.listeners.resize();
 assert(Number.parseInt(lightbox.style.height,10)<=mockWindow.innerHeight*0.95,'Resizing keeps the viewer within the viewport');
@@ -247,6 +265,8 @@ assert.match(html, /\.lightbox-nav\{[^}]*position:absolute;top:50%[^}]*height:mi
 assert.match(html, /function fitLightboxToGallery\(\)/, 'Artwork dimensions determine a common height across the carousel');
 assert.match(html, /source\.height=img\.naturalHeight/, 'Natural image dimensions are retained for fitting');
 assert.match(html, /\.lightbox-stage img\{[^}]*width:0;height:100%[^}]*object-fit:contain/, 'All images use one contained stage size');
+assert.match(html, /padding:8px calc\(var\(--arrow-width\) \+ var\(--arrow-gap\)\)/, 'Image padding reserves the full arrow width plus a gap on each side');
+assert.match(html, /\.lightbox-nav\{[^}]*width:var\(--arrow-width\)/, 'Arrow widths match the reserved gutters');
 assert.doesNotMatch(html, /PR drafting and pony research finish independently\./, 'Redundant footer is removed');
 assert.match(html, /state\.pony\?' and supporting character research':''/, 'Pony research is named only when there is a matching pony');
 assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');
