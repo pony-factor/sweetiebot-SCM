@@ -125,6 +125,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     state: 'open', merged: false, mergeable: false, mergeable_state: 'dirty', body: 'Why this PR exists'
   };
   let commentsForPr = [];
+  let inlineCommentsForPr = [];
   let fileRequests = 0;
   const fakeFetch = async (address, options) => {
     assert.equal(options.headers.Authorization, 'Bearer test-token');
@@ -135,7 +136,8 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
         additions: 5, deletions: 1, patch: '@@ -1 +1 @@\n-old\n+new' }];
-    } else if (pathname.endsWith('/comments')) result = commentsForPr;
+    } else if (pathname.endsWith('/pulls/12/comments')) result = inlineCommentsForPr;
+    else if (pathname.endsWith('/issues/12/comments')) result = commentsForPr;
     else throw new Error('Unexpected URL ' + address);
     return { ok: true, json: async () => result };
   };
@@ -241,6 +243,24 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await dashboard.refresh();
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
     'A changed blocking reason is reported even when the phase stays blocked');
+  inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
+    html_url: url + '#discussion_r90',
+    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + optionsBlock }];
+  info = { ...info, head: { ...info.head, sha }, mergeable_state: 'clean', mergeable: true };
+  await dashboard.refresh();
+  const inlinePr = events.at(-1).prs[0];
+  assert.equal(inlinePr.review.text, 'Which API should this conflict preserve?');
+  assert.equal(inlinePr.review.url, url + '#discussion_r90');
+  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-preserve-api');
+  assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
+  const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
+    actionId: inlineChoice.id, optionKey: inlineChoice.key };
+  await messageHandler(inlineAction);
+  assert.equal(actionLaunches.length, 3, 'Inline options survive the fresh action lookup');
+  assert.equal(actionLaunches[2][4].review.url, url + '#discussion_r90');
+  inlineCommentsForPr = [];
+  await messageHandler(inlineAction);
+  assert.equal(actionLaunches.length, 3, 'Removed inline choices cannot execute from a stale dashboard');
   info = { ...info, state: 'closed', merged: false };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'closed');

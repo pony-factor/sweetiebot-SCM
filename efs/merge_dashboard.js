@@ -127,6 +127,15 @@ async function paged(fetchImpl, token, repository, endpoint, maxPages = 3) {
   return items;
 }
 
+async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
+  const [conversation, inline] = await Promise.all([
+    paged(fetchImpl, token, repository, '/issues/' + number + '/comments', maxPages),
+    paged(fetchImpl, token, repository, '/pulls/' + number + '/comments', maxPages)
+  ]);
+  // Inline decision requests take precedence over legacy Conversation requests.
+  return reportFromComments([...conversation, ...inline]);
+}
+
 // Observe GitHub state only. The ChatGPT window alone performs merge mutations;
 // never infer successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
@@ -201,9 +210,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.filesTruncated = files.length >= 300;
     }
     if (cycle === 1 || cycle % 3 === 0 || changed || info.merged) {
-      const comments = await paged(fetchImpl, token, selection.repository,
-        '/issues/' + item.number + '/comments', 2);
-      const notes = reportFromComments(comments);
+      const notes = await readReports(fetchImpl, token, selection.repository, item.number);
       if (notes.report?.id !== item.report?.id && notes.report) {
         addEvent(item, 'reported', 'AI merge explanation recorded on the pull request');
       }
@@ -305,8 +312,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             fresh.head?.repo?.full_name !== selection.repository) {
           throw Error('The PR changed. Refresh its status and review the options before choosing again.');
         }
-        const comments = await paged(fetchImpl, token, selection.repository, '/issues/' + pr.number + '/comments', 3);
-        const notes = reportFromComments(comments);
+        const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3);
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
           state: mergePhase(fresh, { ...pr, ...notes }) };
         const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);

@@ -243,9 +243,11 @@ async function run() {
   assert.match(prompt, /first line exactly matches/);
   assert.match(prompt, /Resolve straightforward mechanical conflicts on the selected PR branch/);
   assert.match(prompt, /Re-read the updated head SHA/);
-  assert.match(prompt, /leave a focused GitHub PR comment/);
+  assert.match(prompt, /leave a focused inline GitHub PR review comment on the actual conflicting code/);
   assert.match(prompt, /asking the specific question a maintainer must answer/);
-  assert.match(prompt, /Check existing comments to avoid duplicate feedback/);
+  assert.match(prompt, /Check existing review threads and update the matching comment to avoid duplicate feedback/);
+  assert.match(prompt, /exact current head commit_id, file path, line and side/);
+  assert.match(prompt, /Do not substitute a top-level PR Conversation comment/);
   assert.match(prompt, /continue with unrelated safe selected PRs/);
 
   // Complete stacks reach main with separate squash commits; partial stacks
