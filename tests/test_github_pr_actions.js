@@ -407,15 +407,19 @@ async function main() {
   assert.deepEqual(refreshes, Array(7).fill('pr.refreshList'));
   assert.deepEqual(notices, Array(5).fill('PR #12 queued for merge.'));
 
-  // A completed PR gets one brief notice; in-flight progress is only in the status bar.
-  const successNotices = [], progressOptions = [];
+  // Progress becomes a notification immediately on click, without a premature
+  // completion toast. Success still has exactly one informational notice.
+  const successNotices = [], progressOptions = [], progressUpdates = [];
   registerGitHubPullRequestActions({
     commands: { registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async () => {} },
     ProgressLocation: { Window: 10, Notification: 15 },
     extensions: { getExtension: () => undefined },
     window: {
-      withProgress: (options, fn) => { progressOptions.push(options); return fn(); },
+      withProgress: (options, fn) => {
+        progressOptions.push(options);
+        return fn({ report: update => progressUpdates.push(update) });
+      },
       showInformationMessage: message => successNotices.push(message),
       showWarningMessage: () => { throw new Error('Unexpected cleanup warning'); },
       showErrorMessage: () => { throw new Error('Unexpected merge error'); }
@@ -424,11 +428,17 @@ async function main() {
     merged: true, number: 12, repo: 'owner/repo',
     pr: { ...open, state: 'MERGED', isCrossRepository: true }
   }));
-  assert.deepEqual(await handler({ url, number: 12 }), { state: 'merged' });
-  assert.deepEqual(successNotices, ['PR #12 merged into main.']);
-  assert.equal(progressOptions.length, 1);
-  assert.equal(progressOptions[0].location, 10);
+  const mergeOperation = handler({ url, number: 12 });
+  assert.equal(progressOptions.length, 1, 'The start notification appears before any asynchronous PR lookup');
+  assert.equal(progressOptions[0].location, 15);
+  assert.equal(progressOptions[0].title, 'Starting squash merge for PR #12…');
   assert.equal(progressOptions[0].cancellable, false);
+  assert.deepEqual(await mergeOperation, { state: 'merged' });
+  assert.deepEqual(progressUpdates, [{ message: 'PR #12: checking merge eligibility…' }]);
+  assert.deepEqual(successNotices, ['PR #12 merged into main.']);
+  const managedOperation = handler({ url, number: 12 }, { progressManaged: true });
+  assert.equal(progressOptions.length, 1, 'The PR sidebar must not open a nested notification');
+  assert.deepEqual(await managedOperation, { state: 'merged' });
   // Native PR nodes can expose their URI only after rendering. Both the
   // direct command and the inline context action must resolve that clicked row.
   const renderedMerges = [], renderedErrors = [], renderedRefreshes = [];
