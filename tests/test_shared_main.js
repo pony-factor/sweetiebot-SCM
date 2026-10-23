@@ -172,7 +172,34 @@ async function openedRoot(result) {
     assert.equal(await fs.readFile(path.join(legacy, 'file.txt'), 'utf8'), 'separate old edits\n');
     assert.equal(await reconnectManagedMain(editor(topic), options), false, 'Topic windows stay disconnected');
     git('-C', root, 'switch', '-c', 'external-topic');
-    await assert.rejects(openIndependentWorkspace(editor(legacy), options), /must be on main/);
+    await fs.writeFile(path.join(root, 'file.txt'), 'original topic edits\n');
+    git('-C', root, 'add', 'file.txt');
+    await fs.writeFile(path.join(root, 'file.txt'), 'additional unstaged topic edits\n');
+    const originalStatus = git('-C', root, 'status', '--porcelain');
+    const originalIndex = git('-C', root, 'diff', '--cached');
+    const fallbackEditor = editor(root);
+    const fallback = await openIndependentWorkspace(fallbackEditor, options);
+    assert.equal(git('-C', fallback.target, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(fallback.target, 'file.txt'), 'utf8'), 'committed main\n');
+    assert.deepEqual(fallbackEditor.commands.calls.at(-1)[2], { forceNewWindow: true });
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'external-topic');
+    assert.equal(git('-C', root, 'status', '--porcelain'), originalStatus);
+    assert.equal(git('-C', root, 'diff', '--cached'), originalIndex);
+    assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'additional unstaged topic edits\n');
+    assert.equal(await reconnectManagedMain(editor(fallback.target), options), false,
+      'New main clone remains usable while the original is on a topic');
+    const legacyFallback = await openIndependentWorkspace(editor(legacy), options);
+    assert.equal(git('-C', legacyFallback.target, 'branch', '--show-current'), 'main');
+    const originalTopicEditor = editor(root);
+    assert.equal(await routeBranch(originalTopicEditor, { rootUri: { fsPath: root } }, {
+      ...options, branch: 'new-from-original-topic', create: true, start: 'refs/heads/main'
+    }), true, 'New Branch works when the original checkout is still on a topic');
+    const newFromOriginal = await openedRoot({ target: originalTopicEditor.commands.calls.at(-1)[1].fsPath });
+    assert.equal(git('-C', newFromOriginal, 'branch', '--show-current'), 'new-from-original-topic');
+    assert.equal(git('-C', newFromOriginal, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'external-topic');
+    assert.equal(git('-C', root, 'status', '--porcelain'), originalStatus);
+    assert.equal(git('-C', root, 'diff', '--cached'), originalIndex);
     console.log('Shared main windows, isolated topics, reconnection and legacy preservation passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

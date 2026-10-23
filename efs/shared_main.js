@@ -54,7 +54,9 @@ async function mainRoot(root, options = {}) {
   const run = options.run || git;
   const original = await originalRepository(root, options);
   if (await run(['-C', original, 'branch', '--show-current']) !== 'main') {
-    throw new Error('The original checkout at ' + original + ' must be on main before reconnecting. Its topic files were preserved.');
+    const error = new Error('The original checkout at ' + original + ' must be on main before reconnecting. Its topic files were preserved.');
+    error.code = 'SWEETIEBOT_ORIGINAL_ON_TOPIC';
+    throw error;
   }
   return original;
 }
@@ -320,7 +322,14 @@ async function reconnectManagedMain(vscode, options = {}) {
   if (folder.uri.scheme !== 'file' || !inside(baseDirectory, folder.uri.fsPath)) return false;
   const root = await run(['-C', folder.uri.fsPath, 'rev-parse', '--show-toplevel']);
   if (await run(['-C', root, 'branch', '--show-current']) !== 'main') return false;
-  const original = await mainRoot(root, options);
+  let original;
+  try { original = await mainRoot(root, options); }
+  catch (error) {
+    // Independent main windows remain usable while the original is on a
+    // topic. Reconnect on a later activation after it returns to main.
+    if (error.code === 'SWEETIEBOT_ORIGINAL_ON_TOPIC') return false;
+    throw error;
+  }
   if (root === original) {
     if (path.resolve(folder.uri.fsPath) === original) return false;
     await switchRepository(vscode, root, original, options);
