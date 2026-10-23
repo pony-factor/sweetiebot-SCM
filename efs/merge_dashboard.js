@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
+const { createReactionChoices } = require('./merge_reaction_choices');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -133,11 +134,11 @@ async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
     paged(fetchImpl, token, repository, '/pulls/' + number + '/comments', maxPages)
   ]);
   // Inline decision requests take precedence over legacy Conversation requests.
-  return reportFromComments([...conversation, ...inline]);
+  return { ...reportFromComments([...conversation, ...inline]), inlineComments: inline };
 }
 
-// Observe GitHub state only. The ChatGPT window alone performs merge mutations;
-// never infer successful conflict resolution from an AI assertion or stale snapshot.
+// Observe GitHub state and dispatch explicit user decisions. Never infer
+// successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction } = {}) {
@@ -164,6 +165,31 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let error = '';
   const events = [];
   const launchingActions = new Set();
+  const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
+    storageDirectory: context?.globalStorageUri?.fsPath,
+    launch: async (pr, comment, option) => {
+      if (disposed || launchingActions.has(pr.number)) return;
+      launchingActions.add(pr.number);
+      publish();
+      try {
+        const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
+        if (fresh.state !== 'open' || fresh.merged || fresh.merged_at || fresh.number !== pr.number ||
+            fresh.html_url !== pr.url || fresh.base?.ref !== pr.base || fresh.base?.sha !== pr.baseSha ||
+            fresh.head?.ref !== pr.head || fresh.head?.sha !== pr.headSha ||
+            fresh.head?.repo?.full_name !== selection.repository) {
+          throw Error('The PR changed after your reaction. Refresh the inline choices and react again.');
+        }
+        const snapshot = { ...pr, ...reportFromComments([comment]) };
+        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, 'web');
+        addEvent(byNumber.get(pr.number), 'action', opened === false
+          ? 'Reaction task was not opened; add a fresh reaction to retry.'
+          : 'Your emoji selected: ' + option.label + ' · opened GPT web');
+      } finally {
+        launchingActions.delete(pr.number);
+        publish();
+      }
+    }
+  });
 
   function addEvent(pr, state, message) {
     const event = { number: pr.number, state, message, at: new Date().toISOString() };
@@ -184,6 +210,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   async function refreshOne(item) {
+    let decisionComments = [];
     const info = await githubGet(fetchImpl, token, selection.repository,
       '/pulls/' + item.number);
     // Never follow a moved PR base silently, and do not treat an unrelated PR as selected.
@@ -211,6 +238,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     if (cycle === 1 || cycle % 3 === 0 || changed || info.merged) {
       const notes = await readReports(fetchImpl, token, selection.repository, item.number);
+      decisionComments = notes.inlineComments;
       if (notes.report?.id !== item.report?.id && notes.report) {
         addEvent(item, 'reported', 'AI merge explanation recorded on the pull request');
       }
@@ -246,6 +274,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     item.mergeCommit = info.merge_commit_sha || '';
     item.description = String(info.body || '').slice(0, 12000);
     publish();
+    if (!launchingActions.has(item.number)) {
+      await reactionChoices.inspect({ ...item, headSha: info.head?.sha, baseSha: info.base?.sha }, decisionComments);
+    }
   }
 
   async function refresh() {
