@@ -11,6 +11,7 @@ const { humanSquashMerge } = require('../efs/local_human_squash');
 const run = promisify(execFile);
 
 (async () => {
+ for (const resolving of [true, false]) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-resolution-test-'));
   const working = path.join(root, 'working'), remote = path.join(root, 'remote.git');
   const git = async (...args) => (await run('git', ['-c', 'core.hooksPath=/dev/null',
@@ -34,8 +35,9 @@ const run = promisify(execFile);
     const headSha = await repo('rev-parse', 'HEAD');
     const originalMessage = await repo('show', '-s', '--format=%B', 'HEAD');
     await repo('checkout', '--quiet', 'main');
-    await fs.writeFile(path.join(working, 'file.txt'), 'base update\n');
-    await repo('commit', '--quiet', '-am', 'Update base fixture');
+    await fs.writeFile(path.join(working, resolving ? 'file.txt' : 'base.txt'), 'base update\n');
+    await repo('add', resolving ? 'file.txt' : 'base.txt');
+    await repo('commit', '--quiet', '-m', 'Update base fixture');
     const baseSha = await repo('rev-parse', 'HEAD');
     await repo('push', '--quiet', 'origin', 'main', 'feature');
     let merged = false, pushed = false;
@@ -63,7 +65,7 @@ const run = promisify(execFile);
       } };
       if (endpoint.endsWith('/pulls/12')) return {
         state: merged ? 'closed' : 'open', merged, merged_at: merged ? '2026-10-21' : null,
-        title: '🐛 Resolve feature', mergeable: pushed, user: { type: 'Bot', login: 'codex-pony[bot]' },
+        title: '🐛 Resolve feature', mergeable: !resolving || pushed, user: { type: 'Bot', login: 'codex-pony[bot]' },
         head: { ref: 'feature', sha: await branch('feature'), repo: { full_name: 'owner/repo' } },
         base: { ref: 'main', sha: merged ? baseSha : await branch('main'), repo: { full_name: 'owner/repo' } },
         merge_commit_sha: merged ? await branch('main') : null
@@ -76,14 +78,15 @@ const run = promisify(execFile);
       if (args.includes('push')) pushed = true;
       return output;
     };
-    const resolutionPatch = 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-base update\n+feature and base update\n';
+    const completePatch = 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-base update\n+feature and base update\n';
+    const resolutionPatch = resolving ? completePatch : null;
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
       api, git: localGit, expected, resolutionPatch,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
     await assert.rejects(attempt({ expected: { ...expected, headSha: 'a'.repeat(40) } }), /changed/);
-    await assert.rejects(attempt({ expected: { ...expected, baseSha: 'b'.repeat(40) } }), /changed/);
+    if (resolving) await assert.rejects(attempt({ expected: { ...expected, baseSha: 'b'.repeat(40) } }), /changed/);
     await assert.rejects(attempt({ api: async (endpoint, ...rest) => {
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, default_branch: 'feature' };
       return api(endpoint, ...rest);
@@ -101,7 +104,7 @@ const run = promisify(execFile);
         commit: { author, message: originalMessage } }];
       return api(endpoint, ...rest);
     } }), /No verified original human/);
-    await assert.rejects(attempt({ resolutionPatch: resolutionPatch.replaceAll('file.txt', 'other.txt') }), /unrelated/);
+    await assert.rejects(attempt({ resolutionPatch: completePatch.replaceAll('file.txt', 'other.txt') }), /unrelated/);
     assert.equal(await branch('feature'), headSha, 'Every blocked preflight leaves the selected branch unchanged');
     assert.equal(await branch('main'), baseSha, 'Every blocked preflight leaves main unchanged');
     // A real competing update must defeat the exact-SHA push lease.
@@ -115,7 +118,7 @@ const run = promisify(execFile);
       expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
     assert(result.merged);
-    assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'), 'feature and base update');
+    assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'), resolving ? 'feature and base update' : 'feature continued');
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
@@ -130,4 +133,5 @@ const run = promisify(execFile);
     assert.equal(await repo('rev-parse', 'HEAD'), baseSha, 'Source branch does not move');
     console.log('Real Git resolution patch, isolated checkout, guarded push and human-author squash passed.');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+ }
 })().catch(error => { console.error(error); process.exitCode = 1; });

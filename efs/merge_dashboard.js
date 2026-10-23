@@ -75,11 +75,11 @@ function mergePhase(pr, previous) {
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
   if (previous.review && !previous.report) return 'review';
+  if (pr.mergeable_state === 'unstable' || pr.mergeable_state === 'blocked') return 'blocked';
   if (previous.sawConflict && pr.mergeable === true && pr.head?.sha !== previous.originalHead) {
     return 'resolved';
   }
-  if (pr.mergeable_state === 'queued' || pr.mergeable_state === 'unstable') return 'queued';
-  if (pr.mergeable_state === 'blocked') return 'blocked';
+  if (pr.mergeable_state === 'queued') return 'queued';
   if (pr.head?.sha && pr.head.sha !== previous.originalHead) return 'updated';
   return 'waiting';
 }

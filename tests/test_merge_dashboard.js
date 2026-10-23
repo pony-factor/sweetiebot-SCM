@@ -33,6 +33,12 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked',
+    'Unstable checks do not mean the PR entered a merge queue');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'queued' }, {}), 'queued');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable',
+    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
+    'Clearing a conflict does not override check failures');
   assert.equal(mergePhase({ state: 'open', mergeable: true,
     head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'resolved');
   assert.equal(mergePhase({ state: 'open', mergeable: true,

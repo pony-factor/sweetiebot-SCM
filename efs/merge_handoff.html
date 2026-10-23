@@ -16,7 +16,9 @@
     const response = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     const result = await response.json();
     if (!response.ok || result.error) throw Error(result.error || 'Local merge failed.');
-    document.getElementById('status').textContent = 'Local execution finished. GitHub results:';
+    document.getElementById('status').textContent = result.results.length
+      ? 'Local execution finished. GitHub results:'
+      : 'No pull requests were delegated. Review the merge report in Lindsey for any blockers.';
     document.getElementById('results').textContent = result.results.map(pr => '#' + pr.number + ' · ' + pr.status + '\n' + (pr.url || pr.reason || '')).join('\n\n');
   } catch (error) { document.getElementById('status').textContent = error.message; }
 })();

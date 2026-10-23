@@ -11,7 +11,7 @@ const MAX_PATCH_BYTES = 60000;
 
 function validateResolution(input, selection) {
   if (input?.version !== 1 || input.repository !== selection.repository ||
-      !Array.isArray(input.results) || !input.results.length || input.results.length > selection.pullRequests.length) {
+      !Array.isArray(input.results) || input.results.length > selection.pullRequests.length) {
     throw Error('Invalid local merge handoff.');
   }
   const seen = new Set();
@@ -78,7 +78,7 @@ function resolutionInstructions(selection, callback) {
     'For an already mergeable PR return patch:null. For a straightforward conflict, inspect the complete current base and PR changes and return a COMPLETE git unified diff against the exact current BASE tree. That patch must represent the entire intended final PR change, incorporating the resolution and preserving both intentions. It is not a patch against conflict markers or against the PR head. Do not return shell commands, partial patches, binary files, symlinks, credentials, or secret-bearing files. If the complete patch does not fit, or intentions require human judgment, leave that PR out and report the limitation.',
     'Recheck each delegated PR’s exact head, base branch and base SHA. The selected heads are: ' + JSON.stringify(selection.pullRequests.map(pr => ({ number: pr.number, headSha: pr.headSha, base: pr.base }))) + '. Changed heads require a fresh selection. For patches, any subsequent base change blocks application. For patch:null the local helper independently reconciles the current base.',
     'After handling any PRs you can merge directly, return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, guard the push with force-with-lease, and ask GitHub to merge the resulting single human-authored squash commit. Checks and reviews still apply.',
-    'End with a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. Before returning, describe delegated PRs as pending local execution, never as merged.'
+    'If every selected PR is blocked or already handled, return results:[] in that same versioned JSON object. This is a valid no-op; the local CLI must not merge anything. Keep the blocker details in the GitHub report. End with a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. Before returning, describe delegated PRs as pending local execution, never as merged.'
   ].join('\n\n');
 }
 

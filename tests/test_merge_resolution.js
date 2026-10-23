@@ -21,6 +21,14 @@ const input = { version: 1, repository: 'owner/repo', results: [{
       .map(change => ({ ...input, results: [{ ...input.results[0], ...change }] }))
   ]) assert.throws(() => validateResolution(bad, selection));
   let calls = 0;
+  const empty = { ...input, results: [] };
+  assert.deepEqual(validateResolution(empty, selection), []);
+  assert.deepEqual(await executeResolution(empty, selection, {
+    merge: async () => assert.fail('An empty handoff must never invoke Git or GitHub merging')
+  }), { repository: selection.repository, results: [] });
+  assert.deepEqual(await invokeResolutionCLI(empty, selection, undefined),
+    { repository: selection.repository, results: [] },
+    'A blocked batch completes through the real child CLI without GitHub writes');
   const result = await executeResolution(input, selection, { merge: async (repo, number, options) => {
     calls++;
     assert.equal(repo, 'owner/repo'); assert.equal(number, 12);
