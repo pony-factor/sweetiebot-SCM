@@ -778,11 +778,13 @@ git config --global scm-toolkit.codex-hide-usage-reset-times true
 python3 scripts/install.py --codex-only
 ```
 
-### Codex usage-reset countdown
+### Relative Codex reset times
 
-When `codex-usage-reset-countdown` is enabled, usage-limit banners in the installed
-Codex extension show the time remaining as a live countdown such as `4h 23m`. The
-display rounds to the nearest minute and refreshes as the countdown changes.
+The **Relative Codex reset times** setting (`codex-usage-reset-countdown`)
+converts absolute reset dates and times in supported Codex usage-limit banners
+into live relative countdowns. For example, "resets October 24 at 3 PM" is
+displayed as "resets in 1d 4h" when that duration remains. Countdown values
+are rounded to the nearest minute and update automatically.
 The local composer label beside the location icon shows the smaller remaining
 percentage of the five-hour and weekly usage limits. Until usage data is available,
 it shows **Work locally**. The usage submenu shows centered reset countdowns;
