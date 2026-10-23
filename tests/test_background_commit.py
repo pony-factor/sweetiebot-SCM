@@ -53,6 +53,102 @@ class BackgroundCommitTests(unittest.TestCase):
     def job(self, directory):
         return json.loads((directory / 'job.json').read_text())
 
+    def published_blocked_job(self):
+        directory = self.queue(push=True)
+        self.git('commit', '--allow-empty', '-qm', 'External follow-up')
+        self.git('push', '-q', 'origin', 'main')
+        job = self.job(directory)
+        job.update(phase='blocked', error='The branch advanced outside the queued commits; background work was paused.')
+        worker.write_journal(directory / 'job.json', job)
+        return directory
+
+    def test_status_retires_published_jobs_after_external_merge_without_touching_work(self):
+        first = self.queue(push=True)
+        self.git('branch', 'side')
+        (self.repo / 'story.txt').write_text('Second change\n')
+        self.git('add', 'story.txt')
+        second = self.queue(push=True)
+        self.git('checkout', '-q', 'side')
+        self.git('commit', '--allow-empty', '-qm', 'External side change')
+        self.git('checkout', '-q', 'main')
+        self.git('merge', '--no-ff', '-qm', 'External reconciliation', 'side')
+        self.git('push', '-q', 'origin', 'main')
+        for directory in (first, second):
+            job = self.job(directory)
+            job.update(phase='blocked', error='The branch advanced outside the queued commits; background work was paused.')
+            worker.write_journal(directory / 'job.json', job)
+        (self.repo / 'story.txt').write_text('Staged work\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'story.txt').write_text('Unstaged work\n')
+        before = [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')]
+        status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+        self.assertFalse(status.get('id'))
+        self.assertEqual([self.job(d)['phase'] for d in (first, second)], ['done', 'done'])
+        self.assertEqual(before, [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main').split()[0])
+        worker.wait_for_background('/usr/bin/git', [])
+
+    def test_stale_tracking_ref_cannot_release_unpublished_job(self):
+        directory = self.published_blocked_job()
+        parent = self.job(directory)['sha']
+        # Tracking says published, but the real destination no longer includes it.
+        self.git('checkout', '--orphan', 'unrelated')
+        self.git('commit', '-qm', 'Unrelated history')
+        other = self.git('rev-parse', 'HEAD')
+        self.git('push', '-q', 'origin', 'HEAD:refs/heads/unrelated')
+        self.git('checkout', '-q', 'main')
+        self.git('--git-dir=' + str(self.root / 'remote'), 'update-ref', 'refs/heads/main', other)
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main'), self.git('rev-parse', 'HEAD'))
+        self.assertNotEqual(parent, other)
+
+    def test_provisional_and_active_jobs_are_not_retired(self):
+        directory = self.published_blocked_job()
+        job = self.job(directory)
+        job['provisional'] = True
+        worker.write_journal(directory / 'job.json', job)
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        job['provisional'] = False
+        worker.write_journal(directory / 'job.json', job)
+        with (directory / 'worker.lock').open('a+b') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            worker.reconcile_published_jobs(self.repo / '.git')
+            self.assertEqual(self.job(directory)['phase'], 'blocked')
+
+    def test_offline_check_preserves_pause_and_worker_recovers_when_published(self):
+        directory = self.published_blocked_job()
+        original = worker.git
+        def offline(*args, **kwargs):
+            if args[0] == 'ls-remote':
+                raise subprocess.TimeoutExpired(args, 3)
+            return original(*args, **kwargs)
+        with patch.object(worker, 'git', side_effect=offline):
+            worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+
+    def test_background_gate_clears_published_job(self):
+        directory = self.published_blocked_job()
+        worker.wait_for_background('/usr/bin/git', [])
+        self.assertEqual(self.job(directory)['phase'], 'done')
+
+    def test_published_job_removed_from_local_branch_stays_blocked(self):
+        directory = self.published_blocked_job()
+        self.git('checkout', '--orphan', 'replacement')
+        self.git('commit', '-qm', 'Replacement history')
+        self.git('branch', '-f', 'main', 'HEAD')
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
+    def test_pending_finalization_transaction_prevents_cleanup(self):
+        directory = self.published_blocked_job()
+        (self.repo / '.git' / worker.TRANSACTION).write_text('{}')
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
     def test_resume_skips_gitdir_replaced_by_worktree_pointer(self):
         stale = self.root / 'jobs' / 'stale'
         stale.mkdir(parents=True)
