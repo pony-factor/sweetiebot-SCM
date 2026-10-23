@@ -6,7 +6,7 @@ const {
   REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments,
   mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard
 } = require('../efs/merge_dashboard');
-const { formatTimelineTimestamp } = require('../efs/merge_dashboard_timestamps');
+const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
 
@@ -137,6 +137,11 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     '--vscode-diffEditorGutter-removedLineBackground',
   ]) assert(panel.webview.html.includes(themeToken), 'Missing VS Code theme token ' + themeToken);
   assert(panel.webview.html.includes('function formatTimelineTimestamp('));
+  assert(panel.webview.html.includes('function formatMergeOutcome('));
+  assert(panel.webview.html.includes('formatMergeOutcome(pr.mergedAt, pr.mergeCommit, model.timestampMode)'),
+    'Verified merge outcome uses the selected time preference');
+  assert(panel.webview.html.includes("outcome.textContent = formatMergeOutcome(pr.mergedAt, pr.mergeCommit, 'relative')"),
+    'Relative verified merge times continue updating');
   assert(!panel.webview.html.includes('__TIMESTAMP_FORMATTER__'));
   assert(panel.webview.html.includes('id="timeline-time-mode"'));
   assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
@@ -238,6 +243,18 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   const related = anchors.find(n => n.href.endsWith('/pull/5'));
   related.handlers.click({ preventDefault() {} });
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
+  const emphasisRoot = document.createElement('div');
+  renderMergeMarkdown(emphasisRoot, '**bold *italic* ending** and *italic **bold** ending* plus ***both***.');
+  assert.equal(emphasisRoot.textContent, 'bold italic ending and italic bold ending plus both.');
+  const emphasisNodes = walk(emphasisRoot);
+  assert(emphasisNodes.some(n => n.tag === 'strong' && n.children.some(c => c.tag === 'em')));
+  assert(emphasisNodes.some(n => n.tag === 'em' && n.children.some(c => c.tag === 'strong')));
+  const previewLinkRoot = document.createElement('div');
+  renderMergeMarkdown(previewLinkRoot, '[Gallery] (https://derpicdn.net/some.png)',
+    { mapLink: () => 'https://derpibooru.org/images/42' });
+  const previewLink = walk(previewLinkRoot).find(n => n.tag === 'a');
+  assert.equal(previewLink.href, 'https://derpibooru.org/images/42');
+  assert.equal(previewLink.target, '_blank');
   const now = new Date(2026, 9, 21, 6, 15, 0).getTime();
   assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'hidden', now), '');
   assert.equal(formatTimelineTimestamp(new Date(now - 120000).toISOString(), 'relative', now), '2m ago');
@@ -250,6 +267,18 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
     new Date(now - 120000).toLocaleTimeString(), 'Clock mode respects the local timezone');
   assert.equal(formatTimelineTimestamp(new Date(now - 172800000).toISOString(), 'clock', now),
     new Date(now - 172800000).toLocaleString(), 'Older clock timestamps include their date');
+  const mergedAt = new Date(now - 120000).toISOString();
+  const mergeCommit = 'c'.repeat(40);
+  assert.equal(formatMergeOutcome(mergedAt, mergeCommit, 'hidden', now),
+    'GitHub merged this PR\nSquash/merge commit: ' + mergeCommit,
+    'Hidden mode suppresses the verified merge time without hiding the commit');
+  assert.equal(formatMergeOutcome(mergedAt, mergeCommit, 'relative', now),
+    'GitHub merged this PR 2m ago\nSquash/merge commit: ' + mergeCommit);
+  assert.equal(formatMergeOutcome(mergedAt, mergeCommit, 'clock', now),
+    'GitHub merged this PR at ' + new Date(mergedAt).toLocaleTimeString() +
+      '\nSquash/merge commit: ' + mergeCommit);
+  assert.equal(formatMergeOutcome(mergedAt, '', 'hidden', now),
+    'GitHub merged this PR', 'Outcome remains readable when no merge commit is present');
   // GitHub patches must be line-colored, not rendered as one plain preformatted string.
   const patch = [
     '@@ -10,3 +10,4 @@',

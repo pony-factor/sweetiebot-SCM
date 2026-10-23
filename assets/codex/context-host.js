@@ -29,6 +29,14 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             if (message?.type !== 'scm-toolkit-context-response' || request?.webview !== webview) return;
             pending.delete(message.id);
             clearTimeout(request.timeout);
+            if (request.identityOnly) {
+                if (message.hasConversation && !uuid.test(message.conversationId ?? '')) {
+                    request.reject(new Error('Cannot identify the visible Codex chat; its worker was not moved.'));
+                    return;
+                }
+                request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null });
+                return;
+            }
             const text = typeof message.text === 'string' ? message.text.trim().slice(-6000) : '';
             if (!text) {
                 request.reject(new Error('Open a Codex conversation with text in this window first.'));
@@ -54,7 +62,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const capture = includeSource => {
+    const capture = (includeSource, identityOnly = false) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -66,15 +74,19 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         const sidebar = sidebars.find(view => view.visible) ?? provider.sidebarView ?? sidebars[0];
         const webview = focusedWebview ?? (activePanel ? provider.getWebviewForPanel(activePanel) : sidebar?.webview)
             ?? (panels.length === 1 ? provider.getWebviewForPanel(panels[0]) : undefined);
-        if (!webview) throw new Error('Open a Codex conversation in this window first.');
+        if (!webview) {
+            if (identityOnly) return { threadId: null };
+            throw new Error('Open a Codex conversation in this window first.');
+        }
         const id = crypto.randomUUID();
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error('Codex text capture timed out. Reopen this window after installing the toolkit.'));
             }, 5000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource });
-            webview.postMessage({ type: 'scm-toolkit-context-request', id }).then(sent => {
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly });
+            const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
+            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, allowHidden }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -96,6 +108,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         'sweetiebot.readCodexConversation',
         () => capture(true)
     );
+    const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
     const legacyTextCommand = vscode.commands.registerCommand(
         'scmToolkit.readCodexContext', () => capture(false)
     );
@@ -106,6 +119,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     return { dispose() {
         textCommand.dispose();
         sourceCommand.dispose();
+        identityCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
         provider.initializeWebview = originalInitialize;

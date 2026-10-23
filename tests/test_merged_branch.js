@@ -1,0 +1,26 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { warnMergedBranch } = require('../efs/merged_branch');
+
+(async () => {
+  const uri = { fsPath: '/repo' };
+  const info = { branch: 'old', number: 61, defaultBranch: 'main', remote: 'origin' };
+  const calls = [];
+  let choice;
+  const vscode = {
+    window: { async showWarningMessage(message, options, action) {
+      assert.match(message, /old.*merged in PR #61/);
+      assert.equal(options.modal, true);
+      assert.equal(action, 'New branch from updated main');
+      return choice;
+    } },
+    commands: { async executeCommand(...args) { calls.push(args); } }
+  };
+  await warnMergedBranch(vscode, { rootUri: uri }, info);
+  assert.equal(calls.length, 0, 'dismissing the warning must not change branches');
+  choice = 'New branch from updated main';
+  await warnMergedBranch(vscode, { rootUri: uri }, info);
+  assert.deepEqual(calls, [['sweetiebot.createBranch', uri, { remote: 'origin' }]],
+    'the warning must use the same command as the toolbar');
+  console.log('Merged-branch warning action checks passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

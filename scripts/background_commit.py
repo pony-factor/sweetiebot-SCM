@@ -23,7 +23,7 @@ MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
 FORKS = 'sweetiebot-background-forks.json'
-PARALLEL_JOBS = 4
+PARALLEL_JOBS = 6
 
 
 class SyncConflicts(RuntimeError):
@@ -108,7 +108,7 @@ def recover_finalization(meta):
     file.unlink()
 
 
-def fork_branch(source, name, expected_head):
+def fork_branch(source, name, expected_head, destination=None):
     """Capture a pending base and its subscription under the finalizer's lock."""
     meta = Path(git('rev-parse', '--absolute-git-dir'))
     with repository_lock(meta):
@@ -134,7 +134,10 @@ def fork_branch(source, name, expected_head):
         forks[branch] = base
         # Save before creating the ref: a crash must never leave an untracked fork.
         write_journal(meta / FORKS, forks)
-        git('checkout', '-b', name, base)
+        if destination:
+            git('worktree', 'add', '-b', name, '--', destination, base)
+        else:
+            git('checkout', '-b', name, base)
         return base
 
 
@@ -192,7 +195,7 @@ def runtime():
     target = jobs_home() / 'runtime'
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     for name in ('background_commit.py', 'ai_commit.py', 'sweetiebot_async_commit.py',
-                 'sweetiebot_diagnostics.py', 'post_commit_spellcheck.py'):
+                 'sweetiebot_diagnostics.py', 'post_commit_spellcheck.py', 'merged_branch.py'):
         source = Path(__file__).with_name(name)
         if source.resolve() == (target / name).resolve():
             continue
@@ -658,6 +661,8 @@ def work(directory, commit_only=False):
                 job = read_journal(file)
             pushed = job['push']
             if pushed:
+                from merged_branch import require_unmerged
+                require_unmerged(job['branch'], job['remote'])
                 job['phase'] = 'pushing'
                 write_journal(file, job)
                 env = os.environ.copy()
@@ -721,6 +726,9 @@ def work(directory, commit_only=False):
                 current.pop('conflictPaths', None)
                 if isinstance(exc, SyncConflicts):
                     current['conflictPaths'] = exc.paths
+                if getattr(exc, 'info', None):
+                    current['mergedBranch'] = exc.info
+                    current['push'] = False
                 write_journal(file, current)
             log_event('background_commit', 'blocked', error_type=type(exc).__name__, outcome='blocked')
         finally:
@@ -825,6 +833,11 @@ def resume(parallel=True):
     for file in jobs_home().glob('*/job.json'):
         job = read_journal(file)
         meta = job['gitdir']
+        # Archived jobs can outlive a checkout or its conversion to a linked
+        # worktree, where the old .git directory is now a pointer file.
+        # Never let that stale location prevent other repositories resuming.
+        if not Path(meta).is_dir():
+            continue
         if meta in repositories:
             continue
         repositories.add(meta)
@@ -958,6 +971,8 @@ if __name__ == '__main__':
             print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
         elif len(sys.argv) == 5 and sys.argv[1] == '--fork-branch':
             print(fork_branch(*sys.argv[2:]))
+        elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
+            print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
@@ -974,7 +989,7 @@ if __name__ == '__main__':
             marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
-            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths') if key in job} if job else {}
+            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths', 'mergedBranch') if key in job} if job else {}
             recoverable = False
             if job and job['phase'] == 'blocked' and branch_recovery_candidate(job):
                 try:

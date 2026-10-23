@@ -36,6 +36,8 @@ async function openedRoot(result) {
     const first = await openIndependentWorkspace(editor(root), options);
     const second = await openIndependentWorkspace(editor(root), options);
     assert.notEqual(first.target, second.target, 'Window identities remain independent');
+    assert.equal(path.dirname(first.directory), path.join(baseDirectory, 'repo'));
+    assert.match(path.basename(first.directory), /^[0-9a-f-]{36}$/);
     assert.equal(await openedRoot(first), root);
     assert.equal(await openedRoot(second), root);
     await fs.writeFile(path.join(root, 'file.txt'), 'pending shared main\n');
@@ -44,8 +46,15 @@ async function openedRoot(result) {
     const topicEditor = editor(root);
     assert.equal(await routeBranch(topicEditor, { rootUri: { fsPath: root } },
       { ...options, branch: 'topic', create: true, start: 'main' }), true);
+    assert.deepEqual(topicEditor.commands.calls.at(-1)[2], { forceReuseWindow: true },
+      'The selected branch replaces this window so the same Codex chat can follow');
+    assert.equal(topicEditor.workspace.workspaceFolders[0].uri.fsPath, root,
+      'The originating main workspace and Codex session remain untouched');
     const topicWorkspace = topicEditor.commands.calls.at(-1)[1].fsPath;
     const topic = await openedRoot({ target: topicWorkspace });
+    assert.equal(path.dirname(path.dirname(topic)), path.join(baseDirectory, 'repo'));
+    assert.match(path.basename(path.dirname(topic)), /^[0-9a-f-]{36}$/);
+    assert.equal(path.dirname(path.dirname(topicWorkspace)), path.join(baseDirectory, 'repo'));
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main', 'Never switch the shared main folder');
     assert.equal(await originalRepository(topic, options), root);
@@ -59,6 +68,94 @@ async function openedRoot(result) {
     const reopening = editor(root);
     await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
+
+    await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
+    git('-C', root, 'add', 'file.txt');
+    const indexBefore = git('-C', root, 'diff', '--cached');
+    const moving = editor(root);
+    moving.extensions = { getExtension: () => ({ async activate() {} }) };
+    moving.commands.getCommands = async () => ['sweetiebot.codex.prepareWorkspaceHandoff'];
+    const ordinaryExecute = moving.commands.executeCommand;
+    moving.commands.executeCommand = async function (id, ...args) {
+      if (id === 'sweetiebot.codex.prepareWorkspaceHandoff') return { threadId: 'fixture', relative: '', wasActive: true };
+      return ordinaryExecute.call(this, id, ...args);
+    };
+    await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'moving-task', create: true });
+    const moved = await openedRoot({ target: moving.commands.calls.at(-1)[1].fsPath });
+    assert.equal(await fs.readFile(path.join(moved, 'file.txt'), 'utf8'), 'pending shared main\n');
+    assert.equal(await fs.readFile(path.join(moved, 'draft.txt'), 'utf8'), 'untracked task work\n');
+    assert.equal(git('-C', moved, 'diff', '--cached'), '', 'Copied task work is never staged');
+    assert.equal(git('-C', root, 'diff', '--cached'), indexBefore, 'Source index is unchanged');
+    assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.save'));
+
+    // Saved workspaces switch folders without reopening the workbench.
+    moving.workspace.workspaceFile = { scheme: 'file', fsPath: first.target };
+    moving.commands.calls.length = 0;
+    let folderUpdate;
+    moving.workspace.updateWorkspaceFolders = (...args) => {
+      folderUpdate = args;
+      assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.save'),
+        'Save the same-chat handoff before an extension-host restart');
+      return true;
+    };
+    await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
+    assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: topic }, name: 'Repo' }]);
+    assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'),
+      'An existing saved workspace must not reopen the window');
+    const saved = moving.commands.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1];
+    assert.equal(saved.workspace, first.target, 'Keep the existing workspace identity');
+    assert.equal(saved.plan.destination, topic);
+
+    moving.commands.calls.length = 0;
+    await routeBranch(moving, { rootUri: { fsPath: root } },
+      { ...options, branch: 'smooth-task', create: true });
+    const smooth = folderUpdate[2].uri.fsPath;
+    assert.equal(git('-C', smooth, 'branch', '--show-current'), 'smooth-task');
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(smooth, 'draft.txt'), 'utf8'), 'untracked task work\n');
+    assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'),
+      'Creating a branch also keeps the existing workbench');
+
+    // A new branch from an existing topic must also use a new worktree.
+    moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: moved }, name: 'Repo' }];
+    const topicIndex = git('-C', moved, 'diff', '--cached');
+    moving.commands.calls.length = 0;
+    await routeBranch(moving, { rootUri: { fsPath: moved } },
+      { ...options, branch: 'from-topic', create: true, start: 'refs/heads/main' });
+    const fromTopic = folderUpdate[2].uri.fsPath;
+    assert.equal(git('-C', fromTopic, 'branch', '--show-current'), 'from-topic');
+    assert.equal(git('-C', fromTopic, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
+    assert.equal(git('-C', moved, 'branch', '--show-current'), 'moving-task');
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(fromTopic, 'draft.txt'), 'utf8'), 'untracked task work\n');
+    assert.equal(git('-C', moved, 'diff', '--cached'), topicIndex);
+    assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'));
+    const forkScript = path.join(temporary, 'fork_fixture.py');
+    await fs.writeFile(forkScript, [
+      'import subprocess, sys',
+      'head = subprocess.check_output(["git", "symbolic-ref", "HEAD"], text=True).strip()',
+      'assert head == sys.argv[4], "Expected the job owner HEAD under the helper lock"',
+      'subprocess.run(["git", "worktree", "add", "-b", sys.argv[3], "--", sys.argv[5], sys.argv[2]], check=True)'
+    ].join('\n'));
+    await routeBranch(moving, { rootUri: { fsPath: moved } }, {
+      ...options, branch: 'pending-from-topic', create: true, forkScript,
+      source: 'refs/heads/main', expectedHead: 'refs/heads/moving-task'
+    });
+    assert.equal(git('-C', folderUpdate[2].uri.fsPath, 'branch', '--show-current'), 'pending-from-topic');
+    await assert.rejects(routeBranch(moving, { rootUri: { fsPath: moved } }, {
+      ...options, branch: 'stale-from-topic', create: true, forkScript,
+      source: 'refs/heads/main', expectedHead: 'refs/heads/stale'
+    }), /active branch changed/);
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+    moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
+
+    moving.commands.calls.length = 0;
+    moving.workspace.updateWorkspaceFolders = () => false;
+    await assert.rejects(routeBranch(moving, { rootUri: { fsPath: root } },
+      { ...options, branch: 'topic' }), /could not update/);
+    assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.clear'));
+    assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codex.resumeWorkspaceHandoff' && call[1].destination === root),
+      'A rejected folder update resumes the chat in its original checkout');
 
     const legacy = path.join(baseDirectory, 'legacy', 'repo');
     await fs.mkdir(path.dirname(legacy), { recursive: true });

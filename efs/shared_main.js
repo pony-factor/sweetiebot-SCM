@@ -6,6 +6,9 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { createWorkspaceDirectory } = require('./workspace_layout');
+const { resolvePythonExecutable } = require('./python_runtime');
+const { prepareCodexHandoff } = require('./codex_workspace_handoff');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -57,10 +60,28 @@ async function mainRoot(root, options = {}) {
 }
 
 async function openFolders(vscode, folders, { forceNewWindow = false,
-  baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main' } = {}) {
-  await io.mkdir(baseDirectory, { recursive: true });
-  const label = path.basename(folders[0].path).replace(/[^\w.-]/g, '-') || 'repo';
-  const directory = await io.mkdtemp(path.join(baseDirectory, label + '-window-'));
+  baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main', handoff } = {}) {
+  const workspace = vscode.workspace.workspaceFile;
+  if (!forceNewWindow && workspace?.scheme === 'file') {
+    // Keep the existing workbench and workspace identity. Opening a different
+    // workspace file reloads the entire renderer, making a branch switch look
+    // like closing and reopening VS Code. Persist the handoff before updating
+    // folders because changing the first root can restart the extension host.
+    if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', {
+      workspace: workspace.fsPath, plan: handoff
+    });
+    try {
+      const accepted = vscode.workspace.updateWorkspaceFolders(0,
+        vscode.workspace.workspaceFolders.length,
+        ...folders.map(folder => ({ uri: vscode.Uri.file(folder.path), name: folder.name })));
+      if (!accepted) throw new Error('VS Code could not update this workspace’s folders.');
+      return { directory: path.dirname(workspace.fsPath), target: workspace.fsPath, folders };
+    } catch (error) {
+      if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.clear', workspace.fsPath).catch(() => {});
+      throw error;
+    }
+  }
+  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(folders[0].path), io);
   const target = path.join(directory, 'workspace.code-workspace');
   try {
     // A unique workspace file permits separate windows on the SAME main
@@ -69,10 +90,12 @@ async function openFolders(vscode, folders, { forceNewWindow = false,
     await io.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
       version: 1, kind, repositories: []
     }, null, 2) + '\n');
+    if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', { workspace: target, plan: handoff });
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(target),
       forceNewWindow ? { forceNewWindow: true } : { forceReuseWindow: true });
     return { directory, target, folders };
   } catch (error) {
+    if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.clear', target).catch(() => {});
     await io.rm(directory, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
@@ -105,7 +128,61 @@ async function replaceRepository(vscode, root, destination, options) {
   return openFolders(vscode, folders, options);
 }
 
-async function routeBranch(vscode, repository, { branch, create = false, start, ...options } = {}) {
+async function capturePendingFiles(root, run) {
+  const patch = (await exec('git', ['-C', root, 'diff', '--binary', 'HEAD', '--'], { maxBuffer: 32 * 1024 * 1024 })).stdout;
+  const names = (await run(['-C', root, 'ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
+  const files = [];
+  for (const name of names) {
+    const file = path.resolve(root, name);
+    if (!inside(root, file)) throw new Error('Invalid untracked path during Codex handoff.');
+    const stat = await fs.lstat(file);
+    if (!stat.isFile()) throw new Error('Codex handoff preserves source symlinks and special files in their original checkout.');
+    files.push({ name, size: stat.size, mtimeMs: stat.mtimeMs });
+  }
+  return { patch, files };
+}
+
+async function copyPendingFiles(root, destination, directory, snapshot) {
+  for (const { name } of snapshot.files) {
+    if (await fs.lstat(path.join(destination, name)).then(() => true, error => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    })) throw new Error('A pending file already exists in the destination; the source files were preserved.');
+  }
+  if (snapshot.patch) {
+    const patchFile = path.join(directory, '.sweetiebot-handoff.patch');
+    try {
+      await fs.writeFile(patchFile, snapshot.patch, { mode: 0o600, flag: 'wx' });
+      await exec('git', ['-C', destination, 'apply', '--binary', patchFile]);
+    } finally { await fs.rm(patchFile, { force: true }); }
+  }
+  for (const file of snapshot.files) {
+    const source = path.join(root, file.name);
+    const before = await fs.lstat(source);
+    if (!before.isFile() || before.size !== file.size || before.mtimeMs !== file.mtimeMs) {
+      throw new Error('A pending file changed during checkout handoff; the original files were preserved.');
+    }
+    const target = path.join(destination, file.name);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.copyFile(source, target, require('node:fs').constants.COPYFILE_EXCL);
+  }
+}
+
+async function switchRepository(vscode, root, destination, options) {
+  const handoff = await prepareCodexHandoff(vscode, root);
+  try {
+    return await replaceRepository(vscode, root, destination, {
+      ...options, handoff: handoff && { ...handoff, destination }
+    });
+  } catch (error) {
+    if (handoff) await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
+      { ...handoff, destination: root }).catch(() => {});
+    throw error;
+  }
+}
+
+async function routeBranch(vscode, repository, { branch, create = false, start,
+  forkScript, source, expectedHead, ...options } = {}) {
   const run = options.run || git;
   if (!repository.rootUri?.fsPath || !branch || !vscode.workspace?.workspaceFolders?.length) return false;
   const root = await fs.realpath(repository.rootUri.fsPath);
@@ -114,37 +191,67 @@ async function routeBranch(vscode, repository, { branch, create = false, start, 
   if (branch === 'main') {
     if (root === original && current === 'main') return false;
     await mainRoot(root, options);
-    await replaceRepository(vscode, root, original, options);
+    await switchRepository(vscode, root, original, options);
     return true;
   }
-  if (root !== original || current !== 'main') return false;
+  if (!create && (root !== original || current !== 'main')) return false;
+  if (create && root !== original) {
+    const common = await Promise.all([root, original].map(directory =>
+      run(['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'])));
+    // Legacy independent clones have their own refs and pending title jobs.
+    // Keep their existing branch flow instead of routing into another Git DB.
+    if (common[0] !== common[1]) return false;
+  }
   await run(['-C', original, 'check-ref-format', '--branch', branch]);
   // Reopening an existing topic must use its existing files, including edits.
   const worktrees = (await run(['-C', original, 'worktree', 'list', '--porcelain'])).split('\n\n');
   const existing = worktrees.find(block => block.split('\n').includes('branch refs/heads/' + branch));
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
-    await replaceRepository(vscode, root, destination, options);
+    await switchRepository(vscode, root, destination, options);
     return true;
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();
-  await fs.mkdir(baseDirectory, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(baseDirectory, path.basename(original) + '-topic-'));
+  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original));
   const destination = path.join(directory, path.basename(original));
   let added = false;
+  let handoff;
   try {
+    handoff = await prepareCodexHandoff(vscode, root);
+    const pendingFiles = handoff && create ? await capturePendingFiles(root, run) : null;
     const args = ['-C', original, 'worktree', 'add'];
     if (create) args.push('-b', branch);
     args.push('--', destination, create ? (start || 'main') : branch);
-    await run(args);
+    if (create && forkScript) {
+      if (expectedHead && await run(['-C', root, 'symbolic-ref', 'HEAD']) !== expectedHead) {
+        throw new Error('The active branch changed while preparing the new branch.');
+      }
+      // Pending main title jobs and fork subscriptions belong to the original
+      // checkout. Validate the source above, then use that job owner's HEAD
+      // for the helper's additional check under its repository lock.
+      const ownerHead = await run(['-C', original, 'symbolic-ref', 'HEAD']);
+      await exec(resolvePythonExecutable(), [forkScript, '--fork-worktree',
+        source, branch, ownerHead, destination], { cwd: original, timeout: 120000 });
+    } else {
+      await run(args);
+    }
     added = true;
+    if (pendingFiles) await copyPendingFiles(root, destination, directory, pendingFiles);
     // The old independent-clone pruner intentionally ignores linked worktrees.
     await fs.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
       version: 1, kind: 'topic-worktree', repositories: [path.basename(original)]
     }, null, 2) + '\n');
-    await replaceRepository(vscode, root, destination, options);
+    // The user wants this same chat and window to follow the selected branch.
+    // Its turn was stopped before creating the checkout; the destination host
+    // resumes the same thread only after verifying its execution directory.
+    await replaceRepository(vscode, root, destination,
+      { ...options, forceNewWindow: false, handoff: handoff && { ...handoff, destination } });
     return true;
   } catch (error) {
+    if (handoff) {
+      await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
+        { ...handoff, destination: root }).catch(() => {});
+    }
     if (!added) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
     // Once added, retain the checkout and any edits even if opening fails.
     throw error;
@@ -162,7 +269,7 @@ async function reconnectManagedMain(vscode, options = {}) {
   const original = await mainRoot(root, options);
   if (root === original) {
     if (path.resolve(folder.uri.fsPath) === original) return false;
-    await replaceRepository(vscode, root, original, options);
+    await switchRepository(vscode, root, original, options);
     return true;
   }
   if (await run(['-C', root, 'status', '--porcelain'])) {
@@ -174,7 +281,7 @@ async function reconnectManagedMain(vscode, options = {}) {
   if (unfinished) throw new Error('This main checkout is still finalizing a commit. It will reconnect after finalization.');
   try { await run(['-C', original, 'merge-base', '--is-ancestor', sha, 'main']); }
   catch { throw new Error('This old main checkout has separate commits. Preserve them in the original repo before reconnecting.'); }
-  await replaceRepository(vscode, root, original, options);
+  await switchRepository(vscode, root, original, options);
   return true;
 }
 

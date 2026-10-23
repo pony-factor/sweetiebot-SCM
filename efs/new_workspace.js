@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { createWorkspaceDirectory } = require('./workspace_layout');
 const { openSharedMainWorkspace } = require('./shared_main');
 
 const OPEN_WORKSPACE_COMMAND = 'sweetiebot.openIndependentWorkspace';
@@ -93,13 +94,9 @@ async function openIndependentClone(vscode, {
   const labelFor = root =>
     path.basename(root).replace(/[^a-zA-Z0-9._-]/g, '-') || 'repo';
 
-  // Name the persistent workspace for its source repository, rather than
-  // creating an opaque workspace-... folder with 1-repo / 2-repo children.
-  // mkdtemp still guarantees distinct directories across repeated launches.
+  // Multi-root workspaces are grouped under their first repository.
   const firstLabel = labelFor(roots.values().next().value);
-  const groupSuffix = roots.size > 1 ? '-group' : '';
-  await io.mkdir(baseDirectory, { recursive: true });
-  const directory = await io.mkdtemp(path.join(baseDirectory, firstLabel + groupSuffix + '-'));
+  const directory = await createWorkspaceDirectory(baseDirectory, firstLabel, io);
   try {
     const destinations = new Map();
     const usedNames = new Set();

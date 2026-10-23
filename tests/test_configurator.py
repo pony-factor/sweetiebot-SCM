@@ -54,6 +54,50 @@ class SubmissionTests(unittest.TestCase):
         for name in names:
             self.assertIn(f'name="{name}"', page)
 
+    def test_sync_commit_filter_defaults_on_and_persists(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],
+                         "scm-toolkit.filter-sync-commit-summaries")
+        values = form_values()
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["filterSyncCommitSummaries"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["filterSyncCommitSummaries"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="filterSyncCommitSummaries" value="true" checked', page)
+        self.assertIn("Exclude sync commits from squash summaries", page)
+        values.pop("filterSyncCommitSummaries")
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled["filterSyncCommitSummaries"])
+        self.assertFalse(configurator.extension_settings_payload(disabled)["vscodeSettings"]["filterSyncCommitSummaries"])
+
+    def test_emoji_only_squash_summary_format_toggle(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["squashOmitBulletsForEmojiTitles"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["squashOmitBulletsForEmojiTitles"],
+                         "scm-toolkit.squash-omit-bullets-for-emoji-titles")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["squashOmitBulletsForEmojiTitles"])
+        values["squashOmitBulletsForEmojiTitles"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["squashOmitBulletsForEmojiTitles"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashOmitBulletsForEmojiTitles"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="squashOmitBulletsForEmojiTitles" value="true" checked', page)
+        self.assertIn("Hide bullets for emoji-only squash summaries", page)
+
+    def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],
+                         "scm-toolkit.ai-title-explanations")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["aiTitleExplanations"])
+        values["aiTitleExplanations"] = ["true"]
+        settings = configurator.parse_submission(values)
+        self.assertTrue(settings["aiTitleExplanations"])
+        page = configurator.render_form(settings, [], "Ready", "test-token", "Save")
+        self.assertIn('name="aiTitleExplanations" value="true" checked', page)
+        self.assertIn("Explain AI commit title choices", page)
+        self.assertFalse("aiTitleExplanations" in configurator.extension_settings_payload(settings)["vscodeSettings"])
+
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
         values["spellcheckPreserveLineBreaks"] = ["true"]
@@ -119,6 +163,15 @@ class SubmissionTests(unittest.TestCase):
             values["chatgptProjectUrl"] = [bad_url]
             with self.assertRaises(ValueError):
                 configurator.parse_submission(values)
+
+    def test_add_separator_appears_immediately_above_available_buttons(self):
+        page = configurator.render_form(dict(toolkit_settings.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        preview = page.index('class="message-bar-preview"')
+        add_separator = page.index('id="message-bar-add-separator"')
+        available = page.index('class="message-bar-hidden"')
+        self.assertLess(preview, add_separator)
+        self.assertLess(add_separator, available)
+        self.assertEqual(page.count('id="message-bar-add-separator"'), 1)
 
     def test_available_push_control_is_disabled_without_a_visibility_switch(self):
         values = form_values()
@@ -442,6 +495,64 @@ class SubmissionTests(unittest.TestCase):
         values["spellcheckManualCommit"] = ["true"]
         self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
 
+    def test_manual_draft_emoji_toggle_is_independent_of_spellcheck(self):
+        values = form_values()
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "scm-toolkit.draft-commit-emoji")
+        self.assertFalse(configurator.parse_submission(values)["draftCommitEmoji"])
+        values["draftCommitEmoji"] = ["true"]
+        configured = configurator.parse_submission(values)
+        self.assertTrue(configured["draftCommitEmoji"])
+        self.assertFalse(configured["spellcheckManualCommit"])
+        page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
+        self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
+    def test_spellchecking_suite_defaults_validation_and_grouping(self):
+        values = form_values()
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckAction"], "automatic")
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckDelaySeconds"], "1.5")
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckStyle"], "spelling")
+        values.update({
+            "spellcheckManualCommit": ["true"],
+            "draftSpellcheckAction": ["review"],
+            "draftSpellcheckDelaySeconds": ["2.5"],
+            "draftSpellcheckStyle": ["grammar"],
+            "draftSpellcheckVocabulary": ["Instinet\nSoroban"],
+            "draftSpellcheckGuidance": ["Keep legal terminology unchanged."],
+            "draftCommitEmoji": ["true"],
+        })
+        parsed = configurator.parse_submission(values)
+        for key in ("draftSpellcheckAction", "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
+                    "draftSpellcheckVocabulary", "draftSpellcheckGuidance"):
+            self.assertEqual(parsed[key], values[key][0])
+        page = configurator.render_form(parsed, [], "Ready", "token", "Save")
+        self.assertIn(">Spellcheck Changes</button>", page)
+        self.assertIn("<h3>While drafting a commit</h3>", page)
+        self.assertIn("<h3>After committing</h3>", page)
+        self.assertIn('name="draftSpellcheckAction"', page)
+        self.assertIn('name="draftSpellcheckDelaySeconds"', page)
+        self.assertIn('name="draftSpellcheckVocabulary"', page)
+        self.assertIn('name="draftSpellcheckGuidance"', page)
+        self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
+    def test_spellchecking_suite_rejects_invalid_inputs(self):
+        invalid = (
+            ("draftSpellcheckAction", "silent"),
+            ("draftSpellcheckStyle", "rewrite"),
+            ("draftSpellcheckDelaySeconds", "0.1"),
+            ("draftSpellcheckDelaySeconds", "11"),
+            ("draftSpellcheckDelaySeconds", "nan"),
+            ("draftSpellcheckVocabulary", "word\n" * 101),
+            ("draftSpellcheckGuidance", "x" * 2001),
+            ("draftSpellcheckVocabulary", "x\x00"),
+        )
+        for name, value in invalid:
+            with self.subTest(name=name, value=value[:30]):
+                form = form_values()
+                form[name] = [value]
+                with self.assertRaises(ValueError):
+                    configurator.parse_submission(form)
+
     def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")
@@ -487,6 +598,28 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="aiCommitFallback" value="true" checked', page)
         values.pop("aiCommitFallback")
         self.assertFalse(configurator.parse_submission(values)["aiCommitFallback"])
+
+    def test_commit_time_budget_setting_renders_and_validates(self):
+        for name, default, maximum, key in (
+                ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
+                ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
+            setting = next(s for s in configurator.SETTINGS if s.name == name)
+            self.assertEqual(setting.section, 'Ollama')
+            self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
+            self.assertEqual(toolkit_settings.SETTING_KEYS[name], key)
+            values = form_values()
+            for value in ('1', default, maximum):
+                values[name] = [value]
+                parsed = configurator.parse_submission(values)
+                self.assertEqual(parsed[name], value)
+                page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
+                self.assertIn(f'name="{name}"', page)
+                self.assertIn('id="commit-generation-budget"', page)
+                self.assertNotIn('name="aiCommitTimeBudgetSeconds"', page)
+            for value in ('', '0', '-1', str(int(maximum) + 1), '1.5', 'nan'):
+                values[name] = [value]
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    configurator.parse_submission(values)
 
     def test_rebuild_button_is_not_a_preference_toggle(self):
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
@@ -705,7 +838,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("function activateSettingsCategory", page)
         tab_markup = page.split('<button class="settings-tab"')[1:]
         panel_markup = page.split('<section class="settings-panel"')[1:]
-        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS))
+        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 1  # Diagnostics is a read-only tab, not a persisted setting.
         self.assertEqual(len(tab_markup), expected_sections)
         self.assertEqual(len(panel_markup), expected_sections)
         self.assertEqual(

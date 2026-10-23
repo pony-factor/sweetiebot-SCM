@@ -11,6 +11,7 @@ Current features:
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
 - customize the commit-message placeholder (defaults to `Message`)
 - the **Sweetiebot: Commit (Same as Source Control Button)** command starts **unbound**. In Sweetiebot Settings → Message bar, choose **Change** beside **Commit hotkey** to record a shortcut, or **Reset** to remove it. The shortcut invokes the native Source Control Commit action, preserving the current message, AI generation, checks, and push settings. Settings writes only this command's user keybinding and preserves unrelated shortcuts and JSONC comments. VS Code and operating-system shortcuts may take precedence.
+- **Sweetiebot: Commit with Codex Co-author** has its **own independently configurable, unbound-by-default shortcut** in Settings → Message bar. Its Change/Reset buttons work like the normal Commit hotkey and dispatch the same action as the co-author button, including the configured trailer, optional Codex-context generation, and direct or durable-background commit behavior. The two bindings cannot use the same key combination.
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
 - clean up unchanged local branches after their same-repository PR merges into the default branch
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
@@ -55,7 +56,14 @@ Windows on `main` share the original repository folder under `~/GitHub`, includi
 its uncommitted edits and Git index. Each window keeps its own saved workspace.
 Sweetiebot’s branch selector and new-branch button open topic branches in separate
 linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
-Topics start from committed main; pending main edits stay in the shared folder.
+Creating a new branch follows it in the current window with the same Codex chat.
+Saved workspaces update their folders in place rather than reopening the entire
+window. Extensions may briefly restart when the first folder changes. A window
+opened directly on a folder must first reopen as a saved workspace; subsequent
+switches reuse it. The separate shared-main window button still opens a new window.
+Topics start from committed main. During an active Codex handoff, pending edits
+are copied to the new worktree without staging; the original files and index stay
+unchanged.
 Returning Home or selecting main reconnects the window to the original files,
 preserving pending topic edits in their worktree. Reopening that topic resumes
 those files. Direct terminal Git commands still act on the folder they run in.
@@ -89,17 +97,22 @@ repository separately, simply leave the parent untrusted.
 
 ### Independent workspace folder names
 
-The **Open Independent Workspace from Main** button keeps each checkout in a
-persistent folder named for the repository, such as
-`~/Library/Application Support/Sweetiebot/Workspaces/sweetiebot-SCM-<unique>/sweetiebot-SCM`, rather than
-`workspace-<unique>/1-sweetiebot-SCM`. A multi-root workspace uses a
-`<first-repository>-group-<unique>` parent, with one named checkout per distinct
-Git repository. When multiple roots share the same name, later ones receive a
-suffix (for example, `shared` and `shared-2`) to prevent overwrites.
-The unique workspace suffix keeps repeated launches independent. Existing
-workspaces under the old `~/Sweetiebot Workspaces` directory are not renamed,
-migrated, or deleted by this change. The new folder is per-user and lives
-under macOS Application Support, not Caches.
+Sweetiebot groups saved windows, topic worktrees, and independent clones by
+repository under `~/Library/Application Support/Sweetiebot/Workspaces/<repository>/<workspace-id>/`.
+Each workspace gets a unique UUID; folder names no longer repeat the repository
+name or include `window`, `topic`, or `group` labels. Workspace metadata records
+the workspace type.
+
+Saved-window folders hold `workspace.code-workspace`, which points to the actual
+checkout. Topic and independent-clone folders also hold a checkout named for the
+repository. Multi-root workspaces live under the first repository's folder, with
+one named checkout per distinct repository. Duplicate checkout names receive a
+numeric suffix, such as `shared-2`.
+
+Existing flat workspace folders remain supported and are left in place so open
+windows and Git worktree references continue working. Activity tracking and
+merged-clone cleanup support both layouts. These persistent folders live in
+Application Support, not Caches.
 
 ### Automatic merged-workspace cleanup
 
@@ -498,6 +511,8 @@ flow. Older terminal-only asynchronous finalization remains available below.
 
 **Asynchronous local commit finalization (opt-in):** Turn on **Finalize commit messages in background** in Sweetiebot settings → Ollama, or set `git config --global scm-toolkit.ai-commit-async true`. An ordinary blank-message commit first records its staged tree locally with a temporary `placeholder_<16 hex digits>` subject. The Git command returns immediately and a detached local worker prepares the final title and optional default-branch description using the *captured* diff. The worker replaces the provisional commit object with the final message, preserving the exact tree and Git author/committer identity and timestamps, without staging any further work. An optional auto-push starts as usual in the background but the installed Git wrapper blocks **every push** until finalization completes. It also queues additional commits and ref-changing Git commands until the pending message is finalized; file editing and staging remain available.
 
+In the magic-wand settings under **Ollama**, set **Commit request timeout (seconds)** (1–900, default 45) and **Attempts per model step** (1–10, default 3). The page calculates the overall generation budget as timeout × attempts: the defaults give 135 seconds. Emoji checks, title generation, retries, and backoff all share that budget; each request is also capped by the remaining time. Generation can finish earlier when the attempt limit is reached. When the budget expires, generation uses the deterministic fallback immediately; disabling fallback keeps the job blocked with an explicit timeout error instead. Changes apply to new generation jobs without restarting VS Code. The corresponding global Git settings are `scm-toolkit.ai-commit-request-timeout-seconds` and `scm-toolkit.ai-commit-attempts`.
+
 If Ollama cannot produce a valid message after three attempts, the background job uses Sweetiebot's existing deterministic, factual fallback title and description. Pending job data and its crash-recovery journal live only under the repository's Git directory. The next wrapped push/commit can finish a stopped worker using that fallback. When the branch has changed unexpectedly or the worker cannot safely rewrite an unusual commit, push fails closed and the temporary commit stays local for manual recovery. This protection applies to Git commands run through the configured Sweetiebot Git wrapper; invoking an unrelated Git executable bypasses it. To avoid changing signed commits or the post-commit Markdown spellcheck flow, commits requesting Git signatures and repositories with automatic post-commit spellcheck enabled continue using synchronous generation. Install/reinstall the toolkit after updating so the Git wrapper has its companion async worker.
 
 
@@ -509,7 +524,7 @@ On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 1
 python3 scripts/ollama_concurrency.py
 ```
 
-This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows four simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows six simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
 
 Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
 
@@ -520,6 +535,46 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
+### Spellcheck Changes customization
+
+The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
+simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
+stages only the reviewed Markdown files, runs the **normal Ollama commit-title
+generator** on those staged corrections (same model, effort, retry budget, emoji
+priority rules, and default-branch description policy), then appends a
+`Co-authored-by: Spellchecker (Ollama MODEL) <verified GitHub noreply address>`
+trailer after the generated title and body. The regular commit includes only
+reviewed files; unrelated staged files remain untouched. The review's optional
+description is appended before the spellchecker attribution. If generation
+fails, staged corrections remain visible for manual recovery without a
+fallback special-purpose title.
+
+The **Spellcheck Changes** settings tab groups draft-time and post-commit controls. The
+**Automatic draft commit spellcheck** toggle is off by default. Draft checks can be
+configured independently of **Add professional emoji to drafted commit titles**
+(also off by default).
+
+- **Correction handling:** *Automatic* silently applies verified spelling changes,
+  or *Review* shows original and proposed subjects in a confirmation dialog.
+  Review declines leave the message unchanged and are not repeatedly requested
+  until you change the subject.
+- **Idle delay:** 0.5–10 seconds (default 1.5); checks occur while drafting, never
+  inside Git's commit/push operations.
+- **Correction scope:** *Spelling* (default) only corrects misspelled words and
+  retains word/punctuation structure. *Grammar* permits small grammatical or
+  punctuation changes under a higher similarity threshold.
+- **Protected vocabulary:** Up to 100 terms/phrases and 5,000 characters; preserve
+  exact technical names and specialist terms. **Additional correction guidance**
+  supports up to 2,000 characters to explain preferences to the local model.
+- **Model:** choose the dedicated local Ollama spellcheck model; missing/offline
+  models leave the draft unchanged. Post-commit Markdown options remain separate
+  beneath **After committing**.
+
+The review mode and vocabulary never override structural protections for emojis,
+code, URLs, numbers, filenames, and acronyms. The existing manual preview action
+is still available. All draft options apply to the **commit subject only**, with
+the body and Codex-attributed commits untouched.
+
 ### Automatic draft commit spellcheck
 
 Opt in to **Automatic draft commit spellcheck** in Sweetiebot settings (off by default). After
@@ -529,6 +584,14 @@ draft has not changed in the meantime. No spellcheck waits in the commit path, a
 unavailable model checks leave the message alone. It never changes the commit body.
 The **Preview spelling correction** button remains available for manual reviews. Clicking it
 shows original and corrected subjects in a modal with **Apply correction** and **Keep original**.
+
+The independent **Add professional emoji to drafted commit titles** toggle (off by default,
+`scm-toolkit.draft-commit-emoji`) adds a change-appropriate leading emoji to manual subjects
+that do not already contain an emoji. It uses Sweetiebot's built-in deterministic commit-title
+emoji classifier, without an extra Ollama request. It works when spellcheck is disabled;
+with both enabled, correction and emoji placement happen in one draft processing pass.
+It never replaces a user-selected emoji, changes the commit body or Codex-attributed messages,
+or delays the commit button. Both options run only while the draft is idle.
 
 Spellcheck uses its own `scm-toolkit.spellcheck-model` setting, defaulting to `qwen2.5:3b`, instead
 of sharing either commit-writing model. The model must return a structured `{"subject":"..."}`
@@ -926,6 +989,7 @@ installer after enabling the setting and reopen the VS Code window once to load
 the snapshot bridge. Subsequent button presses leave Codex running.
 
 When `codex-coauthor` is enabled, an account button appears in the SCM message row.
+The same action can be assigned a separate shortcut under **Message bar → Commit with Codex co-author hotkey**. The shortcut starts unbound and does not replace the normal Commit hotkey. With multiple repositories open, the keyboard command uses the active editor's repository when identifiable, otherwise asks which repository to commit.
 The **Message bar** settings let you change the **Commit co-author name** and
 **Commit co-author email** independently. The button appends the configured
 `Co-authored-by` trailer to the current message, then commits to the selected
@@ -1077,6 +1141,13 @@ This toggle is off by default. After a successful automatic staged commit, the l
 Proposals open in the **Spellchecks Performed** review popup as unstaged edits. Use **Undo** beside an individual highlighted correction to restore just that change (adjacent changed words count as one combined correction, while edits separated by unchanged words remain independent); click a file heading to collapse or expand its diff while reviewing other files. Collapsed sections stay collapsed as corrections are refreshed. You can also edit corrections and the proposed message before choosing **Accept** to commit only the reviewed files, **Revert** to discard their unstaged corrections, or **Close** to leave the edits in place. **Accept** also pushes the active branch when Source Control's **Commit and push** checkbox is checked; otherwise it commits locally. If that push fails, the commit stays local and an error is shown without reopening a stale preview. The original commit and unrelated staged work remain unchanged. The job skips repositories with local work or new staged changes, a changed HEAD, and corrections to files edited while it runs. Explicit-message commits retain their existing behavior.
 
 ### Bulk merges through ChatGPT
+
+Sweetiebot uses the **current PR title** as the squash-commit subject, appending the
+matching `(#PR)` suffix only if it is not already present. Single-PR merge paths
+check for title changes before submitting, and synchronous Kefania merges also
+verify the resulting Git commit subject. This retains the ten-underscore
+`__________` separator, formatting preferences, verified-human attribution
+checks, and no-history-rewrite merge safeguards.
 
 Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in a dedicated workspace window with its own extension host, matching Kefania’s PR submission workflow, including when a local Lindsey checkout is installed. The Lindsey merge workspace now starts in Sweetiebot's centered 640 × 640 compact window, rather than filling the screen. Its dashboard safely displays formatted Markdown and clickable HTTP(S) links in PR descriptions, AI merge reports, and human-review comments, while leaving untrusted HTML inert. Its progress dashboard stacks the timeline and details when narrow; the titlebar's **Expand to 75% of this display** action provides more space for the 20/80 ChatGPT/dashboard split. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 

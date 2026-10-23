@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import background_commit as worker
+import merged_branch
 
 
 class BackgroundCommitTests(unittest.TestCase):
@@ -50,6 +51,38 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def job(self, directory):
         return json.loads((directory / 'job.json').read_text())
+
+    def test_resume_skips_gitdir_replaced_by_worktree_pointer(self):
+        stale = self.root / 'jobs' / 'stale'
+        stale.mkdir(parents=True)
+        pointer = self.root / 'old.git'
+        pointer.write_text('gitdir: /relocated/worktree\n')
+        (stale / 'job.json').write_text(json.dumps({'gitdir': str(pointer)}))
+        directory = self.queue()
+        meta = self.job(directory)['gitdir']
+        # Visit the obsolete record first, as in the affected runtime.
+        journals = [stale / 'job.json', directory / 'job.json']
+        for parallel in (True, False):
+            with self.subTest(parallel=parallel), \
+                    patch.object(Path, 'glob', return_value=iter(journals)), \
+                    patch.object(worker, 'drain_parallel') as drain, \
+                    patch.object(worker, 'work') as work:
+                worker.resume(parallel=parallel)
+                if parallel:
+                    drain.assert_called_once_with(meta)
+                else:
+                    work.assert_called_once_with(directory)
+
+    def test_merged_branch_is_blocked_before_background_push(self):
+        directory = self.queue(push=True)
+        info = {'branch': 'main', 'number': 61, 'defaultBranch': 'main', 'remote': 'origin'}
+        with patch.object(merged_branch, 'require_unmerged', side_effect=merged_branch.MergedBranchPush(info)):
+            worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertFalse(job['push'])
+        self.assertEqual(job['mergedBranch'], info)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
 
     def test_status_tracks_title_jobs_independently_of_pending_push(self):
         first = self.queue(push=True)
@@ -504,7 +537,7 @@ worker.work(Path(sys.argv[2]))
         for command in ('commit', 'reset'):
             result = subprocess.run([sys.executable, str(Path(worker.__file__).with_name('ai_commit.py')), command], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('background Commit & Push is pending', result.stderr)
+            self.assertIn('Commit & Push is still running', result.stderr)
         self.assertEqual(self.job(directory)['phase'], 'committed')
 
     def test_wrapper_allows_switch_and_checkout_while_push_is_pending(self):
@@ -553,6 +586,21 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(self.git('rev-parse', 'checkout-copy'), base)
         self.assertEqual(self.git('rev-parse', 'switch-copy'), base)
         self.assertNotEqual(self.git('rev-parse', 'main'), provisional)
+
+    def test_pending_fork_worktree_preserves_main_and_tracks_finalized_base(self):
+        first = self.queue(message='')
+        destination = self.root / 'isolated-topic'
+        before = (self.repo / 'story.txt').read_text()
+        worker.fork_branch('main', 'isolated', 'refs/heads/main', str(destination))
+        self.assertEqual(self.git('symbolic-ref', '--short', 'HEAD'), 'main')
+        self.assertEqual((self.repo / 'story.txt').read_text(), before)
+        (destination / 'story.txt').write_text('Independent topic edit\n')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish shared base', '')):
+            worker.work(first)
+        self.assertEqual(self.git('rev-parse', 'isolated'), self.git('rev-parse', 'main'))
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s', 'isolated'))
+        self.assertEqual((destination / 'story.txt').read_text(), 'Independent topic edit\n')
+        self.assertEqual((self.repo / 'story.txt').read_text(), before)
 
     def test_fork_descendants_wait_for_inherited_title_and_keep_staging(self):
         first = self.queue(message='', push=True)
@@ -745,6 +793,29 @@ worker.resume(parallel=False)
         self.assertEqual([child.wait(timeout=15) for child in children], [0, 0, 0])
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
+
+    def test_scheduler_runs_six_jobs_before_starting_seventh(self):
+        from types import SimpleNamespace
+        entries = [{'id': str(i), 'directory': str(self.root / str(i))} for i in range(7)]
+        jobs = {entry['id']: dict(entry, phase='committed', provisional=True,
+                                branch='refs/heads/main', sha=entry['id']) for entry in entries}
+        active, batches = [], []
+        def launch(directory):
+            child = SimpleNamespace(done=False)
+            child.poll = lambda: 0 if child.done else None
+            active.append(child)
+            return child
+        def tick(_seconds):
+            running = [child for child in active if not child.done]
+            batches.append(len(running))
+            for child in running:
+                child.done = True
+        with patch.object(worker, 'queue_entries', return_value=entries), \
+                patch.object(worker, 'read_journal', side_effect=lambda p: jobs[p.parent.name]), \
+                patch.object(worker, 'launch_job', side_effect=launch), \
+                patch.object(worker.time, 'sleep', side_effect=tick):
+            worker.drain_parallel(str(self.repo / '.git'))
+        self.assertEqual(batches, [6, 1])
 
     def check_parallel_generation(self, second_finishes_first):
         first = self.queue(message='', push=True)
