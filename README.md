@@ -563,6 +563,18 @@ The low-memory path never escalates to the larger primary model when the fallbac
 
 ### Spellcheck Changes customization
 
+**Spellcheck reasoning effort** is a separate option for draft subjects and
+reviewed Markdown corrections. It offers **Default**, **Low**, **Medium**, and
+**High**. Sweetiebot asks local Ollama which thinking levels the selected
+spellcheck model supports, uses the exact supported level (or enables thinking
+for on/off-only models), and falls back to the model's normal behavior when
+the level is unavailable. Thinking-capable models get a larger context, output
+budget, and timeout; the normal commit-title pipeline is unchanged. Results
+still go through the original correction safety checks. This is an Ollama
+feature, not a hidden ChatGPT plugin session; corrections and co-author
+attribution remain accurately identified as Ollama unless a separately
+verified ChatGPT integration is implemented.
+
 The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
 simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
 stages only the reviewed Markdown files, runs the **normal Ollama commit-title

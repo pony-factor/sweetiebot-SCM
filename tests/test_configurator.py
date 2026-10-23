@@ -581,6 +581,24 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="draftSpellcheckGuidance"', page)
         self.assertIn('name="draftCommitEmoji" value="true" checked', page)
 
+    def test_spellcheck_thinking_effort_uses_supported_persisted_levels(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckThinkingEffort"], "default")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckThinkingEffort"],
+                         "scm-toolkit.spellcheck-thinking-effort")
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["spellcheckThinkingEffort"], "default")
+        for effort in ("low", "medium", "high"):
+            with self.subTest(effort=effort):
+                values["spellcheckThinkingEffort"] = [effort]
+                configured = configurator.parse_submission(values)
+                self.assertEqual(configured["spellcheckThinkingEffort"], effort)
+                page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
+                self.assertIn('name="spellcheckThinkingEffort"', page)
+                self.assertIn(f'<option value="{effort}" selected>', page)
+        values["spellcheckThinkingEffort"] = ["maximum"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_spellchecking_suite_rejects_invalid_inputs(self):
         invalid = (
             ("draftSpellcheckAction", "silent"),

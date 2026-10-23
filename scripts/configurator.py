@@ -265,6 +265,7 @@ SETTINGS = (
     Setting("draftSpellcheckVocabulary", "scm-toolkit.draft-spellcheck-vocabulary", "Protected vocabulary", "One term or phrase per line. When present, these exact words, brands or technical expressions must remain unchanged.", "Spellcheck Changes", "textarea"),
     Setting("draftSpellcheckGuidance", "scm-toolkit.draft-spellcheck-guidance", "Additional correction guidance", "Optional preferences or specialist terminology for the local model. Safety checks, protected tokens and user-selected emoji always take precedence.", "Spellcheck Changes", "textarea"),
     Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Spellcheck Changes", "model"),
+    Setting("spellcheckThinkingEffort", "scm-toolkit.spellcheck-thinking-effort", "Spellcheck reasoning effort", "Default uses the model's normal behavior. Low, medium, or high requests supported Ollama thinking levels; models offering only an on/off control use thinking on. Unsupported levels fall back to the model default. Applies to commit-subject and Markdown spellchecking; does not change normal commit-title generation.", "Spellcheck Changes", "select", ("default", "low", "medium", "high")),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellcheck Changes"),
     Setting("spellcheckChangesEmoji", "scm-toolkit.spellcheck-changes-emoji", "Add professional emoji to spellcheck commits", "Include the professional leading emoji from normal AI commit-title generation when accepting reviewed Spellcheck Changes. Turn off to omit it without changing title quality, model effort, or attribution. On by default.", "Spellcheck Changes"),
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
@@ -881,7 +882,8 @@ def render_form(
             draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",
                               "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
                               "draftSpellcheckVocabulary", "draftSpellcheckGuidance",
-                              "draftCommitEmoji", "spellcheckModel"}
+                              "draftCommitEmoji", "spellcheckModel",
+                              "spellcheckThinkingEffort"}
             controls = (
                 '<div class="settings-group"><h3>While drafting a commit</h3>'
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
