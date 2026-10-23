@@ -2,7 +2,7 @@
 
 A small source-control UI patch for Visual Studio Code. It keeps the built-in Git workflow, but adds a compact branch selector and optional SCM controls around the commit-message box.
 
-For distinct Kefania and Lindsey GitHub App identities, see [GitHub App identity setup](docs/DISTINCT_GITHUB_APPS.md). The default legacy publishing identity and spellcheck settings are unchanged until separate-app mode is enabled.
+For distinct Kefania and Lindsey GitHub App identities, see [GitHub App identity setup](docs/distinct_github_apps.md). The default legacy publishing identity and spellcheck settings are unchanged until separate-app mode is enabled.
 
 Current features:
 
