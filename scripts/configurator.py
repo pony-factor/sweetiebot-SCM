@@ -349,6 +349,7 @@ SETTINGS = (
     Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Usage pie indicator", "Replace the Codex remaining-usage percentage with a circular indicator that empties as the five-hour allowance is used.", "Codex"),
+    Setting("codexResetTimePieIndicator", "scm-toolkit.codex-reset-time-pie-indicator", "Reset countdown pie indicators", "Show a time-remaining pie beside each five-hour and weekly Codex usage-menu reset countdown. Pies empty as the reset approaches; hiding reset times overrides this setting. Off by default.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
@@ -871,7 +872,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexHideChatTimestamps",
+                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'

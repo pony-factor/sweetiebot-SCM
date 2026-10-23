@@ -1165,6 +1165,7 @@ class CodexCountdownTests(unittest.TestCase):
     def test_countdown_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsageResetCountdown"])
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsagePieIndicator"])
+        self.assertFalse(install.DEFAULT_SETTINGS["codexResetTimePieIndicator"])
         self.assertFalse(install.DEFAULT_SETTINGS["codexHideUsageResetTimes"])
 
     def test_hide_reset_times_without_countdown(self):

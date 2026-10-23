@@ -338,6 +338,7 @@ class SubmissionTests(unittest.TestCase):
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "token", "Save")
         self.assertIn("Relative Codex reset times", page)
         self.assertIn("live relative countdowns", page)
+        self.assertIn('name="codexResetTimePieIndicator"', page)
 
     def test_rate_limit_sticker_toggle_and_local_picker(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
@@ -950,6 +951,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="cmdClickCloseOthers"', page)
         self.assertIn('name="browserChatgptHome"', page)
         self.assertIn('name="codexUsagePieIndicator"', page)
+        self.assertIn('name="codexResetTimePieIndicator"', page)
         self.assertIn('name="codexHideChatTimestamps"', page)
         self.assertIn('name="codexHideDictation"', page)
         self.assertIn('name="codexShortModelLabels"', page)
