@@ -2,7 +2,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8');
+const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8')
+  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
@@ -10,6 +11,8 @@ class Element {
   get textContent(){return this._text+this.children.map(node=>String(node.textContent??'')).join('');}
   set textContent(value){this._text=String(value);this.children=[];}
   append(...nodes){this.children.push(...nodes);}
+  appendChild(node){this.children.push(node);return node;}
+  get ownerDocument(){return document;}
   replaceChildren(...nodes){this._text='';this.children=nodes;}
   setAttribute(name,value){this[name]=value;}
   addEventListener(name,listener){(this.listeners[name]??=[]).push(listener);}
@@ -47,9 +50,9 @@ assert.equal(context.safeLink('javascript:alert(1)'),null);
 assert.equal(context.safeLink('https://user:password@example.com'),null);
 const output=new Element('div');
 context.renderMarkdown(output,'## Profile\n\nA **recognizable** pony with <script>alert(1)</script>.\n\n- [Source](https://example.com/pony)');
-assert.equal(output.children[0].tag,'h3');
-assert.equal(output.children[1].children[1].tag,'strong');
-assert(output.children[1].children.some(node=>node.textContent.includes('<script>')),'Raw HTML remains inert text');
+assert.equal(output.children[0].tag,'h2');
+assert(output.children[1].children.some(node=>node.tag==='strong'));
+assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
 const inlineNodes=output.children[0].children;
 assert.deepEqual(inlineNodes.filter(node=>node.tag==='em').map(node=>node.textContent),['Friendship Is Magic','Rock Solid Friendship']);
@@ -196,8 +199,9 @@ pendingImages[staleStart+1].naturalWidth=400;
 pendingImages[staleStart+1].onload();
 assert.equal(images.children.length,1);
 assert.equal(images.children[0].children[1].textContent,'New result');
-assert.match(html, /id="close-confirmation"[^>]*hidden/, 'Close action initially hidden');
-assert.match(html, /const closeVisible=!!state\.result&&state\.showKefaniaCloseButton!==false/, 'Close is optional after publication');
+assert.match(html, /id="close-confirmation"[^>]*title="Close window">×<\/button>/, 'Close action appears in the initial page HTML');
+assert.doesNotMatch(html, /id="close-confirmation"[^>]*\shidden(?:\s|>)/, 'Close must not wait for draft publication');
+assert.match(html, /const closeVisible=state\.showKefaniaCloseButton!==false/, 'Close visibility follows the existing preference at every generation stage');
 assert.match(html, /root\+'\/close'/, 'Close action uses local handoff');
 assert.match(html, /grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/, 'Pony takes 60% on the left of the wide confirmation layout');
 assert.match(html, /\.layout:has\(#pony-section\[hidden\]\)\{grid-template-columns:minmax\(0,1fr\)\}/, 'PR-only confirmation uses the full grid width');
@@ -232,6 +236,13 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   let layoutState={errors:{}};
   context.fetch=async()=>({ok:true,json:async()=>layoutState});
   await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,false,'The close X is visible while the PR is still being drafted');
+  layoutState={errors:{},showKefaniaCloseButton:false};
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,true,'The existing hide-X preference applies during generation');
+  layoutState={errors:{},showKefaniaCloseButton:true};
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,false,'Enabling the preference restores the X before publication');
   assert.equal(getElementById('pony-section').hidden,true,'An ordinary branch hides the pony section');
   assert.equal(getElementById('subtitle').textContent,'Review the pull request draft.');
   layoutState={errors:{},pony:{name:'Kefania',slug:'kefania'},result:{number:23,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/23'}};

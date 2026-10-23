@@ -1050,7 +1050,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const previousFocus = doc.activeElement;
             const dialog = doc.createElement('dialog');
             dialog.className = 'scm-toolkit-spellcheck-popup';
-            dialog.setAttribute('aria-label', 'Spellchecks Performed');
+            dialog.setAttribute('aria-label', 'Spellcheck Changes');
             const themeHost = doc.querySelector?.('.monaco-workbench') || doc.documentElement;
             const theme = doc.defaultView.getComputedStyle?.(themeHost);
             dialog.style?.setProperty('color', theme?.getPropertyValue('--vscode-editor-foreground').trim() || '#d4d4d4');
@@ -1061,16 +1061,16 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             const content = doc.createElement('div');
             content.className = 'scm-toolkit-spellcheck-content';
             const heading = doc.createElement('h1');
-            heading.textContent = 'Spellchecks Performed';
+            heading.textContent = 'Spellcheck Changes';
             const status = doc.createElement('div');
             status.className = 'scm-toolkit-spellcheck-status';
             status.setAttribute('role', 'status');
             const messageLabel = doc.createElement('label');
             messageLabel.className = 'scm-toolkit-spellcheck-message-label';
-            messageLabel.textContent = 'Commit message';
+            messageLabel.textContent = 'Optional commit description (normal title generated on Accept)';
             const message = doc.createElement('textarea');
             message.className = 'scm-toolkit-spellcheck-message';
-            message.setAttribute('aria-label', 'Commit message');
+            message.setAttribute('aria-label', 'Optional commit description');
             message.rows = 4;
             message.value = preview.message || '';
             messageLabel.append(message);
@@ -1086,7 +1086,7 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
             let activeEdit, currentSave, acting = false, dismissed = false;
             const collapsedFiles = new Set();
             const updateActions = () => {
-                accept.disabled = acting || !!currentSave || !message.value.trim() || !(preview.files || []).length;
+                accept.disabled = acting || !!currentSave || !(preview.files || []).length;
                 revert.disabled = acting;
                 close.disabled = acting;
                 message.disabled = acting;
@@ -1359,7 +1359,10 @@ function scmToolkitWatchSpellcheckPopups(doc, commands) {
 
 // Run opt-in subject-only spelling corrections as the user drafts, not during Commit.
 // Debounce local Ollama calls, serialize checks, and discard stale responses.
-function scmToolkitWatchDraftSpellcheck(input, repositoryUri, commands, blocked = () => false) {
+function scmToolkitWatchDraftSpellcheck(
+    input, repositoryUri, commands, blocked = () => false,
+    { spellcheck = true, professionalEmoji = false, review = false, delaySeconds = 1.5 } = {}
+) {
     let timer;
     let busy = false;
     let disposed = false;
@@ -1381,7 +1384,8 @@ function scmToolkitWatchDraftSpellcheck(input, repositoryUri, commands, blocked 
             checkedSubject = subject;
             try {
                 const corrected = await commands.executeCommand(
-                    'sweetiebot.previewCommitSpellcheck', repositoryUri, original, { automatic: true }
+                    'sweetiebot.previewCommitSpellcheck', repositoryUri, original,
+                    { automatic: true, spellcheck, professionalEmoji, review }
                 );
                 if (!disposed && !blocked() && input.value === original
                     && typeof corrected === 'string' && corrected !== original) {
@@ -1395,7 +1399,7 @@ function scmToolkitWatchDraftSpellcheck(input, repositoryUri, commands, blocked 
                 busy = false;
                 if (!disposed && subjectOf(input.value) !== checkedSubject) schedule();
             }
-        }, 1500);
+        }, Math.max(500, Math.min(10000, (Number(delaySeconds) || 1.5) * 1000)));
     };
 
     const listener = input.onDidChange(schedule);
@@ -1850,26 +1854,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         refreshCodexCommit();
 
         try {
-            if (configuration.getValue('scmToolkit.durableBackgroundCommits') === true) {
-                await commands.executeCommand('sweetiebot.queueCommit', repositoryUri, {
-                    message: originalMessage, codex: true,
-                    trailer: scmToolkitCoauthorTrailer(settings),
-                    push: configuration.getValue('git.postCommitCommand') === 'push'
-                });
-            } else {
-                // The original direct workflow: generate locally now and commit normally.
-                // Use the same Ollama prompt, custom instructions and emoji rules as queued jobs.
-                let message = originalMessage;
-                if (!message.trim()) {
-                    message = await commands.executeCommand('sweetiebot.generateCodexCommitMessage', repositoryUri);
-                }
-                if (typeof message !== 'string' || !message.trim()) {
-                    throw new Error('Local commit generation did not return a message.');
-                }
-                await commands.executeCommand('sweetiebot.commitWithMessage', repositoryUri,
-                    scmToolkitWithCodexCoauthor(message, settings));
-                if (input.value === originalMessage) input.setValue('');
-            }
+            const result = await commands.executeCommand('sweetiebot.commitWithCodex', repositoryUri, {
+                message: originalMessage,
+                trailer: scmToolkitCoauthorTrailer(settings),
+                codexCommitContext: settings.codexCommitContext
+            });
+            if (result?.committed && !result.queued && input.value === originalMessage) input.setValue('');
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -2511,9 +2501,18 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             if (settings.spellcheckManualCommit) {
                 spellcheckButton.hidden = false;
                 refreshSpellcheck();
+            }
+            if (settings.spellcheckManualCommit || settings.draftCommitEmoji) {
                 widget.repositoryDisposables.add(scmToolkitWatchDraftSpellcheck(
                     input, currentRepositoryUri, commands,
-                    () => pending || deletingBranch || spellchecking
+                    () => pending || deletingBranch || spellchecking,
+                    {
+                        spellcheck: Boolean(settings.spellcheckManualCommit),
+                        professionalEmoji: Boolean(settings.draftCommitEmoji),
+                        review: Boolean(settings.spellcheckManualCommit)
+                            && settings.draftSpellcheckAction === 'review',
+                        delaySeconds: settings.draftSpellcheckDelaySeconds || 1.5
+                    }
                 ));
             }
 

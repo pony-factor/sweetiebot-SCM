@@ -108,7 +108,7 @@ def recover_finalization(meta):
     file.unlink()
 
 
-def fork_branch(source, name, expected_head):
+def fork_branch(source, name, expected_head, destination=None):
     """Capture a pending base and its subscription under the finalizer's lock."""
     meta = Path(git('rev-parse', '--absolute-git-dir'))
     with repository_lock(meta):
@@ -134,7 +134,10 @@ def fork_branch(source, name, expected_head):
         forks[branch] = base
         # Save before creating the ref: a crash must never leave an untracked fork.
         write_journal(meta / FORKS, forks)
-        git('checkout', '-b', name, base)
+        if destination:
+            git('worktree', 'add', '-b', name, '--', destination, base)
+        else:
+            git('checkout', '-b', name, base)
         return base
 
 
@@ -967,6 +970,8 @@ if __name__ == '__main__':
         if len(sys.argv) == 3 and sys.argv[1] == '--branch-base':
             print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
         elif len(sys.argv) == 5 and sys.argv[1] == '--fork-branch':
+            print(fork_branch(*sys.argv[2:]))
+        elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
             print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))

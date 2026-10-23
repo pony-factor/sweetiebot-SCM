@@ -1,7 +1,7 @@
 'use strict';
 
 // Render GitHub Markdown into safe DOM nodes, never innerHTML.
-function renderMergeMarkdown(root, markdown, { baseUrl, openLink } = {}) {
+function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}) {
   const doc = root.ownerDocument;
   const TICK = String.fromCharCode(96);
   const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
@@ -21,25 +21,31 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink } = {}) {
     const url = safeUrl(value);
     if (!url) return false;
     const a = node(parent, 'a', label);
-    a.href = url;
+    a.href = typeof mapLink === 'function' ? safeUrl(mapLink(url)) || url : url;
     a.rel = 'noopener noreferrer';
-    a.addEventListener('click', event => {
-      event.preventDefault();
-      if (typeof openLink === 'function') openLink(url);
-    });
+    if (typeof openLink === 'function') {
+      a.addEventListener('click', event => {
+        event.preventDefault();
+        openLink(a.href);
+      });
+    } else a.target = '_blank';
     return true;
   }
   function markdownLink(source, start) {
-    const close = source.indexOf('](', start + 1);
+    const close = source.indexOf(']', start + 1);
     if (close < 0) return null;
-    let i = close + 2, nested = 1;
+    // Generated research sometimes writes [label] (https://source).
+    let begin = close + 1;
+    while (begin < source.length && /\s/.test(source[begin])) begin++;
+    if (source[begin] !== '(') return null;
+    let i = begin + 1, nested = 1;
     while (i < source.length && nested) {
       if (source[i] === '(') nested++;
       if (source[i] === ')') nested--;
       i++;
     }
     if (nested) return null;
-    let url = source.slice(close + 2, i - 1).trim().replace(/\s+["'][^"']*["']$/, '');
+    let url = source.slice(begin + 1, i - 1).trim().replace(/\s+["'][^"']*["']$/, '');
     if (url.startsWith('<') && url.endsWith('>')) url = url.slice(1, -1);
     return { label: source.slice(start + 1, close), url, end: i };
   }
@@ -79,12 +85,34 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink } = {}) {
         if (safeUrl(value)) { flush(); addLink(parent, value, value); i += value.length; continue; }
       }
       let matched = false;
-      for (const [marker, tag] of [['**','strong'], ['__','strong'], ['~~','s'], ['*','em'], ['_','em']]) {
-        if (!text.startsWith(marker, i) || (marker === '_' && i > 0 && /\w/.test(text[i - 1]))) continue;
-        const end = text.indexOf(marker, i + marker.length);
-        if (end <= i + marker.length) continue;
+      for (const [marker, tag, innerTag] of [
+        ['***', 'strong', 'em'], ['___', 'strong', 'em'],
+        ['**', 'strong'], ['__', 'strong'], ['~~', 's'], ['*', 'em'], ['_', 'em']
+      ]) {
+        if (!text.startsWith(marker, i)) continue;
+        if (marker[0] === '_' && i > 0 && /\w/.test(text[i - 1])) continue;
+        if (/\s/.test(text[i + marker.length] || '')) continue;
+        let end = -1;
+        for (let at = i + marker.length; at < text.length; at++) {
+          if (text[at] === '\\') { at++; continue; }
+          if (text[at] === TICK) {
+            const tickEnd = text.indexOf(TICK, at + 1);
+            if (tickEnd >= 0) { at = tickEnd; continue; }
+          }
+          if (!text.startsWith(marker, at)) continue;
+          const ch = marker[0];
+          if (marker.length === 1 && (text[at - 1] === ch || text[at + 1] === ch)) continue;
+          if (marker.length === 2 && text[at + 2] === ch) continue;
+          if (/\s/.test(text[at - 1])) continue;
+          if (ch === '_' && /\w/.test(text[at + marker.length] || '')) continue;
+          end = at;
+          break;
+        }
+        if (end < 0) continue;
         flush();
-        inline(node(parent, tag), text.slice(i + marker.length, end), level + 1);
+        const outer = node(parent, tag);
+        const inner = innerTag ? node(outer, innerTag) : outer;
+        inline(inner, text.slice(i + marker.length, end), level + 1);
         i = end + marker.length;
         matched = true;
         break;

@@ -34,7 +34,7 @@ test('popup safely renders and restores focus after closing via ' + closingActio
   };
   const patch = 'diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1 +1 @@\n-<speling>\n+<spelling>\n'
     + 'diff --git a/b.md b/b.md\n--- a/b.md\n+++ b/b.md\n@@ -1 +1 @@\n-speling\n+spelling\n';
-  const preview = {sessionId: 'session', title: 'Spellcheck suggestions', message: '🤖 Spellcheck trading citations and notes', html: '', files: spellcheckDiffFiles(patch)};
+  const preview = {sessionId: 'session', title: 'Spellcheck Changes', message: '', html: '', files: spellcheckDiffFiles(patch)};
   preview.files[0].rows.find(row => row.kind === 'add').editId = 'line';
   preview.files[1].rows.find(row => row.kind === 'add').editId = 'line-b';
   preview.files[0].rows.find(row => row.kind === 'add').changes = [

@@ -48,11 +48,6 @@ COMMIT_HOTKEY_STYLE = """
 .hotkey-status.error-state{color:#ffb3ad}
 """
 COMMIT_HOTKEY_SCRIPT = r"""
-const hotkeyChange = document.getElementById('commit-hotkey-change');
-const hotkeyReset = document.getElementById('commit-hotkey-reset');
-const hotkeyValue = document.getElementById('commit-hotkey-value');
-const hotkeyStatus = document.getElementById('commit-hotkey-status');
-let hotkeyListening = false;
 const hotkeyNames = {
   Space:'space', Enter:'enter', Tab:'tab', Escape:'escape',
   Backspace:'backspace', Delete:'delete', Home:'home', End:'end',
@@ -63,61 +58,71 @@ const hotkeyNames = {
   Backslash:'backslash', Semicolon:'semicolon', Quote:'quote',
   Comma:'comma', Period:'period', Slash:'slash'
 };
-function finishHotkeyRecording() {
-  hotkeyListening = false;
-  document.removeEventListener('keydown', captureCommitHotkey, true);
-  if (hotkeyChange) hotkeyChange.textContent = 'Change';
-}
-async function saveCommitHotkey(key) {
-  hotkeyChange.disabled = true;
-  hotkeyReset.disabled = true;
-  hotkeyStatus.classList.remove('error-state');
-  hotkeyStatus.textContent = 'Saving…';
-  try {
-    const response = await fetch('/commit-hotkey' + location.search, {
-      method:'POST', body:new URLSearchParams({key})
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
-    hotkeyValue.textContent = result.key || 'Unbound';
-    hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
-  } catch (error) {
-    hotkeyStatus.textContent = error.message;
-    hotkeyStatus.classList.add('error-state');
-  } finally {
-    hotkeyChange.disabled = false;
-    hotkeyReset.disabled = false;
+let activeStopHotkey = null;
+function setupCommitHotkey(prefix, command) {
+  const hotkeyChange = document.getElementById(prefix + '-change');
+  const hotkeyReset = document.getElementById(prefix + '-reset');
+  const hotkeyValue = document.getElementById(prefix + '-value');
+  const hotkeyStatus = document.getElementById(prefix + '-status');
+  if (!hotkeyChange || !hotkeyReset || !hotkeyValue || !hotkeyStatus) return;
+  let hotkeyListening = false;
+  function finishHotkeyRecording() {
+    hotkeyListening = false;
+    document.removeEventListener('keydown', captureCommitHotkey, true);
+    hotkeyChange.textContent = 'Change';
+    if (activeStopHotkey === finishHotkeyRecording) activeStopHotkey = null;
   }
-}
-function captureCommitHotkey(event) {
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (event.key === 'Escape') {
+  async function saveCommitHotkey(key) {
+    hotkeyChange.disabled = true;
+    hotkeyReset.disabled = true;
+    hotkeyStatus.classList.remove('error-state');
+    hotkeyStatus.textContent = 'Saving…';
+    try {
+      const response = await fetch('/commit-hotkey' + location.search, {
+        method:'POST', body:new URLSearchParams({key, command})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not save shortcut.');
+      hotkeyValue.textContent = result.key || 'Unbound';
+      hotkeyStatus.textContent = 'Saved to VS Code user keybindings.';
+    } catch (error) {
+      hotkeyStatus.textContent = error.message;
+      hotkeyStatus.classList.add('error-state');
+    } finally {
+      hotkeyChange.disabled = false;
+      hotkeyReset.disabled = false;
+    }
+  }
+  function captureCommitHotkey(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.key === 'Escape') {
+      finishHotkeyRecording();
+      hotkeyStatus.textContent = 'Recording cancelled.';
+      return;
+    }
+    if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
+    let key = hotkeyNames[event.code];
+    if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
+    if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
+    if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
+    if (!key) {
+      hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
+      return;
+    }
+    const mods = [];
+    if (event.ctrlKey) mods.push('ctrl');
+    if (event.altKey) mods.push('alt');
+    if (event.shiftKey) mods.push('shift');
+    if (event.metaKey) mods.push('cmd');
     finishHotkeyRecording();
-    hotkeyStatus.textContent = 'Recording cancelled.';
-    return;
+    void saveCommitHotkey([...mods, key].join('+'));
   }
-  if (/^(Shift|Control|Alt|Meta|OS)$/.test(event.key) || event.repeat) return;
-  let key = hotkeyNames[event.code];
-  if (!key && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3).toLowerCase();
-  if (!key && /^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
-  if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code.toLowerCase();
-  if (!key) {
-    hotkeyStatus.textContent = 'Unsupported key. Try a letter, number, function, or navigation key.';
-    return;
-  }
-  const mods = [];
-  if (event.ctrlKey) mods.push('ctrl');
-  if (event.altKey) mods.push('alt');
-  if (event.shiftKey) mods.push('shift');
-  if (event.metaKey) mods.push('cmd');
-  finishHotkeyRecording();
-  void saveCommitHotkey([...mods, key].join('+'));
-}
-if (hotkeyChange) {
   hotkeyChange.addEventListener('click', () => {
     if (hotkeyListening) { finishHotkeyRecording(); return; }
+    if (activeStopHotkey) activeStopHotkey();
     hotkeyListening = true;
+    activeStopHotkey = finishHotkeyRecording;
     hotkeyChange.textContent = 'Cancel';
     hotkeyStatus.textContent = 'Press the desired key combination. Escape cancels.';
     hotkeyStatus.classList.remove('error-state');
@@ -134,8 +139,17 @@ if (hotkeyChange) {
     }
   });
 }
+setupCommitHotkey('commit-hotkey', 'sweetiebot.commit');
+setupCommitHotkey('codex-commit-hotkey', 'sweetiebot.commitWithCodex');
 """
-def _commit_hotkey_control(key: str | None) -> str:
+def _commit_hotkey_control(
+    key: str | None,
+    *,
+    prefix: str = "commit-hotkey",
+    label: str = "Commit hotkey",
+    description: str = ("Run the same action as the Source Control Commit button. "
+                        "Unbound by default; Reset removes the assignment."),
+) -> str:
     available = key is not None
     shown = html.escape(key or "Unbound")
     disabled = "" if available else " disabled"
@@ -143,17 +157,15 @@ def _commit_hotkey_control(key: str | None) -> str:
             "shortcuts may still take precedence." if available else
             "Open this page from Sweetiebot in VS Code to edit its shortcut.")
     return (
-        '<div class="setting"><span><strong>Commit hotkey</strong>'
-        '<small>Run the same action as the Source Control Commit button. '
-        'Unbound by default; Reset removes the assignment.</small></span>'
+        f'<div class="setting"><span><strong>{html.escape(label)}</strong>'
+        f'<small>{html.escape(description)}</small></span>'
         '<div class="hotkey-actions">'
-        f'<output id="commit-hotkey-value" class="hotkey-value">{shown}</output>'
-        f'<button type="button" id="commit-hotkey-change"{disabled}>Change</button>'
-        f'<button type="button" id="commit-hotkey-reset"{disabled}>Reset</button>'
-        f'<small id="commit-hotkey-status" class="hotkey-status" role="status" aria-live="polite">'
+        f'<output id="{prefix}-value" class="hotkey-value">{shown}</output>'
+        f'<button type="button" id="{prefix}-change"{disabled}>Change</button>'
+        f'<button type="button" id="{prefix}-reset"{disabled}>Reset</button>'
+        f'<small id="{prefix}-status" class="hotkey-status" role="status" aria-live="polite">'
         f'{html.escape(hint)}</small></div></div>'
     )
-
 
 
 @dataclass(frozen=True)
@@ -240,11 +252,17 @@ SETTINGS = (
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
-    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Automatic draft commit spellcheck", "After 1.5 seconds without typing, correct obvious spelling errors in manual commit subjects using local Ollama. Never blocks a commit, replaces the body, or alters Codex-attributed messages. The manual preview action remains available. Off by default.", "Ollama"),
-    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Ollama", "model"),
-    Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Ollama"),
-    Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Ollama"),
-    Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Ollama", "textarea"),
+    Setting("spellcheckManualCommit", "scm-toolkit.spellcheck-preview", "Automatic draft commit spellcheck", "After 1.5 seconds without typing, correct obvious spelling errors in manual commit subjects using local Ollama. Never blocks a commit, replaces the body, or alters Codex-attributed messages. The manual preview action remains available. Off by default.", "Spellcheck Changes"),
+    Setting("draftCommitEmoji", "scm-toolkit.draft-commit-emoji", "Add professional emoji to drafted commit titles", "After 1.5 seconds without typing, prefix manual commit subjects with a change-appropriate emoji when they have none. Independent of automatic spelling correction; preserves your emoji, body, and Codex-attributed messages. Uses the built-in title classifier without a second Ollama call. Off by default.", "Spellcheck Changes"),
+    Setting("draftSpellcheckAction", "scm-toolkit.draft-spellcheck-action", "Correction handling", "Apply verified corrections automatically, or ask for approval in a before-and-after confirmation after typing stops.", "Spellcheck Changes", "select", ("automatic", "review")),
+    Setting("draftSpellcheckDelaySeconds", "scm-toolkit.draft-spellcheck-delay-seconds", "Idle delay (seconds)", "Wait 0.5–10 seconds after typing before checking the current commit subject. Does not delay Commit.", "Spellcheck Changes", "number", minimum=0.5, maximum=10),
+    Setting("draftSpellcheckStyle", "scm-toolkit.draft-spellcheck-style", "Correction scope", "Spelling only preserves word and punctuation structure; spelling and grammar also permits small grammatical fixes subject to safety checks.", "Spellcheck Changes", "select", ("spelling", "grammar")),
+    Setting("draftSpellcheckVocabulary", "scm-toolkit.draft-spellcheck-vocabulary", "Protected vocabulary", "One term or phrase per line. When present, these exact words, brands or technical expressions must remain unchanged.", "Spellcheck Changes", "textarea"),
+    Setting("draftSpellcheckGuidance", "scm-toolkit.draft-spellcheck-guidance", "Additional correction guidance", "Optional preferences or specialist terminology for the local model. Safety checks, protected tokens and user-selected emoji always take precedence.", "Spellcheck Changes", "textarea"),
+    Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Spellcheck Changes", "model"),
+    Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellcheck Changes"),
+    Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
+    Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
@@ -259,6 +277,8 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
+    Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Hide bullets for emoji-only squash summaries", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
+    Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
     Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
@@ -396,6 +416,13 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
         if setting.kind == "textarea":
             if "\x00" in raw_value:
                 raise ValueError(f"{setting.label} contains an invalid null byte.")
+            limit = 5000 if setting.name == "draftSpellcheckVocabulary" else (
+                2000 if setting.name == "draftSpellcheckGuidance" else None
+            )
+            if limit is not None and len(raw_value) > limit:
+                raise ValueError(f"{setting.label} must be at most {limit} characters.")
+            if setting.name == "draftSpellcheckVocabulary" and len(raw_value.splitlines()) > 100:
+                raise ValueError("Protected vocabulary supports at most 100 lines.")
             parsed[setting.name] = raw_value.strip()
             continue
 
@@ -763,6 +790,7 @@ def render_form(
     finish_on_save: bool = True,
     server_instance: str = "",
     commit_hotkey: str | None = None,
+    codex_commit_hotkey: str | None = None,
 ) -> str:
     current = dict(current)
     if current.get("kefaniaShowCloseButton") is False:
@@ -811,14 +839,22 @@ def render_form(
             )
         if section == "Message bar":
             controls += _commit_hotkey_control(commit_hotkey)
+            controls += _commit_hotkey_control(
+                codex_commit_hotkey,
+                prefix="codex-commit-hotkey",
+                label="Commit with Codex co-author hotkey",
+                description=("Run the same action as the Codex co-author commit button, "
+                             "including its configured trailer and commit flow. "
+                             "Independently configurable and unbound by default."),
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
             controls += (
-                '<div class="setting"><span><strong>Commit hotkey</strong>'
-                '<small>Set or clear this shortcut using Change or Reset in the Message bar tab. '
-                'New installations start unbound. The shortcut performs the same action '
-                'as the Source Control Commit button.</small></span></div>'
+                '<div class="setting"><span><strong>Commit hotkeys</strong>'
+                '<small>Configure the normal Commit and Commit with Codex co-author '
+                'shortcuts independently in the Message bar tab. Both start unbound.</small>'
+                '</span></div>'
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
@@ -830,8 +866,24 @@ def render_form(
                 'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
             ) + controls
         status = ""
-        if section in {"Ollama", "Search"}:
+        if section in {"Ollama", "Search", "Spellcheck Changes"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
+        if section == "Spellcheck Changes":
+            draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",
+                              "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
+                              "draftSpellcheckVocabulary", "draftSpellcheckGuidance",
+                              "draftCommitEmoji", "spellcheckModel"}
+            controls = (
+                '<div class="settings-group"><h3>While drafting a commit</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name in draft_controls)
+                + '</div><div class="settings-group"><h3>After committing</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name not in draft_controls)
+                + '</div>'
+            )
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"
         selected = "true" if index == 0 else "false"
@@ -1483,6 +1535,12 @@ def run_configurator(
                 hotkey = read_commit_hotkey(keybindings_file) if keybindings_file else None
             except (OSError, ValueError):
                 hotkey = None
+            try:
+                codex_hotkey = read_commit_hotkey(
+                    keybindings_file, "sweetiebot.commitWithCodex"
+                ) if keybindings_file else None
+            except (OSError, ValueError):
+                codex_hotkey = None
             self._send(render_form(
                 session_settings,
                 names,
@@ -1492,6 +1550,7 @@ def run_configurator(
                 finish_on_save=open_browser,
                 server_instance=server_instance,
                 commit_hotkey=hotkey,
+                codex_commit_hotkey=codex_hotkey,
             ))
 
         def do_POST(self) -> None:
@@ -1546,7 +1605,10 @@ def run_configurator(
                     return
                 try:
                     with hotkey_lock:
-                        key = update_commit_hotkey(keybindings_file, values.get("key", [""])[0])
+                        key = update_commit_hotkey(
+                            keybindings_file, values.get("key", [""])[0],
+                            values.get("command", ["sweetiebot.commit"])[0],
+                        )
                     self._send_json({"saved": True, "key": key})
                 except (OSError, RuntimeError, ValueError) as error:
                     self._send_json({"error": str(error)}, 400)

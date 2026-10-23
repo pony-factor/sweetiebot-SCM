@@ -11,6 +11,7 @@ Current features:
 - show enabled action icons in pure white while hovering SCM or Source Control Graph rows and action buttons, preserving their normal theme colors otherwise
 - customize the commit-message placeholder (defaults to `Message`)
 - the **Sweetiebot: Commit (Same as Source Control Button)** command starts **unbound**. In Sweetiebot Settings → Message bar, choose **Change** beside **Commit hotkey** to record a shortcut, or **Reset** to remove it. The shortcut invokes the native Source Control Commit action, preserving the current message, AI generation, checks, and push settings. Settings writes only this command's user keybinding and preserves unrelated shortcuts and JSONC comments. VS Code and operating-system shortcuts may take precedence.
+- **Sweetiebot: Commit with Codex Co-author** has its **own independently configurable, unbound-by-default shortcut** in Settings → Message bar. Its Change/Reset buttons work like the normal Commit hotkey and dispatch the same action as the co-author button, including the configured trailer, optional Codex-context generation, and direct or durable-background commit behavior. The two bindings cannot use the same key combination.
 - optionally show a commit-and-push checkbox that dispatches the push without holding commit completion
 - clean up unchanged local branches after their same-repository PR merges into the default branch
 - suppress the GitHub PR extension’s redundant cleanup prompt when the repository deletes merged branches automatically
@@ -524,6 +525,46 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
+### Spellcheck Changes customization
+
+The **Spellcheck Changes** review for Markdown corrections no longer generates a separate,
+simplified “Spellcheck …” commit title. When you select **Accept**, Sweetiebot
+stages only the reviewed Markdown files, runs the **normal Ollama commit-title
+generator** on those staged corrections (same model, effort, retry budget, emoji
+priority rules, and default-branch description policy), then appends a
+`Co-authored-by: Spellchecker (Ollama MODEL) <verified GitHub noreply address>`
+trailer after the generated title and body. The regular commit includes only
+reviewed files; unrelated staged files remain untouched. The review's optional
+description is appended before the spellchecker attribution. If generation
+fails, staged corrections remain visible for manual recovery without a
+fallback special-purpose title.
+
+The **Spellcheck Changes** settings tab groups draft-time and post-commit controls. The
+**Automatic draft commit spellcheck** toggle is off by default. Draft checks can be
+configured independently of **Add professional emoji to drafted commit titles**
+(also off by default).
+
+- **Correction handling:** *Automatic* silently applies verified spelling changes,
+  or *Review* shows original and proposed subjects in a confirmation dialog.
+  Review declines leave the message unchanged and are not repeatedly requested
+  until you change the subject.
+- **Idle delay:** 0.5–10 seconds (default 1.5); checks occur while drafting, never
+  inside Git's commit/push operations.
+- **Correction scope:** *Spelling* (default) only corrects misspelled words and
+  retains word/punctuation structure. *Grammar* permits small grammatical or
+  punctuation changes under a higher similarity threshold.
+- **Protected vocabulary:** Up to 100 terms/phrases and 5,000 characters; preserve
+  exact technical names and specialist terms. **Additional correction guidance**
+  supports up to 2,000 characters to explain preferences to the local model.
+- **Model:** choose the dedicated local Ollama spellcheck model; missing/offline
+  models leave the draft unchanged. Post-commit Markdown options remain separate
+  beneath **After committing**.
+
+The review mode and vocabulary never override structural protections for emojis,
+code, URLs, numbers, filenames, and acronyms. The existing manual preview action
+is still available. All draft options apply to the **commit subject only**, with
+the body and Codex-attributed commits untouched.
+
 ### Automatic draft commit spellcheck
 
 Opt in to **Automatic draft commit spellcheck** in Sweetiebot settings (off by default). After
@@ -533,6 +574,14 @@ draft has not changed in the meantime. No spellcheck waits in the commit path, a
 unavailable model checks leave the message alone. It never changes the commit body.
 The **Preview spelling correction** button remains available for manual reviews. Clicking it
 shows original and corrected subjects in a modal with **Apply correction** and **Keep original**.
+
+The independent **Add professional emoji to drafted commit titles** toggle (off by default,
+`scm-toolkit.draft-commit-emoji`) adds a change-appropriate leading emoji to manual subjects
+that do not already contain an emoji. It uses Sweetiebot's built-in deterministic commit-title
+emoji classifier, without an extra Ollama request. It works when spellcheck is disabled;
+with both enabled, correction and emoji placement happen in one draft processing pass.
+It never replaces a user-selected emoji, changes the commit body or Codex-attributed messages,
+or delays the commit button. Both options run only while the draft is idle.
 
 Spellcheck uses its own `scm-toolkit.spellcheck-model` setting, defaulting to `qwen2.5:3b`, instead
 of sharing either commit-writing model. The model must return a structured `{"subject":"..."}`
@@ -930,6 +979,7 @@ installer after enabling the setting and reopen the VS Code window once to load
 the snapshot bridge. Subsequent button presses leave Codex running.
 
 When `codex-coauthor` is enabled, an account button appears in the SCM message row.
+The same action can be assigned a separate shortcut under **Message bar → Commit with Codex co-author hotkey**. The shortcut starts unbound and does not replace the normal Commit hotkey. With multiple repositories open, the keyboard command uses the active editor's repository when identifiable, otherwise asks which repository to commit.
 The **Message bar** settings let you change the **Commit co-author name** and
 **Commit co-author email** independently. The button appends the configured
 `Co-authored-by` trailer to the current message, then commits to the selected
@@ -1078,13 +1128,12 @@ Proposals open in the **Spellchecks Performed** review popup as unstaged edits. 
 
 ### Bulk merges through ChatGPT
 
-All Sweetiebot squash-merge paths use the **current pull-request title**, not
-an original commit title or the repository's default squash preference. The
-corresponding `(#PR)` suffix appears exactly once. Single-PR GitHub squashes
-submit an explicit `commit_title` and Kefania checks the resulting commit.
-Bot-opened PRs, Lindsey bulk merges, and ChatGPT merge instructions apply the
-same policy; renamed PRs block stale-title merges.
-
+Sweetiebot uses the **current PR title** as the squash-commit subject, appending the
+matching `(#PR)` suffix only if it is not already present. Single-PR merge paths
+check for title changes before submitting, and synchronous Kefania merges also
+verify the resulting Git commit subject. This retains the ten-underscore
+`__________` separator, formatting preferences, verified-human attribution
+checks, and no-history-rewrite merge safeguards.
 
 Both the selective bulk merge picker and **Merge All Pull Requests** open the ChatGPT web interface in a dedicated workspace window with its own extension host, matching Kefania’s PR submission workflow, including when a local Lindsey checkout is installed. The Lindsey merge workspace now starts in Sweetiebot's centered 640 × 640 compact window, rather than filling the screen. Its dashboard safely displays formatted Markdown and clickable HTTP(S) links in PR descriptions, AI merge reports, and human-review comments, while leaving untrusted HTML inert. Its progress dashboard stacks the timeline and details when narrow; the titlebar's **Expand to 75% of this display** action provides more space for the 20/80 ChatGPT/dashboard split. The picker keeps its selective checkboxes; Merge All submits all ready-for-review PRs.
 

@@ -587,6 +587,21 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(self.git('rev-parse', 'switch-copy'), base)
         self.assertNotEqual(self.git('rev-parse', 'main'), provisional)
 
+    def test_pending_fork_worktree_preserves_main_and_tracks_finalized_base(self):
+        first = self.queue(message='')
+        destination = self.root / 'isolated-topic'
+        before = (self.repo / 'story.txt').read_text()
+        worker.fork_branch('main', 'isolated', 'refs/heads/main', str(destination))
+        self.assertEqual(self.git('symbolic-ref', '--short', 'HEAD'), 'main')
+        self.assertEqual((self.repo / 'story.txt').read_text(), before)
+        (destination / 'story.txt').write_text('Independent topic edit\n')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish shared base', '')):
+            worker.work(first)
+        self.assertEqual(self.git('rev-parse', 'isolated'), self.git('rev-parse', 'main'))
+        self.assertNotIn('placeholder_', self.git('log', '--format=%s', 'isolated'))
+        self.assertEqual((destination / 'story.txt').read_text(), 'Independent topic edit\n')
+        self.assertEqual((self.repo / 'story.txt').read_text(), before)
+
     def test_fork_descendants_wait_for_inherited_title_and_keep_staging(self):
         first = self.queue(message='', push=True)
         worker.fork_branch('main', 'fork', 'refs/heads/main')

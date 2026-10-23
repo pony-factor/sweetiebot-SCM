@@ -18,6 +18,7 @@ const { registerPullRequestBatchCommand } = require('./pull_request_batch');
 const { registerEditorActions } = require('./editor_actions');
 const { registerNewWorkspaceCommand } = require('./new_workspace');
 const { registerSharedMain } = require('./shared_main');
+const { registerCodexWorkspaceHandoff } = require('./codex_workspace_handoff');
 const { registerTerminalActions } = require('./terminal_actions');
 const { registerGitHubPullRequestActions } = require('./github_pr_actions');
 const { registerOpenFileOnGitHub } = require('./github_file');
@@ -347,6 +348,7 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
