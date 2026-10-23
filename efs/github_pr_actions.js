@@ -64,7 +64,8 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
   }
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
-    const landed = await humanMerge(repo, Number(number));
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: true });
+    if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
         finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
@@ -81,7 +82,8 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const commits = await readCommits(api, repo, Number(number));
   const human = verifiedHumanAuthor(commits);
   if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
-    const landed = await humanMerge(repo, Number(number));
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: true });
+    if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
         finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {

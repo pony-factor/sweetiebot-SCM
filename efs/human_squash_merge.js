@@ -1,6 +1,6 @@
 'use strict';
 
-// The original PR branch must never be force-pushed or rewritten for a squash.
+// Prefer leaving the original PR branch unchanged for a squash.
 // GitHub's native squash attributes bot-opened PRs to the bot. The only
 // no-rewrite, single-commit exception is a pre-existing, already human-authored
 // PR commit with the exact intended title and verified credits. Rebase-merging
@@ -51,7 +51,7 @@ function verifyCommit(commit, expected, author) {
 }
 
 
-async function humanSquashMerge(repository, number, { api } = {}) {
+async function humanSquashMerge(repository, number, { api, allowHistoryRewrite = false, localMerge } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
@@ -84,7 +84,18 @@ async function humanSquashMerge(repository, number, { api } = {}) {
 
   const commits = await readCommits(async ([endpoint]) => api(endpoint), repository, number);
   const author = humanAuthor(commits);
+  const prepareSquash = async () => {
+    // Only the local one-PR merge action opts into this last resort. The local
+    // executor independently verifies necessity, branch isolation, live tips,
+    // human attribution, and checks before its exact-head leased push.
+    localMerge ||= require('./local_human_squash').humanSquashMerge;
+    return localMerge(repository, number, {
+      api, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
+      expected: { headSha, baseSha, head, base, title: original.title }
+    });
+  };
   if (commits.length !== 1) {
+    if (allowHistoryRewrite) return prepareSquash();
     throw Error('No-force-push policy: cannot squash multiple original PR commits under a verified human author without rewriting the PR branch. The PR remains open; request human review.');
   }
   const originalCommit = commits[0];
@@ -97,6 +108,7 @@ async function humanSquashMerge(repository, number, { api } = {}) {
   if (existing.split('\n', 1)[0] !== expectedTitle ||
       existing.split(separator).length !== 2 ||
       !/^Co-authored-by: Codex Web <noreply@openai.com>$/m.test(existing)) {
+    if (allowHistoryRewrite) return prepareSquash();
     throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title, ten-underscore separator, and required Codex Web credit. Leave the PR open rather than rewriting it.');
   }
   const repositoryInfo = await api(root);

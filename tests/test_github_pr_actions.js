@@ -54,10 +54,11 @@ async function main() {
   let handled = false;
   const botResult = await squashMergePullRequest(url, botOpened.execute, undefined, {
     ...quickPoll,
-    humanMerge: async (repo, number) => {
+    humanMerge: async (repo, number, options) => {
       handled = true;
       assert.equal(repo, 'owner/repo');
       assert.equal(number, 12);
+      assert.deepEqual(options, { allowHistoryRewrite: true });
       return { merged: true, sha: 'c'.repeat(40), author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
     }
   });
@@ -65,6 +66,12 @@ async function main() {
   assert.equal(botResult.merged, true);
   assert.equal(botOpened.calls.some(args => args.includes('--method')), false,
     'A bot opener must not reach the bot-authored squash merge endpoint');
+  const waitingBot = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
+  } });
+  await assert.rejects(squashMergePullRequest(url, waitingBot.execute, undefined, {
+    ...quickPoll, humanMerge: async () => ({ merged: false, status: 'waiting', reason: 'Waiting for required checks' })
+  }), /Waiting for required checks/);
   const anotherHumanOpener = mockMerge({ stackMetadata: {
     stack: null, user: { login: 'DifferentHuman', type: 'User' }
   } });
