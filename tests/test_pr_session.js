@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession } = require('../efs/pr_session');
+const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs/merge_blocker_actions');
 
 (async () => {
   const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pr-session-')));
@@ -153,7 +154,57 @@ const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, 
       if (previousDashboard) require.cache[dashboardModulePath] = previousDashboard;
       else delete require.cache[dashboardModulePath];
     }
-    console.log('Independent PR workspace launch, restart, ownership, and cleanup checks passed.');
+    const pr = { ...selection.pullRequests[0], state: 'blocked', headSha: selection.pullRequests[0].headSha };
+    const option = blockerOptions(pr)[0];
+    await launchBlockerAction(source, context, root, selection.repository, pr, option, 'web');
+    const actionWorkspace = calls.at(-1)[1];
+    const actionDirectory = path.dirname(actionWorkspace.fsPath);
+    assert.equal(path.basename(actionWorkspace.fsPath), 'Resolve #12 [repository].code-workspace');
+    const actionRequest = JSON.parse(await fs.readFile(path.join(actionDirectory, 'request.json'), 'utf8'));
+    const actionPrompt = new URLSearchParams(new URL(actionRequest.mergeUrl).hash.slice(1)).get('q');
+    assert(actionPrompt.includes('Preserve what is already on the current main branch'));
+    assert(actionPrompt.includes('does not authorize merging or closing'));
+    await assert.rejects(fs.stat(path.join(actionDirectory, 'merge-selection.json')), /ENOENT/,
+      'Implementation follow-ups do not receive a bulk merge capability');
+
+    // Exercise an actual independent clone and verify the task resumes only
+    // in its selected branch, leaving the source checkout unchanged.
+    execFileSync('git', ['-C', root.fsPath, 'symbolic-ref', 'HEAD', 'refs/heads/my-feature']);
+    await fs.writeFile(path.join(root.fsPath, 'fixture.txt'), 'Local workspace fixture\n');
+    execFileSync('git', ['-C', root.fsPath, 'add', 'fixture.txt']);
+    execFileSync('git', ['-C', root.fsPath, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+      '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', '🧪 Create branch fixture']);
+    const fixtureSha = execFileSync('git', ['-C', root.fsPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const branchPr = { ...pr, headSha: fixtureSha };
+    const codexSource = { ...source,
+      extensions: { getExtension: () => ({ async activate() {} }) },
+      commands: { ...source.commands, getCommands: async () => ['sweetiebot.codex.startBlockerTask'] }
+    };
+    const localGit = async (cwd, args) => {
+      const copy = [...args];
+      if (copy[0] === 'remote' && copy[1] === 'set-url') copy[3] = root.fsPath;
+      return execFileSync('git', copy, { cwd, encoding: 'utf8' }).trim();
+    };
+    await openCodexBranch(codexSource, context, root.fsPath, selection.repository, branchPr,
+      'Keep main and add the proposed features.', { git: localGit, baseDirectory: path.join(storage, 'clones') });
+    const codexWorkspace = calls.at(-1)[1];
+    const codexSettings = JSON.parse(await fs.readFile(codexWorkspace.fsPath, 'utf8'));
+    const cloneRoot = codexSettings.folders[0].path;
+    assert.notEqual(cloneRoot, root.fsPath);
+    assert.equal(execFileSync('git', ['-C', cloneRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), fixtureSha);
+    assert.equal(execFileSync('git', ['-C', root.fsPath, 'status', '--porcelain'], { encoding: 'utf8' }), '');
+    const startedCodex = [];
+    const codexHost = { ...codexSource, workspace: { workspaceFile: codexWorkspace,
+      workspaceFolders: [{ uri: file(cloneRoot) }] }, commands: { ...codexSource.commands,
+      async executeCommand(...args) { startedCodex.push(args); } } };
+    await resumePRSession(codexHost, context);
+    assert.equal(startedCodex.length, 1);
+    assert.equal(startedCodex[0][0], 'sweetiebot.codex.startBlockerTask');
+    assert.equal(startedCodex[0][1].cwd, cloneRoot);
+    assert.equal(startedCodex[0][1].prompt, 'Keep main and add the proposed features.');
+    await resumePRSession(codexHost, context);
+    assert.equal(startedCodex.length, 1, 'Reload never resubmits the selected implementation');
+    console.log('Independent PR workspaces, selected web prompts and isolated Codex branch tasks passed.');
   } finally {
     os.homedir = originalHome;
     await fs.rm(storage, { recursive: true, force: true });

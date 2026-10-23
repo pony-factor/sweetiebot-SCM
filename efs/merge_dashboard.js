@@ -295,6 +295,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (message.type === 'blocker-action') {
       if (launchingActions.has(pr.number) || !['web', 'codex'].includes(message.engine || 'web')) return;
       launchingActions.add(pr.number);
+      error = '';
       publish();
       try {
         const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
@@ -339,7 +340,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
   publish();
   void refresh();
-  return { panel, refresh, selection };
+  return { panel, refresh, selection, recordLocalResult(result) {
+    if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
+    for (const item of result.results) {
+      const pr = byNumber.get(item.number);
+      if (!pr) continue;
+      addEvent(pr, item.status === 'merged' ? 'merged' : 'blocked',
+        item.status === 'merged' ? 'Local CLI verified the human-authored merge: ' + item.sha
+          : 'Local CLI stopped: ' + item.reason);
+    }
+    publish();
+  } };
 }
 
 module.exports = { REPORT_MARKER, REVIEW_MARKER, validateSelection,

@@ -56,11 +56,16 @@ function stripReportOptions(text) { return String(text || '').replace(OPTIONS_MA
 function blockerOptions(pr) {
   if (['merged', 'closed'].includes(pr.state)) return [];
   if (!['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review) return [];
-  const suggestions = [...(pr.review?.options || []), ...(pr.report?.options || [])];
-  const choices = [DEFAULT_OPTIONS[0], ...suggestions,
+  const suggestions = [...(pr.review?.options || []), ...(pr.report?.options || [])].slice(0, 6);
+  const primary = suggestions.find(option => option.id === 'report-keep-main') || DEFAULT_OPTIONS[0];
+  const choices = [primary, ...suggestions,
     ...DEFAULT_OPTIONS.slice(1).filter(option => option.id !== 'resolve-conflicts' || pr.state === 'conflict' || pr.sawConflict)];
-  const seen = new Set();
-  return choices.filter(option => !seen.has(option.id) && seen.add(option.id)).map(option => ({
+  const seen = new Set(), labels = new Set();
+  return choices.filter(option => {
+    const label = option.label.toLowerCase().trim();
+    if (seen.has(option.id) || labels.has(label)) return false;
+    seen.add(option.id); labels.add(label); return true;
+  }).map(option => ({
     ...option, key: createHash('sha256').update(JSON.stringify(option)).digest('hex')
   }));
 }
