@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { publishPonyProfile } = require('./pony_git_publish');
+const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('./github_app_identity');
 
 // Independent pony research tabs may finish together; Git index and ref edits must be serialized.
 let ponyPublishQueue = Promise.resolve();
@@ -12,11 +13,30 @@ function enqueuePonyPublish(work) {
   return task;
 }
 
+async function kefaniaChildEnvironment(repository, { botOnly = false, env = process.env,
+  roleToken = getRoleInstallationToken } = {}) {
+  const child = stripAppSecrets(env);
+  child.PATH = [env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter);
+  if (separateAppsEnabled(env)) {
+    const auth = await roleToken('kefania', repository, { env });
+    // In Kefania's local-pr runner the cli transport accepts a GH_TOKEN
+    // installation token; its native app transport still requires codex-pony.
+    delete child.KEFANIA_GITHUB_PRIVATE_KEY;
+    delete child.KEFANIA_GITHUB_APP_ID;
+    delete child.KEFANIA_GITHUB_INSTALLATION_ID;
+    child.KEFANIA_GITHUB_AUTH = 'cli';
+    child.GH_TOKEN = auth.token;
+    child.GITHUB_TOKEN = auth.token;
+  } else if (botOnly) {
+    child.KEFANIA_GITHUB_AUTH = 'app';
+  }
+  return child;
+}
+
 async function runKefania(repositoryPath, input, { botOnly = false } = {}) {
   const runner = await resolveKefaniaFile(repositoryPath, path.join('src', 'local-pr.js'));
+  const env = await kefaniaChildEnvironment(input?.repository, { botOnly });
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter),
-      ...(botOnly ? { KEFANIA_GITHUB_AUTH: 'app' } : {}) };
     const child = spawn('node', [runner], { cwd: repositoryPath, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '', error = '';
     child.stdout.on('data', chunk => { output += chunk; });
@@ -49,7 +69,7 @@ async function runKefaniaPonyCache(repositoryPath, input) {
     };
     const child = spawn('node', [runner], {
       cwd: repositoryPath,
-      env: { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter) },
+      env: { ...stripAppSecrets(), PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter) },
       stdio: ['pipe', 'pipe', 'ignore']
     });
     const timer = setTimeout(() => { child.kill(); complete({ hit: false }); }, 5000);
@@ -77,4 +97,4 @@ async function runKefaniaPonyCache(repositoryPath, input) {
   });
 }
 
-module.exports = { runKefania, runKefaniaPonyCache };
+module.exports = { kefaniaChildEnvironment, runKefania, runKefaniaPonyCache };

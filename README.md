@@ -2,6 +2,8 @@
 
 A small source-control UI patch for Visual Studio Code. It keeps the built-in Git workflow, but adds a compact branch selector and optional SCM controls around the commit-message box.
 
+For distinct Kefania and Lindsey GitHub App identities, see [GitHub App identity setup](docs/DISTINCT_GITHUB_APPS.md). The default legacy publishing identity and spellcheck settings are unchanged until separate-app mode is enabled.
+
 Current features:
 
 - resize the current VS Code window to a centered 640 × 640 square with the compact-window titlebar button, matching VS Code's native minimum width for side-mounted panels so resizable vertical columns remain intact without window-level horizontal overflow; restore the previous bounds on the next click (displays smaller than 600 pixels in either dimension are left unchanged)
