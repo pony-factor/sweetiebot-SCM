@@ -14,12 +14,12 @@ const asyncMergedResponse = { status: 'merged', details: { sha: 'c'.repeat(40) }
 const mergedPr = { ...open, state: 'MERGED' };
 
 function mockMerge({ views = [open, open, mergedPr], submission = pending, responses = [asyncMergedResponse],
-  submissionError, stackMetadata = { stack: null } } = {}) {
+  submissionError, stackMetadata = { stack: null, user: { login: 'JFWooten4', type: 'User' } } } = {}) {
   const calls = [];
   const execute = async args => {
     calls.push(args);
     if (args[0] === 'pr') return { stdout: JSON.stringify(views.length > 1 ? views.shift() : views[0]) };
-    if (args.some(a => typeof a === 'string' && a.includes('/commits?per_page=100&page='))) return { stdout: JSON.stringify([{ commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }]) };
+    if (args.some(a => typeof a === 'string' && a.includes('/commits?per_page=100&page='))) return { stdout: JSON.stringify([{ author: { login: 'JFWooten4', type: 'User' }, commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }]) };
     if (args.includes('repos/owner/repo/pulls/12')) return { stdout: JSON.stringify(stackMetadata) };
     if (args.includes('--method')) {
       if (submissionError) throw submissionError;
@@ -41,10 +41,59 @@ async function main() {
     '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
     '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
     '-f', 'commit_title=🐛 Correct caching (#12)',
-    '-f', `commit_message=- Change\n\n---------\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+    '-f', `commit_message=- Change\n\n__________\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Codex Web <noreply@openai.com>`]);
   assert.deepEqual(happy.calls[5], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
     `${asyncPath}/${requestId}`]);
   assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
+
+  // A bot-created PR keeps its opener but must never enter GitHub's native
+  // squash endpoint (which would author its commit as codex-pony[bot]).
+  const botOpened = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
+  } });
+  let handled = false;
+  const botResult = await squashMergePullRequest(url, botOpened.execute, undefined, {
+    ...quickPoll,
+    humanMerge: async (repo, number) => {
+      handled = true;
+      assert.equal(repo, 'owner/repo');
+      assert.equal(number, 12);
+      return { merged: true, sha: 'c'.repeat(40), author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
+    }
+  });
+  assert.equal(handled, true);
+  assert.equal(botResult.merged, true);
+  assert.equal(botOpened.calls.some(args => args.includes('--method')), false,
+    'A bot opener must not reach the bot-authored squash merge endpoint');
+  const anotherHumanOpener = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'DifferentHuman', type: 'User' }
+  } });
+  let usedHumanHelper = false;
+  const protectedAttribution = await squashMergePullRequest(url, anotherHumanOpener.execute, undefined, {
+    ...quickPoll, humanMerge: async () => {
+      usedHumanHelper = true;
+      return { merged: true, sha: 'c'.repeat(40),
+        author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
+    }
+  });
+  assert(usedHumanHelper && protectedAttribution.merged);
+  assert.equal(anotherHumanOpener.calls.some(args => args.includes('--method')), false,
+    'A different human PR opener must not replace the original human Git author');
+  const botOnly = mockMerge();
+  const botOnlyExecute = args => args.some(a => String(a).includes('/commits?per_page=100&page='))
+    ? Promise.resolve({stdout: JSON.stringify([{
+      author: {login: 'codex-pony[bot]', type: 'Bot'},
+      commit: { author: {name: 'codex-pony[bot]', email: 'bot@example.org'}, message: 'Bot-only change' }
+    }])})
+    : botOnly.execute(args);
+  await assert.rejects(squashMergePullRequest(url, botOnlyExecute, undefined, quickPoll),
+    /No verified original human Git author/);
+  assert.equal(botOnly.calls.some(args => args.includes('--method')), false,
+    'No native merge request without a linked human original author');
+  const unverifiable = mockMerge({ stackMetadata: { stack: null } });
+  await assert.rejects(squashMergePullRequest(url, unverifiable.execute, undefined, quickPoll),
+    /Cannot verify PR opener identity/);
+  assert.equal(unverifiable.calls.some(args => args.includes('--method')), false);
 
   for (const invalid of [{ isDraft: true }, { baseRefName: '' }, { state: 'CLOSED' }, { headRefOid: '' }]) {
     const denied = mockMerge({ views: [{ ...open, ...invalid }] });
@@ -68,7 +117,7 @@ async function main() {
   assert.deepEqual(approved.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
 
   // Validate the exact head and destination again after selection, even for main.
-  for (const changed of [{ baseRefName: 'another' }, { headRefOid: 'b'.repeat(40) },
+  for (const changed of [{ baseRefName: 'another' }, { title: '🎨 New PR title' }, { headRefOid: 'b'.repeat(40) },
     { headRefName: 'other' }, { state: 'CLOSED' }, { isDraft: true }]) {
     for (const initial of [open, alternate]) {
       const stale = mockMerge({ views: [initial, { ...initial, ...changed }] });
@@ -156,7 +205,7 @@ async function main() {
     const clean = { ...open, mergeable: 'MERGEABLE' };
     const stalled = mockMerge({ views: [clean, clean, clean, mergedPr], submissionError: matchingError, responses: [pending] });
     let recovered = false;
-    const originals = [{ commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }];
+    const originals = [{ author: { login: 'JFWooten4', type: 'User' }, commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }];
     const expected = squashMessage(open.title, 12, originals);
     const execute = async args => {
       if (args.includes('repos/owner/repo/pulls/12/merge')) {
@@ -358,15 +407,19 @@ async function main() {
   assert.deepEqual(refreshes, Array(7).fill('pr.refreshList'));
   assert.deepEqual(notices, Array(5).fill('PR #12 queued for merge.'));
 
-  // A completed PR gets one brief notice; in-flight progress is only in the status bar.
-  const successNotices = [], progressOptions = [];
+  // Progress becomes a notification immediately on click, without a premature
+  // completion toast. Success still has exactly one informational notice.
+  const successNotices = [], progressOptions = [], progressUpdates = [];
   registerGitHubPullRequestActions({
     commands: { registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async () => {} },
     ProgressLocation: { Window: 10, Notification: 15 },
     extensions: { getExtension: () => undefined },
     window: {
-      withProgress: (options, fn) => { progressOptions.push(options); return fn(); },
+      withProgress: (options, fn) => {
+        progressOptions.push(options);
+        return fn({ report: update => progressUpdates.push(update) });
+      },
       showInformationMessage: message => successNotices.push(message),
       showWarningMessage: () => { throw new Error('Unexpected cleanup warning'); },
       showErrorMessage: () => { throw new Error('Unexpected merge error'); }
@@ -375,11 +428,17 @@ async function main() {
     merged: true, number: 12, repo: 'owner/repo',
     pr: { ...open, state: 'MERGED', isCrossRepository: true }
   }));
-  assert.deepEqual(await handler({ url, number: 12 }), { state: 'merged' });
-  assert.deepEqual(successNotices, ['PR #12 merged into main.']);
-  assert.equal(progressOptions.length, 1);
-  assert.equal(progressOptions[0].location, 10);
+  const mergeOperation = handler({ url, number: 12 });
+  assert.equal(progressOptions.length, 1, 'The start notification appears before any asynchronous PR lookup');
+  assert.equal(progressOptions[0].location, 15);
+  assert.equal(progressOptions[0].title, 'Starting squash merge for PR #12…');
   assert.equal(progressOptions[0].cancellable, false);
+  assert.deepEqual(await mergeOperation, { state: 'merged' });
+  assert.deepEqual(progressUpdates, [{ message: 'PR #12: checking merge eligibility…' }]);
+  assert.deepEqual(successNotices, ['PR #12 merged into main.']);
+  const managedOperation = handler({ url, number: 12 }, { progressManaged: true });
+  assert.equal(progressOptions.length, 1, 'The PR sidebar must not open a nested notification');
+  assert.deepEqual(await managedOperation, { state: 'merged' });
   // Native PR nodes can expose their URI only after rendering. Both the
   // direct command and the inline context action must resolve that clicked row.
   const renderedMerges = [], renderedErrors = [], renderedRefreshes = [];

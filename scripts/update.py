@@ -20,6 +20,7 @@ FORMATS = {
     "efs": {".js", ".json", ".svg", ".md", ".html"},
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
+    "assets/images": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"},
     "assets/browser": {".js"},
     "assets/github": {".js"},
 }
@@ -38,7 +39,7 @@ def extract_sources(archive, destination):
             relative = Path(member.name)
             if relative.is_absolute() or ".." in relative.parts or not member.isfile():
                 continue
-            if not any(relative.is_relative_to(folder) and relative.suffix in suffixes
+            if not any(relative.is_relative_to(folder) and relative.suffix.lower() in suffixes
                        for folder, suffixes in FORMATS.items()):
                 continue
             target = destination / relative

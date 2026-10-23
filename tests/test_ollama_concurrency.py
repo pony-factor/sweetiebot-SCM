@@ -15,7 +15,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(env["OLLAMA_HOST"], "127.0.0.1:11435")
         self.assertEqual(env["OLLAMA_MODELS"], "/Users/test/.ollama/models")
         self.assertEqual(env["OLLAMA_MAX_LOADED_MODELS"], "1")
-        self.assertEqual(env["OLLAMA_NUM_PARALLEL"], "4")
+        self.assertEqual(env["OLLAMA_NUM_PARALLEL"], "6")
         self.assertEqual(env["OLLAMA_KV_CACHE_TYPE"], "q8_0")
         self.assertEqual(definition["ProgramArguments"], ["/opt/homebrew/bin/ollama", "serve"])
 
@@ -32,20 +32,20 @@ class WorkerTests(unittest.TestCase):
                 worker.install(Path("/Users/test"), "/opt/homebrew/bin/ollama")
         self.assertEqual(len(run.call_args_list), 1)
 
-    def test_existing_serial_commit_service_is_upgraded_once(self):
+    def test_existing_four_slot_commit_service_is_upgraded_once(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)
             agent = home / 'Library/LaunchAgents' / (worker.LABEL + '.plist')
             agent.parent.mkdir(parents=True)
             previous = worker.service_definition('/opt/homebrew/bin/ollama', home)
-            previous['EnvironmentVariables']['OLLAMA_NUM_PARALLEL'] = '1'
+            previous['EnvironmentVariables']['OLLAMA_NUM_PARALLEL'] = '4'
             agent.write_bytes(plistlib.dumps(previous))
             with patch.object(worker.sys, 'platform', 'darwin'), patch.object(worker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run, patch.object(worker, 'ready', return_value=True):
                 worker.install(home, '/opt/homebrew/bin/ollama')
                 calls = [call.args[0] for call in run.call_args_list]
                 self.assertEqual(calls[1], ['/bin/launchctl', 'bootout', f'gui/{worker.os.getuid()}/{worker.LABEL}'])
                 self.assertEqual(calls[2][-1], str(agent))
-                self.assertEqual(plistlib.loads(agent.read_bytes())['EnvironmentVariables']['OLLAMA_NUM_PARALLEL'], '4')
+                self.assertEqual(plistlib.loads(agent.read_bytes())['EnvironmentVariables']['OLLAMA_NUM_PARALLEL'], '6')
                 run.reset_mock()
                 worker.install(home, '/opt/homebrew/bin/ollama')
                 self.assertEqual(len(run.call_args_list), 2, 'unchanged parallel settings do not restart the service')

@@ -2,6 +2,7 @@
 
 const { spawn, execFile } = require('node:child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
+const { mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
 
 function enqueue(script, cwd, request, action = '--enqueue') {
   return new Promise((resolve, reject) => {
@@ -37,6 +38,29 @@ function readStatus(script, cwd) {
   });
 }
 
+function blockedNotification(root, status) {
+  const name = root.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+  const conflict = /merge conflicts?/i.test(status.error || '');
+  const files = Array.isArray(status.conflictPaths) ? status.conflictPaths : [];
+  const branch = status.branch?.replace(/^refs\/heads\//, '');
+  const label = name + (branch ? ' (' + branch + ')' : '');
+  const count = files.length ? ` in ${files.length} file${files.length === 1 ? '' : 's'}` : '';
+  return {
+    message: conflict
+      ? `${label}: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
+      : `${label}: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
+    action: conflict ? 'View conflicting files' : 'View details',
+    detail: [
+      'Repository: ' + root, ...(branch ? ['Branch: ' + branch] : []), '',
+      ...(conflict ? ['Push blocked: local and remote changes conflict.', '',
+        ...files.map(file => '  • ' + file), ...(files.length ? [''] : [])] : []),
+      status.error || '', '',
+      'Retry sync and push after resolving the problem.',
+      'Stop background push keeps your local commit and stops this queued push.'
+    ].join('\n')
+  };
+}
+
 function registerBackgroundCommit(vscode, context) {
   const script = vscode.Uri.joinPath(context.extensionUri, 'background_commit.py').fsPath;
   const resume = () => {
@@ -62,6 +86,7 @@ function registerBackgroundCommit(vscode, context) {
   };
   let scanning = false;
   const seen = new Map();
+  let output;
   const generation = new Map();
   const generationRevision = new Map();
   const showGeneration = root => {
@@ -106,13 +131,28 @@ function registerBackgroundCommit(vscode, context) {
           if (!previous?.recoverable || previous.id !== status.id) resume();
         } else if (status.phase === 'blocked'
             && (previous?.phase !== 'blocked' || previous?.recoverable || previous?.id !== status.id)) {
-          void vscode.window.showErrorMessage('Background commit paused: ' + status.error,
-            'Retry background job', 'Cancel background job').then(choice => {
-              if (choice === 'Retry background job') control(root, 'retry');
-              if (choice === 'Cancel background job') control(root, 'cancel');
+          if (status.mergedBranch) {
+            void warnMergedBranch(vscode, repository, status.mergedBranch).catch(error =>
+              vscode.window.showErrorMessage(error.message));
+            continue;
+          }
+          const notice = blockedNotification(root, status);
+          void vscode.window.showErrorMessage(notice.message,
+            notice.action, 'Retry sync and push', 'Stop background push').then(choice => {
+              if (choice === notice.action) {
+                if (!output) {
+                  output = vscode.window.createOutputChannel('Commit & Push problems');
+                  context.subscriptions.push(output);
+                }
+                output.appendLine(notice.detail + '\n');
+                output.show(true);
+              }
+              if (choice === 'Retry sync and push') control(root, 'retry');
+              if (choice === 'Stop background push') control(root, 'cancel');
             });
         } else if (status.phase === 'pushing' && previous?.phase !== 'pushing') {
-          void vscode.window.showInformationMessage('Push is pending and will retry automatically.');
+          const name = root.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+          void vscode.window.showInformationMessage(`${name}: Push is pending and will retry automatically.`);
         } else if (previous?.id && !status.id) {
           await repository.status();
         }
@@ -128,6 +168,11 @@ function registerBackgroundCommit(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queuePush', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') return { queued: false };
+    const merged = await mergedBranchStatus({ rootUri: root }, options.remote, options.branch);
+    if (merged) {
+      await warnMergedBranch(vscode, { rootUri: root }, merged);
+      return { queued: false, cancelled: true };
+    }
     const result = await enqueue(script, root.fsPath, options, '--request-push');
     if (result.queued) {
       void vscode.window.showInformationMessage(
@@ -148,6 +193,15 @@ function registerBackgroundCommit(vscode, context) {
     const git = await extension.activate();
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected repository is unavailable.');
+    const config = vscode.workspace.getConfiguration('git', root);
+    if (options.push ?? config.get('postCommitCommand') === 'push') {
+      const remote = vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin');
+      const merged = await mergedBranchStatus(repository, remote);
+      if (merged) {
+        await warnMergedBranch(vscode, repository, merged);
+        return { cancelled: true };
+      }
+    }
     await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
     if (!repository.state.indexChanges.length || options.all) {
@@ -184,4 +238,4 @@ function registerBackgroundCommit(vscode, context) {
   }));
 }
 
-module.exports = { enqueue, readStatus, registerBackgroundCommit };
+module.exports = { enqueue, readStatus, blockedNotification, registerBackgroundCommit };

@@ -29,7 +29,7 @@ def service_definition(binary: str, home: Path) -> dict:
             "OLLAMA_HOST": "127.0.0.1:11435",
             "OLLAMA_MODELS": str(home / ".ollama/models"),
             "OLLAMA_MAX_LOADED_MODELS": "1",
-            "OLLAMA_NUM_PARALLEL": "4",
+            "OLLAMA_NUM_PARALLEL": "6",
             "OLLAMA_CONTEXT_LENGTH": "4096",
             "OLLAMA_FLASH_ATTENTION": "1",
             "OLLAMA_KV_CACHE_TYPE": "q8_0",
@@ -78,7 +78,7 @@ def install(home: Path | None = None, binary: str | None = None) -> None:
         raise RuntimeError("Refusing to replace a symlinked LaunchAgent.")
     if registered and agent.is_file():
         previous = plistlib.loads(agent.read_bytes())
-        if previous.get('EnvironmentVariables', {}).get('OLLAMA_NUM_PARALLEL') != '4':
+        if previous.get('EnvironmentVariables', {}).get('OLLAMA_NUM_PARALLEL') != '6':
             if previous.get('Label') != LABEL or previous.get('ProgramArguments') != definition['ProgramArguments']:
                 raise RuntimeError('The dedicated commit service changed; refusing to replace it.')
             agent.write_bytes(plistlib.dumps(definition))

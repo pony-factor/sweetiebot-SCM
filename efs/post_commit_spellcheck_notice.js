@@ -11,6 +11,7 @@ const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime
 const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
 const DEFAULT_EMAIL = '326443430+codex-pony[bot]@users.noreply.github.com';
+const SPELLCHECK_LABEL = 'Spellcheck Changes';
 const NOREPLY_EMAIL = /^(?:[1-9]\d*\+)?[a-z\d-]+(?:\[bot\])?@users\.noreply\.github\.com$/i;
 const previews = [];
 const previewSessions = new Map();
@@ -41,7 +42,7 @@ function parseNotice(content) {
 }
 
 function coauthor(email = DEFAULT_EMAIL, model = '') {
-  const name = model ? 'Ollama (' + model + ')' : 'Ollama';
+  const name = model ? 'Spellchecker (Ollama ' + model + ')' : 'Spellchecker';
   if (typeof email !== 'string' || !NOREPLY_EMAIL.test(email.trim())) return '';
   if (typeof name !== 'string' || !name.trim() || /[\r\n<>]/.test(name)) return '';
   return 'Co-authored-by: ' + name.trim() + ' <' + email.trim() + '>';
@@ -49,9 +50,26 @@ function coauthor(email = DEFAULT_EMAIL, model = '') {
 
 function spellcheckMessage(paths, email = DEFAULT_EMAIL, model = '', title = '') {
   const count = paths.length;
-  const subject = '🤖 ' + (title || 'Spellcheck ' + count + ' Markdown file' + (count === 1 ? '' : 's'));
+  const subject = '🤖 ' + (title || SPELLCHECK_LABEL);
   const trailer = coauthor(email, model);
   return subject + (trailer ? '\n\n' + trailer : '');
+}
+
+async function generateReviewedCommitMessage(cwd, paths) {
+  const bundled = path.join(__dirname, 'ai_commit.py');
+  const script = await fs.access(bundled).then(() => bundled,
+    () => path.join(__dirname, '../scripts/ai_commit.py'));
+  // The normal generator controls its own retries and model selection.
+  const {stdout} = await execFileAsync(resolvePythonExecutable(),
+    [script, '--spellcheck-generate-message', JSON.stringify({paths})],
+    {cwd, timeout: 9060000, maxBuffer: 1024 * 1024});
+  const result = JSON.parse(stdout);
+  if (typeof result.title !== 'string' || !result.title.trim()
+      || /[\r\n\x00]/.test(result.title) || result.title.length > 72
+      || typeof result.description !== 'string' || result.description.includes('\x00')) {
+    throw new Error('Sweetiebot returned an invalid generated spellcheck commit message.');
+  }
+  return {title: result.title, description: result.description};
 }
 
 async function gitAction(cwd, args) {
@@ -207,12 +225,12 @@ async function normalizeReviewedWhitespace(root, paths) {
 }
 
 async function finishSpellcheckPreview(vscode, sessionId, action, message, runAction = gitAction,
-  normalize = normalizeReviewedWhitespace) {
+  normalize = normalizeReviewedWhitespace, generateTitle = generateReviewedCommitMessage) {
   const session = previewSessions.get(sessionId);
   if (!session || !['accept', 'revert'].includes(action)) throw new Error('This spellcheck preview is no longer available.');
   if (session.saving || session.acting) throw new Error('Wait for the current spelling edit to finish.');
-  if (action === 'accept' && (typeof message !== 'string' || !message.trim() || message.includes('\0'))) {
-    throw new Error('Enter a commit message before accepting the spelling changes.');
+  if (action === 'accept' && (typeof message !== 'string' || message.includes('\0'))) {
+    throw new Error('The optional commit description is invalid.');
   }
   // The Source Control push checkbox controls Git's post-commit command.
   // Read it when Accept is clicked, not when the preview was first shown.
@@ -244,8 +262,27 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
       ]);
       if (staged.trim()) throw new Error('These files also have staged changes. Unstage them before accepting this preview.');
       await normalize(session.root, session.paths);
-      // --only includes the reviewed working files while preserving other staged work.
-      await runAction(session.root, ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim', '--message', message, '--', ...session.paths]);
+      // Stage reviewed files BEFORE normal title generation. --only later
+      // restricts the commit to these files, preserving unrelated staged work.
+      await runAction(session.root, ['--literal-pathspecs', 'add', '--', ...session.paths]);
+      const generated = await generateTitle(session.root, session.paths);
+      if (!generated || typeof generated.title !== 'string' || !generated.title.trim()) {
+        throw new Error('The normal commit-title generator did not return a title.');
+      }
+      if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) {
+        throw new Error('The repository advanced while generating the title. Reviewed edits remain staged.');
+      }
+      if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
+        throw new Error('The active branch changed while generating the title. Reviewed edits remain staged.');
+      }
+      const args = ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim',
+        '--message', generated.title];
+      const body = [generated.description, message.trim()].filter(Boolean).join('\n\n');
+      if (body) args.push('--message', body);
+      // Append attribution AFTER the usual subject and explanatory body.
+      if (session.trailer) args.push('--message', session.trailer);
+      args.push('--', ...session.paths);
+      await runAction(session.root, args);
     } else {
       // The preview compares with the index, so revert to that same baseline.
       await runAction(session.root, ['--literal-pathspecs', 'restore', '--worktree', '--', ...session.paths]);
@@ -302,8 +339,8 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
   catch { /* Detached HEAD has no branch name. */ }
   const session = {
     id: randomUUID(), root: notice.root, paths: notice.paths, head: notice.head, branch,
-    title: notice.title || 'Spellchecks Performed', readDiff, readGit: readConfig, repository,
-    message: spellcheckMessage(notice.paths, email, notice.model, notice.title)
+    title: SPELLCHECK_LABEL, readDiff, readGit: readConfig, repository,
+    message: '', trailer: coauthor(email, notice.model)
   };
   previewSessions.set(session.id, session);
   previews.push(editablePreview(session, patch));

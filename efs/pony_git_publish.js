@@ -44,12 +44,34 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
     throw new Error('The pony profile is not a new, uncommitted file; refusing to overwrite existing work.');
   }
 
-  // Refresh before committing: never silently push another person's new work
-  // or already-ahead local commits along with this single pony record.
+  // Fetch before committing. A behind-only local main may fast-forward,
+  // but never publish earlier local commits or rewrite diverged history.
   await git('fetch', '--quiet', 'origin', 'main');
   const parent = await git('rev-parse', 'HEAD');
-  if (parent !== await git('rev-parse', 'refs/remotes/origin/main')) {
-    throw new Error('Kafania main is not synchronized with origin/main; update it before automatic publishing.');
+  const upstream = await git('rev-parse', 'refs/remotes/origin/main');
+  if (parent !== upstream) {
+    let common;
+    try { common = await git('merge-base', 'HEAD', 'refs/remotes/origin/main'); }
+    catch { /* Unrelated histories must fail closed, like divergent commits. */ }
+    if (common !== parent) {
+      throw new Error('Kafania main is not synchronized with origin/main: local commits prevent a safe fast-forward.');
+    }
+    try {
+      // Equivalent to the merge phase of git pull --ff-only, using the ref
+      // we just fetched. Git refuses to overwrite staged or untracked work.
+      await git('merge', '--ff-only', '--quiet', 'refs/remotes/origin/main');
+    } catch {
+      throw new Error('Kafania main could not fast-forward to origin/main without overwriting local work; resolve the checkout manually.');
+    }
+  }
+  if (await git('rev-parse', 'HEAD') !== await git('rev-parse', 'refs/remotes/origin/main')) {
+    throw new Error('Kafania main changed during synchronization; refusing automatic publishing.');
+  }
+  // Revalidate after the pull: a newly tracked pony path cannot be committed
+  // as though it were our untracked research result.
+  const updatedStatus = await git('status', '--porcelain=1', '--untracked-files=all', '--', relativePath);
+  if (updatedStatus !== `?? ${relativePath}` && updatedStatus !== `A  ${relativePath}`) {
+    throw new Error('The pony profile changed while synchronizing; refusing to overwrite existing work.');
   }
   await git('add', '--', relativePath);
   if (await git('diff', '--cached', '--name-only', '--diff-filter=A', '--', relativePath) !== relativePath) {

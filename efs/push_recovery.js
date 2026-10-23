@@ -1,4 +1,5 @@
 'use strict';
+const { mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
 
 function recoveryError(error, target, step) {
   const details = [error?.stderr, error?.stdout, error?.message].filter(Boolean).join('\n');
@@ -20,12 +21,19 @@ function recoveryError(error, target, step) {
   return new Error(message, { cause: error });
 }
 
-function createPushErrorHandler() {
+function createPushErrorHandler(vscode) {
   // The Git API creates new Repository wrappers when invoking error handlers.
   // Key by URI so a rejected retry cannot recursively start another recovery.
   const recovering = new Set();
   return {
     async handlePushError(repository, remote, refspec, error) {
+      if (vscode && /was merged in PR #\d+/.test([error?.stderr, error?.message].join('\n'))) {
+        const info = await mergedBranchStatus(repository, remote.name, refspec?.split(':').at(-1));
+        if (info) {
+          await warnMergedBranch(vscode, repository, info);
+          return true;
+        }
+      }
       if (error?.gitErrorCode !== 'PushRejected'
           || !/!\s+\[rejected\].*\((?:non-fast-forward|fetch first)\)/m.test(error.stderr ?? '')) {
         return false;
@@ -75,7 +83,7 @@ async function registerPushRecovery(vscode, context) {
   const extension = vscode.extensions.getExtension('vscode.git');
   if (!extension) return;
   const git = await extension.activate();
-  context.subscriptions.push(git.getAPI(1).registerPushErrorHandler(createPushErrorHandler()));
+  context.subscriptions.push(git.getAPI(1).registerPushErrorHandler(createPushErrorHandler(vscode)));
 }
 
 module.exports = { createPushErrorHandler, registerPushRecovery };

@@ -47,6 +47,35 @@ class BranchNamePackTests(unittest.TestCase):
         self.assertEqual(stallions["displayNames"]["hoo-far"], "Hoo'Far")
         self.assertEqual(sum("hoo-far" in p["names"] for p in catalog["packs"]), 1)
 
+    def test_doctor_titles_use_full_prefix_and_preserve_legacy_aliases(self):
+        catalog = branch_names.load_catalog()
+        packs = {pack["id"]: pack for pack in catalog["packs"]}
+        expected = {
+            "g4-mares": ("fauna",),
+            "g4-stallions": ("caballeron", "hooves", "horse", "steth", "whooves"),
+            "idw-comics": ("philly", "greymare"),
+        }
+        for pack_id, suffixes in expected.items():
+            pack = packs[pack_id]
+            for suffix in suffixes:
+                old_name, full_name = f"dr-{suffix}", f"doctor-{suffix}"
+                if suffix == "horse":
+                    # Dr. Horse (Doc Top) is a different Earth pony from
+                    # Doctor Horse, Rainbow Dash's unicorn physician.
+                    full_name = "doc-top"
+                self.assertNotIn(old_name, pack["names"])
+                self.assertIn(full_name, pack["names"])
+                self.assertEqual(pack["aliases"][old_name], full_name)
+        self.assertIn("doctor-horse", packs["g4-stallions"]["names"])
+        self.assertIn("doc-top", packs["g4-stallions"]["names"])
+        self.assertEqual(packs["g4-stallions"]["aliases"]["doctor-horse-doc-top"], "doc-top")
+        self.assertNotIn("doctor-horse-doc-top", packs["g4-stallions"]["names"])
+        all_names = [name for pack in catalog["packs"] for name in pack["names"]]
+        self.assertEqual(all_names.count("doctor-horse"), 1)
+        self.assertEqual(all_names.count("doc-top"), 1)
+        self.assertFalse(any(name.startswith("dr-") for name in all_names))
+        self.assertEqual(len(all_names), len(set(all_names)))
+
     def test_legacy_scrape_artifacts_resolve_to_real_pony_slugs(self):
         catalog = branch_names.load_catalog()
         all_names = [n for pack in catalog["packs"] for n in pack["names"]]
@@ -92,7 +121,7 @@ class BranchNamePackTests(unittest.TestCase):
             "rookie-archaeologistgentiana": "gentiana",
             "the-great-and-powerfultwily": "twily",
         }
-        self.assertEqual(aliases, expected)
+        self.assertTrue(expected.items() <= aliases.items())
         self.assertEqual(len(expected), 34)
         self.assertEqual(len(set(expected.values())), 34)
         for old, target in expected.items():

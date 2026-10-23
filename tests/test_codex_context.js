@@ -114,6 +114,15 @@ async function run() {
   });
   assert.equal(await hiddenPending, 'Retained conversation', 'Source Control can hide Codex without losing context');
 
+  const identityPending = registered.get('sweetiebot.readCodexIdentity')();
+  assert.equal(messages.at(-1).identityOnly, true);
+  assert.equal(messages.at(-1).allowHidden, true);
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId, hasConversation: true });
+  assert.equal((await identityPending).threadId, conversationId);
+  const ambiguous = registered.get('sweetiebot.readCodexIdentity')();
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, hasConversation: true });
+  await assert.rejects(ambiguous, /identify/);
+
   provider.sidebarViews.clear();
   assert.throws(
     () => registered.get('sweetiebot.readCodexConversation')(),

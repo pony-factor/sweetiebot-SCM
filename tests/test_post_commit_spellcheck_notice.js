@@ -23,14 +23,14 @@ test('reads only valid, repo-relative Markdown notice data', () => {
 
 test('uses only a configured GitHub noreply bot identity for co-authorship', () => {
   const email = '123456+ollama-bot@users.noreply.github.com';
-  assert.equal(coauthor(email), 'Co-authored-by: Ollama <' + email + '>');
+  assert.equal(coauthor(email), 'Co-authored-by: Spellchecker <' + email + '>');
   assert.equal(coauthor(''), '');
   assert.equal(coauthor('ollama@example.com'), '');
   assert.equal(coauthor(email, 'Injected\nTrailer'), '');
-  assert.match(spellcheckMessage(['a.md', 'b.mdx'], email), /^🤖 Spellcheck 2 Markdown files/);
-  assert.match(spellcheckMessage(['a.md'], email), /\n\nCo-authored-by: Ollama <123456\+ollama-bot@users\.noreply\.github\.com>$/);
+  assert.match(spellcheckMessage(['a.md', 'b.mdx'], email), /^🤖 Spellcheck Changes/);
+  assert.match(spellcheckMessage(['a.md'], email), /\n\nCo-authored-by: Spellchecker <123456\+ollama-bot@users\.noreply\.github\.com>$/);
   assert.equal(spellcheckMessage(['a.md'], undefined, 'qwen:3b'),
-    '🤖 Spellcheck 1 Markdown file\n\nCo-authored-by: Ollama (qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
+    '🤖 Spellcheck Changes\n\nCo-authored-by: Spellchecker (Ollama qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
 });
 
 function fixture({ currentHead = head, changed = true, draft = '' } = {}) {
@@ -122,7 +122,7 @@ test('renders every file and changed line as an escaped, theme-based inline diff
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.doesNotMatch(html, /Keep edits|Discard.*button|Markdown files have/);
-  assert.match(html, /<h1>Spellchecks Performed<\/h1>/);
+  assert.match(html, /<h1>Spellcheck Changes<\/h1>/);
   assert.doesNotMatch(html, /All proposed edits/);
 });
 
@@ -135,7 +135,7 @@ test('spellcheck review queues a popup without opening an editor or modifying a 
   });
   assert.equal(f.repo.inputBox.value, 'Do not modify this draft');
   const popup = takeSpellcheckPopup();
-  assert.equal(popup.title, 'Spellchecks Performed');
+  assert.equal(popup.title, 'Spellcheck Changes');
   assert.match(popup.html.replace(/<\/?span[^>]*>/g, ''), /Another error/);
   assert.equal(takeSpellcheckPopup(), undefined);
   assert.deepEqual(invocations[0], {
@@ -272,10 +272,11 @@ test('descriptive titles appear in the proposed commit message without changing 
   const vscode = {};
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, f.git);
   const popup = takeSpellcheckPopup();
-  assert.equal(popup.title, title);
-  assert.match(popup.html, /<h1>Spellchecks Performed<\/h1>/);
+  assert.equal(popup.title, 'Spellcheck Changes');
+  assert.match(popup.html, /<h1>Spellcheck Changes<\/h1>/);
   assert.equal(f.repo.inputBox.value, '');
-  assert.equal(popup.message, '🤖 ' + title + '\n\nCo-authored-by: Ollama (qwen:3b) <123456+ollama-bot@users.noreply.github.com>');
+  assert.equal(popup.message, '');
+  assert.equal(popup.trailer, undefined); // Metadata stays private to the review session.
   f.repo.inputBox.value = '';
   await showNotice(vscode, f.repo, {...data, root: '/repo'}, async () => patch, async () => {
     f.repo.inputBox.value = 'Draft entered while reading config';
@@ -364,7 +365,7 @@ test('in-place edits save only the intended unstaged line and reject stale or un
 });
 
 
-test('Accept commits reviewed files with the displayed message; Revert restores only their working tree', async () => {
+test('Accept stages reviewed files before normal title generation and appends coauthor after the title', async () => {
   for (const action of ['accept', 'revert']) {
     const f = fixture({draft: 'Keep my unrelated draft'});
     let refreshed = 0;
@@ -372,16 +373,28 @@ test('Accept commits reviewed files with the displayed message; Revert restores 
     const readDiff = async (_root, args) => args.includes('--cached') ? '' : patch;
     await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md'], title: 'Spellcheck trading citations and notes'}, readDiff, f.git);
     const preview = takeSpellcheckPopup();
-    assert.match(preview.message, /^🤖 Spellcheck trading citations and notes/);
+    assert.equal(preview.message, '');
     const message = '🖊️ Correct the revised spelling\n\nExact edited body.\n';
     const mutations = [];
     const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}};
+    const generate = async (root, paths) => {
+      mutations.push({generatedFrom: root, paths});
+      return {title: '🖊️ Correct trading citations', description: 'Fix spelling without changing figures.'};
+    };
     assert.deepEqual(await finishSpellcheckPreview(vscode, preview.sessionId, action, message, async (root, args) => {
       mutations.push({root, args});
-    }, async () => {}), {action});
-    assert.deepEqual(mutations, [{root: '/repo', args: action === 'accept'
-      ? ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim', '--message', message, '--', 'notes/report.md']
-      : ['--literal-pathspecs', 'restore', '--worktree', '--', 'notes/report.md']}]);
+    }, async () => {}, generate), {action});
+    assert.deepEqual(mutations, action === 'accept'
+      ? [
+          {root: '/repo', args: ['--literal-pathspecs', 'add', '--', 'notes/report.md']},
+          {generatedFrom: '/repo', paths: ['notes/report.md']},
+          {root: '/repo', args: ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim',
+            '--message', '🖊️ Correct trading citations',
+            '--message', 'Fix spelling without changing figures.\n\n' + message.trim(),
+            '--message', 'Co-authored-by: Spellchecker <123456+ollama-bot@users.noreply.github.com>',
+            '--', 'notes/report.md']},
+        ]
+      : [{root: '/repo', args: ['--literal-pathspecs', 'restore', '--worktree', '--', 'notes/report.md']}]);
     assert.equal(f.repo.inputBox.value, 'Keep my unrelated draft');
     assert.equal(refreshed, 1);
     await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, action, message), /no longer available/);
@@ -389,7 +402,7 @@ test('Accept commits reviewed files with the displayed message; Revert restores 
 });
 
 test('Accept and Revert reject changed previews, dirty editors, and staged changes without mutating Git', async () => {
-  for (const problem of ['external', 'head', 'dirty', 'staged', 'empty message']) {
+  for (const problem of ['external', 'head', 'dirty', 'staged', 'invalid description']) {
     const f = fixture();
     let active = false;
     const readDiff = async (_root, args) => args.includes('--cached')
@@ -402,8 +415,8 @@ test('Accept and Revert reject changed previews, dirty editors, and staged chang
     const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: problem === 'dirty'
       ? [{uri: {fsPath: '/repo/notes/report.md'}, isDirty: true}] : []}};
     let mutated = false;
-    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', problem === 'empty message' ? ' ' : preview.message,
-      async () => { mutated = true; }), /changed|Save the existing|staged changes|Enter a commit/);
+    await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', problem === 'invalid description' ? '\0' : preview.message,
+      async () => { mutated = true; }), /changed|Save the existing|staged changes|description is invalid/);
     if (['external', 'head', 'dirty'].includes(problem)) {
       await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'revert', '', async () => { mutated = true; }));
     }
@@ -445,8 +458,9 @@ test('Accept honors the Commit and push checkbox, while Revert never pushes', as
         },
       };
       const result = await finishSpellcheckPreview(vscode, preview.sessionId, action, preview.message,
-        async (_root, args) => { commands.push(args); }, async () => {});
-      assert.equal(commands.length, 1);
+        async (_root, args) => { commands.push(args); }, async () => {},
+        async () => ({title: '🖊️ Fix cited typos', description: ''}));
+      assert.equal(commands.length, action === 'accept' ? 2 : 1);
       assert.equal(pushes.length, enabled && action === 'accept' ? 1 : 0);
       assert.equal(result.pushed, enabled && action === 'accept' ? true : undefined);
       assert.equal(f.repo.inputBox.value, 'Preserve my draft');
@@ -478,7 +492,8 @@ test('Failed push preserves the accepted commit and reports the failure without 
       window: {showErrorMessage(message) { messages.push(message); }}
     };
     const result = await finishSpellcheckPreview(vscode, preview.sessionId, 'accept', preview.message,
-      async (_root, args) => { assert.equal(args[1], 'commit'); committed = true; }, async () => {});
+      async (_root, args) => { if (args[1] === 'commit') committed = true; },
+      async () => {}, async () => ({title: '🖊️ Fix cited typos', description: ''}));
     assert.equal(committed, true);
     assert.equal(pushed, !switchBranch);
     assert.equal(result.pushed, false);
@@ -496,7 +511,7 @@ test('Accept reruns normalization before committing; a failed check keeps the pr
   const preview = takeSpellcheckPopup();
   const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}};
   const calls = [];
-  const commit = async () => { calls.push('commit'); };
+  const commit = async (_root, args) => { calls.push(args[1]); };
   await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', preview.message,
     commit, async () => { throw new Error('newline check failed'); }), /newline check failed/);
   assert.deepEqual(calls, []);
@@ -505,6 +520,63 @@ test('Accept reruns normalization before committing; a failed check keeps the pr
       assert.equal(root, '/repo');
       assert.deepEqual(paths, ['notes/report.md']);
       calls.push('normalize');
+    }, async () => {
+      calls.push('generate title');
+      return {title: '🖊️ Fix spelling', description: ''};
     });
-  assert.deepEqual(calls, ['normalize', 'commit']);
+  assert.deepEqual(calls, ['normalize', 'add', 'generate title', 'commit']);
+});
+
+
+test('normal titled spellcheck commit contains only reviewed staged files and preserves unrelated staged work', async () => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const {execFileSync} = require('node:child_process');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spellcheck-staged-title-'));
+  const git = (...args) => execFileSync('git', args, {
+    cwd: root, encoding: 'utf8', env: {...process.env, GIT_CONFIG_NOSYSTEM: '1'}
+  }).trim();
+  let preview;
+  try {
+    git('init', '--quiet');
+    git('config', 'user.name', 'Test Committer');
+    git('config', 'user.email', 'committer@example.test');
+    git('config', 'commit.gpgsign', 'false');
+    await fs.writeFile(path.join(root, 'report.md'), 'A speling issue.\n');
+    await fs.writeFile(path.join(root, 'unrelated.txt'), 'Original content.\n');
+    git('add', '--', 'report.md', 'unrelated.txt');
+    git('commit', '--quiet', '-m', 'Base');
+    await fs.writeFile(path.join(root, 'report.md'), 'A spelling issue.\n');
+    await fs.writeFile(path.join(root, 'unrelated.txt'), 'Unrelated staged work.\n');
+    git('add', '--', 'unrelated.txt');
+    const baseline = git('rev-parse', 'HEAD');
+    const read = async (_root, args) => git(...args);
+    await showNotice({}, {inputBox: {value: ''}, async status() {}}, {
+      head: baseline, root, paths: ['report.md'], model: 'qwen:3b'
+    }, read, read);
+    preview = takeSpellcheckPopup();
+    assert.equal(preview.title, 'Spellcheck Changes');
+    let generated = 0;
+    const run = async (_root, args) => git(...args);
+    const title = async (_root, files) => {
+      generated++;
+      assert.deepEqual(files, ['report.md']);
+      assert.match(git('diff', '--cached', '--', 'report.md'), /\+A spelling issue\./);
+      assert.deepEqual(git('diff', '--cached', '--name-only').split('\n').sort(),
+        ['report.md', 'unrelated.txt']);
+      return {title: '🖊️ Correct Markdown spelling', description: 'Fix the reviewed spelling error.'};
+    };
+    await finishSpellcheckPreview({Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}},
+      preview.sessionId, 'accept', '', run, async () => {}, title);
+    assert.equal(generated, 1);
+    assert.equal(git('show', '--pretty=format:', '--name-only', 'HEAD'), 'report.md');
+    assert.equal(git('diff', '--cached', '--name-only'), 'unrelated.txt');
+    assert.equal(git('diff', '--', 'report.md'), '');
+    const message = git('log', '-1', '--pretty=%B');
+    assert.match(message, /^🖊️ Correct Markdown spelling\n\nFix the reviewed spelling error\.\n\nCo-authored-by: Spellchecker \(Ollama qwen:3b\) <326443430\+codex-pony\[bot\]@users\.noreply\.github\.com>$/);
+  } finally {
+    if (preview) closeSpellcheckPopup(preview.sessionId);
+    await fs.rm(root, {recursive: true, force: true});
+  }
 });

@@ -53,7 +53,7 @@ async function run() {
   const sandbox = vm.createContext({
     module: { exports: {} }, process, clearTimeout,
     setTimeout(callback, delay) {
-      assert.equal(delay, 960000, 'The child deadline allows three 300-second Ollama attempts plus overhead');
+      assert.equal(delay, 9060000, 'The child deadline allows ten 900-second Ollama attempts plus one minute of overhead');
       return setTimeout(callback, delay);
     },
     require: name => {

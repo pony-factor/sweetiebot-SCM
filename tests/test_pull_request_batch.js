@@ -150,30 +150,60 @@ async function run() {
   assert.match(prompt, /#12: Newest ready change/);
   assert(!prompt.includes('#10: Ready change'));
   assert.match(prompt, /Never merge, close, edit, or implicitly include an unselected PR/);
-  assert.match(prompt, /force-with-lease/);
+  assert.match(prompt, /Never force-push or rewrite any branch/);
+  assert.match(prompt, /fast-forward-only push/);
   assert.match(prompt, /verify the resulting tree differs from its parent/);
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries' }),
     '🐛 Repair retries (#269)');
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#269)' }),
     '🐛 Repair retries (#269)', 'Do not repeat an existing PR-number suffix');
   assert.equal(squashCommitTitle({ number: 269, title: '🐛 Repair retries (#42)' }),
-    '🐛 Repair retries (#269)', 'Replace a stale PR-number suffix');
+    '🐛 Repair retries (#42) (#269)', 'Retain the exact PR title even when it references another PR');
+  assert.equal(squashCommitTitle({ number: 393, title: '🖌️ Show final commit titles beside generation times' }),
+    '🖌️ Show final commit titles beside generation times (#393)');
   assert.throws(() => squashCommitTitle({ number: 0, title: 'Invalid' }), /valid pull-request number/);
   assert.throws(() => squashCommitTitle({ number: 269, title: '' }), /pull-request title/);
   assert.match(prompt, /squash title: "Newest ready change \(#12\)"/);
   assert.match(prompt, /read ALL original PR commits \(paginate the commits endpoint\)/);
   assert.match(prompt, /linked GitHub author\/committer accounts/);
+  assert.match(prompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
+  assert.match(prompt, /preserve every verified Git author, committer and Co-authored-by trailer/);
+  const syncIncludedPrompt=batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [pulls[0]], filterSyncCommitSummaries: false });
+  assert.match(syncIncludedPrompt, /SYNC COMMIT FILTER DISABLED/);
+  assert.match(syncIncludedPrompt, /explanatory bodies in the squash summary/);
+  assert(!syncIncludedPrompt.includes('SYNC COMMIT FILTER ENABLED'));
+  assert.match(prompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
+  const emojiPrompt = batchMergePrompt({ repositoryUrl: 'https://github.com/owner/repo',
+    pullRequests: [pulls[0]], omitBulletsForEmojiTitles: true });
+  assert.match(emojiPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
+  assert.match(emojiPrompt, /if EVERY remaining commit subject begins with an emoji/);
+  assert.match(emojiPrompt, /If any retained subject lacks an emoji, keep the normal hyphen bullets/);
   assert.match(prompt, /bot-opened PR/);
   assert.match(prompt, /Deduplicate repeated credits for the same person\/agent/);
   assert.match(prompt, /correctly ordered Co-authored-by: Name <email> trailers/);
   assert.match(prompt, /compact chronological '- ' bullet list/);
+  assert.match(prompt, /exact selected PR title VERBATIM/);
+  assert.match(prompt, /never an individual commit title/);
   assert.match(prompt, /hyphen bullets, not '\*'/);
   assert.match(prompt, /indented continuation lines directly under its corresponding bullet/);
   assert.match(prompt, /relocate all such credits into ONE final trailer block/);
-  assert.match(prompt, /conventional GitHub separator ---------/);
-  assert.match(prompt, /only one final trailer block after ---------/);
+  assert.match(prompt, /separator of EXACTLY TEN underscores __________/);
+  assert.match(prompt, /only one final trailer block after exactly ten underscores __________/);
+  assert.doesNotMatch(prompt, /separator ---------/);
   assert.match(prompt, /Co-authored-by: Codex Web <noreply@openai.com>/);
   assert.match(prompt, /CO-AUTHOR ORDER \(HIGH TO LOW\)/);
+  assert.match(prompt, /HUMAN AUTHOR PRE-MERGE GATE \(NON-OPTIONAL\)/);
+  assert.match(prompt, /If no original linked human can be verified, STOP/);
+  assert.match(prompt, /NEVER invoke the GitHub connector native squash operation/);
+  assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
+  assert.doesNotMatch(prompt, /git commit --author/);
+  assert.match(prompt, /NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED/);
+  assert(prompt.includes('node efs/human_squash_merge.js'));
+  assert.match(prompt, /NEVER push a squash commit directly to main/);
+  assert.match(prompt, /This uses no git push and does not rewrite the PR branch/);
+  assert(prompt.includes('NEVER use that route when the PR opener is codex-pony[bot]'));
+  assert.match(prompt, /Git author is the verified original HUMAN/);
   const priorities = [
     '1. Main/original human Git authors first',
     '2. Other human contributors',
@@ -275,6 +305,8 @@ async function run() {
   };
   let mergeAllHandler;
   let configuredProject = '';
+  let filterSyncSummaries = true;
+  let emojiOnlySummaries = false;
   let pickerAction = 'first';
   let includeNonMain = false;
   let includeStack = false;
@@ -284,7 +316,13 @@ async function run() {
     ThemeIcon: class { constructor(id) { this.id = id; } },
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) {
+        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles'].includes(key),
+          'Unexpected SCM configuration key: ' + key);
+        if (key === 'chatgptProjectUrl') return configuredProject || fallback;
+        if (key === 'filterSyncCommitSummaries') return filterSyncSummaries;
+        return emojiOnlySummaries;
+      } };
     } },
     extensions: {
       getExtension(id) {
@@ -383,6 +421,17 @@ async function run() {
   assert.match(sentPrompt, /preserve only the exact verified co-author name and email/);
   assert.doesNotMatch(sentPrompt, /hello@ollama\.com/i);
   assert(!sentPrompt.includes('pull/40'));
+  assert.match(sentPrompt, /SYNC COMMIT FILTER ENABLED \(default\)/);
+  assert.match(sentPrompt, /EMOJI-ONLY SUBJECT LINES DISABLED \(default\)/);
+  filterSyncSummaries = false;
+  emojiOnlySummaries = true;
+  await handler();
+  const alteredChat = new URL(browserCalls.filter(call => call.id === 'vscode.openFolder').at(-1).options.url);
+  const alteredPrompt = mergePromptFromUrl(alteredChat);
+  assert.match(alteredPrompt, /SYNC COMMIT FILTER DISABLED/);
+  assert.match(alteredPrompt, /EMOJI-ONLY SUBJECT LINES ENABLED/);
+  filterSyncSummaries = true;
+  emojiOnlySummaries = false;
   assert.equal(browserCalls[0].options.openToSide, undefined);
 
   pickerAction = 'cancel';
@@ -396,7 +445,7 @@ async function run() {
   // The planner lists main-targeted PRs before unrelated non-main PRs.
   pickerAction = 'top';
   await handler();
-  assert.equal(browserCalls.length, 2, 'Dismissing the non-main confirmation must not open ChatGPT');
+  assert.equal(browserCalls.length, 3, 'Dismissing the non-main confirmation must not open ChatGPT');
   assert.equal(modalWarnings.length, 1);
   assert.match(modalWarnings[0].message, /kefania.*not main/);
   assert.equal(modalWarnings[0].options.modal, true);
@@ -408,7 +457,7 @@ async function run() {
   approveNonMain = false;
   pickerAction = 'cancel';
   await handler();
-  assert.equal(browserCalls.length, 3, 'Cancelling must not submit a merge request');
+  assert.equal(browserCalls.length, 4, 'Cancelling must not submit a merge request');
   pickerAction = 'first';
 
   configuredProject = 'https://chatgpt.com/g/g-p-example/project';

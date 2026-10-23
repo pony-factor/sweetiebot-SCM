@@ -211,6 +211,20 @@ async function run() {
     assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'HEAD']);
     assert(!calls.some(call => ['fetch', 'merge', 'push'].includes(call[0])));
   }
+  for (const dirty of ['indexChanges', 'workingTreeChanges']) {
+    const { repository, calls } = fixture();
+    repository.state[dirty] = [{}];
+    repository.checkout = async () => { throw new Error('main is already used by worktree'); };
+    let isolated;
+    assert.equal(await createBranch(repository, {
+      ...options, isolateBranch: async (...args) => { isolated = args; return true; }
+    }, () => 0), 'fresh');
+    assert.equal(isolated[0], 'fresh');
+    assert.equal(isolated[1], 'refs/heads/main');
+    assert.equal(isolated[2].expectedHead, 'refs/heads/topic');
+    assert.equal(repository.state.HEAD.name, 'topic');
+    assert(!calls.some(call => ['checkout', 'create', 'fetch', 'merge', 'push'].includes(call[0])));
+  }
   {
     const { repository, calls } = fixture();
     repository.state.mergeChanges = [{}];
@@ -472,8 +486,11 @@ async function run() {
       }));
       const callCount = calls.length;
       assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
-      assert.deepEqual(calls.slice(callCount).find(call => call[0] === 'create'),
-        ['create', 'fresh', true, base]);
+      assert.equal(git('branch', '--show-current').toString().trim(), 'fresh');
+      assert.equal(git('rev-parse', 'fresh').toString().trim(), git('rev-parse', 'main').toString().trim());
+      assert.notEqual(git('rev-parse', 'fresh').toString().trim(), base);
+      const forks = JSON.parse(fs.readFileSync(path.join(root, '.git', 'sweetiebot-background-forks.json'), 'utf8'));
+      assert.equal(forks['refs/heads/fresh'], git('rev-parse', 'main').toString().trim());
       assert(!calls.slice(callCount).some(call => ['merge', 'fetch', 'push'].includes(call[0])),
         'Do not sync or publish pending history while creating a branch');
       fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');

@@ -1,60 +1,108 @@
 name: Checks
 
 on:
+  # Run once for each push, not again when the same commit is in a pull request.
+  # PRs opened from this repository use the checks on their head commit.
   push:
-  pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  inventory:
+    name: Test inventory
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: scripts
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - name: Verify exhaustive, exclusive test assignments
+        run: python3 scripts/ci_test_runner.py verify
 
-      - name: Compile Python
-        run: python3 -m py_compile scripts/install.py scripts/configurator.py scripts/message_bar.py scripts/message_bar_configurator.py scripts/branch_names.py scripts/ai_commit.py scripts/sweetiebot_async_commit.py scripts/model_picker.py scripts/workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_message_bar.py tests/test_branch_names.py tests/test_ai_commit.py tests/test_async_commit.py tests/test_model_picker.py tests/test_workspace_search.py
-
-      - name: Run installer tests
-        run: python3 -m unittest discover -s tests -v
-
+  suites:
+    name: ${{ matrix.label }}
+    needs: inventory
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: commit
+            label: Commit system
+          - group: branches
+            label: Git branches
+          - group: branch-names
+            label: Branch names and pony packs
+          - group: github-pr
+            label: GitHub pull requests
+          - group: codex
+            label: Codex
+          - group: kefania
+            label: Kefania
+          - group: lindsey
+            label: Lindsey bulk merge
+          - group: browser-ui
+            label: Browser and UI
+          - group: efs-search
+            label: EFS and workspace search
+          - group: installation
+            label: Installation and configuration
+          - group: security
+            label: Security and workspace trust
+    env:
+      PYTHONPATH: scripts:tests
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
+      - name: Detect browser-test dependencies
+        id: browser
+        run: python3 scripts/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
       - name: Install browser-test dependencies
+        if: steps.browser.outputs.required == 'true'
         run: |
           npm install --no-save --no-package-lock playwright@1.64.0
           npx playwright install --with-deps chromium
+      - name: Run ${{ matrix.label }} checks
+        run: python3 scripts/ci_test_runner.py run "${{ matrix.group }}"
 
-      - name: Check injected JavaScript syntax
+  codex-webview-browser:
+    name: Chromium CSS and DOM regression
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium automation
         run: |
-          node --check assets/workbench/picker.js
-          node --check assets/workbench/message_bar.js
-          node --check efs/core.js
-          node --check efs/ollama.js
-          node --check efs/extract.js
-          node --check efs/search_index.js
-          node --check efs/view.js
-          node --check efs/extension.js
-          failures=0
-          for test_file in tests/test_*.js; do
-            if ! node "$test_file"; then
-              echo "::error file=$test_file::JavaScript regression test failed"
-              failures=$((failures + 1))
-            fi
-          done
-          if [ "$failures" -ne 0 ]; then
-            echo "$failures JavaScript test file(s) failed."
-            exit 1
-          fi
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Browser-backed Codex webview simulation
+        run: |
+          python tests/test_codex_webview_browser.py
+          python tests/test_codex_webview_iframe.py
+      - name: Node.js timestamp and heading tests
+        run: |
+          node tests/test_codex_hide_chat_timestamps.js
+          node tests/test_codex_window_label.js
+          node tests/test_codex_usage.js
+      - name: Codex manifest label tests
+        env:
+          PYTHONPATH: scripts
+        run: python -m unittest discover -s tests -p test_codex_label.py -v

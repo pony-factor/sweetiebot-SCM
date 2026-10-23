@@ -5,6 +5,7 @@ const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { pullRequestFromTreeNode } = require('./github_pr_refresh');
 const { squashMessage, readCommits } = require('./squash_attribution');
+const { humanSquashMerge, verifiedHumanAuthor } = require('./human_squash_merge');
 const { promisify } = require('node:util');
 
 const run = promisify(execFile);
@@ -15,7 +16,7 @@ const executeGh = args => run(gh, args, { timeout: 120000 });
 // Keep one-off squash merges scoped to the selected PR and let GitHub enforce
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
-  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000 } = {}) {
+  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000, humanMerge = humanSquashMerge } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -40,7 +41,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const latest = await read();
   if (latest.state !== 'OPEN' || latest.isDraft ||
       latest.baseRefName !== pr.baseRefName || latest.headRefName !== pr.headRefName ||
-      latest.headRefOid !== pr.headRefOid) {
+      latest.headRefOid !== pr.headRefOid || latest.title !== pr.title) {
     throw new Error(`PR #${number} changed since selection. Refresh and try again.`);
   }
   if (latest.mergeable === 'CONFLICTING') throw conflict();
@@ -55,10 +56,41 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (metadata?.stack) {
     throw new Error(`PR #${number} belongs to a GitHub-native stack. Use the bulk merge workflow to select the intended layers.`);
   }
+  // GitHub's native squash endpoint assigns the PR opener as Git author.
+  // For bot-opened PRs, locally squash on that same PR head with the original
+  // verified human author, then use GitHub's native one-commit rebase merge.
+  // Never submit a bot-authored native squash as a silent fallback.
+  if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
+    throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
+  }
+  if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
+    const landed = await humanMerge(repo, Number(number));
+    const finished = await read();
+    if (!landed.merged || finished.state !== 'MERGED' ||
+        finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
+      throw new Error('Human-authored squash landed but its GitHub PR state could not be verified.');
+    }
+    return { merged: true, repo, number, base: pr.baseRefName, pr: finished,
+      sha: landed.sha, author: landed.author };
+  }
   if (!pr.title || (metadata?.title && metadata.title !== pr.title)) {
     throw new Error(`PR #${number} title is unavailable or changed; merge blocked.`);
   }
-  const squash = squashMessage(pr.title, Number(number), await readCommits(api, repo, number));
+  // Do not trust a human PR opener as proof of original human authorship:
+  // GitHub's native squash credits the opener rather than the original author.
+  const commits = await readCommits(api, repo, Number(number));
+  const human = verifiedHumanAuthor(commits);
+  if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
+    const landed = await humanMerge(repo, Number(number));
+    const finished = await read();
+    if (!landed.merged || finished.state !== 'MERGED' ||
+        finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
+      throw new Error('Original human Git author was not verified after the guarded merge.');
+    }
+    return { merged: true, repo, number, base: pr.baseRefName, pr: finished,
+      sha: landed.sha, author: landed.author };
+  }
+  const squash = squashMessage(pr.title, Number(number), commits);
   let outcome;
   let resumed = false;
   try {
@@ -266,7 +298,7 @@ async function closeMergedPullRequestTab(vscode, result) {
 
 function registerGitHubPullRequestActions(vscode, context, merge = squashMergePullRequest) {
   const busy = new Set();
-  const handler = async node => {
+  const processMerge = async (node, progress) => {
     // Resolve the exact clicked PR row for both command entry points. A row
     // without a URL may expose it only through its asynchronous TreeItem.
     const model = await resolveMergeTarget(vscode, node);
@@ -276,6 +308,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     try {
       // Never invoke a merge with an unresolved or mismatched PR identity.
       if (!url) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
+      progress?.report?.({ message: `PR #${model.number}: checking merge eligibility…` });
       const confirmNonMain = async ({ number, base }) => {
         const action = `Squash into ${base}`;
         const choice = await vscode.window.showWarningMessage(
@@ -285,10 +318,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         );
         return choice === action;
       };
-      const result = await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Window,
-        title: `Squash-merging PR #${model?.number ?? ''}`, cancellable: false
-      }, () => merge(url, undefined, confirmNonMain));
+      const result = await merge(url, undefined, confirmNonMain);
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {
@@ -338,6 +368,21 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       busy.delete(url);
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
     }
+  };
+  const handler = (node, options) => {
+    // The PR sidebar's tree command starts its own notification at the exact
+    // click point. Do not show a second one when it forwards the selected URL.
+    if (options?.progressManaged === true) return processMerge(node);
+    // Open progress on the click, including while the GitHub PR extension is
+    // still resolving the exact row. This is a single ongoing notification,
+    // not an early claim that the merge succeeded.
+    const clicked = pullRequestFromTreeNode(node);
+    if (clicked.url && busy.has(clicked.url)) return;
+    return vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: clicked.number ? `Starting squash merge for PR #${clicked.number}…` : 'Starting squash merge…',
+      cancellable: false
+    }, progress => processMerge(node, progress));
   };
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),

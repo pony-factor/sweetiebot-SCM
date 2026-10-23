@@ -45,8 +45,14 @@ class BranchCleanupTests(unittest.TestCase):
         return subprocess.run(['git', 'show-ref', '--verify', '--quiet', 'refs/heads/topic'], cwd=self.repo).returncode == 0
 
     def test_verified_pr_evidence_is_written_only_to_managed_workspace(self):
+        self.check_managed_workspace_evidence("pony/ABC123")
+
+    def test_legacy_workspace_evidence_remains_supported(self):
+        self.check_managed_workspace_evidence("pony-ABC123")
+
+    def check_managed_workspace_evidence(self, relative):
         home = Path(self.temp.name) / "user-home"
-        group = home / "Library/Application Support/Sweetiebot/Workspaces/pony-ABC123"
+        group = home / "Library/Application Support/Sweetiebot/Workspaces" / relative
         root = group / "pony"
         root.mkdir(parents=True)
         (group / ".sweetiebot-workspace.json").write_text(json.dumps({

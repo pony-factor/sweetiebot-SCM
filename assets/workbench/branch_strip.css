@@ -16,6 +16,27 @@
     color: var(--vscode-foreground);
     font: var(--vscode-font-size) var(--vscode-font-family);
 }
+.scm-toolkit-branch-strip-filter {
+    box-sizing: border-box;
+    flex: 0 1 160px;
+    min-width: 90px;
+    height: 25px;
+    margin: 5px 2px 5px 7px;
+    padding: 0 7px;
+    border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+    border-radius: 4px;
+    outline: none;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font: inherit;
+    align-self: flex-start;
+}
+.scm-toolkit-branch-strip-filter::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+}
+.scm-toolkit-branch-strip-filter:focus {
+    border-color: var(--vscode-focusBorder);
+}
 .scm-toolkit-branch-strip-scroll {
     display: flex;
     box-sizing: border-box;

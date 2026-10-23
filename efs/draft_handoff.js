@@ -10,7 +10,8 @@ const MAX_REQUEST_BYTES = 100000;
 async function createDraftHandoff(publish) {
   // Load the PR-only asset when starting a handoff so an incomplete install
   // cannot prevent unrelated SCM commands from registering during activation.
-  const page = readFileSync(join(__dirname, 'draft_confirmation.html'), 'utf8');
+  const page = readFileSync(join(__dirname, 'draft_confirmation.html'), 'utf8')
+    .replace('__MARKDOWN_RENDERER__', readFileSync(join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'));
   const { normalizeKefaniaClosePosition } = require('./kefania_close_position');
   const drafts = new Map();
   async function publishDraft(id, state) {
@@ -39,7 +40,7 @@ async function createDraftHandoff(publish) {
     if (!state || state.expires < Date.now()) return fail(410, 'This confirmation page expired. Start the workflows again.');
     const kind = match[2];
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
       if (kind === 'close' || kind === 'merge') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
@@ -62,7 +63,6 @@ async function createDraftHandoff(publish) {
       } finally { state.merging = false; }
     }
     if (kind === 'close') {
-      if (!state.result) return fail(409, 'Publish the pull request before closing this window.');
       if (typeof state.onClose !== 'function') return fail(503, 'Cannot close the confirmation window automatically. Use its window controls.');
       try { await state.onClose(); return json(200, {closed:true}); }
       catch { return fail(503, 'Could not close the confirmation window. Use its window controls.'); }
@@ -102,7 +102,7 @@ async function createDraftHandoff(publish) {
   expiry.unref();
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, autoPublish = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, autoPublish, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, expires: Date.now() + 3600000}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { clearTimeout(expiry); drafts.clear(); server.close(); }
   };

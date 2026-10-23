@@ -96,6 +96,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     }
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
+    files[Path("commit_diagnostics_dashboard.py")] = here / "commit_diagnostics_dashboard.py"
     files[Path("commit_hotkey.py")] = here / "commit_hotkey.py"
     files[Path("toolkit_settings.py")] = here / "toolkit_settings.py"
     files[Path("message_bar.py")] = here / "message_bar.py"
@@ -103,6 +104,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("codex_colors.py")] = here / "codex_colors.py"
     files[Path("ai_commit.py")] = here / "ai_commit.py"
     files[Path("background_commit.py")] = here / "background_commit.py"
+    files[Path("merged_branch.py")] = here / "merged_branch.py"
     files[Path("post_commit_spellcheck.py")] = here / "post_commit_spellcheck.py"
     files[Path("sweetiebot_async_commit.py")] = here / "sweetiebot_async_commit.py"
     files[Path("sweetiebot_diagnostics.py")] = here / "sweetiebot_diagnostics.py"
@@ -111,9 +113,9 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("branch_name_packs.json")] = here / "branch_name_packs.json"
     files[Path("local_setup.py")] = here / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
-    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md", ".html"})):
+    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/images", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md", ".html"})):
         for source in (here.parent / directory).rglob("*"):
-            if source.is_file() and source.suffix in suffixes:
+            if source.is_file() and source.suffix.lower() in suffixes:
                 files[Path("codex-customizations") / source.relative_to(here.parent)] = source
     return dict(sorted(files.items()))
 

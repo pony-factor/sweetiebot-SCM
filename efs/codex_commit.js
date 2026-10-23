@@ -10,8 +10,9 @@ function generateMessage(script, cwd, context) {
     });
     let stdout = '';
     let stderr = '';
-    // Allow three 300-second Ollama attempts plus retry backoff and overhead.
-    const timeout = setTimeout(() => { child.kill(); reject(new Error('Local commit-message generation timed out. Ollama may be busy with OCR or another model.')); }, 960000);
+    // Python enforces the configured timeout × attempts budget (up to 9000s).
+    // Leave an extra minute for context collection and process shutdown.
+    const timeout = setTimeout(() => { child.kill(); reject(new Error('Local commit-message generation timed out. Ollama may be busy with OCR or another model.')); }, 9060000);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => { stdout += data; });
@@ -41,7 +42,129 @@ function normalizeStagedWhitespace(script, cwd) {
   });
 }
 
+
+const path = require('node:path');
+const activeCodexCommits = new Set();
+
+// Keyboard commands have no repository argument. Never guess when multiple SCM
+// repositories are open and none can be identified from the active editor.
+async function resolveCommitRepository(vscode, uri) {
+  const gitExtension = vscode.extensions.getExtension('vscode.git');
+  if (!gitExtension) throw new Error('The VS Code Git extension is unavailable.');
+  const git = await gitExtension.activate();
+  const api = git.getAPI(1);
+  if (uri) {
+    const root = vscode.Uri.from(uri?.rootUri ?? uri);
+    const repository = api.getRepository(root);
+    if (!repository) throw new Error('The selected Git repository is unavailable.');
+    return repository;
+  }
+  const repositories = api.repositories || [];
+  if (!repositories.length) throw new Error('No Git repository is open.');
+  if (repositories.length === 1) return repositories[0];
+  const editorPath = vscode.window.activeTextEditor?.document?.uri?.fsPath;
+  if (editorPath) {
+    const matching = repositories.filter(repository => {
+      const rootPath = repository.rootUri.fsPath;
+      const relative = path.relative(rootPath, editorPath);
+      return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
+    }).sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length);
+    if (matching.length) return matching[0];
+  }
+  const selections = repositories.map(repository => ({
+    label: path.basename(repository.rootUri.fsPath),
+    description: repository.rootUri.fsPath,
+    repository
+  }));
+  const selection = await vscode.window.showQuickPick(selections, {
+    title: 'Commit with Codex co-author',
+    placeHolder: 'Choose the repository to commit'
+  });
+  return selection?.repository;
+}
+
+function readCommitGitSetting(rootPath, name, fallback) {
+  return new Promise(resolve => {
+    execFile('git', ['config', '--get', name], { cwd: rootPath, timeout: 5000 },
+      (error, stdout) => resolve(error ? fallback : stdout.trim() || fallback));
+  });
+}
+
+function coauthorTrailer(name, email) {
+  if (typeof name !== 'string' || !name.trim() || name.length > 100
+      || /[\x00-\x1f\x7f<>\u2028\u2029]/.test(name)
+      || typeof email !== 'string' || email.length > 254
+      || !/^[^\s<>@]+@[^\s<>@]+$/.test(email)) {
+    throw new Error('Invalid co-author name or email in Sweetiebot settings.');
+  }
+  return 'Co-authored-by: ' + name + ' <' + email + '>';
+}
+
+function withCoauthorTrailer(message, trailer) {
+  const base = message.trimEnd();
+  if (!base) return '';
+  if (base.split(/\r?\n/).some(line => line.trim() === trailer)) return base;
+  return base + '\n\n' + trailer;
+}
+
+async function commitWithCodex(vscode, uri, options = {}) {
+  const repository = await resolveCommitRepository(vscode, uri);
+  if (!repository) return { cancelled: true };
+  const root = repository.rootUri;
+  const lockKey = root.toString();
+  if (activeCodexCommits.has(lockKey)) throw new Error('A Codex co-author commit is already in progress.');
+  activeCodexCommits.add(lockKey);
+  try {
+    const configuredName = options.trailer === undefined
+      ? await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-name', 'Codex')
+      : null;
+    const configuredEmail = options.trailer === undefined
+      ? await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-email', 'noreply@openai.com')
+      : null;
+    const trailer = options.trailer === undefined
+      ? coauthorTrailer(configuredName, configuredEmail)
+      : options.trailer;
+    // Validate even caller-provided trailers; no arbitrary commit-message injection.
+    if (typeof trailer !== 'string' || !/^Co-authored-by: [^\r\n<>]+ <[^\s<>@\r\n]+@[^\s<>@\r\n]+>$/.test(trailer)) {
+      throw new Error('Invalid Codex co-author trailer.');
+    }
+    const input = repository.inputBox;
+    const originalMessage = options.message === undefined ? (input?.value ?? '') : options.message;
+    if (typeof originalMessage !== 'string') throw new Error('The commit message must be text.');
+    const useCodexContext = options.codexCommitContext === undefined
+      ? (await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-commit-context', 'false')) === 'true'
+      : options.codexCommitContext === true;
+    if (!originalMessage.trim() && !useCodexContext) {
+      throw new Error('Enter a commit message before committing with Codex attribution.');
+    }
+    const push = vscode.workspace.getConfiguration('git', root).get('postCommitCommand') === 'push';
+    if (vscode.workspace.getConfiguration('scmToolkit', root).get('durableBackgroundCommits', false) === true) {
+      return await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
+        message: originalMessage, codex: true, trailer, push
+      });
+    }
+    let message = originalMessage;
+    if (!message.trim()) {
+      message = await vscode.commands.executeCommand('sweetiebot.generateCodexCommitMessage', root);
+    }
+    if (typeof message !== 'string' || !message.trim()) {
+      throw new Error('Local commit generation did not return a message.');
+    }
+    const result = await vscode.commands.executeCommand(
+      'sweetiebot.commitWithMessage', root, withCoauthorTrailer(message, trailer)
+    );
+    if (result?.queued || result?.cancelled) return result;
+    if (input && input.value === originalMessage) input.value = '';
+    return { committed: true, queued: false };
+  } finally {
+    activeCodexCommits.delete(lockKey);
+  }
+}
+
 function registerCodexCommitCommand(vscode, extensionContext) {
+  extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.commitWithCodex', (uri, options) =>
+    commitWithCodex(vscode, uri, options)
+  ));
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.commitWithMessage', async (uri, message) => {
     if (typeof message !== 'string' || !message.trim()) throw new Error('A commit message is required.');
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
@@ -50,7 +173,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     const queued = await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
       message, onlyIfPending: true
     });
-    if (queued?.queued || queued?.cancelled) return;
+    if (queued?.queued || queued?.cancelled) return queued;
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');
     const git = await extension.activate();
@@ -72,6 +195,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     if (configuration.get('postCommitCommand') === 'push') {
       await vscode.commands.executeCommand('git.push', root);
     }
+    return { committed: true };
   }));
   extensionContext.subscriptions.push(vscode.commands.registerCommand('sweetiebot.prepareCodexCommit', async (uri, options = {}) => {
     const extension = vscode.extensions.getExtension('vscode.git');

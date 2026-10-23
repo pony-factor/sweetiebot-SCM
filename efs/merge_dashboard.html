@@ -18,11 +18,21 @@ h3{margin:16px 0 8px;font-size:13px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
 .overview{display:flex;align-items:center;gap:12px}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
-.primary{background:var(--vscode-button-background);border:0;color:var(--vscode-button-foreground);border-radius:6px;padding:7px 13px}
+.refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
+.refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
+.refresh-icon svg{width:16px;height:16px}
 .bar{height:6px;background:var(--vscode-progressBar-background,#444);margin:0;border-radius:0;opacity:.3}
 .bar-fill{height:100%;background:var(--vscode-testing-iconPassed,#4cba78);width:0%;transition:width .2s}
-.layout{display:grid;grid-template-columns:minmax(250px,37%) minmax(360px,63%);height:calc(100vh - 122px);min-height:300px}
-aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+body{height:100vh;display:flex;flex-direction:column}
+header,.bar,.notice{flex-shrink:0}
+.layout{display:grid;grid-template-columns:minmax(0,var(--sidebar-width,37%)) 6px minmax(0,1fr);flex:1;min-height:0}
+aside{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.section-heading{flex-shrink:0}
+.splitter{background:var(--vscode-panel-border,#555);touch-action:none;flex-shrink:0;outline-offset:-2px}
+.splitter:hover,.splitter:focus-visible,.splitter.dragging{background:var(--vscode-focusBorder,#468cdb);outline:none}
+.splitter.vertical{cursor:col-resize}
+.splitter.horizontal{height:6px;cursor:row-resize}
+body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cursor)!important}
 .section-heading{padding:14px 16px 6px}
 .prs{overflow-y:auto;min-height:100px;flex:1;padding:4px 10px}
 .pr{display:block;text-align:left;width:100%;padding:11px;margin-bottom:8px;background:transparent;border:1px solid var(--vscode-widget-border,#555);border-radius:8px}
@@ -33,7 +43,12 @@ aside{border-right:1px solid var(--vscode-panel-border,#555);display:flex;flex-d
 .flag.merged,.flag.resolved{color:var(--vscode-testing-iconPassed,#3cbb78);border-color:currentColor}
 .flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
-.events{max-height:34%;min-height:170px;overflow:auto;border-top:1px solid var(--vscode-panel-border,#555);padding:10px 16px}
+.events{flex:0 0 var(--timeline-height,34%);min-height:0;overflow:auto;padding:10px 16px}
+.timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.timeline-heading h2{margin:0}
+.timeline-time-picker{display:flex;align-items:center;gap:5px;color:var(--vscode-descriptionForeground);font-size:11px}
+.timeline-time-picker select{font:inherit;color:var(--vscode-dropdown-foreground,var(--vscode-foreground));background:var(--vscode-dropdown-background,var(--vscode-input-background));border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,#555));border-radius:4px;padding:2px 4px;max-width:100%}
+.timeline-time-picker select:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:1px}
 .event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
@@ -45,20 +60,53 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
 .panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .panel h3{margin:0 0 8px}
+.markdown-panel{white-space:normal}
+.markdown-content{white-space:normal;overflow-wrap:anywhere;line-height:1.55}
+.markdown-content :first-child{margin-top:0}
+.markdown-content :last-child{margin-bottom:0}
+.markdown-content p{margin:8px 0;white-space:pre-wrap}
+.markdown-content h1,.markdown-content h2,.markdown-content h3,.markdown-content h4,.markdown-content h5,.markdown-content h6{margin:14px 0 6px;line-height:1.35}
+.markdown-content h1{font-size:18px}.markdown-content h2{font-size:16px}.markdown-content h3{font-size:14px}
+.markdown-content ul,.markdown-content ol{padding-left:22px;margin:8px 0}
+.markdown-content li{padding:2px 0}
+.markdown-content li input{margin:0 6px 0 0;vertical-align:middle}
+.markdown-content a{color:var(--vscode-textLink-foreground,#3794ff);text-decoration:underline;text-underline-offset:2px}
+.markdown-content a:hover{color:var(--vscode-textLink-activeForeground,#4daafc)}
+.markdown-content code{font-family:var(--vscode-editor-font-family,monospace);background:var(--vscode-textCodeBlock-background,#333);border-radius:3px;padding:1px 4px;white-space:pre-wrap}
+.markdown-content pre{white-space:pre;overflow:auto;margin:8px 0}
+.markdown-content pre code{padding:0;background:transparent;white-space:pre}
+.markdown-content blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,#777);margin:8px 0;padding:1px 0 1px 12px;color:var(--vscode-descriptionForeground)}
+.markdown-content table{display:block;max-width:100%;overflow:auto;border-collapse:collapse;margin:8px 0}
+.markdown-content th,.markdown-content td{padding:5px 8px;border:1px solid var(--vscode-widget-border,#555);text-align:left}
+.markdown-content hr{border:0;border-top:1px solid var(--vscode-widget-border,#555);margin:12px 0}
 .empty{color:var(--vscode-descriptionForeground);font-style:italic}
 .file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
 pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
+/* Resolved VS Code theme tokens already include workbench.colorCustomizations in settings.json. */
+pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-background,var(--vscode-textCodeBlock-background));color:var(--vscode-editor-foreground,var(--vscode-foreground))}
+.diff-line{display:block;box-sizing:border-box;width:max-content;min-width:100%;min-height:1.55em;padding:0 12px;border-inline-start:3px solid transparent;white-space:pre;line-height:1.55}
+.diff-line--added{background:var(--vscode-diffEditor-insertedLineBackground,rgba(46,160,67,.17));border-inline-start-color:var(--vscode-diffEditorGutter-insertedLineBackground,var(--vscode-gitDecoration-addedResourceForeground,#3fb950))}
+.diff-line--removed{background:var(--vscode-diffEditor-removedLineBackground,rgba(248,81,73,.17));border-inline-start-color:var(--vscode-diffEditorGutter-removedLineBackground,var(--vscode-gitDecoration-deletedResourceForeground,#f85149))}
+.diff-line--added .diff-line-text{background:var(--vscode-diffEditor-insertedTextBackground,transparent)}
+.diff-line--removed .diff-line-text{background:var(--vscode-diffEditor-removedTextBackground,transparent)}
+.diff-line-prefix{font-weight:700}
+.diff-line--added .diff-line-prefix{color:var(--vscode-gitDecoration-addedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--removed .diff-line-prefix{color:var(--vscode-gitDecoration-deletedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--hunk,.diff-line--meta{background:var(--vscode-diffEditor-unchangedRegionBackground,var(--vscode-editorWidget-background,transparent));color:var(--vscode-diffEditor-unchangedRegionForeground,var(--vscode-descriptionForeground))}
+.diff-line--note{color:var(--vscode-descriptionForeground)}
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
-@media(max-width:900px){.layout{grid-template-columns:minmax(205px,40%) minmax(250px,60%)}main{padding:14px}}
+@media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
+/* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
+@media(max-width:650px){body{height:auto;min-height:100vh}.layout{display:block;flex:none}aside{height:370px;border-bottom:1px solid var(--vscode-panel-border,#555)}.splitter.vertical{display:none}main{overflow:visible}}
 </style>
 </head>
 <body>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
-<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="primary">Refresh now</button></div>
+<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="notice" class="notice" hidden></div>
@@ -66,14 +114,124 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
 <aside aria-label="Merge timeline">
   <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
   <div id="prs" class="prs"></div>
-  <div class="events"><h2>Activity timeline</h2><div id="events"></div></div>
+  <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
+  <div id="timeline" class="events">
+    <div class="timeline-heading">
+      <h2>Activity timeline</h2>
+      <label class="timeline-time-picker" for="timeline-time-mode">Time
+        <select id="timeline-time-mode" aria-label="Activity timeline timestamps">
+          <option value="hidden">Hidden</option>
+          <option value="relative">Relative</option>
+          <option value="clock">Clock</option>
+        </select>
+      </label>
+    </div>
+    <div id="events"></div>
+  </div>
 </aside>
+<div id="details-splitter" class="splitter vertical" role="separator" tabindex="0" aria-label="Resize pull request list and details" aria-orientation="vertical" aria-controls="prs details"></div>
 <main id="details" aria-live="polite"><p class="empty">Waiting for live GitHub data…</p></main>
 </div>
+<script nonce="__NONCE__">
+__MARKDOWN_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__DIFF_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__TIMESTAMP_FORMATTER__
+</script>
 <script nonce="__NONCE__">
 (() => {
   const vscode = acquireVsCodeApi();
   const byId = id => document.getElementById(id);
+  const layout = document.querySelector('.layout');
+  const sidebar = document.querySelector('aside');
+  const savedLayout = vscode.getState() || {};
+  const validRatio = value => Number.isFinite(value) && value > 0 && value < 1;
+  let sidebarRatio = validRatio(savedLayout.sidebarRatio) ? savedLayout.sidebarRatio : null;
+  let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
+  let layoutPreferences = savedLayout.layoutPreferences || null;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  function saveLayout() {
+    vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
+  }
+  function bounds(kind) {
+    if (kind === 'sidebar') {
+      const total = layout.clientWidth - byId('details-splitter').offsetWidth;
+      return { total, min: Math.min(160, total / 2), max: total - Math.min(200, total / 2) };
+    }
+    const total = sidebar.clientHeight - sidebar.querySelector('.section-heading').offsetHeight - byId('timeline-splitter').offsetHeight;
+    return { total, min: Math.min(80, total / 2), max: total - Math.min(100, total / 2) };
+  }
+  function applySize(kind, requested) {
+    const { total, min, max } = bounds(kind);
+    if (total <= 0) return;
+    const size = clamp(requested, min, max);
+    if (kind === 'sidebar') layout.style.setProperty('--sidebar-width', size + 'px');
+    else sidebar.style.setProperty('--timeline-height', size + 'px');
+    const handle = byId(kind === 'sidebar' ? 'details-splitter' : 'timeline-splitter');
+    handle.setAttribute('aria-valuemin', Math.round(min / total * 100));
+    handle.setAttribute('aria-valuemax', Math.round(max / total * 100));
+    handle.setAttribute('aria-valuenow', Math.round(size / total * 100));
+    return size / total;
+  }
+  function restoreSizes() {
+    // Keep the saved wide-layout ratio while the details are stacked on narrow windows.
+    if (window.innerWidth > 650) {
+      applySize('sidebar', bounds('sidebar').total * (sidebarRatio ?? (window.innerWidth <= 900 ? 0.4 : 0.37)));
+    }
+    applySize('timeline', bounds('timeline').total * timelineRatio);
+  }
+  function rememberSize(kind, size) {
+    const ratio = applySize(kind, size);
+    if (ratio === undefined) return;
+    if (kind === 'sidebar') sidebarRatio = ratio;
+    else timelineRatio = ratio;
+  }
+  function setupSplitter(id, kind) {
+    const handle = byId(id);
+    let drag = null;
+    const position = event => kind === 'sidebar' ? event.clientX : event.clientY;
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || drag) return;
+      event.preventDefault();
+      handle.focus();
+      drag = { id: event.pointerId, start: position(event), size: kind === 'sidebar' ? sidebar.clientWidth : byId('timeline').offsetHeight };
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add('dragging');
+      document.body.classList.add('resizing');
+      document.body.style.setProperty('--resize-cursor', kind === 'sidebar' ? 'col-resize' : 'row-resize');
+    });
+    handle.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      rememberSize(kind, drag.size + (position(event) - drag.start) * (kind === 'sidebar' ? 1 : -1));
+    });
+    const finish = event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      drag = null;
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      saveLayout();
+    };
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) handle.addEventListener(type, finish);
+    handle.addEventListener('keydown', event => {
+      const keys = kind === 'sidebar' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowDown', 'ArrowUp'];
+      if (![...keys, 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const { min, max } = bounds(kind);
+      const current = kind === 'sidebar' ? sidebar.clientWidth : byId('timeline').offsetHeight;
+      rememberSize(kind, event.key === 'Home' ? min : event.key === 'End' ? max : current + (event.key === keys[0] ? -1 : 1) * (event.shiftKey ? 40 : 10));
+      saveLayout();
+    });
+  }
+  setupSplitter('details-splitter', 'sidebar');
+  setupSplitter('timeline-splitter', 'timeline');
+  const layoutObserver = new ResizeObserver(restoreSizes);
+  layoutObserver.observe(layout);
+  layoutObserver.observe(sidebar);
+  restoreSizes();
   let model = { prs: [], events: [] };
   let selected = null;
   const labels = {
@@ -92,12 +250,20 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
     parent.appendChild(node);
     return node;
   }
-  function dispatch(type, number) { vscode.postMessage({ type, number }); }
-  function showTextPanel(parent, heading, content, missing) {
-    const panel = el('section', 'panel');
+  function dispatch(type, number, url) { vscode.postMessage({ type, number, url }); }
+  function showTextPanel(parent, heading, content, missing, markdown = false) {
+    const panel = el('section', markdown ? 'panel markdown-panel' : 'panel');
     show('h3', '', heading, panel);
-    show('div', content ? '' : 'empty', content || missing, panel);
+    const body = el('div', content ? (markdown ? 'markdown-content' : '') : 'empty');
+    if (content && markdown) {
+      renderMergeMarkdown(body, content, {
+        baseUrl: 'https://github.com/' + model.repository + '/',
+        openLink: url => dispatch('open-link', undefined, url)
+      });
+    } else body.textContent = content || missing;
+    panel.appendChild(body);
     parent.appendChild(panel);
+    return body;
   }
   function renderDetail() {
     const parent = byId('details');
@@ -116,26 +282,25 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
       button.addEventListener('click', () => dispatch(item[0], pr.number));
     }
     if (pr.mergedAt) {
-      showTextPanel(parent, '✓ Verified outcome', 'GitHub merged this PR at ' +
-        new Date(pr.mergedAt).toLocaleString() +
-        (pr.mergeCommit ? '\nSquash/merge commit: ' + pr.mergeCommit : ''),
-        '');
+      const outcome = showTextPanel(parent, '✓ Verified outcome',
+        formatMergeOutcome(pr.mergedAt, pr.mergeCommit, model.timestampMode), '');
+      outcome.dataset.mergeOutcome = 'true';
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
     if (pr.review && pr.state !== 'merged') showTextPanel(parent,
-      'Human review requested · GitHub comment', pr.review.text, '');
+      'Human review requested · GitHub comment', pr.review.text, '', true);
     showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
-      'No AI merge report yet. The ChatGPT session can post one after verifying the work.');
+      'No AI merge report yet. The ChatGPT session can post one after verifying the work.', true);
     showTextPanel(parent, 'Original PR description', pr.description,
-      'No PR description supplied.');
+      'No PR description supplied.', true);
     show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
     if (!pr.files.length) show('p', 'empty', 'No file diff loaded yet.', parent);
     for (const file of pr.files) {
       const wrap = show('details', 'file', undefined, parent);
       const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
       show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
-      if (file.patch) show('pre', '', file.patch, wrap);
+      if (file.patch) renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch);
       else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
@@ -167,12 +332,20 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
     }
     list.scrollTop = listScroll;
     const events = byId('events');
+    const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
+      ? model.timestampMode : 'hidden';
+    byId('timeline-time-mode').value = timestampMode;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
     for (const event of model.events.slice(-100).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
-      show('div', 'event-time', new Date(event.at).toLocaleTimeString(), node);
+      const label = formatTimelineTimestamp(event.at, timestampMode);
+      if (label) {
+        const stamp = show('div', 'event-time', label, node);
+        stamp.dataset.eventAt = event.at;
+        stamp.title = new Date(event.at).toLocaleString();
+      }
     }
     events.scrollTop = eventScroll;
     if (selected === null && model.prs.length) selected = model.prs[0].number;
@@ -180,10 +353,38 @@ pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;over
   }
   window.addEventListener('message', event => {
     if (event.data?.type !== 'state') return;
+    const preferences = event.data.layoutPreferences;
+    if (preferences && Number.isInteger(preferences.sidebar) && preferences.sidebar >= 15 && preferences.sidebar <= 75 &&
+        Number.isInteger(preferences.timeline) && preferences.timeline >= 15 && preferences.timeline <= 80) {
+      if (preferences.sidebar !== layoutPreferences?.sidebar) sidebarRatio = preferences.sidebar / 100;
+      if (preferences.timeline !== layoutPreferences?.timeline) timelineRatio = preferences.timeline / 100;
+      layoutPreferences = preferences;
+      restoreSizes();
+      saveLayout();
+    }
     model = event.data;
     render();
   });
+  function refreshRelativeEventTimes() {
+    if (model.timestampMode !== 'relative') return;
+    for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
+      stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
+    }
+    const pr = model.prs.find(item => item.number === selected);
+    const outcome = byId('details').querySelector('[data-merge-outcome]');
+    if (pr?.mergedAt && outcome) {
+      outcome.textContent = formatMergeOutcome(pr.mergedAt, pr.mergeCommit, 'relative');
+    }
+  }
+  byId('timeline-time-mode').addEventListener('change', event => {
+    const mode = event.target.value;
+    if (!['hidden', 'relative', 'clock'].includes(mode)) return;
+    model.timestampMode = mode;
+    render();
+    vscode.postMessage({ type: 'timestamp-mode', mode });
+  });
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
+  setInterval(refreshRelativeEventTimes, 30000);
   dispatch('ready');
 })();
 </script>

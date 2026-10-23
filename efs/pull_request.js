@@ -441,6 +441,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         try { return await vscode.commands.executeCommand('sweetiebot.kefaniaThemeColors'); }
         catch { return null; }
       },
+      closeAfterMerge: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseAfterMerge', false),
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
       kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
