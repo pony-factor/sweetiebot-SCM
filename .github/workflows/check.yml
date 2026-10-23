@@ -22,10 +22,12 @@ jobs:
           python-version: "3.x"
 
       - name: Compile Python
-        run: python3 -m py_compile scripts/install.py scripts/configurator.py scripts/commit_diagnostics_dashboard.py scripts/message_bar.py scripts/message_bar_configurator.py scripts/branch_names.py scripts/ai_commit.py scripts/sweetiebot_async_commit.py scripts/model_picker.py scripts/workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_commit_diagnostics_dashboard.py tests/test_message_bar.py tests/test_branch_names.py tests/test_ai_commit.py tests/test_async_commit.py tests/test_model_picker.py tests/test_workspace_search.py
+        run: python3 -m py_compile scripts/install.py scripts/configurator.py scripts/commit_diagnostics_dashboard.py scripts/message_bar.py scripts/message_bar_configurator.py scripts/ai_commit.py scripts/sweetiebot_async_commit.py scripts/model_picker.py scripts/workspace_search.py tests/test_install.py tests/test_configurator.py tests/test_commit_diagnostics_dashboard.py tests/test_message_bar.py tests/test_ai_commit.py tests/test_async_commit.py tests/test_model_picker.py tests/test_workspace_search.py
 
-      - name: Run installer tests
-        run: python3 -m unittest discover -s tests -v
+      - name: Run Python tests (excluding branch-name catalog checks)
+        run: |
+          mapfile -t test_modules < <(find tests -maxdepth 1 -type f -name 'test_*.py' ! -name 'test_branch_names.py' -printf '%f\n' | sort | sed 's/\.py$//')
+          PYTHONPATH="scripts:tests" python3 -m unittest -v "${test_modules[@]}"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -49,6 +51,9 @@ jobs:
           node --check efs/extension.js
           failures=0
           for test_file in tests/test_*.js; do
+            if [ "$test_file" = tests/test_branch_name_selection.js ]; then
+              continue
+            fi
             if ! node "$test_file"; then
               echo "::error file=$test_file::JavaScript regression test failed"
               failures=$((failures + 1))
@@ -58,6 +63,32 @@ jobs:
             echo "$failures JavaScript test file(s) failed."
             exit 1
           fi
+
+  branch-names:
+    name: Branch name and pony pack checks
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check branch-name module syntax
+        run: |
+          python3 -m py_compile scripts/branch_names.py tests/test_branch_names.py
+          node --check efs/branch_name_selection.js
+          node --check tests/test_branch_name_selection.js
+      - name: Test pony name catalog and packs
+        run: python3 -m unittest discover -s tests -p 'test_branch_names.py' -v
+      - name: Test secure name selection and shared history
+        run: node tests/test_branch_name_selection.js
 
   human-squash:
     name: Human-authored PR merge regressions
