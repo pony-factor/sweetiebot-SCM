@@ -1,8 +1,9 @@
 name: Checks
 
 on:
+  # Run once for each push, not again when the same commit is in a pull request.
+  # PRs opened from this repository use the checks on their head commit.
   push:
-  pull_request:
 
 permissions:
   contents: read
@@ -74,3 +75,34 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Run ${{ matrix.label }} checks
         run: python3 scripts/ci_test_runner.py run "${{ matrix.group }}"
+
+  codex-webview-browser:
+    name: Chromium CSS and DOM regression
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium automation
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Browser-backed Codex webview simulation
+        run: |
+          python tests/test_codex_webview_browser.py
+          python tests/test_codex_webview_iframe.py
+      - name: Node.js timestamp and heading tests
+        run: |
+          node tests/test_codex_hide_chat_timestamps.js
+          node tests/test_codex_window_label.js
+          node tests/test_codex_usage.js
+      - name: Codex manifest label tests
+        env:
+          PYTHONPATH: scripts
+        run: python -m unittest discover -s tests -p test_codex_label.py -v
