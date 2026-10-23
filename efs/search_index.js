@@ -516,7 +516,14 @@ class SearchIndex {
       if (this.dirty.size) return this.refresh();
       return undefined;
     }).catch(() => {});
-    return { results: visibleResults.slice(0, settings.resultLimit), warning: this.embeddingWarning, mode: selectedMode };
+    const capWarning = this.githubFolder && this.files.size >= settings.maxFiles
+      ? 'GitHub-folder passage indexing reached the configured file limit (' + settings.maxFiles + '); some file contents may be omitted.'
+      : '';
+    return {
+      results: visibleResults.slice(0, settings.resultLimit),
+      warning: [this.embeddingWarning, capWarning].filter(Boolean).join(' '),
+      mode: selectedMode
+    };
   }
 }
 
