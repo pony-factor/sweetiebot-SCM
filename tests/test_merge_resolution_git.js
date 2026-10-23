@@ -89,7 +89,7 @@ const run = promisify(execFile);
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
     await assert.rejects(attempt({ expected: { ...expected, headSha: 'a'.repeat(40) } }), /changed/);
-    if (resolving) await assert.rejects(attempt({ expected: { ...expected, baseSha: 'b'.repeat(40) } }), /changed/);
+    if (resolving) await assert.rejects(attempt({ expected: { ...expected, baseSha: 'b'.repeat(40) } }), /changed|Base changed/);
     await assert.rejects(attempt({ api: async (endpoint, ...rest) => {
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, default_branch: 'feature' };
       return api(endpoint, ...rest);
@@ -137,4 +137,112 @@ const run = promisify(execFile);
     console.log('Real Git resolution patch, isolated checkout, guarded push and human-author squash passed.');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
  }
+ await successiveMerges();
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+async function successiveMerges() {
+ const { createMergeBatch } = require('../efs/merge_batch');
+ const { executeResolution } = require('../efs/merge_resolution');
+ const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-successive-test-'));
+ const working = path.join(root, 'working'), remote = path.join(root, 'remote.git');
+ const git = async (...args) => (await run('git', ['-c', 'core.hooksPath=/dev/null',
+   '-c', 'commit.gpgsign=false', '-c', 'user.name=John Wooten',
+   '-c', 'user.email=human@example.test', ...args])).stdout.trim();
+ let batch;
+ try {
+   await git('init', '--quiet', '--bare', '--initial-branch=main', remote);
+   await git('init', '--quiet', '--initial-branch=main', working);
+   const repo = (...args) => git('-C', working, ...args);
+   const file = path.join(working, 'price.js');
+   await fs.writeFile(file, 'function price(n) { return n * 2; }\n');
+   await repo('add', 'price.js'); await repo('commit', '--quiet', '-m', 'Initial fixture');
+   const initial = await repo('rev-parse', 'HEAD');
+   const heads = {};
+   for (const [number, code] of [[1, 'function price(n) { return n * 3; }\n'],
+     [2, 'function price(n, tax = 0) { return n * 2 + tax; }\n']]) {
+     await repo('checkout', '--quiet', '-B', 'feature-' + number, initial);
+     await fs.writeFile(file, code);
+     await repo('commit', '--quiet', '-am', 'Feature fixture\n\nCo-authored-by: Codex <noreply@openai.com>');
+     heads[number] = await repo('rev-parse', 'HEAD');
+   }
+   await repo('checkout', '--quiet', 'main');
+   await repo('remote', 'add', 'origin', remote);
+   await repo('push', '--quiet', 'origin', 'main', 'feature-1', 'feature-2');
+   const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
+   const author = { name: 'John Wooten', email: 'human@example.test' };
+   const merged = new Set();
+   const title = number => number === 1 ? '🐛 Correct the multiplier' : '✨ Add optional tax';
+   const snapshot = async number => ({ number, title: title(number), state: merged.has(number) ? 'closed' : 'open',
+     merged: merged.has(number), merge_commit_sha: merged.has(number) ? await branch('main') : null,
+     user: { type: 'Bot', login: 'codex-pony[bot]' }, mergeable: number === 1 || !merged.has(1),
+     head: { ref: 'feature-' + number, sha: await branch('feature-' + number), repo: { full_name: 'owner/repo' } },
+     base: { ref: 'main', sha: await branch('main'), repo: { full_name: 'owner/repo' } } });
+   const commit = async sha => ({ sha, author: { type: 'User', login: 'human' }, commit: { author,
+     message: await git('--git-dir=' + remote, 'show', '-s', '--format=%B', sha) },
+     parents: [{ sha: await git('--git-dir=' + remote, 'rev-parse', sha + '^') }] });
+   const api = async (endpoint, method, fields) => {
+     if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, default_branch: 'main' };
+     if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
+     if (endpoint.includes('/check-runs?')) {
+       const old = endpoint.includes(heads[2]);
+       return { check_runs: [{ id: 1, name: 'price tests', status: 'completed', conclusion: old ? 'failure' : 'success' }] };
+     }
+     if (endpoint.includes('/check-suites?')) return { check_suites: [] };
+     if (endpoint.includes('/status?')) return { statuses: [] };
+     if (endpoint.includes('/pulls?')) return [];
+     if (endpoint.includes('/commits?')) return [await commit(await branch('feature-' + endpoint.split('/')[4]))];
+     if (endpoint.includes('/commits/')) return commit(endpoint.split('/').at(-1));
+     const number = Number(endpoint.split('/')[4]);
+     if (endpoint.endsWith('/merge') && method === 'PUT') {
+       const head = await branch('feature-' + number), base = await branch('main');
+       assert(fields.includes('sha=' + head));
+       assert.equal(await git('--git-dir=' + remote, 'rev-parse', head + '^'), base);
+       await git('--git-dir=' + remote, 'update-ref', 'refs/heads/main', head, base);
+       merged.add(number);
+       return { merged: true, sha: head };
+     }
+     if (number) return snapshot(number);
+     throw Error('Unexpected endpoint ' + endpoint);
+   };
+   const localGit = async (...args) => { if (args[0] === 'clone') args[3] = remote; return git(...args); };
+   const selection = { repository: 'owner/repo', pullRequests: [1, 2].map(number => ({ number,
+     title: title(number), url: 'https://github.com/owner/repo/pull/' + number,
+     head: 'feature-' + number, headSha: heads[number], base: 'main' })) };
+   batch = await createMergeBatch(selection, { api, destination: 'https://chatgpt.com/',
+     execute: (input, selected) => executeResolution(input, selected, { merge: (repository, number, options) =>
+       humanSquashMerge(repository, number, { ...options, api, git: localGit, checkOptions: { timeoutMs: 0 },
+         temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) }) }) });
+   const submit = async (url, number, patch = null) => {
+     const launch = new URLSearchParams(new URL(url).hash.slice(1));
+     const callback = launch.get('return_to');
+     const response = await fetch(callback, { method: 'POST', headers: {
+       Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
+       version: 1, repository: 'owner/repo', results: [{ number, headSha: heads[number], baseSha: await branch('main'),
+         patch, explanation: number === 1 ? 'Correct the multiplier to three.' : 'Keep multiplier three and add optional tax.' }] }) });
+     assert.equal(response.status, 200);
+     return response.json();
+   };
+   const first = await submit(batch.url, 1);
+   assert.equal(first.results[0].status, 'merged');
+   const conflict = await submit(first.continueUrl, 2);
+   assert.equal(conflict.results[0].status, 'needs_resolution');
+   assert.deepEqual(conflict.results[0].conflictPaths, ['price.js']);
+   assert.equal(await branch('feature-2'), heads[2], 'A detected conflict does not push a partial tree');
+   const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
+   const final = await submit(conflict.continueUrl, 2, patch);
+   assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
+   assert.equal(final.batch.merged.length, 2);
+   assert.deepEqual(final.batch.deferred, []);
+   const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
+   const price = require('node:vm').runInNewContext(code + '; price;');
+   assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
+   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
+   const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
+   assert(message.startsWith(title(2) + ' (#2)\n'));
+   assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
+   assert.equal(await repo('rev-parse', 'HEAD'), initial);
+   assert.equal(await repo('status', '--porcelain'), '');
+   assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('executor-')), []);
+   console.log('Successive real Git merges preserve the earlier fix and later feature, tolerate old failed checks, and retain human attribution.');
+ } finally { batch?.dispose(); await fs.rm(root, { recursive: true, force: true }); }
+}

@@ -33,6 +33,8 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false } = 
   const failed = activeRuns.filter(run => run.status === 'completed' && !passing.has(run.conclusion))
     .map(run => String(run.name || 'GitHub check'));
   failed.push(...activeStatuses.filter(status => ['failure', 'error'].includes(status.state)).map(status => String(status.context)));
+  failed.push(...suites.filter(suite => suite.status === 'completed' && suite.conclusion && !passing.has(suite.conclusion) &&
+    !activeRuns.some(run => run.check_suite?.id === suite.id)).map(suite => String(suite.app?.name || 'GitHub check suite')));
   if (failed.length) return { state: 'failed', names: [...new Set(failed)], hasChecks: true };
   const hasChecks = Boolean(runs.length || suites.length || statuses.length);
   const pending = activeRuns.some(run => run.status !== 'completed') ||

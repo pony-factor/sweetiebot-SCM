@@ -86,7 +86,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             conflictPaths: item.conflictPaths || [], baseSha: item.baseSha || pr.baseSha };
           history.push(detail);
           if (item.merged === true && item.status === 'merged') merged.push(detail);
-          else if (['waiting', 'checks_failed'].includes(item.status) && item.previousHeadSha === pr.headSha && SHA.test(item.sha || '')) {
+          else if (['waiting', 'checks_failed', 'needs_refresh'].includes(item.status) && item.previousHeadSha === pr.headSha && SHA.test(item.sha || '')) {
             // Only our verified executor can refresh an authorized head.
             pr.headSha = item.sha;
           }

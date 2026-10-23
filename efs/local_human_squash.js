@@ -52,11 +52,12 @@ async function humanSquashMerge(repository, number, {
     return branch.commit.sha;
   };
   const baseSha = await readBaseTip();
+  const refreshBase = () => Object.assign(Error('Base changed; refresh the remaining PR and regenerate its current-base resolution.'), { code: 'MERGE_BASE_CHANGED' });
   if (expected && (originalSha !== expected.headSha || base !== expected.base ||
-      head !== expected.head || original.title !== expected.title ||
-      (resolutionPatch !== null && baseSha !== expected.baseSha))) {
+      head !== expected.head || original.title !== expected.title)) {
     throw Error('Selected PR head, base or title changed; prepare a fresh handoff.');
   }
+  if (resolutionPatch !== null && baseSha !== expected.baseSha) throw refreshBase();
   if (resolutionPatch !== null && (!expected || typeof resolutionPatch !== 'string' ||
       !resolutionPatch.trim() || Buffer.byteLength(resolutionPatch) > 60000)) {
     throw Error('A complete bounded resolution patch requires an exact selected snapshot.');
@@ -123,10 +124,11 @@ async function humanSquashMerge(repository, number, {
         : 'Checks failed on the integrated PR head: ' + checks.names.join(', ') };
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title || fresh.head?.sha !== sha ||
-        await readBaseTip() !== baseSha || fresh.base?.ref !== base ||
+        fresh.base?.ref !== base ||
         fresh.head?.ref !== head || fresh.stack) {
       throw Error('PR changed before GitHub merge; inspect the updated head and base.');
     }
+    if (await readBaseTip() !== baseSha) throw Object.assign(refreshBase(), { sha, previousHeadSha: originalSha });
     const outcome = await api(prPath + '/merge', 'PUT',
       ['-f', 'sha=' + sha, '-f', 'merge_method=rebase']);
     if (outcome?.merged !== true || !SHA.test(outcome.sha || '')) {
@@ -160,9 +162,10 @@ async function humanSquashMerge(repository, number, {
     await inRepo('fetch', '--quiet', 'origin', 'refs/heads/' + base, 'refs/heads/' + head);
     const liveBase = await inRepo('rev-parse', 'refs/remotes/origin/' + base);
     const liveHead = await inRepo('rev-parse', 'refs/remotes/origin/' + head);
-    if (liveBase !== baseSha || liveHead !== originalSha) {
+    if (liveHead !== originalSha) {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
+    if (liveBase !== baseSha) throw refreshBase();
     const mergeBase = await inRepo('merge-base', liveBase, liveHead);
     if (!SHA.test(mergeBase)) throw Error('No verified common ancestor.');
     const originalFiles = (await inRepo('diff', '--name-only', '-z', mergeBase, liveHead)).split('\0').filter(Boolean).sort();
@@ -228,10 +231,11 @@ async function humanSquashMerge(repository, number, {
     // Re-read GitHub before the ONLY force-with-lease, scoped strictly to the selected head.
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title || fresh.head?.sha !== originalSha ||
-        await readBaseTip() !== baseSha || fresh.base?.ref !== base ||
+        fresh.base?.ref !== base ||
         fresh.head?.ref !== head || fresh.stack) {
       throw Error('PR changed before guarded push; no branch was modified.');
     }
+    if (await readBaseTip() !== baseSha) throw refreshBase();
     // Close the PR-dependency race between the first preflight and this push.
     await checkHeadIsolation();
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
@@ -239,12 +243,17 @@ async function humanSquashMerge(repository, number, {
     pushedSha = preparedSha;
     const rewritten = await api(prPath);
     if (rewritten?.state !== 'open' || rewritten.draft || rewritten.title !== original.title || rewritten.head?.sha !== preparedSha ||
-        rewritten.base?.ref !== base || await readBaseTip() !== baseSha) {
+        rewritten.base?.ref !== base) {
       throw Error('PR changed after guarded push; inspect the selected branch before merging.');
     }
+    if (await readBaseTip() !== baseSha) throw refreshBase();
     // Native GitHub rebase merge records the same bot-opened PR as merged.
     return await finish(preparedSha, message);
   } catch (error) {
+    if (error.code === 'MERGE_BASE_CHANGED') {
+      if (pushedSha) Object.assign(error, { sha: pushedSha, previousHeadSha: originalSha });
+      throw error;
+    }
     if (pushedSha) throw Error(error.message + ' Prepared head: ' + pushedSha + '; original head: ' + originalSha + '. Retry from a fresh selection after checks/reviews pass.');
     throw error;
   } finally {

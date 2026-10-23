@@ -42,7 +42,9 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
-      results.push({ number: item.number, status: 'blocked', reason: error.message });
+      results.push({ number: item.number, status: error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
+        reason: error.message, ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?
+          { sha: error.sha, previousHeadSha: error.previousHeadSha } : {}) });
     }
   }
   return { repository: selection.repository, results };
@@ -65,7 +67,7 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
     const result = JSON.parse(stdout);
     if (result.repository !== selection.repository || !Array.isArray(result.results) ||
         result.results.length !== input.results.length || result.results.some((item, index) =>
-          item.number !== input.results[index].number || !['merged', 'blocked', 'needs_resolution', 'waiting', 'checks_failed'].includes(item.status))) {
+          item.number !== input.results[index].number || !['merged', 'blocked', 'needs_resolution', 'needs_refresh', 'waiting', 'checks_failed'].includes(item.status))) {
       throw Error('Local CLI returned an invalid merge result.');
     }
     return result;
