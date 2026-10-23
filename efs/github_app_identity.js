@@ -4,6 +4,7 @@
 // whereas changing a Git author, co-author trailer or display name does not.
 const { createSign } = require('node:crypto');
 const { readFile } = require('node:fs/promises');
+const { savedEnvironment, readKeychainKey } = require('./github_app_settings');
 
 const REPOSITORY = /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/;
 const SLUG = /^[a-z\d](?:[a-z\d-]{0,98}[a-z\d])?$/;
@@ -11,6 +12,7 @@ const ROLES = new Set(['kefania', 'lindsey']);
 const API = 'https://api.github.com';
 
 function separateAppsEnabled(env = process.env) {
+  env = savedEnvironment(env);
   const mode = env.SWEETIEBOT_BOT_IDENTITY_MODE || 'legacy';
   if (mode !== 'legacy' && mode !== 'separate-apps') {
     throw new Error('SWEETIEBOT_BOT_IDENTITY_MODE must be legacy or separate-apps.');
@@ -19,18 +21,20 @@ function separateAppsEnabled(env = process.env) {
 }
 
 function roleSettings(role, env = process.env) {
+  env = savedEnvironment(env);
   if (!ROLES.has(role)) throw new Error('Unknown GitHub App workflow role.');
   const prefix = 'SWEETIEBOT_' + role.toUpperCase() + '_APP_';
   const id = String(env[prefix + 'ID'] || '');
   const slug = String(env[prefix + 'SLUG'] || '').toLowerCase();
   const inlineKey = env[prefix + 'PRIVATE_KEY'];
   const keyFile = env[prefix + 'PRIVATE_KEY_FILE'];
+  const keychain = env[prefix + 'KEYCHAIN'] === 'true';
   if (!/^\d+$/.test(id) || !SLUG.test(slug) ||
-      Boolean(inlineKey) === Boolean(keyFile)) {
+      [inlineKey, keyFile, keychain].filter(Boolean).length !== 1) {
     throw new Error('Configure ' + prefix + 'ID, ' + prefix + 'SLUG and exactly one of ' +
-      prefix + 'PRIVATE_KEY or ' + prefix + 'PRIVATE_KEY_FILE.');
+      prefix + 'PRIVATE_KEY or ' + prefix + 'PRIVATE_KEY_FILE, or save a key in Magic Settings.');
   }
-  return { id, slug, inlineKey, keyFile };
+  return { id, slug, inlineKey, keyFile, keychain };
 }
 
 function workflowBotLogin(role, env = process.env) {
@@ -65,12 +69,13 @@ function signAppJwt(appId, key, now) {
 
 async function getRoleInstallationToken(role, repository, {
   env = process.env, fetchImpl = globalThis.fetch, now = Date.now,
-  readKey = readFile
+  readKey = readFile, keychainKey = readKeychainKey
 } = {}) {
   if (!separateAppsEnabled(env)) throw new Error('Distinct GitHub App mode is not enabled.');
   if (!REPOSITORY.test(repository || '')) throw new Error('Invalid GitHub repository for GitHub App authorization.');
   const config = roleSettings(role, env);
-  const key = config.keyFile ? await readKey(config.keyFile, 'utf8') : config.inlineKey.replace(/\\n/g, '\n');
+  const key = config.keychain ? await keychainKey(role) : config.keyFile
+    ? await readKey(config.keyFile, 'utf8') : config.inlineKey.replace(/\\n/g, '\n');
   const jwt = signAppJwt(config.id, key, now());
   const request = async (endpoint, authorization, method = 'GET', body) => {
     let response;

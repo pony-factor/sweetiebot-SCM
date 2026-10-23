@@ -36,6 +36,8 @@ from local_setup import (
 )
 from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
+from github_apps_ui import APP_PANEL, APP_SCRIPT
+from github_apps import app_status, save_app, save_mode, check_connection
 
 
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -800,6 +802,7 @@ def render_form(
     section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))
     section_names.remove("GitHub")
     section_names.insert(section_names.index("Codex"), "GitHub")
+    section_names.insert(section_names.index("GitHub") + 1, "GitHub Apps")
     section_names.append("Diagnostics")
     for index, section in enumerate(section_names):
         controls = "".join(
@@ -809,6 +812,8 @@ def render_form(
         )
         if section == "Diagnostics":
             controls = DIAGNOSTICS_PANEL
+        if section == "GitHub Apps":
+            controls = APP_PANEL
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
@@ -932,6 +937,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
+{APP_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
@@ -1473,6 +1479,7 @@ def run_configurator(
     outcome: dict[str, bool | None] = {"saved": None}
     session_settings = dict(current)
     hotkey_lock = threading.Lock()
+    app_lock = threading.Lock()
     rebuild_lock = threading.Lock()
     rebuild_status = {"running": False, "finished": False, "error": False, "message": ""}
 
@@ -1523,6 +1530,9 @@ def run_configurator(
             if path == "/health":
                 self._send_json({"instance": server_instance})
                 return
+            if path == "/github-apps":
+                self._send_json(app_status())
+                return
             if path == "/diagnostics":
                 self._send_json(read_diagnostics())
                 return
@@ -1557,6 +1567,11 @@ def run_configurator(
             if not self._authorized():
                 self._send("<h1>Not found</h1>", 404)
                 return
+            if urllib.parse.urlsplit(self.path).path.startswith("/github-apps/"):
+                expected = f"http://127.0.0.1:{self.server.server_port}"
+                if self.headers.get("Origin") != expected or self.headers.get("Host") != expected[7:]:
+                    self._send_json({"error": "Invalid settings origin."}, 403)
+                    return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
@@ -1599,6 +1614,24 @@ def run_configurator(
                     self.wfile.write(b'{"error":"Download interrupted. Retry the download."}\n')
                 return
             path = urllib.parse.urlsplit(self.path).path
+            if path.startswith("/github-apps/"):
+                try:
+                    with app_lock:
+                        if path == "/github-apps/save":
+                            result = save_app(values)
+                        elif path == "/github-apps/mode":
+                            result = save_mode(values.get("mode", [""])[0])
+                        elif path == "/github-apps/check":
+                            result = check_connection(values.get("role", [""])[0], values.get("repository", [""])[0])
+                        else:
+                            self._send_json({"error": "Unknown App action."}, 404)
+                            return
+                    self._send_json(result)
+                except (RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                except Exception:
+                    self._send_json({"error": "App setup could not complete. Check local Git and Keychain access."}, 400)
+                return
             if path == "/commit-hotkey":
                 if not keybindings_file:
                     self._send_json({"error": "Open Settings through VS Code to edit shortcuts."}, 409)
