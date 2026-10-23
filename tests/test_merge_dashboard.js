@@ -33,6 +33,8 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
+  assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked');
   assert.equal(mergePhase({ state: 'open', mergeable: true,
     head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'resolved');
   assert.equal(mergePhase({ state: 'open', mergeable: true,
@@ -188,6 +190,18 @@ const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashb
   await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
   assert.deepEqual(openings, [url, url + '/files', 'https://example.org/reference'],
     'Only validated web links open through the extension host');
+  info = { ...info, mergeable_state: 'unstable' };
+  await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].state, 'blocked');
+  assert.equal(events.at(-1).events.at(-1).message, 'PR is open; checks are not passing');
+  info = { ...info, mergeable_state: 'blocked' };
+  await dashboard.refresh();
+  assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
+    'A changed blocking reason is reported even when the phase stays blocked');
+  info = { ...info, state: 'closed', merged: false };
+  await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].state, 'closed');
+  assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',
     merge_commit_sha: 'c'.repeat(40) };
   await dashboard.refresh();

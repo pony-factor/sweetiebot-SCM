@@ -72,14 +72,15 @@ function reportFromComments(comments) {
 
 function mergePhase(pr, previous) {
   if (pr.merged || pr.merged_at) return 'merged';
+  if (pr.state === 'closed') return 'closed';
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
   if (previous.review && !previous.report) return 'review';
+  if (pr.mergeable_state === 'unstable' || pr.mergeable_state === 'blocked') return 'blocked';
   if (previous.sawConflict && pr.mergeable === true && pr.head?.sha !== previous.originalHead) {
     return 'resolved';
   }
-  if (pr.mergeable_state === 'queued' || pr.mergeable_state === 'unstable') return 'queued';
-  if (pr.mergeable_state === 'blocked') return 'blocked';
+  if (pr.mergeable_state === 'queued') return 'queued';
   if (pr.head?.sha && pr.head.sha !== previous.originalHead) return 'updated';
   return 'waiting';
 }
@@ -182,6 +183,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     const changed = info.head?.sha !== item.currentHead;
     const before = item.state;
+    const previousMessage = item.statusMessage;
     if (changed) {
       item.currentHead = info.head?.sha || '';
       addEvent(item, 'updated', 'PR head changed; reviewing the new GitHub diff');
@@ -208,18 +210,22 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const next = mergePhase(info, item);
     item.state = next;
     if (next === 'conflict') item.sawConflict = true;
-    if (before !== next) {
-      const labels = {
-        merged: 'GitHub confirms the pull request was merged',
-        resolved: 'Conflict cleared after head revision; awaiting merge',
-        conflict: 'GitHub reports merge conflicts',
-        review: 'Human review required',
-        queued: 'GitHub reports the pull request is queued',
-        blocked: 'Merge is blocked or PR was closed',
-        updated: 'PR head differs from the selected snapshot',
-        waiting: 'GitHub reports the PR is open; awaiting merge'
-      };
-      addEvent(item, next, labels[next]);
+    const labels = {
+      merged: 'GitHub confirms the pull request was merged',
+      closed: 'PR was closed without merging',
+      resolved: 'Conflict cleared after head revision; awaiting merge',
+      conflict: 'GitHub reports merge conflicts',
+      review: 'Human review required',
+      queued: 'GitHub reports the pull request is queued',
+      blocked: info.state !== 'open' ? 'GitHub PR state is unavailable; merging is blocked'
+        : info.mergeable_state === 'unstable' ? 'PR is open; checks are not passing'
+        : 'PR is open; merging is blocked',
+      updated: 'PR head differs from the selected snapshot',
+      waiting: 'GitHub reports the PR is open; awaiting merge'
+    };
+    item.statusMessage = labels[next];
+    if (before !== next || previousMessage !== item.statusMessage) {
+      addEvent(item, next, item.statusMessage);
     }
     item.mergeable = info.mergeable;
     item.mergeableState = info.mergeable_state || '';
