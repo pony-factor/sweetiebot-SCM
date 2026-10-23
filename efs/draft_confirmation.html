@@ -70,7 +70,7 @@ const el = id => document.getElementById(id);
 let lastProfile, lastBody;
 let imageSources=[],currentImage=-1,focusBeforeLightbox,imageGeneration=0;
 const lightbox=el('image-lightbox');
-// Round the artwork itself, including when object-fit adds letterboxing.
+// Round expanded artwork only, including when object-fit adds letterboxing.
 function roundArtwork(img){
   const width=img.clientWidth,height=img.clientHeight;
   if(!width||!height||!img.naturalWidth||!img.naturalHeight)return;
@@ -82,7 +82,6 @@ function roundArtwork(img){
 const artworkObserver=typeof ResizeObserver==='function'?new ResizeObserver(entries=>{
   for(const entry of entries)roundArtwork(entry.target);
 }):null;
-const artworkThumbnails=new Set();
 el('lightbox-image').addEventListener('load',()=>roundArtwork(el('lightbox-image')));
 artworkObserver?.observe(el('lightbox-image'));
 function safeLink(url){try{const value=new URL(url);return ['https:','http:'].includes(value.protocol)&&!value.username&&!value.password?value.href:null}catch{return null}}
@@ -139,8 +138,6 @@ function stepImage(delta){
   if(currentImage>=0&&imageSources.length>1)showImage((currentImage+delta+imageSources.length)%imageSources.length);
 }
 function imageIndex(profile){
-  for(const img of artworkThumbnails)artworkObserver?.unobserve(img);
-  artworkThumbnails.clear();
   if(lightbox.open)lightbox.close();
   const generation=++imageGeneration;
   el('images').replaceChildren();
@@ -183,8 +180,6 @@ function imageIndex(profile){
     img.alt=captionText;
     img.referrerPolicy='no-referrer';
     img.decoding='async';
-    artworkThumbnails.add(img);
-    artworkObserver?.observe(img);
     caption.textContent=captionText;
     img.onload=()=>{
       if(generation!==imageGeneration||!img.naturalWidth||candidate.loaded)return;
