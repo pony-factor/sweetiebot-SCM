@@ -28,10 +28,14 @@ header,.bar,.notice{flex-shrink:0}
 .layout{display:grid;grid-template-columns:minmax(0,var(--sidebar-width,37%)) 6px minmax(0,1fr);flex:1;min-height:0}
 aside{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 .section-heading{flex-shrink:0}
-.splitter{background:var(--vscode-panel-border,#555);touch-action:none;flex-shrink:0;outline-offset:-2px}
-.splitter:hover,.splitter:focus-visible,.splitter.dragging{background:var(--vscode-focusBorder,#468cdb);outline:none}
+.splitter{position:relative;background:transparent;touch-action:none;flex-shrink:0;outline-offset:-2px}
+.splitter::before{content:"";position:absolute;background:var(--vscode-panel-border,#555);opacity:.6;pointer-events:none}
+.splitter:hover,.splitter:focus-visible,.splitter.dragging{outline:none}
+.splitter:hover::before,.splitter:focus-visible::before,.splitter.dragging::before{background:var(--vscode-focusBorder,#468cdb);opacity:1}
 .splitter.vertical{cursor:col-resize}
+.splitter.vertical::before{top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%)}
 .splitter.horizontal{height:6px;cursor:row-resize}
+.splitter.horizontal::before{left:0;right:0;top:50%;height:2px;transform:translateY(-50%)}
 body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cursor)!important}
 .section-heading{padding:14px 16px 6px}
 .prs{overflow-y:auto;min-height:100px;flex:1;padding:4px 10px}
@@ -53,12 +57,15 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
+.event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
 main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .detail-top h2{flex:1;margin:0}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
 .panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.blocker-choice{margin-top:12px;white-space:normal}.blocker-choice .muted{margin-top:4px}
 .panel h3{margin:0 0 8px}
 .markdown-panel{white-space:normal}
 .markdown-content{white-space:normal;overflow-wrap:anywhere;line-height:1.55}
@@ -234,6 +241,7 @@ __TIMESTAMP_FORMATTER__
   restoreSizes();
   let model = { prs: [], events: [] };
   let selected = null;
+  let actionEngine = 'web';
   const labels = {
     waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Resolved',
     conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
@@ -275,8 +283,9 @@ __TIMESTAMP_FORMATTER__
     show('h2', '', '#' + pr.number + ' ' + pr.title, top);
     show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
     if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
-    show('div', 'muted', pr.head + ' → ' + pr.base +
+    const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base) +
       (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
+    branchLine.title = pr.head + ' → ' + pr.base;
     const actions = show('div', 'actions', undefined, parent);
     for (const item of [['open-pr', 'View PR'], ['open-diff', 'GitHub file diff']]) {
       const button = show('button', 'secondary', item[1], actions);
@@ -293,6 +302,33 @@ __TIMESTAMP_FORMATTER__
       'Human review requested · GitHub comment', pr.review.text, '', true);
     showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
       'No AI merge report yet. The ChatGPT session can post one after verifying the work.', true);
+    if (pr.blockerOptions?.length) {
+      const choices = show('section', 'panel', undefined, parent);
+      show('h3', '', 'Choose how to proceed', choices);
+      const destination = show('label', 'actions', 'Run with ', choices);
+      const engine = show('select', '', undefined, destination);
+      engine.setAttribute('aria-label', 'Implementation destination');
+      for (const [value, label] of [['web', 'GPT web'], ['codex', 'Codex branch workspace']]) {
+        const option = show('option', '', label, engine);
+        option.value = value;
+      }
+      engine.value = actionEngine;
+      engine.addEventListener('change', () => { actionEngine = engine.value; });
+      for (const option of pr.blockerOptions) {
+        const row = show('div', 'blocker-choice', undefined, choices);
+        const button = show('button', 'secondary', option.label, row);
+        button.disabled = Boolean(pr.actionPending);
+        button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
+          headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
+        if (option.description) show('div', 'muted', option.description, row);
+        if (option.recommended) show('div', 'muted', 'Recommended · see the report for reasoning and tradeoffs', row);
+        else if (option.suggested) show('div', 'muted', 'Suggested in the blocker report', row);
+        const instructions = show('details', '', undefined, row);
+        show('summary', 'muted', 'View instructions', instructions);
+        show('p', '', option.prompt, instructions);
+      }
+      if (pr.actionPending) show('p', 'muted', 'Opening the selected implementation…', choices);
+    }
     showTextPanel(parent, 'Original PR description', pr.description,
       'No PR description supplied.', true);
     show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
@@ -328,7 +364,8 @@ __TIMESTAMP_FORMATTER__
       const row = show('div', 'row', undefined, button);
       show('span', 'name', '#' + pr.number + ' ' + pr.title, row);
       show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
-      show('div', 'muted', pr.head + ' → ' + pr.base, button);
+      const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
+      branchLine.title = pr.head + ' → ' + pr.base;
       button.addEventListener('click', () => { selected = pr.number; render(); });
     }
     list.scrollTop = listScroll;
@@ -338,9 +375,10 @@ __TIMESTAMP_FORMATTER__
     byId('timeline-time-mode').value = timestampMode;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
-    for (const event of model.events.slice(-100).reverse()) {
+    for (const event of model.events.slice(-400).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
+      if (event.details) show('div', 'event-details', event.details, node);
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {
         const stamp = show('div', 'event-time', label, node);

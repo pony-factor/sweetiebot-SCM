@@ -127,6 +127,13 @@ f = fixture({ url: 'https://chatgpt.com/#sweetiebot_pr=1&sweetiebot_merge=1&q=Am
 f.tick(); assert.equal(f.clicks(), 0, 'Reject ambiguous launch markers');
 console.log('Fragment and merge handoff checks passed.');
 
+const mergeCallback = 'http://127.0.0.1:1234/lindsey-merge/11111111-2222-4333-8444-555555555555';
+const mergeReturn = mergeCallback + '#result=' + encodeURIComponent(JSON.stringify({ version: 1, repository: 'owner/repo', results: [] }));
+f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: 'Merge #41 & #42', resultLinks: [mergeReturn], streaming: true });
+f.tick(2500); assert.equal(f.navigations.length, 0);
+f.setStreaming(false); f.tick(2500);
+assert.deepEqual(f.navigations, [mergeReturn], 'Collect a completed local merge result automatically for sequential continuation');
+
 const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);

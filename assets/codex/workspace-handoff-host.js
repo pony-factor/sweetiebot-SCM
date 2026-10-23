@@ -56,6 +56,42 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
     } : undefined;
     if (guardedSend) connection.sendProviderRequest = guardedSend;
 
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.openChatCheckout', async expectedThreadId => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (!identity?.threadId || identity.threadId !== expectedThreadId) {
+            throw new Error('The visible chat changed. Try the button again.');
+        }
+        const thread = await read(identity.threadId);
+        const cwd = await canonical(thread.cwd);
+        if (!(await fs.stat(cwd)).isDirectory()) throw new Error('The recorded checkout is not a folder.');
+        // Opening the existing folder does not checkout a branch, interrupt a turn,
+        // or rebind the worker. Keep this window and its drafts intact.
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(cwd), { forceNewWindow: true });
+        return { threadId: identity.threadId, cwd };
+    }));
+
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.startBlockerTask', async ({ cwd, prompt }) => {
+        const root = await canonical(cwd);
+        const folders = vscode.workspace.workspaceFolders || [];
+        const roots = await Promise.all(folders.filter(folder => folder.uri.scheme === 'file').map(folder => canonical(folder.uri.fsPath)));
+        if (!roots.includes(root) || typeof prompt !== 'string' || !prompt.trim() || prompt.length > 24000) {
+            throw new Error('The implementation task does not match this Codex workspace.');
+        }
+        // A new thread leaves every existing chat, draft and worker untouched.
+        // Omit approval/model overrides so the configured defaults still apply.
+        const started = await send('thread/start', { cwd: root });
+        const threadId = started?.thread?.id;
+        if (!threadId || await canonical(started.thread.cwd || started.cwd) !== root) {
+            throw new Error('Codex did not confirm the implementation workspace.');
+        }
+        bindings.set(threadId, root);
+        provider.navigateToRoute('/local/' + threadId);
+        await vscode.commands.executeCommand('chatgpt.openSidebar');
+        await send('turn/start', { threadId, cwd: root, clientUserMessageId: randomUUID(),
+            input: [{ type: 'text', text: prompt, text_elements: [] }] });
+        return { threadId, cwd: root };
+    }));
+
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.prepareWorkspaceHandoff', async ({ from }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
         if (!identity?.threadId) return null;

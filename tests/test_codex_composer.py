@@ -8,6 +8,28 @@ import codex_composer
 
 
 class RetiredComposerPatchTests(unittest.TestCase):
+    def test_custom_placeholders_use_external_display_and_restore_exact_source(self):
+        source = ('a.formatMessage({id:`homePage.composer.placeholder.askAnything.v2`,'
+                  'defaultMessage:`Ask anything`,description:`New chat`});'
+                  'b.formatMessage({id:`composer.placeholder.localFollowUp.locally`,'
+                  'defaultMessage:`Ask for changes`,description:`Follow up`})')
+        settings = {'codexNewChatPlaceholder': 'Soar', 'codexFollowUpPlaceholder': 'Flap'}
+        patched = codex_composer.transform_placeholders(source, settings)
+        self.assertIn('new Set(["Soar", "Flap"])', patched)
+        self.assertIn('aria-hidden', patched)
+        self.assertEqual(codex_composer.transform_placeholders(patched, settings), patched)
+        self.assertEqual(codex_composer.transform_placeholders(patched, {}), source)
+
+    def test_legacy_placeholder_patch_is_upgraded(self):
+        original = ('a.formatMessage({id:`composer.placeholder.localFollowUp.locally`,'
+                    'defaultMessage:`Ask for changes`,description:`Follow up`})')
+        replacement = '("Flap"/* scm-toolkit:codexFollowUpPlaceholder */)'
+        legacy = (replacement + codex_composer.PLACEHOLDER_START
+                  + json.dumps([[original, replacement]]) + codex_composer.PLACEHOLDER_END)
+        patched = codex_composer.transform_placeholders(legacy, {'codexFollowUpPlaceholder': 'Flap'})
+        self.assertIn(codex_composer.PLACEHOLDER_DISPLAY_START, patched)
+        self.assertEqual(codex_composer.transform_placeholders(patched, {}), original)
+
     def test_clipboard_native_service_discovery_and_reinstallation(self):
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory) / 'app-initial-fixture.js'
