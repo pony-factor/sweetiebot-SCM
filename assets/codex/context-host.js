@@ -20,6 +20,12 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     provider.handleMessage = function(webview, message) {
+        if (message?.type === 'scm-toolkit-open-chat-checkout') {
+            // Resolve identity in this host; never accept a filesystem path from the DOM.
+            void vscode.commands.executeCommand('sweetiebot.codex.openChatCheckout', message.threadId)
+                .catch(error => vscode.window.showErrorMessage('Cannot open this chat’s checkout: ' + error.message));
+            return;
+        }
         if (message?.type === 'scm-toolkit-context-response') return;
         return originalHandleMessage.call(this, webview, message);
     };

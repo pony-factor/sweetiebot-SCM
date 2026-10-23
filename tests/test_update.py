@@ -26,10 +26,10 @@ class UpdateTests(unittest.TestCase):
     def test_nested_images_survive_all_distribution_paths(self):
         import build_installer_app
         entries = {
-            'assets/images/twi-stop.png': 'sticker',
-            'assets/images/more/another.PNG': 'another sticker',
-            'assets/images/more/animation.webp': 'animation',
-            'assets/images/ignored.txt': 'excluded',
+            'assets/imgs/twi-stop.png': 'sticker',
+            'assets/imgs/more/another.PNG': 'another sticker',
+            'assets/imgs/more/animation.webp': 'animation',
+            'assets/imgs/ignored.txt': 'excluded',
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

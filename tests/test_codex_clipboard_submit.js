@@ -157,6 +157,49 @@ async function runClipboardChecks() {
     await hooks.sendClipboard(clipboardButton);
     assert.equal(editor.value, 'draft with attachment');
     assert.equal(nativeClicks, 1);
+
+    // Codex's ProseMirror view changes synchronously, while its persisted
+    // React draft may still be empty. The clipboard action must send the
+    // live editor text without depending on that lagging saved value.
+    editor.querySelector = () => null;
+    submit.disabled = false;
+    let liveText = 'old ProseMirror text';
+    let persistedText = '';
+    let setCalls = 0;
+    editor.__scmToolkitComposer = {
+        view: {
+            isDestroyed: false,
+            state: { doc: {
+                content: { size: 1 },
+                textBetween: () => liveText,
+            } },
+        },
+        getPersistedText: () => persistedText,
+        setPromptText(text, options) {
+            assert.equal(options.format, 'plain');
+            liveText = text;
+            setCalls++;
+        },
+    };
+    submit.click = () => { nativeClicks++; liveText = ''; };
+    clipboardText = 'send from the live ProseMirror document';
+    timeoutTicks = 0;
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(nativeClicks, 2, 'clicks native Send even when persistence lags');
+    assert.equal(setCalls, 1);
+    assert.equal(liveText, '', 'native Send clears the submitted document');
+
+    // If the native editor silently declines the replacement, never submit
+    // its older nonempty draft, even when a Send button is already enabled.
+    liveText = 'do not send this old draft';
+    editor.__scmToolkitComposer.setPromptText = () => {};
+    clipboardText = 'new clipboard prompt';
+    timeoutTicks = 0;
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(nativeClicks, 2, 'does not submit an unchanged old draft');
+    assert.equal(timeoutTicks, 25, 'waits for the new text instead of guessing');
+    assert.equal(liveText, 'do not send this old draft');
+    assert.match(clipboardButton.title, /not ready/);
 }
 runClipboardChecks().then(() => console.log('Codex clipboard submission checks passed.')).catch(error => {
     console.error(error);

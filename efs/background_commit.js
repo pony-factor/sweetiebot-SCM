@@ -89,6 +89,16 @@ function registerBackgroundCommit(vscode, context) {
   let output;
   const generation = new Map();
   const generationRevision = new Map();
+  const pendingPushes = new Set();
+  let pushing;
+  const setPushPending = async (root, pending) => {
+    if (pending) pendingPushes.add(root);
+    else pendingPushes.delete(root);
+    const value = pendingPushes.size > 0;
+    if (value === pushing) return;
+    await vscode.commands.executeCommand('setContext', 'sweetiebot.pushPending', value);
+    pushing = value;
+  };
   const showGeneration = root => {
     if (generation.has(root)) return;
     let finish;
@@ -116,12 +126,18 @@ function registerBackgroundCommit(vscode, context) {
       const extension = vscode.extensions.getExtension('vscode.git');
       if (!extension) return;
       const git = await extension.activate();
-      for (const repository of git.getAPI(1).repositories || []) {
+      const repositories = git.getAPI(1).repositories || [];
+      const roots = new Set(repositories.map(repository => repository.rootUri.fsPath));
+      for (const root of pendingPushes) {
+        if (!roots.has(root)) await setPushPending(root, false);
+      }
+      for (const repository of repositories) {
         const root = repository.rootUri.fsPath;
         const revision = generationRevision.get(root);
         const status = await readStatus(script, root);
         if (!status) continue;
         if (revision === generationRevision.get(root)) {
+          await setPushPending(root, status.pushPending === true);
           if (status.titleJobs?.length) showGeneration(root);
           else closeGeneration(root);
         }
@@ -163,6 +179,8 @@ function registerBackgroundCommit(vscode, context) {
   context.subscriptions.push({ dispose() {
     clearInterval(timer);
     for (const root of generation.keys()) closeGeneration(root);
+    pendingPushes.clear();
+    void vscode.commands.executeCommand('setContext', 'sweetiebot.pushPending', false);
   } });
   void scan().catch(() => {});
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queuePush', async (uri, options = {}) => {
@@ -175,6 +193,8 @@ function registerBackgroundCommit(vscode, context) {
     }
     const result = await enqueue(script, root.fsPath, options, '--request-push');
     if (result.queued) {
+      generationRevision.set(root.fsPath, (generationRevision.get(root.fsPath) || 0) + 1);
+      await setPushPending(root.fsPath, true);
       void vscode.window.showInformationMessage(
         'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
     }
@@ -230,8 +250,11 @@ function registerBackgroundCommit(vscode, context) {
       remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
     });
     if (result.queued) {
-      await repository.status();
       generationRevision.set(root.fsPath, (generationRevision.get(root.fsPath) || 0) + 1);
+      if (options.push ?? configuration.get('postCommitCommand') === 'push') {
+        await setPushPending(root.fsPath, true);
+      }
+      await repository.status();
       if (!String(options.message ?? '').trim()) showGeneration(root.fsPath);
     }
     return result;

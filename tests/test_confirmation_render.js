@@ -30,6 +30,16 @@ const images=getElementById('images');
 const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
 const context=vm.createContext({URL,URLSearchParams,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
 vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
+// The clip follows the fitted image edges rather than the letterboxed element.
+const artwork={clientWidth:1000,clientHeight:600,naturalWidth:400,naturalHeight:600,style:{}};
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 300px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:1000,naturalWidth:600,naturalHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(300px 0px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 0px round 64pt)');
 // Theme colors update in place, and disabling the option removes stale tokens.
 const themeProperties=new Map();
 document.documentElement={
@@ -131,8 +141,8 @@ assert.equal(getElementById('lightbox-prev').hidden,true);
 assert.equal(getElementById('lightbox-next').hidden,true);
 getElementById('lightbox-image').fire('error');
 assert.equal(getElementById('lightbox-error').hidden,false,'Failed full images offer a source fallback');
-getElementById('lightbox-close').fire('click');
-assert.equal(lightbox.open,false,'Close button dismisses modal');
+lightbox.fire('click',{target:getElementById('lightbox-error')});
+assert.equal(lightbox.open,false,'Clicking outside artwork dismisses the modal');
 assert.equal(focused.focused,true,'Focus returns to thumbnail');
 img.onerror();
 assert.equal(images.children.length,0,'Failed thumbnails disappear entirely, including their attribution-only cards');
@@ -169,8 +179,26 @@ assert.equal(images.children[1].children[1].textContent,'Second');
 assert.equal(getElementById('lightbox-caption').textContent,'Second · 2 of 2','Loading a preceding image preserves the displayed artwork');
 assert.equal(getElementById('lightbox-prev').hidden,false);
 const galleryHeight=lightbox.style.height;
+const galleryWidth=lightbox.style.width;
 getElementById('lightbox-next').fire('click');
 assert.equal(lightbox.style.height,galleryHeight,'The viewer never changes height on previous/next navigation');
+assert.equal(lightbox.style.width,galleryWidth,'The widest fitted image fixes both arrow positions across navigation');
+const envelope=vm.runInContext(`(()=>{
+  const saved=imageSources;
+  try{
+    imageSources=[{width:400,height:1600}];
+    fitLightboxToGallery();
+    const portraitWidth=parseFloat(lightbox.style.width);
+    imageSources.push({width:1600,height:400});
+    fitLightboxToGallery();
+    return {portraitWidth,width:parseFloat(lightbox.style.width),height:parseFloat(lightbox.style.height)};
+  }finally{imageSources=saved;fitLightboxToGallery()}
+})()`,context);
+const arrowGutters=2*(48+12);
+const fittedPortraitWidth=(1920*.95-48-16)/4;
+assert.equal(envelope.portraitWidth,Math.ceil(fittedPortraitWidth+arrowGutters),'Portrait-only galleries collapse to their fitted artwork plus external arrow gutters');
+assert.equal(envelope.width,960*.72,'A wide image sets the common outer boundary within the viewport budget');
+assert.equal(envelope.height,1920*.95,'The tallest fitted image sets a stable common height');
 mockWindow.innerHeight=1100;
 mockWindow.listeners.resize();
 assert(Number.parseInt(lightbox.style.height,10)<=mockWindow.innerHeight*0.95,'Resizing keeps the viewer within the viewport');
@@ -179,8 +207,16 @@ lightbox.fire('keydown',{key:'ArrowRight'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/second.png','Next wraps');
 lightbox.fire('keydown',{key:'ArrowLeft'});
 assert.equal(getElementById('lightbox-image').src,'https://example.com/first.png','Previous wraps');
-lightbox.fire('click',{clientX:400,clientY:400});
-assert.equal(lightbox.open,true,'Interior clicks do not dismiss');
+for(const id of ['lightbox-image','lightbox-prev','lightbox-next']){
+  lightbox.fire('click',{target:getElementById(id)});
+  assert.equal(lightbox.open,true,'Artwork and arrow clicks do not dismiss');
+}
+lightbox.fire('click',{target:new Element('div'),clientX:400,clientY:400});
+assert.equal(lightbox.open,false,'Empty space inside the viewer dismisses');
+trigger.fire('click');
+lightbox.fire('click',{target:getElementById('lightbox-caption')});
+assert.equal(lightbox.open,false,'The credits strip also dismisses');
+trigger.fire('click');
 lightbox.fire('click',{clientX:40,clientY:40});
 assert.equal(lightbox.open,false,'Backdrop click closes');
 const blockedStart=pendingImages.length;
@@ -224,10 +260,13 @@ assert.match(html, /for\(const position of \['left','middle','right'\]\)document
 assert.match(html, /\.close-button-left header\{padding-left:44px\}/, 'Only visible left X reserves header space');
 assert.match(html, /\.lightbox\[open\]\{display:grid;grid-template-rows:minmax\(0,1fr\) auto\}/, 'Lightbox has only image and footer rows');
 assert.doesNotMatch(html, /class="lightbox-toolbar"/, 'No empty top banner');
+assert.doesNotMatch(html, /lightbox-close/, 'The image viewer has no X button');
 assert.match(html, /\.lightbox-nav\{[^}]*position:absolute;top:50%[^}]*height:min\(75%,560px\)/, 'Arrows resize with the compact image stage instead of spanning empty space');
 assert.match(html, /function fitLightboxToGallery\(\)/, 'Artwork dimensions determine a common height across the carousel');
 assert.match(html, /source\.height=img\.naturalHeight/, 'Natural image dimensions are retained for fitting');
 assert.match(html, /\.lightbox-stage img\{[^}]*width:0;height:100%[^}]*object-fit:contain/, 'All images use one contained stage size');
+assert.match(html, /padding:8px calc\(var\(--arrow-width\) \+ var\(--arrow-gap\)\)/, 'Image padding reserves the full arrow width plus a gap on each side');
+assert.match(html, /\.lightbox-nav\{[^}]*width:var\(--arrow-width\)/, 'Arrow widths match the reserved gutters');
 assert.doesNotMatch(html, /PR drafting and pony research finish independently\./, 'Redundant footer is removed');
 assert.match(html, /state\.pony\?' and supporting character research':''/, 'Pony research is named only when there is a matching pony');
 assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');

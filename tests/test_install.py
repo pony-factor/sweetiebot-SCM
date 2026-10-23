@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import types
@@ -118,6 +119,153 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_window_naming_preserves_defaults_and_independent_templates(self):
+        native = '''class Title {
+initialize(){this.checkTitleVariables(),this.registerListeners()}
+registerListeners(){}
+onActiveEditorChange(){this.titleIncludesEditorState&&this.activeEditorListeners.add(this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))}
+getFullWindowTitle(){let{prefix:e,suffix:t}=this.getTitleDecorations(),i=this.getWindowTitle()||this.productService.nameLong;return i}
+doUpdateTitle(){let e=this.getFullWindowTitle();if(e!==this.title){this.title=e;this.onDidChangeEmitter.fire()}}
+onConfigurationChanged(e){let t=e.affectsConfiguration("window.title");t&&this.checkTitleVariables(),t&&this.titleUpdater.schedule()}
+checkTitleVariables(){let e=this.configurationService.getValue("window.title");typeof e==="string"&&(this.titleIncludesFocusedView=e.includes("${focusedView}"),this.titleIncludesEditorState=e.includes("${activeEditorState}"))}
+getWindowTitle(){let z=this.configurationService.getValue("window.title");typeof z!=="string"&&(z="${rootName}");!this.titleIncludesEditorState&&this.accessibilityService.isScreenReaderOptimized()&&this.configurationService.getValue("accessibility.windowTitleOptimized")&&(z+="${separator}${activeEditorState}");return render(z)}isCustomTitleFormat(){return!1}
+}'''
+        original = workbench_fixture() + native
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        transformed = native
+        for before, after in install.window_title_push_edits(native) + install.window_title_naming_edits(native):
+            transformed = transformed.replace(before, after)
+        subprocess.run(['node', '-e', r'''
+            const assert = require('node:assert/strict');
+            const values = {'window.title': '${activeEditorShort} — ${appName}'};
+            const tokens = {rootName:'repository',activeRepositoryBranchName:'branch',
+                activeEditorShort:'file.md',appName:'Code',focusedView:'Explorer',
+                separator:' — ',activeEditorState:'Modified'};
+            function render(template) {
+                return template.replace(/\$\{([^}]+)\}/g, (_, key) => tokens[key] || '');
+            }
+        ''' + transformed + '''
+            let pending = false, scheduled = 0, changes = 0;
+            const title = new Title();
+            Object.assign(title, {
+                configurationService:{getValue:key => values[key]},
+                contextKeyService:{getContextKeyValue:() => pending},
+                accessibilityService:{isScreenReaderOptimized:() => false},
+                productService:{nameLong:'Code'},
+                getTitleDecorations:() => ({}),
+                registerVariables:() => {},
+                titleUpdater:{schedule:() => scheduled++}
+                ,onDidChangeEmitter:{fire:() => changes++}
+            });
+            title.initialize();
+            title.doUpdateTitle();
+            assert.equal(changes,1);
+            assert.equal(title.getWindowTitle(), 'file.md — Code');
+            assert.equal(title.getFullWindowTitle(), 'file.md — Code');
+            assert.equal(title.isCustomTitleFormat(), false);
+            values['scmToolkit.windowHeading']='${rootName} (${activeRepositoryBranchName})';
+            title.onConfigurationChanged({affectsConfiguration:key=>key==='scmToolkit.windowHeading'});
+            title.doUpdateTitle();
+            assert.equal(changes,2,'heading changes refresh the UI even when the native window name stays the same');
+            assert.equal(scheduled,1);
+            assert.equal(title.getWindowTitle(),'repository (branch)');
+            assert.equal(title.getFullWindowTitle(),'file.md — Code');
+            assert.equal(title.isCustomTitleFormat(),true);
+            values['scmToolkit.windowName']='${rootName} — ${focusedView}';
+            title.onConfigurationChanged({affectsConfiguration:key=>key==='scmToolkit.windowName'});
+            assert.equal(title.titleIncludesFocusedView,true);
+            assert.equal(title.getFullWindowTitle(),'repository — Explorer');
+            pending=true;
+            assert.equal(title.getWindowTitle(),'repository (branch) — Pushing');
+            assert.equal(title.getFullWindowTitle(),'repository — Explorer — Pushing');
+            pending=false;
+            values['scmToolkit.windowHeading']='';values['scmToolkit.windowName']='';
+            assert.equal(title.getWindowTitle(),'file.md — Code');
+            assert.equal(title.getFullWindowTitle(),'file.md — Code');
+        '''], check=True, capture_output=True, text=True)
+
+    def test_window_push_title_is_reversible_and_tracks_context(self):
+        title = (
+            'this.checkTitleVariables(),this.registerListeners();'
+            'getFullWindowTitle(){let{prefix:e,suffix:t}=this.getTitleDecorations(),'
+            'i=this.getWindowTitle()||this.productService.nameLong;return i}'
+        )
+        original = workbench_fixture() + title
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        transformed = title
+        for before, after in install.window_title_push_edits(title):
+            transformed = transformed.replace(before, after)
+        method = transformed.split(';getFullWindowTitle()', 1)[1]
+        subprocess.run(['node', '-e', '''
+            const assert = require('node:assert/strict');
+            let pending = false;
+            const title = {
+                getTitleDecorations: () => ({}),
+                getWindowTitle: () => 'repository (branch)',
+                contextKeyService: {getContextKeyValue(key) {
+                    assert.equal(key, 'sweetiebot.pushPending'); return pending;
+                }},
+                productService: {nameLong: 'Code'},
+                configurationService: {getValue: () => ''},
+                getFullWindowTitle() ''' + method + '''
+            };
+            assert.equal(title.getFullWindowTitle(), 'repository (branch)');
+            pending = true;
+            assert.equal(title.getFullWindowTitle(), 'repository (branch) — Pushing');
+            pending = false;
+            assert.equal(title.getFullWindowTitle(), 'repository (branch)');
+        '''], check=True, capture_output=True, text=True)
+
+    def test_implicit_title_status_refreshes_after_external_commit(self):
+        listener = (
+            'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+            'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+        )
+        original = workbench_fixture() + listener
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        _, after = install.window_title_status_edits(listener)[0]
+        # The accessibility-generated suffix uses decorations even when the
+        # explicit title template does not include activeEditorState.
+        subprocess.run(['node', '-e', '''
+            const assert = require('node:assert/strict');
+            let onDecoration, scheduled = 0, disposed = false;
+            const subscriptions = [];
+            const service = {
+                titleIncludesEditorState: false,
+                activeEditorListeners: {add(subscription) {
+                    assert.equal(typeof subscription.dispose, 'function');
+                    subscriptions.push(subscription);
+                }},
+                decorationsService: {onDidChangeDecorations(callback) {
+                    onDecoration = callback;
+                    return {dispose() {disposed = true;}};
+                }},
+                titleUpdater: {schedule() {scheduled++;}}
+            };
+        ''' + f'function subscribe() {{{after}}}; subscribe.call(service);' + '''
+            assert.equal(typeof onDecoration, 'function');
+            onDecoration(); // Git decoration cleared after the external commit.
+            assert.equal(scheduled, 1);
+            subscriptions.forEach(subscription => subscription.dispose());
+            assert.equal(disposed, true);
+        '''], check=True, capture_output=True, text=True)
+
+    def test_title_status_rejects_changed_or_ambiguous_native_listener(self):
+        listener = (
+            'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+            'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+        )
+        with self.assertRaisesRegex(ValueError, 'window title status listener'):
+            install.window_title_status_edits('checkTitleVariables(){}')
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            install.window_title_status_edits(listener + listener)
+
     def test_native_push_handoff_is_reversible(self):
         original = ('class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
                     'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));}'
@@ -293,7 +441,9 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertIn("scmToolkit.autoPublishNewBranches", js)
         self.assertIn('[id="workbench.view.scm"] .monaco-progress-container', css)
         self.assertIn(".pane:has(.scm-view) > .monaco-progress-container", css)
-        self.assertEqual(js.count("className = 'scm-toolkit-tooltip'"), 5)
+        self.assertEqual(js.count("className = 'scm-toolkit-tooltip'"), 6)
+        self.assertIn("scm-toolkit-stacked-branch codicon codicon-layers", js)
+        self.assertIn("sweetiebot.createStackedBranch", js)
         self.assertIn(".scm-toolkit-autocomplete:hover > .scm-toolkit-tooltip", css)
         self.assertIn("Co-authored-by: Codex <noreply@openai.com>", js)
         self.assertIn("currentInput?.repository.provider.acceptInputCommand", js)
@@ -684,6 +834,26 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             )
         self.assertEqual(install.pr_workspace_explorer_edits(workbench_fixture()), [])
 
+    def test_explorer_migrates_stale_contents_title_metadata(self):
+        source = workbench_fixture() + pr_explorer_fixture()
+        patched, css = install.transform(source, 'base-css', settings=SETTINGS)
+        before, payload = patched.split(install.START, 1)
+        # Reproduce the installed folder-name code with older Contents metadata.
+        payload = payload.replace(
+            '?this.contextService.getWorkspace().folders[0].name:',
+            '?\\"Contents\\":',
+        )
+        stale = before + install.START + payload
+        self.assertNotEqual(stale, patched)
+        self.assertEqual(install.transform(stale, css, settings=SETTINGS), (patched, css))
+        self.assertEqual(install.transform(stale, css, remove=True), (source, 'base-css'))
+        for unexpected in (
+            before.replace('folders[0].name:', 'folders[0].path:'),
+            before + install.pr_workspace_explorer_edits(source)[1][1],
+        ):
+            with self.assertRaisesRegex(ValueError, 'Installed toolkit patch changed'):
+                install.transform(unexpected + install.START + payload, css, settings=SETTINGS)
+
     def test_pr_explorer_supports_inlined_folder_state(self):
         original = workbench_fixture() + pr_explorer_fixture().replace(
             'WorkbenchState.FOLDER', '2'
@@ -910,7 +1080,26 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(hidden, enabled=True), patched)
 
     def test_installer_app_includes_bundled_twilight_artwork(self):
-        self.assertIn(Path("assets/images/twi-stop.png"), build_installer_app.source_files())
+        self.assertIn(Path("assets/imgs/twi-stop.png"), build_installer_app.source_files())
+
+    def test_semantic_rate_limit_bundle_can_be_discovered_after_copy_changes(self):
+        source = 'const view={"data-composer-navigation-target":true,"data-testid":"codex-rate-limit-alert",role:"alert"};'
+        self.assertTrue(install.codex_bundle_matches(source))
+        changed = install.transform_codex(source, sticker_enabled=False)
+        self.assertIn(install.CODEX_LIMIT_START, changed)
+        self.assertIn("scmToolkitSemanticRateLimitNodes", changed)
+        self.assertEqual(install.transform_codex(changed, remove=True), source)
+        self.assertFalse(install.codex_bundle_matches('const docs="quota limit";'))
+
+    def test_sticker_can_be_disabled_without_disabling_compaction(self):
+        original = 'const modernStatus = "You’re out of Codex messages";'
+        disabled = install.transform_codex(original, sticker_enabled=False)
+        self.assertIn(install.CODEX_LIMIT_START, disabled)
+        self.assertIn("scmToolkitCompactUntimedRateLimitBranch", disabled)
+        self.assertIn("const scmToolkitRateLimitStickerEnabled = false;", disabled)
+        self.assertNotIn("data:image/png;base64,", disabled)
+        self.assertEqual(install.transform_codex(disabled, sticker_enabled=False), disabled)
+        self.assertEqual(install.transform_codex(disabled, remove=True), original)
 
     def test_rate_limit_sticker_works_without_legacy_transcript_ids(self):
         original = 'const modernStatus = "You’re out of Codex messages";'
@@ -1162,6 +1351,28 @@ class CodexDictationTests(unittest.TestCase):
         self.assertIn("scm-toolkit-codex-timestamps:start", patched)
         self.assertIn("scm-toolkit-codex-dictation:start", patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+
+class InstallerScriptsLayoutTests(unittest.TestCase):
+    def test_install_command_runs_from_checkout_root(self):
+        root = Path(__file__).resolve().parents[1]
+        launcher = root / "scripts/install.command"
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(launcher.stat().st_mode & 0o111)
+        self.assertFalse((root / "Install Sweetiebot.command").exists())
+        source = launcher.read_text(encoding="utf-8")
+        self.assertIn('cd -- "$(dirname -- "$0")/.."', source)
+        self.assertIn("python3 scripts/build_installer_app.py", source)
+        self.assertIn('open "$PWD/Sweetiebot Installer.app"', source)
+
+    def test_ci_runner_and_inventory_share_directory(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertTrue((root / "scripts/ci/ci_test_runner.py").is_file())
+        self.assertTrue((root / "scripts/ci/ci_test_groups.json").is_file())
+        self.assertFalse((root / "scripts/ci_test_runner.py").exists())
+        self.assertFalse((root / "scripts/ci_test_groups.json").exists())
+        workflow = (root / ".github/workflows/check.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("scripts/ci/ci_test_runner.py"), 3)
 
 
 if __name__ == "__main__":

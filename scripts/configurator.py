@@ -25,6 +25,7 @@ from commit_diagnostics_dashboard import (
 )
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
+import codex_sticker
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from local_setup import (
     configure_signing_key,
@@ -36,10 +37,57 @@ from local_setup import (
 )
 from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
+from window_title_configurator import WINDOW_TITLE_SCRIPT, WINDOW_TITLE_STYLE, render_heading
+from github_apps_ui import APP_PANEL, APP_SCRIPT
+from github_apps import app_status, save_app, save_mode, check_connection
 
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 MAX_FORM_BYTES = 512 * 1024
+STICKER_UPLOAD_LIMIT = codex_sticker.MAX_STICKER_BYTES
+
+STICKER_SCRIPT = r"""
+const stickerPicker = document.getElementById('sticker-upload');
+const stickerReset = document.getElementById('sticker-reset');
+const stickerStatus = document.getElementById('sticker-status');
+stickerPicker?.addEventListener('change', async () => {
+  const file = stickerPicker.files?.[0];
+  if (!file) return;
+  stickerPicker.disabled = true;
+  stickerReset.disabled = true;
+  stickerStatus.textContent = 'Caching image locally…';
+  try {
+    if (file.size > 2 * 1024 * 1024) throw new Error('Choose an image under 2 MB.');
+    const response = await fetch('/sticker-upload' + location.search, {
+      method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to cache the image.');
+    stickerStatus.textContent = 'Cached privately. Rebuild and reload Codex to display it.';
+  } catch (error) {
+    stickerStatus.textContent = 'Image not saved: ' + error.message;
+  } finally {
+    stickerPicker.value = '';
+    stickerPicker.disabled = false;
+    stickerReset.disabled = false;
+  }
+});
+stickerReset?.addEventListener('click', async () => {
+  stickerPicker.disabled = true;
+  stickerReset.disabled = true;
+  try {
+    const response = await fetch('/sticker-reset' + location.search, {method: 'POST'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to reset sticker.');
+    stickerStatus.textContent = 'Bundled Twilight image selected. Rebuild and reload Codex.';
+  } catch (error) {
+    stickerStatus.textContent = 'Reset failed: ' + error.message;
+  } finally {
+    stickerPicker.disabled = false;
+    stickerReset.disabled = false;
+  }
+});
+"""
 
 COMMIT_HOTKEY_STYLE = """
 .hotkey-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -230,6 +278,10 @@ SETTINGS = (
     Setting("normalizeStagedWhitespace", "scm-toolkit.normalize-staged-whitespace", "Normalize line endings and whitespace", "Remove trailing spaces on added lines and ensure exactly one final newline in eligible staged text files, preserving LF or CRLF. Applies to ordinary commits and Commit with Codex, including typed messages. Disable to preserve staged file formatting.", "Source control"),
     Setting("compactWindowButton", "scm-toolkit.compact-window-button", "Show compact-window button", "Show the title-bar button that switches between compact and restored window sizes.", "Window"),
     Setting("newWorkspaceWindowButton", "scm-toolkit.new-workspace-window-button", "Show new-workspace-window button", "Show the title-bar button that opens the same repository folders in a new workspace window.", "Window"),
+    Setting("windowHeading", "scm-toolkit.window-heading", "Title-bar heading", "Leave blank to follow VS Code's window.title setting. Use VS Code title variables, e.g. ${rootName} (${activeRepositoryBranchName}). This changes the visible heading independently of the window name.", "Window", "optional_text"),
+    Setting("windowName", "scm-toolkit.window-name", "Window name", "Name shown in macOS and window switchers. Leave blank to follow VS Code's window.title setting. Use the same title variables as the heading; Pushing is added automatically while publication is pending.", "Window", "optional_text"),
+    Setting("windowShowModifiedStatus", "scm-toolkit.window-show-modified-status", "Show modified editor status", "Allow VS Code to display Modified or other active editor state in window titles. Disable to hide this status.", "Window"),
+    Setting("windowShowPushingStatus", "scm-toolkit.window-show-pushing-status", "Show pushing status", "Append Pushing while a background push is pending. Disable to hide the label without changing the actual push.", "Window"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
     Setting("browserGlobeNewTab", "scm-toolkit.browser-globe-new-tab", "Globe opens a new browser tab", "Click the title-bar globe to open a new Integrated Browser tab directly. Turn off to show the browser URL or tab picker.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
@@ -260,8 +312,9 @@ SETTINGS = (
     Setting("draftSpellcheckVocabulary", "scm-toolkit.draft-spellcheck-vocabulary", "Protected vocabulary", "One term or phrase per line. When present, these exact words, brands or technical expressions must remain unchanged.", "Spellcheck Changes", "textarea"),
     Setting("draftSpellcheckGuidance", "scm-toolkit.draft-spellcheck-guidance", "Additional correction guidance", "Optional preferences or specialist terminology for the local model. Safety checks, protected tokens and user-selected emoji always take precedence.", "Spellcheck Changes", "textarea"),
     Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Spellcheck Changes", "model"),
+    Setting("spellcheckThinkingEffort", "scm-toolkit.spellcheck-thinking-effort", "Spellcheck reasoning effort", "Default uses the model's normal behavior. Low, medium, or high requests supported Ollama thinking levels; models offering only an on/off control use thinking on. Unsupported levels fall back to the model default. Applies to commit-subject and Markdown spellchecking; does not change normal commit-title generation.", "Spellcheck Changes", "select", ("default", "low", "medium", "high")),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellcheck Changes"),
-    Setting("spellcheckReviewEmoji", "scm-toolkit.spellcheck-review-emoji", "Professional emoji on Spellcheck Changes commits", "Keep the professional leading emoji in automatically generated titles when committing reviewed Markdown spellcheck changes. The normal commit generator still selects the emoji; turning this off removes only the title emoji after generation. Independent of the manual draft emoji setting. On by default.", "Spellcheck Changes"),
+    Setting("spellcheckChangesEmoji", "scm-toolkit.spellcheck-changes-emoji", "Add professional emoji to spellcheck commits", "Include the professional leading emoji from normal AI commit-title generation when accepting reviewed Spellcheck Changes. Turn off to omit it without changing title quality, model effort, or attribution. On by default.", "Spellcheck Changes"),
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
@@ -292,7 +345,8 @@ SETTINGS = (
     Setting("ludicrousMode", "scm-toolkit.ludicrous-mode", "Ludicrous mode", "Skip the confirmation box when you click Squash and merge in the Kefania dialog.", "Pull requests"),
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
-    Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Codex reset countdown", "Show the live usage-reset countdown in Codex limit banners.", "Codex"),
+    Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Relative Codex reset times", "Convert Codex's absolute reset dates and times into live relative countdowns in usage-limit banners (for example, 'resets October 24 at 3 PM' becomes 'resets in 1d 4h').", "Codex"),
+    Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Usage pie indicator", "Replace the Codex remaining-usage percentage with a circular indicator that empties as the five-hour allowance is used.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
@@ -623,7 +677,7 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
         disabled = "" if current is True else " disabled"
         return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
-    if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "commitButtonLabel", "commitAndSendButtonLabel"}:
+    if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "commitButtonLabel", "commitAndSendButtonLabel", "windowHeading"}:
         return ""
     if setting.kind == "message_bar":
         return render_message_bar_control(current)
@@ -696,7 +750,8 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.kind == "color":
         required = ' placeholder="#43AF49"'
     elif setting.kind == "optional_text":
-        required = ""
+        required = (' placeholder="VS Code default"'
+                    if setting.name in {"windowHeading", "windowName"} else "")
     elif setting.kind == "chatgpt_project_url":
         required = ' placeholder="https://chatgpt.com/g/g-p-.../project"'
     elif setting.kind == "browser_url":
@@ -801,6 +856,7 @@ def render_form(
     section_names = list(dict.fromkeys(setting.section for setting in SETTINGS))
     section_names.remove("GitHub")
     section_names.insert(section_names.index("Codex"), "GitHub")
+    section_names.insert(section_names.index("GitHub") + 1, "GitHub Apps")
     section_names.append("Diagnostics")
     for index, section in enumerate(section_names):
         controls = "".join(
@@ -810,6 +866,8 @@ def render_form(
         )
         if section == "Diagnostics":
             controls = DIAGNOSTICS_PANEL
+        if section == "GitHub Apps":
+            controls = APP_PANEL
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
@@ -825,6 +883,22 @@ def render_form(
                 + '</div>'
                 for heading, is_time in (("Time", True), ("Customization", False))
             )
+        if section == "Codex":
+            image_status = ("Custom image cached on this computer" if codex_sticker.sticker_path().is_file()
+                            else "Bundled Twilight image")
+            controls += (
+                '<div class="setting sticker-setting"><span><strong>Rate-limit sticker image</strong>'
+                '<small>PNG, JPEG, GIF or WebP up to 2 MB. Stored in your private local app data, '
+                'not in Git, settings sync or a remote URL. Rebuild/reload Codex after changing.</small></span>'
+                '<div class="sticker-actions"><input type="file" id="sticker-upload" '
+                'accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" '
+                'aria-label="Choose rate-limit sticker artwork">'
+                '<button type="button" id="sticker-reset">Use bundled image</button>'
+                f'<output id="sticker-status" role="status" aria-live="polite">{html.escape(image_status)}</output>'
+                '</div></div>'
+            )
+        if section == "Window":
+            controls = render_heading(current.get("windowHeading", "")) + controls
         if section == "Message bar":
             layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
             controls = render_message_bar_control(
@@ -873,7 +947,8 @@ def render_form(
             draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",
                               "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
                               "draftSpellcheckVocabulary", "draftSpellcheckGuidance",
-                              "draftCommitEmoji", "spellcheckModel"}
+                              "draftCommitEmoji", "spellcheckModel",
+                              "spellcheckThinkingEffort"}
             controls = (
                 '<div class="settings-group"><h3>While drafting a commit</h3>'
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
@@ -914,12 +989,14 @@ def render_form(
 main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}.settings-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}}.settings-header>div:first-child{{min-width:0}}.rebuild-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:160px}}.rebuild-actions output{{font-size:12px;max-width:290px;text-align:right;color:var(--muted)}}.rebuild-actions output.error-state{{color:#ffb3ad}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .settings-group h3{{font-size:14px;margin:14px 0 4px;color:var(--muted)}}.settings-group+.settings-group{{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}}
+.sticker-actions{{display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:55%}}.sticker-actions input{{max-width:100%;font:inherit}}.sticker-actions output{{font-size:12px;color:var(--muted)}}.sticker-setting{{align-items:flex-start}}
 .setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
 .field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.signing-actions{{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;width:min(520px,56%)}}.signing-actions select{{flex:1 1 240px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.field-row input.compact-number{{width:76px;min-width:76px;flex:none;text-align:right;font-variant-numeric:tabular-nums}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
+{WINDOW_TITLE_STYLE}
 {COMMIT_HOTKEY_STYLE}
 {DIAGNOSTICS_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
@@ -933,6 +1010,8 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
+{APP_SCRIPT}
+{STICKER_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
@@ -1117,6 +1196,7 @@ for (const tab of settingsTabs) {{
 }}
 
 {MESSAGE_BAR_SCRIPT}
+{WINDOW_TITLE_SCRIPT}
 
 const packSearch = document.getElementById('pack-search');
 const packTabs = [...document.querySelectorAll('.pack-tab')];
@@ -1397,7 +1477,23 @@ if (settingsServerInstance) {{
       const response = await fetch('/health' + location.search, {{cache: 'no-store'}});
       if (!response.ok) return;
       const status = await response.json();
-      if (status.instance && status.instance !== settingsServerInstance) location.reload();
+      if (status.instance && status.instance !== settingsServerInstance) {{
+        location.reload();
+        return;
+      }}
+      // Respect in-progress edits while reflecting changes made in VS Code itself.
+      if (!autosaveTimer && saveStatus.textContent === 'Saved') {{
+        for (const [name, value] of Object.entries(status.windowSettings || {{}})) {{
+          const input = settingsForm.elements.namedItem(name);
+          if (input && input !== document.activeElement) {{
+            if (input.type === 'checkbox' && typeof value === 'boolean') input.checked = value;
+            else if (typeof value === 'string') {{
+              input.value = value;
+              if (name === 'windowHeading') window.refreshHeadingEditor?.(value);
+            }}
+          }}
+        }}
+      }}
     }} catch {{
       // The extension may be reloading. Keep the page and retry the same stable URL.
     }}
@@ -1474,6 +1570,7 @@ def run_configurator(
     outcome: dict[str, bool | None] = {"saved": None}
     session_settings = dict(current)
     hotkey_lock = threading.Lock()
+    app_lock = threading.Lock()
     rebuild_lock = threading.Lock()
     rebuild_status = {"running": False, "finished": False, "error": False, "message": ""}
 
@@ -1522,7 +1619,16 @@ def run_configurator(
                 self._send_json(status)
                 return
             if path == "/health":
-                self._send_json({"instance": server_instance})
+                self._send_json({
+                    "instance": server_instance,
+                    "windowSettings": {
+                        name: session_settings.get(name, "")
+                        for name in ("windowHeading", "windowName", "windowShowModifiedStatus", "windowShowPushingStatus")
+                    },
+                })
+                return
+            if path == "/github-apps":
+                self._send_json(app_status())
                 return
             if path == "/diagnostics":
                 self._send_json(read_diagnostics())
@@ -1558,17 +1664,57 @@ def run_configurator(
             if not self._authorized():
                 self._send("<h1>Not found</h1>", 404)
                 return
+            if urllib.parse.urlsplit(self.path).path.startswith("/github-apps/"):
+                expected = f"http://127.0.0.1:{self.server.server_port}"
+                if self.headers.get("Origin") != expected or self.headers.get("Host") != expected[7:]:
+                    self._send_json({"error": "Invalid settings origin."}, 403)
+                    return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 self._send("<h1>Invalid request</h1>", 400)
                 return
-            if length < 0 or length > MAX_FORM_BYTES:
-                self._send("<h1>Request too large</h1>", 413)
+            path = urllib.parse.urlsplit(self.path).path
+            max_length = STICKER_UPLOAD_LIMIT if path == "/sticker-upload" else MAX_FORM_BYTES
+            if length < 0 or length > max_length:
+                self._send_json({"error": "Request too large."}, 413)
                 return
-            values = urllib.parse.parse_qs(
-                self.rfile.read(length).decode("utf-8"), keep_blank_values=True
-            )
+            data = self.rfile.read(length)
+            if path == "/sticker-upload":
+                # Reject cross-origin requests; the token is required as well.
+                origin = self.headers.get("Origin")
+                if origin and origin != f"http://127.0.0.1:{self.server.server_port}":
+                    self._send_json({"error": "Invalid origin."}, 403)
+                    return
+                try:
+                    codex_sticker.save_sticker(data)
+                    self._send_json({"saved": True})
+                except (OSError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path == "/sticker-reset":
+                try:
+                    codex_sticker.clear_sticker()
+                    self._send_json({"saved": True})
+                except (OSError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            values = urllib.parse.parse_qs(data.decode("utf-8"), keep_blank_values=True)
+            if urllib.parse.urlsplit(self.path).path == "/sync-window-settings":
+                # The live VS Code user configuration is authoritative for these fields.
+                names = ("windowHeading", "windowName")
+                statuses = ("windowShowModifiedStatus", "windowShowPushingStatus")
+                if any(len(values.get(name, [])) != 1 or
+                       len(values[name][0]) > 4096 or
+                       "\n" in values[name][0] or "\r" in values[name][0]
+                       for name in names) or any(values.get(name) not in (["true"], ["false"])
+                                                 for name in statuses):
+                    self._send_json({"error": "Invalid window settings."}, 400)
+                    return
+                session_settings.update({name: values[name][0] for name in names})
+                session_settings.update({name: values[name][0] == "true" for name in statuses})
+                self._send_json({"synced": True})
+                return
             if urllib.parse.urlsplit(self.path).path == "/rebuild":
                 with rebuild_lock:
                     if rebuild_status["running"]:
@@ -1600,6 +1746,24 @@ def run_configurator(
                     self.wfile.write(b'{"error":"Download interrupted. Retry the download."}\n')
                 return
             path = urllib.parse.urlsplit(self.path).path
+            if path.startswith("/github-apps/"):
+                try:
+                    with app_lock:
+                        if path == "/github-apps/save":
+                            result = save_app(values)
+                        elif path == "/github-apps/mode":
+                            result = save_mode(values.get("mode", [""])[0])
+                        elif path == "/github-apps/check":
+                            result = check_connection(values.get("role", [""])[0], values.get("repository", [""])[0])
+                        else:
+                            self._send_json({"error": "Unknown App action."}, 404)
+                            return
+                    self._send_json(result)
+                except (RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                except Exception:
+                    self._send_json({"error": "App setup could not complete. Check local Git and Keychain access."}, 400)
+                return
             if path == "/commit-hotkey":
                 if not keybindings_file:
                     self._send_json({"error": "Open Settings through VS Code to edit shortcuts."}, 409)

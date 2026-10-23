@@ -52,6 +52,34 @@ async function run() {
     };
     assert.deepEqual(await invokeLindseyBulkMerge(found, selection, 'session-token', fakeExec), good);
     await assert.rejects(fs.access(seen), /ENOENT/);
+    // Separate-App mode uses the Lindsey installation, never the user's
+    // session token, and does not propagate any App private keys to the CLI.
+    const mode = {
+      SWEETIEBOT_BOT_IDENTITY_MODE: 'separate-apps',
+      SWEETIEBOT_LINDSEY_APP_PRIVATE_KEY: 'do-not-pass',
+      SWEETIEBOT_KEFANIA_APP_PRIVATE_KEY: 'also-do-not-pass'
+    };
+    let invoked = false;
+    await invokeLindseyBulkMerge(found, selection, 'session-token',
+      async (_binary, _args, options) => {
+        invoked = true;
+        assert.equal(options.env.GH_TOKEN, 'lindsey-token');
+        assert.equal(options.env.GITHUB_TOKEN, 'lindsey-token');
+        assert.equal(options.env.SWEETIEBOT_LINDSEY_APP_PRIVATE_KEY, undefined);
+        assert.equal(options.env.SWEETIEBOT_KEFANIA_APP_PRIVATE_KEY, undefined);
+        return { stdout: JSON.stringify(good) };
+      },
+      { env: mode, async roleToken(role, repository) {
+        assert.equal(role, 'lindsey');
+        assert.equal(repository, 'pony-factor/example');
+        return { token: 'lindsey-token' };
+      } });
+    assert(invoked);
+    await assert.rejects(invokeLindseyBulkMerge(found, selection, 'session-token',
+      async () => { throw Error('must not execute'); },
+      { env: mode, async roleToken() { throw Error('App not installed'); } }),
+    /App not installed/);
+
 
     if (process.platform === 'darwin') {
       const probe = path.join(tmp, 'probe.cjs');

@@ -43,6 +43,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       conflictPaths: secondAttempt === 1 ? ['price.js'] : [], baseSha: d }] };
   } });
   try {
+    assert(batch.instructions.includes('Return the oldest eligible remaining PR'));
     const tooMany = await submit(batch.url, [item(1, c), item(2, c)]);
     assert.equal(tooMany.status, 400);
     assert.equal(calls, 0, 'Do not prepare stale multi-PR patches in one round');
@@ -125,8 +126,32 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   checks.check_runs = [];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a, { expectChecks: true })).state, 'pending');
   assert.equal((await waitForMergeChecks(checkApi, 'owner/repo', a, { expectChecks: true, timeoutMs: 0 })).state, 'pending');
+  checks.check_suites = ['Netlify', 'AWS Amplify'].map(name => ({
+    app: { name }, status: 'queued', latest_check_runs_count: 0
+  }));
+  assert.deepEqual(await readMergeChecks(checkApi, 'owner/repo', a),
+    { state: 'passed', names: [], hasChecks: false },
+    'Empty app suites must not delay ready PRs or create a check expectation after squash');
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a, { expectChecks: true })).state,
+    'pending', 'Empty suites do not satisfy checks expected from the original head');
+  await waitForMergeChecks(checkApi, 'owner/repo', a, {
+    sleep: async () => assert.fail('Empty queued suites must not start a polling wait')
+  });
   checks.check_runs = [{ name: 'test', status: 'queued' }];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending');
+  checks.check_runs = [];
+  checks.check_suites = [{ status: 'queued', latest_check_runs_count: 1 }];
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending',
+    'A queued suite with jobs still blocks');
+  checks.check_suites = [{ status: 'queued' }];
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending',
+    'An unknown job count is not evidence of an empty suite');
+  checks.statuses = [{ context: 'required', state: 'pending' }];
+  checks.check_suites = [{ status: 'queued', latest_check_runs_count: 0 }];
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending',
+    'Actual pending statuses still block alongside empty suites');
+  checks.statuses = [];
+  checks.check_runs = [{ name: 'test', status: 'queued' }];
   checks.check_runs[0] = { name: 'test', status: 'completed', conclusion: 'success' };
   checks.check_suites = [{ status: 'in_progress' }];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending', 'Wait for the full suite, not only its first finished job');

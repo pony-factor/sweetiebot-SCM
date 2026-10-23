@@ -84,6 +84,22 @@ async function openSettingsBrowser(url, session = configuratorProcess) {
   }
 }
 
+function syncWindowSettingsToConfigurator() {
+  if (!configuratorURL) return;
+  const url = new URL(configuratorURL);
+  url.pathname = '/sync-window-settings';
+  const configuration = vscode.workspace.getConfiguration('scmToolkit');
+  const body = new URLSearchParams({
+    windowHeading: configuration.get('windowHeading', ''),
+    windowName: configuration.get('windowName', ''),
+    windowShowModifiedStatus: String(configuration.get('windowShowModifiedStatus', true)),
+    windowShowPushingStatus: String(configuration.get('windowShowPushingStatus', true))
+  });
+  void fetch(url, { method: 'POST', body }).catch(() => {
+    // The settings server may be restarting; a subsequent page load reads VS Code.
+  });
+}
+
 async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   if (configuratorProcess && configuratorProcess.exitCode === null) {
     if (openBrowserWhenReady && configuratorURL) {
@@ -103,6 +119,10 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
     vscodeSettings: {
       compactWindowButton: scm.get('compactWindowButton', true),
       newWorkspaceWindowButton: scm.get('newWorkspaceWindowButton', true),
+      windowHeading: scm.get('windowHeading', ''),
+      windowName: scm.get('windowName', ''),
+      windowShowModifiedStatus: scm.get('windowShowModifiedStatus', true),
+      windowShowPushingStatus: scm.get('windowShowPushingStatus', true),
       openPanelOnStartup,
       automaticAppRepair: scm.get('automaticAppRepair', true),
       messagePlaceholder: scm.get('messagePlaceholder', 'Message'),
@@ -396,6 +416,12 @@ async function activate(context) {
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration('scmToolkit.windowHeading') ||
+        event.affectsConfiguration('scmToolkit.windowName') ||
+        event.affectsConfiguration('scmToolkit.windowShowModifiedStatus') ||
+        event.affectsConfiguration('scmToolkit.windowShowPushingStatus')) {
+      syncWindowSettingsToConfigurator();
+    }
     if (event.affectsConfiguration(`${CONFIG_ROOT}.placeholder`)) {
       provider.post({ type: 'placeholder', value: settings().placeholder });
     }

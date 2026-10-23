@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.x"
       - name: Verify exhaustive, exclusive test assignments
-        run: python3 scripts/ci_test_runner.py verify
+        run: python3 scripts/ci/ci_test_runner.py verify
 
   suites:
     name: ${{ matrix.label }}
@@ -67,14 +67,14 @@ jobs:
           node-version: "22"
       - name: Detect browser-test dependencies
         id: browser
-        run: python3 scripts/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/ci/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
       - name: Install browser-test dependencies
         if: steps.browser.outputs.required == 'true'
         run: |
           npm install --no-save --no-package-lock playwright@1.64.0
           npx playwright install --with-deps chromium
       - name: Run ${{ matrix.label }} checks
-        run: python3 scripts/ci_test_runner.py run "${{ matrix.group }}"
+        run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
 
   codex-webview-browser:
     name: Chromium CSS and DOM regression
@@ -106,3 +106,24 @@ jobs:
         env:
           PYTHONPATH: scripts
         run: python -m unittest discover -s tests -p test_codex_label.py -v
+
+  bot-app-identities:
+    name: Separate GitHub App identity regressions
+    needs: inventory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check separate App auth wiring and regressions
+        run: |
+          node --check efs/github_app_identity.js
+          node --check efs/kefania_runner.js
+          node --check efs/local_pull_request.js
+          node --check efs/lindsey_bulk_merge.js
+          node --check efs/pull_request.js
+          node tests/test_github_app_identity.js
+          node tests/test_github_app_settings.js
+          node tests/test_kefania_app_environment.js
+          node tests/test_lindsey_bulk_merge.js

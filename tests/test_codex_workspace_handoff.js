@@ -13,7 +13,7 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex_workspac
     await fs.mkdir(from); await fs.mkdir(destination);
     const threadId = '019c56c3-06fc-7db3-a928-9c3607e17129';
     const newThreadId = '019c56c3-06fc-7db3-a928-9c3607e17130';
-    const commands = new Map(), providers = new Map(), requests = [], routes = [];
+    const commands = new Map(), providers = new Map(), requests = [], routes = [], opened = [];
     let active = true, wrongCwd = false, wrongThread = false, identity = { threadId };
     const connection = {
       registerProvider(name, callbacks) { providers.set(name, callbacks); return { dispose() { providers.delete(name); } }; },
@@ -42,11 +42,12 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex_workspac
       },
       sendRequest(...args) { this.sendProviderRequest(...args); }
     };
-    const vscode = { workspace: { workspaceFolders: [{ uri: { scheme: 'file', fsPath: destination } }] }, commands: {
+    const vscode = { Uri: { file: fsPath => ({ fsPath }) }, workspace: { workspaceFolders: [{ uri: { scheme: 'file', fsPath: destination } }] }, commands: {
       registerCommand(id, fn) { commands.set(id, fn); return { dispose() { commands.delete(id); } }; },
       async executeCommand(id, ...args) {
         if (id === 'sweetiebot.readCodexIdentity') return identity;
         if (id === 'chatgpt.openSidebar') return;
+        if (id === 'vscode.openFolder') { opened.push(args); return; }
         return commands.get(id)(...args);
       }
     } };
@@ -56,6 +57,17 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex_workspac
     const disposable = context.scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode);
     const prepare = commands.get('sweetiebot.codex.prepareWorkspaceHandoff');
     const resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
+    const openCheckout = commands.get('sweetiebot.codex.openChatCheckout');
+    await assert.rejects(openCheckout('stale-chat'), /visible chat changed/);
+    assert.equal(requests.length, 0, 'Reject stale clicks before querying a different chat');
+    await openCheckout(threadId);
+    assert.equal(opened[0][0].fsPath, from, 'Open the chat cwd, not the current workspace root');
+    assert.equal(opened[0][1].forceNewWindow, true);
+    assert(requests.every(request => request.method === 'thread/read'), 'Opening must not resume or interrupt the worker');
+    wrongThread = true;
+    await assert.rejects(openCheckout(threadId), /different chat/);
+    assert.equal(opened.length, 1);
+    wrongThread = false;
     const plan = await prepare({ from });
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));

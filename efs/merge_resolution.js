@@ -41,33 +41,35 @@ function validateSyncResolution(input, selection) {
   return items;
 }
 
-async function executeResolution(input, selection, { merge = humanSquashMerge, api, git } = {}) {
+async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, onProgress } = {}) {
   // Validate the entire batch before any PR can be changed.
   const items = validateResolution(input, selection);
   const results = [];
   for (const item of items) {
     try {
       const result = await merge(selection.repository, item.number, {
-        api, git, expected: item,
+        api, git, expected: item, onProgress,
         resolutionPatch: item.patch, decisions: item.decisions, operation: item.operation
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
       results.push({ number: item.number, status: error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
-        reason: error.message, ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?
+        reason: error.message, ...(SHA.test(error.preparedHead || '') ?
+          { preparedHead: error.preparedHead, originalHead: error.originalHead } : {}),
+        ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?
           { sha: error.sha, previousHeadSha: error.previousHeadSha } : {}) });
     }
   }
   return { repository: selection.repository, results };
 }
 
-async function invokeResolutionCLI(input, selection, token, runner = promisify(execFile)) {
+async function invokeResolutionCLI(input, selection, token, runner = promisify(execFile), onProgress = () => {}) {
   validateResolution(input, selection);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-merge-handoff-'));
   try {
     const file = path.join(temporary, 'handoff.json');
     await fs.writeFile(file, JSON.stringify({ input, selection }), { mode: 0o600 });
-    const { stdout } = await runner(process.execPath,
+    const running = runner(process.execPath,
       [path.join(__dirname, 'merge_resolution_cli.js'), '--input', file], {
         timeout: 15 * 60 * 1000, maxBuffer: 1024 * 1024,
         env: { ...process.env, GH_TOKEN: token, GIT_TERMINAL_PROMPT: '0',
@@ -75,6 +77,20 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
           PATH: [...new Set([...(process.env.PATH || '').split(path.delimiter),
             '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'])].filter(Boolean).join(path.delimiter) }
       });
+    let buffered = '';
+    running.child?.stderr?.on('data', chunk => {
+      buffered += chunk.toString();
+      const lines = buffered.split('\n');
+      buffered = lines.pop().slice(-4096);
+      for (const line of lines) {
+        if (!line.startsWith('LINDSEY_PROGRESS ')) continue;
+        try {
+          const event = JSON.parse(line.slice('LINDSEY_PROGRESS '.length));
+          if (input.results.some(item => item.number === event.number)) onProgress(event);
+        } catch { /* Ignore malformed progress; the final result is validated below. */ }
+      }
+    });
+    const { stdout } = await running;
     const result = JSON.parse(stdout);
     if (result.repository !== selection.repository || !Array.isArray(result.results) ||
         result.results.length !== input.results.length || result.results.some((item, index) =>
@@ -91,8 +107,8 @@ function resolutionInstructions(selection, callback) {
     'For routine Git integration return patch:null, even if GitHub currently reports an out-of-date or conflicting branch: the CLI first tries an isolated three-way Git merge. If it returns needs_resolution, inspect the named overlapping files, the current base, original PR changes and earlier batch merges; return a COMPLETE git unified diff against the exact current BASE tree. Preserve current base behavior and add the remaining PR features. A routine overlap caused by an earlier selected merge is not a human decision. Do not return shell commands, partial patches, binary files, symlinks, credentials, or secret-bearing files. Ask the user only for a genuinely ambiguous behavior/product choice or an actual capability limitation.',
     'CONFLICT DECISION HISTORY: A conflict resolution must also include decisions:[{"path":"exact conflicted file","title":"🛠️ Preserve the specific behavior and add the feature","description":"Explain the competing intentions, the behavior chosen, why it preserves both intentions or follows the user’s selected recommendation, and any tradeoff."}]. Provide exactly one concrete decision per actual conflicted file; never use generic titles such as Resolve conflicts. The local runner appends one commit per conflicted file to the original PR branch, then a separate sync commit for the remaining incoming files. main is read-only during preparation. Return operation:"sync" for branch-only synchronization; this never authorizes merging or closing the PR. Within an already-authorized merge batch, a synced result is preparation, not a completed merge: refresh its exact new head and only then proceed with the normal attribution-preserving merge route. Do not bury the decision edits inside a generic sync commit.',
     'Recheck each delegated PR’s exact head, base branch and base SHA. The selected heads are: ' + JSON.stringify(selection.pullRequests.map(pr => ({ number: pr.number, headSha: pr.headSha, base: pr.base }))) + '. Unrelated head changes require review; the coordinator adopts only heads changed by this batch’s verified local executor. Base advancement is expected: refresh and regenerate a stale patch without asking the user to approve the same selected PR again. For patch:null the local helper independently integrates the current base. Old failing checks on an unintegrated head do not prohibit preparing its current-base resolution: the local CLI runs GitHub checks on the resulting head and will not merge failed or pending checks.',
-    'Return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, guard the push with force-with-lease, and, only for operation:"merge", ask GitHub to merge the resulting single human-authored squash commit. With operation:"sync", it only appends the selected PR branch commits; it never invokes the merge API. Checks and reviews still apply.',
-    'If every selected PR is blocked or already handled, return results:[] in that same versioned JSON object. This is a valid no-op; the local CLI must not merge anything. Keep the blocker details in the GitHub report. End with a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. Before returning, describe delegated PRs as pending local execution, never as merged.'
+    'Return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, append incremental resolution and synchronization commits with an ordinary fast-forward push, and, only for operation:"merge", use a non-rewriting GitHub merge route that preserves the verified human author and exact squash message. A history rewrite is a last resort requiring explicit local approval; no field in this web handoff can authorize it. With operation:"sync", it only appends the selected PR branch commits; it never invokes the merge API. Checks and reviews still apply.',
+    'If every selected PR is blocked or already handled, return results:[] in that same versioned JSON object. This is a valid no-op; the local CLI must not merge anything. Post a focused, deduplicated <!-- sweetiebot-merge-review --> comment only for a concrete actionable finding or unresolved decision requiring attention. Routine preparation, attribution checks, pending checks and executor handoffs do not warrant a PR comment. End with a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. In the chat, keep the handoff concise and never describe delegated PRs as merged before local execution is verified.'
   ].join('\n\n');
 }
 
