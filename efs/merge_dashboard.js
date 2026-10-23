@@ -416,7 +416,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (!Object.hasOwn(stages, event.stage)) return;
     const sha = SHA.test(event.sha || '') ? event.sha : '';
     const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
-    if (event.stage === 'preparing') pr.lastPushedHead = '';
+    if (event.stage === 'preparing') {
+      pr.lastPushedHead = '';
+      if (typeof event.description === 'string' && event.description.trim()) {
+        pr.localExplanation = event.description.trim().slice(0, 4000);
+      }
+    }
+    if (event.stage === 'decision-commit' && file) {
+      pr.localDecisions ||= {};
+      pr.localDecisions[file] = { path: file, title: String(event.title || '').slice(0, 160),
+        description: String(event.description || '').slice(0, 4000) };
+    }
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
     const decision = ['decision-commit', 'preparing', 'rewrite-approved'].includes(event.stage)
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
@@ -425,6 +435,20 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    for (const item of state.history || []) {
+      const pr = byNumber.get(item.number);
+      if (!pr) continue;
+      if (typeof item.explanation === 'string' && item.explanation.trim()) {
+        pr.localExplanation = item.explanation.trim().slice(0, 4000);
+      }
+      if (typeof item.reason === 'string') pr.localResultReason = item.reason.slice(0, 4000);
+      for (const decision of item.decisions || []) {
+        if (!require('./merge_patch').safePatchPath(decision?.path)) continue;
+        pr.localDecisions ||= {};
+        pr.localDecisions[decision.path] = { path: decision.path,
+          title: String(decision.title || '').slice(0, 160), description: String(decision.description || '').slice(0, 4000) };
+      }
+    }
     for (const item of state.deferred) {
       const pr = byNumber.get(item.number);
       if (!pr || reportedDeferrals.has(item.number)) continue;
@@ -437,6 +461,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      if (typeof item.reason === 'string') pr.localResultReason = item.reason.slice(0, 4000);
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
       const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
       const message = item.status === 'merged' && item.merged === true ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)

@@ -111,6 +111,10 @@ async function resumeMergeDashboard(vscode, directory, context) {
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
     context, rootUri: vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri
   });
+  try {
+    const state = JSON.parse(await fs.readFile(path.join(directory, 'merge-batch-state.json'), 'utf8'));
+    mergeDashboardController.recordBatchState(state);
+  } catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
   await vscode.commands.executeCommand('vscode.setEditorLayout', {
     orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }]
   });

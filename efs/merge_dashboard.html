@@ -300,8 +300,14 @@ __TIMESTAMP_FORMATTER__
     }
     if (pr.review && pr.state !== 'merged') showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
-    showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
-      'No AI merge report yet. The ChatGPT session can post one after verifying the work.', true);
+    const localInfo = [pr.localExplanation,
+      ...Object.values(pr.localDecisions || {}).map(item =>
+        [item.title, item.path, item.description].filter(Boolean).join('\n')),
+      pr.localResultReason].filter(Boolean).join('\n\n');
+    if (localInfo) showTextPanel(parent, 'AI explanation · Local session', localInfo, '', true);
+    if (pr.report?.text) showTextPanel(parent, 'AI explanation · GitHub report', pr.report.text, '', true);
+    if (!localInfo && !pr.report?.text) showTextPanel(parent, 'AI explanation', '',
+      'No explanation available yet.', true);
     if (pr.blockerOptions?.length) {
       const choices = show('section', 'panel', undefined, parent);
       show('h3', '', 'Choose how to proceed', choices);
