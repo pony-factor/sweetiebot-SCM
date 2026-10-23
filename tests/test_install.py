@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import types
@@ -118,6 +119,52 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_implicit_title_status_refreshes_after_external_commit(self):
+        listener = (
+            'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+            'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+        )
+        original = workbench_fixture() + listener
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        _, after = install.window_title_status_edits(listener)[0]
+        # The accessibility-generated suffix uses decorations even when the
+        # explicit title template does not include activeEditorState.
+        subprocess.run(['node', '-e', '''
+            const assert = require('node:assert/strict');
+            let onDecoration, scheduled = 0, disposed = false;
+            const subscriptions = [];
+            const service = {
+                titleIncludesEditorState: false,
+                activeEditorListeners: {add(subscription) {
+                    assert.equal(typeof subscription.dispose, 'function');
+                    subscriptions.push(subscription);
+                }},
+                decorationsService: {onDidChangeDecorations(callback) {
+                    onDecoration = callback;
+                    return {dispose() {disposed = true;}};
+                }},
+                titleUpdater: {schedule() {scheduled++;}}
+            };
+        ''' + f'function subscribe() {{{after}}}; subscribe.call(service);' + '''
+            assert.equal(typeof onDecoration, 'function');
+            onDecoration(); // Git decoration cleared after the external commit.
+            assert.equal(scheduled, 1);
+            subscriptions.forEach(subscription => subscription.dispose());
+            assert.equal(disposed, true);
+        '''], check=True, capture_output=True, text=True)
+
+    def test_title_status_rejects_changed_or_ambiguous_native_listener(self):
+        listener = (
+            'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+            'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+        )
+        with self.assertRaisesRegex(ValueError, 'window title status listener'):
+            install.window_title_status_edits('checkTitleVariables(){}')
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            install.window_title_status_edits(listener + listener)
+
     def test_native_push_handoff_is_reversible(self):
         original = ('class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
                     'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));}'

@@ -396,6 +396,24 @@ def extension_update_toolbar_edits(js):
     return changes
 
 
+def window_title_status_edits(js):
+    # Accessibility can append activeEditorState implicitly. Native VS Code only
+    # listens for decoration changes when the title template includes it
+    # explicitly, leaving e.g. "Modified" behind after an external commit.
+    # Subscribe for every active editor, including accessibility mode changes.
+    original = (
+        'this.titleIncludesEditorState&&this.activeEditorListeners.add('
+        'this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))'
+    )
+    if original not in js:
+        if 'checkTitleVariables(){' in js:
+            raise ValueError("Unsupported VS Code build: window title status listener does not match.")
+        return []  # Older builds and synthetic fixtures without the title service.
+    if js.count(original) != 1:
+        raise ValueError("Unsupported VS Code build: window title status listener is ambiguous.")
+    return [(original, original.removeprefix('this.titleIncludesEditorState&&'))]
+
+
 def compact_window_edits(js, command="fe", configuration="Xe"):
     # Match the native titlebar layout rather than relying on SCM activation.
     ident = r"[A-Za-z_$][\w$]*"
@@ -556,6 +574,7 @@ def edits(js=None, settings=None):
 
     if js is not None:
         changes.extend(browser_cross_window_reopen_edits(js))
+        changes.extend(window_title_status_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))
