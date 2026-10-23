@@ -76,7 +76,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
       if (ch === '<') {
         const end = text.indexOf('>', i + 1);
         const value = end < 0 ? '' : text.slice(i + 1, end);
-        if (safeUrl(value)) { flush(); addLink(parent, value, value); i = end + 1; continue; }
+        if (/^https?:\/\//i.test(value.trim()) && safeUrl(value)) { flush(); addLink(parent, value, value); i = end + 1; continue; }
       }
       const bare = /^https?:\/\/[^\s<>"']+/i.exec(text.slice(i));
       if (bare && (i === 0 || !/[\w/@]/.test(text[i - 1]))) {

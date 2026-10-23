@@ -63,6 +63,7 @@ async function run() {
           pythonLaunchError: error => error
         };
       }
+      if (name === 'node:path') return path;
       assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
         assert.equal(exe, '/resolved/python3');
         assert.deepEqual(Array.from(args), ['/extension/local_codex_commit.py', '--normalize-staged-whitespace']);
