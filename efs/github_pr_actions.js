@@ -369,7 +369,10 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       await vscode.commands.executeCommand('pr.refreshList').catch(() => {});
     }
   };
-  const handler = node => {
+  const handler = (node, options) => {
+    // The PR sidebar's tree command starts its own notification at the exact
+    // click point. Do not show a second one when it forwards the selected URL.
+    if (options?.progressManaged === true) return processMerge(node);
     // Open progress on the click, including while the GitHub PR extension is
     // still resolving the exact row. This is a single ongoing notification,
     // not an early claim that the merge succeeded.
