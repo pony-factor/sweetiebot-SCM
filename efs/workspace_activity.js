@@ -6,6 +6,7 @@ const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
+const { isWorkspaceDirectory } = require('./workspace_layout');
 const { MANIFEST, ACTIVATED, SESSION_PREFIX } = require('./workspace_prune');
 
 const exec = promisify(execFile);
@@ -23,7 +24,7 @@ async function findManagedGroups(vscode, {
     try {
       const root = path.resolve(await rootOf(folder.uri.fsPath));
       const group = path.dirname(root);
-      if (path.dirname(group) !== baseDirectory) continue;
+      if (!await isWorkspaceDirectory(io, group, baseDirectory)) continue;
       if (!(await io.lstat(group)).isDirectory() || !(await io.lstat(root)).isDirectory()) continue;
       const manifest = JSON.parse(await io.readFile(path.join(group, MANIFEST), 'utf8'));
       if (manifest.version !== 1 || manifest.kind !== 'independent-clone' ||
