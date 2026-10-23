@@ -434,6 +434,53 @@ class ManualSpellcheckTests(unittest.TestCase):
             self.assertIn("Instinet\nSoroban", prompt)
             self.assertIn("grammatical", prompt)
 
+    def test_spellcheck_thinking_detects_named_boolean_and_unsupported_levels(self):
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+        def fake_show(_path, payload, timeout=None):
+            if payload["model"] == "named:test":
+                return {"thinking": {"values": ["low", "medium", "high"], "default": "medium"}}
+            if payload["model"] == "boolean:test":
+                return {"thinking": {"values": [False, True], "default": False}}
+            return {"thinking": {"values": [False]}}
+        with patch.object(ai_commit, "git_config_string",
+                          return_value="high"), patch.object(
+            ai_commit, "ollama_json", side_effect=fake_show
+        ) as show:
+            self.assertEqual(ai_commit.spellcheck_thinking_options("named:test"), {"think": "high"})
+            self.assertEqual(ai_commit.spellcheck_thinking_options("boolean:test"), {"think": True})
+            self.assertEqual(ai_commit.spellcheck_thinking_options("unsupported:test"), {})
+            self.assertEqual(show.call_count, 3)
+            self.assertEqual(ai_commit.spellcheck_thinking_options("named:test"), {"think": "high"})
+            self.assertEqual(show.call_count, 3)
+        with patch.object(ai_commit, "git_config_string", return_value="default"), patch.object(
+            ai_commit, "ollama_json"
+        ) as request:
+            self.assertEqual(ai_commit.spellcheck_thinking_options("new:test"), {})
+            request.assert_not_called()
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+
+    def test_draft_high_thinking_increases_budget_without_bypassing_safety(self):
+        requests = []
+        def generate(endpoint, payload, timeout=None):
+            requests.append((endpoint, payload, timeout))
+            if endpoint == "/api/show":
+                return {"thinking": {"values": ["low", "medium", "high"]}}
+            return {"response": '{"subject":"Fix spelling"}'}
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+        with patch.object(ai_commit, "git_config_string", side_effect=lambda key, default="": (
+            "high" if key == "scm-toolkit.spellcheck-thinking-effort" else default
+        )), patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True), patch.object(
+            ai_commit, "installed_local_model_names", return_value={"thinking:test"}
+        ), patch.object(ai_commit, "configured_spellcheck_model", return_value="thinking:test"), patch.object(
+            ai_commit, "ollama_json", side_effect=generate
+        ):
+            self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
+        self.assertEqual(requests[0][0], "/api/show")
+        self.assertEqual(requests[1][1]["think"], "high")
+        self.assertGreaterEqual(requests[1][1]["options"]["num_predict"], 2048)
+        self.assertEqual(requests[1][2], 120)
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+
     def test_reviewed_spellcheck_title_uses_the_normal_commit_generation_pipeline(self):
         import io
         argv = ["ai_commit.py", "--spellcheck-generate-message",
@@ -464,6 +511,38 @@ class ManualSpellcheckTests(unittest.TestCase):
             "--- a/notes/report.md\n+++ b/notes/report.md\n-old\n+new",
             ["notes/report.md"], include_description=True, file_context="context")
         self.assertTrue(all("notes/report.md" in call.args for call in read.call_args_list))
+
+    def test_reviewed_spellcheck_emoji_toggle_formats_only_after_normal_generation(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        for enabled, expected in (
+            (True, "🖊️ Fix Markdown typos"),
+            (False, "Fix Markdown typos"),
+        ):
+            with self.subTest(enabled=enabled), patch.object(
+                sys, "argv", argv
+            ), patch.object(
+                sys, "stdout", io.StringIO()
+            ) as output, patch.object(
+                ai_commit, "git_output", side_effect=["report.md | 2 +-", "-typo\n+fixed"]
+            ), patch.object(
+                ai_commit, "staged_file_context", return_value=""
+            ), patch.object(
+                ai_commit, "should_add_default_branch_description", return_value=False
+            ), patch.object(
+                ai_commit, "git_config_bool", return_value=enabled
+            ) as setting, patch.object(
+                ai_commit, "generate_message",
+                return_value=("🖊️ Fix Markdown typos", "Full normal-generation description.")
+            ) as generator:
+                ai_commit.main()
+            self.assertEqual(json.loads(output.getvalue()), {
+                "title": expected,
+                "description": "Full normal-generation description.",
+            })
+            generator.assert_called_once()
+            setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
 
     def test_reviewed_spellcheck_title_rejects_unsafe_paths_before_git(self):
         import io

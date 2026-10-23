@@ -71,7 +71,6 @@ async function openedRoot(result) {
 
     await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
     git('-C', root, 'add', 'file.txt');
-    const indexBefore = git('-C', root, 'diff', '--cached');
     const moving = editor(root);
     moving.extensions = { getExtension: () => ({ async activate() {} }) };
     moving.commands.getCommands = async () => ['sweetiebot.codex.prepareWorkspaceHandoff'];
@@ -85,7 +84,10 @@ async function openedRoot(result) {
     assert.equal(await fs.readFile(path.join(moved, 'file.txt'), 'utf8'), 'pending shared main\n');
     assert.equal(await fs.readFile(path.join(moved, 'draft.txt'), 'utf8'), 'untracked task work\n');
     assert.equal(git('-C', moved, 'diff', '--cached'), '', 'Copied task work is never staged');
-    assert.equal(git('-C', root, 'diff', '--cached'), indexBefore, 'Source index is unchanged');
+    assert.equal(git('-C', root, 'status', '--porcelain'), '', 'Transferred changes leave main clean');
+    assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'committed main\n');
+    assert.equal(await fs.stat(path.join(root, 'draft.txt')).then(() => true, () => false), false);
+
     assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.save'));
 
     // Saved workspaces switch folders without reopening the workbench.
@@ -106,6 +108,7 @@ async function openedRoot(result) {
     assert.equal(saved.workspace, first.target, 'Keep the existing workspace identity');
     assert.equal(saved.plan.destination, topic);
 
+    await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
     moving.commands.calls.length = 0;
     await routeBranch(moving, { rootUri: { fsPath: root } },
       { ...options, branch: 'smooth-task', create: true });
@@ -129,6 +132,8 @@ async function openedRoot(result) {
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
     assert.equal(await fs.readFile(path.join(fromTopic, 'draft.txt'), 'utf8'), 'untracked task work\n');
     assert.equal(git('-C', moved, 'diff', '--cached'), topicIndex);
+    assert.equal(git('-C', moved, 'status', '--porcelain'), '', 'Topic-to-topic handoff also moves pending edits');
+
     assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'));
     const forkScript = path.join(temporary, 'fork_fixture.py');
     await fs.writeFile(forkScript, [

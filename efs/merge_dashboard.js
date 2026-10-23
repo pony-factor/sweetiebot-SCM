@@ -4,12 +4,27 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
+const { createReactionChoices } = require('./merge_reaction_choices');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
 const SHA = /^[0-9a-f]{40,64}$/i;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const TIMELINE_MODES = ['hidden', 'relative', 'clock'];
+
+function branchDisplayLabel(branch, catalog) {
+  if (branch === 'main') return '🏠';
+  const pony = require('./pull_request').matchSweetiebotPonyCatalog(branch, catalog);
+  return pony ? '✨ ' + (pony.name || require('./pony_profile').displayName(pony.canonicalSlug)) : branch;
+}
+
+function ponyCatalog() {
+  for (const file of [path.join(__dirname, 'branch_name_packs.json'),
+    path.join(__dirname, '..', 'scripts', 'branch_name_packs.json')]) {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* Optional display enrichment. */ }
+  }
+  return undefined;
+}
 
 function configuredTimelineMode(vscode) {
   const value = vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden');
@@ -127,8 +142,17 @@ async function paged(fetchImpl, token, repository, endpoint, maxPages = 3) {
   return items;
 }
 
-// Observe GitHub state only. The ChatGPT window alone performs merge mutations;
-// never infer successful conflict resolution from an AI assertion or stale snapshot.
+async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
+  const [conversation, inline] = await Promise.all([
+    paged(fetchImpl, token, repository, '/issues/' + number + '/comments', maxPages),
+    paged(fetchImpl, token, repository, '/pulls/' + number + '/comments', maxPages)
+  ]);
+  // Inline decision requests take precedence over legacy Conversation requests.
+  return { ...reportFromComments([...conversation, ...inline]), inlineComments: inline };
+}
+
+// Observe GitHub state and dispatch explicit user decisions. Never infer
+// successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction } = {}) {
@@ -143,8 +167,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
+  const catalog = ponyCatalog();
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
+    headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
     files: [], report: null, review: null, sawConflict: false, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
@@ -155,9 +181,36 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let error = '';
   const events = [];
   const launchingActions = new Set();
+  const inlineComments = new Map();
+  const reportedDeferrals = new Set();
+  const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
+    storageDirectory: context?.globalStorageUri?.fsPath,
+    launch: async (pr, comment, option) => {
+      if (disposed || launchingActions.has(pr.number)) return;
+      launchingActions.add(pr.number);
+      publish();
+      try {
+        const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
+        if (fresh.state !== 'open' || fresh.merged || fresh.merged_at || fresh.number !== pr.number ||
+            fresh.html_url !== pr.url || fresh.base?.ref !== pr.base || fresh.base?.sha !== pr.baseSha ||
+            fresh.head?.ref !== pr.head || fresh.head?.sha !== pr.headSha ||
+            fresh.head?.repo?.full_name !== selection.repository) {
+          throw Error('The PR changed after your reaction. Refresh the inline choices and react again.');
+        }
+        const snapshot = { ...pr, ...reportFromComments([comment]) };
+        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, 'web');
+        addEvent(byNumber.get(pr.number), 'action', opened === false
+          ? 'Reaction task was not opened; add a fresh reaction to retry.'
+          : 'Your emoji selected: ' + option.label + ' · opened GPT web');
+      } finally {
+        launchingActions.delete(pr.number);
+        publish();
+      }
+    }
+  });
 
-  function addEvent(pr, state, message) {
-    const event = { number: pr.number, state, message, at: new Date().toISOString() };
+  function addEvent(pr, state, message, details) {
+    const event = { number: pr.number, state, message, ...(details ? { details } : {}), at: new Date().toISOString() };
     events.push(event);
     pr.events.push(event);
     if (events.length > 400) events.shift();
@@ -175,6 +228,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   async function refreshOne(item) {
+    let decisionComments = inlineComments.get(item.number) || [];
     const info = await githubGet(fetchImpl, token, selection.repository,
       '/pulls/' + item.number);
     // Never follow a moved PR base silently, and do not treat an unrelated PR as selected.
@@ -201,9 +255,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.filesTruncated = files.length >= 300;
     }
     if (cycle === 1 || cycle % 3 === 0 || changed || info.merged) {
-      const comments = await paged(fetchImpl, token, selection.repository,
-        '/issues/' + item.number + '/comments', 2);
-      const notes = reportFromComments(comments);
+      const notes = await readReports(fetchImpl, token, selection.repository, item.number);
+      decisionComments = notes.inlineComments;
+      inlineComments.set(item.number, decisionComments);
       if (notes.report?.id !== item.report?.id && notes.report) {
         addEvent(item, 'reported', 'AI merge explanation recorded on the pull request');
       }
@@ -239,6 +293,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     item.mergeCommit = info.merge_commit_sha || '';
     item.description = String(info.body || '').slice(0, 12000);
     publish();
+    if (!launchingActions.has(item.number)) {
+      await reactionChoices.inspect({ ...item, headSha: info.head?.sha, baseSha: info.base?.sha }, decisionComments);
+    }
   }
 
   async function refresh() {
@@ -305,8 +362,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             fresh.head?.repo?.full_name !== selection.repository) {
           throw Error('The PR changed. Refresh its status and review the options before choosing again.');
         }
-        const comments = await paged(fetchImpl, token, selection.repository, '/issues/' + pr.number + '/comments', 3);
-        const notes = reportFromComments(comments);
+        const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3);
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
           state: mergePhase(fresh, { ...pr, ...notes }) };
         const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);
@@ -340,23 +396,65 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
   publish();
   void refresh();
-  return { panel, refresh, selection, recordLocalResult(result) {
+  return { panel, refresh, selection, recordLocalProgress(event) {
+    const pr = byNumber.get(event?.number);
+    if (!pr) return;
+    const stages = {
+      preparing: 'Preparing the full PR in an isolated checkout',
+      integrating: 'Integrating the full PR with the current base',
+      'applying-resolution': 'Applying the complete conflict-resolution patch',
+      'rewrite-approved': 'Using an explicitly approved history rewrite as a last resort',
+      prepared: 'Full PR squash prepared locally · not pushed yet',
+      'decision-commit': 'Conflict decision recorded as a separate local commit',
+      'sync-prepared': 'Branch synchronization prepared locally',
+      pushed: 'Prepared commit pushed to the PR branch · not merged',
+      'verifying-push': 'Verifying GitHub sees the pushed PR head',
+      'waiting-checks': 'Checking the integrated PR head · waiting for passing checks',
+      'checks-passed': 'Integrated-head checks passed · merge not yet confirmed',
+      merging: 'Requesting GitHub merge · awaiting confirmation'
+    };
+    if (!Object.hasOwn(stages, event.stage)) return;
+    const sha = SHA.test(event.sha || '') ? event.sha : '';
+    const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
+    if (event.stage === 'preparing') pr.lastPushedHead = '';
+    if (event.stage === 'pushed') pr.lastPushedHead = sha;
+    const decision = ['decision-commit', 'preparing', 'rewrite-approved'].includes(event.stage)
+      ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
+    addEvent(pr, 'progress', stages[event.stage],
+      [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
+    publish();
+  }, recordBatchState(state) {
+    if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    for (const item of state.deferred) {
+      const pr = byNumber.get(item.number);
+      if (!pr || reportedDeferrals.has(item.number)) continue;
+      reportedDeferrals.add(item.number);
+      addEvent(pr, 'blocked', 'Deferred for this batch · other selected PRs can continue', String(item.reason || '').slice(0, 4000));
+    }
+    publish();
+  }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
-      const message = item.status === 'merged' ? 'Local CLI verified the human-authored merge: ' + item.sha
-        : item.status === 'synced' ? 'PR branch synchronized after separate per-file decision commits; main was not modified.'
+      const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
+      const message = item.status === 'merged' && item.merged === true ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)
+        : item.status === 'synced' ? item.sha === item.previousHeadSha
+          ? 'PR branch already up to date · no commit or push needed'
+          : 'PR branch synchronized with incremental commits · existing history retained'
         : item.status === 'needs_resolution' ? 'Automatically reconciling overlapping changes against current main: ' + (item.conflictPaths || []).join(', ')
         : item.status === 'needs_refresh' ? 'Main advanced; automatically refreshing the integration.'
-        : item.status === 'waiting' ? 'Waiting for checks on the integrated PR head.'
-        : 'Local CLI stopped: ' + (item.reason || 'Review the merge result.');
-      addEvent(pr, item.status === 'merged' ? 'merged' : continuing ? 'updated' : 'blocked', message);
+        : item.status === 'waiting' ? 'Checks still pending · prepared PR remains unmerged'
+        : item.status === 'checks_failed' ? 'Integrated-head checks failed · PR remains unmerged'
+        : pushed ? 'Stopped after pushing the prepared PR branch · merge not confirmed'
+        : 'Local preparation stopped · merge not confirmed';
+      const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason].filter(Boolean).join('\n');
+      addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
     }
     publish();
   } };
 }
 
 module.exports = { REPORT_MARKER, REVIEW_MARKER, validateSelection,
-  reportFromComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard };
+  reportFromComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard, branchDisplayLabel };

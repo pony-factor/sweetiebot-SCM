@@ -23,7 +23,7 @@ function validateDecisions(value = []) {
 // Build an append-only PR history in an isolated index. main is only a tree
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
-  conflicts, decisions, author, base }) {
+  conflicts, decisions, author, base, onCommit = () => {} }) {
   decisions = validateDecisions(decisions);
   if (conflicts.some(file => !safePatchPath(file)) ||
       conflicts.length !== decisions.length || conflicts.some(file => !decisions.some(item => item.path === file))) {
@@ -51,6 +51,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
       '\nIncoming ' + base + ': ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
     tip = await commit(tree, tip, message);
     commits.push({ ...decision, sha: tip });
+    try { onCommit({ ...decision, sha: tip }); } catch { /* Reporting cannot alter the prepared tree. */ }
   }
   // The remaining tree difference contains only nonconflicting incoming work.
   // Keep an empty sync marker if all incoming changes were resolved above.

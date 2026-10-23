@@ -36,6 +36,7 @@ from local_setup import (
 )
 from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
+from window_title_configurator import WINDOW_TITLE_SCRIPT, WINDOW_TITLE_STYLE, render_heading
 
 
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -230,6 +231,10 @@ SETTINGS = (
     Setting("normalizeStagedWhitespace", "scm-toolkit.normalize-staged-whitespace", "Normalize line endings and whitespace", "Remove trailing spaces on added lines and ensure exactly one final newline in eligible staged text files, preserving LF or CRLF. Applies to ordinary commits and Commit with Codex, including typed messages. Disable to preserve staged file formatting.", "Source control"),
     Setting("compactWindowButton", "scm-toolkit.compact-window-button", "Show compact-window button", "Show the title-bar button that switches between compact and restored window sizes.", "Window"),
     Setting("newWorkspaceWindowButton", "scm-toolkit.new-workspace-window-button", "Show new-workspace-window button", "Show the title-bar button that opens the same repository folders in a new workspace window.", "Window"),
+    Setting("windowHeading", "scm-toolkit.window-heading", "Title-bar heading", "Leave blank to follow VS Code's window.title setting. Use VS Code title variables, e.g. ${rootName} (${activeRepositoryBranchName}). This changes the visible heading independently of the window name.", "Window", "optional_text"),
+    Setting("windowName", "scm-toolkit.window-name", "Window name", "Name shown in macOS and window switchers. Leave blank to follow VS Code's window.title setting. Use the same title variables as the heading; Pushing is added automatically while publication is pending.", "Window", "optional_text"),
+    Setting("windowShowModifiedStatus", "scm-toolkit.window-show-modified-status", "Show modified editor status", "Allow VS Code to display Modified or other active editor state in window titles. Disable to hide this status.", "Window"),
+    Setting("windowShowPushingStatus", "scm-toolkit.window-show-pushing-status", "Show pushing status", "Append Pushing while a background push is pending. Disable to hide the label without changing the actual push.", "Window"),
     Setting("cmdClickCloseOthers", "scm-toolkit.cmd-click-close-others", "Cmd-click closes other tabs", "Hold Command while clicking a tab's X to keep that tab open and close the other editors in its group.", "Browser"),
     Setting("browserGlobeNewTab", "scm-toolkit.browser-globe-new-tab", "Globe opens a new browser tab", "Click the title-bar globe to open a new Integrated Browser tab directly. Turn off to show the browser URL or tab picker.", "Browser"),
     Setting("browserChatgptHome", "scm-toolkit.browser-chatgpt-home", "Custom URL for blank browser tabs", "Open blank Integrated Browser tabs at the URL below while preserving explicit URLs.", "Browser"),
@@ -260,7 +265,9 @@ SETTINGS = (
     Setting("draftSpellcheckVocabulary", "scm-toolkit.draft-spellcheck-vocabulary", "Protected vocabulary", "One term or phrase per line. When present, these exact words, brands or technical expressions must remain unchanged.", "Spellcheck Changes", "textarea"),
     Setting("draftSpellcheckGuidance", "scm-toolkit.draft-spellcheck-guidance", "Additional correction guidance", "Optional preferences or specialist terminology for the local model. Safety checks, protected tokens and user-selected emoji always take precedence.", "Spellcheck Changes", "textarea"),
     Setting("spellcheckModel", "scm-toolkit.spellcheck-model", "Spellcheck model", "Local Ollama model for automatic draft spelling corrections and manual commit previews.", "Spellcheck Changes", "model"),
+    Setting("spellcheckThinkingEffort", "scm-toolkit.spellcheck-thinking-effort", "Spellcheck reasoning effort", "Default uses the model's normal behavior. Low, medium, or high requests supported Ollama thinking levels; models offering only an on/off control use thinking on. Unsupported levels fall back to the model default. Applies to commit-subject and Markdown spellchecking; does not change normal commit-title generation.", "Spellcheck Changes", "select", ("default", "low", "medium", "high")),
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellcheck Changes"),
+    Setting("spellcheckChangesEmoji", "scm-toolkit.spellcheck-changes-emoji", "Add professional emoji to spellcheck commits", "Include the professional leading emoji from normal AI commit-title generation when accepting reviewed Spellcheck Changes. Turn off to omit it without changing title quality, model effort, or attribution. On by default.", "Spellcheck Changes"),
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
@@ -622,7 +629,7 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
         disabled = "" if current is True else " disabled"
         return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
-    if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "commitButtonLabel", "commitAndSendButtonLabel"}:
+    if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "commitButtonLabel", "commitAndSendButtonLabel", "windowHeading"}:
         return ""
     if setting.kind == "message_bar":
         return render_message_bar_control(current)
@@ -695,7 +702,8 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.kind == "color":
         required = ' placeholder="#43AF49"'
     elif setting.kind == "optional_text":
-        required = ""
+        required = (' placeholder="VS Code default"'
+                    if setting.name in {"windowHeading", "windowName"} else "")
     elif setting.kind == "chatgpt_project_url":
         required = ' placeholder="https://chatgpt.com/g/g-p-.../project"'
     elif setting.kind == "browser_url":
@@ -824,6 +832,8 @@ def render_form(
                 + '</div>'
                 for heading, is_time in (("Time", True), ("Customization", False))
             )
+        if section == "Window":
+            controls = render_heading(current.get("windowHeading", "")) + controls
         if section == "Message bar":
             layout_setting = next(setting for setting in SETTINGS if setting.kind == "message_bar")
             controls = render_message_bar_control(
@@ -872,7 +882,8 @@ def render_form(
             draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",
                               "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
                               "draftSpellcheckVocabulary", "draftSpellcheckGuidance",
-                              "draftCommitEmoji", "spellcheckModel"}
+                              "draftCommitEmoji", "spellcheckModel",
+                              "spellcheckThinkingEffort"}
             controls = (
                 '<div class="settings-group"><h3>While drafting a commit</h3>'
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
@@ -919,6 +930,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
+{WINDOW_TITLE_STYLE}
 {COMMIT_HOTKEY_STYLE}
 {DIAGNOSTICS_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
@@ -1116,6 +1128,7 @@ for (const tab of settingsTabs) {{
 }}
 
 {MESSAGE_BAR_SCRIPT}
+{WINDOW_TITLE_SCRIPT}
 
 const packSearch = document.getElementById('pack-search');
 const packTabs = [...document.querySelectorAll('.pack-tab')];
@@ -1396,7 +1409,23 @@ if (settingsServerInstance) {{
       const response = await fetch('/health' + location.search, {{cache: 'no-store'}});
       if (!response.ok) return;
       const status = await response.json();
-      if (status.instance && status.instance !== settingsServerInstance) location.reload();
+      if (status.instance && status.instance !== settingsServerInstance) {{
+        location.reload();
+        return;
+      }}
+      // Respect in-progress edits while reflecting changes made in VS Code itself.
+      if (!autosaveTimer && saveStatus.textContent === 'Saved') {{
+        for (const [name, value] of Object.entries(status.windowSettings || {{}})) {{
+          const input = settingsForm.elements.namedItem(name);
+          if (input && input !== document.activeElement) {{
+            if (input.type === 'checkbox' && typeof value === 'boolean') input.checked = value;
+            else if (typeof value === 'string') {{
+              input.value = value;
+              if (name === 'windowHeading') window.refreshHeadingEditor?.(value);
+            }}
+          }}
+        }}
+      }}
     }} catch {{
       // The extension may be reloading. Keep the page and retry the same stable URL.
     }}
@@ -1521,7 +1550,13 @@ def run_configurator(
                 self._send_json(status)
                 return
             if path == "/health":
-                self._send_json({"instance": server_instance})
+                self._send_json({
+                    "instance": server_instance,
+                    "windowSettings": {
+                        name: session_settings.get(name, "")
+                        for name in ("windowHeading", "windowName", "windowShowModifiedStatus", "windowShowPushingStatus")
+                    },
+                })
                 return
             if path == "/diagnostics":
                 self._send_json(read_diagnostics())
@@ -1568,6 +1603,21 @@ def run_configurator(
             values = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8"), keep_blank_values=True
             )
+            if urllib.parse.urlsplit(self.path).path == "/sync-window-settings":
+                # The live VS Code user configuration is authoritative for these fields.
+                names = ("windowHeading", "windowName")
+                statuses = ("windowShowModifiedStatus", "windowShowPushingStatus")
+                if any(len(values.get(name, [])) != 1 or
+                       len(values[name][0]) > 4096 or
+                       "\n" in values[name][0] or "\r" in values[name][0]
+                       for name in names) or any(values.get(name) not in (["true"], ["false"])
+                                                 for name in statuses):
+                    self._send_json({"error": "Invalid window settings."}, 400)
+                    return
+                session_settings.update({name: values[name][0] for name in names})
+                session_settings.update({name: values[name][0] == "true" for name in statuses})
+                self._send_json({"synced": True})
+                return
             if urllib.parse.urlsplit(self.path).path == "/rebuild":
                 with rebuild_lock:
                     if rebuild_status["running"]:

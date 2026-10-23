@@ -43,6 +43,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       conflictPaths: secondAttempt === 1 ? ['price.js'] : [], baseSha: d }] };
   } });
   try {
+    assert(batch.instructions.includes('Return the oldest eligible remaining PR'));
     const tooMany = await submit(batch.url, [item(1, c), item(2, c)]);
     assert.equal(tooMany.status, 400);
     assert.equal(calls, 0, 'Do not prepare stale multi-PR patches in one round');
