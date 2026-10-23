@@ -9,6 +9,7 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 
 const { isConflictState, offerConflictRecoveryOptions } = require('./lindsey_conflicts');
+const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = require('./sync_review');
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
 const { resolvePythonExecutable } = require('./python_runtime');
@@ -985,7 +986,7 @@ async function confirmUnverifiedLocalDeletion(vscode, repository, {
   });
 }
 
-async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash' }) {
+async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash', reviewConflicts }) {
   if (!branch) throw new Error('Select a branch to sync.');
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
   const checkBranch = async () => {
@@ -1051,6 +1052,36 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         throw new Error('Sync staged changes outside the automatic Git merge result. Review and commit substantive edits in their own human-authored commit before retrying.');
       }
     };
+    const confirmConflict = async (headBefore, expectedTree) => {
+      if (expectedTree !== null || typeof reviewConflicts !== 'function') return true;
+      const targetSha = await git(['rev-parse', target]);
+      const approved = await reviewConflicts(repository, {
+        branch, defaultBranch, remote, strategy, head: headBefore, target: targetSha
+      });
+      if (!approved) return false;
+      // A reviewer might switch branches, edit files, or move the target while
+      // looking at the preview. Never apply a stale decision.
+      await checkBranch();
+      if (await git(['rev-parse', 'HEAD']) !== headBefore
+          || await git(['rev-parse', target]) !== targetSha
+          || await git(['status', '--porcelain'])) {
+        throw new Error('Git changed during sync review. Start a fresh sync.');
+      }
+      return true;
+    };
+    const recordSync = async before => {
+      const sha = await git(['rev-parse', 'HEAD']);
+      const targetSha = await git(['rev-parse', target]);
+      try {
+        await queueSyncReport(root, {
+          branch, defaultBranch, remote, strategy, before, target: targetSha, sha
+        });
+      } catch (error) {
+        // The Git commit already succeeded. A comment outage must not cause
+        // a dangerous retry that repeats the merge or changes its authorship.
+        console.warn('Sweetiebot could not queue the sync report:', error.message);
+      }
+    };
     if (strategy === 'merge') {
       if (!git) {
         // Allow VS Code Git API fixtures that do not expose a real checkout.
@@ -1058,6 +1089,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       } else if (!await isAncestor()) {
         const headBefore = await git(['rev-parse', 'HEAD']);
         const expectedTree = await proposedMergeTree(headBefore);
+        if (!await confirmConflict(headBefore, expectedTree)) return false;
         // Do not let Git auto-commit with an arbitrary/generated description.
         await git(['merge', '--no-ff', '--no-commit', '-m', message, target]);
         await checkBranch();
@@ -1068,6 +1100,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         if (!mergeHead) throw new Error('Git did not leave a verifiable merge to commit.');
         await verifyAutomaticResult(expectedTree);
         await git(['commit', '-m', routineCommitMessage]);
+        await recordSync(headBefore);
       }
     } else {
       if (!git) throw new Error('A local Git checkout is required for squash synchronization.');
@@ -1075,6 +1108,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       // If the target is already an ancestor there is nothing to incorporate.
       if (!await isAncestor()) {
         const expectedTree = await proposedMergeTree(headBefore);
+        if (!await confirmConflict(headBefore, expectedTree)) return false;
         await checkBranch();
         // A conflict intentionally leaves the index and worktree available to resolve.
         await git(['merge', '--squash', target]);
@@ -1091,6 +1125,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           }
           await verifyAutomaticResult(expectedTree);
           await git(['commit', '-m', routineCommitMessage]);
+          await recordSync(headBefore);
         }
       }
     }
@@ -1171,6 +1206,9 @@ function registerBranchCommands(vscode, context) {
             ...options, defaultBranch,
             ...(command === 'sweetiebot.createBranch' && defaultBranch === 'main' ? {
               isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork })
+            } : {}),
+            ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
+              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details)
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, repository, {
@@ -1265,6 +1303,8 @@ function registerBranchCommands(vscode, context) {
       });
     })
   );
+
+  if (vscode.window?.createOutputChannel) registerSyncReportPublisher(vscode, context);
 
   let scanning = false, disposed = false;
   const lastFetch = new WeakMap();
