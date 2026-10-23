@@ -17,7 +17,8 @@
     const candidate = new URL(payload.get('return_to'));
     if (candidate.protocol === 'http:' && candidate.hostname === '127.0.0.1'
         && candidate.port && !candidate.username && !candidate.password && !candidate.search && !candidate.hash
-        && /^\/kefania-draft\/[0-9a-f-]{36}\/(draft|pony)$/.test(candidate.pathname)) callback = candidate;
+        && (prLaunch && /^\/kefania-draft\/[0-9a-f-]{36}\/(draft|pony)$/.test(candidate.pathname)
+          || mergeLaunch && /^\/lindsey-merge\/[0-9a-f-]{36}$/.test(candidate.pathname))) callback = candidate;
   } catch { /* Older manual drafting links do not collect results automatically. */ }
   // Give this action's new tab a blank draft without deleting or replacing the
   // user's shared draft. ChatGPT reads storage in its page world, not preload.
@@ -78,7 +79,7 @@
         if (url.origin !== callback.origin || url.pathname !== callback.pathname || url.search
             || url.href.length > 80000) continue;
         const result = new URLSearchParams(url.hash.slice(1));
-        const expectedKeys = callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
+        const expectedKeys = mergeLaunch ? ['result'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
         if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
         latest = url.href;
       }

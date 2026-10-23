@@ -11,7 +11,7 @@
     try { url = new URL(address); } catch { return; }
     const local = url.protocol === 'http:' && url.hostname === '127.0.0.1'
       && url.port && !url.username && !url.password
-      && /^\/kefania-draft\/[0-9a-f-]{36}(?:\/(?:draft|pony))?$/.test(url.pathname);
+      && /^(?:\/kefania-draft\/[0-9a-f-]{36}(?:\/(?:draft|pony))?|\/lindsey-merge\/[0-9a-f-]{36})$/.test(url.pathname);
     if (url.origin === 'https://chatgpt.com') {
       const payload = new URLSearchParams(url.hash.slice(1));
       if (payload.get('sweetiebot_merge') === '1') active = true;
