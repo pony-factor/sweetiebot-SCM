@@ -88,6 +88,34 @@ async function main() {
     /No-force-push policy: cannot squash multiple original PR commits/);
   assert(!many.merged);
   assert(!many.calls.some(c => c.method !== 'GET'));
+  const guarded = fixture({ commits: [oneHuman, secondHuman] });
+  let delegated = 0;
+  const localMerge = async (repo, number, options) => {
+    delegated++;
+    assert.equal(repo, 'owner/repo');
+    assert.equal(number, 12);
+    assert.equal(options.api, guarded.api);
+    assert.equal(options.allowHistoryRewrite, true);
+    assert.equal(options.rewriteReason, 'preserve-human-author');
+    assert.deepEqual(options.expected, { headSha: oldSha, baseSha, head: 'bot-topic',
+      base: 'main', title: '🐛 Fix placement' });
+    return { merged: true, sha: mergedSha };
+  };
+  assert((await humanSquashMerge('owner/repo', 12, {
+    api: guarded.api, allowHistoryRewrite: true, localMerge
+  })).merged);
+  assert.equal(delegated, 1);
+  assert(!guarded.calls.some(c => c.method !== 'GET'), 'Only the guarded local executor may write');
+  const unprepared = fixture({ commits: [{ ...oneHuman, commit: { ...oneHuman.commit, message: 'Original title' } }] });
+  assert.equal((await humanSquashMerge('owner/repo', 12, {
+    api: unprepared.api, allowHistoryRewrite: true,
+    localMerge: async () => ({ merged: false, status: 'waiting', reason: 'Waiting for required checks' })
+  })).status, 'waiting');
+  const prepared = fixture();
+  assert((await humanSquashMerge('owner/repo', 12, {
+    api: prepared.api, allowHistoryRewrite: true,
+    localMerge: async () => assert.fail('Prepared one-commit PR must not be rewritten')
+  })).merged);
 
   for (const change of [
     [{ ...oneHuman, commit: { ...oneHuman.commit,
