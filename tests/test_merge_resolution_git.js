@@ -46,7 +46,10 @@ const run = promisify(execFile);
     const api = async (endpoint, method) => {
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, default_branch: 'main' };
       if (endpoint.includes('/check-runs?')) return { check_runs: [] };
-      if (endpoint.includes('/check-suites?')) return { check_suites: [] };
+      if (endpoint.includes('/check-suites?')) return { check_suites: [
+        { app: { name: 'Netlify' }, status: 'queued', latest_check_runs_count: 0 },
+        { app: { name: 'AWS Amplify' }, status: 'queued', latest_check_runs_count: 0 }
+      ] };
       if (endpoint.includes('/status?')) return { statuses: [] };
       if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
       if (endpoint.includes('/pulls?')) return [];
