@@ -71,7 +71,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       validate: validateRound,
       execute: async (input, selected) => { submitted = input; return execute(input, selected); },
       onResult: async result => {
-        await onResult(result);
+        // Dashboard rendering must not prevent a verified Git result from
+        // advancing the coordinator (for example, after its panel is closed).
+        try { await onResult(result); } catch { /* State below remains authoritative. */ }
         for (const decision of submitted.deferred || []) deferred.push({ ...decision });
         if (result.results.length) emptyRounds = 0;
         else emptyRounds++;
@@ -91,7 +93,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             pr.headSha = item.sha;
           }
           if (item.status === 'checks_failed') deferred.push({ number: pr.number, reason: item.reason });
-          else if (item.status === 'blocked' || pr.attempts >= 3) deferred.push({ number: pr.number,
+          else if (!item.merged && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number,
             reason: item.reason || 'Repeated integration attempts require inspection.' });
         }
         // Empty results cannot silently abandon remaining routine integration.

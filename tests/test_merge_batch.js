@@ -82,6 +82,36 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(finished.value.batch.merged.length, 1);
   } finally { own.dispose(); }
 
+  // Main may advance during preparation. Retry and adopt only our verified
+  // prepared head, including when its first result is a base-refresh request.
+  currentHead = a; attempts = 0;
+  const raced = await createMergeBatch(one, { api: ownApi, destination: 'https://chatgpt.com/',
+    onResult: async () => { throw Error('Dashboard closed'); }, execute: async () => {
+      attempts++; currentHead = e;
+      return { repository: 'owner/repo', results: [{ number: 1, status: attempts < 3 ? 'needs_refresh' : 'merged',
+        merged: attempts === 3, sha: e, previousHeadSha: attempts === 1 ? a : e }] };
+    } });
+  try {
+    const first = await submit(raced.url, [item(1, c)]);
+    const second = await submit(first.value.continueUrl, [item(1, c, null, e)]);
+    const third = await submit(second.value.continueUrl, [item(1, c, null, e)]);
+    assert.equal(third.value.batch.merged.length, 1);
+    assert.deepEqual(third.value.batch.deferred, [], 'A successful last retry is not also a blocker');
+  } finally { raced.dispose(); }
+
+  const page = require('node:fs').readFileSync(require.resolve('../efs/merge_handoff.html'), 'utf8');
+  const pageScript = page.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const next = 'https://chatgpt.com/#sweetiebot_merge=1&q=Refreshed%20round';
+  for (const destination of [next, 'https://example.com/#sweetiebot_merge=1']) {
+    const elements = { status: {}, results: {} }, navigations = [];
+    await require('node:vm').runInNewContext(pageScript, { URL, URLSearchParams,
+      location: { hash: '#result=' + encodeURIComponent('{}'), pathname: '/lindsey-merge/fixture', assign: url => navigations.push(url) },
+      history: { replaceState() {} }, document: { getElementById: id => elements[id] },
+      setTimeout: callback => callback(), fetch: async () => ({ ok: true, json: async () => ({
+        results: [], batch: { merged: [1], deferred: [] }, continueUrl: destination }) }) });
+    assert.deepEqual(navigations, destination === next ? [next] : [], 'Only a verified ChatGPT merge continuation is followed');
+  }
+
   let checks = { check_runs: [{ id: 1, name: 'test', status: 'completed', conclusion: 'failure' }],
     check_suites: [], statuses: [] };
   const checkApi = async endpoint => endpoint.includes('/check-runs?') ? { check_runs: checks.check_runs }
@@ -97,5 +127,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   checks.check_runs[0] = { name: 'test', status: 'completed', conclusion: 'success' };
   checks.check_suites = [{ status: 'in_progress' }];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending', 'Wait for the full suite, not only its first finished job');
+  checks.check_suites = [{ status: 'completed', conclusion: 'failure' }];
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'failed', 'A failed suite cannot pass just because its jobs are absent');
   console.log('Sequential merge continuation, intent ledger, current-base resolution, replay and integrated-head check gates passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
