@@ -11,7 +11,7 @@ HOST_END = '\n/* sweetiebot-codex-drafts-host:end */\n'
 WEB_START = '/* sweetiebot-codex-drafts-webview:start */\n'
 WEB_END = '/* sweetiebot-codex-drafts-webview:end */\n'
 HOST_ANCHOR = re.compile(
-    r'(?P<vscode>[\w$]+)\.window\.registerWebviewViewProvider\('
+    r'(?<![\w$])(?P<vscode>[\w$]+)\.window\.registerWebviewViewProvider\('
     r'(?P<view>[\w$]+)\.viewType,(?P<provider>[\w$]+),'
 )
 

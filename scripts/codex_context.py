@@ -9,10 +9,10 @@ ASSETS = HERE.parent / "assets/codex"
 START = '\n/* scm-toolkit-codex-context:start */\n'
 END = '\n/* scm-toolkit-codex-context:end */\n'
 HOST_ANCHOR = re.compile(
-    r'(?P<subscriptions>[\w$]+)\.push\((?P<vscode>[\w$]+)\.window\.registerWebviewViewProvider\('
+    r'(?<![\w$])(?P<subscriptions>[\w$]+)\.push\((?P<vscode>[\w$]+)\.window\.registerWebviewViewProvider\('
     r'(?P<type>[\w$]+)\.viewType,(?P<provider>[\w$]+),'
 )
-WEBVIEW_ANCHOR = re.compile(r'(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
+WEBVIEW_ANCHOR = re.compile(r'(?<![\w$])(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
 
 
 def transform(source, kind, enabled=True):
