@@ -39,6 +39,7 @@
     "onCommand:sweetiebot.previewCommitSpellcheck",
     "onCommand:sweetiebot.spellcheckWithChatGPT",
     "onCommand:sweetiebot.postCommitSpellcheck",
+    "onCommand:sweetiebot.spellcheckFilenames",
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
     "onCommand:sweetiebot.listBranchStrip",
@@ -112,6 +113,12 @@
         "title": "Review Text with ChatGPT Spellcheck Only",
         "category": "Sweetiebot",
         "icon": "$(edit)"
+      },
+      {
+        "command": "sweetiebot.spellcheckFilenames",
+        "title": "Spellcheck Filenames",
+        "category": "Sweetiebot",
+        "icon": "$(check)"
       },
       {
         "command": "sweetiebot.commitWithCodex",
@@ -225,6 +232,17 @@
           "command": "sweetiebot.openFileOnGitHub",
           "when": "resourceScheme == file",
           "group": "navigation@50"
+        },
+        {
+          "command": "sweetiebot.spellcheckFilenames",
+          "when": "resourceScheme == file",
+          "group": "navigation@49"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "sweetiebot.spellcheckFilenames",
+          "group": "navigation@90"
         }
       ],
       "scm/resourceState/context": [
@@ -232,6 +250,11 @@
           "command": "sweetiebot.openFileOnGitHub",
           "when": "resourceScheme == file",
           "group": "navigation@50"
+        },
+        {
+          "command": "sweetiebot.spellcheckFilenames",
+          "when": "resourceScheme == file",
+          "group": "navigation@49"
         }
       ]
     },

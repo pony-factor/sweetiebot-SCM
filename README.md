@@ -242,6 +242,10 @@ python3 scripts/install.py --app "/path/to/Visual Studio Code.app"
 If macOS blocks the write, allow the terminal or Python process you are using under **System Settings → Privacy & Security → App Management**, then run the installer again.
 
 
+### Filename spellcheck
+
+Choose **Sweetiebot: Spellcheck Filenames** from the Command Palette to review changed and untracked filenames, or right-click an individual file in Explorer or Source Control. Suggestions use the configured local Ollama spellcheck model and only change obvious spelling errors in the filename: directories, extensions, separators, and digits are preserved. Select suggestions and confirm before VS Code renames any files. No rename is staged or committed automatically; review links and code references before committing.
+
 ### Automatic spellcheck commit notification
 
 When the opt-in post-commit Markdown spellcheck produces edits and you keep them, Sweetiebot leaves the edits **unstaged**, shows a small VS Code notification, and fills an **empty** Source Control commit box with a `🤖 Spellcheck …` message. An existing draft is never overwritten: the notification offers **Use spellcheck message** instead. No follow-up commit or push happens automatically.
