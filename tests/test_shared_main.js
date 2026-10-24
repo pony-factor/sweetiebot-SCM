@@ -54,7 +54,7 @@ async function openedRoot(result) {
     const topicWorkspace = topicEditor.commands.calls.at(-1)[1].fsPath;
     const topic = await openedRoot({ target: topicWorkspace });
     assert.equal(path.dirname(path.dirname(topic)), path.join(baseDirectory, 'repo'));
-    assert.match(path.basename(path.dirname(topic)), /^topic-[a-z]+$/);
+    assert.match(path.basename(path.dirname(topic)), /^topic-(?:\d+-)?[a-z]+$/);
     assert.match(path.basename(path.dirname(topic)), /^[0-9a-f-]{36}$/);
     assert.equal(path.dirname(path.dirname(topicWorkspace)), path.join(baseDirectory, 'repo'));
     assert.equal(path.basename(topicWorkspace), path.basename(path.dirname(topicWorkspace)) + '.code-workspace');
