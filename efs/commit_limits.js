@@ -334,13 +334,51 @@ async function confirmCommitLimits(vscode, cwd, status) {
 }
 
 function registerCommitLimitCommand(vscode, context) {
+  // Only a tree this instance actually approved can reuse the inspection.
+  // Passing an arbitrary Git SHA to the public command is not an approval.
+  const approvedByRepository = new Map();
   context.subscriptions.push(vscode.commands.registerCommand(
     'sweetiebot.checkCommitLimits',
-    async uri => {
+    async (uri, options = {}) => {
       const root = vscode.Uri.from(uri?.rootUri ?? uri);
-      if (root.scheme !== 'file') return true;
-      const status = await inspectCommitLimits(root.fsPath);
-      return confirmCommitLimits(vscode, root.fsPath, status);
+      const captureTree = options.captureTree === true;
+      if (root.scheme !== 'file') return captureTree ? { approved: false } : true;
+      const tree = async () => (await gitBuffer(root.fsPath, ['write-tree']))
+        .toString('ascii').trim();
+
+      // A durable queue may hand a declined special-mode commit back to the
+      // direct Git wrapper. Reuse its approved inspection only for the exact
+      // same tree; an intervening stage change invalidates the approval.
+      const approvedTree = options.approvedTree;
+      if (typeof approvedTree === 'string'
+          && approvedByRepository.get(root.fsPath) === approvedTree
+          && await tree() === approvedTree) {
+        return captureTree ? { approved: true, stagedTree: approvedTree } : true;
+      }
+
+      // Inspect only once for a stable staged tree. If staging changes during
+      // the diff scan, a warning prompt, or an oversized-file split, repeat on
+      // the new tree instead of approving stale results. Bound retries so an
+      // actively changing index cannot keep a commit action alive forever.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const before = await tree();
+        const status = await inspectCommitLimits(root.fsPath);
+        if (await tree() !== before) continue;
+        const allowed = await confirmCommitLimits(vscode, root.fsPath, status);
+        if (!allowed) {
+          approvedByRepository.delete(root.fsPath);
+          return captureTree ? { approved: false } : false;
+        }
+        const after = await tree();
+        if (after !== before) continue;
+        approvedByRepository.set(root.fsPath, after);
+        return captureTree ? { approved: true, stagedTree: after } : true;
+      }
+      approvedByRepository.delete(root.fsPath);
+      await vscode.window.showWarningMessage(
+        'The staged changes kept changing during commit validation. Review the selection and retry.'
+      );
+      return captureTree ? { approved: false } : false;
     }
   ));
 }

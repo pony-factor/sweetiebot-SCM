@@ -41,6 +41,8 @@ navigate('https://chatgpt.com/#sweetiebot_merge=1&q=Merge');
 assert.equal(settings.at(-1), false, 'Bulk merge keeps running in its background window');
 navigate('https://chatgpt.com/c/merge-conversation');
 assert.equal(settings.at(-1), false, 'Merge conversation navigation retains background execution');
+navigate('http://127.0.0.1:1234/lindsey-merge/11111111-2222-4333-8444-555555555555#result=prepared');
+assert.equal(settings.at(-1), false, 'Local Lindsey callback remains active in the background merge window');
 navigate('https://example.com/');
 assert.equal(settings.at(-1), true, 'Leaving a merge chat restores throttling');
 console.log('Background PR lifecycle checks passed.');

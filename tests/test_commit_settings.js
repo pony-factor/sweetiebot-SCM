@@ -39,8 +39,11 @@ for (const initiallyAttached of [false, true]) {
           disconnect() { observed = undefined; }
         } }
       },
-      closest(selector) { return attached ? (selector === '.scm-view' ? root : row) : null; }
+      closest(selector) { return attached ? (selector === '.scm-view' ? root : row) : null; },
+      classList: { remove() {} },
+      append(button) { button.parentElement = this; }
     },
+    layout() {},
     disposables: { add(value) { disposed = value; } }
   };
   const button = { parentElement: null, remove() { this.parentElement = null; } };
@@ -48,7 +51,8 @@ for (const initiallyAttached of [false, true]) {
   vm.runInContext(attach + '\nscmToolkitAttachCommitSettings(widget, button);', context);
   assert.equal(observed, initiallyAttached ? root : documentRoot);
   if (!initiallyAttached) {
-    assert.equal(button.parentElement, null);
+    assert.equal(button.parentElement, widget.element,
+      'Keep the wand available inline until VS Code mounts the action row');
     attached = true;
     callback();
   }
@@ -57,6 +61,11 @@ for (const initiallyAttached of [false, true]) {
   assert(classes.has('scm-toolkit-commit-settings'));
   callback();
   assert.equal(button.parentElement, dropdown, 'Repeated mutations preserve placement');
+  dropdown = null;
+  callback();
+  assert.equal(button.parentElement, widget.element,
+    'Fall back to the input toolbar when VS Code recycles the native dropdown');
+  assert(!classes.has('scm-toolkit-commit-settings'));
   index = 4;
   dropdown = makeDropdown();
   callback();
