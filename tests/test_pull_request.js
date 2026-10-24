@@ -144,6 +144,23 @@ async function run() {
   const stored = { [codexSource.uuid]: share };
   assert.deepEqual(sourceWithSharedConversationUrl({ globalState: { get: () => stored } }, codexSource),
     { ...codexSource, sharedUrl: share });
+  const withOrigin = pullRequestPrompt({
+    branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
+    instructions: 'Use current branch evidence.', source: { ...codexSource, sharedUrl: share },
+    conversationContext: 'Full Codex transcript context',
+    conversationModel: { name: 'GPT-6 Codex', effort: 'Extra High' }
+  });
+  assert(withOrigin.includes('Originating conversation browser link: ' + share));
+  assert(withOrigin.includes('Full Codex transcript context'));
+  assert(withOrigin.includes('GPT-6 Codex'));
+  assert(withOrigin.includes('Extra High'));
+  assert.match(withOrigin, /snapshot, not a live transcript/);
+  const withoutShare = pullRequestPrompt({
+    branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
+    instructions: '', source: codexSource
+  });
+  assert.match(withoutShare, /No verified ChatGPT browser-view link/);
+  assert(!withoutShare.includes('Originating conversation browser link:'));
   assert.deepEqual(sourceWithSharedConversationUrl({ globalState: { get: () => stored } }, chatSource), chatSource);
 
   const codexUrl = codexConversationUrl('019c56c3-06fc-7db3-a928-9c3607e17129');
@@ -179,7 +196,7 @@ async function run() {
   assert(prompt.includes(chatSource.url));
   assert.match(prompt, /intentSummary/);
   assert.match(prompt, /provenance summary may differ from the final diff/);
-  assert.match(prompt, /Conversation context for the optional intent summary only/);
+  assert.match(prompt, /Originating conversation transcript for understanding the request/);
   assert.match(prompt, /Local Sweetiebot pony profile/);
   assert(prompt.includes('berry-punch'));
   assert.match(prompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);

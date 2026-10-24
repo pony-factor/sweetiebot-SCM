@@ -43,13 +43,22 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null });
                 return;
             }
-            const text = typeof message.text === 'string' ? message.text.trim().slice(-6000) : '';
+            // Keep a substantial transcript for PR intent, not merely its last
+            // few turns. URL transport will independently enforce its 70 KB cap.
+            const clipped = typeof message.text === 'string' ? message.text.trim().slice(-95000) : '';
+            // Never start the URL-bound context with a split UTF-16 surrogate.
+            const text = /^[\uDC00-\uDFFF]/.test(clipped) ? clipped.slice(1) : clipped;
             if (!text) {
                 request.reject(new Error('Open a Codex conversation with text in this window first.'));
                 return;
             }
             if (request.includeSource) {
-                request.resolve({ text, source: sourceFor(message.conversationId) });
+                const label = value => typeof value === 'string' && value.length <= 100
+                    ? value.replace(/\s+/g, ' ').trim() : '';
+                const name = label(message.model?.name);
+                const effort = label(message.model?.effort);
+                request.resolve({ text, source: sourceFor(message.conversationId),
+                    ...((name || effort) ? { model: { name, effort } } : {}) });
             } else {
                 request.resolve(text);
             }
