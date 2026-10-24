@@ -32,7 +32,10 @@ def transform_host(source, enabled=True):
         source = source.replace(replacement, original, 1)
     if not enabled:
         return source
-    matches = list(HOST_ANCHOR.finditer(source))
+    # Context restoration metadata contains copies of its registration anchor.
+    # Only the executable vendor bundle owns the actual provider registration.
+    bundle = source.split('\n/* scm-toolkit-codex-context:start */\n', 1)[0]
+    matches = list(HOST_ANCHOR.finditer(bundle))
     if len(matches) != 1:
         raise ValueError('Unsupported Codex webview provider registration.')
     match = matches[0]
@@ -70,7 +73,7 @@ def patch_files(extension_path, enabled=True):
     host = root / 'out/extension.js'
     if not host.is_file():
         return []
-    webviews = [p for p in (root / 'webview/assets').glob('app-initial-*.js')
+    webviews = [p for p in (root / 'webview/assets').glob('*.js')
                 if WEB_START in p.read_text() or 'acquireVsCodeApi()' in p.read_text()]
     if len(webviews) != 1:
         if enabled:

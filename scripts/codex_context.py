@@ -16,6 +16,10 @@ WEBVIEW_ANCHOR = re.compile(r'(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
 
 
 def transform(source, kind, enabled=True):
+    import codex_drafts
+    had_drafts = kind == 'host' and codex_drafts.HOST_START in source
+    if had_drafts:
+        source = codex_drafts.transform_host(source, False)
     if source.count(START) != source.count(END) or source.count(START) > 1:
         raise ValueError('Incomplete Codex context patch; refusing to overwrite it.')
     if START in source:
@@ -30,7 +34,7 @@ def transform(source, kind, enabled=True):
             raise ValueError('Installed Codex context patch changed; refusing to overwrite it.')
         source = source.replace(replacement, original, 1)
     if not enabled:
-        return source
+        return codex_drafts.transform_host(source) if had_drafts else source
     pattern = HOST_ANCHOR if kind == 'host' else WEBVIEW_ANCHOR
     matches = list(pattern.finditer(source))
     if len(matches) != 1:
@@ -47,8 +51,9 @@ def transform(source, kind, enabled=True):
     helper = (ASSETS / f'context-{kind}.js').read_text()
     if kind == 'host':
         helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
-    return (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
-            + helper + END)
+    result = (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
+              + helper + END)
+    return codex_drafts.transform_host(result) if had_drafts else result
 
 
 def patch_files(extension_path=None, enabled=True):
@@ -65,7 +70,7 @@ def patch_files(extension_path=None, enabled=True):
             raise ValueError('The Codex extension host bundle was not found.')
         return []
     webviews = []
-    for path in (extension / 'webview/assets').glob('app-initial-*.js'):
+    for path in (extension / 'webview/assets').glob('*.js'):
         text = path.read_text()
         if START in text or WEBVIEW_ANCHOR.search(text):
             webviews.append(path)
