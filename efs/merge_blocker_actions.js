@@ -20,7 +20,7 @@ function parseReportOptions(text) {
     let data;
     try { data = JSON.parse(match[1]); } catch { continue; }
     if (data?.version !== 1 || !Array.isArray(data.options)) continue;
-    const start = options.length;
+    const start = options.length, priorRecommended = recommended;
     for (const option of data.options.slice(0, 6)) {
       if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(option?.id || '') || seen.has(option.id) ||
           ROUTINE_ACTIONS.has(option.id) || typeof option.label !== 'string' || !option.label.trim() || option.label.length > 120 ||
@@ -35,7 +35,10 @@ function parseReportOptions(text) {
         ...(CHOICE_REACTIONS.includes(option.reaction) ? { reaction: option.reaction } : {}),
         ...(isRecommended ? { recommended: true } : {}) });
     }
-    if (options.length - start < 2) options.splice(start);
+    if (options.length - start < 2) {
+      for (const option of options.splice(start)) seen.delete(option.id.replace(/^report-/, ''));
+      recommended = priorRecommended;
+    }
   }
   return options;
 }

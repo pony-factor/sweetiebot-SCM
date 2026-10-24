@@ -177,7 +177,7 @@
       },
       {
         "command": "sweetiebot.repairMergeReview",
-        "title": "Restore merge review actions",
+        "title": "Refresh grouped merge review",
         "category": "Sweetiebot"
       }
     ],
