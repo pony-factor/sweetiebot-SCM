@@ -8,7 +8,7 @@
 .pony-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:12px}.pony-heading .status:not(.pack-tag){grid-column:1/-1}.pony-heading .pack-tag{white-space:nowrap}
 .pr-heading{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.pr-heading h2{min-width:0;overflow-wrap:anywhere}.pr-number{flex:none;padding:2px 9px;border:1px solid var(--line);border-radius:999px;font-size:12px;white-space:nowrap;text-decoration:none}
 .status.pack-tag{padding:2px 8px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--accent);background:#ffffff06}.status.pack-tag::before{display:none}
-.merge-controls{margin:12px 0 14px;padding:4px 8px}.merge-controls button{padding:10px 15px;border-radius:10pt}.merge-controls .publication{color:#f0bdc5}.close-confirmation{position:fixed;top:20px;left:20px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:10pt;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:20px}.pony-column{display:flex;flex-direction:column;min-width:0}
+.merge-controls{margin:12px 0 14px;padding:4px 8px}.merge-controls button{padding:10px 15px;border-radius:10pt}.merge-controls .publication{color:#f0bdc5}.merge-issue{margin:16px 0 4px;padding:16px 18px;border:1px solid var(--kefania-error,#f28f79);border-left:5px solid var(--kefania-error,#f28f79);border-radius:12px;background:color-mix(in srgb,var(--kefania-error,#f28f79) 9%,transparent)}.merge-issue strong{display:block;color:var(--kefania-error,#f28f79);font-size:17px;line-height:1.35}.merge-issue p{margin:8px 0 12px;overflow-wrap:anywhere}.merge-issue button{margin-top:4px}.merge-issue .publication{margin-top:10px}.close-confirmation{position:fixed;top:20px;left:20px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:10pt;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:20px}.pony-column{display:flex;flex-direction:column;min-width:0}
 /* A PR without pony research should occupy the complete content grid. */
 .layout:has(#pony-section[hidden]){grid-template-columns:minmax(0,1fr)}
 .layout:has(#pony-section[hidden]) .pony-column{display:none}.close-button-left header{padding-left:44px}.close-button-right header{padding-right:44px}.close-button-middle header{position:relative;padding-right:60px}.close-button-middle .close-confirmation{position:absolute;top:50%;left:auto;right:8px;transform:translateY(-50%);margin:0}
@@ -52,7 +52,7 @@
 <main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window">×</button></header>
 <div class="layout">
 <div class="pony-column"><section id="pony-section" class="card" hidden><div class="card-head"><p class="eyebrow">Meet the pony</p><div class="pony-heading"><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
-<section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><div class="pr-heading"><h2 id="title">Preparing your draft</h2><a id="pr-number" class="pr-number" target="_blank" rel="noopener noreferrer" hidden></a></div><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><button id="merge-history" type="button" hidden>Merge preserving commits</button><p id="merge-history-help" class="muted" hidden>Create a merge commit. Keep the original commits without rebasing or rewriting the PR branch.</p><p id="merge-error" class="publication" role="alert"></p></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
+<section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><div class="pr-heading"><h2 id="title">Preparing your draft</h2><a id="pr-number" class="pr-number" target="_blank" rel="noopener noreferrer" hidden></a></div><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><button id="merge-history" type="button" hidden>Merge preserving commits</button><p id="merge-history-help" class="muted" hidden>Create a merge commit. Keep the original commits without rebasing or rewriting the PR branch.</p><div id="merge-issue" class="merge-issue" role="alert" hidden><strong id="merge-issue-title"></strong><p id="merge-error" class="publication"></p><button id="merge-help" type="button" aria-describedby="merge-error" hidden>Review resolution options in Lindsey ↗</button><p id="merge-help-status" class="publication" role="status"></p></div></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 </div>
 <dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
 <div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button></div>
@@ -99,10 +99,41 @@ function cleanProfileReferences(profile) {
 }
 function renderMarkdown(target, markdown) {
   target.replaceChildren();
-  renderMergeMarkdown(target, markdown, {
+  // The general renderer treats HTML as inert text. Recognize only the exact
+  // trailing source disclosure produced by the verified local PR handoff.
+  const footer = /\n\n<details>\n<summary>Source details<\/summary>\n\n([\s\S]*?)\n<\/details>\s*$/.exec(markdown);
+  renderMergeMarkdown(target, footer ? markdown.slice(0, footer.index) : markdown, {
     baseUrl: 'https://github.com/',
     mapLink: imageSourcePage
   });
+  if (!footer) return;
+  const disclosure = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = 'Source details';
+  disclosure.append(summary);
+  const list = document.createElement('ul');
+  for (const line of footer[1].split('\n')) {
+    const entry = /^- \*\*(Online|Local|Desktop):\*\* (.*)$/.exec(line);
+    if (!entry) continue;
+    const row = document.createElement('li');
+    const label = document.createElement('strong');
+    label.textContent = entry[1] + ': ';
+    row.append(label);
+    const markdownLink = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(entry[2]);
+    const value = markdownLink?.[2] || entry[2];
+    const valid = entry[1] === 'Online'
+      ? /^https:\/\/chatgpt\.com\/(?:s\/cx_[A-Za-z0-9_-]{16,128}|c\/[0-9a-f-]{36})$/i.test(value)
+      : entry[1] === 'Local'
+        ? /^vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}$/i.test(value)
+        : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
+    const node = document.createElement(valid ? 'a' : 'span');
+    node.textContent = value;
+    if (valid) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
+    row.append(node);
+    list.append(row);
+  }
+  disclosure.append(list);
+  target.append(disclosure);
 }
 
 // Fit every image to the same viewport budget, then use their shared envelope.
@@ -259,7 +290,14 @@ for(const position of ['left','middle','right'])document.querySelector('main').c
 el('merge-controls').hidden=!state.result||!!state.mergeResult;
 el('merge').disabled=!state.result||!!state.mergeResult||!!state.merging;
 el('merge').textContent=state.merging?'Merging…':'Squash and merge';
-el('merge-error').textContent=state.errors.merge||'';
+const mergeIssue=state.mergeResult?null:state.mergeIssue;
+el('merge-issue').hidden=!mergeIssue;
+el('merge-issue-title').textContent=mergeIssue?.kind==='conflict'?'Merge conflicts need resolution':mergeIssue?.kind==='method'?'Choose how to merge':'Merge blocked — attention required';
+el('merge-error').textContent=mergeIssue?.message||state.errors.merge||'';
+el('merge-help').hidden=!mergeIssue||mergeIssue.kind==='method'||state.mergeHelpAvailable===false;
+el('merge-help').disabled=Boolean(state.mergeHelpOpening);
+el('merge-help').textContent=state.mergeHelpOpening?'Opening Lindsey…':'Review resolution options in Lindsey ↗';
+el('merge-help-status').textContent=state.errors?.mergeHelp||(state.mergeHelpOpened?'Lindsey’s PR-specific resolution view is open. This pull request has not been merged.':'');
 el('merge-history').hidden=state.mergeChoice!=='SQUASH_AUTHOR_CHOICE_REQUIRED'||Boolean(state.mergeResult);
 el('merge-history-help').hidden=el('merge-history').hidden;
 el('publication').textContent='';
@@ -269,11 +307,11 @@ document.title=heading+' · Kefania · '+confirmationToken;
 el('pr-number').hidden=!state.result?.number;
 if(state.result){el('pr-number').textContent='#'+state.result.number;el('pr-number').href=safeLink(state.result.url)||'#';el('pr-number').title='Open pull request #'+state.result.number;}
 const publicationError=state.errors.publish||(!state.draft?state.errors.draft:'');
-el('title').textContent=publicationError?(state.errors.publish?'Publication failed':'Draft failed'):state.mergeResult?'Successfully merged':state.result?'Successfully published':state.publishing?'Publishing…':state.draft?'Ready to publish':'Preparing your draft';
+el('title').textContent=publicationError?(state.errors.publish?'Publication failed':'Draft failed'):state.mergeResult?'Successfully merged':mergeIssue?.kind==='conflict'?'Merge conflicts need resolution':mergeIssue?.kind==='method'?'Merge method required':mergeIssue?'Merge blocked':state.result?'Successfully published':state.publishing?'Publishing…':state.draft?'Ready to publish':'Preparing your draft';
 el('draft-status').textContent=publicationError||'';
 el('draft-status').hidden=!publicationError;
 el('pony-section').hidden=!state.pony;
-const subtitle=state.result?(state.mergeResult?'Pull request merged. Review the details':'Pull request published. Review the details'):'Review the pull request draft';
+const subtitle=state.result?(state.mergeResult?'Pull request merged. Review the details':mergeIssue?'Pull request published, but not merged. Review the problem and choose a recovery action':'Pull request published. Review the details'):'Review the pull request draft';
 document.querySelector('.subtitle').textContent=subtitle+(state.pony?' and supporting character research':'')+'.';
 if(state.pony)el('pony-title').textContent=state.pony.name||String(state.pony.slug).split('-').map(part=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');
 const packLabel=state.pony?.packLabel||state.pony?.packId||'';
@@ -291,6 +329,15 @@ el('merge').onclick=async()=>{
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Merge failed.');await refresh();
     if(result.merged===true&&state.closeAfterMerge===true)await el('close-confirmation').onclick();
   }catch(error){el('merge').disabled=false;el('merge-error').textContent=error.message||'Merge failed. Check GitHub.';}
+};
+el('merge-help').onclick=async()=>{
+  el('merge-help').disabled=true;
+  el('merge-help-status').textContent='Opening Lindsey’s resolution options…';
+  try{const response=await fetch(root+'/merge-help',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const result=await response.json();if(!response.ok||result.opened!==true)throw new Error(result.error||'Could not open Lindsey.');
+    await refresh();
+  }catch(error){el('merge-help-status').textContent=error.message||'Could not open Lindsey.';}
+  finally{el('merge-help').disabled=false;}
 };
 el('merge-history').onclick=async()=>{el('merge-history').disabled=true;try{const response=await fetch(root+'/merge-history',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('merge-error').textContent=error.message}finally{el('merge-history').disabled=false}};
 el('close-confirmation').onclick=async()=>{

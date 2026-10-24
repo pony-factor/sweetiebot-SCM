@@ -68,6 +68,17 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
     assert.equal(writes,0,'Opening a draft must not publish it');
+    const detailsId = '44444444-2222-4333-8444-555555555555';
+    handoff.register(detailsId, {decorateDraft: draft => ({
+      ...draft, body: draft.body + '\n\n<details>\n<summary>Source details</summary>\n\nOnline URL\n</details>'
+    })});
+    const detailsUrl = handoff.origin + '/kefania-draft/' + detailsId;
+    const detailsResult = await fetch(detailsUrl + '/draft', { method:'POST',
+      headers:{Origin:handoff.origin,'Content-Type':'application/json'},
+      body:JSON.stringify({title:'Sample',body:'Description'}) });
+    assert.equal(detailsResult.status,200);
+    assert.match((await (await fetch(detailsUrl+'/state')).json()).draft.body, /<summary>Source details<\/summary>/);
+    assert.equal(writes,0,'Decorating a preview does not publish');
     assert.equal((await fetch(url+'/close')).status,405,'Closing requires an explicit local POST');
     assert.equal((await fetch(url.replace(/555555555555$/, '666666666666'))).status,410);
     const post = (path, value) => fetch(url+path,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:JSON.stringify(value)});
@@ -136,6 +147,66 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal((await choicePost('/merge-history')).status, 200);
     await choicePost('/merge-history');
     assert.equal(preserved, 1, 'A replay cannot merge twice');
+    const blockerId='77777777-2222-4333-8444-555555555555';
+    let helped = 0;
+    handoff.register(blockerId, { onMerge: async () => { throw Error('Resolve the overlapping edits against the current base, preserving both intentions.'); },
+      onMergeHelp: async () => { helped++; return true; } });
+    const blockerUrl = handoff.origin+'/kefania-draft/'+blockerId;
+    const blockerPost = suffix => fetch(blockerUrl+suffix, {method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
+    assert.equal((await blockerPost('/merge-help')).status,409,'Recovery cannot open before a failed merge');
+    assert.equal((await fetch(blockerUrl,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body})).status,200,'Publish the test PR before testing merge failure');
+    assert.equal((await fetch(blockerUrl+'/merge-help')).status,405,'Recovery requires a POST');
+    assert.equal((await blockerPost('/merge')).status,409);
+    const blockedState = await (await fetch(blockerUrl+'/state')).json();
+    assert.equal(blockedState.mergeIssue.kind,'conflict','Overlapping edits surface as an actual conflict state');
+    assert.match(blockedState.mergeIssue.message,/overlapping edits/);
+    assert.equal(blockedState.mergeResult,undefined,'Recovery never pretends a merge completed');
+    assert.equal(blockedState.mergeHelpAvailable,true);
+    assert.equal((await blockerPost('/merge-help')).status,200);
+    assert.equal(helped,1,'A deliberate click opens the shared Lindsey recovery dashboard');
+    assert.equal((await (await fetch(blockerUrl+'/state')).json()).mergeHelpOpened,true);
+    assert.equal((await fetch(blockerUrl+'/merge-help',{method:'POST',headers:{Origin:'https://malicious.example','Content-Type':'application/json'},body:'{}'})).status,403);
+    const failureId='88888888-2222-4333-8444-555555555555';
+    handoff.register(failureId,{onMerge:async()=>{throw Object.assign(Error('Human authorship requires another method.'),{code:'SQUASH_AUTHOR_CHOICE_REQUIRED'});}});
+    const failureUrl=handoff.origin+'/kefania-draft/'+failureId;
+    const failurePost=suffix=>fetch(failureUrl+suffix,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
+    assert.equal((await fetch(failureUrl,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body})).status,200);
+    await failurePost('/merge');
+    assert.equal((await (await fetch(failureUrl+'/state')).json()).mergeIssue.kind,'method','Authorship choice is not mislabeled a merge conflict');
+    assert.equal((await failurePost('/merge-help')).status,503,'Unavailable resolution view is not falsely reported open');
+    // Active confirmation polling renews the idle deadline while preserving
+    // the original security limit for stale pages and background callbacks.
+    const clock = Date.now;
+    try {
+      let now = clock();
+      Date.now = () => now;
+      const activeId = '44444444-2222-4333-8444-555555555555';
+      const activeUrl = handoff.origin + '/kefania-draft/' + activeId;
+      handoff.register(activeId);
+      now += 59 * 60 * 1000;
+      assert.equal((await fetch(activeUrl + '/state')).status, 200, 'An active confirmation stays readable');
+      now += 59 * 60 * 1000;
+      assert.equal((await fetch(activeUrl + '/state')).status, 200,
+        'Polling keeps an active confirmation alive past the original one-hour limit');
+      now += 60 * 60 * 1000 + 1;
+      assert.equal((await fetch(activeUrl + '/state')).status, 410,
+        'Leaving an active page unattended for an hour still expires its capability');
+      assert.equal((await fetch(activeUrl + '/draft', {
+        method: 'POST', headers: { Origin: handoff.origin, 'Content-Type': 'application/json' },
+        body
+      })).status, 410, 'Idle expiry continues to reject late draft submissions');
+
+      const boundedId = '55555555-2222-4333-8444-555555555555';
+      const boundedUrl = handoff.origin + '/kefania-draft/' + boundedId;
+      handoff.register(boundedId);
+      for (let i = 0; i < 14; i++) {
+        now += 50 * 60 * 1000;
+        assert.equal((await fetch(boundedUrl + '/state')).status, 200);
+      }
+      now += 50 * 60 * 1000;
+      assert.equal((await fetch(boundedUrl + '/state')).status, 410,
+        'Even repeated polling cannot keep a confirmation live beyond twelve hours');
+    } finally { Date.now = clock; }
     const now=Date.now;
     try {
       Date.now=()=>now()+3600001;

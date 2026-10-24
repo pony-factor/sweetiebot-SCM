@@ -4,6 +4,15 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const MAX_REQUEST_BYTES = 100000;
+const DRAFT_IDLE_MS = 60 * 60 * 1000;
+const DRAFT_MAX_AGE_MS = 12 * DRAFT_IDLE_MS;
+
+function mergeFailure(error) {
+  const message = String(error?.message || 'Merge failed. Check GitHub.');
+  const kind = error?.code === 'SQUASH_AUTHOR_CHOICE_REQUIRED' ? 'method'
+    : /resolve the overlapping edits|merge conflicts? detected|conflicting files/i.test(message) ? 'conflict' : 'blocked';
+  return { kind, message };
+}
 
 // Each independent workflow returns through a same-origin local intake page.
 // Collecting a result never calls the publisher; only the confirmation button does.
@@ -34,14 +43,21 @@ async function createDraftHandoff(publish) {
     response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; base-uri 'none'; frame-ancestors 'none'");
     const json = (code, value) => { response.writeHead(code, {'Content-Type':'application/json'}); response.end(JSON.stringify(value)); };
     const fail = (code, error) => json(code, {error});
-    const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close|merge|merge-history))?$/.exec(request.url);
+    const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close|merge|merge-history|merge-help))?$/.exec(request.url);
     if (request.headers.host !== new URL(origin).host || !match) return fail(404, 'Unknown draft.');
     const kind = match[2];
     const state = drafts.get(match[1]);
-    if (!state || (state.expires < Date.now() && kind !== 'close')) return fail(410, 'This confirmation page expired. Start the workflows again.');
+    const now = Date.now();
+    if (!state || (state.expires < now && kind !== 'close')) return fail(410, 'This confirmation page expired. Start the workflows again.');
+    // The confirmation window polls /state while open. Keep a live workflow
+    // usable during long-running commit/push and draft preparation, but still
+    // expire unattended pages and enforce a hard cap on old capabilities.
+    if (state && kind === 'state' && request.method === 'GET') {
+      state.expires = Math.min(now + DRAFT_IDLE_MS, state.registeredAt + DRAFT_MAX_AGE_MS);
+    }
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, mergeChoice: state.mergeChoice, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
-      if (kind === 'close' || kind === 'merge' || kind === 'merge-history') return fail(405, 'Use the confirmation page controls.');
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, mergeChoice: state.mergeChoice, mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'close' || kind === 'merge' || kind === 'merge-history' || kind === 'merge-help') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
     if (request.method !== 'POST' || kind === 'state' || request.headers.origin !== origin || request.headers['content-type'] !== 'application/json') return fail(403, 'Use the local confirmation page.');
@@ -58,12 +74,31 @@ async function createDraftHandoff(publish) {
         if (!result?.merged) throw new Error('GitHub did not confirm the merge. Check the pull request.');
         state.mergeResult = result;
         delete state.errors.merge;
+        delete state.errors.mergeHelp;
+        delete state.mergeIssue;
         return json(200, result);
       } catch (error) {
         if (error.code) state.mergeChoice = error.code;
-        state.errors.merge = error.message || 'Merge failed. Check GitHub.';
+        state.mergeIssue = mergeFailure(error);
+        state.errors.merge = state.mergeIssue.message;
         return fail(409, state.errors.merge);
       } finally { state.merging = false; }
+    }
+    if (kind === 'merge-help') {
+      if (!state.result || state.mergeResult || !state.mergeIssue) return fail(409, 'A merge blocker is required to review recovery options.');
+      if (state.mergeHelpOpening) return fail(409, 'Merge recovery options are already opening.');
+      if (typeof state.onMergeHelp !== 'function') return fail(503, 'Merge recovery is not available in this workspace.');
+      state.mergeHelpOpening = true;
+      delete state.errors.mergeHelp;
+      try {
+        const opened = await state.onMergeHelp(state.result);
+        if (opened === false) throw new Error('The recovery view did not open.');
+        state.mergeHelpOpened = true;
+        return json(200, { opened: true });
+      } catch (error) {
+        state.errors.mergeHelp = error.message || 'Could not open the resolution options.';
+        return fail(409, state.errors.mergeHelp);
+      } finally { state.mergeHelpOpening = false; }
     }
     if (kind === 'close') {
       if (typeof state.onClose !== 'function') return fail(503, 'Cannot close the confirmation window automatically. Use its window controls.');
@@ -84,13 +119,18 @@ async function createDraftHandoff(publish) {
         state.profile ||= input.profile;
       } else if (kind === 'draft') {
         if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 256 || typeof input.body !== 'string' || !input.body.trim() || Buffer.byteLength(input.body) > 60000) return fail(400, 'Invalid PR draft.');
-        state.draft ||= { title: input.title, body: input.body };
+        const draft = typeof state.decorateDraft === 'function'
+          ? state.decorateDraft({ title: input.title, body: input.body })
+          : { title: input.title, body: input.body };
+        if (!draft || typeof draft.title !== 'string' || typeof draft.body !== 'string' ||
+            Buffer.byteLength(draft.body) > 60000) return fail(400, 'PR description with source details exceeds the 60 KB limit.');
+        state.draft ||= draft;
       } else {
         if (state.result) return json(200, state.result);
         if (state.attempted) return fail(409, 'Publication was already attempted. Check GitHub before starting again.');
         // Legacy prepared drafts still require the explicit POST publication action.
-        const draft = state.draft || input;
-        if (typeof draft.title !== 'string' || !draft.title.trim() || draft.title.length > 256 || typeof draft.body !== 'string' || !draft.body.trim() || Buffer.byteLength(draft.body) > 60000) return fail(400, 'Wait for a valid PR draft.');
+        const draft = state.draft || (typeof state.decorateDraft === 'function' ? state.decorateDraft(input) : input);
+        if (!draft || typeof draft.title !== 'string' || !draft.title.trim() || draft.title.length > 256 || typeof draft.body !== 'string' || !draft.body.trim() || Buffer.byteLength(draft.body) > 60000) return fail(400, 'Wait for a valid PR draft.');
         state.draft = draft;
         return json(200, await publishDraft(match[1], state));
       }
@@ -104,7 +144,7 @@ async function createDraftHandoff(publish) {
   // Draft writes expire, but the close control lives until this host is disposed.
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { drafts.clear(); server.close(); }
   };

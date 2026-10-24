@@ -3,10 +3,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
-const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI } = require('../efs/merge_resolution');
+const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions } = require('../efs/merge_resolution');
 const { createMergeHandoff } = require('../efs/merge_handoff');
 const { patchPaths, safePatchPath } = require('../efs/merge_patch');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
+const { reviewPublicationInstructions } = require('../efs/merge_review_policy');
+assert(reviewPublicationInstructions().includes('Never create a per-file inline comment'));
+assert(reviewPublicationInstructions().includes('Only tag truly actionable findings'));
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12,
   title: 'Fix a conflict', head: 'feature', base: 'main', headSha: head,
   url: 'https://github.com/owner/repo/pull/12' }] };
@@ -14,6 +17,10 @@ const input = { version: 1, repository: 'owner/repo', results: [{
   number: 12, headSha: head, baseSha: base, patch: null, explanation: 'Preserve the human Git author.'
 }] };
 
+const handoffPolicy = resolutionInstructions(selection, 'http://127.0.0.1:12345/return');
+assert(handoffPolicy.includes('GITHUB REVIEW PUBLICATION POLICY'));
+assert(handoffPolicy.includes('publish zero inline comments'));
+assert(handoffPolicy.includes('local handoff record'));
 (async () => {
   // Exercise signing selection without accessing the user's private key store.
   const path = require('node:path');

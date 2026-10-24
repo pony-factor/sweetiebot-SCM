@@ -16,6 +16,13 @@ const { chatgptPullRequestUrl } = require('../efs/chatgpt_project');
     {files:[{patch:'🦄'.repeat(20001)}]});
   assert(Buffer.byteLength(emojiLaunch.url) <= MAX_LAUNCH_BYTES, 'Truncation must preserve complete emoji');
   assert.throws(() => boundedLaunch(() => '🦄'.repeat(20000), prompt => chatgptPullRequestUrl(prompt)), /budget/);
+  let transcript = 'long conversation '.repeat(9000);
+  let shortened = 0;
+  const contextLaunch = boundedLaunch(() => transcript, prompt => chatgptPullRequestUrl(prompt), undefined, {
+    shortenContext() { shortened++; transcript = transcript.slice(-Math.floor(transcript.length / 2)); return transcript.length >= 50; }
+  });
+  assert(shortened > 0, 'Oversized transcripts are shortened after repository patches');
+  assert(Buffer.byteLength(contextLaunch.url) <= MAX_LAUNCH_BYTES);
   const rules = '## Description\nExplain changes.\n\n## Local Sweetiebot pony profile\nPublish the pull request normally first. After a successful publication, add a compact pony profile to the assistant\'s chat response.\nVerify sources.\n\n## Publishing\nPublish normally.';
   assert(!prRules(rules).includes('Verify sources.'));
   const profile = ponyPrompt({slug:'bushel'}, rules, 'http://127.0.0.1:1234/kefania-draft/test/pony');

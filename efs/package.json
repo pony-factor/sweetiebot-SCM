@@ -39,6 +39,7 @@
     "onCommand:sweetiebot.previewCommitSpellcheck",
     "onCommand:sweetiebot.spellcheckWithChatGPT",
     "onCommand:sweetiebot.postCommitSpellcheck",
+    "onCommand:sweetiebot.spellcheckFilenames",
     "onCommand:sweetiebot.createBranch",
     "onCommand:sweetiebot.publishBranch",
     "onCommand:sweetiebot.listBranchStrip",
@@ -112,6 +113,12 @@
         "title": "Review Text with ChatGPT Spellcheck Only",
         "category": "Sweetiebot",
         "icon": "$(edit)"
+      },
+      {
+        "command": "sweetiebot.spellcheckFilenames",
+        "title": "Spellcheck Filenames",
+        "category": "Sweetiebot",
+        "icon": "$(check)"
       },
       {
         "command": "sweetiebot.commitWithCodex",
@@ -230,6 +237,17 @@
           "command": "sweetiebot.openFileOnGitHub",
           "when": "resourceScheme == file",
           "group": "navigation@50"
+        },
+        {
+          "command": "sweetiebot.spellcheckFilenames",
+          "when": "resourceScheme == file",
+          "group": "navigation@49"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "sweetiebot.spellcheckFilenames",
+          "group": "navigation@90"
         }
       ],
       "scm/resourceState/context": [
@@ -237,6 +255,11 @@
           "command": "sweetiebot.openFileOnGitHub",
           "when": "resourceScheme == file",
           "group": "navigation@50"
+        },
+        {
+          "command": "sweetiebot.spellcheckFilenames",
+          "when": "resourceScheme == file",
+          "group": "navigation@49"
         }
       ]
     },
@@ -244,6 +267,12 @@
     "configuration": {
       "title": "Sweetiebot SCM",
       "properties": {
+        "scmToolkit.postCommitSpellcheck": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Allow post-commit Markdown Spellcheck Changes when global Spellcheck is on. Set false in the repository's .vscode/settings.json to opt out only there without disabling spellcheck elsewhere."
+        },
         "scmToolkit.automaticBranchCleanup": {
           "type": "boolean",
           "default": true,
@@ -271,7 +300,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Prune Sweetiebot-managed, inactive independent workspaces only when their verified pull requests merged into main and no dirty files, unmerged branches, or unpublished commits remain. Does not touch legacy workspaces."
+          "description": "Clean inactive, Sweetiebot-managed saved workspace metadata and safe Git worktrees after verifying no live windows, pending edits, or unpublished commits. Topic worktrees require verified merged PRs; legacy independent clones retain strict merge-proof safeguards."
         },
         "scmToolkit.workspaceSearch.autoReindex": {
           "type": "boolean",
@@ -452,6 +481,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically refresh visible and focused GitHub PR lists at the configured interval (120 seconds by default), pausing on rate limits."
+        },
+        "scmToolkit.prWarningHighlights": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to highlighting the PR icon when eligibility verification fails. Off keeps its normal muted gray appearance; PR safeguards and tooltip details remain available."
         },
         "scmToolkit.pullRequestQuickMerge": {
           "type": "boolean",

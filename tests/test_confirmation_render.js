@@ -65,6 +65,25 @@ assert.equal(output.children[0].tag,'h2');
 assert(output.children[1].children.some(node=>node.tag==='strong'));
 assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
 assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
+const sourceId='019c56c3-06fc-7db3-a928-9c3607e17129';
+const sourceShared='https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
+const localLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+const desktopLink='codex://threads/'+sourceId;
+const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
+  +'- **Online:** '+sourceShared+'\n'
+  +'- **Local:** ['+localLink+']('+localLink+')\n'
+  +'- **Desktop:** ['+desktopLink+']('+desktopLink+')\n\n</details>';
+context.renderMarkdown(output,sourceBlock);
+assert.equal(output.children.at(-1).tag,'details','Verified source footer is a collapsed native disclosure');
+assert.equal(output.children.at(-1).children[0].tag,'summary');
+assert.equal(output.children.at(-1).children[0].textContent,'Source details');
+const sourceRows=output.children.at(-1).children[1].children;
+assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
+assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),[sourceShared,localLink,desktopLink]);
+assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
+context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
+assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
+  'Untrusted source links are not activated');
 context.renderMarkdown(output,'Source: <https://example.com/pony>.');
 assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
@@ -301,6 +320,20 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.equal(getElementById('pony-section').hidden,true,'Switching back to PR-only removes the pony column');
   assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details.');
+  layoutState={errors:{merge:'Resolve the overlapping edits.'},result:{number:479,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/479'},mergeIssue:{kind:'conflict',message:'Resolve the overlapping edits.'},mergeHelpAvailable:true};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Merge conflicts need resolution');
+  assert.equal(getElementById('merge-issue').hidden,false,'Conflict notice is prominent rather than a tiny published-PR footnote');
+  assert.equal(getElementById('merge-issue-title').textContent,'Merge conflicts need resolution');
+  assert.equal(getElementById('merge-help').hidden,false,'The shared Lindsey recovery entry is available');
+  assert.match(getElementById('subtitle').textContent,/published, but not merged/);
+  layoutState={...layoutState,mergeIssue:{kind:'method',message:'Select merge method'}};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Merge method required');
+  assert.equal(getElementById('merge-help').hidden,true,'Authorship choice uses the existing method controls');
+  layoutState={...layoutState,mergeResult:{merged:true}};
+  await context.refresh();
+  assert.equal(getElementById('merge-issue').hidden,true,'Verified merge removes the blocker banner');
   layoutState={errors:{},draft:{title:'🐞 Preserve branch windows',body:'The PR description.'},publishing:true};
   await context.refresh();
   assert.equal(getElementById('h1').textContent,'🐞 Preserve branch windows');

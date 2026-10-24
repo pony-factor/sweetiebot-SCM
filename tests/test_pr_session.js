@@ -5,10 +5,41 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession } = require('../efs/pr_session');
+const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
+  publishOptionalMergeSummaries } = require('../efs/pr_session');
 const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs/merge_blocker_actions');
 
 (async () => {
+  // Disabled or irrelevant optional summaries must not even load their module.
+  const summaryPayload = { selection: { repository: 'pony-factor/example' },
+    input: { results: [{ number: 12, explanation: 'Integrated the change.' }] },
+    result: { results: [{ number: 12, status: 'merged', merged: true, sha: 'a'.repeat(40) }] },
+    token: 'token' };
+  const unavailable = () => { throw Error('The publisher should not be loaded'); };
+  assert.deepEqual(await publishOptionalMergeSummaries({ ...summaryPayload, enabled: false }, unavailable), []);
+  assert.deepEqual(await publishOptionalMergeSummaries({
+    ...summaryPayload, enabled: true, result: { results: [{ number: 12, status: 'synced', merged: false }] }
+  }, unavailable), []);
+  const staleErrors = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true }, () => undefined);
+  assert.equal(staleErrors[0].number, 12);
+  assert.match(staleErrors[0].error, /out of date/);
+  const loadErrors = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true }, () => {
+    throw Error('Cannot find module');
+  });
+  assert.match(loadErrors[0].error, /Cannot find module/);
+  const rejected = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
+    async () => { throw Error('GitHub unavailable'); });
+  assert.match(rejected[0].error, /out of date/); // An asynchronous loader is not a synchronous publisher.
+  const publisherErrors = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
+    () => async () => { throw Error('GitHub unavailable'); });
+  assert.match(publisherErrors[0].error, /GitHub unavailable/);
+  const published = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
+    () => async args => {
+      assert.deepEqual(args, { ...summaryPayload, enabled: true });
+      return [];
+    });
+  assert.deepEqual(published, []);
+
   const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pr-session-')));
   const originalHome = os.homedir;
   os.homedir = () => storage;

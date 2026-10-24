@@ -51,6 +51,9 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(first.value.batch.merged.length, 1);
     let prompt = new URLSearchParams(new URL(first.value.continueUrl).hash.slice(1)).get('q');
     assert(prompt.includes('Preserve the main calculation fix.'));
+    assert(prompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
+    assert(prompt.includes('publish zero inline comments'));
+    assert(prompt.includes('decision commit titles/bodies'));
     assert(prompt.includes('sweetiebot-merge-options'), 'Automatic rounds reuse the existing selectable recommendation format');
     assert(prompt.includes('Before deferring a PR for human review'));
     assert(prompt.includes('multiple plausible resolutions have materially different behavior'));
