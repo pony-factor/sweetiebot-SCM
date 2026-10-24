@@ -126,6 +126,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
         assert.deepEqual(snapshot, selection);
         assert.equal(token, 'merge-session-token');
         launches++;
+        return { recordBatchState(state) { assert.equal(state.repository, selection.repository); } };
       } }
     };
     const dashboardCalls = [];
