@@ -4,6 +4,15 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const MAX_REQUEST_BYTES = 100000;
+const DRAFT_IDLE_MS = 60 * 60 * 1000;
+const DRAFT_MAX_AGE_MS = 12 * DRAFT_IDLE_MS;
+
+function mergeFailure(error) {
+  const message = String(error?.message || 'Merge failed. Check GitHub.');
+  const kind = error?.code === 'SQUASH_AUTHOR_CHOICE_REQUIRED' ? 'method'
+    : /resolve the overlapping edits|merge conflicts? detected|conflicting files/i.test(message) ? 'conflict' : 'blocked';
+  return { kind, message };
+}
 
 // Each independent workflow returns through a same-origin local intake page.
 // Collecting a result never calls the publisher; only the confirmation button does.
@@ -34,33 +43,62 @@ async function createDraftHandoff(publish) {
     response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; base-uri 'none'; frame-ancestors 'none'");
     const json = (code, value) => { response.writeHead(code, {'Content-Type':'application/json'}); response.end(JSON.stringify(value)); };
     const fail = (code, error) => json(code, {error});
-    const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close|merge))?$/.exec(request.url);
+    const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close|merge|merge-history|merge-help))?$/.exec(request.url);
     if (request.headers.host !== new URL(origin).host || !match) return fail(404, 'Unknown draft.');
-    const state = drafts.get(match[1]);
-    if (!state || state.expires < Date.now()) return fail(410, 'This confirmation page expired. Start the workflows again.');
     const kind = match[2];
+    const state = drafts.get(match[1]);
+    const now = Date.now();
+    if (!state || (state.expires < now && kind !== 'close')) return fail(410, 'This confirmation page expired. Start the workflows again.');
+    // The confirmation window polls /state while open. Keep a live workflow
+    // usable during long-running commit/push and draft preparation, but still
+    // expire unattended pages and enforce a hard cap on old capabilities.
+    if (state && kind === 'state' && request.method === 'GET') {
+      state.expires = Math.min(now + DRAFT_IDLE_MS, state.registeredAt + DRAFT_MAX_AGE_MS);
+    }
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
-      if (kind === 'close' || kind === 'merge') return fail(405, 'Use the confirmation page controls.');
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, mergeChoice: state.mergeChoice, mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'close' || kind === 'merge' || kind === 'merge-history' || kind === 'merge-help') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
     if (request.method !== 'POST' || kind === 'state' || request.headers.origin !== origin || request.headers['content-type'] !== 'application/json') return fail(403, 'Use the local confirmation page.');
-    if (kind === 'merge') {
+    if (kind === 'merge' || kind === 'merge-history') {
       if (!state.result) return fail(409, 'Publish the pull request before merging.');
       if (state.mergeResult) return json(200, state.mergeResult);
       if (state.merging) return fail(409, 'Merge already in progress.');
-      if (typeof state.onMerge !== 'function') return fail(503, 'Merging is unavailable in this confirmation window.');
+      const merge = kind === 'merge-history' ? state.onMergePreservingCommits : state.onMerge;
+      if (kind === 'merge-history' && state.mergeChoice !== 'SQUASH_AUTHOR_CHOICE_REQUIRED') return fail(409, 'Review the squash attribution choice first.');
+      if (typeof merge !== 'function') return fail(503, 'Merging is unavailable in this confirmation window.');
       state.merging = true;
       try {
-        const result = await state.onMerge(state.result);
+        const result = await merge(state.result);
         if (!result?.merged) throw new Error('GitHub did not confirm the merge. Check the pull request.');
         state.mergeResult = result;
         delete state.errors.merge;
+        delete state.errors.mergeHelp;
+        delete state.mergeIssue;
         return json(200, result);
       } catch (error) {
-        state.errors.merge = error.message || 'Merge failed. Check GitHub.';
+        if (error.code) state.mergeChoice = error.code;
+        state.mergeIssue = mergeFailure(error);
+        state.errors.merge = state.mergeIssue.message;
         return fail(409, state.errors.merge);
       } finally { state.merging = false; }
+    }
+    if (kind === 'merge-help') {
+      if (!state.result || state.mergeResult || !state.mergeIssue) return fail(409, 'A merge blocker is required to review recovery options.');
+      if (state.mergeHelpOpening) return fail(409, 'Merge recovery options are already opening.');
+      if (typeof state.onMergeHelp !== 'function') return fail(503, 'Merge recovery is not available in this workspace.');
+      state.mergeHelpOpening = true;
+      delete state.errors.mergeHelp;
+      try {
+        const opened = await state.onMergeHelp(state.result);
+        if (opened === false) throw new Error('The recovery view did not open.');
+        state.mergeHelpOpened = true;
+        return json(200, { opened: true });
+      } catch (error) {
+        state.errors.mergeHelp = error.message || 'Could not open the resolution options.';
+        return fail(409, state.errors.mergeHelp);
+      } finally { state.mergeHelpOpening = false; }
     }
     if (kind === 'close') {
       if (typeof state.onClose !== 'function') return fail(503, 'Cannot close the confirmation window automatically. Use its window controls.');
@@ -103,13 +141,12 @@ async function createDraftHandoff(publish) {
   });
   await new Promise((resolve,reject) => { server.once('error',reject); server.listen(0,'127.0.0.1',resolve); });
   server.unref();
-  const expiry = setTimeout(() => server.close(), 3600000);
-  expiry.unref();
+  // Draft writes expire, but the close control lives until this host is disposed.
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
-    dispose() { clearTimeout(expiry); drafts.clear(); server.close(); }
+    dispose() { drafts.clear(); server.close(); }
   };
 }
 module.exports = {createDraftHandoff, MAX_REQUEST_BYTES};
