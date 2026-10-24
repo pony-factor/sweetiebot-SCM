@@ -34,6 +34,7 @@ const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
 const { registerNativeSpellcheckBridge } = require('./native_spellcheck_bridge');
 const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
+const { registerFilenameSpellcheck } = require('./filename_spellcheck');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
 const { kefaniaClosePosition } = require('./kefania_close_position');
@@ -392,6 +393,7 @@ async function activate(context) {
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
+  registerFilenameSpellcheck(vscode, context);
   registerNativeSpellcheckBridge(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
     console.warn('Sweetiebot spellcheck notification initialization:', error.message);
@@ -440,7 +442,10 @@ async function activate(context) {
   registerCloudRepoSync(vscode, context);
   registerWorkspaceCleanup(vscode, context);
   const index = new SearchIndex(context, settings);
-  const provider = new WorkspaceSearchViewProvider(index, settings);
+  // Keep all ~/GitHub checkout directories out of VS Code's source-control roots.
+  const githubIndex = new SearchIndex(context, settings, { githubFolder: path.join(os.homedir(), 'GitHub') });
+  const provider = new WorkspaceSearchViewProvider(index, settings, githubIndex);
+  context.subscriptions.push(provider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
@@ -481,7 +486,7 @@ async function activate(context) {
   const indexSyncTimer = setInterval(() => {
     if (indexSyncRunning || !settings().autoReindex) return;
     indexSyncRunning = true;
-    void index.refresh().catch(error => {
+    void Promise.all([index.refresh(), ...(githubIndex.loaded ? [githubIndex.refresh()] : [])]).catch(error => {
       console.error('Workspace Search automatic index sync failed:', error);
     }).finally(() => {
       indexSyncRunning = false;
@@ -490,7 +495,7 @@ async function activate(context) {
   context.subscriptions.push({ dispose: () => clearInterval(indexSyncTimer) });
 
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.workspaceSearch.clearIndex', async () => {
-    await index.clear();
+    await Promise.all([index.clear(), githubIndex.clear()]);
     provider.lastResults = [];
     provider.post({ type: 'results', results: [], warning: '', mode: settings().mode });
     vscode.window.showInformationMessage('Workspace Search index cleared.');

@@ -9,6 +9,7 @@ const { randomUUID } = require('node:crypto');
 const { runKefania, runKefaniaPonyCache } = require('./kefania_runner');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { createDraftHandoff } = require('./draft_handoff');
+const { openKefaniaMergeHelp } = require('./kefania_merge_help');
 const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
@@ -204,6 +205,7 @@ function pullRequestPrompt({
     `The canonical pull-request drafting rules below were loaded from the sibling ${KEFANIA_DIRECTORY}/${KEFANIA_RULES_FILE}. Follow them as the source of truth:\n\n${instructions}`,
   ];
   sections.push(PR_CROSS_REFERENCE_RULES);
+  sections.push('For a code bug-fix pull request, use the same bug emoji as the earliest bug-fix commit belonging to this branch in the verified base-to-head comparison. Exclude commits inherited from the base branch, including main or a stacked PR parent. Do not borrow an emoji from earlier main commits or unrelated PRs. If the branch has no bug-fix commit emoji, choose one afresh from 🐛 🐜 🐝 🐞 🦗 🕷️ 🦟. Keep the chosen emoji stable for this PR; independent bug fixes committed directly to main get independently selected emojis.');
 
   if (pony && !browserDraft) {
     sections.push(
@@ -543,6 +545,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         const session = await require('./github_session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
       },
+      onMergeHelp: result => openKefaniaMergeHelp(vscode, context, repository.rootUri,
+        input.repository, { ...result, head: branch, base: options.base }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');

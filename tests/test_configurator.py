@@ -152,6 +152,15 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("Explain AI commit title choices", page)
         self.assertFalse("aiTitleExplanations" in configurator.extension_settings_payload(settings)["vscodeSettings"])
 
+    def test_spellcheck_menu_documents_repository_override(self):
+        page = configurator.render_form(
+            dict(toolkit_settings.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save"
+        )
+        self.assertIn("Opt out in one repository", page)
+        self.assertIn("<code>.vscode/settings.json</code>", page)
+        self.assertIn("&quot;scmToolkit.postCommitSpellcheck&quot;: false", page)
+        self.assertIn("Other repositories still spellcheck", page)
+
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
         values["spellcheckPreserveLineBreaks"] = ["true"]
@@ -311,6 +320,24 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="hideIncomingSyncCount" value="true" checked', page)
         self.assertIn('name="hideOutgoingSyncCount" value="true"', page)
 
+    def test_pr_warning_highlights_require_opt_in(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["prWarningHighlights"])
+        values = form_values()
+        values.pop("prWarningHighlights", None)
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true"', page)
+        self.assertNotIn('name="prWarningHighlights" value="true" checked', page)
+        self.assertFalse(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+
+        values["prWarningHighlights"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["prWarningHighlights"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true" checked', page)
+
     def test_sync_direction_arrow_toggles_round_trip(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncArrow"])
@@ -385,9 +412,10 @@ class SubmissionTests(unittest.TestCase):
             for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
             for key in toolkit_settings.VSCODE_SETTINGS[group]
         }
-        # These two extension-native controls do not belong to the
-        # Sweetiebot configurator's managed settings.
+        # Extension-native and repository-scoped settings do not belong
+        # to the global Git-backed configurator's managed controls.
         self.assertEqual(properties - exposed, {
+            "scmToolkit.postCommitSpellcheck",
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
         })
