@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
-  REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments,
+  REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments, normalizeInlineReviewComments,
   mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard
 } = require('../efs/merge_dashboard');
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
@@ -72,6 +72,23 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
+  const reviewComments = normalizeInlineReviewComments([
+    { id: 10, path: 'src/feature.js', start_line: 12, line: 18, user: { login: 'reviewer' },
+      body: REVIEW_MARKER + '\n## Keep both behavior paths\nDetailed reasoning.\n' + optionsBlock,
+      html_url: url + '#discussion_r10' },
+    { id: 11, path: 'src/old.js', line: null, original_line: 43, body: '  Update the handler' },
+    { id: 12, path: 'src/unplaced.js', body: '' },
+    { id: 13, body: 'Not an inline comment' }
+  ]);
+  assert.equal(reviewComments.length, 3, 'Only file-anchored review comments become details');
+  assert.equal(reviewComments[0].title, 'Keep both behavior paths');
+  assert.equal(reviewComments[0].location, 'L12–L18');
+  assert.equal(reviewComments[0].author, 'reviewer');
+  assert(!reviewComments[0].text.includes('sweetiebot-merge-options'));
+  assert.equal(reviewComments[1].location, 'L43');
+  assert.equal(reviewComments[1].outdated, true);
+  assert.equal(reviewComments[2].location, 'Line unavailable');
+  assert.equal(reviewComments[2].title, 'Code review comment');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
   assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked');
@@ -206,6 +223,12 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   assert(!panel.webview.html.includes('__NONCE__'));
   assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
   assert(panel.webview.html.includes('function renderMergeMarkdown('));
+  assert(panel.webview.html.includes("show('details', 'review-comment'"),
+    'Each code review comment renders in a separate native details disclosure');
+  assert(panel.webview.html.includes('expandedReviewComments.has(key)'),
+    'Expanded code review comments stay open across dashboard refreshes');
+  assert(panel.webview.html.includes('comment.path + \' · \' + comment.location'),
+    'The summary includes the original path and line');
   assert(panel.webview.html.includes('function renderMergePatch('));
   assert(!panel.webview.html.includes('__DIFF_RENDERER__'));
   assert(panel.webview.html.includes("renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch)"));
@@ -300,12 +323,18 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
     'A changed blocking reason is reported even when the phase stays blocked');
   inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
     html_url: url + '#discussion_r90',
-    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + optionsBlock }];
+    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + optionsBlock },
+    { id: 91, path: 'src/another.js', original_line: 21,
+      body: 'Consider the old caller, too.' }];
   info = { ...info, head: { ...info.head, sha }, mergeable_state: 'clean', mergeable: true };
   await dashboard.refresh();
   const inlinePr = events.at(-1).prs[0];
   assert.equal(inlinePr.review.text, 'Which API should this conflict preserve?');
   assert.equal(inlinePr.review.url, url + '#discussion_r90');
+  assert.equal(inlinePr.inlineReviewComments.length, 2);
+  assert.equal(inlinePr.inlineReviewComments[0].location, 'L1');
+  assert.equal(inlinePr.inlineReviewComments[1].location, 'L21');
+  assert.equal(inlinePr.inlineReviewComments[1].title, 'Consider the old caller, too.');
   const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-90-preserve-api');
   assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
   const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
