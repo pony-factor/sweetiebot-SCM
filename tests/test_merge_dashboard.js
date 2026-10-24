@@ -389,6 +389,25 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
 
   await assert.rejects(githubGet(async () => ({ ok: false, status: 403 }), 'test-token',
     'pony-factor/example', '/pulls/12'), /HTTP 403/);
+  const requestFailure = cause => githubGet(async () => { throw new TypeError('fetch failed', { cause }); },
+    'test-token', 'pony-factor/example', '/pulls/12/files');
+  await assert.rejects(requestFailure({ code: 'ENOTFOUND' }), error => {
+    assert(error.message.includes('GET /repos/pony-factor/example/pulls/12/files'));
+    assert(error.message.includes('Could not resolve api.github.com'));
+    assert(!error.message.includes('test-token'));
+    return true;
+  });
+  await assert.rejects(requestFailure({ errors: [{ code: 'ECONNREFUSED' }] }), /connection was refused/);
+  await assert.rejects(requestFailure({ code: 'UND_ERR_CONNECT_TIMEOUT' }), /Connecting to GitHub timed out/);
+  await assert.rejects(requestFailure(undefined), /No HTTP response was received/);
+  await assert.rejects(githubGet(async () => ({ ok: false, status: 401 }), 'test-token',
+    'pony-factor/example', '/pulls/12'), /HTTP 401.*Sign in again/);
+  await assert.rejects(githubGet(async () => ({ ok: false, status: 429,
+    json: async () => ({ message: 'API rate limit exceeded' }) }), 'test-token',
+  'pony-factor/example', '/pulls/12'), error => error.rateLimited === true && error.retryAt > Date.now());
+  await assert.rejects(githubGet(async () => ({ ok: true,
+    json: async () => { throw new SyntaxError('Unexpected token'); } }), 'test-token',
+  'pony-factor/example', '/pulls/12'), /response could not be read as JSON/);
   assert(fs.readFileSync(require('node:path').join(__dirname, '../efs/merge_dashboard.html'),
     'utf8').includes('Changed files'));
   // A mock DOM tests Markdown semantics without trusting any source HTML.
