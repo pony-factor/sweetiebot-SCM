@@ -55,8 +55,7 @@ async function humanSquashMerge(repository, number, { api, allowHistoryRewrite =
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
-  api ||= async (endpoint, method = 'GET', fields = []) =>
-    JSON.parse((await exec(gh, ['api', '-X', method, endpoint, ...fields], { timeout: 120000 })).stdout);
+  api ||= require('./github_user_api').legacyAPI(require('./merge_pull_request').githubApi);
 
   const root = 'repos/' + repository;
   const prPath = root + '/pulls/' + number;

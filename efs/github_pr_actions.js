@@ -321,7 +321,10 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         return choice === action;
       };
       const session = await require('./github_session').githubSession(vscode);
-      const execute = args => run(gh, args, { timeout: 120000, env: { ...process.env, GH_TOKEN: session.accessToken, GH_PROMPT_DISABLED: '1' } });
+      const execute = async args => {
+        try { return await run(gh, args, { timeout: 120000, env: { ...process.env, GH_TOKEN: session.accessToken, GH_PROMPT_DISABLED: '1' } }); }
+        catch (error) { throw require('./github_rate_limit').rateLimitError({ status: 403, message: error.stderr || error.message }) || error; }
+      };
       const userAPI = require('./github_user_api').githubUserAPI(session.accessToken);
       const humanAPI = (endpoint, method = 'GET', fields = []) => {
         const body = {};

@@ -29,8 +29,7 @@ async function humanSquashMerge(repository, number, {
       !expected || !SHA.test(expected.headSha || '') || !SHA.test(expected.baseSha || '')) {
     throw Error('Invalid repository or PR number.');
   }
-  api ||= async (endpoint, method = 'GET', fields = []) =>
-    JSON.parse((await exec(gh, ['api', '-X', method, endpoint, ...fields], { timeout: 120000 })).stdout);
+  api ||= require('./github_user_api').legacyAPI(require('./merge_pull_request').githubApi);
   git ||= async (...args) => {
     try { return (await exec('git', ['-c', 'core.hooksPath=/dev/null',
     '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
