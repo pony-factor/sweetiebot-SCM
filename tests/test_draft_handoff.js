@@ -143,7 +143,7 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     const blockerUrl = handoff.origin+'/kefania-draft/'+blockerId;
     const blockerPost = suffix => fetch(blockerUrl+suffix, {method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
     assert.equal((await blockerPost('/merge-help')).status,409,'Recovery cannot open before a failed merge');
-    await blockerPost('/draft');
+    assert.equal((await fetch(blockerUrl,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body})).status,200,'Publish the test PR before testing merge failure');
     assert.equal((await fetch(blockerUrl+'/merge-help')).status,405,'Recovery requires a POST');
     assert.equal((await blockerPost('/merge')).status,409);
     const blockedState = await (await fetch(blockerUrl+'/state')).json();
@@ -159,7 +159,8 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     handoff.register(failureId,{onMerge:async()=>{throw Object.assign(Error('Human authorship requires another method.'),{code:'SQUASH_AUTHOR_CHOICE_REQUIRED'});}});
     const failureUrl=handoff.origin+'/kefania-draft/'+failureId;
     const failurePost=suffix=>fetch(failureUrl+suffix,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
-    await failurePost('/draft');await failurePost('/merge');
+    assert.equal((await fetch(failureUrl,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body})).status,200);
+    await failurePost('/merge');
     assert.equal((await (await fetch(failureUrl+'/state')).json()).mergeIssue.kind,'method','Authorship choice is not mislabeled a merge conflict');
     assert.equal((await failurePost('/merge-help')).status,503,'Unavailable resolution view is not falsely reported open');
     // Active confirmation polling renews the idle deadline while preserving
