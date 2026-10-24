@@ -234,14 +234,6 @@ function registerBackgroundCommit(vscode, context) {
       });
     }
     if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
-    // Validate the final staged selection once, before capturing Codex context,
-    // saving a placeholder or starting any title-generation worker.
-    const limits = await vscode.commands.executeCommand(
-      'sweetiebot.checkCommitLimits', root, { captureTree: true }
-    );
-    if (limits?.approved !== true || !/^[0-9a-f]{40,64}$/.test(limits.stagedTree ?? '')) {
-      return { cancelled: true };
-    }
     let snapshot = '';
     if (options.codex && !String(options.message ?? '').trim()) {
       try {
@@ -253,19 +245,47 @@ function registerBackgroundCommit(vscode, context) {
       } catch { /* Chat context is optional; the staged tree remains authoritative. */ }
     }
     const configuration = vscode.workspace.getConfiguration('git', root);
-    const result = await enqueue(script, root.fsPath, {
-      message: options.message ?? '', context: typeof snapshot === 'string' ? snapshot.slice(-6000) : '',
-      trailer: options.trailer ?? '', push: options.push ?? configuration.get('postCommitCommand') === 'push',
-      sign: options.sign ?? configuration.get('enableCommitSigning') === true,
-      signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
-      noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
-      remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
-    });
-    if (result.queued === false) {
-      // The worker may decline oversized multi-commit splitting only after
-      // the queue's post-staging limits inspection has succeeded. The early
-      // onlyIfPending exit is handled above and cannot claim this approval.
-      return { ...result, preflightApproved: true };
+    let result;
+    // Verify the final staged selection before creating any placeholder or
+    // starting title generation. If staging changes before the Python worker
+    // can capture it, re-run the limit inspection on the new selection.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const limits = await vscode.commands.executeCommand(
+        'sweetiebot.checkCommitLimits', root, { captureTree: true }
+      );
+      if (limits?.approved !== true || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(limits.stagedTree ?? '')) {
+        return { cancelled: true };
+      }
+      try {
+        result = await enqueue(script, root.fsPath, {
+          message: options.message ?? '', context: typeof snapshot === 'string' ? snapshot.slice(-6000) : '',
+          trailer: options.trailer ?? '', push: options.push ?? configuration.get('postCommitCommand') === 'push',
+          sign: options.sign ?? configuration.get('enableCommitSigning') === true,
+          signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
+          noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
+          remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
+        });
+        if (result.queued === false) {
+          // The worker declined after a validated preflight. The direct Git
+          // path can reuse approval only if the staged tree is still identical.
+          return { ...result, preflightApproved: true, stagedTree: limits.stagedTree };
+        }
+        break;
+      } catch (error) {
+        // This specific Python failure happens before it writes a job journal
+        // or creates a commit. Do not retry timeouts or uncertain Git errors:
+        // those may have already created a durable local commit.
+        if (!String(error?.message ?? '').startsWith(
+          'Staged changes changed after the commit-size check.'
+        )) throw error;
+        if (attempt === 2) {
+          throw new Error('Staged files changed repeatedly during commit validation. Review and retry.');
+        }
+        await repository.status();
+        if (repository.state.mergeChanges.length) {
+          throw new Error('Resolve conflicts before queuing a commit.');
+        }
+      }
     }
     if (result.queued) {
       generationRevision.set(root.fsPath, (generationRevision.get(root.fsPath) || 0) + 1);
