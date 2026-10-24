@@ -136,6 +136,39 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal((await choicePost('/merge-history')).status, 200);
     await choicePost('/merge-history');
     assert.equal(preserved, 1, 'A replay cannot merge twice');
+    // Active confirmation polling renews the idle deadline while preserving
+    // the original security limit for stale pages and background callbacks.
+    const clock = Date.now;
+    try {
+      let now = clock();
+      Date.now = () => now;
+      const activeId = '44444444-2222-4333-8444-555555555555';
+      const activeUrl = handoff.origin + '/kefania-draft/' + activeId;
+      handoff.register(activeId);
+      now += 59 * 60 * 1000;
+      assert.equal((await fetch(activeUrl + '/state')).status, 200, 'An active confirmation stays readable');
+      now += 59 * 60 * 1000;
+      assert.equal((await fetch(activeUrl + '/state')).status, 200,
+        'Polling keeps an active confirmation alive past the original one-hour limit');
+      now += 60 * 60 * 1000 + 1;
+      assert.equal((await fetch(activeUrl + '/state')).status, 410,
+        'Leaving an active page unattended for an hour still expires its capability');
+      assert.equal((await fetch(activeUrl + '/draft', {
+        method: 'POST', headers: { Origin: handoff.origin, 'Content-Type': 'application/json' },
+        body
+      })).status, 410, 'Idle expiry continues to reject late draft submissions');
+
+      const boundedId = '55555555-2222-4333-8444-555555555555';
+      const boundedUrl = handoff.origin + '/kefania-draft/' + boundedId;
+      handoff.register(boundedId);
+      for (let i = 0; i < 14; i++) {
+        now += 50 * 60 * 1000;
+        assert.equal((await fetch(boundedUrl + '/state')).status, 200);
+      }
+      now += 50 * 60 * 1000;
+      assert.equal((await fetch(boundedUrl + '/state')).status, 410,
+        'Even repeated polling cannot keep a confirmation live beyond twelve hours');
+    } finally { Date.now = clock; }
     const now=Date.now;
     try {
       Date.now=()=>now()+3600001;
