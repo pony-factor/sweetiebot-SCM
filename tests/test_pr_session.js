@@ -126,6 +126,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
         assert.deepEqual(snapshot, selection);
         assert.equal(token, 'merge-session-token');
         launches++;
+        return { recordBatchState(state) { assert.equal(state.repository, selection.repository); } };
       } }
     };
     const dashboardCalls = [];
@@ -135,6 +136,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
       authentication: { async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
+        if (options.silent) return undefined;
         assert.deepEqual(scopes, ['repo']);
         assert.equal(options.createIfNone, true);
         return { accessToken: 'merge-session-token' };
@@ -161,7 +163,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       assert.deepEqual(dashboardCalls.map((call, index) => index === 3 ? [call[0]] : call), [
         ...layoutCommands.map(command => [command]),
         ['workbench.action.browser.open'],
-        ['vscode.setEditorLayout', { orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }] }]
+        ['vscode.setEditorLayout', { orientation: 0, groups: [{}] }]
       ]);
       assert.equal(launches, 1);
       await resumePRSession(instrumented, context);
@@ -174,7 +176,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       else delete require.cache[dashboardModulePath];
     }
     const pr = { ...selection.pullRequests[0], state: 'blocked', headSha: selection.pullRequests[0].headSha };
-    const option = blockerOptions(pr)[0];
+    const option = blockerOptions({ ...pr, review: { options: [{id:'report-retain-api',suggested:true,label:'Retain the public API',description:'Keep callers compatible.',prompt:'Preserve what is already on the current main branch and adapt the new feature internally.'},{id:'report-replace-api',suggested:true,label:'Adopt the new interface',prompt:'Update callers to the new interface.'}] } })[0];
     await launchBlockerAction(source, context, root, selection.repository, pr, option, 'web');
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);

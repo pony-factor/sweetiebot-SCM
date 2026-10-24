@@ -10,11 +10,12 @@ const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
 const SHA = /^[a-f0-9]{40}$/i;
 
-// The merge runs under the user's existing gh login, not the PR-creation bot.
+// VS Code callers provide the signed-in user's transport; local handoffs
+// inherit that same session through GH_TOKEN, never the PR-creation bot.
 // GitHub applies repository permissions, reviews, and branch protection.
 function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn) {
   return new Promise((resolve, reject) => {
-    const args = ['api', '--hostname', 'github.com', '--method', method, endpoint];
+    const args = ['api', '--include', '--hostname', 'github.com', '--method', method, endpoint];
     if (body !== undefined) args.push('--input', '-');
     const command = process.env.KEFANIA_GH_COMMAND ||
       ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
@@ -33,18 +34,23 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
     }, 60000);
     child.stdout.on('data', chunk => {
       output += chunk;
-      if (output.length > 100000) {
+      if (Buffer.byteLength(output) > 4 * 1024 * 1024) {
         child.kill();
         finish(new Error('Unexpectedly large GitHub merge response.'));
       }
     });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-2000); });
     child.stdin.on('error', () => {});
-    child.on('error', () => finish(new Error('GitHub CLI is unavailable. Install gh and authenticate with gh auth login.')));
+    child.on('error', () => finish(new Error('GitHub CLI is unavailable. Install gh; Sweetiebot uses your VS Code GitHub sign-in.')));
     child.on('close', code => {
-      if (code !== 0) return finish(new Error('GitHub rejected the merge (' +
-        (stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
-      try { finish(null, JSON.parse(output)); }
+      const response = require('./github_rate_limit').parseCLIResponse(output);
+      if (code !== 0) {
+        let message = stderr;
+        try { message += ' ' + JSON.parse(response.body).message; } catch { /* gh can return only stderr. */ }
+        const limited = require('./github_rate_limit').rateLimitError({ status: response.status || Number(stderr.match(/HTTP (\d{3})/)?.[1]) || (/rate.?limit/i.test(message) ? 403 : 0), headers: response.headers, message });
+        return finish(limited || new Error('GitHub rejected the request (' + (response.status || stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
+      }
+      try { finish(null, JSON.parse(response.body || (method === 'DELETE' ? 'null' : ''))); }
       catch { finish(new Error('GitHub returned an invalid merge response. Check the PR before retrying.')); }
     });
     child.stdin.end(body === undefined ? undefined : JSON.stringify(body));
@@ -52,7 +58,8 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 }
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
-  { humanMerge = humanSquashMerge } = {}) {
+  { humanMerge = humanSquashMerge, method = 'squash', gitToken } = {}) {
+  if (!['squash', 'merge'].includes(method)) throw new Error('Unknown merge method.');
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||
@@ -80,6 +87,36 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     return branch.commit.sha;
   };
   const baseSha = await readBaseTip();
+  if (method === 'merge') {
+    const info = await request('repos/' + repository);
+    if (info.allow_merge_commit !== true) throw new Error('This repository does not allow merge commits.');
+    const actor = await request('user');
+    if (actor.type !== 'User' || /\[bot\]$/i.test(actor.login || '')) throw new Error('A signed-in human account is required for this merge.');
+    const commits = await readCommits(async ([url]) => request(url), repository, result.number);
+    const human = verifiedHumanAuthor(commits);
+    const prepared = squashMessage(pr.title, result.number, commits,
+      { primaryAuthor: human.login.toLowerCase() === actor.login.toLowerCase() ? human : undefined });
+    const checks = await require('./merge_checks').readMergeChecks(path => request(path), repository, pr.head.sha);
+    if (checks.state !== 'passed') throw new Error('PR checks must pass before merging while preserving commits.');
+    const fresh = await request(endpoint);
+    if (fresh.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== pr.title ||
+        fresh.head?.sha !== pr.head.sha || fresh.head?.ref !== head || fresh.base?.ref !== base || await readBaseTip() !== baseSha) {
+      throw new Error('PR or base changed before merge; refresh and review the current branch.');
+    }
+    const merged = await request(endpoint + '/merge', { method: 'PUT', body: {
+      sha: pr.head.sha, merge_method: 'merge', commit_title: prepared.title, commit_message: prepared.message
+    } });
+    if (!merged.merged || !SHA.test(merged.sha || '')) throw new Error('GitHub did not confirm the merge.');
+    const destination = await request('repos/' + repository + '/commits/' + merged.sha);
+    const parents = destination.parents?.map(parent => parent.sha) || [];
+    const verified = await request(endpoint);
+    if (!parents.includes(baseSha) || !parents.includes(pr.head.sha) || destination.author?.login !== actor.login ||
+        destination.author?.type !== 'User' || verified.merged !== true || verified.merge_commit_sha !== merged.sha) {
+      throw new Error('The merge occurred, but preserved ancestry or human attribution could not be verified. Inspect GitHub.');
+    }
+    return { merged: true, sha: merged.sha, url: result.url, number: result.number, base, method: 'merge', authorsPreserved: true };
+  }
+
   const mergeWithHumanAuthor = async () => {
     // Use the same authenticated transport as the button and bind preparation
     // to the selected PR, rather than the read-only, already-prepared helper.
@@ -94,10 +131,11 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       }
       return request(endpoint, { method, body });
     };
-    const landed = await humanMerge(repository, result.number, { api,
+    const landed = await humanMerge(repository, result.number, { api, gitToken, offerAuthorChoice: true,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
-      throw new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.');
+      throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
+        landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' } : {});
     }
     return { merged: true, sha: landed.sha, url: result.url,
       number: result.number, base, author: landed.author };

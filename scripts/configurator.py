@@ -339,6 +339,10 @@ SETTINGS = (
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
     Setting("prWarningHighlights", "scm-toolkit.pr-warning-highlights", "Highlight PR eligibility warnings", "Opt in to a colored PR button when its eligibility or setup check fails. Off keeps the icon muted gray while retaining validation and diagnostic tooltips.", "Pull requests"),
+    Setting("mergeAutoRefresh", "scm-toolkit.merge-auto-refresh", "Refresh active merge dashboard", "Refresh GitHub status only while the merge dashboard is visible and its window is focused. Local merge work continues in the background.", "GitHub"),
+    Setting("mergeRefreshIntervalSeconds", "scm-toolkit.merge-refresh-interval-seconds", "Merge refresh interval (seconds)", "Delay between GitHub status updates in an active merge dashboard. Choose 30–3600 seconds.", "GitHub", "integer", minimum=30, maximum=3600),
+    Setting("githubRateLimitCooldownSeconds", "scm-toolkit.github-rate-limit-cooldown-seconds", "GitHub rate-limit fallback (seconds)", "Pause when GitHub does not supply a reset time. Choose 60–3600 seconds. Server reset times always take precedence.", "GitHub", "integer", minimum=60, maximum=3600),
+    Setting("mergePostSummaries", "scm-toolkit.merge-post-summaries", "Post AI merge summaries to GitHub", "Opt in to a concise summary on each selected PR after its merge is verified. Local explanations always remain available. Off by default.", "Lindsey"),
     Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
     Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
@@ -1518,7 +1522,7 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
     payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
-    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent"):
+    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeRefreshIntervalSeconds", "githubRateLimitCooldownSeconds"):
         payload["vscodeSettings"][key] = int(settings[key])
     return payload
 
