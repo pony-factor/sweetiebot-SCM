@@ -142,6 +142,8 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   };
   let commentsForPr = [];
   let inlineCommentsForPr = [];
+  let reviewsForPr = [{ id: 70, state: 'COMMENTED', body: 'Existing historical review',
+    html_url: url + '#pullrequestreview-70', user: { login: 'reviewer' } }];
   let reactionVotes = [];
   const reactionWrites = [];
   let fileRequests = 0, apiRequests = 0;
@@ -170,6 +172,7 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
       result = [{ filename: 'src/file.js', status: 'modified',
         additions: 5, deletions: 1, patch: '@@ -1 +1 @@\n-old\n+new' }];
     } else if (pathname.endsWith('/pulls/12/comments')) result = inlineCommentsForPr;
+    else if (pathname.endsWith('/pulls/12/reviews')) result = reviewsForPr;
     else if (pathname.endsWith('/issues/12/comments')) result = commentsForPr;
     else throw new Error('Unexpected URL ' + address);
     return { ok: true, json: async () => result };
@@ -238,6 +241,10 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(events.at(-1).prs[0].state, 'conflict');
   assert(events.at(-1).events.some(event => event.message.includes('merge conflicts')));
+  assert(!events.at(-1).events.some(event => event.state === 'review-comment'),
+    'Existing reviews must not be reported as newly posted');
+  assert(panel.webview.html.includes('dispatch(\'open-link\', undefined, event.url)'),
+    'Timeline review entries open their GitHub source in the browser');
   await messageHandler({ type: 'timestamp-mode', mode: 'relative' });
   assert.deepEqual(savedModes, ['relative']);
   assert.equal(events.at(-1).timestampMode, 'relative', 'Relative mode is reflected immediately');
@@ -333,6 +340,35 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   assert.equal(actionLaunches.length,5,'The recorded reaction drives the implementation route');
   await dashboard.refresh();
   assert.equal(actionLaunches.length,5,'Button and polling cannot dispatch the same reaction twice');
+
+  // A new review body, inline comment, and Conversation comment have distinct
+  // timeline entries. Pending reviews, previously seen comments, and special
+  // merge-report markers do not create duplicate review-comment events.
+  reviewsForPr = [...reviewsForPr,
+    { id: 71, state: 'COMMENTED', body: 'Reviewed the changed behavior.',
+      html_url: url + '#pullrequestreview-71', user: { login: 'reviewer' } },
+    { id: 72, state: 'PENDING', body: 'Not submitted yet',
+      html_url: url + '#pullrequestreview-72', user: { login: 'reviewer' } }];
+  inlineCommentsForPr.push({ id: 91, path: 'src/file.js', line: 22,
+    html_url: url + '#discussion_r91', user: { login: 'reviewer' },
+    body: 'This branch still needs a fallback.' });
+  commentsForPr.push({ id: 18, html_url: url + '#issuecomment-18',
+    user: { login: 'reviewer' }, body: 'Posted an additional review note.' });
+  const reviewEvents = () => events.at(-1).events.filter(event => event.state === 'review-comment');
+  for (let attempt = 0; attempt < 3; attempt++) await dashboard.refresh();
+  assert.equal(reviewEvents().length, 3, 'Each newly submitted comment type has one activity entry');
+  assert(reviewEvents().some(event => event.message === 'PR review submitted' &&
+    event.url === url + '#pullrequestreview-71'));
+  assert(reviewEvents().some(event => event.message === 'Inline review comment posted' &&
+    event.details.includes('src/file.js:22') && event.url === url + '#discussion_r91'));
+  assert(reviewEvents().some(event => event.message === 'PR conversation comment posted' &&
+    event.details.includes('@reviewer')));
+  assert(!reviewEvents().some(event => event.details.includes('Not submitted yet')));
+  for (let attempt = 0; attempt < 3; attempt++) await dashboard.refresh();
+  assert.equal(reviewEvents().length, 3, 'Repeated GitHub polling never duplicates comment entries');
+  reviewsForPr[2].state = 'COMMENTED';
+  for (let attempt = 0; attempt < 3; attempt++) await dashboard.refresh();
+  assert.equal(reviewEvents().length, 4, 'A pending review creates an event only after submission');
 
   const stateBeforeProgress = events.at(-1).prs[0].state;
   dashboard.recordLocalProgress({ number: 12, stage: 'preparing', description: 'Preserve the existing API and add optional tax.' });
