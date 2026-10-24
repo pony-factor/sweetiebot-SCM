@@ -97,7 +97,7 @@ async function humanSquashMerge(repository, number, {
           p.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase())));
       if (dependent.length) {
         const names = dependent.map(p => '#' + p.number + ' (' + (p.head?.ref || '?') + ' → ' + (p.base?.ref || '?') + ')').join(', ');
-        throw Error('Open PR ' + names + ' depends on or shares head branch "' + head + '"; refusing to rewrite it.');
+        throw Error('Open PR ' + names + ' depends on or shares this head branch "' + head + '"; refusing to rewrite it.');
       }
       if (pulls.length < 100) break;
       if (page === 100) throw Error('Open PR dependency list is incomplete.');
