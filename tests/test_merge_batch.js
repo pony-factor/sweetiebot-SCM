@@ -89,6 +89,20 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(finished.value.batch.merged.length, 1);
   } finally { own.dispose(); }
 
+  // Unchanged branch-only results must stop rather than repeatedly retrying.
+  currentHead = a;
+  const noOp = await createMergeBatch(one, { api: ownApi, destination: 'https://chatgpt.com/',
+    execute: async () => ({ repository: 'owner/repo', results: [{
+      number: 1, status: 'synced', merged: false, unchanged: true, sha: a, previousHeadSha: a,
+      reason: 'No merge conflicts; branch left unchanged.'
+    }] }) });
+  try {
+    const unchanged = await submit(noOp.url, [item(1, c)]);
+    assert.equal(unchanged.value.batch.merged.length, 0);
+    assert.equal(unchanged.value.batch.deferred.length, 1);
+    assert.equal(unchanged.value.continueUrl, undefined, 'No-op sync must not trigger another round');
+  } finally { noOp.dispose(); }
+
   // Main may advance during preparation. Retry and adopt only our verified
   // prepared head, including when its first result is a base-refresh request.
   currentHead = a; attempts = 0;

@@ -99,6 +99,8 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             // Only our verified executor can refresh an authorized head.
             pr.headSha = item.sha;
           }
+          if (item.status === 'synced' && item.unchanged === true) deferred.push({ number: pr.number,
+            reason: item.reason || 'Nothing needed synchronization; do not retry the unchanged branch.' });
           if (item.status === 'checks_failed') deferred.push({ number: pr.number, reason: item.reason });
           else if (!item.merged && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number,
             reason: item.reason || 'Repeated integration attempts require inspection.' });

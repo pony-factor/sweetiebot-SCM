@@ -21,6 +21,8 @@ const handoffPolicy = resolutionInstructions(selection, 'http://127.0.0.1:12345/
 assert(handoffPolicy.includes('GITHUB REVIEW PUBLICATION POLICY'));
 assert(handoffPolicy.includes('publish zero inline comments'));
 assert(handoffPolicy.includes('local handoff record'));
+assert(handoffPolicy.includes('NO-OP SYNCHRONIZATION'));
+assert(handoffPolicy.includes('Do not create or request a synchronization commit'));
 (async () => {
   // Exercise signing selection without accessing the user's private key store.
   const path = require('node:path');
