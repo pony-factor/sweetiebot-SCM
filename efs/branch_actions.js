@@ -1140,6 +1140,24 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
 }
 
 function registerBranchCommands(vscode, context) {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.refreshRepository', async uri => {
+    // A workspace switch briefly leaves Git with no repositories. Unlike
+    // git.refresh, background polling must never fall back to its picker,
+    // whose error dialog appears even when the caller catches the rejection.
+    if (!uri) return false;
+    try {
+      const extension = vscode.extensions.getExtension('vscode.git');
+      if (!extension) return false;
+      const git = await extension.activate();
+      const repository = git.getAPI(1).getRepository(vscode.Uri.from(uri.rootUri ?? uri));
+      if (!repository) return false;
+      await repository.status();
+      return true;
+    } catch {
+      // The repository or extension host can disappear during the status read.
+      return false;
+    }
+  }));
   const resolveRepository = async uri => {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) throw new Error('The VS Code Git extension is unavailable.');

@@ -21,6 +21,7 @@
         "test_commit_shortcut.js",
         "test_finalized_commit_recovery.js",
         "test_local_codex_commit.py",
+        "test_native_spellcheck_bridge.js",
         "test_ollama_concurrency.py",
         "test_pony_git_publish.js",
         "test_pony_publish_retry.js",
@@ -33,6 +34,8 @@
       ],
       "syntax": [
         "efs/ollama.js",
+        "efs/native_spellcheck_bridge.js",
+        "assets/browser/spellcheck_bridge.js",
         "scripts/ai_commit.py",
         "scripts/commit_diagnostics_dashboard.py",
         "scripts/sweetiebot_async_commit.py"
@@ -46,6 +49,7 @@
         "test_auto_pull_host.js",
         "test_background_branch.js",
         "test_branch_actions.js",
+        "test_repository_refresh.js",
         "test_branch_cleanup_dirty.js",
         "test_branch_maintenance.js",
         "test_branch_strip.js",
@@ -184,12 +188,14 @@
         "test_merge_reaction_choices.js",
         "test_merge_resolution.js",
         "test_merge_resolution_git.js",
+        "test_pushed_pr.js",
         "test_pr_session.js",
         "test_pull_request_batch.js"
       ],
       "syntax": [
         "efs/lindsey_bulk_merge.js",
         "efs/local_human_squash.js",
+        "efs/pushed_pr.js",
         "efs/merge_batch.js",
         "efs/merge_checks.js",
         "efs/merge_dashboard.js",
