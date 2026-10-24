@@ -306,7 +306,7 @@ __TIMESTAMP_FORMATTER__
     }
     if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
     else if (pr.localReview?.notes?.length && pr.state !== 'merged') showTextPanel(parent, 'Integration notes', pr.localReview.text, '', true);
-    if (pr.review && pr.state !== 'merged') showTextPanel(parent,
+    if (pr.review && !pr.analysis?.length && pr.state !== 'merged') showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
     const localInfo = [pr.localExplanation,
       ...Object.values(pr.localDecisions || {}).map(item =>

@@ -59,7 +59,7 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
       if (!anchor) throw Error('Cannot anchor the analysis for ' + note.path + ' in the current diff.');
       const option = { id: 'apply-file-plan', label: note.title.slice(0, 120), reaction: '+1', recommended: true,
         description: 'Apply the integration described for ' + note.path + '.',
-        prompt: 'Implement the following integration for ' + note.path + ': ' + note.description + '\nInspect the other grouped review notes and preserve their combined intentions. Verify the resulting behavior. Do not merge or rewrite history.' };
+        prompt: 'Implement the following integration for ' + note.path + ': ' + note.description.slice(0, 3500) + '\nInspect the other grouped review notes and preserve their combined intentions. Verify the resulting behavior. Do not merge or rewrite history.' };
       return { ...note, anchor, body: MARKER + '\n<!-- sweetiebot-merge-review -->\n### ' + note.title + '\n\n' + note.description +
         '\n\n👍 **' + option.label + '**: apply the file plan above. React with 👍 on this file comment, or click the matching Lindsey action. This starts implementation; it does not authorize merging or history rewriting. Compatible integration remains the default for the running batch.\n\n<!-- sweetiebot-merge-options\n' +
         JSON.stringify({ version: 1, headSha: pr.headSha, baseSha: base.commit.sha, options: [option] }) + '\n-->' };
@@ -102,6 +102,6 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
       }
     }
     return { ...report, posted: true, reviewUrl: review.html_url, comments: postedNotes };
-  } catch (error) { return { ...report, posted: false, comments: postedNotes, error: error.message }; }
+  } catch (error) { return { ...report, posted: false, comments: postedNotes, error: error.message, ...(error.rateLimited ? { rateLimited: true, retryAt: error.retryAt } : {}) }; }
 }
 module.exports = { blockerReport, firstDiffAnchor, publishBlockerReport };

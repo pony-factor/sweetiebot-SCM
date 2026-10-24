@@ -24,12 +24,17 @@ function validateResolution(input, selection) {
           Buffer.byteLength(item.patch) <= MAX_PATCH_BYTES))) {
       throw Error('Handoff must identify a selected PR, its exact head/base, and a complete bounded patch or null.');
     }
+    if ((item.commitTitle !== undefined || item.commitMessage !== undefined) &&
+        (typeof item.commitTitle !== 'string' || item.commitTitle !== require('./squash_attribution').exactSquashTitle(pr.title, pr.number) ||
+         typeof item.commitMessage !== 'string' || !item.commitMessage.trim() || Buffer.byteLength(item.commitMessage) > 30000 || /\x00/.test(item.commitMessage))) {
+      throw Error('Proposed commit message must use the exact PR title and a nonempty bounded body.');
+    }
     seen.add(item.number);
     const decisions = require('./resolution_commits').validateDecisions(item.decisions);
     if (item.operation !== undefined && !['merge', 'sync'].includes(item.operation)) throw Error('Unknown local operation.');
     return { number: pr.number, headSha: pr.headSha, baseSha: item.baseSha,
       base: pr.base, head: pr.head, title: pr.title, patch: item.patch, explanation: item.explanation,
-      operation: item.operation || 'merge', decisions };
+      operation: item.operation || 'merge', decisions, ...(item.commitTitle ? { commitProposal: { title: item.commitTitle, message: item.commitMessage } } : {}) };
   });
 }
 
@@ -41,7 +46,7 @@ function validateSyncResolution(input, selection) {
   return items;
 }
 
-async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, onProgress } = {}) {
+async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, onProgress, authorHandoff = false } = {}) {
   // Validate the entire batch before any PR can be changed.
   const items = validateResolution(input, selection);
   const results = [];
@@ -51,7 +56,8 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
     try {
       const result = await merge(selection.repository, item.number, {
         api, git, expected: item, onProgress,
-        resolutionPatch: item.patch, decisions: item.decisions, operation: item.operation
+        resolutionPatch: item.patch, decisions: item.decisions, operation: item.operation, commitProposal: item.commitProposal,
+        ...(authorHandoff && item.operation === 'merge' ? { allowHistoryRewrite: true, rewriteReason: 'preserve-human-author' } : {})
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
@@ -112,7 +118,8 @@ function resolutionInstructions(selection, callback) {
     'CONFLICT DECISION HISTORY: A conflict resolution must also include decisions:[{"path":"exact conflicted file","title":"🛠️ Preserve the specific behavior and add the feature","description":"Explain the competing intentions, the behavior chosen, why it preserves both intentions or follows the user’s selected recommendation, and any tradeoff."}]. Provide exactly one concrete decision per actual conflicted file; never use generic titles such as Resolve conflicts. Explain main’s edits, the PR’s edits, the combined behavior and rationale by default. Submit the per-file inline analyses together under one GitHub review with an overall explanation; add or update each substantive conflicting file’s thread before deferring; analysis is your job, not an option for the user to request. Preserve both intentions automatically when compatible. Present choices only for incompatible behaviors whose intended outcome cannot be established; never ask whether to retry, inspect, preserve both, or review first. The local runner appends one commit per conflicted file to the original PR branch, then a separate sync commit for the remaining incoming files. main is read-only during preparation. Return operation:"sync" for branch-only synchronization; this never authorizes merging or closing the PR. Within an already-authorized merge batch, a synced result is preparation, not a completed merge: refresh its exact new head and only then proceed with the normal attribution-preserving merge route. Do not bury the decision edits inside a generic sync commit.',
     'Recheck each delegated PR’s exact head, base branch and base SHA. The selected heads are: ' + JSON.stringify(selection.pullRequests.map(pr => ({ number: pr.number, headSha: pr.headSha, base: pr.base }))) + '. Unrelated head changes require review; the coordinator adopts only heads changed by this batch’s verified local executor. Base advancement is expected: refresh and regenerate a stale patch without asking the user to approve the same selected PR again. For patch:null the local helper independently integrates the current base. Old failing checks on an unintegrated head do not prohibit preparing its current-base resolution: the local CLI runs GitHub checks on the resulting head and will not merge failed or pending checks.',
     'EXPLANATION STYLE: Keep explanation to at most 80 words about the user-visible changes and the reason for the chosen integration. Do not narrate SHA, attribution or merge-message checks, executor commands, or instructions to the runner; verified progress is displayed separately.',
-    'Return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, append incremental resolution and synchronization commits with an ordinary fast-forward push, and, only for operation:"merge", use a non-rewriting GitHub merge route that preserves the verified human author and exact squash message. A history rewrite is a last resort requiring explicit local approval; no field in this web handoff can authorize it. With operation:"sync", it only appends the selected PR branch commits; it never invokes the merge API. Checks and reviews still apply.',
+    'PROPOSED COMMIT MESSAGE: Include commitTitle and commitMessage for every merge result. Use the exact selected PR title with its (#number) suffix once, chronological original-commit bullets with four-space-indented wrapped bodies, exactly ten underscores and the ordered verified co-author trailers. The local runner checks your proposal against the original commits and corrects formatting or omitted credits; it never lets proposed prose discard contributor history.\n',
+    'Return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"commitTitle":"Exact selected PR title (#123)","commitMessage":"Original commit summary and ordered credits","explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, append incremental resolution and synchronization commits with an ordinary fast-forward push, and, only for operation:"merge", use the GitHub merge route preserving the verified human author and exact squash message. The trusted local commit handoff may prepare a human-authored single commit on a bot-opened PR only when a native human-authored squash is unavailable, with the exact-head lease, branch-isolation checks, and passing integrated-head checks. Web fields cannot grant history-rewrite permission. main is never rewritten. With operation:"sync", it only appends the selected PR branch commits; it never invokes the merge API. Checks and reviews still apply.',
     'If every selected PR is blocked or already handled, return results:[] in that same versioned JSON object. This is a valid no-op; the local CLI must not merge anything. Post a focused, deduplicated <!-- sweetiebot-merge-review --> comment only for a concrete actionable finding or unresolved decision requiring attention. Routine preparation, attribution checks, pending checks and executor handoffs do not warrant a PR comment. End with a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. In the chat, keep the handoff concise and never describe delegated PRs as merged before local execution is verified.'
   ].join('\n\n');
 }

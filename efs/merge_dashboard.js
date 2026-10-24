@@ -455,6 +455,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (!pr) return;
     const stages = {
       preparing: 'Preparing PR in a temporary checkout',
+      'message-prepared': 'Commit message validated against the selected PR and original contributors',
       integrating: 'Integrating the full PR with the current base',
       'applying-resolution': 'Applying the complete conflict-resolution patch',
       'rewrite-approved': 'Using an explicitly approved history rewrite as a last resort',
@@ -482,7 +483,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         description: String(event.description || '').slice(0, 4000) };
     }
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
-    const decision = ['decision-commit', 'preparing', 'rewrite-approved'].includes(event.stage)
+    const decision = ['decision-commit', 'preparing', 'rewrite-approved', 'message-prepared'].includes(event.stage)
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
     addEvent(pr, 'progress', stages[event.stage],
       [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));

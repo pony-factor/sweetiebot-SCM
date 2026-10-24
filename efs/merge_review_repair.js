@@ -37,7 +37,7 @@ async function repairMergeReview(vscode) {
       return { path: note.path, title, description };
     });
     const result = await publishBlockerReport({ repository, pr: { number: Number(number), title: info.title, head: info.head.ref, headSha: info.head.sha, base: info.base.ref }, paths: decisions.map(note => note.path), decisions, api });
-    if (!result.posted) throw Error(result.error || 'No owned per-file analysis was found.');
+    if (!result.posted) throw Object.assign(Error(result.error || 'No owned per-file analysis was found.'), result.rateLimited ? { rateLimited: true, retryAt: result.retryAt } : {});
     vscode.window.showInformationMessage('Implementation actions restored to the grouped review.');
     return result;
   } catch (error) { if (!await promptRateLimit(vscode, error)) throw error; }
