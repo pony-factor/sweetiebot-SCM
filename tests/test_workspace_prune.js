@@ -2,6 +2,8 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs/promises');
+const os = require('node:os');
 const { pruneManagedWorkspaces } = require('../efs/workspace_prune');
 
 const BASE = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';
@@ -148,5 +150,167 @@ function fixture({
     assert.deepEqual(await sample.scan(), [], label + ' must preserve clone');
     assert(!sample.deleted.some(([file]) => file === GROUP), label + ' must not remove group');
   }
+  // Shared-main metadata is safe to prune, but edited workspace files and
+  // running VS Code sessions protect the whole group.
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pruner-kinds-'));
+  try {
+    const base = path.join(temp, 'Workspaces');
+    const original = path.join(temp, 'original');
+    const workspace = path.join(base, 'repo', 'saved');
+    const stamp = path.join(workspace, '.sweetiebot-activated');
+    await fs.mkdir(workspace, { recursive: true });
+    await fs.mkdir(original);
+    const content = JSON.stringify({ folders: [{ path: original }] }, null, 2) + '\n';
+    const manifest = { version: 1, kind: 'shared-main', repositories: [],
+      workspaceFileContents: content };
+    await fs.writeFile(path.join(workspace, '.sweetiebot-workspace.json'), JSON.stringify(manifest));
+    await fs.writeFile(path.join(workspace, 'workspace.code-workspace'), content);
+    await fs.writeFile(stamp, 'Activated');
+    const older = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(stamp, older, older);
+    const neverRunGit = async () => { throw Error('Metadata must not invoke Git'); };
+    await fs.appendFile(path.join(workspace, 'workspace.code-workspace'), ' ');
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: () => false, run: neverRunGit
+    }), [], 'Edited workspace settings must be preserved');
+    await fs.writeFile(path.join(workspace, 'workspace.code-workspace'), content);
+    await fs.writeFile(path.join(workspace, '.sweetiebot-session-12-test.json'), '{"pid":12}');
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: pid => pid === 12, run: neverRunGit
+    }), [], 'Live workspace sessions must be preserved');
+    await fs.rm(path.join(workspace, '.sweetiebot-session-12-test.json'));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: () => false, run: neverRunGit
+    }), [workspace], 'Idle shared-main metadata should be pruned');
+    assert.equal(await fs.readFile(path.join(original, '.missing')).then(
+      () => true, () => false), false, 'Original checkout must never be deleted');
+    assert.equal((await fs.stat(original)).isDirectory(), true);
+
+    const group = path.join(base, 'repo', 'topic-id');
+    const checkout = path.join(group, 'repo');
+    await fs.mkdir(checkout, { recursive: true });
+    await fs.mkdir(path.join(original, '.git'));
+    await fs.writeFile(path.join(group, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'topic-worktree', repositories: ['repo'], branch: 'topic'
+    }));
+    await fs.writeFile(path.join(group, '.sweetiebot-activated'), 'Activated');
+    await fs.utimes(path.join(group, '.sweetiebot-activated'), older, older);
+    const sha = 'a'.repeat(40), operations = [];
+    let approved = true, dirty = false;
+    const run = async (binary, args, cwd) => {
+      operations.push([binary, ...args]);
+      if (binary === 'gh') {
+        if (args[1] === 'view') return JSON.stringify({
+          state: approved ? 'MERGED' : 'OPEN', mergedAt: approved ? '2026-10-20' : null,
+          baseRefName: 'main', headRefName: 'topic', headRefOid: sha,
+          isCrossRepository: false
+        });
+        if (args.includes('open')) return '[]';
+        return '[{"number":123}]';
+      }
+      assert.equal(binary, 'git');
+      switch (args[0]) {
+        case 'rev-parse':
+          if (args[1] === '--show-toplevel') return checkout;
+          if (args[1] === '--path-format=absolute') return path.join(original, '.git');
+          if (args[1] === '--verify') return null; // No stashes.
+          return sha;
+        case 'symbolic-ref': return 'topic';
+        case 'worktree':
+          if (args[1] === 'list') return 'worktree ' + checkout +
+            '\nHEAD ' + sha + '\nbranch refs/heads/topic\n\n';
+          if (args[1] === 'remove') {
+            await fs.rm(checkout, { recursive: true });
+            return '';
+          }
+          break;
+        case 'status': return dirty ? '?? user-file' : '';
+        case 'remote': return 'https://github.com/org/repo.git';
+        case 'fetch': return '';
+        case 'branch': return '';
+      }
+      throw Error('Unexpected operation: ' + args.join(' '));
+    };
+    const saved = path.join(base, 'repo', 'other-window');
+    await fs.mkdir(saved);
+    await fs.writeFile(path.join(saved, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'shared-main', repositories: [],
+      workspaceFileContents: JSON.stringify({ folders: [{ path: checkout }] })
+    }));
+    await fs.writeFile(path.join(saved, 'workspace.code-workspace'),
+      JSON.stringify({ folders: [{ path: checkout }] }));
+    // This saved workspace has never activated; preserve it and the target.
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [], 'A saved workspace reference protects its topic worktree');
+    await fs.rm(saved, { recursive: true });
+    dirty = true;
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [], 'Dirty worktrees must be preserved');
+    dirty = false;
+    approved = false;
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [], 'Unmerged topic branches must be preserved');
+    approved = true;
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [group], 'Merged, clean, idle topic worktrees are safely detached');
+    assert(operations.some(args => args[0] === 'git' && args[1] === 'worktree' &&
+      args[2] === 'remove'), 'Git, rather than recursive deletion, detaches worktrees');
+    assert(operations.some(args => args[0] === 'git' && args[1] === 'branch' &&
+      args[2] === '-D'), 'Verified squash-merged topic branch is retired');
+
+    // An unused temporary main checkout is removed only when its HEAD is
+    // already included in origin/main; local unpublished commits protect it.
+    const mainGroup = path.join(base, 'repo', 'main-id');
+    const mainCheckout = path.join(mainGroup, 'repo');
+    await fs.mkdir(mainCheckout, { recursive: true });
+    await fs.writeFile(path.join(mainGroup, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'main-worktree', repositories: ['repo']
+    }));
+    await fs.writeFile(path.join(mainGroup, '.sweetiebot-activated'), 'Activated');
+    await fs.utimes(path.join(mainGroup, '.sweetiebot-activated'), older, older);
+    let published = false;
+    const mainOperations = [];
+    const mainRun = async (binary, args) => {
+      mainOperations.push([binary, ...args]);
+      assert.equal(binary, 'git', 'Main cleanup does not require a PR');
+      switch (args[0]) {
+        case 'rev-parse':
+          if (args[1] === '--show-toplevel') return mainCheckout;
+          if (args[1] === '--path-format=absolute') return path.join(original, '.git');
+          if (args[1] === '--verify') return null;
+          return sha;
+        case 'symbolic-ref': return 'main';
+        case 'worktree':
+          if (args[1] === 'list') return 'worktree ' + mainCheckout +
+            '\nHEAD ' + sha + '\nbranch refs/heads/main\n\n';
+          if (args[1] === 'remove') {
+            await fs.rm(mainCheckout, { recursive: true });
+            return '';
+          }
+          break;
+        case 'status': return '';
+        case 'remote': return 'https://github.com/org/repo.git';
+        case 'fetch': return '';
+        case 'merge-base': return published ? '' : null;
+      }
+      throw Error('Unexpected main Git command: ' + args.join(' '));
+    };
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run: mainRun, alive: () => false
+    }), [], 'Unpublished main commits protect the worktree');
+    published = true;
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run: mainRun, alive: () => false
+    }), [mainGroup], 'Clean, published, closed main worktrees are detached');
+    assert(mainOperations.some(args => args[1] === 'worktree' && args[2] === 'remove'));
+
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+
   console.log('Guarded merged-workspace cleanup checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

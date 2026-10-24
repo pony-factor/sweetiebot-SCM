@@ -150,13 +150,10 @@ async function openIndependentClone(vscode, {
 }
 
 async function openIndependentWorkspace(vscode, options = {}) {
-  try { return await openSharedMainWorkspace(vscode, options); }
-  catch (error) {
-    // Older checkouts can still have their topic checked out in the original
-    // folder. Preserve that window and open main in a separate clone.
-    if (error.code !== 'SWEETIEBOT_ORIGINAL_ON_TOPIC') throw error;
-    return openIndependentClone(vscode, options);
-  }
+  // All new windows share the checked-out main directory. If main is currently
+  // free, shared_main creates one linked worktree rather than cloning a second
+  // Git database. Retain openIndependentClone only for legacy compatibility.
+  return openSharedMainWorkspace(vscode, options);
 }
 
 function registerNewWorkspaceCommand(vscode, context) {

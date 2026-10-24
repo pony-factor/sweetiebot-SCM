@@ -54,8 +54,11 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 
 ### Independent workspace trust (first run)
 
-Windows on `main` share the original repository folder under `~/GitHub`, including
-its uncommitted edits and Git index. Each window keeps its own saved workspace.
+Windows on `main` share the same Git checkout and index. Normally that is the
+original repository folder under `~/GitHub`; if the original currently has a
+topic branch checked out, Sweetiebot reuses or creates **one linked main
+worktree** instead. Every main window points to that same checkout, while
+keeping its own saved VS Code workspace identity.
 Sweetiebot’s branch selector and new-branch button open topic branches in separate
 linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
 Creating a new branch follows it in the current window with the same Codex chat.
@@ -66,16 +69,16 @@ switches reuse it. The separate shared-main window button still opens a new wind
 Topics start from committed main. During an active Codex handoff, pending edits
 are copied to the new worktree without staging; the original files and index stay
 unchanged.
-Returning Home or selecting main reconnects the window to the original files,
-preserving pending topic edits in their worktree. Reopening that topic resumes
-those files. Direct terminal Git commands still act on the folder they run in.
+Returning Home or selecting main reconnects to the current shared main
+checkout, preserving pending topic edits in their worktree. Reopening that
+topic resumes those files. Direct terminal Git commands still act on the
+folder they run in.
 
-Clean legacy main clones reconnect on activation only when all their commits
-already exist in the original main. Separate edits or commits are preserved and
-reported instead of silently hidden. Reconnecting requires the original folder
-to be on main. When it is on a topic branch, New Window opens a separate main
-clone and preserves the original branch, files, and staging. That clone waits
-to reconnect until the original returns to main.
+Clean legacy independent main clones reconnect on activation when their
+commits are already present in main. Separate edits or commits are preserved
+and reported instead of silently hidden. No **new** independent clones are
+created by the New Window button, even when the original checkout is on a
+topic: Git worktrees share one history and one main branch checkout.
 
 VS Code's Workspace Trust may
 otherwise start these windows in **Restricted Mode**, disabling extensions,
@@ -109,9 +112,10 @@ name or include `window`, `topic`, or `group` labels. Workspace metadata records
 the workspace type.
 
 Saved-window folders hold `workspace.code-workspace`, which points to the actual
-checkout. Topic and independent-clone folders also hold a checkout named for the
-repository. Multi-root workspaces live under the first repository's folder, with
-one named checkout per distinct repository. Duplicate checkout names receive a
+checkout. Topic and main-worktree folders hold linked Git worktrees named for
+their repository; legacy independent-clone folders hold a separate Git checkout.
+Multi-root legacy clones live under the first repository's folder, with one
+named checkout per distinct repository. Duplicate checkout names receive a
 numeric suffix, such as `shared-2`.
 
 Existing flat workspace folders remain supported and are left in place so open
@@ -121,29 +125,39 @@ Application Support, not Caches.
 
 ### Automatic merged-workspace cleanup
 
-Sweetiebot checks its **own newly created independent clones** at startup and
-every ten minutes. `scmToolkit.automaticWorkspaceCleanup` (on by default)
-controls this separately from automatic branch cleanup. A checkout is never
-deleted merely for being old, or because a remote branch disappeared.
+Sweetiebot scans its own managed workspace folders at startup and every ten
+minutes. `scmToolkit.automaticWorkspaceCleanup` (on by default) controls
+this separately from branch cleanup. Cleanup waits for a prior successful
+activation, at least an hour without an activity heartbeat, and no live window
+sessions. Changing folders inside a saved workspace updates which checkouts
+receive activity markers. Restricted Mode, unknown files, edited workspace
+settings, or missing evidence always prevent deletion.
 
-The normal merged-branch cleanup stores evidence of PRs that it verified were
-merged into `main` at the exact recorded head commit. Workspace cleanup
-revalidates that evidence with authenticated GitHub CLI (`gh`), checks that no
-PR for the branch is open, and requires **all** repositories in a multi-root
-workspace to pass. Each repository must be on `main`, have no extra local
-branches, stash, modified, untracked or ignored files, and no unpublished or
-otherwise unrecognized commits in its reflog. A successful fresh fetch must
-confirm that local `main` is already reachable from `origin/main`.
+Different workspace kinds require different checks:
 
-Workspace cleanup also requires a Sweetiebot provenance manifest, evidence
-that Sweetiebot successfully activated in the workspace, and at least an hour
-since its last activity heartbeat. A live extension-host process always
-protects the workspace. Missing/ambiguous evidence, network errors, unfamiliar
-files, or any unmerged/new work stop deletion. The cleanup process never
-manages user-selected folders or older workspaces created without its
-manifest. The active-workspace safeguard is conservative but cannot detect
-every conceivable editor process outside Sweetiebot; do not treat these clones
-as permanent storage after their work has merged.
+- **`shared-main`**: delete only the unused, unmodified
+  `workspace.code-workspace` file and its Sweetiebot metadata, never the
+  original repository.
+- **`topic-worktree`**: require a clean Git checkout, no stash, exact Git
+  worktree registration, and a same-repository PR verified by authenticated
+  GitHub CLI (`gh`) as merged into `main` at that worktree's exact branch
+  tip, with no open PR for the branch. Remove through `git worktree remove`,
+  then retire only the verified squash-merged local branch.
+- **`main-worktree`**: require a clean linked checkout and confirm its local
+  HEAD is already in `origin/main`. Remove through Git without deleting the
+  `main` branch. Multiple windows share the same checkout, and saved workspace
+  references prevent its removal.
+- **`independent-clone`** (legacy): continue requiring recorded and freshly
+  revalidated merged-PR proofs for every included repository, a clean
+  `main` checkout, no other local branches or stashes, and no unpublished
+  or unrecognized commits in the reflog.
+
+The pruner refuses worktrees referenced by remaining saved Sweetiebot
+workspace files, and Git never forcibly removes dirty worktrees. A fresh
+fetch or GitHub check that fails also blocks cleanup. The process does not
+manage arbitrary user folders, legacy workspaces missing required provenance,
+or the old `~/Sweetiebot Workspaces` directory. Only verified workspaces are
+deleted; age alone is never a reason.
 
 Successful deletions and errors appear in the **Sweetiebot Workspace Cleanup**
 output channel. No automatic migration or cleanup is performed on the old
