@@ -29,6 +29,29 @@ PARALLEL_JOBS = 6
 COMPLETED_JOB_RETENTION_DAYS = 60
 
 
+def transient_network_error(error):
+    message = str(error).lower()
+    return any(fragment in message for fragment in (
+        'tls handshake timeout', 'i/o timeout', 'connection timed out',
+        'connection reset by peer', 'temporary failure in name resolution',
+        'could not resolve host', 'network is unreachable',
+    ))
+
+
+def retry_network_read(operation):
+    # Retry only the read-only pre-push guard; never repeat a commit or merge.
+    for attempt in range(4):
+        try:
+            return operation()
+        except RuntimeError as error:
+            if not transient_network_error(error):
+                raise
+            if attempt == 3:
+                error.network_retries_exhausted = True
+                raise
+            time.sleep(2 ** attempt)
+
+
 class SyncConflicts(RuntimeError):
     def __init__(self, paths):
         self.paths = paths
@@ -709,6 +732,13 @@ def work(directory, commit_only=False):
                 return
             if not any(entry['id'] == job['id'] for entry in entries):
                 raise RuntimeError('The background commit no longer owns this repository.')
+            if (job['phase'] == 'blocked' and job.get('push') and job.get('sha')
+                    and transient_network_error(job.get('error', ''))
+                    and not job.get('network_retries_exhausted')):
+                # Repair jobs paused by the older immediate-notification path.
+                job['phase'] = 'committed'
+                job.pop('error', None)
+                write_journal(file, job)
             if job['phase'] == 'blocked':
                 # An already-running older worker can finish generation after
                 # another placeholder was queued. Recover only a verified chain.
@@ -820,7 +850,7 @@ def work(directory, commit_only=False):
             pushed = job['push']
             if pushed:
                 from merged_branch import require_unmerged
-                require_unmerged(job['branch'], job['remote'])
+                retry_network_read(lambda: require_unmerged(job['branch'], job['remote']))
                 job['phase'] = 'pushing'
                 write_journal(file, job)
                 env = os.environ.copy()
@@ -874,6 +904,8 @@ def work(directory, commit_only=False):
             with nullcontext() if commit_only else repository_lock(job['gitdir']):
                 current = read_journal(file)
                 current.update(phase='blocked', error=str(exc), context='')
+                if getattr(exc, 'network_retries_exhausted', False):
+                    current['network_retries_exhausted'] = True
                 current.pop('conflictPaths', None)
                 if isinstance(exc, SyncConflicts):
                     current['conflictPaths'] = exc.paths
@@ -922,6 +954,7 @@ def control(action):
             job['phase'] = ('finalizing' if job.get('replacement_sha') else
                             'committed' if job.get('sha') else 'committing' if job['message'] else 'queued')
             job.pop('error', None)
+            job.pop('network_retries_exhausted', None)
             write_journal(directory / 'job.json', job)
 
 

@@ -173,6 +173,31 @@ class BackgroundCommitTests(unittest.TestCase):
         worker.reconcile_published_jobs(self.repo / '.git')
         self.assertEqual(self.job(directory)['phase'], 'blocked')
 
+    def test_tls_guard_retries_three_times_before_blocking_or_continuing(self):
+        error = 'Post "https://api.github.com/graphql": net/http: TLS handshake timeout'
+        directory = self.queue(push=True)
+        with patch.object(merged_branch, 'require_unmerged', side_effect=[RuntimeError(error), RuntimeError(error), RuntimeError(error), None]) as guard, patch.object(worker.time, 'sleep') as sleep:
+            worker.work(directory)
+            self.assertEqual(guard.call_count, 4)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2, 4])
+            self.assertEqual(self.job(directory)['phase'], 'done')
+        (self.repo / 'story.txt').write_text('Another captured change.\n')
+        self.git('add', 'story.txt')
+        failed = self.queue(push=True)
+        with patch.object(merged_branch, 'require_unmerged', side_effect=RuntimeError(error)) as guard, patch.object(worker.time, 'sleep') as sleep:
+            worker.work(failed)
+            self.assertEqual(guard.call_count, 4)
+            self.assertEqual(self.job(failed)['phase'], 'blocked')
+            self.assertTrue(self.job(failed)['network_retries_exhausted'])
+            worker.work(failed)
+            self.assertEqual(guard.call_count, 4, 'Exhausted jobs stay paused until a manual retry')
+
+    def test_non_network_guard_failure_is_not_retried(self):
+        with patch.object(worker.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'Authentication failed'):
+                worker.retry_network_read(lambda: (_ for _ in ()).throw(RuntimeError('Authentication failed')))
+            sleep.assert_not_called()
+
     def test_spellcheck_starts_before_title_generation_and_is_not_repeated(self):
         import post_commit_spellcheck
         (self.repo / 'note.md').write_text('A speling mistake.\n')
