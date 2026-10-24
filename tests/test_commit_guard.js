@@ -218,8 +218,10 @@ async function run(allowed, failCommit = false) {
   }
   for (const outcome of [
     { result: { cancelled: true }, allowed: true, expectedCommits: 0, expectedChecks: 0 },
-    { result: { queued: false, preflightApproved: true }, allowed: true,
-      expectedCommits: 1, expectedChecks: 0 },
+    { result: { queued: false, preflightApproved: true, stagedTree: 'a'.repeat(40) },
+      allowed: true, expectedCommits: 1, expectedChecks: 1, expectedTree: 'a'.repeat(40) },
+    { result: { queued: false, preflightApproved: true, stagedTree: 'a'.repeat(40) },
+      allowed: false, expectedCommits: 0, expectedChecks: 1, expectedTree: 'a'.repeat(40) },
     { result: { queued: false }, allowed: true, expectedCommits: 1, expectedChecks: 1 },
     { result: { queued: false }, allowed: false, expectedCommits: 0, expectedChecks: 1 },
   ]) {
@@ -231,11 +233,13 @@ async function run(allowed, failCommit = false) {
     };
     const context = vm.createContext({
       repository,
-      commands: { async executeCommand(id) {
+      commands: { async executeCommand(id, _uri, options) {
         calls.push(id);
         if (id === 'sweetiebot.queueCommit') return outcome.result;
         if (id === 'sweetiebot.checkCommitLimits') {
           checks++;
+          assert.equal(options?.approvedTree, outcome.expectedTree,
+            'the direct path can reuse only the queue-approved staged tree');
           return outcome.allowed;
         }
         if (id === 'sweetiebot.beginCommit' || id === 'sweetiebot.endCommit') return undefined;
@@ -251,7 +255,7 @@ async function run(allowed, failCommit = false) {
     assert.equal(nativeCommits, outcome.expectedCommits,
       'canceled checks never fall through to unsafe direct Git commits');
     assert.equal(checks, outcome.expectedChecks,
-      'only a declined queue uses the direct-path size check');
+      'only declined queues consult the shared inspector for cached or new approval');
     assert.equal(calls[0], 'sweetiebot.queueCommit',
       'durable path does not check unstaged changes before the queue stages them');
   }
