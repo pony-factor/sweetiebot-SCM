@@ -41,7 +41,14 @@ function renderCommitTree(parent, commits, openCommit) {
     const circle = document.createElementNS(svg.namespaceURI, 'circle');
     circle.setAttribute('cx', 12 + node.lane * 16); circle.setAttribute('cy', node.row * 52 + 17); circle.setAttribute('r', 4); svg.appendChild(circle);
     const button = document.createElement('button'); button.className = 'commit-tree-item'; button.style.marginLeft = width + 'px';
-    button.textContent = (node.isNew ? 'New · ' : '') + node.sha.slice(0, 7) + ' ' + node.title; button.title = node.sha + '\n' + node.title;
+    if (node.isNew) {
+      const indicator = document.createElement('span'); indicator.textContent = 'New · ';
+      button.appendChild(indicator);
+    }
+    const hash = document.createElement('code'); hash.className = 'commit-tree-sha';
+    hash.textContent = node.sha.slice(0, 7); button.appendChild(hash);
+    const title = document.createElement('span'); title.textContent = ' ' + node.title; button.appendChild(title);
+    button.title = node.sha + '\n' + node.title;
     button.addEventListener('click', () => openCommit(node.sha)); list.appendChild(button);
   }
 }
