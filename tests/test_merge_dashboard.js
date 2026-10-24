@@ -334,7 +334,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
   info = { ...info, state: 'closed', merged: false };
-  await dashboard.refresh();
+  await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
   assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',

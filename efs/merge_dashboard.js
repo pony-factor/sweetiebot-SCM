@@ -192,7 +192,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
   let working = false;
-  let refreshRequested = false;
+  let activeRefresh = null;
+  let queuedRefresh = null;
   let cycle = 0;
   let rateLimitedUntil = 0;
   let error = '';
@@ -318,44 +319,50 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   }
 
-  async function refresh(force = false) {
-    if (disposed || Date.now() < rateLimitedUntil) return;
-    if (working) {
-      if (force) refreshRequested = true;
-      return;
+  // A second refresh requested during an active poll must be queued,
+  // and its callers must wait for the latest GitHub state.
+  function refresh() {
+    if (disposed || Date.now() < rateLimitedUntil) return Promise.resolve();
+    if (activeRefresh) {
+      if (!queuedRefresh) {
+        queuedRefresh = activeRefresh.then(() => {
+          queuedRefresh = null;
+          return refresh();
+        });
+      }
+      return queuedRefresh;
     }
-    working = true;
-    cycle++;
-    error = '';
-    try {
-      // Limit simultaneous GitHub calls so selections of 50 PRs remain polite.
-      for (let start = 0; start < prs.length && !disposed; start += 3) {
-        await Promise.all(prs.slice(start, start + 3).map(async pr => {
-          try { await refreshOne(pr); }
-          catch (failure) {
-            error = failure.message;
-            if (failure.rateLimited) rateLimitedUntil = Date.now() + 120000;
-            if (pr.lastError !== failure.message) {
-              pr.lastError = failure.message;
-              addEvent(pr, 'error', failure.message);
+    activeRefresh = (async () => {
+      working = true;
+      cycle++;
+      error = '';
+      try {
+        // Limit simultaneous GitHub calls so selections of 50 PRs remain polite.
+        for (let start = 0; start < prs.length && !disposed; start += 3) {
+          await Promise.all(prs.slice(start, start + 3).map(async pr => {
+            try { await refreshOne(pr); }
+            catch (failure) {
+              error = failure.message;
+              if (failure.rateLimited) rateLimitedUntil = Date.now() + 120000;
+              if (pr.lastError !== failure.message) {
+                pr.lastError = failure.message;
+                addEvent(pr, 'error', failure.message);
+              }
             }
-          }
-        }));
-        if (rateLimitedUntil > Date.now()) break;
+          }));
+          if (rateLimitedUntil > Date.now()) break;
+        }
+      } finally {
+        working = false;
+        publish();
       }
-    } finally {
-      working = false;
-      publish();
-      if (refreshRequested && !disposed) {
-        refreshRequested = false;
-        void refresh();
-      }
-    }
+    })().finally(() => { activeRefresh = null; });
+    return activeRefresh;
   }
 
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'ready') return publish();
-    if (message?.type === 'refresh') return refresh(true);
+    if (message?.type === 'refresh') return refresh();
     if (message?.type === 'timestamp-mode') {
       if (!TIMELINE_MODES.includes(message.mode)) return;
       try {
@@ -452,7 +459,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     addEvent(pr, 'progress', stages[event.stage],
       [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
     publish();
-    if (event.stage === 'pushed' || event.stage === 'checks-passed') void refresh(true);
+    if (event.stage === 'pushed' || event.stage === 'checks-passed') void refresh();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
     for (const item of state.deferred) {
@@ -483,7 +490,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
     }
     publish();
-    void refresh(true);
+    void refresh();
   } };
 }
 
