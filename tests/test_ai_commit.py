@@ -386,6 +386,52 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(ai_commit.installed_local_model_names(), {"primary:test"})
 
 
+class TitleGenerationAdmissionTests(unittest.TestCase):
+    def test_memory_pressure_adapts_global_parallelism(self):
+        gib = 1024**3
+        expected = {
+            None: 2, 0: 1, 3 * gib: 1, 7 * gib: 1,
+            8 * gib: 1, 16 * gib: 2, 24 * gib: 3,
+            32 * gib: 4, 48 * gib: 6, 96 * gib: 6,
+        }
+        for available, slots in expected.items():
+            with self.subTest(available=available):
+                self.assertEqual(ai_commit.title_generation_parallelism(available), slots)
+
+    def test_title_slots_are_shared_and_released_under_pressure(self):
+        gib = 1024**3
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=7 * gib):
+            with ai_commit.title_generation_slot() as first:
+                self.assertEqual(first, 0)
+                with patch.object(ai_commit.time, "sleep", side_effect=RuntimeError("slot busy")):
+                    with self.assertRaisesRegex(RuntimeError, "slot busy"):
+                        with ai_commit.title_generation_slot():
+                            self.fail("A second worker entered the only safe slot")
+            with ai_commit.title_generation_slot() as reopened:
+                self.assertEqual(reopened, 0, "The slot must be reusable after finishing")
+
+    def test_available_headroom_allows_independent_concurrent_slots(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=16 * 1024**3):
+            with ai_commit.title_generation_slot() as first:
+                with ai_commit.title_generation_slot() as second:
+                    self.assertEqual((first, second), (0, 1))
+
+    def test_title_slot_is_released_after_generation_error(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=0):
+            failing = ai_commit.generation_budget(lambda: (_ for _ in ()).throw(
+                RuntimeError("generation failed")))
+            with self.assertRaisesRegex(RuntimeError, "generation failed"):
+                failing()
+            with ai_commit.title_generation_slot() as available_again:
+                self.assertEqual(available_again, 0)
+
+
 class ManualSpellcheckTests(unittest.TestCase):
     def test_safe_grammar_correction_requires_high_similarity_and_preserves_tokens(self):
         original = "🐞 Fix button are brokn"
