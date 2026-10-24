@@ -109,6 +109,27 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     'Manual decisions must preserve earlier review comments');
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
+  const liveDecisions = '<!-- sweetiebot-merge-options\n' + JSON.stringify({
+    version: 1, headSha: sha, baseSha: 'c'.repeat(40), options: [
+      { id: 'keep-api', label: 'Keep API', prompt: 'Keep the original API.' },
+      { id: 'adapt-api', label: 'Use adapter', prompt: 'Introduce an adapter.' }
+    ]
+  }) + '\n-->';
+  const activeReview = { id: 20, body: REVIEW_MARKER + '\nWhich interface?\n' + liveDecisions };
+  assert.equal(reportFromComments([comments[1]], { headSha: sha, baseSha: 'c'.repeat(40) }).review, null,
+    'A historical marker without live decisions cannot block a merge');
+  assert.equal(reportFromComments([activeReview], { headSha: sha, baseSha: 'c'.repeat(40) }).review.id, 20);
+  assert.equal(reportFromComments([activeReview], { headSha: nextSha, baseSha: 'c'.repeat(40) }).review, null,
+    'A new PR head invalidates decisions for its earlier revision');
+  assert.equal(reportFromComments([activeReview], { headSha: sha, baseSha: 'd'.repeat(40) }).review, null,
+    'A new PR base invalidates historical decisions');
+  assert.equal(reportFromComments([{ ...activeReview, body: activeReview.body +
+    '\n<!-- sweetiebot-merge-review-resolved -->' }],
+    { headSha: sha, baseSha: 'c'.repeat(40) }).review, null,
+    'Explicitly resolved decisions cannot block later polls');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'clean' },
+    { review: { id: 20 }, report: { id: 21 } }), 'review',
+    'An unrelated AI report cannot override a current human decision');
   const reviewComments = normalizeInlineReviewComments([
     { id: 10, path: 'src/feature.js', start_line: 12, line: 18, user: { login: 'reviewer' },
       body: REVIEW_MARKER + '\n## Keep both behavior paths\nDetailed reasoning.\n' + optionsBlock,
@@ -229,7 +250,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     env: { async openExternal(target) { openings.push(target); } }
   };
   let info = {
-    number: 12, base: { ref: 'main' }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
+    number: 12, base: { ref: 'main', sha: 'c'.repeat(40) }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
     state: 'open', merged: false, mergeable: false, mergeable_state: 'dirty', body: 'Why this PR exists'
   };
   let commentsForPr = [];
@@ -404,7 +425,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     'A changed blocking reason is reported even when the phase stays blocked');
   inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
     html_url: url + '#discussion_r90',
-    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + optionsBlock },
+    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + liveDecisions },
     { id: 91, path: 'src/another.js', original_line: 21,
       body: 'Consider the old caller, too.' }];
   info = { ...info, head: { ...info.head, sha }, mergeable_state: 'clean', mergeable: true };
@@ -416,7 +437,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(inlinePr.inlineReviewComments[0].location, 'L1');
   assert.equal(inlinePr.inlineReviewComments[1].location, 'L21');
   assert.equal(inlinePr.inlineReviewComments[1].title, 'Consider the old caller, too.');
-  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-90-preserve-api');
+  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-90-keep-api');
   assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
   const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
     actionId: inlineChoice.id, optionKey: inlineChoice.key };
@@ -424,6 +445,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(actionLaunches.length, 3, 'Inline options survive the fresh action lookup');
   assert.equal(actionLaunches[2][4].review.url, url + '#discussion_r90');
   inlineCommentsForPr = [];
+  await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].review, null, 'Removed live review clears on the next poll');
+  assert.notEqual(events.at(-1).prs[0].state, 'review');
   await messageHandler(inlineAction);
   assert.equal(actionLaunches.length, 3, 'Removed inline choices cannot execute from a stale dashboard');
   const reactionBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({
@@ -520,7 +544,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
   info = { ...info, state: 'closed', merged: false };
-  await dashboard.refresh();
+  await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
   assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',

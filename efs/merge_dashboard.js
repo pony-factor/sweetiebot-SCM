@@ -70,7 +70,22 @@ function validateSelection(selection) {
   };
 }
 
-function reportFromComments(comments) {
+// Only current-head, current-base implementation choices should hold a PR in review.
+function hasCurrentReviewDecision(body, scope) {
+  if (!SHA.test(scope?.headSha || '') || !SHA.test(scope?.baseSha || '') ||
+      String(body).includes('<!-- sweetiebot-merge-review-resolved -->')) return false;
+  for (const match of String(body).matchAll(/<!--\s*sweetiebot-merge-options\s*\n([\s\S]*?)\n\s*-->/g)) {
+    let payload;
+    try { payload = JSON.parse(match[1]); } catch { continue; }
+    if (payload?.version !== 1 || payload.headSha !== scope.headSha ||
+        payload.baseSha !== scope.baseSha) continue;
+    const choices = parseReportOptions(match[0]);
+    if (new Set(choices.map(choice => choice.prompt.toLowerCase())).size >= 2) return true;
+  }
+  return false;
+}
+
+function reportFromComments(comments, scope = null) {
   let report = null;
   let review = null;
   const reviewNotes = [];
@@ -81,7 +96,7 @@ function reportFromComments(comments) {
         options: parseReportOptions(body),
         url: comment.html_url || '', id: comment.id };
     }
-    if (body.includes(REVIEW_MARKER)) {
+    if (body.includes(REVIEW_MARKER) && (!scope || hasCurrentReviewDecision(body, scope))) {
       reviewNotes.push({ text: stripReportOptions(body.replace(REVIEW_MARKER, '').replace('<!-- sweetiebot-merge-analysis -->', '')).slice(0, 12000),
         options: parseReportOptions(body).map(option => comment.path && Number.isSafeInteger(comment.id)
           ? { ...option, sourceId: option.id, commentId: comment.id, id: 'report-' + comment.id + '-' + option.id.replace(/^report-/, '') } : option),
@@ -123,7 +138,7 @@ function mergePhase(pr, previous) {
   if (pr.state === 'closed') return 'closed';
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
-  if (previous.review && !previous.report) return 'review';
+  if (previous.review) return 'review';
   if (pr.mergeable_state === 'unstable' || pr.mergeable_state === 'blocked') return 'blocked';
   if (previous.sawConflict && pr.mergeable === true && pr.head?.sha !== previous.originalHead) {
     return 'resolved';
@@ -198,14 +213,14 @@ async function paged(fetchImpl, token, repository, endpoint, maxPages = 3) {
   return items;
 }
 
-async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
+async function readReports(fetchImpl, token, repository, number, maxPages = 2, scope = null) {
   const [conversation, inline, reviews] = await Promise.all([
     paged(fetchImpl, token, repository, '/issues/' + number + '/comments', maxPages),
     paged(fetchImpl, token, repository, '/pulls/' + number + '/comments', maxPages),
     paged(fetchImpl, token, repository, '/pulls/' + number + '/reviews', maxPages)
   ]);
   // Inline decision requests take precedence over legacy Conversation requests.
-  return { ...reportFromComments([...conversation, ...inline]),
+  return { ...reportFromComments([...conversation, ...inline], scope),
     inlineComments: inline, conversationComments: conversation, reviews };
 }
 
@@ -267,6 +282,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
   let working = false;
+  let activeRefresh = null;
+  let queuedRefresh = null;
+  let queuedForce = false;
   let cycle = 0;
   let rateLimitedUntil = initialRateLimit?.retryAt || 0;
   let error = initialRateLimit?.message || '';
@@ -374,8 +392,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
     }
-    if (cycle === 1 || cycle % 3 === 0 || changed || info.merged) {
-      const notes = await readReports(fetchImpl, token, selection.repository, item.number);
+    if (cycle === 1 || cycle % 3 === 0 || changed || info.merged || item.review) {
+      const notes = await readReports(fetchImpl, token, selection.repository, item.number, 2,
+        { headSha: info.head?.sha, baseSha: info.base?.sha });
       decisionComments = notes.inlineComments;
       inlineComments.set(item.number, decisionComments);
       recordReviewActivity(item, notes);
@@ -383,7 +402,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         addEvent(item, 'reported', 'AI merge explanation recorded on the pull request');
       }
       if (notes.review?.id !== item.review?.id && notes.review) {
-        addEvent(item, 'review', 'Human judgment requested on the pull request');
+        addEvent(item, 'review', 'A current implementation decision needs human judgment');
+      } else if (item.review && !notes.review) {
+        addEvent(item, 'updated', 'The previous review request is no longer active for this PR revision');
       }
       item.report = notes.report;
       item.review = notes.review;
@@ -428,7 +449,19 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   }
 
-  async function refresh({ force = false } = {}) {
+  function refresh({ force = false } = {}) {
+    if (disposed) return Promise.resolve();
+    if (activeRefresh) {
+      if (force) queuedForce = true;
+      if (!queuedRefresh) queuedRefresh = activeRefresh.then(() => {
+        const nextForce = queuedForce;
+        queuedRefresh = null;
+        queuedForce = false;
+        return refresh({ force: nextForce });
+      });
+      return queuedRefresh;
+    }
+    activeRefresh = (async () => {
     if (working || disposed || Date.now() < rateLimitedUntil || require('./github_rate_limit').activeRateLimit(vscode) || (!force && !isActive())) return;
     working = true;
     cycle++;
@@ -458,6 +491,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       working = false;
       publish();
     }
+    })().finally(() => { activeRefresh = null; });
+    return activeRefresh;
   }
 
   panel.webview.onDidReceiveMessage(async message => {
@@ -511,7 +546,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             fresh.head?.repo?.full_name !== selection.repository) {
           throw Error('The PR changed. Refresh its status and review the options before choosing again.');
         }
-        const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3);
+        const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3,
+          { headSha: fresh.head?.sha, baseSha: fresh.base?.sha });
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
           baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }) };
         const option = [...blockerOptions(snapshot), ...manualBlockerActions(snapshot)].find(item => item.id === message.actionId && item.key === message.optionKey);
@@ -611,6 +647,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
       event.stage, pr.lastPushedHead || '') || pr.localRecovery;
     publish();
+    if (event.stage === 'pushed' || event.stage === 'checks-passed') void refresh();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
     if (state.rateLimit) {
@@ -680,6 +717,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         item.status, pushed || '') || pr.localRecovery;
     }
     publish();
+    void refresh();
   } };
 }
 
