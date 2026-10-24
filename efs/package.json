@@ -1,6 +1,6 @@
 {
   "name": "sweetiebot-scm",
-  "displayName": "Sweetiebot SCM",
+  "displayName": "Sweetiebot",
   "description": "Local semantic and hybrid workspace search in the Source Control sidebar using Ollama.",
   "version": "0.3.2",
   "publisher": "pony-factor",
@@ -628,6 +628,11 @@
           "description": "Pause when GitHub does not supply a reset time. Choose 60–3600 seconds. Server reset times always take precedence.",
           "minimum": 60,
           "maximum": 3600
+        },
+        "scmToolkit.codexHidePermissionsIcon": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the Codex permissions icon; use Change permissions in Magic Settings instead."
         }
       }
     }

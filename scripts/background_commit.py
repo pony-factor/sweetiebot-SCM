@@ -29,6 +29,29 @@ PARALLEL_JOBS = 6
 COMPLETED_JOB_RETENTION_DAYS = 60
 
 
+def transient_network_error(error):
+    message = str(error).lower()
+    return any(fragment in message for fragment in (
+        'tls handshake timeout', 'i/o timeout', 'connection timed out',
+        'connection reset by peer', 'temporary failure in name resolution',
+        'could not resolve host', 'network is unreachable',
+    ))
+
+
+def retry_network_read(operation):
+    # Retry only the read-only pre-push guard; never repeat a commit or merge.
+    for attempt in range(4):
+        try:
+            return operation()
+        except RuntimeError as error:
+            if not transient_network_error(error):
+                raise
+            if attempt == 3:
+                error.network_retries_exhausted = True
+                raise
+            time.sleep(2 ** attempt)
+
+
 class SyncConflicts(RuntimeError):
     def __init__(self, paths):
         self.paths = paths
@@ -331,8 +354,9 @@ def enqueue(request, start=True):
         message = request.get('message', '')
         context = request.get('context', '')
         trailer = request.get('trailer', '')
+        description = request.get('description', '')
         if not all(isinstance(value, str) and '\x00' not in value
-                   for value in (message, context, trailer)):
+                   for value in (message, context, trailer, description)):
             raise ValueError('Invalid background commit request.')
         if trailer and ('\n' in trailer or not trailer.startswith('Co-authored-by: ')):
             raise ValueError('Invalid co-author trailer.')
@@ -358,6 +382,23 @@ def enqueue(request, start=True):
         if core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
         tree = git('write-tree')
+        selected = request.get('paths')
+        if selected is not None:
+            if (not isinstance(selected, list) or not selected or len(selected) > 100
+                    or any(not isinstance(name, str) or not name or Path(name).is_absolute()
+                           or '..' in Path(name).parts or '\x00' in name or '\n' in name
+                           or Path(name).suffix.lower() not in ('.md', '.mdx') for name in selected)):
+                raise ValueError('Invalid reviewed spellcheck file selection.')
+            entries_for_paths = git('--literal-pathspecs', 'ls-files', '--stage', '-z', '--', *selected)
+            entries_list = [entry for entry in entries_for_paths.split('\x00') if entry]
+            if {entry.partition('\t')[2] for entry in entries_list} != set(selected) or any(' 0\t' not in entry for entry in entries_list):
+                raise RuntimeError('The reviewed spellcheck index entries changed.')
+            with tempfile.TemporaryDirectory(prefix='sweetiebot-reviewed-index-') as temporary:
+                env = os.environ.copy()
+                env['GIT_INDEX_FILE'] = str(Path(temporary) / 'index')
+                git('read-tree', parent, env=env)
+                git('update-index', '-z', '--index-info', input=entries_for_paths + ('\x00' if not entries_for_paths.endswith('\x00') else ''), env=env)
+                tree = git('write-tree', env=env)
         baseline = git('rev-parse', 'HEAD^{tree}', check=False).stdout.strip()
         if tree == baseline or not git('diff', '--cached', '--name-only'):
             raise RuntimeError('Stage the intended changes before queuing a commit.')
@@ -376,10 +417,11 @@ def enqueue(request, start=True):
         directory = jobs_home() / secrets.token_hex(8)
         directory.mkdir(mode=0o700)
         job = dict(id=directory.name, root=root, gitdir=str(meta), branch=branch, parent=parent,
-                   tree=tree, message=message, context=context[-6000:], trailer=trailer,
+                   tree=tree, message=message, context=context[-6000:], trailer=trailer, description=description[:6000],
                    push=push, remote=remote, destination=destination, tracking=tracking,
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
                    no_verify=request.get('noVerify') is True,
+                   skip_spellcheck=request.get('skipSpellcheck') is True,
                    include_description=core.should_add_default_branch_description(),
                    phase='preparing', enqueue_pid=os.getpid())
         write_journal(directory / 'job.json', job)
@@ -721,6 +763,30 @@ def reconcile_published_jobs(meta):
             continue
 
 
+def start_spellcheck(job, journal):
+    if job.get('spellcheck_started') or job.get('skip_spellcheck') or not job.get('sha'):
+        return
+    if state() != (job['branch'], job['sha']):
+        return
+    if not core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
+        return
+    import post_commit_spellcheck as spellcheck
+    if spellcheck.repository_spellcheck_disabled([]):
+        return
+    paths = git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', job['sha']).splitlines()
+    paths = [name for name in paths if name.lower().endswith(('.md', '.mdx'))]
+    if not paths:
+        return
+    index = os.environ.pop('GIT_INDEX_FILE', None)
+    try:
+        spellcheck.spawn_post_commit([], paths, job['sha'], str(Path(__file__).with_name('ai_commit.py')), job['parent'])
+        job['spellcheck_started'] = True
+        write_journal(journal, job)
+    finally:
+        if index is not None:
+            os.environ['GIT_INDEX_FILE'] = index
+
+
 def work(directory, commit_only=False):
     saved = read_journal(directory / 'job.json')
     if saved and saved.get('phase') == 'blocked':
@@ -753,6 +819,13 @@ def work(directory, commit_only=False):
                 return
             if not any(entry['id'] == job['id'] for entry in entries):
                 raise RuntimeError('The background commit no longer owns this repository.')
+            if (job['phase'] == 'blocked' and job.get('push') and job.get('sha')
+                    and transient_network_error(job.get('error', ''))
+                    and not job.get('network_retries_exhausted')):
+                # Repair jobs paused by the older immediate-notification path.
+                job['phase'] = 'committed'
+                job.pop('error', None)
+                write_journal(file, job)
             if job['phase'] == 'blocked':
                 # An already-running older worker can finish generation after
                 # another placeholder was queued. Recover only a verified chain.
@@ -785,6 +858,8 @@ def work(directory, commit_only=False):
                 if not job['message'].strip():
                     job['provisional'] = True
                     job['message'] = PLACEHOLDER + job['id']
+                    if job.get('description'):
+                        job['message'] += '\n\n' + job['description']
                 if job['trailer'] and job['trailer'] not in job['message'].splitlines():
                     job['message'] += '\n\n' + job['trailer']
                 if state() != (job['branch'], job['parent']):
@@ -805,6 +880,10 @@ def work(directory, commit_only=False):
                     raise RuntimeError('A hook changed the captured tree; push was paused.')
                 job.update(sha=sha, phase='committed')
                 write_journal(file, job)
+            try:
+                start_spellcheck(job, file)
+            except (OSError, RuntimeError) as error:
+                log_event('background_commit', 'spellcheck_start_pending', error_type=type(error).__name__, outcome='retry')
             if commit_only:
                 return
             with repository_lock(job['gitdir']):
@@ -858,7 +937,7 @@ def work(directory, commit_only=False):
             pushed = job['push']
             if pushed:
                 from merged_branch import require_unmerged
-                require_unmerged(job['branch'], job['remote'])
+                retry_network_read(lambda: require_unmerged(job['branch'], job['remote']))
                 job['phase'] = 'pushing'
                 write_journal(file, job)
                 env = os.environ.copy()
@@ -909,14 +988,7 @@ def work(directory, commit_only=False):
                 save_queue(marker, queue_entries(marker))
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
             log_event('background_commit', 'completed', outcome='success')
-            # Existing spellcheck guards refuse edits when users have moved on.
-            if core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
-                import post_commit_spellcheck as spellcheck
-                if not spellcheck.repository_spellcheck_disabled([]):
-                    paths = git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', job['sha']).splitlines()
-                    paths = [name for name in paths if name.lower().endswith(('.md', '.mdx'))]
-                    os.environ.pop('GIT_INDEX_FILE', None)
-                    spellcheck.spawn_post_commit([], paths, job['sha'], str(Path(__file__).with_name('ai_commit.py')), job['parent'])
+            # Optional post-commit spellcheck is scheduled once by start_spellcheck.
         except (OSError, subprocess.TimeoutExpired):
             log_event('background_commit', 'interrupted', outcome='retry')
         except Exception as exc:
@@ -926,6 +998,8 @@ def work(directory, commit_only=False):
             with nullcontext() if commit_only else repository_lock(job['gitdir']):
                 current = read_journal(file)
                 current.update(phase='blocked', error=str(exc), context='')
+                if getattr(exc, 'network_retries_exhausted', False):
+                    current['network_retries_exhausted'] = True
                 current.pop('conflictPaths', None)
                 if isinstance(exc, SyncConflicts):
                     current['conflictPaths'] = exc.paths
@@ -974,6 +1048,7 @@ def control(action):
             job['phase'] = ('finalizing' if job.get('replacement_sha') else
                             'committed' if job.get('sha') else 'committing' if job['message'] else 'queued')
             job.pop('error', None)
+            job.pop('network_retries_exhausted', None)
             write_journal(directory / 'job.json', job)
 
 
@@ -1246,8 +1321,8 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
         label = name + (' (' + branch + ')' if branch else '')
         if job and job.get('phase') == 'blocked' and job.get('error'):
             reason = 'Push blocked by merge conflicts.' if 'merge conflict' in job['error'].lower() else 'Commit & Push paused.'
-            raise RuntimeError(label + ': ' + reason + ' ' + job['error'])
-        raise RuntimeError(label + ': Commit & Push is still running. Let it finish before modifying pending history or committing again.')
+            raise RuntimeError('Sweetiebot: ' + reason + ' ' + job['error'])
+        raise RuntimeError('Sweetiebot: Commit & Push is still running. Let it finish before modifying pending history or committing again.')
 
 
 if __name__ == '__main__':

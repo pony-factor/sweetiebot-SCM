@@ -610,6 +610,14 @@ def edits(js=None, settings=None):
             "if(this.clear(),!!o){",
         ),
         (
+            "this.button.onDidClick(async()=>await this.executeCommand(o.command.id,...o.command.arguments||[])",
+            "this.button.onDidClick(async()=>await scmToolkitRunActionButton(this)",
+        ),
+        (
+            "run:async()=>{await this.executeCommand(n.id,...n.arguments||[])}",
+            "run:async()=>{await scmToolkitRunActionButton(this,t,i.indexOf(n))}",
+        ),
+        (
             "this.disposables.add(this.toolbar)}static{this.ValidationTimeouts=",
             "this.disposables.add(this.toolbar);this.scmToolkitControls="
             f"i.invokeFunction(accessor=>scmToolkitCreateControls(this,{observe},"
@@ -1443,7 +1451,7 @@ def main():
         raise ValueError("The installed Codex composer stylesheet could not be identified.")
 
     for path, context_old, context_new in codex_context.patch_files(
-        args.codex_extension, enabled=settings.get("codexCommitContext", False) and not args.uninstall
+        args.codex_extension, enabled=not args.uninstall
     ):
         paths.append(path)
         old.append(context_old)

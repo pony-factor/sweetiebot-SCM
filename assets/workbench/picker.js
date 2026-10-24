@@ -19,6 +19,27 @@ function scmToolkitRequestIndependentWorkspaceTrust(localUserHome, requests) {
     });
 }
 
+// Git publishes fresh command descriptors on status refresh, even when the
+// action has not changed. Keep its DOM, focus and accessibility target alive.
+function scmToolkitSameActionButton(left, right) {
+    if (!left || !right) return left === right;
+    const sameCommand = (a, b) => Boolean(a && b
+        && a.title === b.title && a.shortTitle === b.shortTitle && a.tooltip === b.tooltip);
+    const leftGroups = left.secondaryCommands ?? [];
+    const rightGroups = right.secondaryCommands ?? [];
+    return left.enabled === right.enabled && sameCommand(left.command, right.command)
+        && leftGroups.length === rightGroups.length
+        && leftGroups.every((group, index) => group.length === rightGroups[index].length
+            && group.every((command, item) => sameCommand(command, rightGroups[index][item])));
+}
+
+function scmToolkitRunActionButton(widget, group, index) {
+    const button = widget.scmToolkitPressState?.currentButton;
+    const command = group === undefined ? button?.command : button?.secondaryCommands?.[group]?.[index];
+    if (!command || button.enabled === false) return;
+    return widget.executeCommand(command.id, ...(command.arguments ?? []));
+}
+
 function scmToolkitDeferActionButtonUpdate(widget, button) {
     let state = widget.scmToolkitPressState;
     if (!state) {
@@ -26,6 +47,17 @@ function scmToolkitDeferActionButtonUpdate(widget, button) {
         const doc = container.ownerDocument;
         const view = doc.defaultView;
         state = widget.scmToolkitPressState = { pressed: false, queued: false };
+        const flash = () => {
+            view.clearTimeout(state.flashTimer);
+            // Restart the pulse for every activation, including a second click
+            // before the first flash has faded.
+            container.classList.remove('scm-toolkit-action-pressed');
+            void container.offsetWidth;
+            container.classList.add('scm-toolkit-action-pressed');
+            state.flashTimer = view.setTimeout(() => {
+                container.classList.remove('scm-toolkit-action-pressed');
+            }, 260);
+        };
         const release = () => {
             if (!state.pressed) return;
             // Mouseup is followed by click. Keep the old DOM and its command
@@ -40,23 +72,55 @@ function scmToolkitDeferActionButtonUpdate(widget, button) {
             }, 0);
         };
         const press = event => {
-            if (event.button !== 0 || !event.target.closest?.('.monaco-button')) return;
+            const target = event.target.closest?.('.monaco-button');
+            if (!target || target.classList.contains('disabled')
+                || target.getAttribute('aria-disabled') === 'true') return;
+            if (event.type === 'keydown') {
+                if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+            } else if (event.button !== 0) return;
             view.clearTimeout(state.timer);
             state.pressed = true;
+            // The main action flashes, without lighting the adjacent menu or Settings.
+            if (!target.classList.contains('monaco-dropdown-button')) flash();
+        };
+        const clicked = event => {
+            const target = event.target.closest?.('.monaco-button');
+            if (target && !target.classList.contains('disabled')
+                && !target.classList.contains('monaco-dropdown-button')
+                && target.getAttribute('aria-disabled') !== 'true') flash();
         };
         container.addEventListener('pointerdown', press, true);
+        container.addEventListener('keydown', press, true);
+        container.addEventListener('click', clicked, true);
         doc.addEventListener('pointerup', release, true);
         doc.addEventListener('pointercancel', release, true);
+        doc.addEventListener('keyup', release, true);
         view.addEventListener('blur', release);
         state.dispose = () => {
             view.clearTimeout(state.timer);
+            view.clearTimeout(state.flashTimer);
+            container.classList.remove('scm-toolkit-action-pressed');
             container.removeEventListener('pointerdown', press, true);
+            container.removeEventListener('keydown', press, true);
+            container.removeEventListener('click', clicked, true);
             doc.removeEventListener('pointerup', release, true);
             doc.removeEventListener('pointercancel', release, true);
+            doc.removeEventListener('keyup', release, true);
             view.removeEventListener('blur', release);
         };
     }
-    if (!state.pressed) return false;
+    const sameAppearance = state.rendered && scmToolkitSameActionButton(state.currentButton, button);
+    if (sameAppearance) {
+        // Command proxy handles can change on every refresh. The stable DOM's
+        // listeners resolve the latest descriptor instead of closing over one.
+        state.currentButton = button;
+    }
+    if (!state.pressed) {
+        if (sameAppearance) return true;
+        state.currentButton = button;
+        state.rendered = true;
+        return false;
+    }
     state.button = button;
     state.queued = true;
     return true;

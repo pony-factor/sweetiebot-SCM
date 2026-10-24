@@ -22,7 +22,7 @@ const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh
 const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
-  api, git, gitToken, expected, resolutionPatch = null, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
+  api, git, gitToken, expected, resolutionPatch = null, repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
   allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
@@ -92,10 +92,12 @@ async function humanSquashMerge(repository, number, {
     for (let page = 1; page <= 100; page++) {
       const pulls = await api(endpoint + '/pulls?state=open&per_page=100&page=' + page);
       if (!Array.isArray(pulls)) throw Error('Cannot inspect all dependent pull requests.');
-      if (pulls.some(p => p.number !== number &&
+      const dependent = pulls.filter(p => p.number !== number &&
         (p.base?.ref === head || (p.head?.ref === head &&
-          p.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase())))) {
-        throw Error('Another open PR depends on or shares this head branch; refusing to rewrite it.');
+          p.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase())));
+      if (dependent.length) {
+        const names = dependent.map(p => '#' + p.number + ' (' + (p.head?.ref || '?') + ' → ' + (p.base?.ref || '?') + ')').join(', ');
+        throw Error('Open PR ' + names + ' depends on or shares this head branch "' + head + '"; refusing to rewrite it.');
       }
       if (pulls.length < 100) break;
       if (page === 100) throw Error('Open PR dependency list is incomplete.');
@@ -132,10 +134,13 @@ async function humanSquashMerge(repository, number, {
   const message = alreadyPrepared ? existing : preparedMessage;
   let operationCommitTitle = commits.at(-1)?.commit?.message?.split('\n')[0] || prepared.title;
   const initialChecks = await readMergeChecks(api, repository, originalSha);
+  if (repairChecks && (resolutionPatch === null || initialChecks.state !== 'failed')) {
+    throw Error('A check repair requires a complete patch and confirmed failing checks on the selected head.');
+  }
   const finish = async (sha, expected, method = 'rebase') => {
     progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
-      ...checkOptions, expectChecks: initialChecks.hasChecks
+      ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true
     });
     if (checks.state !== 'passed') return { merged: false, status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
       sha, previousHeadSha: originalSha, base, baseSha, number, author,
@@ -246,7 +251,7 @@ async function humanSquashMerge(repository, number, {
       const patchFile = path.join(temp, '.git', 'sweetiebot-resolution.patch');
       await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
       const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
-      resolvedFiles = patchPaths(resolutionPatch, numstat, originalFiles);
+      resolvedFiles = patchPaths(resolutionPatch, numstat, originalFiles, { allowCheckRepairTests: repairChecks });
       const missing = requiredFiles.filter(name => !resolvedFiles.includes(name));
       if (missing.some(name => conflicts.includes(name))) {
         throw Error('Resolution patch must cover every conflicted PR file.');
@@ -299,7 +304,8 @@ async function humanSquashMerge(repository, number, {
     if (!staged.trim()) throw Error('Squash would make no changes; refusing empty commit.');
     // No unexpected base-only or unrelated file changes may enter this commit.
     const proposedFiles = staged.split('\0').filter(Boolean).sort();
-    if (proposedFiles.some(name => !originalFiles.includes(name)) ||
+    if (proposedFiles.some(name => !originalFiles.includes(name) &&
+          !(repairChecks && /^tests\/test_[\w.-]+\.(?:js|py)$/.test(name))) ||
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }

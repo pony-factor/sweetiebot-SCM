@@ -168,7 +168,7 @@ async function commitWithCodex(vscode, uri, options = {}) {
       // The background worker appends a missing trailer verbatim. Once the
       // message is consolidated, passing the old trailer would duplicate it.
       return await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
-        message: preparedMessage, codex: true,
+        message: preparedMessage, codex: true, codexCommitContext: useCodexContext,
         trailer: preparedMessage ? '' : trailer, push
       });
     }

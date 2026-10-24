@@ -548,7 +548,7 @@ class ManualSpellcheckTests(unittest.TestCase):
         ), patch.object(
             ai_commit, "should_add_default_branch_description", return_value=True
         ), patch.object(
-            ai_commit, "generate_message", return_value=("🖊️ Fix trading citations", "Correct typos in the citations.")
+            ai_commit, "generate_message", autospec=True, return_value=("🖊️ Fix trading citations", "Correct typos in the citations.")
         ) as generate:
             ai_commit.main()
         self.assertEqual(json.loads(output.getvalue()), {
@@ -557,7 +557,7 @@ class ManualSpellcheckTests(unittest.TestCase):
         generate.assert_called_once_with(
             "notes/report.md | 2 + -",
             "--- a/notes/report.md\n+++ b/notes/report.md\n-old\n+new",
-            ["notes/report.md"], include_description=True, file_context="context")
+            ["notes/report.md"], include_description=True, file_context_override="context")
         self.assertTrue(all("notes/report.md" in call.args for call in read.call_args_list))
 
     def test_reviewed_spellcheck_emoji_toggle_formats_only_after_normal_generation(self):

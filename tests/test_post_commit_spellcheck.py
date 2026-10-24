@@ -399,3 +399,22 @@ class ProposalTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PendingTitleSpellcheckTests(unittest.TestCase):
+    def test_title_changes_are_allowed_but_file_or_branch_changes_are_not(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'GIT_CONFIG_GLOBAL':os.devnull,'GIT_CONFIG_NOSYSTEM':'1'}):
+            def git(*args):
+                return subprocess.check_output(['/usr/bin/git','-C',directory,'-c','core.hooksPath=/dev/null','-c','user.name=Fixture','-c','user.email=fixture@example.invalid',*args],text=True).strip()
+            git('init','-q','-b','main')
+            file=Path(directory)/'note.md';file.write_text('A speling issue.\n');git('add','note.md');git('commit','-qm','Original title')
+            original=git('rev-parse','HEAD')
+            git('commit','--allow-empty','-qm','Updated title')
+            current=git('rev-parse','HEAD')
+            self.assertEqual(worker.review_head(['-C',directory],original,'main'),current)
+            git('switch','-qc','other')
+            self.assertEqual(worker.review_head(['-C',directory],original,'main'),'')
+            git('switch','-q','main')
+            file.write_text('Different content.\n');git('add','note.md');git('commit','-qm','Different files')
+            self.assertEqual(worker.review_head(['-C',directory],original,'main'),'')

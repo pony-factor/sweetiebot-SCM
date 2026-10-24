@@ -173,6 +173,60 @@ class BackgroundCommitTests(unittest.TestCase):
         worker.reconcile_published_jobs(self.repo / '.git')
         self.assertEqual(self.job(directory)['phase'], 'blocked')
 
+    def test_tls_guard_retries_three_times_before_blocking_or_continuing(self):
+        error = 'Post "https://api.github.com/graphql": net/http: TLS handshake timeout'
+        directory = self.queue(push=True)
+        with patch.object(merged_branch, 'require_unmerged', side_effect=[RuntimeError(error), RuntimeError(error), RuntimeError(error), None]) as guard, patch.object(worker.time, 'sleep') as sleep:
+            worker.work(directory)
+            self.assertEqual(guard.call_count, 4)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2, 4])
+            self.assertEqual(self.job(directory)['phase'], 'done')
+        (self.repo / 'story.txt').write_text('Another captured change.\n')
+        self.git('add', 'story.txt')
+        failed = self.queue(push=True)
+        with patch.object(merged_branch, 'require_unmerged', side_effect=RuntimeError(error)) as guard, patch.object(worker.time, 'sleep') as sleep:
+            worker.work(failed)
+            self.assertEqual(guard.call_count, 4)
+            self.assertEqual(self.job(failed)['phase'], 'blocked')
+            self.assertTrue(self.job(failed)['network_retries_exhausted'])
+            worker.work(failed)
+            self.assertEqual(guard.call_count, 4, 'Exhausted jobs stay paused until a manual retry')
+
+    def test_non_network_guard_failure_is_not_retried(self):
+        with patch.object(worker.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'Authentication failed'):
+                worker.retry_network_read(lambda: (_ for _ in ()).throw(RuntimeError('Authentication failed')))
+            sleep.assert_not_called()
+
+    def test_spellcheck_starts_before_title_generation_and_is_not_repeated(self):
+        import post_commit_spellcheck
+        (self.repo / 'note.md').write_text('A speling mistake.\n')
+        self.git('add', 'note.md')
+        self.git('config', 'scm-toolkit.post-commit-spellcheck', 'true')
+        original_config = worker.core.git_config_bool
+        with patch.object(worker.core, 'git_config_bool', side_effect=lambda key, default: True if key == 'scm-toolkit.post-commit-spellcheck' else original_config(key, default)), patch.object(post_commit_spellcheck, 'spawn_post_commit') as spellcheck, patch.object(worker.core, 'generate_message', return_value=('📝 Record note', '')) as generate:
+            directory = self.queue(message='')
+            generate.assert_not_called()
+            spellcheck.assert_called_once()
+            self.assertEqual(spellcheck.call_args.args[1], ['note.md'])
+            self.assertTrue(self.job(directory)['spellcheck_started'])
+            worker.work(directory)
+            spellcheck.assert_called_once()
+
+    def test_reviewed_spellcheck_queues_while_titles_pending_and_preserves_other_staging(self):
+        directory = self.queue(message='')
+        (self.repo / 'note.md').write_text('Reviewed spelling.\n')
+        (self.repo / 'story.txt').write_text('Unrelated staged work.\n')
+        self.git('add', 'note.md', 'story.txt')
+        with patch.object(worker.core, 'generate_message') as generate:
+            reviewed = self.queue(message='', paths=['note.md'], skipSpellcheck=True, description='My reviewed note')
+            generate.assert_not_called()
+        sha = self.job(reviewed)['sha']
+        self.assertEqual(self.git('show', '--format=', '--name-only', sha), 'note.md')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), 'story.txt')
+        self.assertIn('My reviewed note', self.git('show', '-s', '--format=%B', sha))
+        self.assertTrue(self.job(reviewed)['skip_spellcheck'])
+
     def test_pending_finalization_transaction_prevents_cleanup(self):
         directory = self.published_blocked_job()
         (self.repo / '.git' / worker.TRANSACTION).write_text('{}')

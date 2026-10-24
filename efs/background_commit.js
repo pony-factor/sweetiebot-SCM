@@ -39,16 +39,14 @@ function readStatus(script, cwd) {
 }
 
 function blockedNotification(root, status) {
-  const name = root.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
   const conflict = /merge conflicts?/i.test(status.error || '');
   const files = Array.isArray(status.conflictPaths) ? status.conflictPaths : [];
   const branch = status.branch?.replace(/^refs\/heads\//, '');
-  const label = name + (branch ? ' (' + branch + ')' : '');
   const count = files.length ? ` in ${files.length} file${files.length === 1 ? '' : 's'}` : '';
   return {
     message: conflict
-      ? `${label}: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
-      : `${label}: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
+      ? `Sweetiebot: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
+      : `Sweetiebot: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
     action: conflict ? 'View conflicting files' : 'View details',
     detail: [
       'Repository: ' + root, ...(branch ? ['Branch: ' + branch] : []), '',
@@ -232,7 +230,7 @@ function registerBackgroundCommit(vscode, context) {
     }
     if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
     let snapshot = '';
-    if (options.codex && !String(options.message ?? '').trim()) {
+    if (options.codex && options.codexCommitContext !== false && !String(options.message ?? '').trim()) {
       try {
         const codex = vscode.extensions.getExtension('openai.chatgpt');
         if (codex && !codex.isActive) await codex.activate();
@@ -260,6 +258,8 @@ function registerBackgroundCommit(vscode, context) {
           sign: options.sign ?? configuration.get('enableCommitSigning') === true,
           signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
           noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
+          ...(options.paths ? {paths: options.paths} : {}), description: options.description ?? '',
+          skipSpellcheck: options.skipSpellcheck === true,
           remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
         });
         if (result.queued === false) {
