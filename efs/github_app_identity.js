@@ -69,7 +69,7 @@ function signAppJwt(appId, key, now) {
 
 async function getRoleInstallationToken(role, repository, {
   env = process.env, fetchImpl = globalThis.fetch, now = Date.now,
-  readKey = readFile, keychainKey = readKeychainKey
+  readKey = readFile, keychainKey = readKeychainKey, readOnly = false
 } = {}) {
   if (!separateAppsEnabled(env)) throw new Error('Distinct GitHub App mode is not enabled.');
   if (!REPOSITORY.test(repository || '')) throw new Error('Invalid GitHub repository for GitHub App authorization.');
@@ -111,8 +111,11 @@ async function getRoleInstallationToken(role, repository, {
     throw new Error('The ' + role + ' GitHub App must have an active repository installation.');
   }
   // Scope each one-hour token to the selected repository, never an org-wide token.
-  const permissions = { contents: role === 'lindsey' ? 'write' : 'read',
-    pull_requests: 'write', issues: 'write' };
+  const permissions = readOnly
+    ? { contents: 'read', pull_requests: 'read', issues: 'read',
+      checks: 'read', statuses: 'read' }
+    : { contents: role === 'lindsey' ? 'write' : 'read',
+      pull_requests: 'write', issues: 'write' };
   const authorized = await request('/app/installations/' + installation.id + '/access_tokens',
     jwt, 'POST', { repositories: [repository.split('/')[1]], permissions });
   if (typeof authorized?.token !== 'string' || !authorized.token ||

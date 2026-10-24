@@ -11,7 +11,11 @@ async function main() {
     window:{state:{focused:true},onDidChangeWindowState:fn=>{focus=fn;return {dispose(){}};}},
     workspace:{getConfiguration:()=>({get:(key,fallback)=>key==='pullRequestAutoRefresh'?enabled:key==='pullRequestRefreshIntervalSeconds'?seconds:fallback}),
       onDidChangeConfiguration:fn=>{configChanged=fn;return {dispose(){}};}},
-    commands:{registerCommand:()=>({dispose(){}}),executeCommand:id=>{if(id==='sweetiebot.githubRateLimited')return Promise.resolve();calls++;return error?Promise.reject(error):Promise.resolve();}}
+    commands:{registerCommand:()=>({dispose(){}}),executeCommand:(id)=>{
+      if (id === 'sweetiebot.githubRateLimited') return Promise.resolve();
+      assert.equal(id, 'pr.refreshList', 'Only PR list refreshes count as polling');
+      calls++;return error?Promise.reject(error):Promise.resolve();
+    }}
   };
   Date.now=()=>now;
   global.setInterval=(fn,ms)=>{tick=fn;delay=ms;return 1;};
