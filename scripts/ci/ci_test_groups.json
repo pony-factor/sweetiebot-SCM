@@ -5,6 +5,7 @@
       "tests": [
         "test_ai_commit.py",
         "test_async_commit.py",
+        "test_auto_codex_commit.js",
         "test_auto_publish.js",
         "test_background_commit.js",
         "test_background_commit.py",
