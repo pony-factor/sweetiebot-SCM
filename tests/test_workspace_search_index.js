@@ -23,7 +23,7 @@ async function run() {
         if (typeof uri === 'string') return `${uri}/${component}`;
         const url = new URL(uri.toString());
         url.pathname = path.posix.resolve(url.pathname, component);
-        return {toString: () => url.toString()};
+        return {toString: () => url.toString(), fsPath: decodeURIComponent(url.pathname)};
       },
       parse: text => ({toString: () => text, fsPath: text.replace(/^file:\/\//, '')}),
       file: filePath => ({toString: () => 'file://' + filePath, fsPath: filePath})
