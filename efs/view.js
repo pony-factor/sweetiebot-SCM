@@ -65,7 +65,7 @@ function buildRepositoryMarkdownLink(result, uri, repositoryRoot, workspaceUri, 
   const rootWorkspace = workspaceUri?.scheme === 'file' &&
     path.resolve(workspaceUri.fsPath) === root;
   const editorFile = editorUri?.scheme === 'file' && editorUri.fsPath &&
-    /\.markdown?$/.test(path.extname(editorUri.fsPath).toLowerCase()) &&
+    /\.(?:md|markdown)$/i.test(path.extname(editorUri.fsPath).toLowerCase()) &&
     isWithinDirectory(root, path.resolve(editorUri.fsPath));
   let targetPath = '/' + rootRelative;
   if (!rootWorkspace && editorFile) {
@@ -76,8 +76,7 @@ function buildRepositoryMarkdownLink(result, uri, repositoryRoot, workspaceUri, 
     encodeURIComponent(segment).replace(/[()]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase())
   ).join('/');
   const label = (folder ? result.relative : result.relative + ':' + line)
-    .replace(/[\\[\]]/g, '\\
-class WorkspaceSearchViewProvider {');
+    .replace(/[\\[\]]/g, '\\$&');
   return '[' + label + '](' + encodedPath + (folder ? '' : '#L' + line) + ')';
 }
 
