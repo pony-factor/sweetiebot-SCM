@@ -459,6 +459,30 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
 
+    def test_remote_branch_namespace_collision_blocks_push_without_retry(self):
+        # Git cannot create remote "fix" while "fix/..." already exists.
+        self.git('checkout', '-q', '-b', 'fix')
+        directory = self.queue(push=True)
+        sha = self.git('rev-parse', 'HEAD')
+        nested = 'refs/heads/fix/efs-repository-relative-copy-links-20261024'
+        self.git('push', '-q', 'origin', f'HEAD:{nested}')
+        worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertIn('conflicts with an existing remote branch name', job['error'])
+        self.assertIn('Stop background push', job['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'rev-parse', nested), sha)
+        self.assertNotIn('refs/heads/fix\n', self.git('--git-dir=' + str(self.root / 'remote'),
+                                                     'for-each-ref', '--format=%(refname)') + '\n')
+        status = json.loads(subprocess.check_output(
+            [sys.executable, worker.__file__, '--status'], text=True))
+        self.assertEqual(status['phase'], 'blocked')
+        self.assertFalse(status['pushPending'])
+        worker.work(directory)
+        self.assertEqual(self.job(directory), job, 'Blocked ref conflicts are not retried')
+
     def test_offline_push_resumes_without_recommitting(self):
         directory = self.queue(push=True)
         (self.root / 'remote').rename(self.root / 'offline')
