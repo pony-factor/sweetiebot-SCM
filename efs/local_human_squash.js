@@ -82,10 +82,14 @@ async function humanSquashMerge(repository, number, {
   }
   const repositoryInfo = await api(endpoint);
   if (head === repositoryInfo.default_branch) throw Error('Cannot rewrite the repository default branch.');
-  const checkHeadIsolation = async () => {
+  const checkHeadWritable = async () => {
     const headBranch = await api(endpoint + '/branches/' + encodeURIComponent(head));
-    if (headBranch.protected !== false) throw Error('PR head is protected; cannot safely replace its commits.');
-    // Rewriting the head of an open child PR or sibling would affect unselected work.
+    if (headBranch.protected !== false) throw Error('PR head is protected; cannot safely update its commits.');
+  };
+  // Dependent PRs must block destructive rewrites, NOT append-only integration
+  // commits or GitHub merges that leave the selected parent branch unchanged.
+  const checkHeadRewriteSafety = async () => {
+    await checkHeadWritable();
     for (let page = 1; page <= 100; page++) {
       const pulls = await api(endpoint + '/pulls?state=open&per_page=100&page=' + page);
       if (!Array.isArray(pulls)) throw Error('Cannot inspect all dependent pull requests.');
@@ -161,7 +165,7 @@ async function humanSquashMerge(repository, number, {
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
   }
-  await checkHeadIsolation();
+  await checkHeadWritable();
   let temp, pushedSha;
   try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
   catch { throw Error('Invalid Git branch name.'); }
@@ -278,7 +282,7 @@ async function humanSquashMerge(repository, number, {
       if (fresh.state !== 'open' || fresh.draft || fresh.head?.sha !== originalSha || fresh.title !== original.title ||
           fresh.head?.ref !== head || fresh.base?.ref !== base) throw Error('PR changed before branch synchronization.');
       if (await readBaseTip() !== baseSha) throw refreshBase();
-      await checkHeadIsolation();
+      await checkHeadWritable();
       // An exact-head lease plus the ancestry check above guarantees this is
       // an append-only update, including if someone rewinds the remote ref.
       await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
@@ -294,6 +298,9 @@ async function humanSquashMerge(repository, number, {
     if (!rewriteApproved || repositoryInfo.allow_rebase_merge !== true) {
       throw Error('A history rewrite requires explicit local approval and a verified human-author necessity.');
     }
+    // Rewriting any parent head would orphan or invalidate dependent PRs.
+    // Even explicit rewrite approval cannot override an open PR dependency.
+    await checkHeadRewriteSafety();
     progress('rewrite-approved', { description: 'Explicit local approval to preserve the original human author; incremental integration cannot produce the required squash.' });
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
@@ -312,8 +319,8 @@ async function humanSquashMerge(repository, number, {
       throw Error('PR changed before guarded push; no branch was modified.');
     }
     if (await readBaseTip() !== baseSha) throw refreshBase();
-    // Close the PR-dependency race between the first preflight and this push.
-    await checkHeadIsolation();
+    // Close the PR-dependency race immediately before the only destructive push.
+    await checkHeadRewriteSafety();
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
     pushedSha = preparedSha;

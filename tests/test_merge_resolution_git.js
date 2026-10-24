@@ -114,10 +114,11 @@ const run = promisify(execFile);
       if (endpoint.endsWith('/branches/feature')) return { protected: true };
       return api(endpoint, ...rest);
     } }), /protected/);
-    await assert.rejects(attempt({ api: async (endpoint, ...rest) => {
-      if (endpoint.includes('/pulls?')) return [{ number: 13, base: { ref: 'feature' } }];
+    const dependentApi = async (endpoint, ...rest) => {
+      if (endpoint.includes('/pulls?')) return [{ number: 13, base: { ref: 'feature' },
+        head: { ref: 'child', repo: { full_name: 'owner/repo' } } }];
       return api(endpoint, ...rest);
-    } }), /depends on/);
+    };
     await assert.rejects(attempt({ api: async (endpoint, ...rest) => {
       if (endpoint.includes('/commits?')) return [{ author: { type: 'Bot', login: 'codex-pony[bot]' },
         commit: { author, message: originalMessage } }];
@@ -135,17 +136,30 @@ const run = promisify(execFile);
     assert.equal(await branch('feature'), competing, 'A normal push preserves the competing head');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
     pushed = false;
+    // A child PR built from the parent must remain untouched while the parent
+    // accepts a normal append-only synchronization commit.
+    const childSha = await git('--git-dir=' + remote, 'commit-tree', headSha + '^{tree}',
+      '-p', headSha, '-m', 'Dependent child fixture');
+    await git('--git-dir=' + remote, 'update-ref', 'refs/heads/child', childSha);
     stalePushReads = 2;
-    const incremental = await attempt();
+    const incremental = await attempt({ api: dependentApi });
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     assert.equal(incremental.status, 'synced', 'Default integration appends commits');
     assert(!pushes.at(-1).some(arg => arg.startsWith('--force')), 'Incremental updates use an ordinary push');
+    assert.equal(await branch('child'), childSha, 'Append-only parent sync does not change its child branch');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
     const needsApproval = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [] });
     assert.equal(needsApproval.status, 'blocked');
     assert.match(needsApproval.reason, /explicit local approval/);
     assert.equal(await branch('feature'), incremental.sha, 'Attribution alone cannot trigger an automatic rewrite');
+    await assert.rejects(attempt({
+      api: dependentApi, expected: { ...expected, headSha: incremental.sha },
+      resolutionPatch: null, decisions: [], allowHistoryRewrite: true,
+      rewriteReason: 'preserve-human-author'
+    }), /depends on or shares this head branch/, 'Dependent PRs still prohibit destructive rewrites');
+    assert.equal(await branch('feature'), incremental.sha, 'Rejected rewrite leaves parent unchanged');
+    assert.equal(await branch('child'), childSha, 'Rejected rewrite leaves child unchanged');
     const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null,
       decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
     assert.equal(wrongReason.status, 'blocked', 'Convenience does not qualify as rewrite necessity');
@@ -248,7 +262,8 @@ async function successiveMerges() {
      }
      if (endpoint.includes('/check-suites?')) return { check_suites: [] };
      if (endpoint.includes('/status?')) return { statuses: [] };
-     if (endpoint.includes('/pulls?')) return [];
+     if (endpoint.includes('/pulls?')) return [{ number: 3,
+       base: { ref: 'feature-1' }, head: { ref: 'stack-child' } }];
      if (endpoint.includes('/commits?')) {
        const shas = (await git('--git-dir=' + remote, 'rev-list', '--reverse', 'main..feature-' + endpoint.split('/')[4])).split('\n');
        return Promise.all(shas.map(commit));
