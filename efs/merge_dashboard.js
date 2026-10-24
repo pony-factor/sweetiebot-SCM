@@ -5,6 +5,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
 const { createReactionChoices } = require('./merge_reaction_choices');
+const { createLindseyReadFetch } = require('./github_read_api');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -157,6 +158,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
+  const readFetch = createLindseyReadFetch(selection.repository, { fetchImpl });
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
     'Lindsey · Merge progress', viewColumn,
     { enableScripts: true, retainContextWhenHidden: true });
@@ -192,7 +194,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       launchingActions.add(pr.number);
       publish();
       try {
-        const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
+        const fresh = await githubGet(readFetch, token, selection.repository, '/pulls/' + pr.number);
         if (fresh.state !== 'open' || fresh.merged || fresh.merged_at || fresh.number !== pr.number ||
             fresh.html_url !== pr.url || fresh.base?.ref !== pr.base || fresh.base?.sha !== pr.baseSha ||
             fresh.head?.ref !== pr.head || fresh.head?.sha !== pr.headSha ||
@@ -233,7 +235,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
 
   async function refreshOne(item) {
     let decisionComments = inlineComments.get(item.number) || [];
-    const info = await githubGet(fetchImpl, token, selection.repository,
+    const info = await githubGet(readFetch, token, selection.repository,
       '/pulls/' + item.number);
     // Never follow a moved PR base silently, and do not treat an unrelated PR as selected.
     if (info.number !== item.number || info.base?.ref !== item.base ||
@@ -253,10 +255,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       addEvent(item, 'updated', 'PR head changed; reviewing the new GitHub diff');
     }
     if (cycle === 1 || changed || !item.files.length) {
-      const files = await paged(fetchImpl, token, selection.repository,
+      const files = await paged(readFetch, token, selection.repository,
         '/pulls/' + item.number + '/files');
       try {
-        item.commits = require('./merge_commit_tree').mergeCommitHistory(item.commits, await paged(fetchImpl, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
+        item.commits = require('./merge_commit_tree').mergeCommitHistory(item.commits, await paged(readFetch, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
         await context?.workspaceState?.update('sweetiebot.prCommits.' + selection.repository + '.' + item.number, item.commits);
         item.commitError = '';
       }
@@ -265,7 +267,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.filesTruncated = files.length >= 300;
     }
     if (cycle === 1 || cycle % 3 === 0 || changed || info.merged) {
-      const notes = await readReports(fetchImpl, token, selection.repository, item.number);
+      const notes = await readReports(readFetch, token, selection.repository, item.number);
       decisionComments = notes.inlineComments;
       inlineComments.set(item.number, decisionComments);
       if (notes.report?.id !== item.report?.id && notes.report) {
@@ -314,7 +316,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   async function refresh({ force = false } = {}) {
-    if (working || disposed || Date.now() < rateLimitedUntil || require('./github_rate_limit').activeRateLimit(vscode) || (!force && !isActive())) return;
+    if (working || disposed || Date.now() < rateLimitedUntil ||
+        (!require('./github_app_identity').separateAppsEnabled() &&
+          require('./github_rate_limit').activeRateLimit(vscode)) ||
+        (!force && !isActive())) return;
     working = true;
     cycle++;
     error = '';
@@ -385,14 +390,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       let reactionSelection;
       publish();
       try {
-        const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
+        const fresh = await githubGet(readFetch, token, selection.repository, '/pulls/' + pr.number);
         if (fresh.state !== 'open' || fresh.merged || fresh.merged_at ||
             fresh.number !== pr.number || fresh.html_url !== pr.url || fresh.base?.ref !== pr.base ||
             fresh.head?.ref !== pr.head || fresh.head?.sha !== message.headSha ||
             fresh.head?.repo?.full_name !== selection.repository) {
           throw Error('The PR changed. Refresh its status and review the options before choosing again.');
         }
-        const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3);
+        const notes = await readReports(readFetch, token, selection.repository, pr.number, 3);
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
           baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }) };
         const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);
