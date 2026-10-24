@@ -70,6 +70,17 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
+  assert(selectedPrompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
+  assert(selectedPrompt.includes('publish zero inline comments'));
+  assert(selectedPrompt.includes('overall GitHub review body'));
+  assert(selectedPrompt.includes('Do not edit a human-authored comment'));
+  assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'));
+  const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
+    blockerOptions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
+  assert(conflictPrompt.includes('Never create a per-file inline comment'));
+  const alternativesPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
+    blockerOptions({ state: 'conflict' }).find(option => option.id === 'suggest-options'));
+  assert(alternativesPrompt.includes('never invent choices for compatible integrations'));
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
   const reviewComments = normalizeInlineReviewComments([
