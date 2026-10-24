@@ -45,6 +45,7 @@ SETTINGS = {
     "aiLowMemoryGiB": "4",
     "aiModelPicker": True,
     "mcpPullRequest": True,
+    "prWarningHighlights": False,
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
@@ -408,6 +409,19 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             ".scm-view .scm-editor > .scm-toolkit-sync-branch:hover:not(:disabled)",
             css,
         )
+
+    def test_pr_warning_icon_is_neutral_by_default(self):
+        self.assertFalse(install.DEFAULT_SETTINGS["prWarningHighlights"])
+        js, css = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)
+        self.assertIn("scmToolkitHighlightPrWarnings(configuration, settings)", js)
+        self.assertIn("settings.prWarningHighlights === true", js)
+        self.assertIn(
+            "scmToolkitHighlightPrWarnings(configuration, settings) && pullRequestEligibility?.reason === 'unavailable'",
+            js,
+        )
+        self.assertIn("event.affectsConfiguration('scmToolkit.prWarningHighlights')", js)
+        self.assertIn("color: var(--vscode-descriptionForeground);", css)
+        self.assertIn(".scm-toolkit-pr-needs-attention", css)
 
     def test_install_injects_valid_settings_line(self):
         js, css = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)
