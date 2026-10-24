@@ -1661,7 +1661,23 @@ def _fallback_operation(files: list[str], file_context: str = "", diff: str = ""
             return "Add"
         if len(re.findall(r"(?m)^deleted file mode ", diff)) == len(files):
             return "Remove"
+        if (len(re.findall(r"(?m)^rename from ", diff)) == len(files)
+                and len(re.findall(r"(?m)^rename to ", diff)) == len(files)):
+            return "Rename"
     return "Update"
+
+
+def _fallback_rename_source(file_context: str, diff: str) -> str:
+    """Read a Git-recorded source name for single-file rename descriptions."""
+    section = re.search(r"(?m)^Status:\n(.*?)(?:\n\n|\Z)", file_context, re.S)
+    if section:
+        lines = [line for line in section.group(1).splitlines() if line and line != "[none]"]
+        if len(lines) == 1 and re.match(r"^R\d*\t", lines[0]):
+            fields = lines[0].split("\t")
+            if len(fields) == 3:
+                return os.path.basename(fields[1])
+    match = re.search(r"(?m)^rename from (.+)$", diff)
+    return os.path.basename(match.group(1)) if match else ""
 
 
 def fallback_title(files: list[str], file_context: str = "", diff: str = "") -> str:
@@ -1669,7 +1685,13 @@ def fallback_title(files: list[str], file_context: str = "", diff: str = "") -> 
         return "🔧 Update repository files"
     action = _fallback_operation(files, file_context, diff)
     if len(files) == 1:
-        title = f"{fallback_emoji(files)} {action} {os.path.basename(files[0])}"
+        name = os.path.basename(files[0])
+        source = _fallback_rename_source(file_context, diff) if action == "Rename" else ""
+        if source and source != name:
+            title = f"{fallback_emoji(files)} Rename {source} to {name}"
+            if len(title) <= 72:
+                return title
+        title = f"{fallback_emoji(files)} {action} {name}"
         return title if len(title) <= 72 else f"{fallback_emoji(files)} {action} repository file"
     categories = [_fallback_category(path) for path in files]
     labels = list(dict.fromkeys(label for label, _ in categories))
