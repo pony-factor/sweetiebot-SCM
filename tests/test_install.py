@@ -396,9 +396,12 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             settings=dict(SETTINGS, filledButtons=True),
         )
 
+        # Transient press feedback uses the same selector in picker.css for both
+        # button styles. Only the persistent outline rule must be opt-in.
         selector = ".scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown"
-        self.assertIn(selector, outlined_css)
-        self.assertNotIn(selector, filled_css)
+        outlined_rule = selector + " {\n    /* One continuous themed outline"
+        self.assertIn(outlined_rule, outlined_css)
+        self.assertNotIn(outlined_rule, filled_css)
 
     def test_push_control_is_centered_without_a_divider(self):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
