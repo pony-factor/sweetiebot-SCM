@@ -85,7 +85,8 @@ function reportFromComments(comments) {
         url: comment.html_url || '', id: comment.id };
     }
   }
-  return { report, review };
+  const analysis = (comments || []).filter(comment => String(comment.body || '').startsWith('<!-- sweetiebot-merge-analysis -->')).map(comment => ({ text: comment.body.replace('<!-- sweetiebot-merge-analysis -->', '').trim(), url: comment.html_url, path: comment.path }));
+  return { report, review, analysis };
 }
 
 function mergePhase(pr, previous) {
@@ -270,6 +271,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       }
       item.report = notes.report;
       item.review = notes.review;
+      item.analysis = notes.analysis;
     }
     const next = mergePhase(info, item);
     item.state = next;
@@ -471,7 +473,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const pr = byNumber.get(item.number);
       if (pr) {
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
-        pr.localReview = require('./merge_blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths);
+        pr.localReview = require('./merge_blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
       }
     }
     for (const [number, report] of Object.entries(state.blockerReports || {})) {

@@ -303,7 +303,8 @@ __TIMESTAMP_FORMATTER__
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
-    if (pr.localReview && pr.state !== 'merged') showTextPanel(parent, 'Resolution needed · Local runner', pr.localReview.text + (pr.localReview.error ? '\n\nGitHub comment unavailable: ' + pr.localReview.error : ''), '', true);
+    if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
+    else if (pr.localReview?.notes?.length && pr.state !== 'merged') showTextPanel(parent, 'Integration notes', pr.localReview.text, '', true);
     if (pr.review && pr.state !== 'merged') showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
     const localInfo = [pr.localExplanation,
@@ -396,7 +397,7 @@ __TIMESTAMP_FORMATTER__
     if (blockers.length) {
       show('span', '', 'Needs attention', blockerNotice);
       for (const pr of blockers) {
-        const button = show('button', 'secondary', 'Review #' + pr.number + ' options', blockerNotice);
+        const button = show('button', 'secondary', (pr.blockerOptions?.length ? 'Review #' + pr.number + ' options' : 'View #' + pr.number + ' integration'), blockerNotice);
         button.addEventListener('click', () => { selected = pr.number; render(); });
       }
     }

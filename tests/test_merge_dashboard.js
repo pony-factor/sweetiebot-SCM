@@ -30,7 +30,10 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     { id: 6, html_url: url + '#comment-6', body: REVIEW_MARKER + '\nNeed owner decision' },
     { id: 7, html_url: url + '#comment-7', body: REPORT_MARKER + '\nNew report' },
   ];
+  comments.push({id:9,path:'options.js',body:'<!-- sweetiebot-merge-analysis -->\n### Preserve storage keys\nMain and PR add distinct keys; retain both.'});
   const notes = reportFromComments(comments);
+  assert.equal(notes.analysis.length,1);
+  assert.equal(notes.analysis[0].path,'options.js');
   const optionsBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
     { id: 'preserve-api', label: 'Keep the current API', description: 'Add compatibility for the PR.', prompt: 'Preserve the current API and add the proposed compatibility layer.', engine: 'shell' },
     { id: '../unsafe', label: 'Bad', prompt: 'bad' },
@@ -42,7 +45,9 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const actionable = reportFromComments([{ id: 8, body: REPORT_MARKER + '\nKeep main.\n' + optionsBlock }]);
   assert.equal(actionable.report.text, 'Keep main.', 'Machine-readable choices are not rendered as report text');
   const choices = blockerOptions({ state: 'blocked', report: actionable.report });
-  assert.equal(choices[0].id, 'keep-main');
+  assert.equal(choices[0].id, 'report-preserve-api');
+  assert.equal(choices.length, 1, 'Only the specific reported implementation is selectable');
+  assert.deepEqual(blockerOptions({ state: 'conflict', localReview: { options: [{ id: 'preserve-both' }, { id: 'report-review-first' }] } }), [], 'Legacy generic recovery prompts are removed');
   assert(choices.some(option => option.id === 'report-preserve-api'));
   const recommendation = parseReportOptions('<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
     { id: 'compatibility', label: 'Add a compatibility layer', prompt: 'Keep both interfaces with an adapter.', recommended: true },
@@ -53,7 +58,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(recommendedChoices[0].id, 'report-compatibility', 'The specific recommendation precedes generic recovery actions');
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
-  const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[1]);
+  const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert.equal(notes.report.text, 'New report');
@@ -229,6 +234,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
   assert.deepEqual(openings, [url, url + '/files', 'https://example.org/reference'],
     'Only validated web links open through the extension host');
+  commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'blocked');
@@ -239,7 +245,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await messageHandler(actionMessage);
   assert.equal(actionLaunches.length, 1);
   assert.equal(actionLaunches[0][6], 'web', 'GPT web is the default destination');
-  assert.equal(actionLaunches[0][5].id, 'keep-main');
+  assert.equal(actionLaunches[0][5].id, 'report-preserve-api');
   await messageHandler({ ...actionMessage, engine: 'codex' });
   assert.equal(actionLaunches[1][6], 'codex');
   await messageHandler({ ...actionMessage, optionKey: 'forged' });

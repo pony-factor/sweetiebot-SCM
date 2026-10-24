@@ -296,7 +296,24 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.equal(getElementById('pony-section').hidden,true,'Switching back to PR-only removes the pony column');
   assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details.');
-  console.log('Kefania PR-only and pony layout state checks passed.');
+  layoutState={errors:{},draft:{title:'🐞 Preserve branch windows',body:'The PR description.'},publishing:true};
+  await context.refresh();
+  assert.equal(getElementById('h1').textContent,'🐞 Preserve branch windows');
+  assert.equal(getElementById('title').textContent,'Publishing…');
+  assert.equal(getElementById('pr-number').hidden,true);
+  layoutState={...layoutState,publishing:false,result:{number:439,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/439'}};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Successfully published');
+  assert.equal(getElementById('pr-number').textContent,'#439');
+  assert.equal(getElementById('pr-number').href,layoutState.result.url);
+  assert.equal(getElementById('draft-status').hidden,true,'No duplicate publication status below the controls');
+  layoutState={...layoutState,result:null,errors:{publish:'GitHub rejected publication: branch has no new commits.'}};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Publication failed');
+  assert.equal(getElementById('draft-status').textContent,layoutState.errors.publish,'Show the specific error');
+  assert.equal(getElementById('draft-status').hidden,false);
+  assert.equal(getElementById('pr-number').hidden,true,'An unsuccessful publication has no PR badge');
+  console.log('Kefania title, number badge and publication status checks passed.');
 
   let merges=0, prompts=0;
   let state={result:{number:2,base:'main'}};

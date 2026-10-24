@@ -171,7 +171,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       else delete require.cache[dashboardModulePath];
     }
     const pr = { ...selection.pullRequests[0], state: 'blocked', headSha: selection.pullRequests[0].headSha };
-    const option = blockerOptions(pr)[0];
+    const option = blockerOptions({ ...pr, review: { options: [{id:'report-retain-api',suggested:true,label:'Retain the public API',description:'Keep callers compatible.',prompt:'Preserve what is already on the current main branch and adapt the new feature internally.'}] } })[0];
     await launchBlockerAction(source, context, root, selection.repository, pr, option, 'web');
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);
