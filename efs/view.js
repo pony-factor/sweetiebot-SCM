@@ -3,6 +3,9 @@
 const vscode = require('vscode');
 const crypto = require('crypto');
 const path = require('path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 const { TEXT_EXTENSIONS } = require('./extract');
 const { ask } = require('./ollama');
 
@@ -41,6 +44,41 @@ function escapeHtmlAttribute(value) {
   return String(value).replace(/[\x00-\x1f\x7f]/g, ' ').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[character]));
+}
+
+
+function isWithinDirectory(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+
+// A leading slash is repository-relative on GitHub, but workspace-relative in
+// VS Code. Use a source-file-relative URL when an editor in this repository is
+// open under a workspace rooted above (or inside) the repository.
+function buildRepositoryMarkdownLink(result, uri, repositoryRoot, workspaceUri, editorUri) {
+  const root = path.resolve(repositoryRoot);
+  const target = path.resolve(uri.fsPath);
+  if (!isWithinDirectory(root, target)) throw new Error('Search result is outside its Git repository.');
+  const folder = result.kind === 'folder';
+  const line = Math.max(0, Number(result.line) || 0) + 1;
+  const rootRelative = path.relative(root, target).split(path.sep).join('/');
+  const rootWorkspace = workspaceUri?.scheme === 'file' &&
+    path.resolve(workspaceUri.fsPath) === root;
+  const editorFile = editorUri?.scheme === 'file' && editorUri.fsPath &&
+    /\.markdown?$/.test(path.extname(editorUri.fsPath).toLowerCase()) &&
+    isWithinDirectory(root, path.resolve(editorUri.fsPath));
+  let targetPath = '/' + rootRelative;
+  if (!rootWorkspace && editorFile) {
+    targetPath = path.relative(path.dirname(editorUri.fsPath), target).split(path.sep).join('/');
+    if (!targetPath.startsWith('.')) targetPath = './' + targetPath;
+  }
+  const encodedPath = targetPath.split('/').map(segment =>
+    encodeURIComponent(segment).replace(/[()]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase())
+  ).join('/');
+  const label = (folder ? result.relative : result.relative + ':' + line)
+    .replace(/[\\[\]]/g, '\\
+class WorkspaceSearchViewProvider {');
+  return '[' + label + '](' + encodedPath + (folder ? '' : '#L' + line) + ')';
 }
 
 class WorkspaceSearchViewProvider {
@@ -91,17 +129,20 @@ class WorkspaceSearchViewProvider {
     if (message?.type === 'copyPath') {
       const result = this.lastResults[Number(message.index)];
       if (result) {
-        const uri = vscode.Uri.parse(result.uri);
-        const folder = result.kind === 'folder';
-        const line = Math.max(0, result.line || 0) + 1;
-        const link = vscode.Uri.from({
-          scheme: vscode.env.uriScheme,
-          authority: 'file',
-          path: folder ? uri.path : `${uri.path}:${line}`
-        }).toString();
-        const label = (folder ? result.relative : `${result.relative}:${line}`).replace(/[\\[\]]/g, '\\$&');
-        await vscode.env.clipboard.writeText(`[${label}](${link})`);
-        this.post({ type: 'copied', index: Number(message.index) });
+        try {
+          const uri = vscode.Uri.parse(result.uri);
+          if (uri.scheme !== 'file' || !uri.fsPath) throw new Error('Only local Git files can be linked.');
+          const repositoryRoot = await this.findGitRoot(uri);
+          const link = buildRepositoryMarkdownLink(
+            result, uri, repositoryRoot,
+            vscode.workspace.getWorkspaceFolder(uri)?.uri,
+            vscode.window.activeTextEditor?.document?.uri
+          );
+          await vscode.env.clipboard.writeText(link);
+          this.post({ type: 'copied', index: Number(message.index) });
+        } catch {
+          this.post({ type: 'error', message: 'Cannot copy a relative link: the result must belong to a local Git repository.' });
+        }
       }
       return;
     }
@@ -109,6 +150,13 @@ class WorkspaceSearchViewProvider {
       if (this.getSettings().askOllama) await this.askOllama();
       return;
     }
+  }
+
+  async findGitRoot(uri) {
+    const { stdout } = await execFileAsync('git',
+      ['-C', path.dirname(uri.fsPath), 'rev-parse', '--show-toplevel'],
+      { timeout: 10000 });
+    return stdout.trim();
   }
 
   async openResult(result) {
@@ -238,4 +286,4 @@ query.focus();
   }
 }
 
-module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore };
+module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore, buildRepositoryMarkdownLink };
