@@ -453,6 +453,11 @@
           "default": true,
           "description": "Automatically refresh visible and focused GitHub PR lists at the configured interval (120 seconds by default), pausing on rate limits."
         },
+        "scmToolkit.prWarningHighlights": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to highlighting the PR icon when eligibility verification fails. Off keeps its normal muted gray appearance; PR safeguards and tooltip details remain available."
+        },
         "scmToolkit.pullRequestQuickMerge": {
           "type": "boolean",
           "default": true,

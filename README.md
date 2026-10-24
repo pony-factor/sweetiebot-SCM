@@ -455,6 +455,8 @@ Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Works
 
 Customize the search-box hint separately from the panel title with `scm-toolkit.workspace-search-placeholder` (or **Search box placeholder** under Sweetiebot Settings → Workspace Search). For example, `git config --global scm-toolkit.workspace-search-placeholder SATS` shows **SATS** in the empty search box. The default remains **Search your workspace…**; blank restores that hint. VS Code Settings also exposes `scmToolkit.workspaceSearch.placeholder`. Changes to that setting update the open EFS view without clearing a search.
 
+Right-click a file or folder search result to copy a Markdown link without an absolute local `vscode://file` path. In a repository-root workspace, links begin with `/` and resolve from the Git repository root on GitHub and the workspace root in VS Code. If the open workspace is above or below the repository and an active Markdown editor is in the same repository, EFS instead copies a path relative to that editor; otherwise it uses the GitHub-compatible repository-root form. File links include a `#L` line reference for GitHub (VS Code opens the file but does not interpret that fragment as a line jump). Files outside local Git repositories cannot be copied this way.
+
 The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `efs/THIRD_PARTY_NOTICES.md`.
 
 Install the default local embedding model once:
@@ -472,9 +474,15 @@ The default **Ask Ollama** model is automatic: it first reuses a currently loade
 The companion extension only accepts loopback Ollama URLs (`127.0.0.1`, `localhost`, or `::1`). You can also install or remove just this companion extension with `python3 scripts/workspace_search.py` or `python3 scripts/workspace_search.py --uninstall`.
 
 
+#### Search all local GitHub repositories
+
+Choose **~/GitHub** from the EFS search-scope selector to search files across the local repository directories beneath `~/GitHub`, including repositories that are not open in VS Code. **Workspace** remains the default. The GitHub-folder scope uses a separate cache, built on first search and refreshed every two minutes after first use. Results show paths beginning with the repository directory and open their original files without adding the repositories to the workspace or Source Control. Nothing is cloned or uploaded to GitHub.
+
+The GitHub-folder search skips symbolic links, Git metadata, and EFS exclusion patterns. The existing **Search file limit** (5,000 by default; configurable up to 50,000) caps the number of *file contents* indexed across this folder. Independent filename/folder discovery includes up to 100,000 files. Raising the file limit broadens content coverage but increases local indexing time. If `~/GitHub` does not exist, EFS reports an explicit error rather than silently falling back to the current workspace.
+
 #### Historical work index
 
-The active workspace is only the first corpus this search needs to cover. A more substantive persistent index should eventually span prior research, comment letters, examination responses, drafts, and other related repositories or files so earlier work can be referenced quickly even when the exact wording is forgotten.
+The active workspace and local GitHub folder are the first corpora this search needs to cover. A more substantive persistent index should eventually span prior research, comment letters, examination responses, drafts, and other related repositories or files so earlier work can be referenced quickly even when the exact wording is forgotten.
 
 A concrete example is the September 2026 lookup for earlier discussion of transitioning away from custodial retirement holdings, the Spain and India direct-holding examples, and the related SEC examination response. Finding those passages required crossing separate stores and took roughly three minutes. That retrieval should instead be a near-immediate semantic lookup that returns the relevant passage together with durable provenance such as repository, file, commit, page, and line.
 
@@ -1143,6 +1151,8 @@ Sweetie Bot appends the prepared prompt as the URL's `q` parameter within the ch
 
 
 **First-run setup:** With no project configured, the next ChatGPT-backed PR drafting or batch merge action offers to set up a project. Choose **Set up project** to open ChatGPT in your web browser, create (or select) a personal **unshared** project, and paste its project URL into Sweetie Bot. The URL is saved in your VS Code user settings so later actions open inside that project. Choose **Use regular chats** to explicitly retain the original behavior without repeat prompts, or cancel to launch no chat. A project URL configured in Settings takes precedence over that choice. Sweetie Bot cannot create a ChatGPT project through a supported external API, verify its privacy, or move old chats; use ChatGPT's own project controls and do not share the project if it must remain private.\n\n### Pull requests through Kafania
+
+The PR button stays neutral gray by default, even when its eligibility check encounters an error. To opt in to yellow warning highlights, enable **Highlight PR eligibility warnings** under Sweetiebot Settings → **Pull requests**, or set `scmToolkit.prWarningHighlights` in VS Code settings (equivalent Git preference: `scm-toolkit.pr-warning-highlights`). This only changes the color cue: PR eligibility checks, disabled states, diagnostic tooltips, and setup guidance still work normally.
 
 The pull-request button immediately left of the new-branch button opens a dedicated **Pull Request** workspace in a new VS Code window. That workspace starts in Sweetiebot's centered 640 × 640 compact-square layout (on displays large enough to support it). The title-bar **Compact window** button restores its previous size; the originating repository window keeps its own dimensions. The PR workspace owns the confirmation window, drafting and pony chats, and local callback server, so closing the original repository window does not stop the PR session. It uses the same repository checkout and preserves the selected branch, base, conversation context, and PR settings. Keep the Pull Request workspace open until the session finishes. When a PR workspace contains one repository, the Explorer shows that repository's files directly rather than an extra root-folder row. This is an Explorer-only change: the named `.code-workspace` file, isolated PR window and extension host, callback ownership, and shared ChatGPT browser profile remain unchanged. Normal workspaces and multi-root PR workspaces retain native Explorer behavior. Sweetiebot reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 

@@ -11,7 +11,8 @@ assert.match(settingsAttachment, /widget\.element\.append\(button\)/,
   'Magic Settings must remain reachable while VS Code has no action dropdown');
 assert.match(settingsAttachment, /const destination = dropdown \|\| widget\.element/,
   'Magic Settings must return to its inline fallback when action rows are recycled');
-const warningPolicy = source.match(/function scmToolkitHighlightPrWarnings\([^)]*\) \{[\s\S]*?\n}/)?.[0] || '';
+const warningPreference = source.match(/function scmToolkitHighlightPrWarnings\([\s\S]*?\n}/)?.[0];
+assert.ok(warningPreference, 'PR eligibility test must include the warning-preference helper');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function harness(executeCommand) {
@@ -30,7 +31,7 @@ function harness(executeCommand) {
     setTimeout(callback, delay) { assert([15000, 60000].includes(delay)); timers.set(++nextTimer, { callback, delay }); return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
   });
-  vm.runInContext(`${warningPolicy}\n${refresh}\nthis.refresh = refreshPullRequest;`, context);
+  vm.runInContext(`${warningPreference}\n${refresh}\nthis.refresh = refreshPullRequest;`, context);
   return { context, timers };
 }
 
