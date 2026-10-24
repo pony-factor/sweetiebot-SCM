@@ -532,7 +532,7 @@
     margin-inline-start: .35em;
 }
 
-.scm-view .monaco-button-dropdown > .scm-toolkit-settings {
+.scm-view .scm-toolkit-settings {
     position: relative;
     box-sizing: border-box;
     display: flex;
@@ -552,6 +552,13 @@
     cursor: pointer;
 }
 
+.scm-view .scm-editor > .scm-toolkit-settings {
+    align-self: center;
+    height: 26px;
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+    background: var(--vscode-input-background);
+}
+
 .scm-toolkit-settings-icon {
     display: flex;
     align-items: center;
@@ -563,15 +570,15 @@
     transform: translateY(-1px);
 }
 
-.scm-view .monaco-button-dropdown > .scm-toolkit-settings[hidden] {
+.scm-view .scm-toolkit-settings[hidden] {
     display: none;
 }
 
-.scm-view .monaco-button-dropdown > .scm-toolkit-settings:hover {
+.scm-view .scm-toolkit-settings:hover {
     background: var(--vscode-button-hoverBackground);
 }
 
-.scm-view .monaco-button-dropdown > .scm-toolkit-settings:focus-visible {
+.scm-view .scm-toolkit-settings:focus-visible {
     outline: 1px solid var(--vscode-focusBorder);
     outline-offset: -1px;
 }

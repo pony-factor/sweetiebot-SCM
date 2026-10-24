@@ -183,7 +183,7 @@ async function run(allowed, failCommit = false) {
       'A failed Git commit must close progress without claiming success');
   }
   {
-    let nativeCommits = 0, nativePushes = 0;
+    let nativeCommits = 0, nativePushes = 0, duplicateChecks = 0;
     const requests = [];
     const repository = {
       rootUri: { fsPath: '/tmp/repo' },
@@ -191,7 +191,10 @@ async function run(allowed, failCommit = false) {
     };
     const context = vm.createContext({ repository,
       commands: { async executeCommand(id, root, request) {
-        if (id === 'sweetiebot.checkCommitLimits') return true;
+        if (id === 'sweetiebot.checkCommitLimits') {
+          duplicateChecks++;
+          return true;
+        }
         assert.equal(id, 'sweetiebot.queueCommit');
         requests.push(request);
         return { queued: true };
@@ -210,6 +213,51 @@ async function run(allowed, failCommit = false) {
     assert.equal(requests.length, 2, 'smart Commit All also uses the immediate placeholder worker');
     assert.equal(requests[1].all, true);
     assert.equal(nativeCommits, 0);
+    assert.equal(duplicateChecks, 0,
+      'durable Commit and Commit All perform their single inspection inside the queue');
+  }
+  for (const outcome of [
+    { result: { cancelled: true }, allowed: true, expectedCommits: 0, expectedChecks: 0 },
+    { result: { queued: false, preflightApproved: true, stagedTree: 'a'.repeat(40) },
+      allowed: true, expectedCommits: 1, expectedChecks: 1, expectedTree: 'a'.repeat(40) },
+    { result: { queued: false, preflightApproved: true, stagedTree: 'a'.repeat(40) },
+      allowed: false, expectedCommits: 0, expectedChecks: 1, expectedTree: 'a'.repeat(40) },
+    { result: { queued: false }, allowed: true, expectedCommits: 1, expectedChecks: 1 },
+    { result: { queued: false }, allowed: false, expectedCommits: 0, expectedChecks: 1 },
+  ]) {
+    let nativeCommits = 0, checks = 0;
+    const calls = [];
+    const repository = {
+      rootUri: { fsPath: '/tmp/repo' },
+      async commit() { nativeCommits++; }, async push() {}
+    };
+    const context = vm.createContext({
+      repository,
+      commands: { async executeCommand(id, _uri, options) {
+        calls.push(id);
+        if (id === 'sweetiebot.queueCommit') return outcome.result;
+        if (id === 'sweetiebot.checkCommitLimits') {
+          checks++;
+          assert.equal(options?.approvedTree, outcome.expectedTree,
+            'the direct path can reuse only the queue-approved staged tree');
+          return outcome.allowed;
+        }
+        if (id === 'sweetiebot.beginCommit' || id === 'sweetiebot.endCommit') return undefined;
+        throw new Error('Unexpected command: ' + id);
+      } },
+      configuration: { getValue(key) {
+        return key === 'scmToolkit.durableBackgroundCommits' ? true : 'none';
+      } },
+      notifications: { notify() { return { close() {} }; } }
+    });
+    vm.runInContext(snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications);', context);
+    await repository.commit('Message', {});
+    assert.equal(nativeCommits, outcome.expectedCommits,
+      'canceled checks never fall through to unsafe direct Git commits');
+    assert.equal(checks, outcome.expectedChecks,
+      'only declined queues consult the shared inspector for cached or new approval');
+    assert.equal(calls[0], 'sweetiebot.queueCommit',
+      'durable path does not check unstaged changes before the queue stages them');
   }
   console.log('Commit guard tests passed');
 })().catch(error => {
