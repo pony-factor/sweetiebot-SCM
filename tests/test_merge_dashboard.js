@@ -8,6 +8,7 @@ const {
 } = require('../efs/merge_dashboard');
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
+const { mergeActivityPresentation, renderMergeActivitySummary } = require('../efs/merge_dashboard_activity');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
 const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt, reportOptionsInstructions } = require('../efs/merge_blocker_actions');
 const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dashboard_persistence');
@@ -319,6 +320,29 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!panel.webview.html.includes('__NONCE__'));
   assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
   assert(panel.webview.html.includes('function renderMergeMarkdown('));
+  assert(panel.webview.html.includes('function mergeActivityPresentation('));
+  assert(!panel.webview.html.includes('__ACTIVITY_RENDERER__'));
+  assert(panel.webview.html.includes('renderMergeActivitySummary(content, event.number, presentation)'));
+  assert(!panel.webview.html.includes("show('summary', 'muted', 'Details'"));
+  assert(panel.webview.html.includes('Saved activity · live GitHub state may have changed'));
+  assert(panel.webview.html.includes("dispatch('open-link', undefined, event.url)"));
+  const commitActivity = mergeActivityPresentation({ number: 12, commitSha: sha,
+    commitTitle: '🔄 Sync branch to main', message: 'Requesting GitHub merge',
+    details: 'Codex preserved both APIs.' });
+  assert.equal(commitActivity.shortSha, 'aaaaaaa');
+  assert.equal(commitActivity.summary, '🔄 Sync branch to main');
+  assert.equal(commitActivity.status, 'Requesting GitHub merge');
+  assert.equal(commitActivity.explanation, 'Codex preserved both APIs.');
+  assert(commitActivity.expandable);
+  const noDetails = mergeActivityPresentation({ number: 12, commitSha: sha,
+    commitTitle: '🛠️ Refine API', message: '🛠️ Refine API' });
+  assert.equal(noDetails.expandable, false);
+  const legacy = mergeActivityPresentation({ number: 12,
+    message: 'Requesting GitHub merge', details: 'Commit: ' + sha.slice(0, 12) },
+    [{ number: 12, commits: [{ sha, commit: { message: '🔄 Sync branch to main' } }] }]);
+  assert.equal(legacy.shortSha, 'aaaaaaa');
+  assert.equal(legacy.explanation, '');
+  assert(legacy.expandable);
   assert(panel.webview.html.includes("show('details', 'review-comment'"),
     'Each code review comment renders in a separate native details disclosure');
   assert(panel.webview.html.includes('expandedReviewComments.has(key)'),
@@ -516,10 +540,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
   dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
     path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
+  assert.equal(events.at(-1).events.at(-1).commitSha, sha);
+  assert.equal(events.at(-1).events.at(-1).commitTitle, '🛠️ Keep both APIs');
   assert(events.at(-1).events.at(-1).details.includes('Keep both APIs'));
   assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
-  dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha });
+  dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha, title: '🔄 Sync branch to main' });
+  assert.equal(events.at(-1).events.at(-1).commitTitle, '🔄 Sync branch to main');
+  assert(!events.at(-1).events.at(-1).details);
   await dashboard.flushLocalState();
   assert.equal(createMergeDashboardPersistence(localContext, selection).restoredRecovery[12].stage, 'pushed');
 
@@ -528,6 +556,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
   assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
   assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
+  assert.equal(events.at(-1).events.at(-1).commitSha, sha);
   assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
@@ -598,6 +627,11 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
       get textContent() { return this.text ?? this.children.map(child => child.textContent).join(''); }
     };
   } };
+  const summaryRoot = document.createElement('div');
+  renderMergeActivitySummary(summaryRoot, 12, commitActivity);
+  assert.deepEqual(summaryRoot.children.map(child => child.tag), ['span', 'code', 'span']);
+  assert.equal(summaryRoot.children[1].className, 'event-commit-sha');
+  assert.equal(summaryRoot.children[1].textContent, 'aaaaaaa');
   const root = document.createElement('div');
   const clicked = [];
   const tick = String.fromCharCode(96);
