@@ -9,7 +9,7 @@ async function run() {
   const commands = new Map(), preparations = [], jobs = [], events = [];
   let poll;
   let status = {};
-  let limitsAllowed = true;
+  let limitsAllowed = true, declineEnqueue = false;
   const notices = [], progress = [], completed = [], errors = [];
   const titleContexts = [];
   const errorActions = [], details = [];
