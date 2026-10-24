@@ -1121,7 +1121,7 @@ class TitleTests(unittest.TestCase):
                     else:
                         self.assertEqual(
                             ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True),
-                            ("📝 Update 2 staged files", "Update the 2 staged files."),
+                            ("📝 Update documentation", "Update 2 files in the repository."),
                         )
 
     def test_filename_only_title_retries_with_content_instructions(self):
@@ -1301,7 +1301,7 @@ class TitleTests(unittest.TestCase):
         self.assertEqual(ai_commit.fallback_title(["src/widget.js"]), "🔧 Update widget.js")
         self.assertEqual(
             ai_commit.fallback_title(["src/a.js", "src/b.js"]),
-            "🔧 Update 2 staged files",
+            "🔧 Update code",
         )
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
@@ -1741,9 +1741,111 @@ class ArtifactContextTests(unittest.TestCase):
         )
         self.assertEqual(
             ai_commit.fallback_title(["assets/a.png", "src/app.js"]),
-            "🔧 Update 2 staged files",
+            "🔧 Update image assets and code",
         )
-        self.assertEqual(ai_commit.fallback_title([]), "🔧 Update staged changes")
+        self.assertEqual(ai_commit.fallback_title([]), "🔧 Update repository files")
+
+
+    def test_offline_path_and_status_based_fallbacks(self):
+        # Borrow action and path classification from auto-commit-msg without
+        # requiring an extra extension, network service, or model.
+        cases = [
+            (
+                ["efs/github_session.py", "tests/test_github_session.py"],
+                "",
+                "🔧 Update GitHub session code and tests",
+            ),
+            (
+                [".github/workflows/test.yml", ".github/workflows/release.yml"],
+                "",
+                "⚙️ Update CI workflows",
+            ),
+            (
+                ["docs/howto.md", "docs/overview.md"],
+                "",
+                "📝 Update documentation",
+            ),
+            (
+                ["requirements.txt", "poetry.lock"],
+                "",
+                "🧰 Update dependencies",
+            ),
+            (
+                ["tests/test_commit.py", "tests/test_push.py"],
+                "Change totals: 2 added\n\nStatus:\nA\ttests/test_commit.py\nA\ttests/test_push.py",
+                "🧪 Add tests",
+            ),
+            (
+                ["assets/logo.svg", "src/sidebar.ts"],
+                "",
+                "🔧 Update image assets and code",
+            ),
+        ]
+        for files, context, expected in cases:
+            with self.subTest(files=files):
+                self.assertEqual(ai_commit.fallback_title(files, context), expected)
+                self.assertNotIn("staged", expected.lower())
+
+    def test_offline_fallback_uses_captured_diff_for_added_files(self):
+        diff = (
+            "diff --git a/src/session.ts b/src/session.ts\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/src/session.ts\n"
+            "+export function session() {}\n"
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["src/session.ts"], diff=diff),
+            "🔧 Add session.ts",
+        )
+        self.assertEqual(
+            ai_commit.fallback_message(["src/session.ts"], False, diff=diff),
+            ("🔧 Add session.ts", ""),
+        )
+
+    def test_offline_fallback_describes_deletions_without_staged_claims(self):
+        context = (
+            "Change totals: 2 deleted\n\nStatus:\n"
+            "D\tdocs/old.md\nD\tdocs/unused.md"
+        )
+        self.assertEqual(
+            ai_commit.fallback_message(["docs/old.md", "docs/unused.md"], True, context),
+            ("📝 Remove documentation", "Remove 2 files."),
+        )
+
+    def test_offline_fallback_preserves_non_english_and_spaces_in_paths(self):
+        self.assertEqual(
+            ai_commit.fallback_title(["docs/rapport final.md"]),
+            "📝 Update rapport final.md",
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["src/überarbeitet.py", "src/ändern.py"]),
+            "🔧 Update code",
+        )
+
+    def test_missing_model_uses_smart_fallback_without_querying_ollama(self):
+        with patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "ollama_json") as ollama:
+            title, description = ai_commit.generate_message(
+                "", "diff --git a/tests/test_api.py b/tests/test_api.py",
+                ["tests/test_api.py", "tests/test_ui.py"], include_description=True,
+                file_context_override="Change totals: 2 modified",
+            )
+            self.assertEqual(title, "🧪 Update tests")
+            self.assertEqual(description, "Update 2 files.")
+            ollama.assert_not_called()
+
+    def test_single_file_status_tracks_rename(self):
+        context = "Change totals: 1 renamed\n\nStatus:\nR100\told.py\tnew.py"
+        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename old.py to new.py")
+        diff = (
+            "diff --git a/old.py b/new.py\n"
+            "similarity index 98%\n"
+            "rename from old.py\n"
+            "rename to new.py\n"
+        )
+        self.assertEqual(ai_commit.fallback_title(["new.py"], diff=diff),
+                         "🔧 Rename old.py to new.py")
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
     def test_missing_model_uses_image_fallback(self, _models):
