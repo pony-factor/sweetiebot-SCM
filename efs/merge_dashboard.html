@@ -336,7 +336,8 @@ __TIMESTAMP_FORMATTER__
       engine.addEventListener('change', () => { actionEngine = engine.value; });
       for (const option of pr.blockerOptions) {
         const row = show('div', 'blocker-choice', undefined, choices);
-        const button = show('button', 'secondary', option.label, row);
+        const emoji = { '+1': '👍', heart: '❤️', rocket: '🚀' }[option.reaction];
+        const button = show('button', 'secondary', (emoji ? emoji + ' ' : '') + option.label, row);
         button.disabled = Boolean(pr.actionPending);
         button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
           headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
@@ -347,7 +348,7 @@ __TIMESTAMP_FORMATTER__
         show('summary', 'muted', 'View instructions', instructions);
         show('p', '', option.prompt, instructions);
       }
-      if (pr.actionPending) show('p', 'muted', 'Opening the selected implementation…', choices);
+      if (pr.actionPending) show('p', 'muted', 'Recording your choice and opening its implementation…', choices);
     }
     showTextPanel(parent, 'Original PR description', pr.description,
       'No PR description supplied.', true);

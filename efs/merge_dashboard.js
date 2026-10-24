@@ -156,10 +156,10 @@ async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
-    'Lindsey · Merge progress', vscode.ViewColumn?.Two || 2,
+    'Lindsey · Merge progress', viewColumn,
     { enableScripts: true, retainContextWhenHidden: true });
   const nonce = randomBytes(16).toString('hex');
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'merge_dashboard.html'), 'utf8')
@@ -173,7 +173,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], report: null, review: null, sawConflict: false, events: []
+    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: false, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -187,7 +187,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const reportedDeferrals = new Set();
   const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
     storageDirectory: context?.globalStorageUri?.fsPath,
-    launch: async (pr, comment, option) => {
+    launch: async (pr, comment, option, engine = 'web') => {
       if (disposed || launchingActions.has(pr.number)) return;
       launchingActions.add(pr.number);
       publish();
@@ -200,7 +200,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           throw Error('The PR changed after your reaction. Refresh the inline choices and react again.');
         }
         const snapshot = { ...pr, ...reportFromComments([comment]) };
-        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, 'web');
+        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
         addEvent(byNumber.get(pr.number), 'action', opened === false
           ? 'Reaction task was not opened; add a fresh reaction to retry.'
           : 'Your emoji selected: ' + option.label + ' · opened GPT web');
@@ -254,7 +254,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (cycle === 1 || changed || !item.files.length) {
       const files = await paged(fetchImpl, token, selection.repository,
         '/pulls/' + item.number + '/files');
-      try { item.commits = await paged(fetchImpl, token, selection.repository, '/pulls/' + item.number + '/commits'); item.commitError = ''; }
+      try {
+        item.commits = require('./merge_commit_tree').mergeCommitHistory(item.commits, await paged(fetchImpl, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
+        await context?.workspaceState?.update('sweetiebot.prCommits.' + selection.repository + '.' + item.number, item.commits);
+        item.commitError = '';
+      }
       catch (error) { item.commitError = error.message; }
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
@@ -368,6 +372,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (launchingActions.has(pr.number) || !['web', 'codex'].includes(message.engine || 'web')) return;
       launchingActions.add(pr.number);
       error = '';
+      let reactionSelection;
       publish();
       try {
         const fresh = await githubGet(fetchImpl, token, selection.repository, '/pulls/' + pr.number);
@@ -379,18 +384,27 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         }
         const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3);
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
-          state: mergePhase(fresh, { ...pr, ...notes }) };
+          baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }) };
         const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);
         if (!option) throw Error('That implementation option changed. Refresh the report and choose again.');
         const engine = option.engine || message.engine || 'web';
-        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
-        if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'web' ? 'GPT web' : 'Codex branch workspace') + ': ' + option.label);
+        if (option.reaction) {
+          const comment = notes.inlineComments.find(comment => parseReportOptions(comment.body).some(candidate => candidate.id === option.id && candidate.prompt === option.prompt && candidate.reaction === option.reaction));
+          if (!comment) throw Error('The code thread for this choice is no longer available.');
+          await reactionChoices.select(snapshot, comment, option);
+          addEvent(pr, 'action', 'Recorded your GitHub reaction: ' + option.label);
+          reactionSelection = { snapshot, comment, engine };
+        } else {
+          const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
+          if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'web' ? 'GPT web' : 'Codex branch workspace') + ': ' + option.label);
+        }
       } catch (failure) {
         error = 'Could not start the selected implementation: ' + failure.message;
       } finally {
         launchingActions.delete(pr.number);
         publish();
       }
+      if (reactionSelection) await reactionChoices.inspect(reactionSelection.snapshot, [reactionSelection.comment], reactionSelection.engine);
       return;
     }
     if (message.type === 'open-commit') {

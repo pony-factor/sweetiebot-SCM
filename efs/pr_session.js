@@ -107,8 +107,10 @@ async function resumeMergeDashboard(vscode, directory, context) {
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
   const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
   const dashboard = require('./merge_dashboard');
+  const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
   // A dedicated merge workspace owns this layout; no edits to the source window.
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
+    viewColumn: hasEditors ? (vscode.ViewColumn?.Two || 2) : (vscode.ViewColumn?.One || 1),
     context, rootUri: vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri
   });
   try {
@@ -116,7 +118,7 @@ async function resumeMergeDashboard(vscode, directory, context) {
     mergeDashboardController.recordBatchState(state);
   } catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
   await vscode.commands.executeCommand('vscode.setEditorLayout', {
-    orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }]
+    orientation: 0, groups: hasEditors ? [{ size: 0.2 }, { size: 0.8 }] : [{}]
   });
   mergeDashboardStarted = true;
   return mergeDashboardController;
