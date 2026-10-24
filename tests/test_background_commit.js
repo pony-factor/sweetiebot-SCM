@@ -9,6 +9,7 @@ async function run() {
   const commands = new Map(), preparations = [], jobs = [], events = [];
   let poll;
   let status = {};
+  let limitsAllowed = true;
   const notices = [], progress = [], completed = [], errors = [];
   const titleContexts = [];
   const errorActions = [], details = [];
@@ -100,7 +101,11 @@ async function run() {
         if (id === 'sweetiebot.prepareCodexCommit') {
           preparations.push(options); events.push('stage');
           repository.state.indexChanges = ['prepared'];
-        } else { assert.equal(id, 'sweetiebot.checkCommitLimits'); events.push('limits'); return true; }
+        } else {
+          assert.equal(id, 'sweetiebot.checkCommitLimits');
+          events.push('limits');
+          return limitsAllowed;
+        }
       }
     }
   };
@@ -124,9 +129,20 @@ async function run() {
   assert.equal(notQueued.queued, false);
   assert.deepEqual(events, [], 'checking an empty queue never stages or commits');
 
+  // Once final staged content is known, rejection must stop *before* enqueue,
+  // snapshotting or background Ollama title generation.
+  limitsAllowed = false;
+  repository.state.indexChanges = ['staged'];
+  const denied = await commit(root, { message: 'Oversize' });
+  assert.equal(denied.cancelled, true);
+  assert.deepEqual(events, ['limits']);
+  assert.equal(jobs.length, 0, 'a rejected size preflight cannot enter the worker');
+  limitsAllowed = true;
+  repository.state.indexChanges = [];
+
   const initialStatusCalls = statusCalls;
   await commit(root, { message: 'Test' });
-  assert.deepEqual(events, ['stage', 'limits', 'enqueue']);
+  assert.deepEqual(events, ['limits', 'stage', 'limits', 'enqueue']);
   assert.equal(statusCalls - initialStatusCalls, 2,
     'queue refreshes once before preflight and once after the local commit');
   assert.equal(preparations[0].statusFresh, true,
