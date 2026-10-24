@@ -320,7 +320,7 @@ async function humanSquashMerge(repository, number, {
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
     await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      '-c', 'commit.gpgsign=false', 'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+      'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
     const preparedSha = await inRepo('rev-parse', 'HEAD');
     const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
     const newTree = await inRepo('rev-parse', 'HEAD^{tree}');
