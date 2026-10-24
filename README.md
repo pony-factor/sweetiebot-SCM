@@ -472,9 +472,15 @@ The default **Ask Ollama** model is automatic: it first reuses a currently loade
 The companion extension only accepts loopback Ollama URLs (`127.0.0.1`, `localhost`, or `::1`). You can also install or remove just this companion extension with `python3 scripts/workspace_search.py` or `python3 scripts/workspace_search.py --uninstall`.
 
 
+#### Search all local GitHub repositories
+
+Choose **~/GitHub** from the EFS search-scope selector to search files across the local repository directories beneath `~/GitHub`, including repositories that are not open in VS Code. **Workspace** remains the default. The GitHub-folder scope uses a separate cache, built on first search and refreshed every two minutes after first use. Results show paths beginning with the repository directory and open their original files without adding the repositories to the workspace or Source Control. Nothing is cloned or uploaded to GitHub.
+
+The GitHub-folder search skips symbolic links, Git metadata, and EFS exclusion patterns. The existing **Search file limit** (5,000 by default; configurable up to 50,000) caps the number of *file contents* indexed across this folder. Independent filename/folder discovery includes up to 100,000 files. Raising the file limit broadens content coverage but increases local indexing time. If `~/GitHub` does not exist, EFS reports an explicit error rather than silently falling back to the current workspace.
+
 #### Historical work index
 
-The active workspace is only the first corpus this search needs to cover. A more substantive persistent index should eventually span prior research, comment letters, examination responses, drafts, and other related repositories or files so earlier work can be referenced quickly even when the exact wording is forgotten.
+The active workspace and local GitHub folder are the first corpora this search needs to cover. A more substantive persistent index should eventually span prior research, comment letters, examination responses, drafts, and other related repositories or files so earlier work can be referenced quickly even when the exact wording is forgotten.
 
 A concrete example is the September 2026 lookup for earlier discussion of transitioning away from custodial retirement holdings, the Spain and India direct-holding examples, and the related SEC examination response. Finding those passages required crossing separate stores and took roughly three minutes. That retrieval should instead be a near-immediate semantic lookup that returns the relevant passage together with durable provenance such as repository, file, commit, page, and line.
 

@@ -39,6 +39,18 @@ async function run() {
   assert.equal(splitResultPath('src/search/view.js').filename, 'view.js');
   assert.equal(formatResultScore(.87), '.87');
   assert.equal(formatResultScore(1), '1.00');
+  const githubRequests = [];
+  const githubProvider = new sandbox.module.exports.WorkspaceSearchViewProvider(
+    {search: async () => ({results: []})}, () => ({}),
+    {search: async (query, mode) => {
+      githubRequests.push({query, mode});
+      return {results: [{relative: 'repo/Wormhole.md'}], warning: '', mode};
+    }}
+  );
+  githubProvider.view = {webview: {postMessage() {}}};
+  await githubProvider.onMessage({type: 'search', query: 'Wormhole', mode: 'exact', scope: 'github', requestId: 1});
+  assert.equal(githubRequests.length, 1);
+  assert.equal(githubProvider.lastResults[0].relative, 'repo/Wormhole.md');
   const pending = [];
   const provider = new sandbox.module.exports.WorkspaceSearchViewProvider({
     search: () => new Promise((resolve, reject) => pending.push({resolve, reject}))
@@ -88,8 +100,8 @@ async function run() {
     remove() { this.removed = true; }
   });
   const elements = new Map();
-  for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
-    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : '', focus() {}}));
+  for (const id of ['search', 'query', 'clear-query', 'mode', 'scope', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
+    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : id === 'scope' ? 'workspace' : '', focus() {}}));
   }
   const windowListeners = {};
   const timers = new Map(); let nextTimer = 0; const sent = [];let pageState;let currentTime=Date.now();
