@@ -8,4 +8,4 @@ When committing directly to main, add one or two descriptive body sentences expl
 
 Do not add co-author trailers, signatures, or other metadata to generated text; Sweetiebot handles those separately.
 
-Generated commit subjects use deterministic change-type emojis; descriptions contain no emojis. A custom ordered priority list takes precedence. Equivalent choices use the first listed emoji (or a previously established branch bug emoji), never a random pick.
+Generated commit subjects use change-type emojis; descriptions contain no emojis. A custom ordered priority list takes precedence. Bug-fix emojis are chosen randomly for each new fix on main, but reused within each PR branch, including concurrent commit-generation jobs. Do not inherit a PR branch's emoji from main or a stacked branch's parent. Equivalent nonrandom choices use the first listed emoji.

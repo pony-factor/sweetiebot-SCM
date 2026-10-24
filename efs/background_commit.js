@@ -166,9 +166,6 @@ function registerBackgroundCommit(vscode, context) {
               if (choice === 'Retry sync and push') control(root, 'retry');
               if (choice === 'Stop background push') control(root, 'cancel');
             });
-        } else if (status.phase === 'pushing' && previous?.phase !== 'pushing') {
-          const name = root.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-          void vscode.window.showInformationMessage(`${name}: Push is pending and will retry automatically.`);
         } else if (previous?.id && !status.id) {
           await repository.status();
         }

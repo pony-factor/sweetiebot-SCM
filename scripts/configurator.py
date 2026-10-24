@@ -968,7 +968,14 @@ def render_form(
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
                           for setting in SETTINGS if setting.section == section
                           and setting.name not in draft_controls)
-                + '</div>'
+                + '<div class="setting"><span><strong>Opt out in one repository</strong>'
+                  '<small>Keep the global Spellcheck toggle on, but stop automatic post-commit '
+                  'Markdown corrections in a particular repository. In that repository, add '
+                  '<code>&quot;scmToolkit.postCommitSpellcheck&quot;: false</code> to '
+                  '<code>.vscode/settings.json</code>. Other repositories still spellcheck. '
+                  'Remove the entry or set it to <code>true</code> to restore spellcheck there. '
+                  'Draft commit checks and manual Spellcheck Only remain available.</small>'
+                  '</span></div></div>'
             )
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"

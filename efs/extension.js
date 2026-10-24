@@ -34,6 +34,7 @@ const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
 const { registerNativeSpellcheckBridge } = require('./native_spellcheck_bridge');
 const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
+const { registerFilenameSpellcheck } = require('./filename_spellcheck');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
 const { kefaniaClosePosition } = require('./kefania_close_position');
@@ -392,6 +393,7 @@ async function activate(context) {
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
+  registerFilenameSpellcheck(vscode, context);
   registerNativeSpellcheckBridge(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
     console.warn('Sweetiebot spellcheck notification initialization:', error.message);
@@ -443,6 +445,7 @@ async function activate(context) {
   // Keep all ~/GitHub checkout directories out of VS Code's source-control roots.
   const githubIndex = new SearchIndex(context, settings, { githubFolder: path.join(os.homedir(), 'GitHub') });
   const provider = new WorkspaceSearchViewProvider(index, settings, githubIndex);
+  context.subscriptions.push(provider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );

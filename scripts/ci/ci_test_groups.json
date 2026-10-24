@@ -171,12 +171,14 @@
         "test_kefania_app_environment.js",
         "test_kefania_chat_window.js",
         "test_kefania_close_position.js",
+        "test_kefania_merge_help.js",
         "test_kefania_paths.js",
         "test_kefania_runner.js"
       ],
       "syntax": [
         "efs/github_app_identity.js",
         "efs/github_app_settings.js",
+        "efs/kefania_merge_help.js",
         "efs/kefania_runner.js"
       ]
     },
@@ -242,6 +244,7 @@
         "test_spellcheck_popup.js",
         "test_spellcheck_popup_viewport.js",
         "test_terminal_actions.js",
+        "test_workbench_live_runtime.js",
         "test_window_title_configurator.py"
       ],
       "syntax": [
@@ -250,12 +253,14 @@
         "scripts/message_bar.py",
         "scripts/message_bar_configurator.py",
         "scripts/model_picker.py",
-        "scripts/window_title_configurator.py"
+        "scripts/window_title_configurator.py",
+        "assets/workbench/live_runtime.js"
       ]
     },
     "efs-search": {
       "label": "EFS and workspace search",
       "tests": [
+        "test_filename_spellcheck.js",
         "test_workspace_activity.js",
         "test_workspace_prune.js",
         "test_workspace_search.py",
@@ -269,7 +274,8 @@
         "efs/extract.js",
         "efs/search_index.js",
         "efs/view.js",
-        "scripts/workspace_search.py"
+        "scripts/workspace_search.py",
+        "efs/filename_spellcheck.js"
       ]
     },
     "installation": {
