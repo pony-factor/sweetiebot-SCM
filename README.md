@@ -520,8 +520,13 @@ When nothing is staged, the background path stages the working changes first,
 respecting Git's tracked-only smart commit setting. Existing staged selections
 stay separate from unstaged work unless you explicitly choose Commit All.
 You can keep committing while earlier titles generate. Each click creates its
-own local placeholder; up to four titles generate in parallel, then the worker
-applies them in commit order and updates
+own local placeholder; up to six titles may generate in parallel when memory
+headroom permits, and fewer run under pressure. Direct and background title
+requests share cross-process admission locks across repositories, so a batch
+cannot monopolize local Ollama or multiply its KV-cache allocations without
+regard to available memory. Waiting for a free slot does not consume the
+configured model-generation timeout. The worker then applies titles in commit
+order and updates
 the queued descendants' parent links without changing their contents. Pushes
 publish only commits whose messages and ancestors are finalized.
 
@@ -556,7 +561,7 @@ On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 1
 python3 scripts/ollama_concurrency.py
 ```
 
-This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows six simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated Ollama service permits up to six simultaneous requests, but Sweetiebot now shares a memory-aware generation limit across repositories and the normal/direct commit path: one request with less than 16 GiB of estimated available memory, two at 16 GiB, three at 24 GiB, four at 32 GiB, and up to six at 48 GiB. When macOS cannot report available memory, the conservative cap is two. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
 
 Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
 
