@@ -271,7 +271,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Prune Sweetiebot-managed, inactive independent workspaces only when their verified pull requests merged into main and no dirty files, unmerged branches, or unpublished commits remain. Does not touch legacy workspaces."
+          "description": "Clean inactive, Sweetiebot-managed saved workspace metadata and safe Git worktrees after verifying no live windows, pending edits, or unpublished commits. Topic worktrees require verified merged PRs; legacy independent clones retain strict merge-proof safeguards."
         },
         "scmToolkit.workspaceSearch.autoReindex": {
           "type": "boolean",
