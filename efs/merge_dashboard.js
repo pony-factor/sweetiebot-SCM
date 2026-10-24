@@ -172,7 +172,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: false, events: []
+    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: false, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -258,7 +258,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         await context?.workspaceState?.update('sweetiebot.prCommits.' + selection.repository + '.' + item.number, item.commits);
         item.commitError = '';
       }
-      catch (error) { item.commitError = error.message; }
+      catch (error) { if (error.rateLimited) throw error; item.commitError = error.message; }
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
     }
@@ -278,6 +278,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     const next = mergePhase(info, item);
     item.state = next;
+    if (!item.conflictCleared && (next === 'resolved' || (next === 'merged' && item.sawConflict))) {
+      item.conflictCleared = true;
+      await context?.workspaceState?.update('sweetiebot.conflictCleared.' + selection.repository + '.' + item.number + '.' + item.originalHead, true);
+    }
     if (next === 'conflict') item.sawConflict = true;
     const labels = {
       merged: 'GitHub confirms the pull request was merged',
@@ -308,7 +312,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   async function refresh({ force = false } = {}) {
-    if (working || disposed || Date.now() < rateLimitedUntil) return;
+    if (working || disposed || Date.now() < rateLimitedUntil || (!force && !isActive())) return;
     working = true;
     cycle++;
     error = '';
@@ -423,16 +427,25 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       await require('./pr_workflows').openWorkflow(vscode, target, { openToSide: true });
     }
   });
-  const actualInterval = intervalMs || Math.max(15000, prs.length * 4000);
-  const timer = setTimer(() => { void refresh(); }, actualInterval);
+  const config = () => vscode.workspace?.getConfiguration('scmToolkit');
+  const isActive = () => panel.visible !== false && vscode.window.state?.focused !== false && config()?.get('mergeAutoRefresh', true) !== false;
+  const refreshInterval = () => intervalMs || Math.max(30000, Math.min(3600000, Number(config()?.get('mergeRefreshIntervalSeconds', 120)) * 1000 || 120000));
+  let actualInterval = refreshInterval();
+  let timer = setTimer(() => { void refresh(); }, actualInterval);
+  const visibilityListener = panel.onDidChangeViewState?.(() => { if (isActive()) void refresh(); });
+  const focusListener = vscode.window.onDidChangeWindowState?.(() => { if (isActive()) void refresh(); });
   const configurationListener = vscode.workspace?.onDidChangeConfiguration?.(event => {
+    if (event.affectsConfiguration('scmToolkit.mergeRefreshIntervalSeconds')) {
+      clearTimer(timer); actualInterval = refreshInterval();
+      timer = setTimer(() => { void refresh(); }, actualInterval);
+    }
     if (['mergePostSummaries', 'mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
       .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
   });
   panel.onDidDispose(() => {
     disposed = true;
     clearTimer(timer);
-    configurationListener?.dispose();
+    configurationListener?.dispose(); visibilityListener?.dispose(); focusListener?.dispose();
   });
   publish();
   void refresh();

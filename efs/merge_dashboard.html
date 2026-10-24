@@ -247,7 +247,7 @@ __TIMESTAMP_FORMATTER__
   let selected = null;
   let actionEngine = 'web';
   const labels = {
-    waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Resolved',
+    waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Conflicts cleared',
     conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
     queued: 'Queued', updated: 'Updated', closed: 'Closed'
   };
@@ -377,10 +377,10 @@ __TIMESTAMP_FORMATTER__
     const ownerLogoUrl = 'https://github.com/' + encodeURIComponent(owner) + '.png?size=64';
     if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
     const merged = model.prs.filter(p => p.state === 'merged').length;
-    const resolved = model.prs.filter(p => p.state === 'resolved').length;
+    const resolved = model.prs.filter(p => p.conflictCleared).length;
     const problems = model.prs.filter(p => ['conflict','review','blocked'].includes(p.state)).length;
     byId('progress').textContent = merged + '/' + model.prs.length +
-      ' merged · ' + resolved + ' resolved · ' + problems + ' need attention';
+      ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
     byId('count').textContent = 'Live GitHub updates · roughly every ' +
       (model.nextRefreshSeconds || 15) + ' seconds';

@@ -307,7 +307,11 @@
         },
         "scmToolkit.mergeTimelineTimestampMode": {
           "type": "string",
-          "enum": ["hidden", "relative", "clock"],
+          "enum": [
+            "hidden",
+            "relative",
+            "clock"
+          ],
           "enumDescriptions": [
             "Hide event timestamps in Lindsey's activity timeline.",
             "Show updating elapsed times (for example, 2m ago).",
@@ -525,7 +529,11 @@
         },
         "scmToolkit.kefaniaCloseButtonPosition": {
           "type": "string",
-          "enum": ["left", "middle", "right"],
+          "enum": [
+            "left",
+            "middle",
+            "right"
+          ],
           "enumDescriptions": [
             "Fix the X to the upper-left corner of the window.",
             "Right-align the X above the pony card inside the main display column.",
@@ -546,6 +554,28 @@
           "minimum": 30,
           "maximum": 3600,
           "description": "Seconds between automatic PR list refreshes (30–3600). Manual refresh is unaffected."
+        },
+        "scmToolkit.mergeAutoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Refresh GitHub status only while the merge dashboard is visible and its window is focused. Local merge work continues in the background."
+        },
+        "scmToolkit.mergeRefreshIntervalSeconds": {
+          "type": "integer",
+          "default": 120,
+          "scope": "application",
+          "description": "Delay between GitHub status updates in an active merge dashboard. Choose 30–3600 seconds.",
+          "minimum": 30,
+          "maximum": 3600
+        },
+        "scmToolkit.githubRateLimitCooldownSeconds": {
+          "type": "integer",
+          "default": 900,
+          "scope": "application",
+          "description": "Pause when GitHub does not supply a reset time. Choose 60–3600 seconds. Server reset times always take precedence.",
+          "minimum": 60,
+          "maximum": 3600
         }
       }
     }

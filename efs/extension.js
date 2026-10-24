@@ -140,6 +140,9 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
+      mergeAutoRefresh: scm.get('mergeAutoRefresh', true),
+      mergeRefreshIntervalSeconds: scm.get('mergeRefreshIntervalSeconds', 120),
+      githubRateLimitCooldownSeconds: scm.get('githubRateLimitCooldownSeconds', 900),
       mergeTimelineTimestampMode: scm.get('mergeTimelineTimestampMode', 'hidden'),
       mergeSidebarWidthPercent: scm.get('mergeSidebarWidthPercent', 37),
       mergeTimelineHeightPercent: scm.get('mergeTimelineHeightPercent', 34),
@@ -275,7 +278,7 @@ async function openSettings(context) {
 }
 
 async function linkedGithubRepositories(query = '') {
-  const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+  const session = await require('./github_session').githubSession(vscode);
   const needle = String(query || '').trim().toLowerCase();
   const repositories = [];
 

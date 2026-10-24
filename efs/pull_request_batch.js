@@ -235,7 +235,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       const repositories = await workspaceGitHubRepositories(vscode);
       const selectedRepository = await chooseRepository(vscode, repositories);
       if (!selectedRepository) return;
-      const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+      const session = await require('./github_session').githubSession(vscode);
       const pullRequests = await fetchOpenPullRequests(
         selectedRepository.repositoryUrl, session.accessToken, fetchImpl
       );

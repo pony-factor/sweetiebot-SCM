@@ -105,7 +105,7 @@ async function resumeMergeDashboard(vscode, directory, context) {
   let selection;
   try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
-  const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+  const auth = await require('./github_session').githubSession(vscode);
   const dashboard = require('./merge_dashboard');
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
   // A dedicated merge workspace owns this layout; no edits to the source window.
@@ -179,7 +179,7 @@ async function resumePRSession(vscode, context) {
     try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (selection) {
-      const auth = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+      const auth = await require('./github_session').githubSession(vscode);
       const { invokeResolutionCLI } = require('./merge_resolution');
       const { githubGet } = require('./merge_dashboard');
       const prefix = 'repos/' + selection.repository;

@@ -17,7 +17,7 @@ function decisionOptions(comment, pr, actor) {
   try { data = JSON.parse(blocks[0][1]); } catch { return null; }
   if (data.headSha !== pr.headSha || data.baseSha !== pr.baseSha) return null;
   const options = parseReportOptions(comment.body);
-  if (options.length < 2 || options.length > 3 || options.some(option => !option.reaction) ||
+  if (options.length < 1 || options.length > 3 || options.some(option => !option.reaction) ||
       new Set(options.map(option => option.reaction)).size !== options.length) return null;
   return options;
 }
