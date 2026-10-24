@@ -61,6 +61,7 @@
         "test_merged_branch.js",
         "test_merged_branch.py",
         "test_new_workspace.js",
+        "test_workspace_layout.js",
         "test_prune_merged_branches.py",
         "test_routine_sync.js",
         "test_shared_main.js",
