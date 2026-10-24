@@ -155,9 +155,13 @@ async function commitWithCodex(vscode, uri, options = {}) {
     }
     const push = vscode.workspace.getConfiguration('git', root).get('postCommitCommand') === 'push';
     if (vscode.workspace.getConfiguration('scmToolkit', root).get('durableBackgroundCommits', false) === true) {
+      const preparedMessage = originalMessage.trim()
+        ? withCoauthorTrailer(originalMessage, trailer) : '';
+      // The background worker appends a missing trailer verbatim. Once the
+      // message is consolidated, passing the old trailer would duplicate it.
       return await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
-        message: originalMessage ? withCoauthorTrailer(originalMessage, trailer) : originalMessage,
-        codex: true, trailer, push
+        message: preparedMessage, codex: true,
+        trailer: preparedMessage ? '' : trailer, push
       });
     }
     let message = originalMessage;
