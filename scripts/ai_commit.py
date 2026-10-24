@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps, lru_cache
+import fcntl
 import json
 import os
 import re
@@ -36,6 +38,10 @@ MAX_GENERATION_ATTEMPTS = 3
 GENERATION_REQUEST_SECONDS = 45
 GENERATION_DEADLINE = ContextVar('commit_generation_deadline', default=None)
 GENERATION_OPTIONS = ContextVar('commit_generation_options', default=None)
+# Ollama can multiply its KV cache for each parallel request. Limit simultaneous
+# title requests across all Sweetiebot worktrees/repositories, not per queue.
+MAX_TITLE_GENERATORS = 6
+TITLE_MEMORY_PER_SLOT = 8 * 1024**3
 
 
 class GenerationDeadlineExceeded(TimeoutError):
@@ -55,13 +61,16 @@ def remaining_generation_time():
 def generation_budget(function):
     @wraps(function)
     def bounded(*args, **kwargs):
-        options = GENERATION_OPTIONS.set((generation_request_seconds(), generation_attempts()))
-        token = GENERATION_DEADLINE.set(time.monotonic() + generation_budget_seconds())
-        try:
-            return function(*args, **kwargs)
-        finally:
-            GENERATION_DEADLINE.reset(token)
-            GENERATION_OPTIONS.reset(options)
+        # Waiting for a free Ollama title slot must not consume an otherwise
+        # healthy request's time budget or trigger a generic fallback title.
+        with title_generation_slot():
+            options = GENERATION_OPTIONS.set((generation_request_seconds(), generation_attempts()))
+            token = GENERATION_DEADLINE.set(time.monotonic() + generation_budget_seconds())
+            try:
+                return function(*args, **kwargs)
+            finally:
+                GENERATION_DEADLINE.reset(token)
+                GENERATION_OPTIONS.reset(options)
     return bounded
 
 # GitHub blocks regular repository files larger than 100 MiB. Sweetiebot uses
@@ -317,6 +326,59 @@ def available_memory_bytes() -> int | None:
     total_bytes = int(total_match.group(1))
     free_percent = float(free_match.group(1))
     return int(total_bytes * free_percent / 100.0)
+
+
+def title_generation_parallelism(available: int | None) -> int:
+    """Memory-aware cap per *machine*, shared by direct and background titles.
+
+    An unknown macOS memory reading conservatively permits two titles. Memory
+    pressure tightens admission to one; plentiful headroom retains six slots.
+    """
+    if available is None:
+        return 2
+    return min(MAX_TITLE_GENERATORS, 1 + max(0, available) // TITLE_MEMORY_PER_SLOT)
+
+
+@contextmanager
+def title_generation_slot():
+    """Cross-process admission for Ollama title requests, including worktrees.
+
+    Advisory file locks live beside durable jobs, never in the working tree.
+    The reservation is released on errors and on process exit. Recheck memory
+    while waiting: many queued jobs must not overwhelm Ollama after a spike.
+    """
+    directory = Path(os.environ.get(
+        "SWEETIEBOT_COMMIT_JOBS",
+        "~/Library/Application Support/Sweetiebot/commit-jobs",
+    )).expanduser()
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    started = time.monotonic()
+    next_memory_check = 0.0
+    capacity = 2
+    while True:
+        now = time.monotonic()
+        if now >= next_memory_check:
+            capacity = title_generation_parallelism(available_memory_bytes())
+            next_memory_check = now + 2.0
+        for index in range(capacity):
+            filename = directory / f".ollama-title-slot-{index}.lock"
+            descriptor = os.open(filename, os.O_CREAT | os.O_RDWR |
+                                 getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(descriptor, "r+b") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                waited_ms = int((time.monotonic() - started) * 1000)
+                if waited_ms >= 500:
+                    log_event("commit_title", "memory_admission_wait",
+                              duration_ms=waited_ms, outcome="deferred")
+                try:
+                    yield index
+                finally:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+                return
+        time.sleep(0.25)
 
 
 def selected_model(installed: set[str]) -> tuple[str | None, bool]:

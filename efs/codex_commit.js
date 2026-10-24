@@ -203,7 +203,9 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     const git = await extension.activate();
     const repository = git.getAPI(1).getRepository(vscode.Uri.from(uri?.rootUri ?? uri));
     if (!repository) throw new Error('The selected Git repository is unavailable.');
-    await repository.status();
+    // Queue callers have already refreshed the Git API. Standalone
+    // preparation still refreshes, and staging refreshes again afterward.
+    if (options.statusFresh !== true) await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve merge conflicts before committing.');
     const all = options.all === true || options.all === 'tracked';
     if (repository.state.indexChanges.length && !all) return;
