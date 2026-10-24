@@ -89,10 +89,12 @@ async function humanSquashMerge(repository, number, {
     for (let page = 1; page <= 100; page++) {
       const pulls = await api(endpoint + '/pulls?state=open&per_page=100&page=' + page);
       if (!Array.isArray(pulls)) throw Error('Cannot inspect all dependent pull requests.');
-      if (pulls.some(p => p.number !== number &&
+      const dependent = pulls.filter(p => p.number !== number &&
         (p.base?.ref === head || (p.head?.ref === head &&
-          p.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase())))) {
-        throw Error('Another open PR depends on or shares this head branch; refusing to rewrite it.');
+          p.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase())));
+      if (dependent.length) {
+        const names = dependent.map(p => '#' + p.number + ' (' + (p.head?.ref || '?') + ' → ' + (p.base?.ref || '?') + ')').join(', ');
+        throw Error('Open PR ' + names + ' depends on or shares head branch "' + head + '"; refusing to rewrite it.');
       }
       if (pulls.length < 100) break;
       if (page === 100) throw Error('Open PR dependency list is incomplete.');

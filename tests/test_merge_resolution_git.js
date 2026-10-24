@@ -115,9 +115,9 @@ const run = promisify(execFile);
       return api(endpoint, ...rest);
     } }), /protected/);
     await assert.rejects(attempt({ api: async (endpoint, ...rest) => {
-      if (endpoint.includes('/pulls?')) return [{ number: 13, base: { ref: 'feature' } }];
+      if (endpoint.includes('/pulls?')) return [{ number: 13, head: {ref: 'child'}, base: { ref: 'feature' } }];
       return api(endpoint, ...rest);
-    } }), /depends on/);
+    } }), /#13 \(child → feature\).*depends on.*feature/);
     await assert.rejects(attempt({ api: async (endpoint, ...rest) => {
       if (endpoint.includes('/commits?')) return [{ author: { type: 'Bot', login: 'codex-pony[bot]' },
         commit: { author, message: originalMessage } }];

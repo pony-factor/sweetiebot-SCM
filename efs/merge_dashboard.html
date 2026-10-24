@@ -283,6 +283,7 @@ __TIMESTAMP_FORMATTER__
     show('h2', '', '#' + pr.number + ' ' + pr.title, top);
     show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
     if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
+    if (pr.localBlocker && !['merged', 'closed'].includes(pr.state)) showTextPanel(parent, 'Local merge stopped', pr.localBlocker, '');
     const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base) +
       (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
     branchLine.title = pr.head + ' → ' + pr.base;
@@ -351,7 +352,7 @@ __TIMESTAMP_FORMATTER__
     byId('progress').textContent = merged + '/' + model.prs.length +
       ' merged · ' + resolved + ' resolved · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
-    byId('count').textContent = 'Live GitHub updates · roughly every ' +
+    byId('count').textContent = (model.batchStatus ? model.batchStatus + ' · ' : '') + 'Live GitHub updates · roughly every ' +
       (model.nextRefreshSeconds || 15) + ' seconds';
     byId('notice').hidden = !model.error;
     byId('notice').textContent = model.error || '';

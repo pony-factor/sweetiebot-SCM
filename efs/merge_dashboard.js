@@ -176,6 +176,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
   let working = false;
+  let batchStatus = '';
   let cycle = 0;
   let rateLimitedUntil = 0;
   let error = '';
@@ -219,7 +220,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
-      type: 'state', repository: selection.repository,
+      type: 'state', repository: selection.repository, batchStatus,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode),
@@ -245,6 +246,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const before = item.state;
     const previousMessage = item.statusMessage;
     if (changed) {
+      item.localBlocker = '';
       item.currentHead = info.head?.sha || '';
       addEvent(item, 'updated', 'PR head changed; reviewing the new GitHub diff');
     }
@@ -416,7 +418,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (!Object.hasOwn(stages, event.stage)) return;
     const sha = SHA.test(event.sha || '') ? event.sha : '';
     const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
-    if (event.stage === 'preparing') pr.lastPushedHead = '';
+    if (event.stage === 'preparing') { pr.lastPushedHead = ''; pr.localBlocker = ''; batchStatus = 'Local merge is running'; }
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
     const decision = ['decision-commit', 'preparing', 'rewrite-approved'].includes(event.stage)
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
@@ -425,8 +427,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    const settled = new Set([...(state.merged || []), ...state.deferred].map(item => item.number));
+    const finished = prs.every(pr => settled.has(pr.number));
+    batchStatus = finished ? 'Batch finished · no merge is running; review the remaining blockers'
+      : 'Batch is processing the remaining pull requests';
     for (const item of state.deferred) {
       const pr = byNumber.get(item.number);
+      if (pr) pr.localBlocker = String(item.reason || 'Local integration stopped.').slice(0, 4000);
       if (!pr || reportedDeferrals.has(item.number)) continue;
       reportedDeferrals.add(item.number);
       addEvent(pr, 'blocked', 'Deferred for this batch · other selected PRs can continue', String(item.reason || '').slice(0, 4000));
@@ -434,9 +441,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
+    if (prs.every(pr => result.results.some(item => item.number === pr.number && !['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status)))) batchStatus = 'Local merge finished · no merge is running';
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      pr.localBlocker = ['blocked', 'checks_failed'].includes(item.status) ? String(item.reason || 'Local integration stopped.').slice(0, 4000) : '';
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
       const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
       const message = item.status === 'merged' && item.merged === true ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)

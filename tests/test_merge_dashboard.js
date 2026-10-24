@@ -297,6 +297,10 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
   assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
   assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
+  assert.equal(events.at(-1).prs[0].localBlocker, 'PR changed after guarded push');
+  assert.match(events.at(-1).batchStatus, /finished.*no merge is running/);
+  await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].localBlocker, 'PR changed after guarded push', 'GitHub polling retains the specific local blocker');
   assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
@@ -306,9 +310,14 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     deferred: [{ number: 12, reason: 'Refresh the selected head before another merge attempt.' }] };
   dashboard.recordBatchState(batchState);
   assert.match(events.at(-1).events.at(-1).message, /Deferred for this batch/);
+  assert.match(events.at(-1).batchStatus, /Batch finished.*no merge is running/);
+  assert.equal(events.at(-1).prs[0].localBlocker, batchState.deferred[0].reason);
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
+  dashboard.recordLocalProgress({number: 12, stage: 'preparing'});
+  assert.equal(events.at(-1).prs[0].localBlocker, '');
+  assert.match(events.at(-1).batchStatus, /is running/);
   info = { ...info, state: 'closed', merged: false };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'closed');
