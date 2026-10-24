@@ -65,6 +65,25 @@ assert.equal(output.children[0].tag,'h2');
 assert(output.children[1].children.some(node=>node.tag==='strong'));
 assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
 assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
+const sourceId='019c56c3-06fc-7db3-a928-9c3607e17129';
+const sourceShared='https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
+const localLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+const desktopLink='codex://threads/'+sourceId;
+const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
+  +'- **Online:** '+sourceShared+'\n'
+  +'- **Local:** ['+localLink+']('+localLink+')\n'
+  +'- **Desktop:** ['+desktopLink+']('+desktopLink+')\n\n</details>';
+context.renderMarkdown(output,sourceBlock);
+assert.equal(output.children.at(-1).tag,'details','Verified source footer is a collapsed native disclosure');
+assert.equal(output.children.at(-1).children[0].tag,'summary');
+assert.equal(output.children.at(-1).children[0].textContent,'Source details');
+const sourceRows=output.children.at(-1).children[1].children;
+assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
+assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),[sourceShared,localLink,desktopLink]);
+assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
+context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
+assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
+  'Untrusted source links are not activated');
 context.renderMarkdown(output,'Source: <https://example.com/pony>.');
 assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');

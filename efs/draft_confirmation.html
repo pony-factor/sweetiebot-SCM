@@ -99,10 +99,41 @@ function cleanProfileReferences(profile) {
 }
 function renderMarkdown(target, markdown) {
   target.replaceChildren();
-  renderMergeMarkdown(target, markdown, {
+  // The general renderer treats HTML as inert text. Recognize only the exact
+  // trailing source disclosure produced by the verified local PR handoff.
+  const footer = /\n\n<details>\n<summary>Source details<\/summary>\n\n([\s\S]*?)\n<\/details>\s*$/.exec(markdown);
+  renderMergeMarkdown(target, footer ? markdown.slice(0, footer.index) : markdown, {
     baseUrl: 'https://github.com/',
     mapLink: imageSourcePage
   });
+  if (!footer) return;
+  const disclosure = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = 'Source details';
+  disclosure.append(summary);
+  const list = document.createElement('ul');
+  for (const line of footer[1].split('\n')) {
+    const entry = /^- \*\*(Online|Local|Desktop):\*\* (.*)$/.exec(line);
+    if (!entry) continue;
+    const row = document.createElement('li');
+    const label = document.createElement('strong');
+    label.textContent = entry[1] + ': ';
+    row.append(label);
+    const markdownLink = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(entry[2]);
+    const value = markdownLink?.[2] || entry[2];
+    const valid = entry[1] === 'Online'
+      ? /^https:\/\/chatgpt\.com\/(?:s\/cx_[A-Za-z0-9_-]{16,128}|c\/[0-9a-f-]{36})$/i.test(value)
+      : entry[1] === 'Local'
+        ? /^vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}$/i.test(value)
+        : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
+    const node = document.createElement(valid ? 'a' : 'span');
+    node.textContent = value;
+    if (valid) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
+    row.append(node);
+    list.append(row);
+  }
+  disclosure.append(list);
+  target.append(disclosure);
 }
 
 // Fit every image to the same viewport budget, then use their shared envelope.

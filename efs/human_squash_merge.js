@@ -6,6 +6,7 @@
 // PR commit with the exact intended title and verified credits. Rebase-merging
 // that commit preserves its original Git author while leaving the PR head alone.
 const { execFile } = require('node:child_process');
+const { isCodex } = require('./codex_attribution');
 const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
 const { SQUASH_SEPARATOR, squashMessage, readCommits } = require('./squash_attribution');
@@ -106,7 +107,11 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
   const separator = '\n\n' + SQUASH_SEPARATOR + '\n\n';
   if (existing.split('\n', 1)[0] !== expectedTitle ||
       existing.split(separator).length !== 2 ||
-      !/^Co-authored-by: Codex Web <noreply@openai.com>$/m.test(existing)) {
+      !existing.split('\n').some(line => {
+        const coauthor = /^Co-authored-by: (.+?) <(noreply@openai\.com)>$/i.exec(line.trim());
+        return coauthor && isCodex(coauthor[1], coauthor[2]) &&
+          (/(?:\bWeb|\bWeb\))$/i.test(coauthor[1]));
+      })) {
     if (allowHistoryRewrite) return prepareSquash();
     throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title, ten-underscore separator, and required Codex Web credit. Leave the PR open rather than rewriting it.');
   }

@@ -3,6 +3,7 @@
 // One canonical separator for all generated PR squash-commit trailers.
 const SQUASH_SEPARATOR = '__________';
 const { execFileSync } = require('node:child_process');
+const { isCodex, mergeNames } = require('./codex_attribution');
 const SYNC_MAIN_SUBJECT = /^(?:🔄\s*)?Sync (?:brach|branch) to main(?:\s*\(#\d+\))?$/i;
 function filterSyncCommitSummariesEnabled() {
   try {
@@ -28,7 +29,7 @@ function who(name,email,original=false) {
  // A historical Ollama placeholder is not a verified account-linked co-author.
  if(email.trim().toLowerCase()==='hello@ollama.com') return null;
  const id=(name+' '+email).toLowerCase();
- const tier=/^codex$/i.test(name)?2:/^codex web$/i.test(name)?3:/codex-pony/.test(id)?4:/copilot/.test(id)?5:/ollama/.test(id)?6:/\[bot\]|bot@|dependabot|github.actions|web-flow/.test(id)?7:/openai|claude|gemini|ai.agent/.test(id)?8:original?0:1;
+ const tier=isCodex(name,email)?2:/codex-pony/.test(id)?4:/copilot/.test(id)?5:/ollama/.test(id)?6:/\[bot\]|bot@|dependabot|github.actions|web-flow/.test(id)?7:/openai|claude|gemini|ai.agent/.test(id)?8:original?0:1;
  return {name:name.trim(),email:email.trim(),tier};
 }
 function exactSquashTitle(title, num) {
@@ -63,7 +64,13 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
  const summaries=[];
- const add=p=>{if(p&&(!names.has(p.name.toLowerCase())||p.tier<names.get(p.name.toLowerCase()).tier))names.set(p.name.toLowerCase(),p)};
+ const add=p=>{
+   if (!p) return;
+   const key=isCodex(p.name,p.email)?'codex@noreply@openai.com':p.name.toLowerCase();
+   const old=names.get(key);
+   if (isCodex(p.name,p.email)) names.set(key,{...p,name:mergeNames(old?.name,p.name),tier:2});
+   else if (!old||p.tier<old.tier) names.set(key,p);
+ };
  for(const entry of commits){
    const original=who(entry?.commit?.author?.name,entry?.commit?.author?.email,true);
    if(!original) throw Error('Original human or bot Git author could not be verified');
@@ -81,7 +88,7 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
  }
  add(who('Codex Web','noreply@openai.com'));
  // The actual squash Git author is never repeated as a Co-authored-by trailer.
- const trailers=[...names.values()].filter(p=>!primaryAuthor || p.name.toLowerCase()!==primaryAuthor.name.toLowerCase())
+ const trailers=[...names.values()].filter(p=>!primaryAuthor || !(p.name.toLowerCase()===primaryAuthor.name.toLowerCase() || (isCodex(p.name,p.email) && isCodex(primaryAuthor.name,primaryAuthor.email))))
    .sort((a,b)=>a.tier-b.tier).map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');
  const unbulleted = omitBulletsForEmojiTitles && summaries.length > 0 &&
    summaries.every(summary => EMOJI_PREFIX.test(summary.slice(2).split('\n', 1)[0]));

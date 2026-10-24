@@ -68,6 +68,17 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
     assert.equal(writes,0,'Opening a draft must not publish it');
+    const detailsId = '44444444-2222-4333-8444-555555555555';
+    handoff.register(detailsId, {decorateDraft: draft => ({
+      ...draft, body: draft.body + '\n\n<details>\n<summary>Source details</summary>\n\nOnline URL\n</details>'
+    })});
+    const detailsUrl = handoff.origin + '/kefania-draft/' + detailsId;
+    const detailsResult = await fetch(detailsUrl + '/draft', { method:'POST',
+      headers:{Origin:handoff.origin,'Content-Type':'application/json'},
+      body:JSON.stringify({title:'Sample',body:'Description'}) });
+    assert.equal(detailsResult.status,200);
+    assert.match((await (await fetch(detailsUrl+'/state')).json()).draft.body, /<summary>Source details<\/summary>/);
+    assert.equal(writes,0,'Decorating a preview does not publish');
     assert.equal((await fetch(url+'/close')).status,405,'Closing requires an explicit local POST');
     assert.equal((await fetch(url.replace(/555555555555$/, '666666666666'))).status,410);
     const post = (path, value) => fetch(url+path,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:JSON.stringify(value)});

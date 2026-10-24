@@ -10,6 +10,8 @@
         "test_background_commit.js",
         "test_background_commit.py",
         "test_coauthor_identity.js",
+        "test_codex_attribution.js",
+        "test_codex_attribution_queue.js",
         "test_codex_commit.js",
         "test_codex_commit_command.js",
         "test_commit_button_browser.js",
@@ -34,6 +36,8 @@
         "test_spellcheck_preview.js"
       ],
       "syntax": [
+        "efs/codex_attribution.js",
+        "efs/codex_commit.js",
         "efs/ollama.js",
         "efs/native_spellcheck_bridge.js",
         "assets/browser/spellcheck_bridge.js",
