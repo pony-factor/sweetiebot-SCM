@@ -1789,7 +1789,15 @@ class ArtifactContextTests(unittest.TestCase):
 
     def test_single_file_status_tracks_rename(self):
         context = "Change totals: 1 renamed\n\nStatus:\nR100\told.py\tnew.py"
-        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename new.py")
+        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename old.py to new.py")
+        diff = (
+            "diff --git a/old.py b/new.py\n"
+            "similarity index 98%\n"
+            "rename from old.py\n"
+            "rename to new.py\n"
+        )
+        self.assertEqual(ai_commit.fallback_title(["new.py"], diff=diff),
+                         "🔧 Rename old.py to new.py")
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
     def test_missing_model_uses_image_fallback(self, _models):
