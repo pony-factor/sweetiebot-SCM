@@ -78,7 +78,7 @@ async function run() {
     fs.writeFileSync(path.join(githubFolder, 'alpha', 'node_modules', 'ignored.js'), 'ignored');
     fs.writeFileSync(path.join(githubFolder, 'beta', 'Wormhole.md'), 'Bridge exploit');
     const found = await sandbox.module.exports.listGithubFolderFiles(githubFolder, '**/{.git,node_modules}/**');
-    assert.deepEqual(found.map(file => path.relative(githubFolder, file)).sort(), ['alpha/notes.md', 'beta/Wormhole.md']);
+    assert.deepEqual(Array.from(found, file => path.relative(githubFolder, file)).sort(), ['alpha/notes.md', 'beta/Wormhole.md']);
     assert.equal((await sandbox.module.exports.listGithubFolderFiles(githubFolder, '', 1)).length, 1);
     assert.ok(sandbox.module.exports.githubGlobRegex('**/{.git,node_modules}/**').test('alpha/node_modules/'));
     await assert.rejects(sandbox.module.exports.listGithubFolderFiles(path.join(githubFolder, 'missing'), ''), /GitHub folder not found/);
