@@ -1602,6 +1602,8 @@ def _fallback_category(path: str) -> tuple[str, str]:
             or name.startswith(("readme", "changelog", "contributing", "license"))
             or name in {"security.md", "code_of_conduct.md"}):
         return "documentation", "📝"
+    if name.endswith((".md", ".mdx", ".rst")):
+        return "documentation", "📝"
     if name in {
         "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
         "requirements.txt", "pipfile.lock", "cargo.lock", "go.sum",
