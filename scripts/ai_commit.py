@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps, lru_cache
+import fcntl
+import secrets
 import json
 import os
 import re
@@ -36,6 +39,10 @@ MAX_GENERATION_ATTEMPTS = 3
 GENERATION_REQUEST_SECONDS = 45
 GENERATION_DEADLINE = ContextVar('commit_generation_deadline', default=None)
 GENERATION_OPTIONS = ContextVar('commit_generation_options', default=None)
+# Ollama can multiply its KV cache for each parallel request. Limit simultaneous
+# title requests across all Sweetiebot worktrees/repositories, not per queue.
+MAX_TITLE_GENERATORS = 6
+TITLE_MEMORY_PER_SLOT = 8 * 1024**3
 
 
 class GenerationDeadlineExceeded(TimeoutError):
@@ -55,13 +62,16 @@ def remaining_generation_time():
 def generation_budget(function):
     @wraps(function)
     def bounded(*args, **kwargs):
-        options = GENERATION_OPTIONS.set((generation_request_seconds(), generation_attempts()))
-        token = GENERATION_DEADLINE.set(time.monotonic() + generation_budget_seconds())
-        try:
-            return function(*args, **kwargs)
-        finally:
-            GENERATION_DEADLINE.reset(token)
-            GENERATION_OPTIONS.reset(options)
+        # Waiting for a free Ollama title slot must not consume an otherwise
+        # healthy request's time budget or trigger a generic fallback title.
+        with title_generation_slot():
+            options = GENERATION_OPTIONS.set((generation_request_seconds(), generation_attempts()))
+            token = GENERATION_DEADLINE.set(time.monotonic() + generation_budget_seconds())
+            try:
+                return function(*args, **kwargs)
+            finally:
+                GENERATION_DEADLINE.reset(token)
+                GENERATION_OPTIONS.reset(options)
     return bounded
 
 # GitHub blocks regular repository files larger than 100 MiB. Sweetiebot uses
@@ -317,6 +327,59 @@ def available_memory_bytes() -> int | None:
     total_bytes = int(total_match.group(1))
     free_percent = float(free_match.group(1))
     return int(total_bytes * free_percent / 100.0)
+
+
+def title_generation_parallelism(available: int | None) -> int:
+    """Memory-aware cap per *machine*, shared by direct and background titles.
+
+    An unknown macOS memory reading conservatively permits two titles. Memory
+    pressure tightens admission to one; plentiful headroom retains six slots.
+    """
+    if available is None:
+        return 2
+    return min(MAX_TITLE_GENERATORS, 1 + max(0, available) // TITLE_MEMORY_PER_SLOT)
+
+
+@contextmanager
+def title_generation_slot():
+    """Cross-process admission for Ollama title requests, including worktrees.
+
+    Advisory file locks live beside durable jobs, never in the working tree.
+    The reservation is released on errors and on process exit. Recheck memory
+    while waiting: many queued jobs must not overwhelm Ollama after a spike.
+    """
+    directory = Path(os.environ.get(
+        "SWEETIEBOT_COMMIT_JOBS",
+        "~/Library/Application Support/Sweetiebot/commit-jobs",
+    )).expanduser()
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    started = time.monotonic()
+    next_memory_check = 0.0
+    capacity = 2
+    while True:
+        now = time.monotonic()
+        if now >= next_memory_check:
+            capacity = title_generation_parallelism(available_memory_bytes())
+            next_memory_check = now + 2.0
+        for index in range(capacity):
+            filename = directory / f".ollama-title-slot-{index}.lock"
+            descriptor = os.open(filename, os.O_CREAT | os.O_RDWR |
+                                 getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(descriptor, "r+b") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                waited_ms = int((time.monotonic() - started) * 1000)
+                if waited_ms >= 500:
+                    log_event("commit_title", "memory_admission_wait",
+                              duration_ms=waited_ms, outcome="deferred")
+                try:
+                    yield index
+                finally:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+                return
+        time.sleep(0.25)
 
 
 def selected_model(installed: set[str]) -> tuple[str | None, bool]:
@@ -1168,6 +1231,54 @@ def emoji_priority_rules(instructions: str) -> list[tuple[str, list[str], bool]]
     return rules
 
 
+def choose_bug_emoji(choices: list[str]) -> str:
+    """Reuse a PR branch's first bug emoji; independently randomize on main."""
+    branch = current_branch()
+    base = configured_default_branch()
+    if not branch:
+        return secrets.choice(choices)
+    if branch == base:
+        # Independent main commits get a new draw, excluding the latest
+        # bug-fix emoji when another permitted option is available.
+        previous = next((match[0] for subject in git_output(
+            "log", "-50", "--format=%s").splitlines()
+            if (match := re.match(EMOJI_PATTERN, subject)) and match[0] in choices), "")
+        available = [emoji for emoji in choices if emoji != previous] or choices
+        return secrets.choice(available)
+
+    # Stacked PRs must not borrow the emoji from their parent PR branch.
+    parent = git_output("config", "--local", "--get",
+                        f"branch.{branch}.sweetiebot-stack-parent").strip() or base
+    subjects = git_output("log", f"{parent}..HEAD", "--format=%s")
+    for subject in reversed(subjects.splitlines()):
+        match = re.match(EMOJI_PATTERN, subject)
+        if match and match[0] in choices:
+            return match[0]
+
+    # Preserve the first selection across simultaneous background generators:
+    # they can all see provisional commit subjects before any is finalized.
+    common_dir = git_output("rev-parse", "--git-common-dir").strip()
+    if not common_dir:
+        return secrets.choice(choices)
+    key = f"branch.{branch}.sweetiebot-bug-emoji"
+    try:
+        with (Path(common_dir) / "sweetiebot-bug-emoji.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            saved = git_output("config", "--local", "--get", key).strip()
+            if saved in choices:
+                return saved
+            selected = secrets.choice(choices)
+            result = subprocess.run(
+                [REAL_GIT, *GIT_GLOBAL_ARGS, "config", "--local", "--replace-all", key, selected],
+                check=False, capture_output=True, text=True,
+            )
+            if result.returncode:
+                log_event("commit_title", "branch_emoji_save_failed", outcome="fallback")
+            return selected
+    except OSError:
+        return secrets.choice(choices)
+
+
 def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
                           stat: str, diff: str, file_context: str,
                           conversation_context: str) -> str:
@@ -1243,15 +1354,11 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
     if selected is None:
         raise RuntimeError("No emoji priority rule matches this change. Update the instructions or enter an explicit message.")
     condition, choices, fallback = rules[selected]
-    # Reuse a branch's bug emoji without borrowing from main's history.
-    branch = current_branch()
-    if "same one" in condition.lower() and branch and branch != configured_default_branch():
-        base = configured_default_branch()
-        for subject in git_output("log", f"{base}..HEAD", "--format=%s").splitlines():
-            match = re.match(EMOJI_PATTERN, subject)
-            if match and match[0] in choices:
-                return match[0]
-    if len(choices) > 1 and not fallback and "random" not in condition.lower():
+    if len(choices) > 1 and re.search(r"\b(?:bugs?|bugfix(?:es)?)\b", condition, re.I):
+        return choose_bug_emoji(choices)
+    if len(choices) > 1 and re.search(r"\brandom\b", condition, re.I):
+        return secrets.choice(choices)
+    if len(choices) > 1 and not fallback:
         # Some bullets map different emojis to different cases (policy/code,
         # or United States/general policy); these are not random-choice lists.
         prompt = (
@@ -1278,8 +1385,7 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
             except (ValueError, TypeError, AttributeError, OSError, urllib.error.URLError):
                 pass
         raise RuntimeError("Could not verify the emoji assigned by the matching priority rule. Try again or enter an explicit message.")
-    # For equivalent choices use the first permitted emoji, never randomness.
-    # Branch-specific bug emoji reuse is handled above.
+    # For equivalent nonrandom choices, use the first permitted emoji.
     return choices[0]
 
 
@@ -1293,7 +1399,7 @@ def emoji_for_change(title: str, files: list[str]) -> str:
     """Deterministic semantic emoji when no configured priority rule applies."""
     wording = re.sub(EMOJI_PATTERN, "", title).strip().lower()
     if re.match(r"(?:fix|repair|correct|resolve|prevent|restore|guard)\b", wording):
-        return "🐛"
+        return choose_bug_emoji(["🐛", "🐜", "🐝", "🐞", "🦗", "🕷️", "🦟"])
     if re.search(r"\b(?:colou?rs?|theme|palette|contrast|accent|tint)\b", wording):
         return "🎨"
     if re.search(r"\b(?:test|tests|testing|validation|validate|assertion|coverage|regression)\b", wording):
@@ -1560,43 +1666,181 @@ def fallback_emoji(files: list[str]) -> str:
     return "🔧"
 
 
-def fallback_title(files: list[str]) -> str:
-    prefix = fallback_emoji(files) + " "
+# Conservative, offline change metadata inspired by the path/status approach in
+# MichaelCurrin/auto-commit-msg (MIT). Keep this native to Sweetiebot so it can
+# title saved Git trees without installing a second extension or invoking AI.
+_FALLBACK_SKIP_WORDS = {
+    "test", "tests", "spec", "specs", "index", "main", "app", "script",
+    "scripts", "src", "lib", "helper", "helpers", "util", "utils", "file",
+    "files", "module", "modules", "component", "components", "config",
+}
+_FALLBACK_GENERIC_DIRS = {
+    "src", "lib", "efs", "scripts", "tests", "test", "docs", "doc", "assets",
+    "images", "app", "packages", "components",
+}
+_FALLBACK_ACRONYMS = {
+    "github": "GitHub", "pdf": "PDF", "scm": "SCM", "api": "API",
+    "ci": "CI", "ui": "UI", "pr": "PR", "dtc": "DTC",
+}
+
+
+def _fallback_category(path: str) -> tuple[str, str]:
+    """Categorize only what a path proves, not the intent of code edits."""
+    normalized = path.replace("\\", "/").lower()
+    parts = normalized.split("/")
+    name = parts[-1]
+    stem = Path(name).stem
+    kind = path_kind(path)
+    if kind == "image":
+        return "image assets", "🖼️"
+    if kind == "document":
+        return "documents", "🖋️"
+    if name.endswith(".eml"):
+        return "archived emails", "📧"
+    if (any(part in {"tests", "test", "spec", "__tests__"} for part in parts[:-1])
+            or name.startswith(("test_", "spec_"))
+            or re.search(r"\.(?:test|spec)\.[^.]+$", name)):
+        return "tests", "🧪"
+    if (parts[:2] == [".github", "workflows"] or ".circleci" in parts
+            or name in {"tox.ini", ".travis.yml", "codecov.yml"}):
+        return "CI workflows", "⚙️"
+    if ("docs" in parts[:-1] or "doc" in parts[:-1]
+            or name.startswith(("readme", "changelog", "contributing", "license"))
+            or name in {"security.md", "code_of_conduct.md"}):
+        return "documentation", "📝"
+    if name.endswith((".md", ".mdx", ".rst")):
+        return "documentation", "📝"
+    if name in {
+        "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
+        "requirements.txt", "pipfile.lock", "cargo.lock", "go.sum",
+        "composer.lock", "gemfile.lock",
+    }:
+        return "dependencies", "🧰"
+    if name in {"dockerfile", "makefile", "package.json", "pyproject.toml"}:
+        return "build configuration", "⚙️"
+    if (name.startswith(".") or name.endswith(
+            (".yaml", ".yml", ".toml", ".ini", ".cfg", ".config", ".config.js"))):
+        return "configuration", "⚙️"
+    return "code", "🔧"
+
+
+def _fallback_topic(files: list[str]) -> str:
+    """Prefer a shared, meaningful filename stem; otherwise a specific folder."""
+    if len(files) < 2:
+        return ""
+    tokens = []
+    for path in files:
+        stem = Path(path.replace("\\", "/")).stem
+        stem = re.sub(r"([a-z])([A-Z])", r"\1 \2", stem)
+        words = [part.lower() for part in re.split(r"[^A-Za-z0-9]+", stem)
+                 if len(part) >= 3 and part.lower() not in _FALLBACK_SKIP_WORDS
+                 and not part.isdigit()]
+        tokens.append(list(dict.fromkeys(words)))
+    shared = [word for word in tokens[0] if all(word in other for other in tokens[1:])]
+    if shared:
+        return " ".join(_FALLBACK_ACRONYMS.get(word, word) for word in shared[:2])
+    paths = [path.replace("\\", "/").split("/")[:-1] for path in files]
+    if paths and all(paths):
+        common = []
+        for members in zip(*paths):
+            if len(set(members)) != 1:
+                break
+            common.append(members[0])
+        for folder in reversed(common):
+            if folder.lower() not in _FALLBACK_GENERIC_DIRS and len(folder) > 2:
+                return folder.replace("_", " ").replace("-", " ")
+    return ""
+
+
+def _fallback_operation(files: list[str], file_context: str = "", diff: str = "") -> str:
+    """Use saved name-status metadata when complete; never infer a code 'fix'."""
+    section = re.search(r"(?m)^Status:\n(.*?)(?:\n\n|\Z)", file_context, re.S)
+    if section:
+        codes = [row.split("\t", 1)[0][:1] for row in section.group(1).splitlines()
+                 if row and row != "[none]"]
+        if len(codes) == len(files) and len(set(codes)) == 1:
+            return {"A": "Add", "D": "Remove", "R": "Rename",
+                    "C": "Copy", "M": "Update"}.get(codes[0], "Update")
+    # Saved commit diffs carry file operations even without a live Git index.
+    if diff and len(re.findall(r"(?m)^diff --git ", diff)) == len(files):
+        if len(re.findall(r"(?m)^new file mode ", diff)) == len(files):
+            return "Add"
+        if len(re.findall(r"(?m)^deleted file mode ", diff)) == len(files):
+            return "Remove"
+        if (len(re.findall(r"(?m)^rename from ", diff)) == len(files)
+                and len(re.findall(r"(?m)^rename to ", diff)) == len(files)):
+            return "Rename"
+    return "Update"
+
+
+def _fallback_rename_source(file_context: str, diff: str) -> str:
+    """Read a Git-recorded source name for single-file rename descriptions."""
+    section = re.search(r"(?m)^Status:\n(.*?)(?:\n\n|\Z)", file_context, re.S)
+    if section:
+        lines = [line for line in section.group(1).splitlines() if line and line != "[none]"]
+        if len(lines) == 1 and re.match(r"^R\d*\t", lines[0]):
+            fields = lines[0].split("\t")
+            if len(fields) == 3:
+                return os.path.basename(fields[1])
+    match = re.search(r"(?m)^rename from (.+)$", diff)
+    return os.path.basename(match.group(1)) if match else ""
+
+
+def fallback_title(files: list[str], file_context: str = "", diff: str = "") -> str:
+    if not files:
+        return "🔧 Update repository files"
+    action = _fallback_operation(files, file_context, diff)
     if len(files) == 1:
-        title = f"{prefix}Update {os.path.basename(files[0])}"
-        return title if len(title) <= 72 else f"{prefix}Update staged file"
-    if files and all(path_kind(path) == "image" for path in files):
-        return sanitize_title(f"🖼️ Update {len(files)} image assets")
-    if files:
-        return f"{prefix}Update {len(files)} staged files"
-    return f"{prefix}Update staged changes"
+        name = os.path.basename(files[0])
+        source = _fallback_rename_source(file_context, diff) if action == "Rename" else ""
+        if source and source != name:
+            title = f"{fallback_emoji(files)} Rename {source} to {name}"
+            if len(title) <= 72:
+                return title
+        title = f"{fallback_emoji(files)} {action} {name}"
+        return title if len(title) <= 72 else f"{fallback_emoji(files)} {action} repository file"
+    categories = [_fallback_category(path) for path in files]
+    labels = list(dict.fromkeys(label for label, _ in categories))
+    emoji = categories[0][1] if len(labels) == 1 else fallback_emoji(files)
+    if labels == ["image assets"]:
+        return f"🖼️ {action} {len(files)} image assets"
+    subject = " and ".join(labels) if len(labels) <= 2 else "project files"
+    topic = _fallback_topic(files)
+    # Avoid repeating a directory name already present in the file-category label.
+    if topic and re.search(rf"\b{re.escape(topic)}\b", subject, re.IGNORECASE):
+        topic = ""
+    phrase = f"{topic} {subject}" if topic else subject
+    title = f"{emoji} {action} {phrase}"
+    if len(title) > 72 and topic:
+        title = f"{emoji} {action} {subject}"
+    return title if len(title) <= 72 else f"{emoji} {action} project files"
 
 
-def fallback_message(files: list[str], include_description: bool, file_context: str = "") -> tuple[str, str]:
-    title = fallback_title(files)
+def fallback_message(files: list[str], include_description: bool, file_context: str = "",
+                     diff: str = "") -> tuple[str, str]:
+    title = fallback_title(files, file_context, diff)
     if not include_description:
         return title, ""
     totals = re.search(r"(?m)^Change totals: (.+)$", file_context)
     if totals and totals.group(1) != "[none]":
         single_operation = re.fullmatch(r"(\d+) (added|deleted|renamed|modified|copied)", totals.group(1))
-        if single_operation:
+        if single_operation and files and all(Path(path).suffix.lower() == ".eml" for path in files):
             count, operation = single_operation.groups()
-            verb = {"added": "Add", "deleted": "Remove", "renamed": "Rename", "modified": "Update", "copied": "Copy"}[operation]
-            noun = "archived emails" if files and all(Path(path).suffix.lower() == ".eml" for path in files) else "staged files"
-            title_noun = noun[:-1] if count == "1" else noun
-            title = f"{fallback_emoji(files)} {verb} {count} {title_noun}"
-            kind = "email file" if noun == "archived emails" else "file"
-            noun = kind if count == "1" else kind + "s"
-            preposition = "from" if operation == "deleted" else "in"
-            return title, f"{verb} {count} {noun} {preposition} the repository."
+            verb = {"added": "Add", "deleted": "Remove", "renamed": "Rename",
+                    "modified": "Update", "copied": "Copy"}[operation]
+            return (f"📧 {verb} {count} archived email{'s' if count != '1' else ''}",
+                    f"{verb} {count} email file{'s' if count != '1' else ''} "
+                    f"{'from' if operation == 'deleted' else 'in'} the repository.")
         operations = []
         for count, operation in re.findall(r"(\d+) (added|deleted|renamed|modified|copied)", totals.group(1)):
-            verb = {"added": "add", "deleted": "remove", "renamed": "rename", "modified": "update", "copied": "copy"}[operation]
+            verb = {"added": "add", "deleted": "remove", "renamed": "rename",
+                    "modified": "update", "copied": "copy"}[operation]
             operations.append(f"{verb} {count} {'file' if count == '1' else 'files'}")
         if operations:
             description = "; ".join(operations)
             return title, description[0].upper() + description[1:] + "."
-    return title, f"Update the {len(files)} staged files." if files else "Record the staged changes."
+    action = _fallback_operation(files, file_context, diff)
+    return title, f"{action} {len(files)} {'file' if len(files) == 1 else 'files'} in the repository."
 
 
 def valid_generated_message(title: str, description: str, include_description: bool) -> bool:
@@ -1723,7 +1967,7 @@ def generate_message(
                 "using fallback title"
             )
         print(f"Sweetiebot: {detail}", file=sys.stderr)
-        return fallback_message(files, include_description)
+        return fallback_message(files, include_description, file_context_override or "", diff)
 
     file_context = staged_file_context(files) if file_context_override is None else file_context_override
     try:
@@ -1848,14 +2092,14 @@ def generate_message(
             raise RuntimeError(f"Local Ollama did not produce a valid, content-based commit summary after {attempts} attempts. Try again or enter an explicit message.")
         log_event("commit_title", "fallback_used", model=model, reason="invalid_message", outcome="fallback")
         print("Sweetiebot: invalid model output; using factual staged-change summary", file=sys.stderr)
-        return fallback_message(files, include_description, file_context)
+        return fallback_message(files, include_description, file_context, diff)
     except GenerationDeadlineExceeded as exc:
         log_event('commit_title', 'generation_budget_exhausted', model=model,
                   reason='deadline_exceeded', outcome='blocked' if require_model else 'fallback')
         if require_model:
             raise RuntimeError('Local commit generation exceeded its configured time budget. Try again or enter an explicit message.') from exc
         print('Sweetiebot: generation time budget exhausted; using fallback title', file=sys.stderr)
-        return fallback_message(files, include_description, file_context)
+        return fallback_message(files, include_description, file_context, diff)
     except RuntimeError as exc:
         if require_model:
             raise
@@ -1865,7 +2109,7 @@ def generate_message(
             outcome="fallback",
         )
         print("Sweetiebot: priority validation failed; using simple staged-change summary", file=sys.stderr)
-        return fallback_message(files, include_description, file_context)
+        return fallback_message(files, include_description, file_context, diff)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         if require_model:
             cause = exc.reason if isinstance(exc, urllib.error.URLError) else exc
@@ -1898,7 +2142,7 @@ def generate_message(
 
     if require_model:
         raise RuntimeError("Local Ollama returned an empty commit message.")
-    return fallback_message(files, include_description, file_context)
+    return fallback_message(files, include_description, file_context, diff)
 
 
 def generate_title(stat: str, diff: str, files: list[str]) -> str:
@@ -1914,6 +2158,16 @@ def load_post_commit_spellcheck():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def post_commit_spellcheck_enabled() -> bool:
+    if not git_config_bool("scm-toolkit.post-commit-spellcheck", False):
+        return False
+    try:
+        return not load_post_commit_spellcheck().repository_spellcheck_disabled(GIT_GLOBAL_ARGS)
+    except Exception:
+        # Invalid or unavailable workspace settings leave the global preference intact.
+        return True
 
 
 def main() -> None:
@@ -2074,9 +2328,10 @@ def main() -> None:
         split_groups = github_split_groups(files)
         if len(split_groups) > 1:
             raise SystemExit(commit_split_groups(argv, split_groups))
+        spellcheck_enabled = post_commit_spellcheck_enabled()
         use_async = (
             git_config_bool("scm-toolkit.ai-commit-async", False)
-            and not git_config_bool("scm-toolkit.post-commit-spellcheck", False)
+            and not spellcheck_enabled
             and git_output("config", "--type=bool", "--get", "commit.gpgsign").strip() != "true"
             and not any(arg == "-S" or arg.startswith(("-S", "--gpg-sign")) for arg in commit_args)
             and bool(current_branch())
@@ -2104,7 +2359,7 @@ def main() -> None:
     message_args = ["-m", title]
     if description:
         message_args.extend(["-m", description])
-    if not git_config_bool("scm-toolkit.post-commit-spellcheck", False):
+    if not spellcheck_enabled:
         os.execv(REAL_GIT, [REAL_GIT, *argv, *message_args])
 
     spellcheck = None

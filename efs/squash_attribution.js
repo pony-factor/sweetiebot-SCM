@@ -39,6 +39,26 @@ function exactSquashTitle(title, num) {
  const suffix = ' (#' + num + ')';
  return originalTitle.endsWith(suffix) ? originalTitle : originalTitle + suffix;
 }
+function formatCommitBody(body, width = 88) {
+ const indent = '    ';
+ let fenced = false;
+ return body.split('\n').map(line => {
+   if (/^\s*```/.test(line)) { fenced = !fenced; return indent + line; }
+   if (!line.trim()) return '';
+   if (fenced) return indent + line;
+   const leading = line.match(/^\s*/)[0];
+   const prefix = indent + leading;
+   const words = line.trim().split(/\s+/);
+   const lines = []; let current = prefix;
+   for (const word of words) {
+     if (current.length > prefix.length && current.length + word.length + 1 > width) {
+       lines.push(current); current = prefix;
+     }
+     current += (current.length > prefix.length ? ' ' : '') + word;
+   }
+   lines.push(current); return lines.join('\n');
+ }).join('\n');
+}
 function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled()}={}){
  const finalTitle = exactSquashTitle(title, num);
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
@@ -63,7 +83,7 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    if(!subject.trim())throw Error('Original PR commit subject unavailable');
    const body=bodyLines.join('\n').replace(COAUTHOR,'').trim();
    if (!(filterSyncCommitSummaries && SYNC_MAIN_SUBJECT.test(subject.trim()))) {
-     summaries.push('- '+subject.trim()+(body?'\n'+body.split('\n').map(line=>line?'  '+line:'').join('\n'):''));
+     summaries.push('- '+subject.trim()+(body?'\n'+formatCommitBody(body):''));
    }
  }
  add(who('Codex Web','noreply@openai.com'));
@@ -86,4 +106,4 @@ async function readCommits(api,repo,num){
  }
  throw Error('Cannot inspect complete PR history');
 }
-module.exports={SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits};
+module.exports={formatCommitBody,SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits};

@@ -225,6 +225,51 @@ class CorrectionTests(unittest.TestCase):
                 self.assertIsNone(worker.spellcheck_file(self.core("text"), "model", [], "../outside.md"))
 
 
+class RepositoryOptOutTests(unittest.TestCase):
+    def test_jsonc_override_and_unset_keep_other_repositories_enabled(self):
+        cases = [
+            ('{"scmToolkit.postCommitSpellcheck": false}', True),
+            ('{// comment\n"scmToolkit.postCommitSpellcheck": false, /* end */\n}', True),
+            ('{"scmToolkit.postCommitSpellcheck": false, // comment\n}', True),
+            ('{"url": "https://example.com/a,b", "scmToolkit.postCommitSpellcheck": true}', False),
+            ('{"scmToolkit.postCommitSpellcheck": "false"}', False),
+            ('{"note": "scmToolkit.postCommitSpellcheck: false"}', False),
+            ('{"scmToolkit.postCommitSpellcheck": false', False),
+            ('{}', False),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".vscode").mkdir()
+            config = root / ".vscode" / "settings.json"
+            git_root = subprocess.CompletedProcess([], 0, stdout=str(root).encode())
+            with patch.object(worker, "git_run", return_value=git_root):
+                self.assertFalse(worker.repository_spellcheck_disabled([]))
+                for content, expected in cases:
+                    with self.subTest(content=content):
+                        config.write_text(content, encoding="utf-8")
+                        self.assertIs(worker.repository_spellcheck_disabled([]), expected)
+                config.write_text('{"scmToolkit.postCommitSpellcheck": false}')
+                with patch.object(worker, "git_run", return_value=subprocess.CompletedProcess([], 1, stdout=b"")):
+                    self.assertFalse(worker.repository_spellcheck_disabled([]))
+
+    def test_repository_opt_out_skips_background_job_before_loading_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".vscode").mkdir()
+            (root / ".vscode" / "settings.json").write_text('{"scmToolkit.postCommitSpellcheck": false}')
+            git_root = subprocess.CompletedProcess([], 0, stdout=str(root).encode())
+            job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
+            with patch.object(worker, "git_run", return_value=git_root), patch.object(
+                worker, "load_core"
+            ) as load_core, patch.object(worker.subprocess, "Popen") as popen, patch.dict(
+                worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}
+            ):
+                worker.spawn_post_commit([], ["note.md"], "expected", "/tmp/ai_commit.py")
+                popen.assert_not_called()
+                self.assertEqual(worker.run_post_commit_job(), 0)
+                load_core.assert_not_called()
+
+
 class ProposalTests(unittest.TestCase):
     def test_applies_only_while_head_index_toggle_and_worktree_match(self):
         for reason in ["safe", "head", "index", "dirty", "toggle", "edited", "no_model"]:
@@ -292,7 +337,7 @@ class ProposalTests(unittest.TestCase):
             self.assertEqual(worker.run_post_commit_job(), 0)
             notice.assert_called_once_with([], "expected", ["note.md"], "model")
             title.assert_not_called()
-            git.assert_not_called()
+            git.assert_called_once_with([], "rev-parse", "--show-toplevel")
 
     def test_changed_head_preserves_proposals_without_showing_stale_notice(self):
         job = {"global_args": [], "paths": ["note.md"], "head": "expected"}

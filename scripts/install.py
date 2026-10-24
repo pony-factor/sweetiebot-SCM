@@ -2,10 +2,12 @@
 """Apply, validate, or remove the custom VS Code SCM toolkit patch."""
 
 import argparse
+import hashlib
 import base64
 import json
 import os
 import re
+import tempfile
 import workspace_search
 import codex_colors
 import codex_label
@@ -1160,7 +1162,7 @@ def transform(js, css, remove=False, settings=None):
         + "\n"
         + (WORKBENCH_ASSETS / "message_bar.js").read_text()
         + "\n"
-        + (WORKBENCH_ASSETS / "codex_file_drag.js").read_text()
+        + (WORKBENCH_ASSETS / "live_runtime.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
@@ -1171,6 +1173,60 @@ def transform(js, css, remove=False, settings=None):
         toolkit_css += "\n" + (WORKBENCH_ASSETS / "outlined_buttons.css").read_text()
     css += START + toolkit_css + END
     return js, css
+
+
+def sync_live_components(workbench_dir, remove=False, check=False):
+    """Keep individually versioned modules outside the patched VS Code bundle."""
+    directory = Path(workbench_dir) / "sweetiebot"
+    if directory.is_symlink():
+        raise RuntimeError("Refusing symlinked Sweetiebot component directory.")
+    manifest = directory / "manifest.json"
+    modules = [("codex-file-drag", "codex_file_drag.js")]
+    files = []
+    entries = []
+    for name, filename in modules:
+        source = (WORKBENCH_ASSETS / filename).read_bytes()
+        files.append((directory / filename, source))
+        entries.append(dict(name=name, file=filename,
+                            version=hashlib.sha256(source).hexdigest()))
+    payload = (json.dumps({"schema": 1, "modules": entries},
+                          separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+    # The manifest is the commit point: publish it after all module files so
+    # a running window never sees a revision before its code is on disk.
+    files.append((manifest, payload))
+    changed = False
+    for target, data in files:
+        if target.is_symlink():
+            raise RuntimeError(f"Refusing symlinked Sweetiebot component: {target}")
+        exists = target.is_file()
+        if target.exists() and not exists:
+            raise RuntimeError(f"Refusing non-file Sweetiebot component: {target}")
+        old = target.read_bytes() if exists else None
+        differs = exists if remove else old != data
+        changed |= differs
+        if check or not differs:
+            continue
+        if remove:
+            target.unlink()
+            continue
+        directory.mkdir(parents=True, exist_ok=True)
+        # Replace each file atomically. Temporary files stay next to the target.
+        fd, temporary = tempfile.mkstemp(prefix=".sweetiebot-component-", dir=directory)
+        try:
+            with os.fdopen(fd, "wb") as output:
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    if remove and not check and directory.is_dir():
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return changed
 
 
 def application_paths(app_path):
@@ -1312,6 +1368,9 @@ def main():
     version, workbench_paths = application_paths(args.app)
     legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
     paths = [] if args.codex_only else workbench_paths
+    components_changed = (not args.codex_only
+                          and sync_live_components(workbench_paths[0].parent,
+                                                   remove=args.uninstall, check=True))
     old = [path.read_text() for path in paths]
     new = (
         []
@@ -1541,6 +1600,7 @@ def main():
         and not model_picker_changed
         and not workspace_search_changed
         and not legacy_changed
+        and not components_changed
     ):
         if not args.check and not args.repair:
             invalidate_extension_cache(args.app)
@@ -1556,6 +1616,7 @@ def main():
                 raise RuntimeError("VS Code changed during validation; retry the command.")
             write_pair(paths, new, old)
         if not args.codex_only:
+            sync_live_components(workbench_paths[0].parent, remove=args.uninstall)
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
             workspace_search.sync_extension(remove=args.uninstall, settings=settings)
         if not args.codex_only and not args.repair:
@@ -1574,7 +1635,10 @@ def main():
         persist_message_bar_layout(settings)
     action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
     target = "Codex customizations" if args.codex_only else "SCM toolkit"
-    print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
+    if old == list(new) and not args.uninstall and components_changed:
+        print(f"{action} live Sweetiebot workbench components for VS Code {version}; no window reload required.")
+    else:
+        print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
     if not args.codex_only and not args.repair:
         if args.uninstall:
             print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")

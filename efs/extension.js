@@ -10,6 +10,7 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerCommitShortcut } = require('./commit_shortcut');
 const { registerBackgroundCommit } = require('./background_commit');
+const { registerAutoCodexCommit } = require('./auto_codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { resumePRSession } = require('./pr_session');
 const { configureWorkspaceBrowserStorage } = require('./browser_storage');
@@ -33,6 +34,7 @@ const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
 const { registerNativeSpellcheckBridge } = require('./native_spellcheck_bridge');
 const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
+const { registerFilenameSpellcheck } = require('./filename_spellcheck');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
 const { kefaniaClosePosition } = require('./kefania_close_position');
@@ -135,6 +137,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       incomingSyncLabel: scm.get('incomingSyncLabel', ''),
       outgoingSyncLabel: scm.get('outgoingSyncLabel', ''),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
+      autoCommitWithCodex: scm.get('autoCommitWithCodex', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
@@ -142,6 +145,9 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
+      mergeAutoRefresh: scm.get('mergeAutoRefresh', true),
+      mergeRefreshIntervalSeconds: scm.get('mergeRefreshIntervalSeconds', 120),
+      githubRateLimitCooldownSeconds: scm.get('githubRateLimitCooldownSeconds', 900),
       mergeTimelineTimestampMode: scm.get('mergeTimelineTimestampMode', 'hidden'),
       mergeSidebarWidthPercent: scm.get('mergeSidebarWidthPercent', 37),
       mergeTimelineHeightPercent: scm.get('mergeTimelineHeightPercent', 34),
@@ -291,7 +297,7 @@ async function openSettings(context) {
 }
 
 async function linkedGithubRepositories(query = '') {
-  const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+  const session = await require('./github_session').githubSession(vscode);
   const needle = String(query || '').trim().toLowerCase();
   const repositories = [];
 
@@ -387,12 +393,19 @@ async function activate(context) {
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
+  registerFilenameSpellcheck(vscode, context);
   registerNativeSpellcheckBridge(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
     console.warn('Sweetiebot spellcheck notification initialization:', error.message);
   });
   // Register PR merge commands before compatibility aliases and awaited startup
   // work so a stale legacy command cannot leave contributed actions without handlers.
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.githubRateLimited', message => {
+    const error = require('./github_rate_limit').rateLimitError({ status: 403, message });
+    if (error) return require('./github_rate_limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.repairMergeReview', () =>
+    require('./merge_review_repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
@@ -413,6 +426,7 @@ async function activate(context) {
   registerCodexCommitCommand(vscode, context);
   registerCommitShortcut(vscode, context);
   registerBackgroundCommit(vscode, context);
+  registerAutoCodexCommit(vscode, context);
   registerPullRequestCommand(vscode, context);
   // Schedule after activation completes so command execution never waits on
   // the activation promise that is currently registering its own handler.
@@ -428,7 +442,10 @@ async function activate(context) {
   registerCloudRepoSync(vscode, context);
   registerWorkspaceCleanup(vscode, context);
   const index = new SearchIndex(context, settings);
-  const provider = new WorkspaceSearchViewProvider(index, settings);
+  // Keep all ~/GitHub checkout directories out of VS Code's source-control roots.
+  const githubIndex = new SearchIndex(context, settings, { githubFolder: path.join(os.homedir(), 'GitHub') });
+  const provider = new WorkspaceSearchViewProvider(index, settings, githubIndex);
+  context.subscriptions.push(provider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
@@ -469,7 +486,7 @@ async function activate(context) {
   const indexSyncTimer = setInterval(() => {
     if (indexSyncRunning || !settings().autoReindex) return;
     indexSyncRunning = true;
-    void index.refresh().catch(error => {
+    void Promise.all([index.refresh(), ...(githubIndex.loaded ? [githubIndex.refresh()] : [])]).catch(error => {
       console.error('Workspace Search automatic index sync failed:', error);
     }).finally(() => {
       indexSyncRunning = false;
@@ -478,7 +495,7 @@ async function activate(context) {
   context.subscriptions.push({ dispose: () => clearInterval(indexSyncTimer) });
 
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.workspaceSearch.clearIndex', async () => {
-    await index.clear();
+    await Promise.all([index.clear(), githubIndex.clear()]);
     provider.lastResults = [];
     provider.post({ type: 'results', results: [], warning: '', mode: settings().mode });
     vscode.window.showInformationMessage('Workspace Search index cleared.');

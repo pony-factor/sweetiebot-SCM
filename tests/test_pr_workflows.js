@@ -32,6 +32,7 @@ const { chatgptPullRequestUrl } = require('../efs/chatgpt_project');
   assert.match(profile, /Twibooru requires anonymous uploads/, 'Anonymous booru upload labels must not be mistaken for artist identity');
   assert.match(profile, /Do not add repetitive disclaimers/, 'Routine anonymous uploading should not dominate pony profiles');
   assert.match(profile, /Format ordinary HTTPS references as descriptive Markdown links/, 'Readable link labels must be part of the research prompt');
+  assert.match(profile, /never native citation tokens/, 'Returned profiles require portable source links');
   assert(!profile.includes('Preserve creator attribution and distinguish the artist from the uploader.'), 'Old generic uploader warning is superseded');
   const userTab = {name:'User work'}, workflowTab = {name:'Draft'}, anotherTab = {name:'Later user work'};
   const group = {tabs:[userTab]};

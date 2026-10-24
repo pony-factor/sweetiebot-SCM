@@ -386,6 +386,54 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(ai_commit.installed_local_model_names(), {"primary:test"})
 
 
+class TitleGenerationAdmissionTests(unittest.TestCase):
+    def test_memory_pressure_adapts_global_parallelism(self):
+        gib = 1024**3
+        expected = {
+            None: 2, 0: 1, 3 * gib: 1, 7 * gib: 1,
+            8 * gib: 2, 15 * gib: 2, 16 * gib: 3,
+            23 * gib: 3, 24 * gib: 4, 31 * gib: 4,
+            32 * gib: 5, 39 * gib: 5, 40 * gib: 6,
+            48 * gib: 6, 96 * gib: 6,
+        }
+        for available, slots in expected.items():
+            with self.subTest(available=available):
+                self.assertEqual(ai_commit.title_generation_parallelism(available), slots)
+
+    def test_title_slots_are_shared_and_released_under_pressure(self):
+        gib = 1024**3
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=7 * gib):
+            with ai_commit.title_generation_slot() as first:
+                self.assertEqual(first, 0)
+                with patch.object(ai_commit.time, "sleep", side_effect=RuntimeError("slot busy")):
+                    with self.assertRaisesRegex(RuntimeError, "slot busy"):
+                        with ai_commit.title_generation_slot():
+                            self.fail("A second worker entered the only safe slot")
+            with ai_commit.title_generation_slot() as reopened:
+                self.assertEqual(reopened, 0, "The slot must be reusable after finishing")
+
+    def test_available_headroom_allows_independent_concurrent_slots(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=16 * 1024**3):
+            with ai_commit.title_generation_slot() as first:
+                with ai_commit.title_generation_slot() as second:
+                    self.assertEqual((first, second), (0, 1))
+
+    def test_title_slot_is_released_after_generation_error(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=0):
+            failing = ai_commit.generation_budget(lambda: (_ for _ in ()).throw(
+                RuntimeError("generation failed")))
+            with self.assertRaisesRegex(RuntimeError, "generation failed"):
+                failing()
+            with ai_commit.title_generation_slot() as available_again:
+                self.assertEqual(available_again, 0)
+
+
 class ManualSpellcheckTests(unittest.TestCase):
     def test_safe_grammar_correction_requires_high_similarity_and_preserves_tokens(self):
         original = "🐞 Fix button are brokn"
@@ -614,7 +662,8 @@ class ManualSpellcheckTests(unittest.TestCase):
                 git.assert_not_called()
 
     def test_professional_emoji_adds_one_suitable_prefix(self):
-        self.assertEqual(ai_commit.add_professional_emoji("Fix commit title"), "🐛 Fix commit title")
+        with patch.object(ai_commit, "choose_bug_emoji", return_value="🐛"):
+            self.assertEqual(ai_commit.add_professional_emoji("Fix commit title"), "🐛 Fix commit title")
         self.assertEqual(ai_commit.add_professional_emoji("Update button layout"), "🖌️ Update button layout")
         self.assertEqual(ai_commit.add_professional_emoji("Add tests"), "🧪 Add tests")
         self.assertEqual(ai_commit.add_professional_emoji(""), "")
@@ -622,7 +671,8 @@ class ManualSpellcheckTests(unittest.TestCase):
     def test_professional_emoji_preserves_existing_user_choice_and_whitespace(self):
         self.assertEqual(ai_commit.add_professional_emoji("🐞 Fix spelling"), "🐞 Fix spelling")
         self.assertEqual(ai_commit.add_professional_emoji("Fix ✅ checkmarks"), "Fix ✅ checkmarks")
-        self.assertEqual(ai_commit.add_professional_emoji("  Fix spelling"), "🐛   Fix spelling")
+        with patch.object(ai_commit, "choose_bug_emoji", return_value="🐛"):
+            self.assertEqual(ai_commit.add_professional_emoji("  Fix spelling"), "🐛   Fix spelling")
 
     def test_cli_emoji_only_never_invokes_spellcheck_or_git(self):
         import io
@@ -630,7 +680,9 @@ class ManualSpellcheckTests(unittest.TestCase):
             sys, "stdin", io.StringIO("Fix typo")
         ), patch.object(sys, "stdout", io.StringIO()) as output, patch.object(
             ai_commit, "spellcheck_subject"
-        ) as spellcheck, patch.object(ai_commit.os, "execv") as git:
+        ) as spellcheck, patch.object(ai_commit.os, "execv") as git, patch.object(
+            ai_commit, "choose_bug_emoji", return_value="🐛"
+        ):
             ai_commit.main()
         self.assertEqual(json.loads(output.getvalue()), {"subject": "🐛 Fix typo"})
         spellcheck.assert_not_called()
@@ -642,7 +694,9 @@ class ManualSpellcheckTests(unittest.TestCase):
             sys, "stdin", io.StringIO("Fxi typo")
         ), patch.object(sys, "stdout", io.StringIO()) as output, patch.object(
             ai_commit, "spellcheck_subject", return_value="Fix typo"
-        ) as spellcheck:
+        ) as spellcheck, patch.object(
+            ai_commit, "choose_bug_emoji", return_value="🐛"
+        ):
             ai_commit.main()
         self.assertEqual(json.loads(output.getvalue()), {"subject": "🐛 Fix typo"})
         spellcheck.assert_called_once_with("Fxi typo")
@@ -1073,7 +1127,7 @@ class TitleTests(unittest.TestCase):
                     else:
                         self.assertEqual(
                             ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True),
-                            ("📝 Update 2 staged files", "Update the 2 staged files."),
+                            ("📝 Update documentation", "Update 2 files in the repository."),
                         )
 
     def test_filename_only_title_retries_with_content_instructions(self):
@@ -1156,6 +1210,7 @@ class TitleTests(unittest.TestCase):
         ]
         for subject, expected in cases:
             with self.subTest(subject=subject), ExitStack() as stack:
+                stack.enter_context(patch.object(ai_commit, "choose_bug_emoji", return_value="🐛"))
                 for name, value in [
                     ("installed_local_model_names", {"local"}),
                     ("selected_model", ("local", False)),
@@ -1253,7 +1308,7 @@ class TitleTests(unittest.TestCase):
         self.assertEqual(ai_commit.fallback_title(["src/widget.js"]), "🔧 Update widget.js")
         self.assertEqual(
             ai_commit.fallback_title(["src/a.js", "src/b.js"]),
-            "🔧 Update 2 staged files",
+            "🔧 Update code",
         )
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
@@ -1561,15 +1616,23 @@ Describe the staged change.
     def test_fallback_only_when_every_condition_is_false(self):
         self.assertEqual(self.select({"0": False, "1": False, "2": False}), "📦")
 
-    def test_equivalent_choices_never_use_random_selection(self):
+    def test_main_bug_emoji_is_chosen_afresh_for_each_commit(self):
         with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
                 patch.object(ai_commit, "current_branch", return_value="main"), \
-                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+                patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                patch.object(ai_commit.secrets, "choice", side_effect=["🐞", "🐛"]) as pick, \
+                patch.object(ai_commit, "git_output", side_effect=[
+                    "🐛 Fix an earlier defect\\n".replace("\\n", "\n"),
+                    "🐞 Fix a different defect\\n".replace("\\n", "\n"),
+                ]) as git:
             selections = [
                 ai_commit.select_priority_emoji("local", self.rules, "", "+fix a bug", "", "")
-                for _ in range(5)
+                for _ in range(2)
             ]
-        self.assertEqual(selections, ["🐛"] * 5)
+        self.assertEqual(selections, ["🐞", "🐛"])
+        self.assertEqual(pick.call_args_list[0].args[0], ["🐞"])
+        self.assertEqual(pick.call_args_list[1].args[0], ["🐛"])
+        self.assertEqual(git.call_count, 2)
 
     def test_missing_string_and_truncated_classifications_block_instead_of_falling_back(self):
         for response in [{"response": '{}'},
@@ -1581,12 +1644,59 @@ Describe the staged change.
                 self.assertEqual(generate.call_count, 3)
 
     def test_branch_bug_emoji_reused_from_branch_only(self):
+        def branch_git(*args):
+            if args[:4] == ("config", "--local", "--get", "branch.repair.sweetiebot-stack-parent"):
+                return ""
+            if args == ("log", "main..HEAD", "--format=%s"):
+                return "🐞 Fix first handler\\n🐛 Fix later handler\\n".replace("\\n", "\n")
+            raise AssertionError(args)
         with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
                 patch.object(ai_commit, "current_branch", return_value="repair"), \
                 patch.object(ai_commit, "configured_default_branch", return_value="main"), \
-                patch.object(ai_commit, "git_output", return_value="🐞 Fix another handler\n") as history:
-            self.assertEqual(ai_commit.select_priority_emoji("local", self.rules, "", "", "", ""), "🐞")
-            history.assert_called_once_with("log", "main..HEAD", "--format=%s")
+                patch.object(ai_commit, "git_output", side_effect=branch_git) as history, \
+                patch.object(ai_commit.secrets, "choice") as pick:
+            self.assertEqual(ai_commit.select_priority_emoji("local", self.rules, "", "", "", ""), "🐛")
+            pick.assert_not_called()
+            self.assertEqual(history.call_count, 2)
+
+    def test_new_branch_keeps_its_first_random_bug_choice_across_generators(self):
+        selected = {}
+        with tempfile.TemporaryDirectory() as gitdir:
+            def branch_git(*args):
+                if args[0] == "config" and args[3].endswith("sweetiebot-stack-parent"):
+                    return ""
+                if args[0] == "log":
+                    return ""
+                if args == ("rev-parse", "--git-common-dir"):
+                    return gitdir
+                if args[0] == "config" and args[3].endswith("sweetiebot-bug-emoji"):
+                    return selected.get(args[3], "")
+                raise AssertionError(args)
+            def save_config(args, **kwargs):
+                selected[args[-2]] = args[-1]
+                return SimpleNamespace(returncode=0)
+            with patch.object(ai_commit, "current_branch", return_value="feature/fix"), \
+                    patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                    patch.object(ai_commit, "git_output", side_effect=branch_git), \
+                    patch.object(ai_commit.subprocess, "run", side_effect=save_config) as save, \
+                    patch.object(ai_commit.secrets, "choice", side_effect=["🐝", "🐜"]) as pick:
+                self.assertEqual(ai_commit.choose_bug_emoji(["🐛", "🐜", "🐝"]), "🐝")
+                self.assertEqual(ai_commit.choose_bug_emoji(["🐛", "🐜", "🐝"]), "🐝")
+                save.assert_called_once()
+                pick.assert_called_once()
+
+    def test_stacked_branch_ignores_its_parent_bug_history(self):
+        def branch_git(*args):
+            if args[0] == "config" and args[3].endswith("stack-parent"):
+                return "parent-pr"
+            if args[0] == "log":
+                self.assertEqual(args[1], "parent-pr..HEAD")
+                return "🐞 Fix this stack layer\n"
+            raise AssertionError(args)
+        with patch.object(ai_commit, "current_branch", return_value="stack-child"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                patch.object(ai_commit, "git_output", side_effect=branch_git):
+            self.assertEqual(ai_commit.choose_bug_emoji(["🐛", "🐞"]), "🐞")
 
     def test_generation_replaces_plus_with_first_matching_rule(self):
         with ExitStack() as stack:
@@ -1693,9 +1803,111 @@ class ArtifactContextTests(unittest.TestCase):
         )
         self.assertEqual(
             ai_commit.fallback_title(["assets/a.png", "src/app.js"]),
-            "🔧 Update 2 staged files",
+            "🔧 Update image assets and code",
         )
-        self.assertEqual(ai_commit.fallback_title([]), "🔧 Update staged changes")
+        self.assertEqual(ai_commit.fallback_title([]), "🔧 Update repository files")
+
+
+    def test_offline_path_and_status_based_fallbacks(self):
+        # Borrow action and path classification from auto-commit-msg without
+        # requiring an extra extension, network service, or model.
+        cases = [
+            (
+                ["efs/github_session.py", "tests/test_github_session.py"],
+                "",
+                "🔧 Update GitHub session code and tests",
+            ),
+            (
+                [".github/workflows/test.yml", ".github/workflows/release.yml"],
+                "",
+                "⚙️ Update CI workflows",
+            ),
+            (
+                ["docs/howto.md", "docs/overview.md"],
+                "",
+                "📝 Update documentation",
+            ),
+            (
+                ["requirements.txt", "poetry.lock"],
+                "",
+                "🧰 Update dependencies",
+            ),
+            (
+                ["tests/test_commit.py", "tests/test_push.py"],
+                "Change totals: 2 added\n\nStatus:\nA\ttests/test_commit.py\nA\ttests/test_push.py",
+                "🧪 Add tests",
+            ),
+            (
+                ["assets/logo.svg", "src/sidebar.ts"],
+                "",
+                "🔧 Update image assets and code",
+            ),
+        ]
+        for files, context, expected in cases:
+            with self.subTest(files=files):
+                self.assertEqual(ai_commit.fallback_title(files, context), expected)
+                self.assertNotIn("staged", expected.lower())
+
+    def test_offline_fallback_uses_captured_diff_for_added_files(self):
+        diff = (
+            "diff --git a/src/session.ts b/src/session.ts\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/src/session.ts\n"
+            "+export function session() {}\n"
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["src/session.ts"], diff=diff),
+            "🔧 Add session.ts",
+        )
+        self.assertEqual(
+            ai_commit.fallback_message(["src/session.ts"], False, diff=diff),
+            ("🔧 Add session.ts", ""),
+        )
+
+    def test_offline_fallback_describes_deletions_without_staged_claims(self):
+        context = (
+            "Change totals: 2 deleted\n\nStatus:\n"
+            "D\tdocs/old.md\nD\tdocs/unused.md"
+        )
+        self.assertEqual(
+            ai_commit.fallback_message(["docs/old.md", "docs/unused.md"], True, context),
+            ("📝 Remove documentation", "Remove 2 files."),
+        )
+
+    def test_offline_fallback_preserves_non_english_and_spaces_in_paths(self):
+        self.assertEqual(
+            ai_commit.fallback_title(["docs/rapport final.md"]),
+            "📝 Update rapport final.md",
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["src/überarbeitet.py", "src/ändern.py"]),
+            "🔧 Update code",
+        )
+
+    def test_missing_model_uses_smart_fallback_without_querying_ollama(self):
+        with patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "ollama_json") as ollama:
+            title, description = ai_commit.generate_message(
+                "", "diff --git a/tests/test_api.py b/tests/test_api.py",
+                ["tests/test_api.py", "tests/test_ui.py"], include_description=True,
+                file_context_override="Change totals: 2 modified",
+            )
+            self.assertEqual(title, "🧪 Update tests")
+            self.assertEqual(description, "Update 2 files.")
+            ollama.assert_not_called()
+
+    def test_single_file_status_tracks_rename(self):
+        context = "Change totals: 1 renamed\n\nStatus:\nR100\told.py\tnew.py"
+        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename old.py to new.py")
+        diff = (
+            "diff --git a/old.py b/new.py\n"
+            "similarity index 98%\n"
+            "rename from old.py\n"
+            "rename to new.py\n"
+        )
+        self.assertEqual(ai_commit.fallback_title(["new.py"], diff=diff),
+                         "🔧 Rename old.py to new.py")
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
     def test_missing_model_uses_image_fallback(self, _models):

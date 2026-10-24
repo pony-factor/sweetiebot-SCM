@@ -5,11 +5,13 @@
 :root{color-scheme:dark;--bg:#15131c;--panel:#211d2b;--line:#393043;--text:#f2edf8;--muted:#b7aabe;--accent:#d6b5ff;background:var(--bg);color:var(--text)}*{box-sizing:border-box}body{margin:0;font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at top right,#38234280,transparent 55%);min-height:100vh}main{max-width:1120px;margin:auto;padding:32px 28px 40px}header{display:flex;align-items:center;gap:16px;margin-bottom:28px}.mark{display:grid;place-items:center;font-size:32px;width:64px;height:64px;border:1px solid #59436b;border-radius:20px;background:linear-gradient(135deg,#453050,#272033);box-shadow:0 10px 32px #0003}.eyebrow{text-transform:uppercase;letter-spacing:.16em;font-size:10px;font-weight:700;color:var(--accent);margin:0 0 4px}h1{font-size:26px;line-height:1.2;margin:0;font-weight:650;letter-spacing:-.6px}.subtitle{margin:7px 0 0;color:var(--muted);font-size:13px}.layout{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:20px;align-items:start}.card{background:linear-gradient(150deg,#292132,var(--panel));border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 16px 45px #0002}.card-head{padding:22px 24px 18px;border-bottom:1px solid var(--line)}h2{font-size:20px;line-height:1.4;margin:6px 0 10px;overflow-wrap:anywhere}h3{font-size:16px;margin:22px 0 10px}.status{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin:0}.status:before{content:'';width:6px;height:6px;border-radius:50%;background:#a98aa9}.status.ready:before{background:#b9deb4;box-shadow:0 0 10px #b9deb433}.content{padding:8px 24px 24px;overflow-wrap:anywhere}.content:empty{display:none}.content p{margin:15px 0}.content ul{padding-left:20px}.content li{margin:8px 0}.content pre{background:#16121c;padding:14px;border-radius:9px;white-space:pre-wrap;font:12px/1.7 ui-monospace,monospace}.content code{font-size:.9em;background:#ffffff09;padding:2px 4px;border-radius:4px}a{color:var(--accent);text-decoration-color:#89709f;text-underline-offset:3px}a:hover{color:#ead7ff}.actions{padding:18px 24px;background:#19151f;border-top:1px solid var(--line)}button{font:600 14px system-ui;padding:12px 18px;border:1px solid #d6b5ff88;border-radius:10px;background:linear-gradient(135deg,#d6b5ff,#cda3e5);color:#291830;cursor:pointer;box-shadow:0 5px 18px #0002}button:hover{filter:brightness(1.08)}button:disabled{background:#352c40;color:#aa97b8;border-color:#4b3d58;cursor:default;box-shadow:none}.publication{font-size:13px;margin:10px 0 0}.publication:empty{display:none}.images{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;padding:20px 24px 0}.images:empty{display:none}figure{margin:0;border:1px solid #44364e;border-radius:12px;overflow:hidden;background:#17131e}.image-stage{display:grid;place-items:center;min-height:150px;background:radial-gradient(ellipse,#382e42,#1b1722)}img{display:block;width:100%;height:220px;object-fit:contain}figcaption{padding:9px 12px;font-size:11px;color:var(--muted)}.image-error{padding:22px;color:var(--muted);text-align:center;font-size:13px}[hidden]{display:none!important}button:focus-visible,a:focus-visible{outline:2px solid #f5d4ff;outline-offset:4px}@media(max-width:760px){.layout{grid-template-columns:1fr}main{padding:24px 20px}.card-head,.content,.actions{padding-left:22px;padding-right:22px}}@media(prefers-reduced-motion:no-preference){.card{animation:arrive .35s ease-out}@keyframes arrive{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}}
 .actions:has(> #publish[hidden]):has(> #publication:empty):has(> #close-error:empty){display:none}
 #draft-status:has(a){display:block}#draft-status:has(a)::before{display:none}
+.pony-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:12px}.pony-heading .status:not(.pack-tag){grid-column:1/-1}.pony-heading .pack-tag{white-space:nowrap}
+.pr-heading{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.pr-heading h2{min-width:0;overflow-wrap:anywhere}.pr-number{flex:none;padding:2px 9px;border:1px solid var(--line);border-radius:999px;font-size:12px;white-space:nowrap;text-decoration:none}
 .status.pack-tag{padding:2px 8px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--accent);background:#ffffff06}.status.pack-tag::before{display:none}
-.merge-controls{margin:10px 0 12px}.merge-controls button{padding:10px 15px}.merge-controls .publication{color:#f0bdc5}.close-confirmation{position:fixed;top:16px;left:16px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:6px;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:16px}.pony-column{display:flex;flex-direction:column;min-width:0}
+.merge-controls{margin:12px 0 14px;padding:4px 8px}.merge-controls button{padding:10px 15px;border-radius:10pt}.merge-controls .publication{color:#f0bdc5}.merge-issue{margin:16px 0 4px;padding:16px 18px;border:1px solid var(--kefania-error,#f28f79);border-left:5px solid var(--kefania-error,#f28f79);border-radius:12px;background:color-mix(in srgb,var(--kefania-error,#f28f79) 9%,transparent)}.merge-issue strong{display:block;color:var(--kefania-error,#f28f79);font-size:17px;line-height:1.35}.merge-issue p{margin:8px 0 12px;overflow-wrap:anywhere}.merge-issue button{margin-top:4px}.merge-issue .publication{margin-top:10px}.close-confirmation{position:fixed;top:20px;left:20px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:10pt;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:20px}.pony-column{display:flex;flex-direction:column;min-width:0}
 /* A PR without pony research should occupy the complete content grid. */
 .layout:has(#pony-section[hidden]){grid-template-columns:minmax(0,1fr)}
-.layout:has(#pony-section[hidden]) .pony-column{display:none}.close-button-left header{padding-left:44px}.close-button-right header{padding-right:44px}.close-button-middle header{position:relative;padding-right:52px}.close-button-middle .close-confirmation{position:absolute;top:50%;left:auto;right:0;transform:translateY(-50%);margin:0}
+.layout:has(#pony-section[hidden]) .pony-column{display:none}.close-button-left header{padding-left:44px}.close-button-right header{padding-right:44px}.close-button-middle header{position:relative;padding-right:60px}.close-button-middle .close-confirmation{position:absolute;top:50%;left:auto;right:8px;transform:translateY(-50%);margin:0}
 
 /* Native modal image viewer keeps pony previews in this confirmation window. */
 .image-trigger{display:block;width:100%;padding:0;border:0;border-radius:0;background:transparent;color:inherit;box-shadow:none;text-align:left;cursor:zoom-in}
@@ -49,8 +51,8 @@
 </style>
 <main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window">×</button></header>
 <div class="layout">
-<div class="pony-column"><section id="pony-section" class="card" hidden><div class="card-head"><p class="eyebrow">Meet the pony</p><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
-<section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><h2 id="title">Preparing your draft</h2><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><p id="merge-error" class="publication" role="alert"></p></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
+<div class="pony-column"><section id="pony-section" class="card" hidden><div class="card-head"><p class="eyebrow">Meet the pony</p><div class="pony-heading"><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
+<section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><div class="pr-heading"><h2 id="title">Preparing your draft</h2><a id="pr-number" class="pr-number" target="_blank" rel="noopener noreferrer" hidden></a></div><div id="merge-controls" class="merge-controls" hidden><button id="merge" type="button">Squash and merge</button><button id="merge-history" type="button" hidden>Merge preserving commits</button><p id="merge-history-help" class="muted" hidden>Create a merge commit. Keep the original commits without rebasing or rewriting the PR branch.</p><div id="merge-issue" class="merge-issue" role="alert" hidden><strong id="merge-issue-title"></strong><p id="merge-error" class="publication"></p><button id="merge-help" type="button" aria-describedby="merge-error" hidden>Review resolution options in Lindsey ↗</button><p id="merge-help-status" class="publication" role="status"></p></div></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 </div>
 <dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
 <div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button></div>
@@ -88,6 +90,12 @@ function imageSourcePage(url){
   const host={'derpicdn.net':'derpibooru.org','static.manebooru.art':'manebooru.art'}[value.hostname];
   const id=/^\/img\/(?:view\/|download\/)?\d{4}\/\d{1,2}\/\d{1,2}\/(\d+)(?:[_/.]|$)/.exec(value.pathname)?.[1];
   return host&&id?'https://'+host+'/images/'+id:url;
+}
+function cleanProfileReferences(profile) {
+  // These opaque IDs only resolve inside the originating ChatGPT conversation.
+  // Never invent URLs for them; real Markdown source links remain intact.
+  return String(profile || '').replace(/\uE200cite\uE202[^\uE201]*\uE201/g, '')
+    .replace(/:contentReference\[oaicite:\d+\]\{[^}]*\}/g, '');
 }
 function renderMarkdown(target, markdown) {
   target.replaceChildren();
@@ -271,7 +279,7 @@ function applyAppearance(colors){
 }
 async function refresh(){try{const response=await fetch(root+'/state');const state=await response.json();if(!response.ok)throw new Error(state.error);
 applyAppearance(state.appearance);
-if(state.draft){el('title').textContent=state.draft.title;if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
+if(state.draft){if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
 el('publish').disabled=!state.draft||state.attempted||state.publishing;
 el('publish').hidden=state.autoPublish||!!state.result;
 const closeVisible=state.showKefaniaCloseButton!==false;
@@ -282,20 +290,36 @@ for(const position of ['left','middle','right'])document.querySelector('main').c
 el('merge-controls').hidden=!state.result||!!state.mergeResult;
 el('merge').disabled=!state.result||!!state.mergeResult||!!state.merging;
 el('merge').textContent=state.merging?'Merging…':'Squash and merge';
-el('merge-error').textContent=state.errors.merge||'';
-if(state.autoPublish&&!state.result)el('publication').textContent=state.errors.publish||(state.publishing?'Publishing your pull request…':'Auto-publish is on.');
-if(state.result){document.title='PR #'+state.result.number+' · Kefania · '+confirmationToken;document.querySelector('h1').textContent='PR #'+state.result.number;}
-if(state.result){el('publication').replaceChildren();el('draft-status').replaceChildren(document.createTextNode('🦄 PR #'+state.result.number+(state.mergeResult?' merged. ':' published. ')));const link=document.createElement('a');link.href=state.result.url;link.textContent='Open pull request ↗';el('draft-status').append(link)}
+const mergeIssue=state.mergeResult?null:state.mergeIssue;
+el('merge-issue').hidden=!mergeIssue;
+el('merge-issue-title').textContent=mergeIssue?.kind==='conflict'?'Merge conflicts need resolution':mergeIssue?.kind==='method'?'Choose how to merge':'Merge blocked — attention required';
+el('merge-error').textContent=mergeIssue?.message||state.errors.merge||'';
+el('merge-help').hidden=!mergeIssue||mergeIssue.kind==='method'||state.mergeHelpAvailable===false;
+el('merge-help').disabled=Boolean(state.mergeHelpOpening);
+el('merge-help').textContent=state.mergeHelpOpening?'Opening Lindsey…':'Review resolution options in Lindsey ↗';
+el('merge-help-status').textContent=state.errors?.mergeHelp||(state.mergeHelpOpened?'Lindsey’s PR-specific resolution view is open. This pull request has not been merged.':'');
+el('merge-history').hidden=state.mergeChoice!=='SQUASH_AUTHOR_CHOICE_REQUIRED'||Boolean(state.mergeResult);
+el('merge-history-help').hidden=el('merge-history').hidden;
+el('publication').textContent='';
+const heading=state.draft?.title||state.result?.title||(state.result?'PR #'+state.result.number:'Ready when you are');
+document.querySelector('h1').textContent=heading;
+document.title=heading+' · Kefania · '+confirmationToken;
+el('pr-number').hidden=!state.result?.number;
+if(state.result){el('pr-number').textContent='#'+state.result.number;el('pr-number').href=safeLink(state.result.url)||'#';el('pr-number').title='Open pull request #'+state.result.number;}
+const publicationError=state.errors.publish||(!state.draft?state.errors.draft:'');
+el('title').textContent=publicationError?(state.errors.publish?'Publication failed':'Draft failed'):state.mergeResult?'Successfully merged':mergeIssue?.kind==='conflict'?'Merge conflicts need resolution':mergeIssue?.kind==='method'?'Merge method required':mergeIssue?'Merge blocked':state.result?'Successfully published':state.publishing?'Publishing…':state.draft?'Ready to publish':'Preparing your draft';
+el('draft-status').textContent=publicationError||'';
+el('draft-status').hidden=!publicationError;
 el('pony-section').hidden=!state.pony;
-const subtitle=state.result?(state.mergeResult?'Pull request merged. Review the details':'Pull request published. Review the details'):'Review the pull request draft';
+const subtitle=state.result?(state.mergeResult?'Pull request merged. Review the details':mergeIssue?'Pull request published, but not merged. Review the problem and choose a recovery action':'Pull request published. Review the details'):'Review the pull request draft';
 document.querySelector('.subtitle').textContent=subtitle+(state.pony?' and supporting character research':'')+'.';
 if(state.pony)el('pony-title').textContent=state.pony.name||String(state.pony.slug).split('-').map(part=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');
 const packLabel=state.pony?.packLabel||state.pony?.packId||'';
 el('pony-status').textContent=state.profile?packLabel:state.errors.pony||'Researching the pony…';
 el('pony-status').hidden=!!state.profile&&!packLabel;
 el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel);
-if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(state.profile))}
-}catch(error){el('draft-status').textContent=error.message}}
+if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile)))}
+}catch(error){el('title').textContent='Could not update status';el('draft-status').hidden=false;el('draft-status').textContent=error.message}}
 el('merge').onclick=async()=>{
   const state=await (await fetch(root+'/state')).json();
   if(!state.result||state.mergeResult||state.merging)return;
@@ -306,7 +330,29 @@ el('merge').onclick=async()=>{
     if(result.merged===true&&state.closeAfterMerge===true)await el('close-confirmation').onclick();
   }catch(error){el('merge').disabled=false;el('merge-error').textContent=error.message||'Merge failed. Check GitHub.';}
 };
-el('close-confirmation').onclick=async()=>{el('close-confirmation').disabled=true;el('close-error').textContent='';try{const response=await fetch(root+'/close',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok){const result=await response.json();throw new Error(result.error||'Could not close the window.')}}catch(error){el('close-confirmation').disabled=false;el('close-error').textContent=error.message||'Could not close the window. Use its window controls instead.'}};
-el('publish').onclick=async()=>{el('publish').disabled=true;el('publication').textContent='Publishing your pull request…';try{const response=await fetch(root,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('publication').textContent=error.message}};
+el('merge-help').onclick=async()=>{
+  el('merge-help').disabled=true;
+  el('merge-help-status').textContent='Opening Lindsey’s resolution options…';
+  try{const response=await fetch(root+'/merge-help',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const result=await response.json();if(!response.ok||result.opened!==true)throw new Error(result.error||'Could not open Lindsey.');
+    await refresh();
+  }catch(error){el('merge-help-status').textContent=error.message||'Could not open Lindsey.';}
+  finally{el('merge-help').disabled=false;}
+};
+el('merge-history').onclick=async()=>{el('merge-history').disabled=true;try{const response=await fetch(root+'/merge-history',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('merge-error').textContent=error.message}finally{el('merge-history').disabled=false}};
+el('close-confirmation').onclick=async()=>{
+  el('close-confirmation').disabled=true;el('close-error').textContent='';
+  try{
+    const response=await fetch(root+'/close',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(2000)});
+    if(!response.ok)throw new Error('Close request unavailable');
+  }catch{
+    // The confirmation can outlive its server or extension host. Close only
+    // this browser tab; no PR lookup or repository operation is needed.
+    window.close();
+    el('close-confirmation').disabled=false;
+    el('close-error').textContent='If this browser keeps the tab open, use its tab close control.';
+  }
+};
+el('publish').onclick=async()=>{el('publish').disabled=true;el('title').textContent='Publishing…';el('draft-status').hidden=true;try{const response=await fetch(root,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('title').textContent='Publication failed';el('draft-status').hidden=false;el('draft-status').textContent=error.message}};
 (async()=>{if(intake){const values=intake[1]==='draft'?{title:fragment.get('title'),body:fragment.get('body')}:{profile:fragment.get('profile')};try{const response=await fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});const result=await response.json();if(!response.ok)throw new Error(result.error);location.replace(root)}catch(error){el('draft-status').textContent=error.message}return}await refresh();setInterval(refresh,1500)})();
 </script></html>

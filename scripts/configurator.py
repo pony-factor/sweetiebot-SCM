@@ -323,6 +323,7 @@ SETTINGS = (
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
+    Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
     Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
     Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
@@ -337,6 +338,11 @@ SETTINGS = (
     Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Hide bullets for emoji-only squash summaries", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
+    Setting("prWarningHighlights", "scm-toolkit.pr-warning-highlights", "Highlight PR eligibility warnings", "Opt in to a colored PR button when its eligibility or setup check fails. Off keeps the icon muted gray while retaining validation and diagnostic tooltips.", "Pull requests"),
+    Setting("mergeAutoRefresh", "scm-toolkit.merge-auto-refresh", "Refresh active merge dashboard", "Refresh GitHub status only while the merge dashboard is visible and its window is focused. Local merge work continues in the background.", "GitHub"),
+    Setting("mergeRefreshIntervalSeconds", "scm-toolkit.merge-refresh-interval-seconds", "Merge refresh interval (seconds)", "Delay between GitHub status updates in an active merge dashboard. Choose 30–3600 seconds.", "GitHub", "integer", minimum=30, maximum=3600),
+    Setting("githubRateLimitCooldownSeconds", "scm-toolkit.github-rate-limit-cooldown-seconds", "GitHub rate-limit fallback (seconds)", "Pause when GitHub does not supply a reset time. Choose 60–3600 seconds. Server reset times always take precedence.", "GitHub", "integer", minimum=60, maximum=3600),
+    Setting("mergePostSummaries", "scm-toolkit.merge-post-summaries", "Post AI merge summaries to GitHub", "Opt in to a concise summary on each selected PR after its merge is verified. Local explanations always remain available. Off by default.", "Lindsey"),
     Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
     Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
@@ -962,7 +968,14 @@ def render_form(
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
                           for setting in SETTINGS if setting.section == section
                           and setting.name not in draft_controls)
-                + '</div>'
+                + '<div class="setting"><span><strong>Opt out in one repository</strong>'
+                  '<small>Keep the global Spellcheck toggle on, but stop automatic post-commit '
+                  'Markdown corrections in a particular repository. In that repository, add '
+                  '<code>&quot;scmToolkit.postCommitSpellcheck&quot;: false</code> to '
+                  '<code>.vscode/settings.json</code>. Other repositories still spellcheck. '
+                  'Remove the entry or set it to <code>true</code> to restore spellcheck there. '
+                  'Draft commit checks and manual Spellcheck Only remain available.</small>'
+                  '</span></div></div>'
             )
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"
@@ -1516,7 +1529,7 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
     payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
-    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent"):
+    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeRefreshIntervalSeconds", "githubRateLimitCooldownSeconds"):
         payload["vscodeSettings"][key] = int(settings[key])
     return payload
 

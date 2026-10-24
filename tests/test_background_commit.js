@@ -9,6 +9,8 @@ async function run() {
   const commands = new Map(), preparations = [], jobs = [], events = [];
   let poll;
   let status = {};
+  let limitsAllowed = true, declineEnqueue = false;
+  let staleEnqueueCount = 0, validatedTree = 'a'.repeat(40);
   const notices = [], progress = [], completed = [], errors = [];
   const titleContexts = [];
   const errorActions = [], details = [];
@@ -18,10 +20,11 @@ async function run() {
   const noticeTimers = [];
   let resumes = 0;
   const root = { scheme: 'file', fsPath: '/repo' };
+  let statusCalls = 0;
   const repository = {
     rootUri: root,
     state: { indexChanges: [], mergeChanges: [] },
-    async status() {},
+    async status() { statusCalls++; },
   };
   const sandbox = vm.createContext({
     module: { exports: {} },
@@ -58,7 +61,21 @@ async function run() {
           }
           assert(args.includes('--enqueue'));
           assert(repository.state.indexChanges.length, 'prepare before enqueueing');
-          jobs.push(JSON.parse(input)); events.push('enqueue');
+          events.push('enqueue');
+          if (staleEnqueueCount > 0) {
+            staleEnqueueCount--;
+            validatedTree = 'b'.repeat(40);
+            child.stderr.emit('data',
+              'Staged changes changed after the commit-size check. Review and retry.');
+            child.emit('close', 1);
+            return;
+          }
+          if (declineEnqueue) {
+            child.stdout.emit('data', JSON.stringify({ queued: false }));
+            child.emit('close', 0);
+            return;
+          }
+          jobs.push(JSON.parse(input));
           child.stdout.emit('data', JSON.stringify({ queued: true, id: String(jobs.length) }));
           child.emit('close', 0);
         };
@@ -99,7 +116,13 @@ async function run() {
         if (id === 'sweetiebot.prepareCodexCommit') {
           preparations.push(options); events.push('stage');
           repository.state.indexChanges = ['prepared'];
-        } else { assert.equal(id, 'sweetiebot.checkCommitLimits'); events.push('limits'); return true; }
+        } else {
+          assert.equal(id, 'sweetiebot.checkCommitLimits');
+          assert.equal(options.captureTree, true,
+            'durable commits inspect and pin their exact final staged tree');
+          events.push('limits');
+          return { approved: limitsAllowed, stagedTree: validatedTree };
+        }
       }
     }
   };
@@ -123,20 +146,65 @@ async function run() {
   assert.equal(notQueued.queued, false);
   assert.deepEqual(events, [], 'checking an empty queue never stages or commits');
 
+  // Once final staged content is known, rejection must stop *before* enqueue,
+  // snapshotting or background Ollama title generation.
+  limitsAllowed = false;
+  repository.state.indexChanges = ['staged'];
+  const denied = await commit(root, { message: 'Oversize' });
+  assert.equal(denied.cancelled, true);
+  assert.deepEqual(events, ['limits']);
+  assert.equal(jobs.length, 0, 'a rejected size preflight cannot enter the worker');
+  limitsAllowed = true;
+  repository.state.indexChanges = [];
+
+  const initialStatusCalls = statusCalls;
   await commit(root, { message: 'Test' });
-  assert.deepEqual(events, ['stage', 'limits', 'enqueue']);
+  assert.deepEqual(events, ['limits', 'stage', 'limits', 'enqueue']);
+  assert.equal(statusCalls - initialStatusCalls, 2,
+    'queue refreshes once before preflight and once after the local commit');
+  assert.equal(preparations[0].statusFresh, true,
+    'preparation reuses the verified Git state');
+  assert.equal(jobs[0].expectedTree, 'a'.repeat(40),
+    'the approved staged tree must reach the Python commit worker');
   await commit(root, { message: 'Staged selection' });
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
   assert.equal(preparations[1].all, 'tracked');
+
+  declineEnqueue = true;
+  const jobsBeforeDecline = jobs.length;
+  const declined = await commit(root, { message: '' });
+  assert.equal(declined.queued, false);
+  assert.equal(declined.preflightApproved, true,
+    'the queue can reuse an approved size check when the Python worker declines');
+  assert.equal(declined.stagedTree, validatedTree,
+    'the direct fallback must compare the approved tree before reusing its result');
+  assert.equal(jobs.length, jobsBeforeDecline,
+    'a declined background job leaves Git commitment to the direct path');
+  declineEnqueue = false;
+  assert.equal(notQueued.preflightApproved, undefined,
+    'onlyIfPending exits before preflight and cannot claim approval');
+
+  const beforeRetry = events.length;
+  const beforeJobs = jobs.length;
+  staleEnqueueCount = 1;
+  await commit(root, { message: 'Retry after concurrent staging' });
+  assert.deepEqual(events.slice(beforeRetry), ['limits', 'enqueue', 'limits', 'enqueue'],
+    'reinspect the changed staged tree before queueing the final local commit');
+  assert.equal(jobs.length, beforeJobs + 1,
+    'a changed selection must create exactly one local background job');
+  assert.equal(jobs.at(-1).expectedTree, 'b'.repeat(40),
+    'the retried job must use the newly approved tree, not the stale hash');
+
   status = { id: 'older', phase: 'generating', titleJobs: ['older'] };
   const manualMessage = '🧪 Manual subject\n\nCo-authored-by: Codex <noreply@openai.com>';
   await commit(root, { message: manualMessage, onlyIfPending: true });
   assert.equal(jobs.at(-1).message, manualMessage);
   status = {};
   repository.state.mergeChanges = ['conflict'];
+  const beforeConflict = jobs.length;
   await assert.rejects(commit(root), /Resolve conflicts/);
-  assert.equal(jobs.length, 4, 'conflicts never stage or enqueue');
+  assert.equal(jobs.length, beforeConflict, 'conflicts never stage or enqueue');
   repository.state.mergeChanges = [];
   await commit(root, { push: true });
   assert.equal(titleContexts.at(-1), true, 'Commit & Push sets the title before the next status poll');
@@ -152,6 +220,7 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(completed.length, 1, 'pending title jobs do not reopen the expired notification');
+  assert.deepEqual(notices, [], 'entering the pushing phase is not a notification-worthy failure');
   assert.equal(progress.length, 1, 'polling must not show the same notification again');
   status = { id: '1', phase: 'pushing', titleJobs: [], pushPending: true };
   poll();
@@ -163,8 +232,19 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(titleContexts.at(-1), false, 'empty queue clears Pushing');
-  assert.deepEqual(notices, ['repo: Push is pending and will retry automatically.'],
-    'no local-save or completion notifications');
+  assert.deepEqual(notices, [],
+    'ordinary background pushes, retries, and completion never show informational notifications');
+  // A worker can keep retrying after VS Code exits. Reconnecting to its
+  // already-running pushing phase must not reopen a misleading notification.
+  status = { id: 'resumed-push', phase: 'pushing', titleJobs: [], pushPending: true };
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(notices, [], 'reattaching to a pending push stays silent');
+  assert.equal(titleContexts.at(-1), true, 'pending push remains reflected in title context');
+  status = {};
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(titleContexts.at(-1), false, 'title context clears when resumed push finishes');
   const beforeRecovery = resumes;
   status = { id: 'old', phase: 'blocked', recoverable: true, titleJobs: ['old'],
     error: 'The branch advanced; message finalization was paused.' };

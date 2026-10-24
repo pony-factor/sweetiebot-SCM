@@ -320,7 +320,20 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         );
         return choice === action;
       };
-      const result = await merge(url, undefined, confirmNonMain);
+      const session = await require('./github_session').githubSession(vscode);
+      const execute = async args => {
+        try { return await run(gh, args, { timeout: 120000, env: { ...process.env, GH_TOKEN: session.accessToken, GH_PROMPT_DISABLED: '1' } }); }
+        catch (error) { throw require('./github_rate_limit').rateLimitError({ status: 403, message: error.stderr || error.message }) || error; }
+      };
+      const userAPI = require('./github_user_api').githubUserAPI(session.accessToken);
+      const humanAPI = (endpoint, method = 'GET', fields = []) => {
+        const body = {};
+        for (let i = 0; i < fields.length; i += 2) {
+          const split = fields[i + 1].indexOf('='); body[fields[i + 1].slice(0, split)] = fields[i + 1].slice(split + 1);
+        }
+        return userAPI(endpoint, { method, ...(method === 'GET' ? {} : { body }) });
+      };
+      const result = await merge(url, execute, confirmNonMain, { humanMerge: (repo, number, options) => humanSquashMerge(repo, number, { ...options, api: humanAPI, gitToken: session.accessToken }) });
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {
@@ -338,7 +351,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         vscode.window.showWarningMessage(`PR #${result.number} merged, but its tab could not be closed: ${error.message}`);
       }
       try {
-        await deleteMergedRemoteBranch(result);
+        await deleteMergedRemoteBranch(result, execute);
       } catch (error) {
         vscode.window.showWarningMessage(`PR #${result.number} merged, but remote branch cleanup failed: ${error.stderr?.trim() || error.message}`);
       }
@@ -364,7 +377,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       const detail = error.code === 'SWEETIEBOT_MERGE_CONFLICT'
         ? error.message
         : error.stderr?.trim() || error.message;
-      vscode.window.showErrorMessage(detail);
+      if (!await require('./github_rate_limit').promptRateLimit(vscode, error)) vscode.window.showErrorMessage(detail);
       return { state: 'failed' };
     } finally {
       busy.delete(url);

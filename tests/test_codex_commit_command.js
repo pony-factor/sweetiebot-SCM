@@ -13,6 +13,7 @@ async function run() {
   let expectedContext = '';
   const commands = new Map();
   let additions = 0;
+  let statusCalls = 0;
   let expectedPaths = ['/selected/edited file', '/selected/deleted file', '/selected/new file'];
   const commits = [];
   let commitError;
@@ -30,7 +31,7 @@ async function run() {
       commits.push({ message, options });
       if (commitError) throw commitError;
     },
-    async status() {},
+    async status() { statusCalls++; },
     async add(paths) {
       assert.deepEqual(Array.from(paths), expectedPaths);
       for (const file of paths) {
@@ -129,6 +130,13 @@ async function run() {
 
   const prepare = commands.get('sweetiebot.prepareCodexCommit');
   const uri = { scheme: 'file', fsPath: '/selected' };
+  const previousStatuses = statusCalls;
+  await prepare(uri, { statusFresh: true });
+  assert.equal(statusCalls, previousStatuses,
+    'queued preparation should reuse the Git status already refreshed');
+  await prepare(uri);
+  assert.equal(statusCalls, previousStatuses + 1,
+    'standalone preparation must still refresh Git status');
   await commit(uri, 'Generated title');
   assert.equal(commits[0].message, 'Generated title');
   assert.equal(commits[0].options.signoff, false);

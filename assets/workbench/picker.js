@@ -391,6 +391,9 @@ function scmToolkitCustomizeMessagePlaceholder(
 function scmToolkitAttachCommitSettings(widget, button) {
     const doc = widget.element.ownerDocument;
     const Observer = doc.defaultView?.MutationObserver;
+    // Native Source Control action rows can be briefly absent, recycled, or
+    // rendered at a different index. Never leave Magic Settings detached.
+    widget.element.append(button);
     if (!Observer) return;
 
     let observedRoot;
@@ -405,22 +408,20 @@ function scmToolkitAttachCommitSettings(widget, button) {
 
     const update = () => {
         const root = widget.element.closest('.scm-view');
-        // Input widgets are constructed before their list row enters the sidebar.
-        if (!root) return;
-        observeRoot(root);
+        if (root) observeRoot(root);
         const inputRow = widget.element.closest('.monaco-list-row');
         const index = inputRow?.getAttribute('data-index');
         const rows = inputRow?.parentElement;
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
         const dropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
-        if (button.parentElement === dropdown) return;
+        const destination = dropdown || widget.element;
+        if (button.parentElement === destination) return;
         button.parentElement?.classList.remove('scm-toolkit-commit-settings');
         button.remove();
-        if (dropdown) {
-            dropdown.classList.add('scm-toolkit-commit-settings');
-            dropdown.append(button);
-        }
+        if (dropdown) dropdown.classList.add('scm-toolkit-commit-settings');
+        destination.append(button);
+        widget.layout();
     };
 
     const observer = new Observer(update);
@@ -712,17 +713,26 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 try { progress?.close?.(); } catch { /* Ignore disposed notice. */ }
                 progress = null;
             };
-            try {
-                const allowed = await commands.executeCommand(
-                    'sweetiebot.checkCommitLimits',
-                    repository.rootUri
-                );
-                if (allowed === false) {
-                    finishProgress(false);
-                    return;
+            // Direct commits inspect here before Git may generate a title. In
+            // durable mode, the queue first completes any automatic staging,
+            // then inspects that final selection exactly once before enqueue.
+            // A pre-staging inspection would miss newly staged/Commit All files.
+            const checkCommitLimits = async approvedTree => {
+                try {
+                    return (await commands.executeCommand(
+                        'sweetiebot.checkCommitLimits',
+                        repository.rootUri,
+                        approvedTree ? { approvedTree } : undefined
+                    )) !== false;
+                } catch {
+                    // Preserve direct Git commits when the companion extension
+                    // is temporarily unavailable; durable queue checks fail closed.
+                    return true;
                 }
-            } catch {
-                // Keep commits usable if the companion extension is temporarily unavailable.
+            };
+            if (!asynchronous && !(await checkCommitLimits())) {
+                finishProgress(false);
+                return;
             }
 
             const requestedPostCommitCommand = options?.postCommitCommand;
@@ -742,7 +752,18 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                     finishProgress(false);
                     throw error;
                 }
-                if (queued?.queued) {
+                if (queued?.queued || queued?.cancelled) {
+                    // Cancellation is terminal: never fall through to native
+                    // Git and bypass a rejected size/merged-branch preflight.
+                    finishProgress(false);
+                    return;
+                }
+                // A declined special mode reuses the queue's approval only
+                // for the same staged tree. If it changed, the shared inspector
+                // reruns before direct Git can generate a title.
+                if (!(await checkCommitLimits(
+                    queued?.preflightApproved ? queued.stagedTree : undefined
+                ))) {
                     finishProgress(false);
                     return;
                 }
@@ -1413,6 +1434,17 @@ function scmToolkitWatchDraftSpellcheck(
     };
 }
 
+// Prefer explicit VS Code scope overrides; otherwise use the Git-backed preference.
+// Keep preflight and eligibility messages working even when warning colors are off.
+function scmToolkitHighlightPrWarnings(configuration, settings) {
+    const key = 'scmToolkit.prWarningHighlights';
+    const inspected = configuration.inspect?.(key);
+    const configured = inspected
+        ? inspected.workspaceFolderValue ?? inspected.workspaceValue ?? inspected.userValue
+        : configuration.getValue(key);
+    return typeof configured === 'boolean' ? configured : settings.prWarningHighlights === true;
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     scmToolkitWatchSpellcheckPopups(widget.element.ownerDocument, commands);
     scmToolkitExpireNotifications(notifications);
@@ -1569,7 +1601,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     settingsButton.setAttribute('aria-label', 'Open Sweetiebot SCM settings');
 
     widget.element.prepend(branchButton);
-    scmToolkitAttachCommitSettings(widget, settingsButton);
     widget.element.append(
         pushControl,
         syncButton,
@@ -1586,6 +1617,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         ponyBranchButton,
         stackedBranchButton
     );
+    scmToolkitAttachCommitSettings(widget, settingsButton);
 
     const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
         settings, event => openBranchPicker(event), branchButton);
@@ -1913,12 +1945,17 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                     message: error.message || String(error) };
                 // Setup can be repaired without moving the branch head. Do not
                 // cache a failed read-only check until the window is reloaded.
+                // A GitHub App 422 can indicate a rejected or throttled token
+                // exchange. Rechecking every 15 seconds in every open window
+                // can make that failure worse. Keep manual Retry available.
+                const retryDelay = /GitHub App request failed \(HTTP 422\)/.test(pullRequestEligibility.message)
+                    ? 60000 : 15000;
                 pullRequestEligibilityRetry = setTimeout(() => {
                     pullRequestEligibilityRetry = undefined;
                     if (pullRequestEligibilityKey !== key || pullRequestEligibilityRequest !== request) return;
                     pullRequestEligibilityKey = undefined;
                     refreshPullRequest();
-                }, 15000);
+                }, retryDelay);
                 refreshPullRequest();
             });
         }
@@ -1927,7 +1964,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         pullRequestButton.disabled = pending || deletingBranch || creatingPullRequest
             || creatingPonyBranch || unavailable || !pullRequestEligibility
             || (pullRequestEligibility.allowed !== true && pullRequestEligibility.reason !== 'unavailable');
-        pullRequestButton.classList.toggle('scm-toolkit-pr-needs-attention', pullRequestEligibility?.reason === 'unavailable');
+        pullRequestButton.classList.toggle('scm-toolkit-pr-needs-attention',
+            scmToolkitHighlightPrWarnings(configuration, settings) && pullRequestEligibility?.reason === 'unavailable');
         const previous = pullRequestEligibility?.pullRequest;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
@@ -1948,6 +1986,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                                 : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
+
+    widget.disposables.add(configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.prWarningHighlights')) refreshPullRequest();
+    }));
 
     const createPullRequest = async event => {
         event.stopPropagation();
@@ -2466,7 +2508,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const stackedBranchWidth = stackedBranchButton.hidden
                 ? 0
                 : stackedBranchButton.getBoundingClientRect().width;
-            return homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
+            const settingsWidth = settingsButton.parentElement === widget.element && !settingsButton.hidden
+                ? settingsButton.getBoundingClientRect().width : 0;
+            return settingsWidth + homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
                 + autocompleteWidth + spellcheckWidth + postSpellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
                 + pullRequestWidth + ponyBranchWidth + stackedBranchWidth;
         },

@@ -36,9 +36,9 @@ async function run(){
  const formatted=squashMessage('📝 Research DRS',67,detailed);
  assert.equal(formatted.message, [
   '- 🖍️ Reference Austin Campbell TAD clip',
-  '  Add a root-level reference to the personal clips index.',
+  '    Add a root-level reference to the personal clips index.',
   '',
-  '  More context.',
+  '    More context.',
   '- ➕ Add IBM Redbooks reference',
   '',
   '__________',
@@ -52,6 +52,10 @@ async function run(){
   'Trailers appear only in one consolidated block');
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{name:'A',email:'a@example.org'},message:'\nNo subject'}}]),/subject/);
 
+ const {formatCommitBody} = require('../efs/squash_attribution');
+ const wrapped = formatCommitBody('A long description with meaningful context '.repeat(12));
+ assert(wrapped.split('\n').every(line => line.length <= 88 && line.startsWith('    ')));
+ assert.equal(wrapped.replace(/\s+/g, ' ').trim(), 'A long description with meaningful context '.repeat(12).trim());
  const legacy=squashMessage('🛠️ Keep verified Ollama attribution',270,[{commit:{
   author:{name:'John Wooten',email:'noreply@wooten.link'},
   message:'Spellcheck\n\nCo-authored-by: Ollama <hello@ollama.com>\nCo-authored-by: Ollama (qwen2.5-coder:7b) <326443430+codex-pony[bot]@users.noreply.github.com>'
@@ -95,7 +99,7 @@ async function run(){
  ];
  const emojiOnly=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
    {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:true});
- assert(emojiOnly.message.startsWith('🐛 Fix panel resizing\n  Avoid overflowing the viewport.\n\n🧪 Cover small windows'));
+ assert(emojiOnly.message.startsWith('🐛 Fix panel resizing\n    Avoid overflowing the viewport.\n\n🧪 Cover small windows'));
  assert(!emojiOnly.message.includes('- 🐛'));
  assert(!emojiOnly.message.includes('Sync brach to main'));
  assert(emojiOnly.trailers.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'));
@@ -115,6 +119,12 @@ async function run(){
  let calls=0;
  assert.equal((await readCommits(async()=>{calls++;return commits},'owner/repo',269)).length,2);
  assert.equal(calls,1);
+ const { validateCommitProposal } = require('../efs/merge_commit_proposal');
+ const accepted = validateCommitProposal({ title: legacyBullets.title, message: legacyBullets.message }, legacyBullets);
+ assert(accepted.proposed && !accepted.adjusted);
+ const corrected = validateCommitProposal({ title: legacyBullets.title, message: 'An incomplete web proposal' }, legacyBullets);
+ assert(corrected.adjusted); assert.equal(corrected.message, legacyBullets.message, 'Missing original content or credits are restored locally');
+ assert.throws(() => validateCommitProposal({ title: 'Wrong PR title', message: legacyBullets.message }, legacyBullets), /exactly match/);
  await assert.rejects(readCommits(async()=>({}),'owner/repo',269),/Invalid/);
 }
 run().catch(e=>{console.error(e);process.exitCode=1});

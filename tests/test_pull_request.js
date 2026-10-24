@@ -198,6 +198,8 @@ async function run() {
   assert(prompt.includes('in repository https://github.com/owner/repo, against'));
   assert(!prompt.includes('/repo with spaces'));
   assert(prompt.includes(rules));
+  assert(prompt.includes('same bug emoji as the earliest bug-fix commit belonging to this branch'));
+  assert(prompt.includes('Exclude commits inherited from the base branch'));
   assert.match(prompt, /Prefer Kafania's connected MCP server "codex-drafter"/);
   assert.match(prompt, /"github_create_pull_request"/);
   assert.match(prompt, /github_get_pull_request_context/);

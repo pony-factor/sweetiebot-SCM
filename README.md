@@ -54,8 +54,11 @@ The patch is intentionally narrow: it does not copy or manage unrelated editor s
 
 ### Independent workspace trust (first run)
 
-Windows on `main` share the original repository folder under `~/GitHub`, including
-its uncommitted edits and Git index. Each window keeps its own saved workspace.
+Windows on `main` share the same Git checkout and index. Normally that is the
+original repository folder under `~/GitHub`; if the original currently has a
+topic branch checked out, Sweetiebot reuses or creates **one linked main
+worktree** instead. Every main window points to that same checkout, while
+keeping its own saved VS Code workspace identity.
 Sweetiebot’s branch selector and new-branch button open topic branches in separate
 linked worktrees under `~/Library/Application Support/Sweetiebot/Workspaces`.
 Creating a new branch follows it in the current window with the same Codex chat.
@@ -66,16 +69,16 @@ switches reuse it. The separate shared-main window button still opens a new wind
 Topics start from committed main. During an active Codex handoff, pending edits
 are copied to the new worktree without staging; the original files and index stay
 unchanged.
-Returning Home or selecting main reconnects the window to the original files,
-preserving pending topic edits in their worktree. Reopening that topic resumes
-those files. Direct terminal Git commands still act on the folder they run in.
+Returning Home or selecting main reconnects to the current shared main
+checkout, preserving pending topic edits in their worktree. Reopening that
+topic resumes those files. Direct terminal Git commands still act on the
+folder they run in.
 
-Clean legacy main clones reconnect on activation only when all their commits
-already exist in the original main. Separate edits or commits are preserved and
-reported instead of silently hidden. Reconnecting requires the original folder
-to be on main. When it is on a topic branch, New Window opens a separate main
-clone and preserves the original branch, files, and staging. That clone waits
-to reconnect until the original returns to main.
+Clean legacy independent main clones reconnect on activation when their
+commits are already present in main. Separate edits or commits are preserved
+and reported instead of silently hidden. No **new** independent clones are
+created by the New Window button, even when the original checkout is on a
+topic: Git worktrees share one history and one main branch checkout.
 
 VS Code's Workspace Trust may
 otherwise start these windows in **Restricted Mode**, disabling extensions,
@@ -109,9 +112,10 @@ name or include `window`, `topic`, or `group` labels. Workspace metadata records
 the workspace type.
 
 Saved-window folders hold `workspace.code-workspace`, which points to the actual
-checkout. Topic and independent-clone folders also hold a checkout named for the
-repository. Multi-root workspaces live under the first repository's folder, with
-one named checkout per distinct repository. Duplicate checkout names receive a
+checkout. Topic and main-worktree folders hold linked Git worktrees named for
+their repository; legacy independent-clone folders hold a separate Git checkout.
+Multi-root legacy clones live under the first repository's folder, with one
+named checkout per distinct repository. Duplicate checkout names receive a
 numeric suffix, such as `shared-2`.
 
 Existing flat workspace folders remain supported and are left in place so open
@@ -121,29 +125,39 @@ Application Support, not Caches.
 
 ### Automatic merged-workspace cleanup
 
-Sweetiebot checks its **own newly created independent clones** at startup and
-every ten minutes. `scmToolkit.automaticWorkspaceCleanup` (on by default)
-controls this separately from automatic branch cleanup. A checkout is never
-deleted merely for being old, or because a remote branch disappeared.
+Sweetiebot scans its own managed workspace folders at startup and every ten
+minutes. `scmToolkit.automaticWorkspaceCleanup` (on by default) controls
+this separately from branch cleanup. Cleanup waits for a prior successful
+activation, at least an hour without an activity heartbeat, and no live window
+sessions. Changing folders inside a saved workspace updates which checkouts
+receive activity markers. Restricted Mode, unknown files, edited workspace
+settings, or missing evidence always prevent deletion.
 
-The normal merged-branch cleanup stores evidence of PRs that it verified were
-merged into `main` at the exact recorded head commit. Workspace cleanup
-revalidates that evidence with authenticated GitHub CLI (`gh`), checks that no
-PR for the branch is open, and requires **all** repositories in a multi-root
-workspace to pass. Each repository must be on `main`, have no extra local
-branches, stash, modified, untracked or ignored files, and no unpublished or
-otherwise unrecognized commits in its reflog. A successful fresh fetch must
-confirm that local `main` is already reachable from `origin/main`.
+Different workspace kinds require different checks:
 
-Workspace cleanup also requires a Sweetiebot provenance manifest, evidence
-that Sweetiebot successfully activated in the workspace, and at least an hour
-since its last activity heartbeat. A live extension-host process always
-protects the workspace. Missing/ambiguous evidence, network errors, unfamiliar
-files, or any unmerged/new work stop deletion. The cleanup process never
-manages user-selected folders or older workspaces created without its
-manifest. The active-workspace safeguard is conservative but cannot detect
-every conceivable editor process outside Sweetiebot; do not treat these clones
-as permanent storage after their work has merged.
+- **`shared-main`**: delete only the unused, unmodified
+  `workspace.code-workspace` file and its Sweetiebot metadata, never the
+  original repository.
+- **`topic-worktree`**: require a clean Git checkout, no stash, exact Git
+  worktree registration, and a same-repository PR verified by authenticated
+  GitHub CLI (`gh`) as merged into `main` at that worktree's exact branch
+  tip, with no open PR for the branch. Remove through `git worktree remove`,
+  then retire only the verified squash-merged local branch.
+- **`main-worktree`**: require a clean linked checkout and confirm its local
+  HEAD is already in `origin/main`. Remove through Git without deleting the
+  `main` branch. Multiple windows share the same checkout, and saved workspace
+  references prevent its removal.
+- **`independent-clone`** (legacy): continue requiring recorded and freshly
+  revalidated merged-PR proofs for every included repository, a clean
+  `main` checkout, no other local branches or stashes, and no unpublished
+  or unrecognized commits in the reflog.
+
+The pruner refuses worktrees referenced by remaining saved Sweetiebot
+workspace files, and Git never forcibly removes dirty worktrees. A fresh
+fetch or GitHub check that fails also blocks cleanup. The process does not
+manage arbitrary user folders, legacy workspaces missing required provenance,
+or the old `~/Sweetiebot Workspaces` directory. Only verified workspaces are
+deleted; age alone is never a reason.
 
 Successful deletions and errors appear in the **Sweetiebot Workspace Cleanup**
 output channel. No automatic migration or cleanup is performed on the old
@@ -201,6 +215,26 @@ git clone https://github.com/pony-factor/sweetiebot-SCM.git
 cd sweetiebot-SCM
 ```
 
+**Live workbench components (first stage):** Sweetiebot now installs a small,
+stable bootstrap into the compiled workbench and keeps the Codex file-drag
+workaround in a separate, versioned script at
+`out/vs/workbench/sweetiebot/`. On startup and when the window regains focus,
+the bootstrap checks a local version manifest (also periodically while focused).
+A changed component initializes its replacement and disposes the prior DOM
+listeners and styles **without reloading the VS Code window**. If loading or
+initialization fails, the running component is retained. The manifest is
+published only after module files have been written; scripts load only from a
+fixed list of same-app assets. The bootstrap also disposes all components on
+window unload.
+
+This is an incremental migration: the SCM widgets and other compiled-workbench
+patches still require the normal reload when their bundled code changes.
+The first installation of the bootstrap itself also requires one reload.
+Sweetiebot's automatic app repair can still request a reload for changes to
+other files, so this does not yet make every update reload-free. The component
+registry exposes `globalThis.__sweetiebotWorkbenchComponents.refresh()`
+for diagnostics, but it is not a public extension API.
+
 Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour, with a shared per-user check timestamp so opening other repository windows within the same hour does not repeat the download. A failed remote check uses a shorter five-minute shared backoff; local repair still runs on each window startup. It downloads the canonical source files into an isolated cache, regenerates the installed companion-extension and tool payloads, and restores customizations using your saved settings. It does not require, download, rebuild, or re-sign the generated installer app for background updates. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair automatically reloads a stale window after the updates settle. Background windows wait until you focus them. Windows already running the current version do not reload. To prevent reload loops, the same workspace will not automatically reload twice for the same revision within ten minutes, and automatic reloads pause after two distinct revisions in that interval; a warning in **Output → Sweetie Bot app repair** explains the pause. Manual **Developer: Reload Window** still works. Before that reload, Sweetie Bot invalidates VS Code's disposable user-extension manifest scan cache when installed files change, so the first reload reads the updated companion extension instead of presenting a second **Extensions have been modified on disk** prompt. It does not alter the installed extensions registry or suppress warnings for unrelated extension changes. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
 
 Updates and repairs are serialized across windows. The Python settings server suppresses bytecode generation, and any existing `__pycache__` / `.pyc` files are ignored when checking whether installed extension sources match, preventing unnecessary reinstalls and reload loops. Routine repair skips companion-extension installation; a new toolkit revision updates it too. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require a compatible Sweetie Bot release, which is fetched automatically once published to `main`.
@@ -242,11 +276,25 @@ python3 scripts/install.py --app "/path/to/Visual Studio Code.app"
 If macOS blocks the write, allow the terminal or Python process you are using under **System Settings → Privacy & Security → App Management**, then run the installer again.
 
 
+### Filename spellcheck
+
+Choose **Sweetiebot: Spellcheck Filenames** from the Command Palette to review changed and untracked filenames, or right-click an individual file in Explorer or Source Control. Suggestions use the configured local Ollama spellcheck model and only change obvious spelling errors in the filename: directories, extensions, separators, and digits are preserved. Select suggestions and confirm before VS Code renames any files. No rename is staged or committed automatically; review links and code references before committing.
+
 ### Automatic spellcheck commit notification
 
 When the opt-in post-commit Markdown spellcheck produces edits and you keep them, Sweetiebot leaves the edits **unstaged**, shows a small VS Code notification, and fills an **empty** Source Control commit box with a `🤖 Spellcheck …` message. An existing draft is never overwritten: the notification offers **Use spellcheck message** instead. No follow-up commit or push happens automatically.
 
 Enable automatic post-commit spellcheck with the **Spellcheck** toggle beside the Source Control commit message, or with `git config --global scm-toolkit.post-commit-spellcheck true`. The toggle saves the same global Git setting used by Sweetiebot Settings; it is off by default.
+
+Keep Spellcheck **on globally** but disable post-commit Markdown corrections in one repository with the following setting in its `.vscode/settings.json` (create the file if needed):
+
+```json
+{
+  "scmToolkit.postCommitSpellcheck": false
+}
+```
+
+Only this repository opts out. Other repositories continue spellchecking normally. Remove the entry or set it to `true` to re-enable corrections. VS Code JSON-with-comments (including trailing commas) is supported. Manual **Spellcheck Only**, filename spellcheck, and draft commit-subject spellcheck are unaffected. Sweetiebot Settings → **Spellcheck Changes** explains this override too.
 
 The prepared message includes the model that actually generated the corrections:
 
@@ -449,11 +497,13 @@ Built-in community packs also include a dedicated **Convention mascots** set and
 
 ### Workspace Search
 
-The normal installer also installs a small companion VS Code extension into `~/.vscode/extensions`. By default, after reloading VS Code, Source Control contains a **Workspace Search** section with an in-sidebar query box, Hybrid/Semantic/Exact modes, ranked snippets, click-to-open results, and an optional **Ask Ollama** action. It does not open Open WebUI or a separate browser window.
+The normal installer also installs a small companion VS Code extension into `~/.vscode/extensions`. By default, after reloading VS Code, Source Control contains a **Workspace Search** section with an in-sidebar query box, Hybrid/Semantic/Exact modes, ranked snippets, click-to-open results, and an optional **Ask Ollama** action. Opening a text passage outlines its line and highlights the matching words or phrase; semantic-only hits outline the indexed line when no literal words match. The temporary highlight clears when another result opens or the editor changes. File-name-only hits and non-text viewers retain their usual opening behavior. It does not open Open WebUI or a separate browser window.
 
 Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Workspace Search view into its own Activity Bar container. The panel title and container label use `scm-toolkit.workspace-search-label` and default to **EFS**. Rerun `python3 scripts/install.py` and reload VS Code after changing either setting.
 
 Customize the search-box hint separately from the panel title with `scm-toolkit.workspace-search-placeholder` (or **Search box placeholder** under Sweetiebot Settings → Workspace Search). For example, `git config --global scm-toolkit.workspace-search-placeholder SATS` shows **SATS** in the empty search box. The default remains **Search your workspace…**; blank restores that hint. VS Code Settings also exposes `scmToolkit.workspaceSearch.placeholder`. Changes to that setting update the open EFS view without clearing a search.
+
+Right-click a file or folder search result to copy a Markdown link without an absolute local `vscode://file` path. In a repository-root workspace, links begin with `/` and resolve from the Git repository root on GitHub and the workspace root in VS Code. If the open workspace is above or below the repository and an active Markdown editor is in the same repository, EFS instead copies a path relative to that editor; otherwise it uses the GitHub-compatible repository-root form. File links include a `#L` line reference for GitHub (VS Code opens the file but does not interpret that fragment as a line jump). Files outside local Git repositories cannot be copied this way.
 
 The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `efs/THIRD_PARTY_NOTICES.md`.
 
@@ -472,9 +522,15 @@ The default **Ask Ollama** model is automatic: it first reuses a currently loade
 The companion extension only accepts loopback Ollama URLs (`127.0.0.1`, `localhost`, or `::1`). You can also install or remove just this companion extension with `python3 scripts/workspace_search.py` or `python3 scripts/workspace_search.py --uninstall`.
 
 
+#### Search all local GitHub repositories
+
+Choose **~/GitHub** from the EFS search-scope selector to search files across the local repository directories beneath `~/GitHub`, including repositories that are not open in VS Code. **Workspace** remains the default. The GitHub-folder scope uses a separate cache, built on first search and refreshed every two minutes after first use. Results show paths beginning with the repository directory and open their original files without adding the repositories to the workspace or Source Control. Nothing is cloned or uploaded to GitHub.
+
+The GitHub-folder search skips symbolic links, Git metadata, and EFS exclusion patterns. The existing **Search file limit** (5,000 by default; configurable up to 50,000) caps the number of *file contents* indexed across this folder. Independent filename/folder discovery includes up to 100,000 files. Raising the file limit broadens content coverage but increases local indexing time. If `~/GitHub` does not exist, EFS reports an explicit error rather than silently falling back to the current workspace.
+
 #### Historical work index
 
-The active workspace is only the first corpus this search needs to cover. A more substantive persistent index should eventually span prior research, comment letters, examination responses, drafts, and other related repositories or files so earlier work can be referenced quickly even when the exact wording is forgotten.
+The active workspace and local GitHub folder are the first corpora this search needs to cover. A more substantive persistent index should eventually span prior research, comment letters, examination responses, drafts, and other related repositories or files so earlier work can be referenced quickly even when the exact wording is forgotten.
 
 A concrete example is the September 2026 lookup for earlier discussion of transitioning away from custodial retirement holdings, the Spain and India direct-holding examples, and the related SEC examination response. Finding those passages required crossing separate stores and took roughly three minutes. That retrieval should instead be a near-immediate semantic lookup that returns the relevant passage together with durable provenance such as repository, file, commit, page, and line.
 
@@ -507,6 +563,19 @@ Without a dedicated title preference, titles default to one professional emoji f
 
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly after one second while generation continues in the background. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
+**Reusable commit-size preflight:** With durable background commits enabled, Sweetiebot
+stages the intended changes (if needed), checks GitHub's file and diff limits
+once per unchanged staged tree before creating a commit or starting the title
+worker. Optional Codex context cannot override that verified selection. The
+approved Git tree ID is passed to the
+worker. If staging changes during validation or before Python accepts the job,
+Sweetiebot automatically inspects the new selection again (up to three retries),
+without creating an unvalidated commit or starting title generation. Direct
+commits use the same inspection command. When a background job declines a
+special operation such as oversized automatic splitting, the direct path reuses
+an earlier approval only if the staged Git tree is unchanged; otherwise it
+runs a new inspection.
+
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message
 commits use a temporary `placeholder_<16 hex digits>` subject, so committed
@@ -520,8 +589,13 @@ When nothing is staged, the background path stages the working changes first,
 respecting Git's tracked-only smart commit setting. Existing staged selections
 stay separate from unstaged work unless you explicitly choose Commit All.
 You can keep committing while earlier titles generate. Each click creates its
-own local placeholder; up to four titles generate in parallel, then the worker
-applies them in commit order and updates
+own local placeholder; up to six titles may generate in parallel when memory
+headroom permits, and fewer run under pressure. Direct and background title
+requests share cross-process admission locks across repositories, so a batch
+cannot monopolize local Ollama or multiply its KV-cache allocations without
+regard to available memory. Waiting for a free slot does not consume the
+configured model-generation timeout. The worker then applies titles in commit
+order and updates
 the queued descendants' parent links without changing their contents. Pushes
 publish only commits whose messages and ancestors are finalized.
 
@@ -535,6 +609,10 @@ never force-pushes or automatically merges remote changes. Jobs and their privat
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
 allows more Sweetiebot commits while blocking direct pushes and branch changes.
+Completed and cancelled background commit job records (and private index snapshots)
+are retained for 60 days from the journal's last write, then deleted on a subsequent
+background worker resume. Unfinished, blocked, active, queued, and recovery-referenced
+jobs are preserved regardless of age.
 Terminal commits through the Git wrapper wait until the queue finishes. Special commit
 modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
@@ -545,7 +623,7 @@ flow. Older terminal-only asynchronous finalization remains available below.
 
 In the magic-wand settings under **Ollama**, set **Commit request timeout (seconds)** (1–900, default 45) and **Attempts per model step** (1–10, default 3). The page calculates the overall generation budget as timeout × attempts: the defaults give 135 seconds. Emoji checks, title generation, retries, and backoff all share that budget; each request is also capped by the remaining time. Generation can finish earlier when the attempt limit is reached. When the budget expires, generation uses the deterministic fallback immediately; disabling fallback keeps the job blocked with an explicit timeout error instead. Changes apply to new generation jobs without restarting VS Code. The corresponding global Git settings are `scm-toolkit.ai-commit-request-timeout-seconds` and `scm-toolkit.ai-commit-attempts`.
 
-If Ollama cannot produce a valid message after three attempts, the background job uses Sweetiebot's existing deterministic, factual fallback title and description. Pending job data and its crash-recovery journal live only under the repository's Git directory. The next wrapped push/commit can finish a stopped worker using that fallback. When the branch has changed unexpectedly or the worker cannot safely rewrite an unusual commit, push fails closed and the temporary commit stays local for manual recovery. This protection applies to Git commands run through the configured Sweetiebot Git wrapper; invoking an unrelated Git executable bypasses it. To avoid changing signed commits or the post-commit Markdown spellcheck flow, commits requesting Git signatures and repositories with automatic post-commit spellcheck enabled continue using synchronous generation. Install/reinstall the toolkit after updating so the Git wrapper has its companion async worker.
+If Ollama cannot produce a valid message after three attempts, the background job uses Sweetiebot's deterministic, offline fallback. The fallback follows a path-and-action classification approach inspired by [MichaelCurrin/auto-commit-msg](https://github.com/MichaelCurrin/auto-commit-msg), but is implemented directly in Sweetiebot with no added extension or network dependency. It recognizes additions and deletions from the captured Git diff, and uses the saved name-status data when available for renames and copies. Paths are categorized as code, tests, documentation, CI, dependencies, configuration, images, documents, or email archives. When multiple filenames share a meaningful topic, that topic appears in the title (for example, `🔧 Update GitHub session code and tests`). Fallback titles never refer to "staged files"—all committed content was staged by definition—and don't claim that code was "fixed" without evidence. The fallback retains Sweetiebot's existing emoji conventions and does not amend earlier finalized commits. Pending job data and its crash-recovery journal live only under the repository's Git directory. The next wrapped push/commit can finish a stopped worker using that fallback. When the branch has changed unexpectedly or the worker cannot safely rewrite an unusual commit, push fails closed and the temporary commit stays local for manual recovery. This protection applies to Git commands run through the configured Sweetiebot Git wrapper; invoking an unrelated Git executable bypasses it. To avoid changing signed commits or the post-commit Markdown spellcheck flow, commits requesting Git signatures and repositories with automatic post-commit spellcheck enabled continue using synchronous generation. Install/reinstall the toolkit after updating so the Git wrapper has its companion async worker.
 
 
 ### Concurrent PDF OCR and commit generation
@@ -556,7 +634,7 @@ On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 1
 python3 scripts/ollama_concurrency.py
 ```
 
-This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows six simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated Ollama service permits up to six simultaneous requests, but Sweetiebot now shares a memory-aware generation limit across repositories and the normal/direct commit path: one request with less than 8 GiB of estimated available memory, two at 8 GiB, three at 16 GiB, four at 24 GiB, five at 32 GiB, and up to six at 40 GiB. When macOS cannot report available memory, the conservative cap is two. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
 
 Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
 
@@ -1122,6 +1200,8 @@ Sweetie Bot appends the prepared prompt as the URL's `q` parameter within the ch
 
 **First-run setup:** With no project configured, the next ChatGPT-backed PR drafting or batch merge action offers to set up a project. Choose **Set up project** to open ChatGPT in your web browser, create (or select) a personal **unshared** project, and paste its project URL into Sweetie Bot. The URL is saved in your VS Code user settings so later actions open inside that project. Choose **Use regular chats** to explicitly retain the original behavior without repeat prompts, or cancel to launch no chat. A project URL configured in Settings takes precedence over that choice. Sweetie Bot cannot create a ChatGPT project through a supported external API, verify its privacy, or move old chats; use ChatGPT's own project controls and do not share the project if it must remain private.\n\n### Pull requests through Kafania
 
+The PR button stays neutral gray by default, even when its eligibility check encounters an error. To opt in to yellow warning highlights, enable **Highlight PR eligibility warnings** under Sweetiebot Settings → **Pull requests**, or set `scmToolkit.prWarningHighlights` in VS Code settings (equivalent Git preference: `scm-toolkit.pr-warning-highlights`). This only changes the color cue: PR eligibility checks, disabled states, diagnostic tooltips, and setup guidance still work normally.
+
 The pull-request button immediately left of the new-branch button opens a dedicated **Pull Request** workspace in a new VS Code window. That workspace starts in Sweetiebot's centered 640 × 640 compact-square layout (on displays large enough to support it). The title-bar **Compact window** button restores its previous size; the originating repository window keeps its own dimensions. The PR workspace owns the confirmation window, drafting and pony chats, and local callback server, so closing the original repository window does not stop the PR session. It uses the same repository checkout and preserves the selected branch, base, conversation context, and PR settings. Keep the Pull Request workspace open until the session finishes. When a PR workspace contains one repository, the Explorer shows that repository's files directly rather than an extra root-folder row. This is an Explorer-only change: the named `.code-workspace` file, isolated PR window and extension host, callback ownership, and shared ChatGPT browser profile remain unchanged. Normal workspaces and multi-root PR workspaces retain native Explorer behavior. Sweetiebot reads `PULL_REQUEST.md` from a sibling `kefania` checkout and includes those canonical rules in the request.
 
 Before opening the chat, Sweetiebot reads the published branch comparison through local Kefania using the saved GitHub App credentials. It sends bounded evidence to ChatGPT, withholds secret-bearing patches, and retains the verified head SHA locally.
@@ -1266,11 +1346,13 @@ Both the selective bulk merge picker and **Merge All Pull Requests** open the Ch
 
 The prompt directs ChatGPT to inspect selected PRs, resolve straightforward conflicts on their branches, and refresh the head SHA before squash merging. Lindsey preserves existing PR history by default: conflict fixes and synchronization append incremental commits with ordinary fast-forward pushes. Human-opened PRs whose opener matches the verified original human author use GitHub native squash merging with the exact PR title and contributor trailers. An already prepared single human-authored commit can use the existing rebase route without changing its branch. For a bot-opened PR that cannot preserve its human author through those routes, Lindsey stops rather than automatically rewriting the head. A rewrite is a last resort requiring explicit local approval for the human-author necessity; a web handoff cannot grant that approval. It never rewrites a branch just to simplify a squash, adjust a title, or repair attribution. GitHub-native stacks remain blocked where custom human authors cannot be preserved per layer. When a conflict needs human judgment, ChatGPT leaves focused PR feedback explaining the competing changes and the maintainer decision required, leaves that PR open, and continues with unrelated safe PRs. Existing selection, stack, attribution, and completed-merge verification requirements still apply. Tool limitations must be reported explicitly.
 
+Lindsey's manual implementation actions, branch-only handoffs, and batch merge prompts share one GitHub review-publication rule: mechanical conflict resolutions and per-file audit notes belong in decision commit messages or local execution records, not inline PR discussions. A substantive manual synchronization may receive one concise overall review summary with the changes and verification results. Inline comments are reserved for real defects or human decisions attached to relevant code; compatible integrations with no outstanding issue produce no inline comments. The workflow reuses existing actionable threads and does not edit human-authored comments.
+
 Lindsey's changed-file patch viewer colors added (+) and removed (-) lines, hunk headers, and leading markers using the live VS Code theme. It reads resolved `diffEditor.*` and `diffEditorGutter.*` CSS variables, so the user's `workbench.colorCustomizations` in VS Code `settings.json` (including theme-specific overrides) control the background accents without requiring Sweetiebot to parse or modify user settings. Patch content remains plain text rather than executable HTML. Unchanged lines preserve the editor foreground and monospace font.
 
-Lindsey's **Activity timeline** has a compact **Time** selector: **Hidden** (default), **Relative** (automatically updating elapsed time), or **Clock** (local time and a date for older events). Its choice is saved as the application-wide `scmToolkit.mergeTimelineTimestampMode` preference for future merge windows. Switching modes never changes GitHub event history or the merge workflow.
+Lindsey's **Activity timeline** has a compact **Time** selector: **Hidden** (default), **Relative** (automatically updating elapsed time), or **Clock** (local time and a date for older events). Its choice is saved as the application-wide `scmToolkit.mergeTimelineTimestampMode` preference for future merge windows. Switching modes never changes GitHub event history or the merge workflow. While a merge dashboard is open, new submitted PR reviews, inline code-review comments, and Conversation comments add linked timeline events with the comment author and a short preview. Historical comments are seeded silently on the first fetch, pending reviews are excluded until submitted, and refreshes deduplicate by GitHub comment ID.
 
-Merge chats keep running while their windows are in the background. Each request owns a separate workspace, and reloading or restoring it does not resubmit the merge prompt. The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow.
+Merge chats keep running while their windows are in the background. Each request owns a separate workspace, and reloading or restoring it does not resubmit the merge prompt. The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow. GitHub status polling pauses while the dashboard tab is hidden or its window is unfocused; local merge execution continues. Magic Settings → GitHub controls active-dashboard refresh, its interval, and the fallback rate-limit cooldown. Server-provided reset times take precedence. A rate limit pauses the batch and offers **Retry after reset**; relative timeline mode also shows a relative reset countdown. **Conflicts cleared** counts PRs whose conflicts were verified cleared and retains them after merging. The web handoff includes a proposed commit title and body; Lindsey checks them against the selected PR and original contributor history before preparing the local commit.
 
 
 ### Direct versus durable commit mode
