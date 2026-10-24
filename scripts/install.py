@@ -1446,12 +1446,14 @@ def main():
             new.append(awake_new)
     usage_pie = settings.get("codexUsagePieIndicator", False)
     hide_reset_times = settings.get("codexHideUsageResetTimes", False)
+    reset_time_pie = settings.get("codexResetTimePieIndicator", False) and not hide_reset_times
     for usage_path, usage_old, usage_new in codex_usage.patch_files(
         args.codex_extension,
-        enabled=(settings["codexUsageResetCountdown"] or usage_pie or hide_reset_times) and not args.uninstall,
+        enabled=(settings["codexUsageResetCountdown"] or usage_pie or reset_time_pie or hide_reset_times) and not args.uninstall,
         hide_reset_times=hide_reset_times,
         pie_indicator=usage_pie,
         reset_countdown=settings["codexUsageResetCountdown"] and not hide_reset_times,
+        reset_time_pie=reset_time_pie,
     ):
         paths.append(usage_path)
         old.append(usage_old)

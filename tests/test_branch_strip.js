@@ -36,6 +36,13 @@ assert.equal(result.branches.find(item => item.name === 'merged').featured, fals
 // Remote may have merged while a local branch still contains unmerged commits.
 assert.equal(result.branches.find(item => item.name === 'older').merged, false);
 assert.equal(result.branches.find(item => item.name === 'main').featured, false);
+const withPrDetails = groupBranchRefs(refs, merged, new Map([['has-pr', {
+  number: 25, url: 'https://github.com/pony-factor/sweetiebot-SCM/pull/25', state: 'OPEN'
+}]]), true, 'main');
+assert.deepEqual(withPrDetails.branches.find(item => item.name === 'has-pr').pr, {
+  number: 25, url: 'https://github.com/pony-factor/sweetiebot-SCM/pull/25', state: 'OPEN'
+});
+assert.equal(withPrDetails.branches.find(item => item.name === 'working').hasPr, false);
 const unknown = groupBranchRefs(refs, merged, new Set(), false, 'main');
 assert.equal(unknown.featuredCount, 0);
 assert(unknown.branches.every(item => item.hasPr === null));

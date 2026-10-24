@@ -221,7 +221,7 @@ async function switchRepository(vscode, root, destination, options) {
   const handoff = await prepareCodexHandoff(vscode, root);
   try {
     return await replaceRepository(vscode, root, destination, {
-      ...options, handoff: handoff && { ...handoff, destination }
+      ...options, forceNewWindow: false, handoff: handoff && { ...handoff, destination }
     });
   } catch (error) {
     if (handoff) await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
