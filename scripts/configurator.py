@@ -90,10 +90,13 @@ stickerReset?.addEventListener('click', async () => {
 """
 
 COMMIT_HOTKEY_STYLE = """
-.hotkey-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px}
-.hotkey-status{display:block;color:var(--muted);font-size:12px}
+.hotkey-setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);align-items:center}
+.hotkey-actions{display:grid;grid-template-columns:max-content max-content max-content minmax(0,1fr);align-items:center;gap:8px;min-width:0}
+.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px;white-space:nowrap}
+.hotkey-actions button{white-space:nowrap}
+.hotkey-status{grid-column:1/-1;min-width:0;overflow-wrap:anywhere;color:var(--muted);font-size:12px}
 .hotkey-status.error-state{color:#ffb3ad}
+@media(max-width:1080px){.hotkey-setting{grid-template-columns:minmax(0,1fr);gap:8px}}
 """
 COMMIT_HOTKEY_SCRIPT = r"""
 const hotkeyNames = {
@@ -205,7 +208,7 @@ def _commit_hotkey_control(
             "shortcuts may still take precedence." if available else
             "Open this page from Sweetiebot in VS Code to edit its shortcut.")
     return (
-        f'<div class="setting"><span><strong>{html.escape(label)}</strong>'
+        f'<div class="setting hotkey-setting"><span><strong>{html.escape(label)}</strong>'
         f'<small>{html.escape(description)}</small></span>'
         '<div class="hotkey-actions">'
         f'<output id="{prefix}-value" class="hotkey-value">{shown}</output>'
