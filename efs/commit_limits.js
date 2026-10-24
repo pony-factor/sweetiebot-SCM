@@ -338,35 +338,38 @@ function registerCommitLimitCommand(vscode, context) {
     'sweetiebot.checkCommitLimits',
     async (uri, options = {}) => {
       const root = vscode.Uri.from(uri?.rootUri ?? uri);
-      if (root.scheme !== 'file') return options.captureTree ? { approved: false } : true;
       const captureTree = options.captureTree === true;
-      // The background queue needs proof that it is committing the *same*
-      // staged tree inspected before title generation. Comparing tree IDs is
-      // much cheaper than repeating the raw-diff and blob-size inspection.
+      if (root.scheme !== 'file') return captureTree ? { approved: false } : true;
       const tree = async () => (await gitBuffer(root.fsPath, ['write-tree']))
         .toString('ascii').trim();
-      const before = captureTree ? await tree() : '';
-      const status = await inspectCommitLimits(root.fsPath);
-      if (captureTree && await tree() !== before) {
-        await vscode.window.showWarningMessage(
-          'The staged files changed during commit validation. Review them and retry the commit.'
-        );
-        return { approved: false };
+
+      // A durable queue may hand a declined special-mode commit back to the
+      // direct Git wrapper. Reuse its approved inspection only for the exact
+      // same tree; an intervening stage change invalidates the approval.
+      const approvedTree = options.approvedTree;
+      if (typeof approvedTree === 'string' && /^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(approvedTree)
+          && await tree() === approvedTree) {
+        return captureTree ? { approved: true, stagedTree: approvedTree } : true;
       }
-      const allowed = await confirmCommitLimits(vscode, root.fsPath, status);
-      if (!captureTree) return allowed;
-      if (!allowed) return { approved: false };
-      const after = await tree();
-      // An approved oversized-file split intentionally changes the staged
-      // tree and re-inspects the result in confirmCommitLimits. Otherwise a
-      // changed index would invalidate the original diff-limit approval.
-      if (!status.oversized?.length && after !== before) {
-        await vscode.window.showWarningMessage(
-          'The staged files changed after commit validation. Review them and retry the commit.'
-        );
-        return { approved: false };
+
+      // Inspect only once for a stable staged tree. If staging changes during
+      // the diff scan, a warning prompt, or an oversized-file split, repeat on
+      // the new tree instead of approving stale results. Bound retries so an
+      // actively changing index cannot keep a commit action alive forever.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const before = await tree();
+        const status = await inspectCommitLimits(root.fsPath);
+        if (await tree() !== before) continue;
+        const allowed = await confirmCommitLimits(vscode, root.fsPath, status);
+        if (!allowed) return captureTree ? { approved: false } : false;
+        const after = await tree();
+        if (after !== before) continue;
+        return captureTree ? { approved: true, stagedTree: after } : true;
       }
-      return { approved: true, stagedTree: after };
+      await vscode.window.showWarningMessage(
+        'The staged changes kept changing during commit validation. Review the selection and retry.'
+      );
+      return captureTree ? { approved: false } : false;
     }
   ));
 }
