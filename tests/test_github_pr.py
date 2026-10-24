@@ -63,9 +63,10 @@ for (const message of ['Connect Timeout Error (attempted address: api.github.com
                        'request timed out', 'UND_ERR_CONNECT_TIMEOUT']) {
  assert.equal(format({message}), '⏳ GitHub took too long to respond. Try refreshing.');
 }
-for (const message of ['Bad credentials', 'API rate limit exceeded', 'Not Found']) {
+for (const message of ['Bad credentials', 'Not Found']) {
  assert.equal(format({message}), 'Fetching pull requests failed: ' + message);
 }
+assert.equal(format({message:'API rate limit exceeded'}), 'GitHub API rate limit reached. Automatic refresh is paused; use Retry after reset in the GitHub notification.');
 assert.equal(errors.length, 6);
 assert(errors.includes('API rate limit exceeded'));
 '''.replace('REPLACEMENT', replacement)

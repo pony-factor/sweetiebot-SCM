@@ -144,6 +144,9 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
+      mergeAutoRefresh: scm.get('mergeAutoRefresh', true),
+      mergeRefreshIntervalSeconds: scm.get('mergeRefreshIntervalSeconds', 120),
+      githubRateLimitCooldownSeconds: scm.get('githubRateLimitCooldownSeconds', 900),
       mergeTimelineTimestampMode: scm.get('mergeTimelineTimestampMode', 'hidden'),
       mergeSidebarWidthPercent: scm.get('mergeSidebarWidthPercent', 37),
       mergeTimelineHeightPercent: scm.get('mergeTimelineHeightPercent', 34),
@@ -293,7 +296,7 @@ async function openSettings(context) {
 }
 
 async function linkedGithubRepositories(query = '') {
-  const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+  const session = await require('./github_session').githubSession(vscode);
   const needle = String(query || '').trim().toLowerCase();
   const repositories = [];
 
@@ -395,6 +398,12 @@ async function activate(context) {
   });
   // Register PR merge commands before compatibility aliases and awaited startup
   // work so a stale legacy command cannot leave contributed actions without handlers.
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.githubRateLimited', message => {
+    const error = require('./github_rate_limit').rateLimitError({ status: 403, message });
+    if (error) return require('./github_rate_limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.repairMergeReview', () =>
+    require('./merge_review_repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);

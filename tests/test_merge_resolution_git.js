@@ -22,10 +22,16 @@ const run = promisify(execFile);
     await git('init', '--quiet', '--initial-branch=main', working);
     const repo = (...args) => git('-C', working, ...args);
     await fs.writeFile(path.join(working, 'file.txt'), 'original\n');
-    await repo('add', 'file.txt'); await repo('commit', '--quiet', '-m', 'Initial fixture');
+    await fs.writeFile(path.join(working, 'clean.txt'), 'original clean\n');
+    await fs.writeFile(path.join(working, 'remove.txt'), 'obsolete\n');
+    await repo('add', 'file.txt', 'clean.txt', 'remove.txt'); await repo('commit', '--quiet', '-m', 'Initial fixture');
     await repo('remote', 'add', 'origin', remote);
     await repo('checkout', '--quiet', '-b', 'feature');
     await fs.writeFile(path.join(working, 'file.txt'), 'feature\n');
+    await fs.writeFile(path.join(working, 'feature-only.txt'), 'retain this new feature\n');
+    await fs.writeFile(path.join(working, 'clean.txt'), 'updated clean\n');
+    await fs.unlink(path.join(working, 'remove.txt'));
+    await repo('add', 'feature-only.txt');
     await repo('commit', '--quiet', '-am', '🐛 Preserve feature\n\nCo-authored-by: Codex <noreply@openai.com>');
     const firstSha = await repo('rev-parse', 'HEAD');
     const firstMessage = await repo('show', '-s', '--format=%B', 'HEAD');
@@ -138,6 +144,11 @@ const run = promisify(execFile);
     stalePushReads = 2;
     const incremental = await attempt();
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
+    if (resolving) {
+      assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
+      assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':clean.txt'), 'updated clean');
+      await assert.rejects(git('--git-dir=' + remote, 'show', incremental.sha + ':remove.txt'));
+    }
     assert.equal(incremental.status, 'synced', 'Default integration appends commits');
     assert(!pushes.at(-1).some(arg => arg.startsWith('--force')), 'Incremental updates use an ordinary push');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
@@ -193,10 +204,10 @@ const run = promisify(execFile);
     console.log('Real Git resolution patch, isolated checkout, guarded push and human-author squash passed.');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
  }
- await successiveMerges();
+ for (const checkState of ['success', 'pending', 'failure']) await successiveMerges(checkState);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
-async function successiveMerges() {
+async function successiveMerges(checkState) {
  const { createMergeBatch } = require('../efs/merge_batch');
  const { executeResolution } = require('../efs/merge_resolution');
  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-successive-test-'));
@@ -215,9 +226,12 @@ async function successiveMerges() {
    const initial = await repo('rev-parse', 'HEAD');
    const heads = {};
    for (const [number, code] of [[1, 'function price(n) { return n * 3; }\n'],
-     [2, 'function price(n, tax = 0) { return n * 2 + tax; }\n']]) {
+     [2, 'function price(n, tax = 0) { return n * 2 + tax; }\n'], [3, null]]) {
      await repo('checkout', '--quiet', '-B', 'feature-' + number, initial);
-     await fs.writeFile(file, code);
+     if (number === 3) {
+       await fs.writeFile(path.join(working, 'extra.txt'), 'Independent third feature\n');
+       await repo('add', 'extra.txt');
+     } else await fs.writeFile(file, code);
      if (number === 1) await fs.writeFile(path.join(working, 'main-only.txt'), 'Independent incoming main work\n');
      if (number === 1) await repo('add', 'main-only.txt');
      await repo('commit', '--quiet', '-am', 'Feature fixture\n\nCo-authored-by: Codex <noreply@openai.com>');
@@ -225,12 +239,12 @@ async function successiveMerges() {
    }
    await repo('checkout', '--quiet', 'main');
    await repo('remote', 'add', 'origin', remote);
-   await repo('push', '--quiet', 'origin', 'main', 'feature-1', 'feature-2');
+   await repo('push', '--quiet', 'origin', 'main', 'feature-1', 'feature-2', 'feature-3');
    const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
    const author = { name: 'John Wooten', email: 'human@example.test' };
    const merged = new Set();
    const staleCheckHead = heads[2];
-   const title = number => number === 1 ? '🐛 Correct the multiplier' : '✨ Add optional tax';
+   const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
    const snapshot = async number => ({ number, title: title(number), state: merged.has(number) ? 'closed' : 'open',
      merged: merged.has(number), merge_commit_sha: merged.has(number) ? await branch('main') : null,
      user: { type: 'User', login: 'human' }, mergeable: number === 1 || !merged.has(1),
@@ -244,6 +258,9 @@ async function successiveMerges() {
      if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
      if (endpoint.includes('/check-runs?')) {
        const old = endpoint.includes(staleCheckHead);
+       const integratedThird = endpoint.includes(await branch('feature-3')) && !endpoint.includes(heads[3]);
+       if (integratedThird && checkState !== 'success') return { check_runs: [{ id: 2, name: 'third feature tests',
+         status: checkState === 'pending' ? 'in_progress' : 'completed', conclusion: checkState === 'pending' ? null : 'failure' }] };
        return { check_runs: [{ id: 1, name: 'price tests', status: 'completed', conclusion: old ? 'failure' : 'success' }] };
      }
      if (endpoint.includes('/check-suites?')) return { check_suites: [] };
@@ -272,7 +289,7 @@ async function successiveMerges() {
      throw Error('Unexpected endpoint ' + endpoint);
    };
    const localGit = async (...args) => { if (args[0] === 'clone') args[3] = remote; return git(...args); };
-   const selection = { repository: 'owner/repo', pullRequests: [1, 2].map(number => ({ number,
+   const selection = { repository: 'owner/repo', pullRequests: [1, 2, 3].map(number => ({ number,
      title: title(number), url: 'https://github.com/owner/repo/pull/' + number,
      head: 'feature-' + number, headSha: heads[number], base: 'main' })) };
    batch = await createMergeBatch(selection, { api, destination: 'https://chatgpt.com/',
@@ -320,6 +337,24 @@ async function successiveMerges() {
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
    assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
+   const beforeThird = await branch('main');
+   const third = await submit(final.continueUrl, 3);
+   const integratedThird = await branch('feature-3');
+   assert.notEqual(integratedThird, heads[3], 'The clean third PR must incorporate both earlier merges');
+   await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', heads[3], integratedThird);
+   if (checkState === 'success') {
+     assert.equal(third.results[0].status, 'merged', 'A clean integration and squash complete in one local execution');
+     assert.equal(third.batch.merged.length, 3);
+     assert.equal(third.continueUrl, undefined, 'No redundant AI round is required');
+     assert.equal(await git('--git-dir=' + remote, 'show', 'main:extra.txt'), 'Independent third feature');
+     assert.equal(await git('--git-dir=' + remote, 'show', 'main:price.js'), code);
+     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
+   } else {
+     assert.equal(third.results[0].status, checkState === 'pending' ? 'waiting' : 'checks_failed');
+     assert.equal(third.results[0].sha, integratedThird, 'The batch can adopt only the executor-prepared head');
+     assert.equal(await branch('main'), beforeThird, 'Pending or failing integrated-head checks cannot merge');
+     assert.equal(third.batch.merged.length, 2);
+   }
    assert.equal(await repo('rev-parse', 'HEAD'), initial);
    assert.equal(await repo('status', '--porcelain'), '');
    assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('executor-')), []);

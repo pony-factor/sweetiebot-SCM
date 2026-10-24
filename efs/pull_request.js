@@ -535,7 +535,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       closeAfterMerge: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseAfterMerge', false),
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
       kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
-      onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
+      onMerge: async result => {
+        const session = await require('./github_session').githubSession(vscode);
+        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { gitToken: session.accessToken });
+      },
+      onMergePreservingCommits: async result => {
+        const session = await require('./github_session').githubSession(vscode);
+        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
+      },
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');

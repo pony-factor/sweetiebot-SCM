@@ -188,7 +188,7 @@ async function run() {
   assert.match(prompt, /exact selected PR title VERBATIM/);
   assert.match(prompt, /never an individual commit title/);
   assert.match(prompt, /hyphen bullets, not '\*'/);
-  assert.match(prompt, /indented continuation lines directly under its corresponding bullet/);
+  assert.match(prompt, /four-space-indented continuation lines wrapped at 88 columns directly under its corresponding bullet/);
   assert.match(prompt, /relocate all such credits into ONE final trailer block/);
   assert.match(prompt, /separator of EXACTLY TEN underscores __________/);
   assert.match(prompt, /only one final trailer block after exactly ten underscores __________/);
@@ -327,10 +327,11 @@ async function run() {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
       return { get(key, fallback) {
-        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles'].includes(key),
+        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles', 'mergePostSummaries'].includes(key),
           'Unexpected SCM configuration key: ' + key);
         if (key === 'chatgptProjectUrl') return configuredProject || fallback;
         if (key === 'filterSyncCommitSummaries') return filterSyncSummaries;
+        if (key === 'mergePostSummaries') return fallback;
         return emojiOnlySummaries;
       } };
     } },
@@ -343,6 +344,7 @@ async function run() {
     authentication: {
       async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
+        if (options.silent) return undefined;
         assert.deepEqual(scopes, ['repo']);
         assert.equal(options.createIfNone, true);
         return { accessToken: 'linked-token' };
