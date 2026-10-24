@@ -23,6 +23,7 @@ function scmToolkitRegisterCodexPermissions(provider, vscode) {
     });
     const command = vscode.commands.registerCommand('sweetiebot.codex.openPermissions', async () => {
         await vscode.commands.executeCommand('chatgpt.openSidebar');
+        provider.sidebarView?.show?.(false);
         const view = provider.sidebarView?.webview || [...views].at(-1);
         if (!view || !await view.postMessage({type: 'sweetiebot-open-permissions'})) {
             throw new Error('Open the Codex sidebar before changing permissions.');

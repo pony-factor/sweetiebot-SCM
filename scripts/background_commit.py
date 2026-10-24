@@ -658,6 +658,8 @@ def reconcile_published_jobs(meta):
 def start_spellcheck(job, journal):
     if job.get('spellcheck_started') or job.get('skip_spellcheck') or not job.get('sha'):
         return
+    if state() != (job['branch'], job['sha']):
+        return
     if not core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
         return
     import post_commit_spellcheck as spellcheck
@@ -761,7 +763,10 @@ def work(directory, commit_only=False):
                     raise RuntimeError('A hook changed the captured tree; push was paused.')
                 job.update(sha=sha, phase='committed')
                 write_journal(file, job)
-            start_spellcheck(job, file)
+            try:
+                start_spellcheck(job, file)
+            except (OSError, RuntimeError) as error:
+                log_event('background_commit', 'spellcheck_start_pending', error_type=type(error).__name__, outcome='retry')
             if commit_only:
                 return
             with repository_lock(job['gitdir']):
