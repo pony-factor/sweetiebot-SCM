@@ -268,13 +268,13 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 2, 'a rejected push produces one actionable error');
-  assert.equal(errors[1], 'repo (hoofar): Push blocked by merge conflicts in 2 files. Lindsey could not sync this branch.');
+  assert.equal(errors[1], 'Sweetiebot: Push blocked by merge conflicts in 2 files. Lindsey could not sync this branch.');
   assert.deepEqual(errorActions[1], ['View conflicting files', 'Retry sync and push', 'Stop background push']);
   assert(details[0].includes('Repository: /repo\nBranch: hoofar'));
   assert(details[0].includes('  • Sources/RepoLauncher.swift'));
   assert(details[0].includes('  • Repository Launcher.app/Contents/MacOS/RepositoryLauncher'));
   const legacy = sandbox.module.exports.blockedNotification('/work/mobli', { error: status.error });
-  assert.equal(legacy.message, 'mobli: Push blocked by merge conflicts. Lindsey could not sync this branch.');
+  assert.equal(legacy.message, 'Sweetiebot: Push blocked by merge conflicts. Lindsey could not sync this branch.');
   assert.equal(progress.length, 2, 'a separate generation batch gets a new notification');
   assert.equal(completed.length, 2, 'jobs finishing early close their notification immediately');
   assert.equal(noticeTimers[1].cancelled, true, 'early completion cancels the one-second timer');

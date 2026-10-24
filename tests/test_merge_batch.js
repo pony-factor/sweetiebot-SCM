@@ -89,6 +89,27 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(finished.value.batch.merged.length, 1);
   } finally { own.dispose(); }
 
+  // A fresh failing head gets one bounded AI repair round, never a merge bypass.
+  currentHead = a; attempts = 0;
+  const failing = await createMergeBatch(one, { api: ownApi, destination: 'https://chatgpt.com/', execute: async () => {
+    attempts++; currentHead = e;
+    return { repository: 'owner/repo', results: [{ number: 1, status: 'checks_failed',
+      merged: false, sha: e, previousHeadSha: attempts === 1 ? a : e,
+      reason: 'GitHub pull requests: missing warning preference in test harness' }] };
+  } });
+  try {
+    const failed = await submit(failing.url, [item(1, c)]);
+    assert.equal(failed.value.batch.deferred.length, 0);
+    assert(failed.value.continueUrl, 'Give AI the actual failure before stopping');
+    const prompt = new URLSearchParams(new URL(failed.value.continueUrl).hash.slice(1)).get('q');
+    assert(prompt.includes('inspect the actual failing job logs'));
+    assert(prompt.includes('missing warning preference in test harness'));
+    const exhausted = await submit(failed.value.continueUrl, [item(1, c, 'complete repaired patch\n', e)]);
+    assert.equal(exhausted.value.batch.deferred.length, 1);
+    assert.equal(exhausted.value.batch.merged.length, 0);
+    assert.equal(exhausted.value.continueUrl, undefined, 'Repeated failures stop without bypassing CI');
+  } finally { failing.dispose(); }
+
   // Main may advance during preparation. Retry and adopt only our verified
   // prepared head, including when its first result is a base-refresh request.
   currentHead = a; attempts = 0;

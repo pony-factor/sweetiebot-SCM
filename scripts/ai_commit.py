@@ -2204,7 +2204,7 @@ def main() -> None:
             title, description = generate_message(
                 stat, diff, paths,
                 include_description=should_add_default_branch_description(),
-                file_context=staged_file_context(paths),
+                file_context_override=staged_file_context(paths),
             )
             # Do not reduce or bypass normal AI title generation. This
             # independent formatting preference only controls the emoji in

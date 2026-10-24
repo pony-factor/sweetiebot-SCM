@@ -109,6 +109,7 @@
         "test_github_pr_rate_limit.js",
         "test_github_pr_reactions.py",
         "test_github_pr_refresh.js",
+        "test_github_user_api.js",
         "test_human_squash_merge.js",
         "test_merge_pull_request.js",
         "test_merge_preserve_history.js",
@@ -123,6 +124,8 @@
       ],
       "syntax": [
         "efs/github_pr_actions.js",
+        "efs/github_rate_limit.js",
+        "efs/github_user_api.js",
         "efs/human_squash_merge.js",
         "efs/merge_pull_request.js"
       ]
@@ -150,12 +153,13 @@
         "test_codex_keep_awake.js",
         "test_codex_keep_awake.py",
         "test_codex_label.py",
+        "test_codex_permissions.js",
         "test_codex_rate_limit_controls.js",
-        "test_codex_sticker.py",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
         "test_codex_short_model_labels.js",
         "test_codex_startup.py",
+        "test_codex_sticker.py",
         "test_codex_usage.js",
         "test_codex_usage.py",
         "test_codex_video_drop.js",
@@ -164,6 +168,8 @@
       ],
       "syntax": [
         "assets/codex/image-drop.js",
+        "assets/codex/permissions-host.js",
+        "assets/codex/permissions-webview.js",
         "assets/codex/video-frames.js"
       ]
     },
@@ -192,9 +198,9 @@
         "test_lindsey_bulk_merge.js",
         "test_lindsey_conflicts.js",
         "test_merge_batch.js",
+        "test_merge_commit_tree.js",
         "test_merge_dashboard.js",
         "test_merge_summary.js",
-        "test_merge_commit_tree.js",
         "test_merge_blocker_report.js",
         "test_merge_dashboard_resize.js",
         "test_merge_reaction_choices.js",
@@ -203,23 +209,22 @@
         "test_github_read_api.js",
         "test_merge_resolution.js",
         "test_merge_resolution_git.js",
-        "test_pushed_pr.js",
         "test_pr_session.js",
-        "test_pull_request_batch.js"
+        "test_pull_request_batch.js",
+        "test_pushed_pr.js"
       ],
       "syntax": [
         "efs/lindsey_bulk_merge.js",
         "efs/local_human_squash.js",
-        "efs/pushed_pr.js",
         "efs/merge_batch.js",
         "efs/merge_checks.js",
+        "efs/merge_commit_tree.js",
         "efs/merge_dashboard.js",
         "efs/merge_summary.js",
         "efs/merge_commit_tree.js",
         "efs/merge_blocker_report.js",
         "efs/merge_dashboard_diff.js",
         "efs/merge_dashboard_markdown.js",
-        "efs/merge_reaction_choices.js",
         "efs/github_rate_limit.js",
         "efs/github_session.js",
         "efs/github_user_api.js",
@@ -228,10 +233,14 @@
         "efs/merge_review_repair.js",
         "efs/merge_handoff.js",
         "efs/merge_patch.js",
+        "efs/merge_reaction_choices.js",
         "efs/merge_resolution.js",
         "efs/merge_resolution_cli.js",
+        "efs/merge_session_completion.js",
         "efs/pull_request_batch.js",
-        "efs/resolution_commits.js"
+        "efs/pushed_pr.js",
+        "efs/resolution_commits.js",
+        "efs/merge_summary.js"
       ]
     },
     "browser-ui": {

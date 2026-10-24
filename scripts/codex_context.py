@@ -9,13 +9,17 @@ ASSETS = HERE.parent / "assets/codex"
 START = '\n/* scm-toolkit-codex-context:start */\n'
 END = '\n/* scm-toolkit-codex-context:end */\n'
 HOST_ANCHOR = re.compile(
-    r'(?P<subscriptions>[\w$]+)\.push\((?P<vscode>[\w$]+)\.window\.registerWebviewViewProvider\('
+    r'(?<![\w$])(?P<subscriptions>[\w$]+)\.push\((?P<vscode>[\w$]+)\.window\.registerWebviewViewProvider\('
     r'(?P<type>[\w$]+)\.viewType,(?P<provider>[\w$]+),'
 )
-WEBVIEW_ANCHOR = re.compile(r'(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
+WEBVIEW_ANCHOR = re.compile(r'(?<![\w$])(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
 
 
 def transform(source, kind, enabled=True):
+    import codex_drafts
+    had_drafts = kind == 'host' and codex_drafts.HOST_START in source
+    if had_drafts:
+        source = codex_drafts.transform_host(source, False)
     if source.count(START) != source.count(END) or source.count(START) > 1:
         raise ValueError('Incomplete Codex context patch; refusing to overwrite it.')
     if START in source:
@@ -30,7 +34,7 @@ def transform(source, kind, enabled=True):
             raise ValueError('Installed Codex context patch changed; refusing to overwrite it.')
         source = source.replace(replacement, original, 1)
     if not enabled:
-        return source
+        return codex_drafts.transform_host(source) if had_drafts else source
     pattern = HOST_ANCHOR if kind == 'host' else WEBVIEW_ANCHOR
     matches = list(pattern.finditer(source))
     if len(matches) != 1:
@@ -40,15 +44,18 @@ def transform(source, kind, enabled=True):
     if kind == 'host':
         replacement = original.replace('.push(',
             f'.push(scmToolkitRegisterCodexSnapshotProvider({match["provider"]},{match["vscode"]}),'
-            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}),', 1)
+            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}),'
+            f'scmToolkitRegisterCodexPermissions({match["provider"]},{match["vscode"]}),', 1)
     else:
-        replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}))'
+        replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}),scmToolkitRegisterCodexPermissionsMenu({match["api"]}))'
     source = source.replace(original, replacement, 1)
     helper = (ASSETS / f'context-{kind}.js').read_text()
     if kind == 'host':
         helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
-    return (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
-            + helper + END)
+    helper += '\n' + (ASSETS / f'permissions-{kind}.js').read_text()
+    result = (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
+              + helper + END)
+    return codex_drafts.transform_host(result) if had_drafts else result
 
 
 def patch_files(extension_path=None, enabled=True):
@@ -65,7 +72,7 @@ def patch_files(extension_path=None, enabled=True):
             raise ValueError('The Codex extension host bundle was not found.')
         return []
     webviews = []
-    for path in (extension / 'webview/assets').glob('app-initial-*.js'):
+    for path in (extension / 'webview/assets').glob('*.js'):
         text = path.read_text()
         if START in text or WEBVIEW_ANCHOR.search(text):
             webviews.append(path)

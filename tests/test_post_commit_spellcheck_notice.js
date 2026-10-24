@@ -426,6 +426,36 @@ test('Accept and Revert reject changed previews, dirty editors, and staged chang
   }
 });
 
+test('failed Accept preserves concurrent staged edits, branch switches, and new commits', async () => {
+  for (const change of ['index', 'branch', 'head']) {
+    const f = fixture();
+    let staged = '', changed = false;
+    const readDiff = async (_root, args) => args.includes('--cached') ? staged : patch;
+    const readGit = async (root, args) => {
+      if (args[0] === 'symbolic-ref') return changed && change === 'branch' ? 'refs/heads/other' : 'refs/heads/topic';
+      if (args[0] === 'rev-parse') return changed && change === 'head' ? 'b'.repeat(40) : head;
+      return f.git(root, args);
+    };
+    await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, readDiff, readGit);
+    const preview = takeSpellcheckPopup();
+    const actions = [];
+    try {
+      await assert.rejects(finishSpellcheckPreview(
+        {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}},
+        preview.sessionId, 'accept', '', async (_root, args) => {
+          actions.push(args[1]);
+          if (args[1] === 'add') staged = patch;
+        }, async () => {}, async () => {
+          changed = true;
+          if (change === 'index') staged = 'Concurrent staged work';
+          throw new Error('Fixture title failed');
+        }), /Fixture title failed.*could not be unstaged safely/);
+      assert.deepEqual(actions, ['add']);
+      assert.equal(staged, change === 'index' ? 'Concurrent staged work' : patch);
+    } finally { closeSpellcheckPopup(preview.sessionId); }
+  }
+});
+
 test('Accept honors the Commit and push checkbox, while Revert never pushes', async () => {
   for (const enabled of [false, true]) {
     for (const action of ['accept', 'revert']) {
@@ -567,6 +597,25 @@ test('normal titled spellcheck commit contains only reviewed staged files and pr
         ['report.md', 'unrelated.txt']);
       return {title: '🖊️ Correct Markdown spelling', description: 'Fix the reviewed spelling error.'};
     };
+    const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}};
+    for (const failure of ['title', 'commit']) {
+      const failingRun = async (root, args) => {
+        if (failure === 'commit' && args[1] === 'commit') throw new Error('Fixture commit failed');
+        return run(root, args);
+      };
+      await assert.rejects(finishSpellcheckPreview(vscode, preview.sessionId, 'accept', '', failingRun,
+        async () => {
+          // Exercise a normalization that changes the patch before a failure.
+          await fs.writeFile(path.join(root, 'report.md'), 'A spelling issue.\n\n');
+        }, async () => {
+          if (failure === 'title') throw new Error('Fixture title failed');
+          return title(root, ['report.md']);
+        }), /Fixture (title|commit) failed/);
+      assert.equal(git('diff', '--cached', '--name-only'), 'unrelated.txt');
+      assert.match(git('diff', '--', 'report.md'), /\+A spelling issue\./);
+      assert.equal(git('rev-parse', 'HEAD'), baseline);
+    }
+    generated = 0;
     await finishSpellcheckPreview({Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}},
       preview.sessionId, 'accept', '', run, async () => {}, title);
     assert.equal(generated, 1);
@@ -579,4 +628,34 @@ test('normal titled spellcheck commit contains only reviewed staged files and pr
     if (preview) closeSpellcheckPopup(preview.sessionId);
     await fs.rm(root, {recursive: true, force: true});
   }
+});
+
+
+test('Accept queues reviewed corrections behind pending titles and survives a title-only head replacement', async () => {
+  const f = fixture();
+  const tree = 'c'.repeat(40);
+  let current = head;
+  const readGit = async (root, args) => {
+    if (args[0] === 'symbolic-ref') return 'refs/heads/topic';
+    if (args[0] === 'rev-parse') return args[1].endsWith('^{tree}') ? tree : current;
+    return f.git(root, args);
+  };
+  await showNotice({}, f.repo, {head, root:'/repo', paths:['notes/report.md']},
+    async (_root, args) => args.includes('--cached') ? '' : patch, readGit);
+  const preview = takeSpellcheckPopup();
+  current = 'b'.repeat(40);
+  const calls = [];
+  const vscode = {Uri:{file:fsPath=>({fsPath})}, workspace:{textDocuments:[]}, commands:{
+    getCommands:async()=>['sweetiebot.queueCommit'],
+    executeCommand:async(command,uri,options)=>{calls.push({command,uri,options});return {queued:true};}
+  }};
+  const mutations=[];
+  const result = await finishSpellcheckPreview(vscode,preview.sessionId,'accept','Keep my description',
+    async (_root,args)=>mutations.push(args[1]),async()=>{},async()=>{throw Error('Must not wait for a title');});
+  assert.deepEqual(result,{action:'accept',queued:true});
+  assert.deepEqual(mutations,['add']);
+  assert.equal(calls[0].command,'sweetiebot.queueCommit');
+  assert.deepEqual(calls[0].options.paths,['notes/report.md']);
+  assert.equal(calls[0].options.description,'Keep my description');
+  assert.equal(calls[0].options.skipSpellcheck,true);
 });

@@ -17,6 +17,42 @@ class CodexContextTests(unittest.TestCase):
                 self.assertEqual(codex_context.transform(patched, kind), patched)
                 self.assertEqual(codex_context.transform(patched, kind, False), original)
 
+    def test_split_message_bus_bootstrap_composes_and_reinstalls_safely(self):
+        import tempfile
+        from pathlib import Path
+        import codex_drafts
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'out').mkdir()
+            (root / 'webview/assets').mkdir(parents=True)
+            host = root / 'out/extension.js'
+            host.write_text('subscriptions.push(vscode.window.registerWebviewViewProvider(View.viewType,provider,{}));'
+                            'subscriptions.push(vscode.window.registerWebviewViewProvider(View.secondaryViewType,provider,{}));')
+            bootstrap = root / 'webview/assets/message-bus-new.js'
+            bootstrap.write_text('var api;function initialize(){api=acquireVsCodeApi()}')
+            (root / 'webview/assets/app-initial-new.js').write_text('import "./message-bus-new.js";')
+            original_host, original_web = host.read_text(), bootstrap.read_text()
+            for module in (codex_context, codex_drafts):
+                patches = module.patch_files(root)
+                self.assertEqual([p for p, _, _ in patches], [host, bootstrap])
+                for file, _, updated in patches:
+                    file.write_text(updated)
+            self.assertIn('sweetiebot.codex.prepareWorkspaceHandoff', host.read_text())
+            self.assertIn('scmToolkitProtectCodexDrafts(provider,vscode)', host.read_text())
+            for module in (codex_context, codex_drafts):
+                for _, before, after in module.patch_files(root):
+                    self.assertEqual(after, before)
+            for module in (codex_context, codex_drafts):
+                for file, _, restored in module.patch_files(root, enabled=False):
+                    file.write_text(restored)
+            self.assertEqual(host.read_text(), original_host)
+            self.assertEqual(bootstrap.read_text(), original_web)
+            (root / 'webview/assets/other.js').write_text('second=acquireVsCodeApi()')
+            with self.assertRaisesRegex(ValueError, 'could not be identified'):
+                codex_context.patch_files(root)
+            with self.assertRaisesRegex(ValueError, 'ambiguous bootstrap'):
+                codex_drafts.patch_files(root)
+
     def test_unsupported_build_is_not_patched(self):
         with self.assertRaisesRegex(ValueError, 'Unsupported Codex build'):
             codex_context.transform('unrecognized source', 'host')
