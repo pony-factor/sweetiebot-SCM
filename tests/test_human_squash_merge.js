@@ -116,6 +116,14 @@ async function main() {
     api: prepared.api, allowHistoryRewrite: true,
     localMerge: async () => assert.fail('Prepared one-commit PR must not be rewritten')
   })).merged);
+  for (const name of ['Codex (Web)', 'Codex (6.1 Med, Web)']) {
+    const updated = fixture({commits:[{...oneHuman,commit:{...oneHuman.commit,
+      message:originalMessage.replace('Codex Web',name)}}]});
+    assert((await humanSquashMerge('owner/repo', 12, {
+      api:updated.api, allowHistoryRewrite:true,
+      localMerge:async()=>assert.fail('Prepared model/Web credit must not be rewritten')
+    })).merged, name + ' must be accepted as valid Codex web credit');
+  }
 
   for (const change of [
     [{ ...oneHuman, commit: { ...oneHuman.commit,
