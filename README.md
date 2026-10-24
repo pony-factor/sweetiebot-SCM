@@ -215,6 +215,26 @@ git clone https://github.com/pony-factor/sweetiebot-SCM.git
 cd sweetiebot-SCM
 ```
 
+**Live workbench components (first stage):** Sweetiebot now installs a small,
+stable bootstrap into the compiled workbench and keeps the Codex file-drag
+workaround in a separate, versioned script at
+`out/vs/workbench/sweetiebot/`. On startup and when the window regains focus,
+the bootstrap checks a local version manifest (also periodically while focused).
+A changed component initializes its replacement and disposes the prior DOM
+listeners and styles **without reloading the VS Code window**. If loading or
+initialization fails, the running component is retained. The manifest is
+published only after module files have been written; scripts load only from a
+fixed list of same-app assets. The bootstrap also disposes all components on
+window unload.
+
+This is an incremental migration: the SCM widgets and other compiled-workbench
+patches still require the normal reload when their bundled code changes.
+The first installation of the bootstrap itself also requires one reload.
+Sweetiebot's automatic app repair can still request a reload for changes to
+other files, so this does not yet make every update reload-free. The component
+registry exposes `globalThis.__sweetiebotWorkbenchComponents.refresh()`
+for diagnostics, but it is not a public extension API.
+
 Automatic repair checks the project's `main` branch for Sweetie Bot updates at startup and every hour, with a shared per-user check timestamp so opening other repository windows within the same hour does not repeat the download. A failed remote check uses a shorter five-minute shared backoff; local repair still runs on each window startup. It downloads the canonical source files into an isolated cache, regenerates the installed companion-extension and tool payloads, and restores customizations using your saved settings. It does not require, download, rebuild, or re-sign the generated installer app for background updates. If the update check or installation fails, it repairs from the installed sources. It targets the running local macOS VS Code application (including custom install locations) and the selected Codex extension. No repository checkout or retained installer app is needed. A successful update or repair automatically reloads a stale window after the updates settle. Background windows wait until you focus them. Windows already running the current version do not reload. To prevent reload loops, the same workspace will not automatically reload twice for the same revision within ten minutes, and automatic reloads pause after two distinct revisions in that interval; a warning in **Output → Sweetie Bot app repair** explains the pause. Manual **Developer: Reload Window** still works. Before that reload, Sweetie Bot invalidates VS Code's disposable user-extension manifest scan cache when installed files change, so the first reload reads the updated companion extension instead of presenting a second **Extensions have been modified on disk** prompt. It does not alter the installed extensions registry or suppress warnings for unrelated extension changes. Turn it off with **Automatically update and restore app customizations** in Sweetie Bot's Startup settings, or `scmToolkit.automaticAppRepair` in VS Code Settings.
 
 Updates and repairs are serialized across windows. The Python settings server suppresses bytecode generation, and any existing `__pycache__` / `.pyc` files are ignored when checking whether installed extension sources match, preventing unnecessary reinstalls and reload loops. Routine repair skips companion-extension installation; a new toolkit revision updates it too. Unsupported builds fail guarded validation before patch writes. See **Output → Sweetie Bot app repair** for errors; macOS may require App Management permission for VS Code/Python. Remote sessions are skipped. New upstream layouts may still require a compatible Sweetie Bot release, which is fetched automatically once published to `main`.
