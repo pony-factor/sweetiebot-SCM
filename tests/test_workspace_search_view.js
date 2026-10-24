@@ -63,7 +63,7 @@ async function run() {
     return require(name);
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/view'), 'utf8'), sandbox);
-  const {groupSearchResults, splitResultPath, formatResultScore} = sandbox.module.exports;
+  const {groupSearchResults, splitResultPath, formatResultScore, scoreIconSize} = sandbox.module.exports;
   const grouped = groupSearchResults([
     {uri: 'file:///top/a.md', relative: 'top/a.md', score: .99},
     {uri: 'file:///other/b.md', relative: 'other/b.md', score: .91},
@@ -90,6 +90,10 @@ async function run() {
   await githubProvider.onMessage({type: 'search', query: 'Wormhole', mode: 'exact', scope: 'github', requestId: 1});
   assert.equal(githubRequests.length, 1);
   assert.equal(githubProvider.lastResults[0].relative, 'repo/Wormhole.md');
+  assert.equal(scoreIconSize(0, 3), 12);
+  assert.equal(scoreIconSize(3, 3), 30);
+  assert.ok(scoreIconSize(.9, .9) > scoreIconSize(.7, .9), 'stronger matches have larger icons');
+  assert.equal(scoreIconSize(NaN, 3), 12, 'invalid scores use the smallest icon');
   const pending = [];
   const provider = new sandbox.module.exports.WorkspaceSearchViewProvider({
     search: () => new Promise((resolve, reject) => pending.push({resolve, reject}))
@@ -189,7 +193,7 @@ async function run() {
   assert.equal(editorChangeListener, undefined, 'provider disposal releases editor listeners');
 
   const makeNode = tagName => ({
-    tagName, children: [], dataset: {}, listeners: {},
+    tagName, children: [], dataset: {}, listeners: {}, style: {setProperty(name, value) {this[name] = value;}},
     addEventListener(event, listener) { this.listeners[event] = listener; },
     append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } },
     replaceChildren(...children) { this.children = []; this.append(...children); },
@@ -204,7 +208,7 @@ async function run() {
     remove() { this.removed = true; }
   });
   const elements = new Map();
-  for (const id of ['search', 'query', 'clear-query', 'mode', 'scope', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
+  for (const id of ['search', 'query', 'clear-query', 'mode', 'scope', 'score-toggle', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
     elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : id === 'scope' ? 'workspace' : '', focus() {}}));
   }
   const windowListeners = {};
@@ -232,6 +236,8 @@ async function run() {
   assert.match(html, /message\.type==='results'\)\{searching=false;updateIdleState\(\)/);
   assert.match(html, /MAX_RESULTS_PER_FILE=7/);
   assert.match(html, /id="history-toggle"/);
+  assert.match(html, /id="score-toggle" class="score-toggle"/);
+  assert.match(html, /#results\.score-icons-active \.score\{display:none\}/);
   assert.match(html, /id="history-panel"/);
   assert.match(html, /id="history-clear"/);
   assert.match(html, /INACTIVITY_MS=8\*60\*60\*1000/);
@@ -247,7 +253,7 @@ async function run() {
   assert.match(html, /' and '\+folderCount\+' folder'/);
   assert.doesNotMatch(html, /' · '\+message\.mode/);
   assert.match(html, /className='line-number'/);
-  assert.match(html, /meta\.append\(score,copied\)/);
+  assert.match(html, /meta\.append\(score,scoreIcon,copied\)/);
   assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
   assert.match(html, /more\.textContent='…'/);
   const page = {document: {getElementById: id => elements.get(id), createElement: makeNode,
@@ -328,6 +334,22 @@ async function run() {
   ]}});
   const sections = elements.get('results').children;
   assert.equal(sections.length, 2, 'multiple hits for one file share a clickable heading');
+  const firstScoreIcon = sections[0].children[1].children[0].children[1].children[2];
+  const secondScoreIcon = sections[0].children[1].children[1].children[1].children[2];
+  assert.equal(firstScoreIcon.className, 'score-icon');
+  assert.equal(firstScoreIcon['aria-label'], 'Relevance .90');
+  assert.ok(parseInt(firstScoreIcon.style['--score-size']) > parseInt(secondScoreIcon.style['--score-size']));
+  const scoreToggle = elements.get('score-toggle');
+  assert.equal(scoreToggle['aria-pressed'], 'false', 'numerical scores remain the default');
+  const beforeToggleMessages = sent.length;
+  scoreToggle.listeners.click();
+  assert.equal(scoreToggle['aria-pressed'], 'true');
+  assert.equal(elements.get('results').className, 'score-icons-active');
+  assert.equal(pageState.useScoreIcons, true, 'score display preference persists alongside search history');
+  assert.equal(sent.length, beforeToggleMessages, 'switching score displays does not rerun search');
+  scoreToggle.listeners.click();
+  assert.equal(elements.get('results').className, '');
+  assert.equal(pageState.useScoreIcons, false);
   const fileHeading = sections[0].children[0];
   assert.equal(fileHeading.tagName, 'button', 'file headings are keyboard-accessible buttons');
   assert.equal(fileHeading.dataset.index, '0', 'file headings open the top-ranked hit');
