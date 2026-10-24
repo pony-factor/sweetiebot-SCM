@@ -214,19 +214,24 @@ function registerBackgroundCommit(vscode, context) {
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected repository is unavailable.');
     const config = vscode.workspace.getConfiguration('git', root);
-    if (options.push ?? config.get('postCommitCommand') === 'push') {
-      const remote = vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin');
-      const merged = await mergedBranchStatus(repository, remote);
-      if (merged) {
-        await warnMergedBranch(vscode, repository, merged);
-        return { cancelled: true };
-      }
+    const pushing = options.push ?? config.get('postCommitCommand') === 'push';
+    const remote = vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin');
+    // Overlap independent local status refresh with the network-backed
+    // merged-branch safeguard instead of serializing both before the commit.
+    const [, merged] = await Promise.all([
+      repository.status(),
+      pushing ? mergedBranchStatus(repository, remote) : Promise.resolve(null)
+    ]);
+    if (merged) {
+      await warnMergedBranch(vscode, repository, merged);
+      return { cancelled: true };
     }
-    await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
     if (!repository.state.indexChanges.length || options.all) {
-      await vscode.commands.executeCommand('sweetiebot.prepareCodexCommit', root, { all: options.all });
-      await repository.status();
+      // Preparation reuses the fresh status and refreshes once after staging.
+      await vscode.commands.executeCommand('sweetiebot.prepareCodexCommit', root, {
+        all: options.all, statusFresh: true
+      });
     }
     if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
     if (await vscode.commands.executeCommand('sweetiebot.checkCommitLimits', root) === false) return { cancelled: true };
