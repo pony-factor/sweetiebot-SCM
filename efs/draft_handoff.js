@@ -119,13 +119,18 @@ async function createDraftHandoff(publish) {
         state.profile ||= input.profile;
       } else if (kind === 'draft') {
         if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 256 || typeof input.body !== 'string' || !input.body.trim() || Buffer.byteLength(input.body) > 60000) return fail(400, 'Invalid PR draft.');
-        state.draft ||= { title: input.title, body: input.body };
+        const draft = typeof state.decorateDraft === 'function'
+          ? state.decorateDraft({ title: input.title, body: input.body })
+          : { title: input.title, body: input.body };
+        if (!draft || typeof draft.title !== 'string' || typeof draft.body !== 'string' ||
+            Buffer.byteLength(draft.body) > 60000) return fail(400, 'PR description with source details exceeds the 60 KB limit.');
+        state.draft ||= draft;
       } else {
         if (state.result) return json(200, state.result);
         if (state.attempted) return fail(409, 'Publication was already attempted. Check GitHub before starting again.');
         // Legacy prepared drafts still require the explicit POST publication action.
-        const draft = state.draft || input;
-        if (typeof draft.title !== 'string' || !draft.title.trim() || draft.title.length > 256 || typeof draft.body !== 'string' || !draft.body.trim() || Buffer.byteLength(draft.body) > 60000) return fail(400, 'Wait for a valid PR draft.');
+        const draft = state.draft || (typeof state.decorateDraft === 'function' ? state.decorateDraft(input) : input);
+        if (!draft || typeof draft.title !== 'string' || !draft.title.trim() || draft.title.length > 256 || typeof draft.body !== 'string' || !draft.body.trim() || Buffer.byteLength(draft.body) > 60000) return fail(400, 'Wait for a valid PR draft.');
         state.draft = draft;
         return json(200, await publishDraft(match[1], state));
       }
@@ -139,7 +144,7 @@ async function createDraftHandoff(publish) {
   // Draft writes expire, but the close control lives until this host is disposed.
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { drafts.clear(); server.close(); }
   };
