@@ -362,7 +362,7 @@ async function run() {
       assert.equal(input.head, 'draft', 'Publish the branch captured before checkout changed');
       assert.equal(input.expectedHeadSha, 'a'.repeat(40));
       assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup',
-         body: appendSourceDetails('Keep the verified source reference.', chatSource) });
+         body: appendSourceDetails('Keep the verified source reference.', input.source) });
       return { url: 'https://github.com/owner/repo/pull/1' };
     },
     readInstructions: async repositoryPath => {
