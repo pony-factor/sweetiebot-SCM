@@ -201,7 +201,6 @@
         "test_merge_commit_tree.js",
         "test_merge_dashboard.js",
         "test_merge_summary.js",
-        "test_merge_commit_tree.js",
         "test_merge_blocker_report.js",
         "test_merge_dashboard_resize.js",
         "test_merge_reaction_choices.js",
@@ -212,8 +211,7 @@
         "test_merge_resolution_git.js",
         "test_pr_session.js",
         "test_pull_request_batch.js",
-        "test_pushed_pr.js",
-        "test_merge_summary.js"
+        "test_pushed_pr.js"
       ],
       "syntax": [
         "efs/lindsey_bulk_merge.js",
