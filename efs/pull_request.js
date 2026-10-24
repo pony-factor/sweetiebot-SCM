@@ -204,6 +204,7 @@ function pullRequestPrompt({
     `The canonical pull-request drafting rules below were loaded from the sibling ${KEFANIA_DIRECTORY}/${KEFANIA_RULES_FILE}. Follow them as the source of truth:\n\n${instructions}`,
   ];
   sections.push(PR_CROSS_REFERENCE_RULES);
+  sections.push('For a code bug-fix pull request, use the same bug emoji as the earliest bug-fix commit belonging to this branch in the verified base-to-head comparison. Exclude commits inherited from the base branch, including main or a stacked PR parent. Do not borrow an emoji from earlier main commits or unrelated PRs. If the branch has no bug-fix commit emoji, choose one afresh from 🐛 🐜 🐝 🐞 🦗 🕷️ 🦟. Keep the chosen emoji stable for this PR; independent bug fixes committed directly to main get independently selected emojis.');
 
   if (pony && !browserDraft) {
     sections.push(
