@@ -716,11 +716,12 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
             // durable mode, the queue first completes any automatic staging,
             // then inspects that final selection exactly once before enqueue.
             // A pre-staging inspection would miss newly staged/Commit All files.
-            const checkCommitLimits = async () => {
+            const checkCommitLimits = async approvedTree => {
                 try {
                     return (await commands.executeCommand(
                         'sweetiebot.checkCommitLimits',
-                        repository.rootUri
+                        repository.rootUri,
+                        approvedTree ? { approvedTree } : undefined
                     )) !== false;
                 } catch {
                     // Preserve direct Git commits when the companion extension
@@ -756,10 +757,12 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                     finishProgress(false);
                     return;
                 }
-                // Declined special modes retain the queue's approval if they
-                // already passed post-staging limits inspection. Unverified
-                // fallbacks must check before entering direct title generation.
-                if (!queued?.preflightApproved && !(await checkCommitLimits())) {
+                // A declined special mode reuses the queue's approval only
+                // for the same staged tree. If it changed, the shared inspector
+                // reruns before direct Git can generate a title.
+                if (!(await checkCommitLimits(
+                    queued?.preflightApproved ? queued.stagedTree : undefined
+                ))) {
                     finishProgress(false);
                     return;
                 }
