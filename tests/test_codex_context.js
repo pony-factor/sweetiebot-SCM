@@ -50,6 +50,10 @@ async function run() {
   });
   receive({ data: { type: 'scm-toolkit-context-request', id: 'hidden' } });
   assert.equal(responses[1].text, 'Retained hidden chat');
+  receive({ data: { type: 'scm-toolkit-context-request', id: 'model', modelOnly: true } });
+  assert.equal(responses[2].model.name, 'GPT-6.1 Codex');
+  assert.equal(responses[2].model.effort, 'Extra High');
+  assert.equal('text' in responses[2], false, 'No transcript for model-only requests');
 
   let mounted, changed;
   const frames = [], clicks = [];
@@ -166,6 +170,13 @@ async function run() {
   const ambiguous = registered.get('sweetiebot.readCodexIdentity')();
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, hasConversation: true });
   await assert.rejects(ambiguous, /identify/);
+  assert(registered.has('sweetiebot.readCodexModel'));
+  const modelPending = registered.get('sweetiebot.readCodexModel')();
+  assert.equal(messages.at(-1).modelOnly, true);
+  listener({type:'scm-toolkit-context-response',id:messages.at(-1).id,
+    model:{name:'GPT-6.1 Codex',effort:'Medium'}});
+  assert.deepEqual(JSON.parse(JSON.stringify(await modelPending)),
+    {name:'GPT-6.1 Codex',effort:'Medium'});
 
   provider.sidebarViews.clear();
   assert.throws(

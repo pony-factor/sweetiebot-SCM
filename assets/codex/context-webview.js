@@ -58,9 +58,6 @@ function scmToolkitRegisterCodexSnapshot(api) {
             api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation });
             return;
         }
-        const transcripts = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')];
-        const visible = transcripts.find(element => element.getClientRects().length);
-        const text = (visible ?? transcripts.at(-1))?.innerText?.trim() ?? '';
         // Capture only visible composer labels at handoff time. Codex does not
         // provide a stable public API for a thread's historical model choices.
         const composerLabel = kind => {
@@ -80,12 +77,20 @@ function scmToolkitRegisterCodexSnapshot(api) {
                         ? 'Medium' : label;
             return normalized.trim().slice(0, 100);
         };
+        const model = { name: composerLabel('model'), effort: composerLabel('reasoning') };
+        if (request.modelOnly) {
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, model });
+            return;
+        }
+        const transcripts = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')];
+        const visible = transcripts.find(element => element.getClientRects().length);
+        const text = (visible ?? transcripts.at(-1))?.innerText?.trim() ?? '';
         api.postMessage({
             type: 'scm-toolkit-context-response',
             id: request.id,
             text,
             conversationId: conversationId(),
-            model: { name: composerLabel('model'), effort: composerLabel('reasoning') },
+            model,
         });
     });
 

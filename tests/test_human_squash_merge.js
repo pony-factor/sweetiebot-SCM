@@ -23,7 +23,8 @@ const basePR = () => ({
 
 function fixture({ commits = [oneHuman], pr = basePR(), rebase = true,
   changedBeforeMerge = false, changedTitleBeforeMerge = false, incorrectResultAuthor = false,
-  liveBaseSha = baseSha, changedBaseBeforeMerge = false, refreshedBaseSha } = {}) {
+  liveBaseSha = baseSha, changedBaseBeforeMerge = false, refreshedBaseSha,
+  mergedMessage = originalMessage } = {}) {
   const calls = [];
   let merged = false;
   const api = async (endpoint, method = 'GET', fields = []) => {
@@ -51,7 +52,7 @@ function fixture({ commits = [oneHuman], pr = basePR(), rebase = true,
     }
     if (endpoint === 'repos/owner/repo/commits/' + mergedSha) return {
       commit: { author: incorrectResultAuthor ? { name: 'codex-pony[bot]', email: 'bot@example.org' }
-        : originalAuthor, message: originalMessage }
+        : originalAuthor, message: mergedMessage }
     };
     throw Error('Unexpected API call: ' + endpoint);
   };
@@ -116,6 +117,15 @@ async function main() {
     api: prepared.api, allowHistoryRewrite: true,
     localMerge: async () => assert.fail('Prepared one-commit PR must not be rewritten')
   })).merged);
+  for (const name of ['Codex (Web)', 'Codex (6.1 Med, Web)']) {
+    const mergedMessage = originalMessage.replace('Codex Web', name);
+    const updated = fixture({mergedMessage, commits:[{...oneHuman,commit:{...oneHuman.commit,
+      message:mergedMessage}}]});
+    assert((await humanSquashMerge('owner/repo', 12, {
+      api:updated.api, allowHistoryRewrite:true,
+      localMerge:async()=>assert.fail('Prepared model/Web credit must not be rewritten')
+    })).merged, name + ' must be accepted as valid Codex web credit');
+  }
 
   for (const change of [
     [{ ...oneHuman, commit: { ...oneHuman.commit,

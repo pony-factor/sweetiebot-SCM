@@ -2,6 +2,7 @@
 
 const { spawn, execFile } = require('child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
+const { isCodex, withModel, collapse } = require('./codex_attribution');
 
 function generateMessage(script, cwd, context) {
   return new Promise((resolve, reject) => {
@@ -101,10 +102,20 @@ function coauthorTrailer(name, email) {
 }
 
 function withCoauthorTrailer(message, trailer) {
-  const base = message.trimEnd();
-  if (!base) return '';
-  if (base.split(/\r?\n/).some(line => line.trim() === trailer)) return base;
-  return base + '\n\n' + trailer;
+  return collapse(message, trailer);
+}
+
+// Read only the active Codex window's displayed model and effort; never
+// request conversation text solely for co-author attribution.
+async function activeCodexModel(vscode) {
+  try {
+    const extension = vscode.extensions.getExtension('openai.chatgpt');
+    if (!extension) return undefined;
+    if (!extension.isActive) await extension.activate();
+    if (!(await vscode.commands.getCommands(true)).includes('sweetiebot.readCodexModel')) return undefined;
+    const model = await vscode.commands.executeCommand('sweetiebot.readCodexModel');
+    return model && typeof model === 'object' ? model : undefined;
+  } catch { return undefined; }
 }
 
 async function commitWithCodex(vscode, uri, options = {}) {
@@ -121,12 +132,17 @@ async function commitWithCodex(vscode, uri, options = {}) {
     const configuredEmail = options.trailer === undefined
       ? await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-email', 'noreply@openai.com')
       : null;
-    const trailer = options.trailer === undefined
+    let trailer = options.trailer === undefined
       ? coauthorTrailer(configuredName, configuredEmail)
       : options.trailer;
     // Validate even caller-provided trailers; no arbitrary commit-message injection.
     if (typeof trailer !== 'string' || !/^Co-authored-by: [^\r\n<>]+ <[^\s<>@\r\n]+@[^\s<>@\r\n]+>$/.test(trailer)) {
       throw new Error('Invalid Codex co-author trailer.');
+    }
+    const parts = /^Co-authored-by: (.+?) <([^<>]+)>$/.exec(trailer);
+    if (isCodex(parts[1], parts[2])) {
+      const model = await activeCodexModel(vscode);
+      trailer = coauthorTrailer(withModel(parts[1], model), parts[2]);
     }
     const input = repository.inputBox;
     const originalMessage = options.message === undefined ? (input?.value ?? '') : options.message;
@@ -139,8 +155,13 @@ async function commitWithCodex(vscode, uri, options = {}) {
     }
     const push = vscode.workspace.getConfiguration('git', root).get('postCommitCommand') === 'push';
     if (vscode.workspace.getConfiguration('scmToolkit', root).get('durableBackgroundCommits', false) === true) {
+      const preparedMessage = originalMessage.trim()
+        ? withCoauthorTrailer(originalMessage, trailer) : '';
+      // The background worker appends a missing trailer verbatim. Once the
+      // message is consolidated, passing the old trailer would duplicate it.
       return await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
-        message: originalMessage, codex: true, trailer, push
+        message: preparedMessage, codex: true,
+        trailer: preparedMessage ? '' : trailer, push
       });
     }
     let message = originalMessage;

@@ -14,7 +14,12 @@ async function run(){
    'Preserve the exact original PR title when it contains a different issue number');
  const prepared=squashMessage('🐛 Repair retries',269,commits);
  assert.equal(prepared.title,'🐛 Repair retries (#269)');
- assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex','Codex Web']);
+ const modeled=squashMessage('🔩 Verify co-authors',269,[{commit:{
+   author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'Verify model\n\nCo-authored-by: Codex (6.1 Med) <noreply@openai.com>'
+ }}]);
+ assert(modeled.trailers.includes('Co-authored-by: Codex (6.1 Med, Web) <noreply@openai.com>'));
+ assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex (Web)']);
  assert.equal(prepared.message, [
   '- Change',
   '- Sync',
@@ -22,8 +27,7 @@ async function run(){
   '__________',
   '',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
-  'Co-authored-by: Codex <noreply@openai.com>',
-  'Co-authored-by: Codex Web <noreply@openai.com>'
+  'Co-authored-by: Codex (Web) <noreply@openai.com>'
  ].join('\n'));
  const detailed=[
   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🖍️ Reference Austin Campbell TAD clip\r\n\r\nAdd a root-level reference to the personal clips index.\r\n\r\nMore context.\r\n\r\nCo-authored-by: Codex Web <noreply@openai.com>'}},
@@ -40,12 +44,11 @@ async function run(){
   '__________',
   '',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
-  'Co-authored-by: Codex <noreply@openai.com>',
-  'Co-authored-by: Codex Web <noreply@openai.com>'
+  'Co-authored-by: Codex (Web) <noreply@openai.com>'
  ].join('\n'));
  assert(!/(^|\n)\* /.test(formatted.message), 'Commit list must use hyphens, not asterisks');
  assert(!formatted.message.includes('\n\n\n'), 'No extra blank lines between entries');
- assert.equal((formatted.message.match(/^Co-authored-by:/gm)||[]).length,3,
+ assert.equal((formatted.message.match(/^Co-authored-by:/gm)||[]).length,2,
   'Trailers appear only in one consolidated block');
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{name:'A',email:'a@example.org'},message:'\nNo subject'}}]),/subject/);
 
@@ -75,7 +78,7 @@ async function run(){
  assert(!filtered.message.includes('Sync brach to main'));
  assert(!filtered.message.includes('Sync branch to main'));
  assert(!filtered.message.includes('latest request timeout changes'));
- assert(filtered.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'),
+ assert(filtered.trailers.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
    'Filtering sync summaries never loses co-author attribution');
  const unfiltered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:false});
  assert(unfiltered.message.includes('- 🔄 Sync brach to main'));
@@ -95,7 +98,7 @@ async function run(){
  assert(emojiOnly.message.startsWith('🐛 Fix panel resizing\n  Avoid overflowing the viewport.\n\n🧪 Cover small windows'));
  assert(!emojiOnly.message.includes('- 🐛'));
  assert(!emojiOnly.message.includes('Sync brach to main'));
- assert(emojiOnly.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'));
+ assert(emojiOnly.trailers.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'));
  const legacyBullets=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
    {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:false});
  assert(legacyBullets.message.includes('- 🐛 Fix panel resizing'));
