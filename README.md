@@ -511,11 +511,13 @@ When blank-message commits use local AI, Source Control displays **Generating co
 stages the intended changes (if needed), checks GitHub's file and diff limits
 **once** against that final staged selection, and only then captures Codex context
 or starts the commit/title worker. The approved Git tree ID is passed to the
-worker, which rejects any new staging changes before recording the commit without
-repeating the expensive diff inspection. Normal direct commits still check once
-before title generation. If the background worker declines a special operation
-such as automatic oversized multi-commit splitting, the direct path reuses the
-already approved inspection; cancellation never bypasses the check.
+worker. If staging changes during validation or before Python accepts the job,
+Sweetiebot automatically inspects the new selection again (up to three retries),
+without creating an unvalidated commit or starting title generation. Direct
+commits use the same inspection command. When a background job declines a
+special operation such as oversized automatic splitting, the direct path reuses
+an earlier approval only if the staged Git tree is unchanged; otherwise it
+runs a new inspection.
 
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message
