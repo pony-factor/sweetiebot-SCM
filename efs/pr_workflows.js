@@ -21,7 +21,7 @@ function ponyPrompt(pony, instructions, callback) {
   ].join('\n\n');
 }
 
-function boundedLaunch(makePrompt, makeUrl, evidence) {
+function boundedLaunch(makePrompt, makeUrl, evidence, { shortenContext } = {}) {
   // Copy rather than mutate the canonical context used for publication checks.
   const copy = evidence ? JSON.parse(JSON.stringify(evidence)) : undefined;
   if (copy) delete copy.instructions; // Already supplied once in the PR rules.
@@ -30,7 +30,10 @@ function boundedLaunch(makePrompt, makeUrl, evidence) {
     const url = makeUrl(prompt);
     if (Buffer.byteLength(url, 'utf8') <= MAX_LAUNCH_BYTES) return { prompt, url, evidence: copy };
     const largest = copy?.files?.filter(file => file.patch).sort((a, b) => b.patch.length - a.patch.length)[0];
-    if (!largest) throw new Error('Kefania instructions exceed the 70 KB browser launch budget. Shorten the drafting instructions and retry.');
+    if (!largest) {
+      if (typeof shortenContext === 'function' && shortenContext()) continue;
+      throw new Error('Kefania instructions exceed the 70 KB browser launch budget. Shorten the drafting instructions and retry.');
+    }
     let end = Math.floor(largest.patch.length / 2);
     // Percent encoding rejects an unmatched surrogate from a split emoji.
     if (/[\uD800-\uDBFF]/.test(largest.patch[end - 1] || '')) end--;

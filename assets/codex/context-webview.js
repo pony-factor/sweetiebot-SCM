@@ -61,11 +61,21 @@ function scmToolkitRegisterCodexSnapshot(api) {
         const transcripts = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')];
         const visible = transcripts.find(element => element.getClientRects().length);
         const text = (visible ?? transcripts.at(-1))?.innerText?.trim() ?? '';
+        // Capture only visible composer labels at handoff time. Codex does not
+        // provide a stable public API for a thread's historical model choices.
+        const composerLabel = kind => {
+            const button = [...document.querySelectorAll(
+                'button[data-composer-navigation-target="' + kind + '"]'
+            )].find(item => item.getClientRects().length);
+            return String(button?.innerText || button?.textContent || button?.getAttribute('aria-label') || '')
+                .replace(/\s+/g, ' ').trim().slice(0, 100);
+        };
         api.postMessage({
             type: 'scm-toolkit-context-response',
             id: request.id,
             text,
             conversationId: conversationId(),
+            model: { name: composerLabel('model'), effort: composerLabel('reasoning') },
         });
     });
 
