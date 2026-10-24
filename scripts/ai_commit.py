@@ -1762,6 +1762,9 @@ def fallback_title(files: list[str], file_context: str = "", diff: str = "") -> 
         return f"🖼️ {action} {len(files)} image assets"
     subject = " and ".join(labels) if len(labels) <= 2 else "project files"
     topic = _fallback_topic(files)
+    # Avoid repeating a directory name already present in the file-category label.
+    if topic and re.search(rf"\b{re.escape(topic)}\b", subject, re.IGNORECASE):
+        topic = ""
     phrase = f"{topic} {subject}" if topic else subject
     title = f"{emoji} {action} {phrase}"
     if len(title) > 72 and topic:
