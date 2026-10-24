@@ -59,6 +59,12 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
 .event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.event-disclosure>summary{cursor:pointer;overflow-wrap:anywhere}
+.event-disclosure>summary:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+.event-summary{font-weight:650;overflow-wrap:anywhere}
+.event-commit-sha{display:inline-block;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-weight:400;color:inherit;background:var(--vscode-textCodeBlock-background,var(--vscode-editorWidget-background,#333));padding:1px 4px;border-radius:3px;white-space:nowrap}
+.event-expanded{margin:5px 0 4px 12px;overflow-wrap:anywhere}
+.event-status{font-weight:600;font-size:12px}
 .event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
 main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -148,6 +154,7 @@ __MARKDOWN_RENDERER__
 <script nonce="__NONCE__">
 __DIFF_RENDERER__
 __COMMIT_TREE__
+__ACTIVITY_RENDERER__
 </script>
 <script nonce="__NONCE__">
 __TIMESTAMP_FORMATTER__
@@ -164,6 +171,7 @@ __RATE_LIMIT_FORMATTER__
   let sidebarRatio = validRatio(savedLayout.sidebarRatio) ? savedLayout.sidebarRatio : null;
   let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
   let layoutPreferences = savedLayout.layoutPreferences || null;
+  const openActivities = new Set();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   function saveLayout() {
     vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
@@ -430,11 +438,25 @@ __RATE_LIMIT_FORMATTER__
     events.replaceChildren();
     for (const event of model.events.slice(-400).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
-      show('strong', '', '#' + event.number + ' ' + event.message, node);
-      if (event.details) {
-        const detail = show('details', '', undefined, node);
-        show('summary', 'muted', 'Details', detail);
-        show('div', 'event-details', event.details, detail);
+      const presentation = mergeActivityPresentation(event, model.prs);
+      const key = event.id ?? (event.at + ':' + event.number + ':' + event.message);
+      const line = presentation.expandable
+        ? show('details', 'event-disclosure', undefined, node) : node;
+      if (presentation.expandable) {
+        line.open = openActivities.has(key);
+        line.addEventListener('toggle', () => {
+          if (!line.isConnected) return;
+          if (line.open) openActivities.add(key);
+          else openActivities.delete(key);
+        });
+      }
+      const summary = show(presentation.expandable ? 'summary' : 'div',
+        'event-summary', undefined, line);
+      renderMergeActivitySummary(summary, event.number, presentation);
+      if (presentation.expandable) {
+        const body = show('div', 'event-expanded', undefined, line);
+        if (presentation.status) show('div', 'event-status', presentation.status, body);
+        if (presentation.explanation) show('div', 'event-details', presentation.explanation, body);
       }
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {

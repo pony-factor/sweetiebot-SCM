@@ -196,6 +196,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
     .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'merge_commit_tree.js'), 'utf8'))
+    .replace('__ACTIVITY_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_activity.js'), 'utf8'))
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
     .replace('__RATE_LIMIT_FORMATTER__', require('./github_rate_limit').rateLimitMessage.toString())
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
@@ -241,8 +242,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   });
 
-  function addEvent(pr, state, message, details) {
-    const event = { number: pr.number, state, message, ...(details ? { details } : {}), at: new Date().toISOString() };
+  let nextEventId = 0;
+  function addEvent(pr, state, message, details, commit) {
+    const validCommit = SHA.test(commit?.sha || '');
+    const event = { id: ++nextEventId, number: pr.number, state, message,
+      ...(details ? { details } : {}),
+      ...(validCommit ? { commitSha: commit.sha,
+        commitTitle: String(commit.title || '').split('\n')[0].slice(0, 160) } : {}),
+      at: new Date().toISOString() };
     events.push(event);
     pr.events.push(event);
     if (events.length > 400) events.shift();
@@ -521,7 +528,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const decision = ['decision-commit', 'preparing', 'rewrite-approved', 'message-prepared'].includes(event.stage)
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
     addEvent(pr, 'progress', stages[event.stage],
-      [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
+      [file, decision].filter(Boolean).join('\n'),
+      sha ? { sha, title: event.title } : null);
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
@@ -586,8 +594,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : item.status === 'checks_failed' ? 'Integrated-head checks failed · PR remains unmerged'
         : pushed ? 'Stopped after pushing the prepared PR branch · merge not confirmed'
         : 'Local preparation stopped · merge not confirmed';
-      const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason].filter(Boolean).join('\n');
-      addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
+      const commitSha = item.status === 'merged' && item.merged === true && SHA.test(item.sha || '')
+        ? item.sha : pushed;
+      addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked',
+        message, String(item.reason || '').slice(0, 4000),
+        commitSha ? { sha: commitSha, title: item.commitTitle } : null);
     }
     publish();
   } };

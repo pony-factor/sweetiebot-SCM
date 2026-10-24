@@ -8,6 +8,7 @@ const {
 } = require('../efs/merge_dashboard');
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
+const { mergeActivityPresentation, renderMergeActivitySummary } = require('../efs/merge_dashboard_activity');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
 const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt } = require('../efs/merge_blocker_actions');
 
@@ -198,6 +199,36 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   assert(!panel.webview.html.includes('__NONCE__'));
   assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
   assert(panel.webview.html.includes('function renderMergeMarkdown('));
+  assert(panel.webview.html.includes('function mergeActivityPresentation('));
+  assert(!panel.webview.html.includes('__ACTIVITY_RENDERER__'));
+  assert(panel.webview.html.includes('renderMergeActivitySummary(summary, event.number, presentation)'));
+  assert(!panel.webview.html.includes("show('summary', 'muted', 'Details'"));
+  const commitActivity = mergeActivityPresentation({
+    number: 12, commitSha: sha, commitTitle: '🔄 Sync branch to main',
+    message: 'Requesting GitHub merge · awaiting confirmation',
+    details: 'Codex preserved both APIs.'
+  });
+  assert.equal(commitActivity.shortSha, 'aaaaaaa');
+  assert.equal(commitActivity.summary, '🔄 Sync branch to main');
+  assert.equal(commitActivity.status, 'Requesting GitHub merge · awaiting confirmation');
+  assert.equal(commitActivity.explanation, 'Codex preserved both APIs.');
+  assert(commitActivity.expandable);
+  const lone = mergeActivityPresentation({
+    number: 12, commitSha: sha, commitTitle: '🛠️ Refine API', message: '🛠️ Refine API'
+  });
+  assert.equal(lone.expandable, false, 'Commit-only events have no redundant details block');
+  const live = mergeActivityPresentation({ number: 12, commitSha: sha, message: 'Checks passed' },
+    [{ number: 12, commits: [{ sha, commit: { message: '🛠️ Refine API\n\nDescription' } }] }]);
+  assert.equal(live.summary, '🛠️ Refine API', 'Resolve actual GitHub commit titles');
+  const legacy = mergeActivityPresentation({ number: 12,
+    message: 'Requesting GitHub merge', details: 'Commit: ' + sha.slice(0, 12) },
+    [{ number: 12, commits: [{ sha, commit: { message: '🔄 Sync branch to main' } }] }]);
+  assert.equal(legacy.shortSha, 'aaaaaaa');
+  assert.equal(legacy.explanation, '', 'The old Commit: details label is removed');
+  assert(legacy.expandable, 'Status remains accessible when commit data is in the summary');
+  const noSha = mergeActivityPresentation({ number: 12, message: 'Checks passed', details: '14 checks passed' });
+  assert.equal(noSha.summary, 'Checks passed');
+  assert.equal(noSha.explanation, '14 checks passed');
   assert(panel.webview.html.includes('function renderMergePatch('));
   assert(!panel.webview.html.includes('__DIFF_RENDERER__'));
   assert(panel.webview.html.includes("renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch)"));
@@ -340,15 +371,20 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
   dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
     path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
+  assert.equal(events.at(-1).events.at(-1).commitSha, sha);
+  assert.equal(events.at(-1).events.at(-1).commitTitle, '🛠️ Keep both APIs');
   assert(events.at(-1).events.at(-1).details.includes('Keep both APIs'));
   assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
-  dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha });
+  dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha, title: '🔄 Sync branch to main' });
+  assert.equal(events.at(-1).events.at(-1).commitTitle, '🔄 Sync branch to main');
+  assert(!events.at(-1).events.at(-1).details, 'Commit-only progress has no redundant detail text');
   assert.match(events.at(-1).events.at(-1).message, /not merged/);
   dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
     status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
   assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
   assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
+  assert.equal(events.at(-1).events.at(-1).commitSha, sha);
   assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
@@ -419,6 +455,12 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
       get textContent() { return this.text ?? this.children.map(child => child.textContent).join(''); }
     };
   } };
+  const summaryRoot = document.createElement('div');
+  renderMergeActivitySummary(summaryRoot, 12, commitActivity);
+  assert.deepEqual(summaryRoot.children.map(child => child.tag), ['span', 'code', 'span']);
+  assert.equal(summaryRoot.children[1].className, 'event-commit-sha');
+  assert.equal(summaryRoot.children[1].textContent, 'aaaaaaa');
+  assert.equal(summaryRoot.children[2].textContent, ' 🔄 Sync branch to main');
   const root = document.createElement('div');
   const clicked = [];
   const tick = String.fromCharCode(96);
