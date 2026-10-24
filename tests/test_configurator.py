@@ -152,6 +152,15 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("Explain AI commit title choices", page)
         self.assertFalse("aiTitleExplanations" in configurator.extension_settings_payload(settings)["vscodeSettings"])
 
+    def test_spellcheck_menu_documents_repository_override(self):
+        page = configurator.render_form(
+            dict(toolkit_settings.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save"
+        )
+        self.assertIn("Opt out in one repository", page)
+        self.assertIn("<code>.vscode/settings.json</code>", page)
+        self.assertIn("&quot;scmToolkit.postCommitSpellcheck&quot;: false", page)
+        self.assertIn("Other repositories still spellcheck", page)
+
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
         values["spellcheckPreserveLineBreaks"] = ["true"]

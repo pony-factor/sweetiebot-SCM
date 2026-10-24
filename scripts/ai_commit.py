@@ -2160,6 +2160,16 @@ def load_post_commit_spellcheck():
     return module
 
 
+def post_commit_spellcheck_enabled() -> bool:
+    if not git_config_bool("scm-toolkit.post-commit-spellcheck", False):
+        return False
+    try:
+        return not load_post_commit_spellcheck().repository_spellcheck_disabled(GIT_GLOBAL_ARGS)
+    except Exception:
+        # Invalid or unavailable workspace settings leave the global preference intact.
+        return True
+
+
 def main() -> None:
     global GIT_GLOBAL_ARGS
 
@@ -2318,9 +2328,10 @@ def main() -> None:
         split_groups = github_split_groups(files)
         if len(split_groups) > 1:
             raise SystemExit(commit_split_groups(argv, split_groups))
+        spellcheck_enabled = post_commit_spellcheck_enabled()
         use_async = (
             git_config_bool("scm-toolkit.ai-commit-async", False)
-            and not git_config_bool("scm-toolkit.post-commit-spellcheck", False)
+            and not spellcheck_enabled
             and git_output("config", "--type=bool", "--get", "commit.gpgsign").strip() != "true"
             and not any(arg == "-S" or arg.startswith(("-S", "--gpg-sign")) for arg in commit_args)
             and bool(current_branch())
@@ -2348,7 +2359,7 @@ def main() -> None:
     message_args = ["-m", title]
     if description:
         message_args.extend(["-m", description])
-    if not git_config_bool("scm-toolkit.post-commit-spellcheck", False):
+    if not spellcheck_enabled:
         os.execv(REAL_GIT, [REAL_GIT, *argv, *message_args])
 
     spellcheck = None
