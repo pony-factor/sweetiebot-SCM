@@ -62,6 +62,36 @@ class BackgroundCommitTests(unittest.TestCase):
         worker.write_journal(directory / 'job.json', job)
         return directory
 
+    def test_durable_commit_rejects_changed_stage_after_approved_preflight(self):
+        """A cheap tree comparison guards the one staged-size inspection."""
+        approved_tree = self.git('write-tree')
+        (self.repo / 'later.txt').write_text('Not included in approval\n')
+        self.git('add', 'later.txt')
+        staged_before = self.git('write-tree')
+        self.assertNotEqual(approved_tree, staged_before)
+        with self.assertRaisesRegex(RuntimeError, 'Staged changes changed'):
+            worker.enqueue({
+                'message': '🧪 Reject stale inspected tree',
+                'expectedTree': approved_tree,
+            }, start=False)
+        self.assertEqual(self.git('write-tree'), staged_before)
+        self.assertEqual(self.git('diff', '--cached', '--name-only'),
+                         'later.txt\nstory.txt')
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_durable_commit_accepts_matching_staged_tree(self):
+        approved_tree = self.git('write-tree')
+        directory = self.queue(expectedTree=approved_tree)
+        self.assertEqual(self.job(directory)['tree'], approved_tree)
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), approved_tree)
+
+    def test_durable_commit_rejects_invalid_preflight_tree_id(self):
+        with self.assertRaisesRegex(ValueError, 'Invalid approved staged-tree'):
+            worker.enqueue({
+                'message': '🧪 Invalid preflight',
+                'expectedTree': 'not-a-git-object',
+            }, start=False)
+
     def test_status_retires_published_jobs_after_external_merge_without_touching_work(self):
         first = self.queue(push=True)
         self.git('branch', 'side')
@@ -169,6 +199,59 @@ class BackgroundCommitTests(unittest.TestCase):
                     drain.assert_called_once_with(meta)
                 else:
                     work.assert_called_once_with(directory)
+
+    def saved_retention_job(self, name, phase, age_days, now, **extra):
+        directory = self.root / 'jobs' / name
+        directory.mkdir(parents=True)
+        worker.write_journal(directory / 'job.json', dict(
+            id=name, gitdir=str(self.repo / '.git'), phase=phase, **extra))
+        timestamp = now - age_days * 86400
+        os.utime(directory / 'job.json', (timestamp, timestamp))
+        return directory
+
+    def test_retention_prunes_only_settled_jobs_older_than_60_days(self):
+        now = time.time()
+        expired_done = self.saved_retention_job('0000000000000001', 'done', 61, now)
+        expired_cancelled = self.saved_retention_job('0000000000000002', 'cancelled', 61, now)
+        recent = self.saved_retention_job('0000000000000003', 'done', 59, now)
+        boundary = self.saved_retention_job('0000000000000004', 'done', 59.9, now)
+        blocked = self.saved_retention_job('0000000000000005', 'blocked', 90, now)
+        generating = self.saved_retention_job('0000000000000006', 'generating', 90, now)
+        provisional = self.saved_retention_job('0000000000000007', 'done', 90, now, provisional=True)
+        unknown = self.saved_retention_job('not-a-job-id', 'done', 90, now)
+        worker.prune_completed_jobs(now=now)
+        self.assertFalse(expired_done.exists())
+        self.assertFalse(expired_cancelled.exists())
+        for directory in (recent, boundary, blocked, generating, provisional, unknown):
+            self.assertTrue(directory.exists(), directory.name)
+
+    def test_retention_protects_queued_jobs_transactions_and_active_workers(self):
+        now = time.time()
+        queued = self.saved_retention_job('0000000000000008', 'done', 90, now)
+        busy = self.saved_retention_job('0000000000000009', 'done', 90, now)
+        meta = self.repo / '.git'
+        worker.write_journal(meta / worker.MARKER, {'id': queued.name, 'directory': str(queued)})
+        with (busy / 'worker.lock').open('a+b') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            worker.prune_completed_jobs(now=now)
+            self.assertTrue(queued.exists())
+            self.assertTrue(busy.exists())
+        (meta / worker.MARKER).unlink()
+        (meta / worker.TRANSACTION).write_text('{}')
+        worker.prune_completed_jobs(now=now)
+        self.assertTrue(queued.exists())
+        self.assertTrue(busy.exists())
+        (meta / worker.TRANSACTION).unlink()
+        worker.prune_completed_jobs(now=now)
+        self.assertFalse(queued.exists())
+        self.assertFalse(busy.exists())
+
+    def test_resume_prunes_expired_completed_jobs(self):
+        now = time.time()
+        expired = self.saved_retention_job('000000000000000a', 'done', 61, now)
+        with patch.object(worker.time, 'time', return_value=now):
+            worker.resume()
+        self.assertFalse(expired.exists())
 
     def test_merged_branch_is_blocked_before_background_push(self):
         directory = self.queue(push=True)

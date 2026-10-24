@@ -507,6 +507,19 @@ Without a dedicated title preference, titles default to one professional emoji f
 
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly after one second while generation continues in the background. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
+**Reusable commit-size preflight:** With durable background commits enabled, Sweetiebot
+stages the intended changes (if needed), checks GitHub's file and diff limits
+once per unchanged staged tree before creating a commit or starting the title
+worker. Optional Codex context cannot override that verified selection. The
+approved Git tree ID is passed to the
+worker. If staging changes during validation or before Python accepts the job,
+Sweetiebot automatically inspects the new selection again (up to three retries),
+without creating an unvalidated commit or starting title generation. Direct
+commits use the same inspection command. When a background job declines a
+special operation such as oversized automatic splitting, the direct path reuses
+an earlier approval only if the staged Git tree is unchanged; otherwise it
+runs a new inspection.
+
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message
 commits use a temporary `placeholder_<16 hex digits>` subject, so committed
@@ -520,8 +533,13 @@ When nothing is staged, the background path stages the working changes first,
 respecting Git's tracked-only smart commit setting. Existing staged selections
 stay separate from unstaged work unless you explicitly choose Commit All.
 You can keep committing while earlier titles generate. Each click creates its
-own local placeholder; up to four titles generate in parallel, then the worker
-applies them in commit order and updates
+own local placeholder; up to six titles may generate in parallel when memory
+headroom permits, and fewer run under pressure. Direct and background title
+requests share cross-process admission locks across repositories, so a batch
+cannot monopolize local Ollama or multiply its KV-cache allocations without
+regard to available memory. Waiting for a free slot does not consume the
+configured model-generation timeout. The worker then applies titles in commit
+order and updates
 the queued descendants' parent links without changing their contents. Pushes
 publish only commits whose messages and ancestors are finalized.
 
@@ -535,6 +553,10 @@ never force-pushes or automatically merges remote changes. Jobs and their privat
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
 allows more Sweetiebot commits while blocking direct pushes and branch changes.
+Completed and cancelled background commit job records (and private index snapshots)
+are retained for 60 days from the journal's last write, then deleted on a subsequent
+background worker resume. Unfinished, blocked, active, queued, and recovery-referenced
+jobs are preserved regardless of age.
 Terminal commits through the Git wrapper wait until the queue finishes. Special commit
 modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
@@ -556,7 +578,7 @@ On macOS, install a dedicated local commit worker so long PDF OCR jobs on port 1
 python3 scripts/ollama_concurrency.py
 ```
 
-This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated commit worker allows six simultaneous Ollama requests. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
+This starts a login LaunchAgent on `127.0.0.1:11435`, shares the existing models in `~/.ollama/models`, and sets `scm-toolkit.ai-ollama-url` after the worker is ready. It leaves the existing Ollama service and active OCR jobs running. The dedicated Ollama service permits up to six simultaneous requests, but Sweetiebot now shares a memory-aware generation limit across repositories and the normal/direct commit path: one request with less than 8 GiB of estimated available memory, two at 8 GiB, three at 16 GiB, four at 24 GiB, five at 32 GiB, and up to six at 40 GiB. When macOS cannot report available memory, the conservative cap is two. Titles that finish early are saved until earlier commits are finalized. The commit worker uses a 4096-token default context and quantized context cache to limit memory use. The API setting `SCM_TOOLKIT_AI_OLLAMA_URL` overrides the Git endpoint setting; only local HTTP endpoints are accepted.
 
 Remove the dedicated worker and restore the default commit endpoint with `python3 scripts/ollama_concurrency.py --uninstall`. Installing the normal VS Code toolkit alone does not change Ollama services.
 
