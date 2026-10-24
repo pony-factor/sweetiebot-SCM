@@ -334,6 +334,9 @@ async function confirmCommitLimits(vscode, cwd, status) {
 }
 
 function registerCommitLimitCommand(vscode, context) {
+  // Only a tree this instance actually approved can reuse the inspection.
+  // Passing an arbitrary Git SHA to the public command is not an approval.
+  const approvedByRepository = new Map();
   context.subscriptions.push(vscode.commands.registerCommand(
     'sweetiebot.checkCommitLimits',
     async (uri, options = {}) => {
@@ -347,7 +350,8 @@ function registerCommitLimitCommand(vscode, context) {
       // direct Git wrapper. Reuse its approved inspection only for the exact
       // same tree; an intervening stage change invalidates the approval.
       const approvedTree = options.approvedTree;
-      if (typeof approvedTree === 'string' && /^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(approvedTree)
+      if (typeof approvedTree === 'string'
+          && approvedByRepository.get(root.fsPath) === approvedTree
           && await tree() === approvedTree) {
         return captureTree ? { approved: true, stagedTree: approvedTree } : true;
       }
@@ -361,11 +365,16 @@ function registerCommitLimitCommand(vscode, context) {
         const status = await inspectCommitLimits(root.fsPath);
         if (await tree() !== before) continue;
         const allowed = await confirmCommitLimits(vscode, root.fsPath, status);
-        if (!allowed) return captureTree ? { approved: false } : false;
+        if (!allowed) {
+          approvedByRepository.delete(root.fsPath);
+          return captureTree ? { approved: false } : false;
+        }
         const after = await tree();
         if (after !== before) continue;
+        approvedByRepository.set(root.fsPath, after);
         return captureTree ? { approved: true, stagedTree: after } : true;
       }
+      approvedByRepository.delete(root.fsPath);
       await vscode.window.showWarningMessage(
         'The staged changes kept changing during commit validation. Review the selection and retry.'
       );
