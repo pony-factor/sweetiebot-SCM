@@ -20,6 +20,7 @@ function parseReportOptions(text) {
     let data;
     try { data = JSON.parse(match[1]); } catch { continue; }
     if (data?.version !== 1 || !Array.isArray(data.options)) continue;
+    const start = options.length;
     for (const option of data.options.slice(0, 6)) {
       if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(option?.id || '') || seen.has(option.id) ||
           ROUTINE_ACTIONS.has(option.id) || typeof option.label !== 'string' || !option.label.trim() || option.label.length > 120 ||
@@ -34,6 +35,7 @@ function parseReportOptions(text) {
         ...(CHOICE_REACTIONS.includes(option.reaction) ? { reaction: option.reaction } : {}),
         ...(isRecommended ? { recommended: true } : {}) });
     }
+    if (options.length - start < 2) options.splice(start);
   }
   return options;
 }
@@ -46,13 +48,14 @@ function blockerOptions(pr) {
   const suggestions = [...(pr.localReview?.options || []), ...(pr.review?.options || []), ...(pr.report?.options || [])].filter(option => !ROUTINE_ACTIONS.has(option.id.replace(/^report-/, ''))).slice(0, 6);
   const choices = [...suggestions.filter(option => option.recommended), ...suggestions];
   const seen = new Set(), labels = new Set();
-  return choices.filter(option => {
+  const distinct = choices.filter(option => {
     const label = option.label.toLowerCase().trim();
     if (seen.has(option.id) || labels.has(label)) return false;
     seen.add(option.id); labels.add(label); return true;
   }).map(option => ({
     ...option, key: createHash('sha256').update(JSON.stringify(option)).digest('hex')
   }));
+  return distinct.length >= 2 ? distinct : [];
 }
 
 function blockerPrompt(repository, pr, option) {

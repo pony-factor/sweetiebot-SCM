@@ -7,7 +7,7 @@ const { publishBlockerReport } = require('./merge_blocker_report');
 // account. Existing review/comment ownership and exact PR snapshots are checked
 // again by the publisher before it writes anything.
 async function repairMergeReview(vscode) {
-  const url = await vscode.window.showInputBox({ prompt: 'Pull request whose grouped merge review needs implementation actions', placeHolder: 'https://github.com/owner/repo/pull/123' });
+  const url = await vscode.window.showInputBox({ prompt: 'Pull request whose grouped merge review needs updated analysis', placeHolder: 'https://github.com/owner/repo/pull/123' });
   if (url === undefined) return;
   const match = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9]\d*)\/?$/.exec(url.trim());
   if (!match) throw Error('Enter a GitHub pull-request URL.');
@@ -38,7 +38,7 @@ async function repairMergeReview(vscode) {
     });
     const result = await publishBlockerReport({ repository, pr: { number: Number(number), title: info.title, head: info.head.ref, headSha: info.head.sha, base: info.base.ref }, paths: decisions.map(note => note.path), decisions, api });
     if (!result.posted) throw Object.assign(Error(result.error || 'No owned per-file analysis was found.'), result.rateLimited ? { rateLimited: true, retryAt: result.retryAt } : {});
-    vscode.window.showInformationMessage('Implementation actions restored to the grouped review.');
+    vscode.window.showInformationMessage('Grouped review updated; compatible integrations need no reaction.');
     return result;
   } catch (error) { if (!await promptRateLimit(vscode, error)) throw error; }
 }
