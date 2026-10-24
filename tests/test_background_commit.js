@@ -18,10 +18,11 @@ async function run() {
   const noticeTimers = [];
   let resumes = 0;
   const root = { scheme: 'file', fsPath: '/repo' };
+  let statusCalls = 0;
   const repository = {
     rootUri: root,
     state: { indexChanges: [], mergeChanges: [] },
-    async status() {},
+    async status() { statusCalls++; },
   };
   const sandbox = vm.createContext({
     module: { exports: {} },
@@ -123,8 +124,13 @@ async function run() {
   assert.equal(notQueued.queued, false);
   assert.deepEqual(events, [], 'checking an empty queue never stages or commits');
 
+  const initialStatusCalls = statusCalls;
   await commit(root, { message: 'Test' });
   assert.deepEqual(events, ['stage', 'limits', 'enqueue']);
+  assert.equal(statusCalls - initialStatusCalls, 2,
+    'queue refreshes once before preflight and once after the local commit');
+  assert.equal(preparations[0].statusFresh, true,
+    'preparation reuses the verified Git state');
   await commit(root, { message: 'Staged selection' });
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
