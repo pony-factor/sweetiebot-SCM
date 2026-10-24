@@ -108,6 +108,12 @@ async function publishOptionalMergeSummaries({ enabled, selection, input, result
   try {
     const publish = loadPublisher();
     if (typeof publish !== 'function') {
+      // A mistaken async loader may return a rejected promise instead of a
+      // publisher function. Consume that rejection without treating it as a
+      // valid publisher or letting it crash the merge-session process.
+      if (publish && typeof publish.then === 'function') {
+        void Promise.resolve(publish).catch(() => {});
+      }
       throw Error('The installed Sweetiebot merge summary module is out of date. Reload or reinstall Sweetiebot.');
     }
     return await publish({ enabled: true, selection, input, result, token });
