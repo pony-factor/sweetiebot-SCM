@@ -26,6 +26,7 @@ LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
 FORKS = 'sweetiebot-background-forks.json'
 PARALLEL_JOBS = 6
+COMPLETED_JOB_RETENTION_DAYS = 60
 
 
 class SyncConflicts(RuntimeError):
@@ -963,6 +964,51 @@ def resume(parallel=True):
                 break
             visited.add(entry['id'])
             work(Path(entry['directory']))
+    prune_completed_jobs()
+
+
+def prune_completed_jobs(now=None):
+    """Delete settled background commit snapshots after 60 days, not recovery state."""
+    cutoff = (time.time() if now is None else now) - COMPLETED_JOB_RETENTION_DAYS * 86400
+    for journal in jobs_home().glob('*/job.json'):
+        directory = journal.parent
+        # Only enqueue-created directories fall under this policy.
+        if (not re.fullmatch(r'[0-9a-f]{16}', directory.name)
+                or directory.is_symlink() or journal.is_symlink()
+                or (directory / 'worker.lock').is_symlink()):
+            continue
+        try:
+            if journal.stat().st_mtime >= cutoff:
+                continue
+            with (directory / 'worker.lock').open('a+b') as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                # Recheck after locking: a worker may have completed recently.
+                if journal.is_symlink() or journal.stat().st_mtime >= cutoff:
+                    continue
+                job = read_journal(journal)
+                if (not isinstance(job, dict) or job.get('id') != directory.name
+                        or job.get('phase') not in ('done', 'cancelled')
+                        or job.get('provisional') or job.get('replacement_sha')):
+                    continue
+                gitdir = job.get('gitdir')
+                if not isinstance(gitdir, str) or not gitdir:
+                    continue
+                meta = Path(gitdir)
+                if meta.is_dir():
+                    # A done descendant may still be queued behind a retry,
+                    # and a pending finalization transaction can need old journals.
+                    if (meta / TRANSACTION).exists() or any(
+                            item.get('id') == job['id']
+                            or item.get('directory') == str(directory)
+                            for item in queue_entries(meta / MARKER)):
+                        continue
+                shutil.rmtree(directory)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            log_event('background_commit', 'prune_failed',
+                      error_type=type(exc).__name__, outcome='retry')
 
 
 def request_push(request, start=True):
