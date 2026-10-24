@@ -104,6 +104,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .diff-line--hunk,.diff-line--meta{background:var(--vscode-diffEditor-unchangedRegionBackground,var(--vscode-editorWidget-background,transparent));color:var(--vscode-diffEditor-unchangedRegionForeground,var(--vscode-descriptionForeground))}
 .diff-line--note{color:var(--vscode-descriptionForeground)}
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
+.commit-tree-list{position:relative}.commit-tree-list svg{position:absolute;left:0;top:0;stroke:var(--vscode-charts-green);fill:var(--vscode-charts-green)}.commit-tree-item{display:block;height:52px;overflow:hidden;text-align:left;border:0;background:transparent;font-size:11px;overflow-wrap:anywhere}.commit-tree-title{display:block;max-height:28px;line-height:14px;overflow:hidden}.commit-tree-time{display:block;font-size:10px;line-height:12px;color:var(--vscode-descriptionForeground)}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
 /* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
@@ -147,6 +148,7 @@ __DIFF_RENDERER__
 </script>
 <script nonce="__NONCE__">
 __TIMESTAMP_FORMATTER__
+__COMMIT_TREE__
 </script>
 <script nonce="__NONCE__">
 (() => {
@@ -342,6 +344,8 @@ __TIMESTAMP_FORMATTER__
       else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
+    const tree = show('section', 'pr-commit-tree', undefined, parent);
+    renderCommitTree(tree, pr.commits, sha => dispatch('open-commit', pr.number, sha), model.timestampMode);
     parent.scrollTop = scroll;
   }
   function render() {
@@ -406,6 +410,7 @@ __TIMESTAMP_FORMATTER__
     render();
   });
   function refreshRelativeEventTimes() {
+    refreshCommitTimestamps(byId('details'), model.timestampMode);
     if (model.timestampMode !== 'relative') return;
     for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
       stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');

@@ -166,12 +166,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
-    .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
+    .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'))
+    .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'merge_commit_tree.js'), 'utf8'));
   const catalog = ponyCatalog();
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], report: null, review: null, sawConflict: false, events: []
+    files: [], report: null, review: null, sawConflict: false, commits: [], events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -253,6 +254,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (cycle === 1 || changed || !item.files.length) {
       const files = await paged(fetchImpl, token, selection.repository,
         '/pulls/' + item.number + '/files');
+      try {
+        item.commits = require('./merge_commit_tree').mergeCommitHistory(item.commits, await paged(fetchImpl, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
+        item.commitError = '';
+      } catch (failure) { if (failure.rateLimited) throw failure; item.commitError = failure.message; }
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
     }
@@ -379,6 +384,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         publish();
       }
       return;
+    }
+    if (message.type === 'open-commit') {
+      if (!pr.commits?.some(commit => commit.sha === message.url)) return;
+      return vscode.env.openExternal(vscode.Uri.parse('https://github.com/' + selection.repository + '/commit/' + message.url));
     }
     if (message.type === 'open-pr' || message.type === 'open-diff') {
       const target = pr.url + (message.type === 'open-diff' ? '/files' : '');

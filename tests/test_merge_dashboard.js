@@ -136,6 +136,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
+    else if (pathname.endsWith('/commits')) result = [{sha, parents: [], commit: {message: 'Fixture commit', committer: {date:'2026-10-24T10:00:00Z'}}}];
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
