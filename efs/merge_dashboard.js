@@ -72,6 +72,7 @@ function validateSelection(selection) {
 function reportFromComments(comments) {
   let report = null;
   let review = null;
+  const reviewNotes = [];
   for (const comment of comments || []) {
     const body = String(comment?.body || '');
     if (body.includes(REPORT_MARKER)) {
@@ -80,11 +81,13 @@ function reportFromComments(comments) {
         url: comment.html_url || '', id: comment.id };
     }
     if (body.includes(REVIEW_MARKER)) {
-      review = { text: stripReportOptions(body.replace(REVIEW_MARKER, '')).slice(0, 12000),
-        options: parseReportOptions(body),
-        url: comment.html_url || '', id: comment.id };
+      reviewNotes.push({ text: stripReportOptions(body.replace(REVIEW_MARKER, '')).slice(0, 12000),
+        options: parseReportOptions(body).map(option => comment.path && Number.isSafeInteger(comment.id)
+          ? { ...option, sourceId: option.id, commentId: comment.id, id: 'report-' + comment.id + '-' + option.id.replace(/^report-/, '') } : option),
+        url: comment.html_url || '', id: comment.id });
     }
   }
+  if (reviewNotes.length) review = { ...reviewNotes.at(-1), text: reviewNotes.map(note => note.text).join('\n\n'), options: reviewNotes.flatMap(note => note.options) };
   const analysis = (comments || []).filter(comment => String(comment.body || '').startsWith('<!-- sweetiebot-merge-analysis -->')).map(comment => ({ text: comment.body.replace('<!-- sweetiebot-merge-analysis -->', '').trim(), url: comment.html_url, path: comment.path }));
   return { report, review, analysis };
 }
@@ -203,7 +206,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
         addEvent(byNumber.get(pr.number), 'action', opened === false
           ? 'Reaction task was not opened; add a fresh reaction to retry.'
-          : 'Your emoji selected: ' + option.label + ' · opened GPT web');
+          : 'Your emoji selected: ' + option.label + ' · opened ' + (engine === 'web' ? 'GPT web' : 'Codex'));
       } finally {
         launchingActions.delete(pr.number);
         publish();
@@ -389,7 +392,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         if (!option) throw Error('That implementation option changed. Refresh the report and choose again.');
         const engine = option.engine || message.engine || 'web';
         if (option.reaction) {
-          const comment = notes.inlineComments.find(comment => parseReportOptions(comment.body).some(candidate => candidate.id === option.id && candidate.prompt === option.prompt && candidate.reaction === option.reaction));
+          const comment = notes.inlineComments.find(comment => (!option.commentId || comment.id === option.commentId) && parseReportOptions(comment.body).some(candidate => candidate.id === (option.sourceId || option.id) && candidate.prompt === option.prompt && candidate.reaction === option.reaction));
           if (!comment) throw Error('The code thread for this choice is no longer available.');
           await reactionChoices.select(snapshot, comment, option);
           addEvent(pr, 'action', 'Recorded your GitHub reaction: ' + option.label);
@@ -404,7 +407,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         launchingActions.delete(pr.number);
         publish();
       }
-      if (reactionSelection) await reactionChoices.inspect(reactionSelection.snapshot, [reactionSelection.comment], reactionSelection.engine);
+      if (reactionSelection) {
+        try { await reactionChoices.inspect(reactionSelection.snapshot, [reactionSelection.comment], reactionSelection.engine); }
+        catch (failure) { error = 'Your reaction was recorded, but its task could not start: ' + failure.message; publish(); }
+      }
       return;
     }
     if (message.type === 'open-commit') {

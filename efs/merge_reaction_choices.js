@@ -68,7 +68,7 @@ function createReactionChoices({ repository, token, fetchImpl, storageDirectory,
       const fresh = await get(endpoint);
       if (fresh.body !== comment.body || fresh.updated_at !== comment.updated_at) throw Error('The code choices changed. Refresh before choosing.');
       const options = decisionOptions(fresh, pr, actor);
-      const selected = options?.find(candidate => candidate.id === option.id && candidate.prompt === option.prompt && candidate.reaction === option.reaction);
+      const selected = options?.find(candidate => candidate.id === (option.sourceId || option.id) && candidate.prompt === option.prompt && candidate.reaction === option.reaction);
       if (!selected) throw Error('This choice is not bound to the current PR head and base.');
       const votes = await reactions(comment.id);
       // A button selects one choice: remove this user's competing or stale votes.

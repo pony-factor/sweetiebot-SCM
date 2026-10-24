@@ -134,10 +134,21 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   let commentsForPr = [];
   let inlineCommentsForPr = [];
   let reactionVotes = [];
+  const reactionWrites = [];
   let fileRequests = 0;
   const fakeFetch = async (address, options) => {
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
+    if (options.method === 'DELETE' && /\/reactions\/\d+$/.test(pathname)) {
+      reactionWrites.push({method:options.method,pathname});
+      reactionVotes=reactionVotes.filter(vote=>!pathname.endsWith('/'+vote.id));
+      return {ok:true,status:204};
+    }
+    if (options.method === 'POST' && pathname.endsWith('/reactions')) {
+      const vote={id:101,user:{id:41,type:'User'},content:JSON.parse(options.body).content,created_at:'2026-10-23T12:02:00Z'};
+      reactionWrites.push({method:options.method,pathname,content:vote.content});reactionVotes.push(vote);
+      return {ok:true,json:async()=>vote};
+    }
     let result;
     if (pathname === '/user') result = { id: 41, type: 'User' };
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
@@ -266,7 +277,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const inlinePr = events.at(-1).prs[0];
   assert.equal(inlinePr.review.text, 'Which API should this conflict preserve?');
   assert.equal(inlinePr.review.url, url + '#discussion_r90');
-  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-preserve-api');
+  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-90-preserve-api');
   assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
   const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
     actionId: inlineChoice.id, optionKey: inlineChoice.key };
@@ -293,6 +304,14 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(actionLaunches[3][4].review.url, url + '#discussion_r90');
   await dashboard.refresh();
   assert.equal(actionLaunches.length, 4, 'Polling cannot repeat the reaction task');
+  const buttonChoice=events.at(-1).prs[0].blockerOptions.find(option=>option.reaction==='+1');
+  await messageHandler({type:'blocker-action',number:12,headSha:nextSha,actionId:buttonChoice.id,optionKey:buttonChoice.key});
+  assert.deepEqual(reactionWrites.map(write=>write.method),['DELETE','POST'],'A button changes only the signed-in user’s reaction');
+  assert.equal(reactionWrites[1].content,'+1');
+  assert.equal(actionLaunches.length,5,'The recorded reaction drives the implementation route');
+  await dashboard.refresh();
+  assert.equal(actionLaunches.length,5,'Button and polling cannot dispatch the same reaction twice');
+
   const stateBeforeProgress = events.at(-1).prs[0].state;
   dashboard.recordLocalProgress({ number: 12, stage: 'preparing', description: 'Preserve the existing API and add optional tax.' });
   assert.equal(events.at(-1).prs[0].localExplanation, 'Preserve the existing API and add optional tax.');
