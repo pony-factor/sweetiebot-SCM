@@ -131,12 +131,12 @@ async function run() {
   listener({
     type: 'scm-toolkit-context-response',
     id: messages[1].id,
-    text: 'Window-local source text',
+    text: '🦄' + 'x'.repeat(94999),
     conversationId,
     model: { name: 'GPT-6.1 Codex', effort: 'Extra High' }
   });
   const snapshot = await sourcePending;
-  assert.equal(snapshot.text, 'Window-local source text');
+  assert.equal(snapshot.text, 'x'.repeat(94999), 'Clipping must not leave a lone low surrogate');
   assert.equal(snapshot.model.name, 'GPT-6.1 Codex');
   assert.equal(snapshot.model.effort, 'Extra High');
   assert.equal(snapshot.source.kind, 'codex');

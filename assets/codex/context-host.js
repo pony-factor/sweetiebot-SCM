@@ -45,7 +45,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             }
             // Keep a substantial transcript for PR intent, not merely its last
             // few turns. URL transport will independently enforce its 70 KB cap.
-            const text = typeof message.text === 'string' ? message.text.trim().slice(-95000) : '';
+            const clipped = typeof message.text === 'string' ? message.text.trim().slice(-95000) : '';
+            // Never start the URL-bound context with a split UTF-16 surrogate.
+            const text = /^[\uDC00-\uDFFF]/.test(clipped) ? clipped.slice(1) : clipped;
             if (!text) {
                 request.reject(new Error('Open a Codex conversation with text in this window first.'));
                 return;

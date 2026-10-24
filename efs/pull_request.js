@@ -170,7 +170,8 @@ async function readCodexConversation(vscode) {
     const snapshot = await vscode.commands.executeCommand('sweetiebot.readCodexConversation');
     if (!snapshot || typeof snapshot !== 'object') return undefined;
     const source = normalizeConversationSource(snapshot.source);
-    const text = typeof snapshot.text === 'string' ? snapshot.text.trim().slice(-95000) : '';
+    const clipped = typeof snapshot.text === 'string' ? snapshot.text.trim().slice(-95000) : '';
+    const text = /^[\uDC00-\uDFFF]/.test(clipped) ? clipped.slice(1) : clipped;
     const label = value => typeof value === 'string' && value.length <= 100
       ? value.replace(/\s+/g, ' ').trim() : '';
     const name = label(snapshot.model?.name), effort = label(snapshot.model?.effort);
@@ -605,7 +606,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
           launchContext = '[Earlier conversation text omitted to fit browser launch limit: ' +
             (conversationContext.length - remaining) +
             ' characters. Use the verified browser link if available.]\n' +
-            conversationContext.slice(-remaining);
+            conversationContext.slice(-remaining).replace(/^[\uDC00-\uDFFF]/, '');
           return true;
         }
       });
