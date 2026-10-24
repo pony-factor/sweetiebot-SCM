@@ -182,6 +182,9 @@ async function openedRoot(result) {
     const legacy = path.join(baseDirectory, 'legacy', 'repo');
     await fs.mkdir(path.dirname(legacy), { recursive: true });
     git('clone', '--local', root, legacy);
+    // Clones do not inherit local author identity; avoid runner defaults.
+    git('-C', legacy, 'config', 'user.name', 'Test');
+    git('-C', legacy, 'config', 'user.email', 'test@example.invalid');
     git('-C', legacy, 'remote', 'set-url', 'origin', 'git@github.com:owner/repo.git');
     assert.equal(await reconnectManagedMain(editor(legacy), options), true, 'Clean legacy main reconnects to the original');
     await fs.writeFile(path.join(legacy, 'file.txt'), 'separate old edits\n');

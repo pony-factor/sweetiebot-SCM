@@ -6,7 +6,7 @@ const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
-const { isWorkspaceDirectory } = require('./workspace_layout');
+const { isWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { MANIFEST, ACTIVATED, SESSION_PREFIX } = require('./workspace_prune');
 
 const exec = promisify(execFile);
@@ -22,10 +22,15 @@ async function findManagedGroups(vscode, {
   // Saved shared-main windows have their own workspace file, but their Git
   // folders point outside Sweetiebot storage. Track that file independently.
   const file = vscode.workspace.workspaceFile;
-  if (file?.scheme === 'file' && path.basename(file.fsPath) === 'workspace.code-workspace') {
+  if (file?.scheme === 'file' && typeof file.fsPath === 'string' &&
+      path.isAbsolute(file.fsPath) &&
+      (path.basename(file.fsPath) === 'workspace.code-workspace' ||
+        path.basename(file.fsPath) === workspaceFileName(path.dirname(file.fsPath)))) {
     const group = path.dirname(file.fsPath);
     try {
-      if (await isWorkspaceDirectory(io, group, baseDirectory) &&
+      const fileStat = await io.lstat(file.fsPath);
+      if (fileStat.isFile() && !fileStat.isSymbolicLink() &&
+          await isWorkspaceDirectory(io, group, baseDirectory) &&
           (await io.lstat(group)).isDirectory()) {
         const manifest = JSON.parse(await io.readFile(path.join(group, MANIFEST), 'utf8'));
         if (manifest.version === 1 && manifest.kind === 'shared-main' &&

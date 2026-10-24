@@ -156,7 +156,8 @@ function fixture({
   try {
     const base = path.join(temp, 'Workspaces');
     const original = path.join(temp, 'original');
-    const workspace = path.join(base, 'repo', 'saved');
+    const workspace = path.join(base, 'repo', 'main-teal');
+    const workspaceFile = path.join(workspace, 'main-teal.code-workspace');
     const stamp = path.join(workspace, '.sweetiebot-activated');
     await fs.mkdir(workspace, { recursive: true });
     await fs.mkdir(original);
@@ -164,16 +165,16 @@ function fixture({
     const manifest = { version: 1, kind: 'shared-main', repositories: [],
       workspaceFileContents: content };
     await fs.writeFile(path.join(workspace, '.sweetiebot-workspace.json'), JSON.stringify(manifest));
-    await fs.writeFile(path.join(workspace, 'workspace.code-workspace'), content);
+    await fs.writeFile(workspaceFile, content);
     await fs.writeFile(stamp, 'Activated');
     const older = new Date(Date.now() - 2 * 60 * 60 * 1000);
     await fs.utimes(stamp, older, older);
     const neverRunGit = async () => { throw Error('Metadata must not invoke Git'); };
-    await fs.appendFile(path.join(workspace, 'workspace.code-workspace'), ' ');
+    await fs.appendFile(workspaceFile, ' ');
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, alive: () => false, run: neverRunGit
     }), [], 'Edited workspace settings must be preserved');
-    await fs.writeFile(path.join(workspace, 'workspace.code-workspace'), content);
+    await fs.writeFile(workspaceFile, content);
     await fs.writeFile(path.join(workspace, '.sweetiebot-session-12-test.json'), '{"pid":12}');
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, alive: pid => pid === 12, run: neverRunGit
@@ -231,19 +232,32 @@ function fixture({
       }
       throw Error('Unexpected operation: ' + args.join(' '));
     };
-    const saved = path.join(base, 'repo', 'other-window');
+    const saved = path.join(base, 'repo', 'main-rose');
+    const savedWorkspaceFile = path.join(saved, 'main-rose.code-workspace');
     await fs.mkdir(saved);
     await fs.writeFile(path.join(saved, '.sweetiebot-workspace.json'), JSON.stringify({
       version: 1, kind: 'shared-main', repositories: [],
       workspaceFileContents: JSON.stringify({ folders: [{ path: checkout }] })
     }));
-    await fs.writeFile(path.join(saved, 'workspace.code-workspace'),
+    await fs.writeFile(savedWorkspaceFile,
       JSON.stringify({ folders: [{ path: checkout }] }));
     // This saved workspace has never activated; preserve it and the target.
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
     }), [], 'A saved workspace reference protects its topic worktree');
     await fs.rm(saved, { recursive: true });
+    // Existing windows using the historical filename still protect worktrees.
+    const legacySaved = path.join(base, 'repo', 'legacy-window');
+    await fs.mkdir(legacySaved);
+    await fs.writeFile(path.join(legacySaved, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'shared-main', repositories: []
+    }));
+    await fs.writeFile(path.join(legacySaved, 'workspace.code-workspace'),
+      JSON.stringify({ folders: [{ path: checkout }] }));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [], 'A legacy saved workspace reference protects its topic worktree');
+    await fs.rm(legacySaved, { recursive: true });
     dirty = true;
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false

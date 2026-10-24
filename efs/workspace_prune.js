@@ -5,7 +5,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
-const { isWorkspaceDirectory } = require('./workspace_layout');
+const { isWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 
 const execFileAsync = promisify(execFile);
 const IDLE_MS = 60 * 60 * 1000;
@@ -55,10 +55,16 @@ async function isPlainDirectory(io, folder) {
 async function eligibleGroup(io, group, baseDirectory, now, alive) {
   if (!await isWorkspaceDirectory(io, group, baseDirectory) || !await isPlainDirectory(io, group)) return null;
   const manifest = await jsonFile(io, path.join(group, MANIFEST));
-  if (manifest?.version !== 1 || manifest.kind !== 'independent-clone' ||
-      !Array.isArray(manifest.repositories) || !manifest.repositories.length ||
-      manifest.repositories.length > 20) return null;
+  const kind = manifest?.kind;
+  if (manifest?.version !== 1 ||
+      !['independent-clone', 'shared-main', 'topic-worktree', 'main-worktree'].includes(kind) ||
+      !Array.isArray(manifest.repositories)) return null;
   const names = manifest.repositories;
+  // Shared-main files have no checkout. Worktrees register one checkout;
+  // independently cloned workspaces retain their legacy repository limits.
+  if ((kind === 'independent-clone' && (!names.length || names.length > 20)) ||
+      (kind === 'shared-main' && names.length !== 0) ||
+      ((kind === 'topic-worktree' || kind === 'main-worktree') && names.length !== 1)) return null;
   if (new Set(names).size !== names.length || names.some(name =>
     typeof name !== 'string' || !name || name === '.' || name === '..' ||
     path.basename(name) !== name || name.startsWith('.'))) return null;
@@ -71,7 +77,7 @@ async function eligibleGroup(io, group, baseDirectory, now, alive) {
   catch { return null; }
   if (!lastActive.isFile() || now - lastActive.mtimeMs < IDLE_MS) return null;
 
-  const workspaceNames = new Set(['workspace.code-workspace', path.basename(group) + '.code-workspace']);
+  const workspaceNames = new Set(['workspace.code-workspace', workspaceFileName(group)]);
   const allowed = new Set([MANIFEST, ACTIVATED, PROOFS, ...workspaceNames, ...names]);
   const entries = await io.readdir(group, { withFileTypes: true });
   for (const entry of entries) {
@@ -91,11 +97,17 @@ async function eligibleGroup(io, group, baseDirectory, now, alive) {
   // .code-workspace files are not part of Git status. Preserve user edits.
   // Support legacy workspace.code-workspace and new branch-color filenames.
   const workspaceFiles = entries.filter(entry => workspaceNames.has(entry.name));
-  if (names.length > 1) {
-    if (workspaceFiles.length !== 1 || typeof manifest.workspaceFileContents !== 'string' ||
-        await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8')
-          !== manifest.workspaceFileContents) return null;
+  if (kind === 'shared-main' ||
+      (kind === 'independent-clone' && names.length > 1)) {
+    // Never discard edited or unreadable saved settings.
+    if (workspaceFiles.length !== 1 || typeof manifest.workspaceFileContents !== 'string') return null;
+    try {
+      if (await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8') !==
+          manifest.workspaceFileContents) return null;
+    } catch { return null; }
   } else if (workspaceFiles.length) return null;
+  // Merge-proof directories only belong to legacy independent clones.
+  if (kind !== 'independent-clone' && entries.some(entry => entry.name === PROOFS)) return null;
   // Only our own per-repository proof files may live in the proof directory.
   if (entries.some(entry => entry.name === PROOFS)) {
     const proofs = await io.readdir(path.join(group, PROOFS), { withFileTypes: true });
@@ -265,10 +277,17 @@ async function hasSavedWorkspaceReference(io, groups, worktree) {
   for (const group of groups) {
     const manifest = await jsonFile(io, path.join(group, MANIFEST));
     if (manifest?.kind !== 'shared-main') continue;
-    const filename = path.join(group, 'workspace.code-workspace');
     let saved;
-    try { saved = JSON.parse(await io.readFile(filename, 'utf8')); }
-    catch { return true; } // Unknown references are not proof of safety.
+    try {
+      const knownNames = new Set(['workspace.code-workspace', workspaceFileName(group)]);
+      const files = (await io.readdir(group, { withFileTypes: true }))
+        .filter(entry => entry.name.endsWith('.code-workspace'));
+      // Missing, ambiguous, unfamiliar, or symlinked saved windows must
+      // protect their linked checkout until a human can inspect them.
+      if (files.length !== 1 || !knownNames.has(files[0].name) ||
+          !files[0].isFile() || files[0].isSymbolicLink()) return true;
+      saved = JSON.parse(await io.readFile(path.join(group, files[0].name), 'utf8'));
+    } catch { return true; } // Unknown references are not proof of safety.
     if (!Array.isArray(saved.folders)) return true;
     for (const folder of saved.folders) {
       if (typeof folder.path !== 'string' || !path.isAbsolute(folder.path)) return true;
