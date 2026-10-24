@@ -535,6 +535,10 @@ never force-pushes or automatically merges remote changes. Jobs and their privat
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
 allows more Sweetiebot commits while blocking direct pushes and branch changes.
+Completed and cancelled background commit job records (and private index snapshots)
+are retained for 60 days from the journal's last write, then deleted on a subsequent
+background worker resume. Unfinished, blocked, active, queued, and recovery-referenced
+jobs are preserved regardless of age.
 Terminal commits through the Git wrapper wait until the queue finishes. Special commit
 modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
