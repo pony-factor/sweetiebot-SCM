@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
+const warningPreference = source.match(/function scmToolkitHighlightPrWarnings\([\s\S]*?\n}/)[0];
 const refresh = source.match(/    const refreshPullRequest = \(\) => \{[\s\S]*?\n    };/)[0];
 const settingsAttachment = source.match(/function scmToolkitAttachCommitSettings\([\s\S]*?\n}\n\nasync function scmToolkitPullCleanRepository/)[0];
 assert.match(settingsAttachment, /widget\.element\.append\(button\)/,
@@ -18,6 +19,7 @@ function harness(executeCommand) {
   let nextTimer = 0;
   const context = vm.createContext({
     settings: { mcpPullRequest: true, remote: 'origin' },
+    configuration: { getValue() { return undefined; } },
     currentBranch: 'draft', currentDefaultBranch: 'main', currentBranchRevision: 'head1',
     currentRepositoryUri: { toString: () => 'file:///workspace/repository' },
     pullRequestEligibilityKey: undefined, pullRequestEligibility: undefined,
@@ -28,7 +30,7 @@ function harness(executeCommand) {
     setTimeout(callback, delay) { assert([15000, 60000].includes(delay)); timers.set(++nextTimer, { callback, delay }); return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
   });
-  vm.runInContext(`${refresh}\nthis.refresh = refreshPullRequest;`, context);
+  vm.runInContext(`${warningPreference}\n${refresh}\nthis.refresh = refreshPullRequest;`, context);
   return { context, timers };
 }
 
