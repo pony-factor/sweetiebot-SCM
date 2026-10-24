@@ -756,10 +756,10 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                     finishProgress(false);
                     return;
                 }
-                // The queue intentionally declines special commit modes (such
-                // as aggregate >100 MiB auto-splitting). Those switch to the
-                // original Git wrapper and need one direct-path preflight.
-                if (!(await checkCommitLimits())) {
+                // Declined special modes retain the queue's approval if they
+                // already passed post-staging limits inspection. Unverified
+                // fallbacks must check before entering direct title generation.
+                if (!queued?.preflightApproved && !(await checkCommitLimits())) {
                     finishProgress(false);
                     return;
                 }
