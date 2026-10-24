@@ -34,7 +34,7 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
     }, 60000);
     child.stdout.on('data', chunk => {
       output += chunk;
-      if (output.length > 100000) {
+      if (Buffer.byteLength(output) > 4 * 1024 * 1024) {
         child.kill();
         finish(new Error('Unexpectedly large GitHub merge response.'));
       }
