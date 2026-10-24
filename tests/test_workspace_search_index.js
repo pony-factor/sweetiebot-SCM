@@ -25,7 +25,8 @@ async function run() {
         url.pathname = path.posix.resolve(url.pathname, component);
         return {toString: () => url.toString()};
       },
-      parse: text => ({toString: () => text})
+      parse: text => ({toString: () => text, fsPath: text.replace(/^file:\/\//, '')}),
+      file: filePath => ({toString: () => 'file://' + filePath, fsPath: filePath})
     },
     FileType: {File: 1},
     workspace: {
@@ -67,6 +68,32 @@ async function run() {
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search_index.js'), 'utf8'), sandbox);
   const index = new sandbox.module.exports.SearchIndex({globalStorageUri: rootUri}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
+  const githubFolder = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'efs-github-'));
+  try {
+    fs.mkdirSync(path.join(githubFolder, 'alpha', '.git'), {recursive: true});
+    fs.mkdirSync(path.join(githubFolder, 'alpha', 'node_modules'), {recursive: true});
+    fs.mkdirSync(path.join(githubFolder, 'beta'), {recursive: true});
+    fs.writeFileSync(path.join(githubFolder, 'alpha', 'notes.md'), 'Notes');
+    fs.writeFileSync(path.join(githubFolder, 'alpha', '.git', 'config'), 'private');
+    fs.writeFileSync(path.join(githubFolder, 'alpha', 'node_modules', 'ignored.js'), 'ignored');
+    fs.writeFileSync(path.join(githubFolder, 'beta', 'Wormhole.md'), 'Bridge exploit');
+    const found = await sandbox.module.exports.listGithubFolderFiles(githubFolder, '**/{.git,node_modules}/**');
+    assert.deepEqual(found.map(file => path.relative(githubFolder, file)).sort(), ['alpha/notes.md', 'beta/Wormhole.md']);
+    assert.equal((await sandbox.module.exports.listGithubFolderFiles(githubFolder, '', 1)).length, 1);
+    assert.ok(sandbox.module.exports.githubGlobRegex('**/{.git,node_modules}/**').test('alpha/node_modules/'));
+    await assert.rejects(sandbox.module.exports.listGithubFolderFiles(path.join(githubFolder, 'missing'), ''), /GitHub folder not found/);
+    const scoped = new sandbox.module.exports.SearchIndex(
+      {globalStorageUri: rootUri},
+      () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'exact', exclude: '**/{.git,node_modules}/**'}),
+      {githubFolder}
+    );
+    assert.notEqual(scoped.storageUri.toString(), index.storageUri.toString());
+    const matches = await scoped.search('Wormhole', 'exact');
+    assert.ok(matches.results.some(item => item.relative === 'beta/Wormhole.md'));
+    assert.match(matches.warning, /file limit/, 'Capped cross-repository contents should be disclosed');
+  } finally {
+    fs.rmSync(githubFolder, {recursive: true, force: true});
+  }
   unavailable = true;
   await index.refresh();
   assert.match(index.embeddingWarning, /Model missing/);
