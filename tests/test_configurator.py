@@ -288,6 +288,24 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="hideIncomingSyncCount" value="true" checked', page)
         self.assertIn('name="hideOutgoingSyncCount" value="true"', page)
 
+    def test_pr_warning_highlights_require_opt_in(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["prWarningHighlights"])
+        values = form_values()
+        values.pop("prWarningHighlights", None)
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true"', page)
+        self.assertNotIn('name="prWarningHighlights" value="true" checked', page)
+        self.assertFalse(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+
+        values["prWarningHighlights"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["prWarningHighlights"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true" checked', page)
+
     def test_sync_direction_arrow_toggles_round_trip(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncArrow"])
