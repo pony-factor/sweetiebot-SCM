@@ -97,6 +97,26 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
   }
 }
 
+// Summary comments are optional. A stale extension install or GitHub failure
+// must never turn an independently completed local merge into a failed handoff.
+async function publishOptionalMergeSummaries({ enabled, selection, input, result, token },
+  loadPublisher = () => require('./merge_summary').publishMergeSummaries) {
+  if (enabled !== true) return [];
+  const merged = Array.isArray(result?.results)
+    ? result.results.filter(item => item.status === 'merged' && item.merged === true) : [];
+  if (!merged.length) return [];
+  try {
+    const publish = loadPublisher();
+    if (typeof publish !== 'function') {
+      throw Error('The installed Sweetiebot merge summary module is out of date. Reload or reinstall Sweetiebot.');
+    }
+    return await publish({ enabled: true, selection, input, result, token });
+  } catch (error) {
+    return merged.map(item => ({ number: item.number,
+      error: error?.message || String(error) }));
+  }
+}
+
 let mergeDashboardStarted = false;
 let mergeDashboardController;
 
@@ -189,7 +209,7 @@ async function resumePRSession(vscode, context) {
         const controller = await resumeMergeDashboard(vscode, directory, context);
         const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
           event => controller?.recordLocalProgress?.(event));
-        const summaryErrors = await require('./merge_summary').publishMergeSummaries({
+        const summaryErrors = await publishOptionalMergeSummaries({
           enabled: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
           selection: snapshot, input: result, result: executed, token: auth.accessToken
         });
@@ -285,4 +305,4 @@ async function closePRSession(vscode, context) {
 }
 
 module.exports = { sessionDirectory, launchPRSession, launchMergeSession, launchBlockerWebSession,
-  launchBlockerCodexSession, resumePRSession, closePRSession };
+  launchBlockerCodexSession, resumePRSession, closePRSession, publishOptionalMergeSummaries };
