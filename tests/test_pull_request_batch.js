@@ -188,7 +188,7 @@ async function run() {
   assert.match(prompt, /exact selected PR title VERBATIM/);
   assert.match(prompt, /never an individual commit title/);
   assert.match(prompt, /hyphen bullets, not '\*'/);
-  assert.match(prompt, /indented continuation lines directly under its corresponding bullet/);
+  assert.match(prompt, /four-space-indented continuation lines wrapped at 88 columns directly under its corresponding bullet/);
   assert.match(prompt, /relocate all such credits into ONE final trailer block/);
   assert.match(prompt, /separator of EXACTLY TEN underscores __________/);
   assert.match(prompt, /only one final trailer block after exactly ten underscores __________/);

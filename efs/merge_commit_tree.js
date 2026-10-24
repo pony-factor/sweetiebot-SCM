@@ -19,12 +19,13 @@ function commitTreeLayout(commits) {
 
 function renderCommitTree(parent, commits, openCommit) {
   const document = parent.ownerDocument, graph = commitTreeLayout(commits);
-  const heading = document.createElement('h3'); heading.textContent = 'PR commits'; parent.appendChild(heading);
+  const heading = document.createElement('h3'); heading.textContent = 'PR commits (' + (commits || []).length + ')'; parent.appendChild(heading);
   if (!graph.nodes.length) {
     const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Commit history not loaded yet.'; parent.appendChild(empty); return;
   }
   const list = document.createElement('div'); list.className = 'commit-tree-list'; parent.appendChild(list);
-  const width = Math.min(84, 16 + graph.lanes * 16);
+  if ((commits || []).length > 100) { const note = document.createElement('p'); note.className = 'muted'; note.textContent = 'Showing the latest 100 commits.'; parent.appendChild(note); }
+  const width = 16 + graph.lanes * 16;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', width); svg.setAttribute('height', graph.nodes.length * 52); svg.setAttribute('aria-hidden', 'true');
   list.appendChild(svg);

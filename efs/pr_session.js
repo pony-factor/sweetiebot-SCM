@@ -229,7 +229,12 @@ async function resumePRSession(vscode, context) {
             const pr = (state.pullRequests || selection.pullRequests).find(pr => pr.number === deferred.number);
             const history = state.history.filter(item => item.number === deferred.number);
             const paths = history.flatMap(item => item.conflictPaths || []);
-            if (!pr || !paths.length) continue;
+            if (!pr) continue;
+            if (!paths.length) {
+              blockerReports[pr.number] = { ...require('./merge_blocker_report').blockerReport(pr, deferred.reason, []),
+                posted: false, error: 'No conflict location was supplied, so an inline comment could not be anchored. Local resolution options remain available.' };
+              continue;
+            }
             blockerReports[pr.number] = await require('./merge_blocker_report').publishBlockerReport({
               repository: selection.repository, pr, reason: deferred.reason, paths
             });

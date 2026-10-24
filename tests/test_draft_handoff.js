@@ -120,6 +120,22 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal(cachedState.profile,'Previously sourced character.','Cache hits are visible without a pony callback');
     assert.equal(cachedState.draft,undefined);
     assert.equal(writes,2,'A cache hit never publishes a PR');
+    const choiceId = '99999999-2222-4333-8444-555555555555';
+    let preserved = 0;
+    handoff.register(choiceId, { autoPublish: true,
+      onMerge: async () => { throw Object.assign(Error('A human squash needs an explicit method choice.'), { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' }); },
+      onMergePreservingCommits: async () => { preserved++; return { merged: true, sha: 'b'.repeat(40) }; }
+    });
+    const choiceUrl = handoff.origin + '/kefania-draft/' + choiceId;
+    const choicePost = suffix => fetch(choiceUrl + suffix, { method: 'POST', headers: { Origin: handoff.origin, 'Content-Type': 'application/json' }, body: '{}' });
+    await fetch(choiceUrl + '/draft', { method: 'POST', headers: { Origin: handoff.origin, 'Content-Type': 'application/json' }, body });
+    assert.equal((await choicePost('/merge-history')).status, 409, 'No silent fallback before the author choice is shown');
+    assert.equal((await choicePost('/merge')).status, 409);
+    assert.equal((await (await fetch(choiceUrl + '/state')).json()).mergeChoice, 'SQUASH_AUTHOR_CHOICE_REQUIRED');
+    assert.equal(preserved, 0, 'Showing the choice does not merge anything');
+    assert.equal((await choicePost('/merge-history')).status, 200);
+    await choicePost('/merge-history');
+    assert.equal(preserved, 1, 'A replay cannot merge twice');
     console.log('Local browser draft handoff and close checks passed.');
   } finally {handoff.dispose();}
 })().catch(error => {console.error(error);process.exitCode=1;});

@@ -60,7 +60,7 @@ async function createDraftHandoff(publish) {
         delete state.errors.merge;
         return json(200, result);
       } catch (error) {
-        state.mergeChoice = error.code;
+        if (error.code) state.mergeChoice = error.code;
         state.errors.merge = error.message || 'Merge failed. Check GitHub.';
         return fail(409, state.errors.merge);
       } finally { state.merging = false; }
