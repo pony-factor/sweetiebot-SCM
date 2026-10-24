@@ -43,6 +43,40 @@ function escapeHtmlAttribute(value) {
   }[character]));
 }
 
+function matchingResultRanges(document, result, query) {
+  const line = Math.min(Math.max(0, Math.trunc(Number(result.line) || 0)), Math.max(0, document.lineCount - 1));
+  const text = document.lineAt(line).text;
+  const lower = text.toLowerCase();
+  const search = String(query || '').trim().toLowerCase();
+  const wordRanges = [];
+  const addRange = (start, length) => wordRanges.push(new vscode.Range(line, start, line, start + length));
+
+  // Prefer the actual phrase (including a full URL) over individual terms.
+  const phraseStart = search ? lower.indexOf(search) : -1;
+  if (phraseStart >= 0) {
+    addRange(phraseStart, search.length);
+  } else {
+    const terms = [...new Set(search.match(/[a-z0-9_$.-]{2,}/g) || [])];
+    for (const term of terms) {
+      let start = lower.indexOf(term);
+      while (start >= 0 && wordRanges.length < 24) {
+        addRange(start, term.length);
+        start = lower.indexOf(term, start + term.length);
+      }
+      if (wordRanges.length >= 24) break;
+    }
+    wordRanges.sort((a, b) => a.start.character - b.start.character);
+  }
+
+  // Semantic-only hits have no literal term: keep the indexed line visible.
+  const column = wordRanges[0]?.start.character || 0;
+  return {
+    lineRange: new vscode.Range(line, 0, line, text.length),
+    wordRanges,
+    focusRange: new vscode.Range(line, column, line, column)
+  };
+}
+
 class WorkspaceSearchViewProvider {
   constructor(index, getSettings) {
     this.index = index;
@@ -111,7 +145,40 @@ class WorkspaceSearchViewProvider {
     }
   }
 
+  clearResultHighlight() {
+    if (!this.highlightedEditor) return;
+    this.highlightedEditor.setDecorations(this.resultLineDecoration, []);
+    this.highlightedEditor.setDecorations(this.resultTextDecoration, []);
+    this.highlightedEditor = undefined;
+  }
+
+  highlightResult(editor, match) {
+    if (!this.resultLineDecoration) {
+      this.resultLineDecoration = vscode.window.createTextEditorDecorationType({
+        isWholeLine: true,
+        backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+        border: '1px solid',
+        borderColor: new vscode.ThemeColor('editor.rangeHighlightBorder'),
+        overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.findMatchForeground'),
+        overviewRulerLane: vscode.OverviewRulerLane.Center
+      });
+      this.resultTextDecoration = vscode.window.createTextEditorDecorationType({
+        backgroundColor: new vscode.ThemeColor('editor.findMatchBackground'),
+        border: '1px solid',
+        borderColor: new vscode.ThemeColor('editor.findMatchBorder')
+      });
+      this.editorChangeSubscription = vscode.window.onDidChangeActiveTextEditor(activeEditor => {
+        if (this.highlightedEditor && activeEditor !== this.highlightedEditor) this.clearResultHighlight();
+      });
+    }
+    this.highlightedEditor = editor;
+    editor.setDecorations(this.resultLineDecoration, [match.lineRange]);
+    editor.setDecorations(this.resultTextDecoration, match.wordRanges);
+    editor.revealRange(match.focusRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+
   async openResult(result) {
+    this.clearResultHighlight();
     const uri = vscode.Uri.parse(result.uri);
     if (result.kind === 'folder') {
       await vscode.commands.executeCommand('revealInExplorer', uri);
@@ -120,14 +187,24 @@ class WorkspaceSearchViewProvider {
     const ext = path.extname(uri.path).toLowerCase();
     if (TEXT_EXTENSIONS.has(ext)) {
       const document = await vscode.workspace.openTextDocument(uri);
-      const line = Math.min(Math.max(0, result.line || 0), Math.max(0, document.lineCount - 1));
-      await vscode.window.showTextDocument(document, {
+      const line = Math.min(Math.max(0, Math.trunc(Number(result.line) || 0)), Math.max(0, document.lineCount - 1));
+      // File-name-only hits have no passage to highlight.
+      const match = result.kind === 'filename' ? null : matchingResultRanges(document, result, this.lastQuery);
+      const editor = await vscode.window.showTextDocument(document, {
         preview: true,
-        selection: new vscode.Range(line, 0, line, 0)
+        selection: match?.focusRange || new vscode.Range(line, 0, line, 0)
       });
+      if (match) this.highlightResult(editor, match);
       return;
     }
     await vscode.commands.executeCommand('vscode.open', uri);
+  }
+
+  dispose() {
+    this.clearResultHighlight();
+    this.editorChangeSubscription?.dispose();
+    this.resultLineDecoration?.dispose();
+    this.resultTextDecoration?.dispose();
   }
 
   async askOllama() {
@@ -238,4 +315,4 @@ query.focus();
   }
 }
 
-module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore };
+module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore, matchingResultRanges };

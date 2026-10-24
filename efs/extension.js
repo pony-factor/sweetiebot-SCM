@@ -429,6 +429,7 @@ async function activate(context) {
   registerWorkspaceCleanup(vscode, context);
   const index = new SearchIndex(context, settings);
   const provider = new WorkspaceSearchViewProvider(index, settings);
+  context.subscriptions.push(provider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
