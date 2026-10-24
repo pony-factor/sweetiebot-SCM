@@ -507,6 +507,19 @@ Without a dedicated title preference, titles default to one professional emoji f
 
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly after one second while generation continues in the background. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
+**Reusable commit-size preflight:** With durable background commits enabled, Sweetiebot
+stages the intended changes (if needed), checks GitHub's file and diff limits
+once per unchanged staged tree before creating a commit or starting the title
+worker. Optional Codex context cannot override that verified selection. The
+approved Git tree ID is passed to the
+worker. If staging changes during validation or before Python accepts the job,
+Sweetiebot automatically inspects the new selection again (up to three retries),
+without creating an unvalidated commit or starting title generation. Direct
+commits use the same inspection command. When a background job declines a
+special operation such as oversized automatic splitting, the direct path reuses
+an earlier approval only if the staged Git tree is unchanged; otherwise it
+runs a new inspection.
+
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message
 commits use a temporary `placeholder_<16 hex digits>` subject, so committed
@@ -540,6 +553,10 @@ never force-pushes or automatically merges remote changes. Jobs and their privat
 index snapshots live outside the working tree under
 `~/Library/Application Support/Sweetiebot/commit-jobs`; their repository marker
 allows more Sweetiebot commits while blocking direct pushes and branch changes.
+Completed and cancelled background commit job records (and private index snapshots)
+are retained for 60 days from the journal's last write, then deleted on a subsequent
+background worker resume. Unfinished, blocked, active, queued, and recovery-referenced
+jobs are preserved regardless of age.
 Terminal commits through the Git wrapper wait until the queue finishes. Special commit
 modes such as amend and oversized automatic commit splitting keep the normal Git flow. On other systems a detached worker
 continues after VS Code closes, but automatic recovery requires launching the
@@ -571,6 +588,34 @@ The wrapper supports two independently configurable models:
 - `ai-commit-low-memory-model` is used when macOS reports less available memory than `ai-low-memory-gib`
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
+
+### ChatGPT Spellcheck Only native-browser transport (experimental)
+
+The optional **Sweetiebot: Review Text with ChatGPT Spellcheck Only** command
+tests the authenticated communication layer independently of the local Ollama
+spellchecking pipeline. It explicitly asks for text or accepts a command
+argument, launches ChatGPT in VS Code's existing **Integrated Browser**, selects
+the **Spellcheck Only** app mention (following Fractured-GH's approach), and
+opens the response in a **new, unsaved review document**. It does **not** edit,
+stage, commit, or automatically apply the result.
+
+The extension host creates a **one-time 256-bit bearer token** and a temporary
+HTTP server bound **only to 127.0.0.1**. The native browser's privileged preload
+transfers the text and completion over this authenticated channel. The token is
+validated for every message; web-origin requests, unexpected hosts, oversized
+messages, and duplicate job claims are rejected. The bearer ticket is removed
+from ChatGPT's URL before prompt insertion. The listener closes on completion,
+error, cancellation, or timeout. ChatGPT credentials and cookies never leave the
+browser's existing signed-in profile. Nothing runs automatically: the command
+is the user-consent boundary.
+
+Because VS Code's Integrated Browser does not load Fractured's Chrome extension,
+Sweetiebot uses a dedicated, scoped native-browser preload adapter. This
+transport **does not claim** a hidden tab, unattended background correction,
+verified model identity, or automatic fallback to Ollama; those need further
+end-to-end native-browser integration testing. Ollama remains the production
+default, with unchanged commit metadata. ChatGPT/plugin UI changes or an
+unavailable app fail closed without modifying repository files.
 
 ### Spellcheck Changes customization
 

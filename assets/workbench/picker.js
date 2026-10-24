@@ -712,17 +712,26 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 try { progress?.close?.(); } catch { /* Ignore disposed notice. */ }
                 progress = null;
             };
-            try {
-                const allowed = await commands.executeCommand(
-                    'sweetiebot.checkCommitLimits',
-                    repository.rootUri
-                );
-                if (allowed === false) {
-                    finishProgress(false);
-                    return;
+            // Direct commits inspect here before Git may generate a title. In
+            // durable mode, the queue first completes any automatic staging,
+            // then inspects that final selection exactly once before enqueue.
+            // A pre-staging inspection would miss newly staged/Commit All files.
+            const checkCommitLimits = async approvedTree => {
+                try {
+                    return (await commands.executeCommand(
+                        'sweetiebot.checkCommitLimits',
+                        repository.rootUri,
+                        approvedTree ? { approvedTree } : undefined
+                    )) !== false;
+                } catch {
+                    // Preserve direct Git commits when the companion extension
+                    // is temporarily unavailable; durable queue checks fail closed.
+                    return true;
                 }
-            } catch {
-                // Keep commits usable if the companion extension is temporarily unavailable.
+            };
+            if (!asynchronous && !(await checkCommitLimits())) {
+                finishProgress(false);
+                return;
             }
 
             const requestedPostCommitCommand = options?.postCommitCommand;
@@ -742,7 +751,18 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                     finishProgress(false);
                     throw error;
                 }
-                if (queued?.queued) {
+                if (queued?.queued || queued?.cancelled) {
+                    // Cancellation is terminal: never fall through to native
+                    // Git and bypass a rejected size/merged-branch preflight.
+                    finishProgress(false);
+                    return;
+                }
+                // A declined special mode reuses the queue's approval only
+                // for the same staged tree. If it changed, the shared inspector
+                // reruns before direct Git can generate a title.
+                if (!(await checkCommitLimits(
+                    queued?.preflightApproved ? queued.stagedTree : undefined
+                ))) {
                     finishProgress(false);
                     return;
                 }

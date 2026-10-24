@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from workspace_search import default_extensions_dir, source_files
@@ -92,6 +93,15 @@ def installed_sources_match(candidate, extensions_dir):
     return True
 
 
+def installer_imports(candidate):
+    """Check runtime compatibility before an installer can change the app."""
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", "import install"],
+        cwd=candidate / "scripts", capture_output=True, timeout=30,
+    )
+    return result.returncode == 0
+
+
 def prepare_update(cache, extensions_dir=None, *, force=False):
     repository = cache / "upstream.git"
     if not repository.exists():
@@ -134,6 +144,9 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
             and (not published_profile.is_file()
                  or SHARED_PROFILE_MARKER not in published_profile.read_text())):
         print('Published release predates shared browser sign-ins; keeping the installed preview.', flush=True)
+        return None
+    if not installer_imports(candidate):
+        print('Published installer cannot load with this Python; keeping the installed sources.', flush=True)
         return None
     if (not force and marker.exists() and marker.read_text().strip() == revision
             and installed_sources_match(candidate, extensions_dir or default_extensions_dir())):

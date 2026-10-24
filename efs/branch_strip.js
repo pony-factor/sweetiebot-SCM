@@ -49,6 +49,8 @@ function groupBranchRefs(refText, mergedText, prNames, prKnown, base, remote = '
   const branches = [...refs.values()].map(item => ({
     ...item,
     hasPr: prKnown ? prNames.has(item.name) : null,
+    ...(prKnown && prNames instanceof Map && prNames.has(item.name)
+      ? { pr: prNames.get(item.name) } : {}),
     featured: prKnown && item.name !== base && !item.merged && !prNames.has(item.name)
   }));
   branches.sort((a, b) =>
@@ -74,7 +76,7 @@ async function pullRequestNames(root, remoteUrl) {
   try {
     const { stdout } = await runFile(ghExecutable(), [
       'pr', 'list', '--repo', repository, '--state', 'all', '--limit', String(PR_LIMIT),
-      '--json', 'headRefName,isCrossRepository'
+      '--json', 'headRefName,isCrossRepository,number,url,state,updatedAt'
     ], {
       cwd: root, timeout: 12000, maxBuffer: 2 * 1024 * 1024,
       env: { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' }
@@ -82,26 +84,34 @@ async function pullRequestNames(root, remoteUrl) {
     const prs = JSON.parse(stdout);
     // An exactly capped result is incomplete: never infer that a branch has no PR.
     if (Array.isArray(prs) && prs.length < PR_LIMIT) {
-      value = new Set(prs.filter(pr => pr && pr.isCrossRepository === false)
-        .map(pr => pr.headRefName).filter(Boolean));
+      value = new Map();
+      // Prefer the most recently updated PR when a branch has several.
+      prs.filter(pr => pr && pr.isCrossRepository === false && pr.headRefName)
+        .sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0))
+        .forEach(pr => {
+          if (!value.has(pr.headRefName)) value.set(pr.headRefName, {
+            number: pr.number, url: pr.url, state: pr.state
+          });
+        });
     }
   } catch { /* Offline or unauthenticated: group conservatively. */ }
   prCache.set(cacheKey, { value, expires: Date.now() + 30000 });
   return value;
 }
 
-async function listBranchStrip(repository, { defaultBranch, remote = 'origin' } = {}) {
+async function listBranchStrip(repository, { defaultBranch, remote = 'origin', localOnly = false } = {}) {
   const root = repository.rootUri.fsPath;
   // Remote-tracking refs survive deletion upstream until a pruning fetch.
   // Only advertise remote branches after confirming their current state.
-  const remoteAvailable = await git(root, ['fetch', '--prune', '--no-tags',
+  const remoteAvailable = !localOnly && await git(root, ['fetch', '--prune', '--no-tags',
     '--no-prune-tags', '--no-recurse-submodules', remote,
     `+refs/heads/*:refs/remotes/${remote}/*`]).then(() => true, () => false);
   const refPrefixes = ['refs/heads', ...(remoteAvailable ? [`refs/remotes/${remote}`] : [])];
-  const [refText, remoteUrl] = await Promise.all([
+  const [refText, remoteUrl, repositoryId] = await Promise.all([
     git(root, ['for-each-ref', '--sort=-committerdate',
       '--format=%(refname)%09%(committerdate:unix)', ...refPrefixes]),
-    git(root, ['remote', 'get-url', remote]).catch(() => '')
+    localOnly ? Promise.resolve('') : git(root, ['remote', 'get-url', remote]).catch(() => ''),
+    git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).catch(() => root)
   ]);
   const baseRefs = [...(remoteAvailable ? [`refs/remotes/${remote}/${defaultBranch}`] : []),
     `refs/heads/${defaultBranch}`];
@@ -115,13 +125,13 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin' } 
   const [mergedText, prNames] = await Promise.all([
     baseRef ? git(root, ['for-each-ref', `--merged=${baseRef}`,
       '--format=%(refname)', 'refs/heads', `refs/remotes/${remote}`]).catch(() => '') : '',
-    pullRequestNames(root, remoteUrl)
+    localOnly ? Promise.resolve(null) : pullRequestNames(root, remoteUrl)
   ]);
-  const prKnown = Boolean(prNames && baseRef);
+  const prKnown = !localOnly && Boolean(prNames && baseRef);
   const classified = groupBranchRefs(refText, mergedText, prNames || new Set(),
     prKnown, defaultBranch, remote);
-  return { ...classified, prStatus: prKnown ? 'available' : 'unavailable',
-    remoteStatus: remoteAvailable ? 'available' : 'unavailable' };
+  return { ...classified, repositoryId, prStatus: localOnly ? 'loading' : prKnown ? 'available' : 'unavailable',
+    remoteStatus: localOnly ? 'loading' : remoteAvailable ? 'available' : 'unavailable' };
 }
 
 async function checkoutBranchStrip(repository, { branch, remote = 'origin' } = {}) {
