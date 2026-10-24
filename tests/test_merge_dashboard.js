@@ -119,6 +119,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
       return panel;
     } },
     Uri: { parse: value => value },
+    commands: { async executeCommand(command, options) { assert.equal(command, 'workbench.action.browser.open'); assert.equal(options.openToSide, true); openings.push(options.url); } },
     env: { async openExternal(target) { openings.push(target); } }
   };
   let info = {
@@ -137,6 +138,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
+    else if (pathname.endsWith('/commits')) result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',

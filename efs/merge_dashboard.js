@@ -165,6 +165,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
+    .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'merge_commit_tree.js'), 'utf8'))
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
   const catalog = ponyCatalog();
@@ -252,6 +253,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (cycle === 1 || changed || !item.files.length) {
       const files = await paged(fetchImpl, token, selection.repository,
         '/pulls/' + item.number + '/files');
+      try { item.commits = await paged(fetchImpl, token, selection.repository, '/pulls/' + item.number + '/commits'); item.commitError = ''; }
+      catch (error) { item.commitError = error.message; }
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
     }
@@ -388,9 +391,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       }
       return;
     }
+    if (message.type === 'open-commit') {
+      if (!pr.commits?.some(commit => commit.sha === message.url)) return;
+      return require('./pr_workflows').openWorkflow(vscode,
+        'https://github.com/' + selection.repository + '/commit/' + message.url, { openToSide: true });
+    }
     if (message.type === 'open-pr' || message.type === 'open-diff') {
       const target = pr.url + (message.type === 'open-diff' ? '/files' : '');
-      await vscode.env.openExternal(vscode.Uri.parse(target));
+      await require('./pr_workflows').openWorkflow(vscode, target, { openToSide: true });
     }
   });
   const actualInterval = intervalMs || Math.max(15000, prs.length * 4000);
@@ -410,7 +418,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const pr = byNumber.get(event?.number);
     if (!pr) return;
     const stages = {
-      preparing: 'Preparing the full PR in an isolated checkout',
+      preparing: 'Preparing PR in a temporary checkout',
       integrating: 'Integrating the full PR with the current base',
       'applying-resolution': 'Applying the complete conflict-resolution patch',
       'rewrite-approved': 'Using an explicitly approved history rewrite as a last resort',
@@ -458,6 +466,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         pr.localDecisions[decision.path] = { path: decision.path,
           title: String(decision.title || '').slice(0, 160), description: String(decision.description || '').slice(0, 4000) };
       }
+    }
+    for (const item of state.deferred) {
+      const pr = byNumber.get(item.number);
+      if (pr) {
+        const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
+        pr.localReview = require('./merge_blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths);
+      }
+    }
+    for (const [number, report] of Object.entries(state.blockerReports || {})) {
+      const pr = byNumber.get(Number(number));
+      if (pr) pr.localReview = report;
     }
     for (const item of state.deferred) {
       const pr = byNumber.get(item.number);

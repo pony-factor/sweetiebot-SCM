@@ -536,6 +536,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
       kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
       onMerge: result => merge({ repository: input.repository, head: branch, base: options.base, result }),
+      onMergePreservingCommits: result => merge({ repository: input.repository, head: branch, base: options.base, result }, undefined, { method: 'merge' }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');

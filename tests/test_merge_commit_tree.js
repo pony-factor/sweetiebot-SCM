@@ -1,0 +1,12 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { commitTreeLayout } = require('../efs/merge_commit_tree');
+const sha = digit => digit.repeat(40);
+const node = (digit, parents) => ({ sha: sha(digit), parents: parents.map(digit => ({ sha: sha(digit) })), commit: { message: 'Commit ' + digit } });
+const graph = commitTreeLayout([node('a', []), node('b', ['a']), node('c', ['a']), node('d', ['b', 'c'])]);
+assert.equal(graph.edges.length, 4, 'Draw actual parents, including both merge parents');
+assert.equal(graph.nodes[1].lane, graph.nodes[0].lane);
+assert.notEqual(graph.nodes[2].lane, graph.nodes[1].lane, 'A fork gets its own lane');
+assert.equal(commitTreeLayout([node('b', ['a'])]).edges.length, 0, 'Do not invent an unavailable parent node');
+assert.equal(commitTreeLayout([{ sha: '../unsafe' }]).nodes.length, 0);
+console.log('Commit tree parent, fork, merge and missing-parent checks passed.');

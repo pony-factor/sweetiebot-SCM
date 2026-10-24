@@ -22,7 +22,7 @@ const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
   api, git, expected, resolutionPatch = null, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
-  allowHistoryRewrite = false, rewriteReason = '',
+  allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
@@ -106,6 +106,11 @@ async function humanSquashMerge(repository, number, {
   const nativeSquash = repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
+  if (offerAuthorChoice && operation === 'merge' && resolutionPatch === null && original.mergeable === true && !nativeSquash &&
+      !allowHistoryRewrite && commits.length > 1) {
+    return { merged: false, status: 'blocked', needsAuthorChoice: true, number, base, baseSha,
+      reason: 'This PR has no merge conflict. It was opened by a bot or a different account, so GitHub’s native squash would assign the wrong Git author. Choose Merge preserving commits to retain the original commits without rebasing or rewriting history. A single human-authored squash would require a separately approved history rewrite.' };
+  }
   decisions = require('./resolution_commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
   const prepared = squashMessage(original.title, number, commits, { primaryAuthor: author });
@@ -190,7 +195,7 @@ async function humanSquashMerge(repository, number, {
         reason: 'PR branch already contains the current base; no incremental commit or push was needed.' };
       if (nativeSquash) return finish(originalSha, preparedMessage, 'squash');
       if (!rewriteApproved) return { merged: false, status: 'blocked', number,
-        reason: 'PR history preserved. A human-authored squash cannot be prepared without rewriting this head. History rewriting is a last resort and requires explicit local approval; no branch was changed.' };
+        needsAuthorChoice: true, reason: 'Squash is blocked by Git-author attribution, not merge conflicts. GitHub would credit the bot or different PR opener. Choose Merge preserving commits for a merge commit without rebasing or rewriting the PR branch; a human-authored single squash requires explicit local approval.' };
     }
     const treeEntries = new Map();
     for (const tree of [liveBase, liveHead]) {

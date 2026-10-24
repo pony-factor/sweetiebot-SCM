@@ -52,7 +52,8 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 }
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
-  { humanMerge = humanSquashMerge } = {}) {
+  { humanMerge = humanSquashMerge, method = 'squash' } = {}) {
+  if (!['squash', 'merge'].includes(method)) throw new Error('Unknown merge method.');
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||
@@ -80,6 +81,36 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     return branch.commit.sha;
   };
   const baseSha = await readBaseTip();
+  if (method === 'merge') {
+    const info = await request('repos/' + repository);
+    if (info.allow_merge_commit !== true) throw new Error('This repository does not allow merge commits.');
+    const actor = await request('user');
+    if (actor.type !== 'User' || /\[bot\]$/i.test(actor.login || '')) throw new Error('A signed-in human account is required for this merge.');
+    const commits = await readCommits(async ([url]) => request(url), repository, result.number);
+    const human = verifiedHumanAuthor(commits);
+    const prepared = squashMessage(pr.title, result.number, commits,
+      { primaryAuthor: human.login.toLowerCase() === actor.login.toLowerCase() ? human : undefined });
+    const checks = await require('./merge_checks').readMergeChecks(path => request(path), repository, pr.head.sha);
+    if (checks.state !== 'passed') throw new Error('PR checks must pass before merging while preserving commits.');
+    const fresh = await request(endpoint);
+    if (fresh.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== pr.title ||
+        fresh.head?.sha !== pr.head.sha || fresh.head?.ref !== head || fresh.base?.ref !== base || await readBaseTip() !== baseSha) {
+      throw new Error('PR or base changed before merge; refresh and review the current branch.');
+    }
+    const merged = await request(endpoint + '/merge', { method: 'PUT', body: {
+      sha: pr.head.sha, merge_method: 'merge', commit_title: prepared.title, commit_message: prepared.message
+    } });
+    if (!merged.merged || !SHA.test(merged.sha || '')) throw new Error('GitHub did not confirm the merge.');
+    const destination = await request('repos/' + repository + '/commits/' + merged.sha);
+    const parents = destination.parents?.map(parent => parent.sha) || [];
+    const verified = await request(endpoint);
+    if (!parents.includes(baseSha) || !parents.includes(pr.head.sha) || destination.author?.login !== actor.login ||
+        destination.author?.type !== 'User' || verified.merged !== true || verified.merge_commit_sha !== merged.sha) {
+      throw new Error('The merge occurred, but preserved ancestry or human attribution could not be verified. Inspect GitHub.');
+    }
+    return { merged: true, sha: merged.sha, url: result.url, number: result.number, base, method: 'merge', authorsPreserved: true };
+  }
+
   const mergeWithHumanAuthor = async () => {
     // Use the same authenticated transport as the button and bind preparation
     // to the selected PR, rather than the read-only, already-prepared helper.
@@ -94,10 +125,11 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       }
       return request(endpoint, { method, body });
     };
-    const landed = await humanMerge(repository, result.number, { api,
+    const landed = await humanMerge(repository, result.number, { api, offerAuthorChoice: true,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
-      throw new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.');
+      throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
+        landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' } : {});
     }
     return { merged: true, sha: landed.sha, url: result.url,
       number: result.number, base, author: landed.author };

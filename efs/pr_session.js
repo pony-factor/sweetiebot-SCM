@@ -207,7 +207,9 @@ async function resumePRSession(vscode, context) {
             resolutionInstructions(selection, handoff.url) }).toString();
         handoff.url = url.href;
         if (Buffer.byteLength(url.href) > 70000) { handoff.dispose(); throw Error('Branch synchronization prompt exceeds the browser launch budget.'); }
-      } else handoff = await require('./merge_batch').createMergeBatch(selection, {
+      } else {
+      const blockerReports = {};
+      handoff = await require('./merge_batch').createMergeBatch(selection, {
         api: endpoint => {
           if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
           return githubGet(globalThis.fetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
@@ -222,6 +224,17 @@ async function resumePRSession(vscode, context) {
         }),
         execute: runLocal,
         onState: async state => {
+          for (const deferred of state.deferred) {
+            if (blockerReports[deferred.number]) continue;
+            const pr = (state.pullRequests || selection.pullRequests).find(pr => pr.number === deferred.number);
+            const history = state.history.filter(item => item.number === deferred.number);
+            const paths = history.flatMap(item => item.conflictPaths || []);
+            if (!pr || !paths.length) continue;
+            blockerReports[pr.number] = await require('./merge_blocker_report').publishBlockerReport({
+              repository: selection.repository, pr, reason: deferred.reason, paths
+            });
+          }
+          state.blockerReports = blockerReports;
           await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 });
           mergeDashboardController?.recordBatchState?.(state);
         },
@@ -231,6 +244,7 @@ async function resumePRSession(vscode, context) {
           await controller?.refresh?.();
         }
       });
+      }
       context.subscriptions?.push(handoff);
       if (!handoff.url) return;
       url.href = handoff.url;

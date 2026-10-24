@@ -12,7 +12,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   const merged = [], deferred = [], history = [], bridges = [];
   let round = 0, emptyRounds = 0, disposed = false;
 
-  const state = () => ({ repository: original.repository, round, merged: [...merged], deferred: [...deferred], history: [...history] });
+  const state = () => ({ repository: original.repository, pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], deferred: [...deferred], history: [...history] });
   const remaining = () => [...entries.values()].filter(pr => !merged.some(item => item.number === pr.number)
     && !deferred.some(item => item.number === pr.number));
 
