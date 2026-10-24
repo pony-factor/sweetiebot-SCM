@@ -308,7 +308,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       await (dependencies.launchMergeSession || launchMergeSession)(
         vscode, context, selectedRepository.repository.rootUri, url, handoff);
     } catch (error) {
-      if (await require('./github_rate_limit').promptRateLimit(vscode, error, { context, retry: () => mergePullRequests(all) })) return;
+      if (await require('./github_rate_limit').promptRateLimit(vscode, error, { context, retryPriority: 1, retry: () => mergePullRequests(all) })) return;
       vscode.window.showErrorMessage(`Unable to prepare pull-request bulk merge: ${error.message}`);
     }
   };

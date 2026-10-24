@@ -154,7 +154,7 @@ async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
 // Observe GitHub state and dispatch explicit user decisions. Never infer
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
-  intervalMs, setTimer = setInterval, clearTimer = clearInterval,
+  initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
@@ -179,8 +179,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let disposed = false;
   let working = false;
   let cycle = 0;
-  let rateLimitedUntil = 0;
-  let error = '';
+  let rateLimitedUntil = initialRateLimit?.retryAt || 0;
+  let error = initialRateLimit?.message || '';
   const events = [];
   const launchingActions = new Set();
   const inlineComments = new Map();
@@ -499,7 +499,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message;
       if (rateLimitedUntil > Date.now()) void require('./github_rate_limit').promptRateLimit(vscode,
         Object.assign(Error(error), { rateLimited: true, retryAt: rateLimitedUntil, configured: true }),
-        { context, retry: () => vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests') }).catch(() => {});
+        { context, retryPriority: 1, retry: () => vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests') }).catch(() => {});
     }
     for (const item of state.history || []) {
       const pr = byNumber.get(item.number);

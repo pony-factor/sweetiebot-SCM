@@ -105,18 +105,19 @@ async function resumeMergeDashboard(vscode, directory, context) {
   let selection;
   try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  let savedState;
+  try { savedState = JSON.parse(await fs.readFile(path.join(directory, 'merge-batch-state.json'), 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
   const auth = await require('./github_session').githubSession(vscode);
   const dashboard = require('./merge_dashboard');
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
   // A dedicated merge workspace owns this layout; no edits to the source window.
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
+    initialRateLimit: savedState?.rateLimit,
     viewColumn: hasEditors ? (vscode.ViewColumn?.Two || 2) : (vscode.ViewColumn?.One || 1),
     context, rootUri: vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri
   });
-  try {
-    const state = JSON.parse(await fs.readFile(path.join(directory, 'merge-batch-state.json'), 'utf8'));
-    mergeDashboardController.recordBatchState(state);
-  } catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
+  if (savedState) mergeDashboardController.recordBatchState(savedState);
   await vscode.commands.executeCommand('vscode.setEditorLayout', {
     orientation: 0, groups: hasEditors ? [{ size: 0.2 }, { size: 0.8 }] : [{}]
   });
@@ -227,8 +228,8 @@ async function resumePRSession(vscode, context) {
         execute: runLocal,
         onState: async state => {
           if (state.rateLimit) {
-            const error = Object.assign(Error(state.rateLimit.message), {rateLimited:true,retryAt:state.rateLimit.retryAt});
-            void require('./github_rate_limit').promptRateLimit(vscode, error, {context,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
+            const error = Object.assign(Error(state.rateLimit.message), {rateLimited:true,retryAt:state.rateLimit.retryAt,configured:state.rateLimit.configured});
+            void require('./github_rate_limit').promptRateLimit(vscode, error, {context,retryPriority:1,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
           }
           for (const deferred of state.deferred) {
             if (blockerReports[deferred.number]) continue;

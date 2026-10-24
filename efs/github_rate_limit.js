@@ -33,7 +33,7 @@ async function githubResponseError(response, fallback) {
 
 const notices = new WeakMap();
 const cooldowns = new WeakMap();
-async function promptRateLimit(vscode, error, { retry, context, schedule = setTimeout } = {}) {
+async function promptRateLimit(vscode, error, { retry, context, retryPriority = 0, schedule = setTimeout } = {}) {
   if (!error?.rateLimited) return false;
   if (!error.configured && error.retryAt <= Date.now() + 61000) {
     const seconds = Number(vscode.workspace?.getConfiguration?.('scmToolkit')?.get('githubRateLimitCooldownSeconds', 900));
@@ -45,14 +45,20 @@ async function promptRateLimit(vscode, error, { retry, context, schedule = setTi
   error.message = rateLimitMessage(error.retryAt, vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden'));
   error.configured = true;
   cooldowns.set(vscode.window, error);
-  if (notices.get(vscode.window) >= error.retryAt) return true;
-  notices.set(vscode.window, error.retryAt);
+  const pending = notices.get(vscode.window);
+  if (pending?.retryAt >= error.retryAt && (pending.retry || !retry)) {
+    if (retry && retryPriority >= pending.priority) { pending.retry = retry; pending.priority = retryPriority; }
+    return true;
+  }
+  const notice = { retryAt: error.retryAt, retry, priority: retryPriority };
+  notices.set(vscode.window, notice);
   const action = 'Retry after reset';
   const choice = await vscode.window.showWarningMessage?.(error.message, ...(retry ? [action] : []));
-  if (choice === action && retry) {
-    const timer = schedule(() => { Promise.resolve().then(retry).catch(failure => vscode.window.showErrorMessage?.(failure.message)); }, Math.max(0, error.retryAt - Date.now()));
+  if (choice === action && notice.retry) {
+    const timer = schedule(() => { Promise.resolve().then(() => notice.retry()).catch(failure => vscode.window.showErrorMessage?.(failure.message)); }, Math.max(0, notice.retryAt - Date.now()));
     timer?.unref?.();
     context?.subscriptions?.push({ dispose() { clearTimeout(timer); } });
+    vscode.window.showInformationMessage?.('GitHub retry scheduled after the rate-limit pause.');
   }
   return true;
 }
