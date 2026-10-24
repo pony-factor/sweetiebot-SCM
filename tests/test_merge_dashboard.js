@@ -193,6 +193,11 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
+  assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
+  assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
+  assert(!panel.webview.html.includes('id="count"'), 'Hide the redundant status text next to selected PRs');
+  assert(!panel.webview.html.includes('Live GitHub updates · roughly every'), 'Hide the polling cadence from the UI');
+  assert(!Object.hasOwn(events.at(-1), 'nextRefreshSeconds'), 'Do not send discarded polling metadata to the webview');
   assert(panel.webview.html.includes('@media(max-width:650px)'),
     'Dashboard stacks its timeline and details in compact merge windows');
   assert(!panel.webview.html.includes('__NONCE__'));

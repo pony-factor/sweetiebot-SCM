@@ -256,8 +256,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       timestampMode: configuredTimelineMode(vscode),
-      layoutPreferences: configuredLayout(vscode),
-      nextRefreshSeconds: Math.ceil(actualInterval / 1000)
+      layoutPreferences: configuredLayout(vscode)
     });
   }
 
