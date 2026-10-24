@@ -9,7 +9,7 @@ const {
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
-const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/merge_blocker_actions');
+const { parseReportOptions, blockerOptions, blockerPrompt, reportOptionsInstructions } = require('../efs/merge_blocker_actions');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -56,6 +56,30 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[1]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
+  assert(selectedPrompt.includes('connected GitHub app authenticated as the user'),
+    'ChatGPT implementation responses must use the connected user account');
+  assert(selectedPrompt.includes('reply_to_review_comment'),
+    'Implementation results must create a new reply to the original inline review');
+  assert(selectedPrompt.includes('If an inline reply cannot be posted'),
+    'Non-inline fallback must still reference the original review');
+  assert(selectedPrompt.includes('Never call update_review_comment or update_issue_comment'),
+    'Prior review comments must be immutable');
+  assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'),
+    'The legacy edit-in-place instruction must not return');
+  const decisionInstructions = reportOptionsInstructions();
+  assert(decisionInstructions.includes('connected user-authenticated GitHub app'),
+    'New unresolved decisions also use the connected user identity');
+  assert(decisionInstructions.includes('new current-head root inline review comment'),
+    'New emoji decisions need independent, current-head inline comments');
+  assert(decisionInstructions.includes('publish a new review comment'),
+    'Revised decisions cannot overwrite old reaction instructions');
+  assert(!decisionInstructions.includes('update the existing tagged comment'),
+    'The original Lindsey review is kept as authored');
+  const optionRequest = blockerOptions({ state: 'blocked', review: notes.review })
+    .find(option => option.id === 'suggest-options');
+  assert(optionRequest.prompt.includes('new user-authored inline review comment'),
+    'Asking GPT for options must not edit the Lindsey review');
+
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
