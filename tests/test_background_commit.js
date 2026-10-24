@@ -10,6 +10,7 @@ async function run() {
   let poll;
   let status = {};
   let limitsAllowed = true, declineEnqueue = false;
+  let staleEnqueueCount = 0, validatedTree = 'a'.repeat(40);
   const notices = [], progress = [], completed = [], errors = [];
   const titleContexts = [];
   const errorActions = [], details = [];
@@ -61,6 +62,14 @@ async function run() {
           assert(args.includes('--enqueue'));
           assert(repository.state.indexChanges.length, 'prepare before enqueueing');
           events.push('enqueue');
+          if (staleEnqueueCount > 0) {
+            staleEnqueueCount--;
+            validatedTree = 'b'.repeat(40);
+            child.stderr.emit('data',
+              'Staged changes changed after the commit-size check. Review and retry.');
+            child.emit('close', 1);
+            return;
+          }
           if (declineEnqueue) {
             child.stdout.emit('data', JSON.stringify({ queued: false }));
             child.emit('close', 0);
@@ -112,7 +121,7 @@ async function run() {
           assert.equal(options.captureTree, true,
             'durable commits inspect and pin their exact final staged tree');
           events.push('limits');
-          return { approved: limitsAllowed, stagedTree: 'a'.repeat(40) };
+          return { approved: limitsAllowed, stagedTree: validatedTree };
         }
       }
     }
@@ -168,11 +177,24 @@ async function run() {
   assert.equal(declined.queued, false);
   assert.equal(declined.preflightApproved, true,
     'the queue can reuse an approved size check when the Python worker declines');
+  assert.equal(declined.stagedTree, validatedTree,
+    'the direct fallback must compare the approved tree before reusing its result');
   assert.equal(jobs.length, jobsBeforeDecline,
     'a declined background job leaves Git commitment to the direct path');
   declineEnqueue = false;
   assert.equal(notQueued.preflightApproved, undefined,
     'onlyIfPending exits before preflight and cannot claim approval');
+
+  const beforeRetry = events.length;
+  const beforeJobs = jobs.length;
+  staleEnqueueCount = 1;
+  await commit(root, { message: 'Retry after concurrent staging' });
+  assert.deepEqual(events.slice(beforeRetry), ['limits', 'enqueue', 'limits', 'enqueue'],
+    'reinspect the changed staged tree before queueing the final local commit');
+  assert.equal(jobs.length, beforeJobs + 1,
+    'a changed selection must create exactly one local background job');
+  assert.equal(jobs.at(-1).expectedTree, 'b'.repeat(40),
+    'the retried job must use the newly approved tree, not the stale hash');
 
   status = { id: 'older', phase: 'generating', titleJobs: ['older'] };
   const manualMessage = '🧪 Manual subject\n\nCo-authored-by: Codex <noreply@openai.com>';
