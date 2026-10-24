@@ -5,6 +5,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {
   codexConversationUrl,
+  conversationSourceLinks,
+  sourceDetailsMarkdown,
+  appendSourceDetails,
   githubRepository,
   kefaniaRulesPath,
   matchSweetiebotPonyCatalog,
@@ -151,10 +154,22 @@ async function run() {
     conversationModel: { name: 'GPT-6 Codex', effort: 'Extra High' }
   });
   assert(withOrigin.includes('Originating conversation browser link: ' + share));
-  assert(withOrigin.includes('Full Codex transcript context'));
+  assert(!withOrigin.includes('Full Codex transcript context'), 'Shared online URL replaces transcript text');
   assert(withOrigin.includes('GPT-6 Codex'));
   assert(withOrigin.includes('Extra High'));
   assert.match(withOrigin, /snapshot, not a live transcript/);
+  const codexLinks = conversationSourceLinks({ ...codexSource, sharedUrl: share });
+  assert.deepEqual(codexLinks, { online: share,
+    local: 'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid,
+    desktop: 'codex://threads/' + codexSource.uuid });
+  const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
+  assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
+  assert.match(decorated, /<summary>Source details<\/summary>/);
+  assert.match(decorated, /- \*\*Local:\*\* \[vscode:\/\//);
+  assert.match(decorated, /- \*\*Desktop:\*\* \[codex:\/\/threads\//);
+  assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
+  assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
+  assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
   const withoutShare = pullRequestPrompt({
     branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
     instructions: '', source: codexSource
@@ -196,7 +211,8 @@ async function run() {
   assert(prompt.includes(chatSource.url));
   assert.match(prompt, /intentSummary/);
   assert.match(prompt, /provenance summary may differ from the final diff/);
-  assert.match(prompt, /Originating conversation transcript for understanding the request/);
+  assert(!prompt.includes('The conversation wanted to preserve provenance.'),
+    'Online ChatGPT URLs suppress pasted transcript in all drafting modes');
   assert.match(prompt, /Local Sweetiebot pony profile/);
   assert(prompt.includes('berry-punch'));
   assert.match(prompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
@@ -345,7 +361,8 @@ async function run() {
       if (publicationFailure) throw publicationFailure;
       assert.equal(input.head, 'draft', 'Publish the branch captured before checkout changed');
       assert.equal(input.expectedHeadSha, 'a'.repeat(40));
-      assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup', body: 'Keep the verified source reference.' });
+      assert.deepEqual(input.preparedDraft, { title: '🔧 Improve setup',
+         body: appendSourceDetails('Keep the verified source reference.', chatSource) });
       return { url: 'https://github.com/owner/repo/pull/1' };
     },
     readInstructions: async repositoryPath => {
