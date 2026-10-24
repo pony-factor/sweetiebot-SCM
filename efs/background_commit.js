@@ -254,6 +254,12 @@ function registerBackgroundCommit(vscode, context) {
       noVerify: options.noVerify === true,
       remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
     });
+    if (result.queued === false) {
+      // The worker may decline oversized multi-commit splitting only after
+      // the queue's post-staging limits inspection has succeeded. The early
+      // onlyIfPending exit is handled above and cannot claim this approval.
+      return { ...result, preflightApproved: true };
+    }
     if (result.queued) {
       generationRevision.set(root.fsPath, (generationRevision.get(root.fsPath) || 0) + 1);
       if (options.push ?? configuration.get('postCommitCommand') === 'push') {
