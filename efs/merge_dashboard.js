@@ -173,7 +173,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: false, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, events: []
+    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: context?.workspaceState?.get('sweetiebot.sawConflict.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -280,11 +280,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     const next = mergePhase(info, item);
     item.state = next;
-    if (!item.conflictCleared && (next === 'resolved' || (next === 'merged' && item.sawConflict))) {
+    if (!item.conflictCleared && (item.sawConflict && ((info.mergeable === true && info.head?.sha !== item.originalHead) || next === 'merged'))) {
       item.conflictCleared = true;
       await context?.workspaceState?.update('sweetiebot.conflictCleared.' + selection.repository + '.' + item.number + '.' + item.originalHead, true);
     }
-    if (next === 'conflict') item.sawConflict = true;
+    if (next === 'conflict') {
+      item.sawConflict = true;
+      await context?.workspaceState?.update('sweetiebot.sawConflict.' + selection.repository + '.' + item.number + '.' + item.originalHead, true);
+    }
     const labels = {
       merged: 'GitHub confirms the pull request was merged',
       closed: 'PR was closed without merging',
@@ -492,10 +495,16 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
-    if (state.rateLimit) { rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message; }
+    if (state.rateLimit) {
+      rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message;
+      if (rateLimitedUntil > Date.now()) void require('./github_rate_limit').promptRateLimit(vscode,
+        Object.assign(Error(error), { rateLimited: true, retryAt: rateLimitedUntil, configured: true }),
+        { context, retry: () => vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests') }).catch(() => {});
+    }
     for (const item of state.history || []) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      if (item.status === 'needs_resolution' || item.conflictPaths?.length) pr.sawConflict = true;
       if (typeof item.explanation === 'string' && item.explanation.trim()) {
         pr.localExplanation = item.explanation.trim().slice(0, 4000);
       }

@@ -85,6 +85,19 @@ class SubmissionTests(unittest.TestCase):
         for name in names:
             self.assertIn(f'name="{name}"', page)
 
+    def test_github_refresh_controls_round_trip(self):
+        values = form_values()
+        values.pop("mergeAutoRefresh", None)
+        values.update(mergeRefreshIntervalSeconds=["180"], githubRateLimitCooldownSeconds=["600"])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertFalse(payload["mergeAutoRefresh"])
+        self.assertEqual(payload["mergeRefreshIntervalSeconds"], 180)
+        self.assertEqual(payload["githubRateLimitCooldownSeconds"], 600)
+        for name, value in [("mergeRefreshIntervalSeconds", "29"), ("githubRateLimitCooldownSeconds", "59")]:
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(dict(values, **{name: [value]}))
+
     def test_merge_summaries_are_opt_in_and_persist(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["mergePostSummaries"])
         values = form_values()

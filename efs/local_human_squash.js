@@ -295,6 +295,7 @@ async function humanSquashMerge(repository, number, {
       // An exact-head lease plus the ancestry check above guarantees this is
       // an append-only update, including if someone rewinds the remote ref.
       await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
+      pushedSha = prepared.sha;
       progress('pushed', { sha: prepared.sha });
       progress('verifying-push', { sha: prepared.sha });
       const updated = await api(prPath);
@@ -353,8 +354,7 @@ async function humanSquashMerge(repository, number, {
       if (pushedSha) Object.assign(error, { sha: pushedSha, previousHeadSha: originalSha });
       throw error;
     }
-    if (pushedSha) throw Object.assign(Error(error.message + ' Prepared head: ' + pushedSha + '; original head: ' + originalSha + '. Retry from a fresh selection after checks/reviews pass.'),
-      { preparedHead: pushedSha, originalHead: originalSha });
+    if (pushedSha) throw Object.assign(error, { preparedHead: pushedSha, originalHead: originalSha });
     throw error;
   } finally {
     if (temp) await fs.rm(temp, { recursive: true, force: true });

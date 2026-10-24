@@ -1242,7 +1242,7 @@ Lindsey's changed-file patch viewer colors added (+) and removed (-) lines, hunk
 
 Lindsey's **Activity timeline** has a compact **Time** selector: **Hidden** (default), **Relative** (automatically updating elapsed time), or **Clock** (local time and a date for older events). Its choice is saved as the application-wide `scmToolkit.mergeTimelineTimestampMode` preference for future merge windows. Switching modes never changes GitHub event history or the merge workflow.
 
-Merge chats keep running while their windows are in the background. Each request owns a separate workspace, and reloading or restoring it does not resubmit the merge prompt. The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow.
+Merge chats keep running while their windows are in the background. Each request owns a separate workspace, and reloading or restoring it does not resubmit the merge prompt. The local Lindsey CLI remains available for direct use; its presence does not bypass the ChatGPT workflow. GitHub status polling pauses while the dashboard tab is hidden or its window is unfocused; local merge execution continues. Magic Settings → GitHub controls active-dashboard refresh, its interval, and the fallback rate-limit cooldown. Server-provided reset times take precedence. A rate limit pauses the batch and offers **Retry after reset**; relative timeline mode also shows a relative reset countdown. **Conflicts cleared** counts PRs whose conflicts were verified cleared and retains them after merging. The web handoff includes a proposed commit title and body; Lindsey checks them against the selected PR and original contributor history before preparing the local commit.
 
 
 ### Direct versus durable commit mode

@@ -40,6 +40,8 @@ async function promptRateLimit(vscode, error, { retry, context, schedule = setTi
     error.retryAt = Math.max(error.retryAt, Date.now() + Math.max(60, Math.min(3600, seconds || 900)) * 1000);
     error.message = 'GitHub API rate limit reached. Requests are paused until ' + new Date(error.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) + '.';
   }
+  const prior = cooldowns.get(vscode.window);
+  if (prior?.retryAt > error.retryAt) error.retryAt = prior.retryAt;
   error.message = rateLimitMessage(error.retryAt, vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden'));
   error.configured = true;
   cooldowns.set(vscode.window, error);
