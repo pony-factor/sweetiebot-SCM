@@ -8,7 +8,8 @@ const {
   evaluateCommitLimits,
   splitPartPaths,
   splitOversizedFile,
-  confirmCommitLimits
+  confirmCommitLimits,
+  registerCommitLimitCommand
 } = require('../efs/commit_limits');
 
 {
@@ -88,6 +89,50 @@ const {
   assert.equal(calls[0][2], 'Commit anyway');
   vscode.window.showWarningMessage = async () => undefined;
   assert.equal(await confirmCommitLimits(vscode, '/tmp/repo', { hardErrors: [], warnings: ['too large'], oversized: [] }), false);
+  // A background job gets an exact approved-tree identifier, while ordinary
+  // direct Git callers continue using the original boolean command result.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-preflight-'));
+  try {
+    cp.execFileSync('git', ['init', '--quiet'], { cwd: repo });
+    fs.writeFileSync(path.join(repo, 'code.js'), 'console.log("hello");\n');
+    cp.execFileSync('git', ['add', 'code.js'], { cwd: repo });
+    const handlers = new Map(), warnings = [];
+    const vscode = {
+      Uri: { from: uri => uri },
+      commands: { registerCommand(id, handler) {
+        handlers.set(id, handler);
+        return { dispose() {} };
+      } },
+      window: {
+        async showErrorMessage() { return undefined; },
+        async showWarningMessage(message) { warnings.push(message); return 'Commit anyway'; }
+      }
+    };
+    registerCommitLimitCommand(vscode, { subscriptions: [] });
+    const inspect = handlers.get('sweetiebot.checkCommitLimits');
+    const uri = { scheme: 'file', fsPath: repo };
+    const approved = await inspect(uri, { captureTree: true });
+    const tree = cp.execFileSync('git', ['write-tree'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.deepEqual(approved, { approved: true, stagedTree: tree });
+    assert.equal(await inspect(uri), true, 'normal direct commits retain the boolean API');
+    assert.deepEqual(warnings, []);
+    // The user can stage changes while reading a nonmodal GitHub diff warning.
+    // Do not approve an index different from the one that was inspected.
+    fs.writeFileSync(path.join(repo, 'large.txt'), 'many lines\n'.repeat(21_000));
+    cp.execFileSync('git', ['add', 'large.txt'], { cwd: repo });
+    vscode.window.showWarningMessage = async message => {
+      warnings.push(message);
+      fs.writeFileSync(path.join(repo, 'late.txt'), 'changed after approval\n');
+      cp.execFileSync('git', ['add', 'late.txt'], { cwd: repo });
+      return 'Commit anyway';
+    };
+    const invalidated = await inspect(uri, { captureTree: true });
+    assert.equal(invalidated.approved, false,
+      'late staging invalidates the snapshot without silently approving extra content');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+
   console.log('Commit limit tests passed');
 })().catch(error => {
   console.error(error);
