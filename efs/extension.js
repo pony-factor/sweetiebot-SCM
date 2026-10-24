@@ -445,6 +445,7 @@ async function activate(context) {
   // Keep all ~/GitHub checkout directories out of VS Code's source-control roots.
   const githubIndex = new SearchIndex(context, settings, { githubFolder: path.join(os.homedir(), 'GitHub') });
   const provider = new WorkspaceSearchViewProvider(index, settings, githubIndex);
+  context.subscriptions.push(provider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
