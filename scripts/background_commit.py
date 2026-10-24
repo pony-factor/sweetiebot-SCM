@@ -469,6 +469,21 @@ def branch_recovery_candidate(job):
                 or (job.get('provisional') and 'branch advanced' in error)))
 
 
+def permanent_push_error(job, result):
+    """Stop retrying remote branch namespace collisions; never expose raw Git output."""
+    output = '\n'.join((result.stderr or '', result.stdout or ''))
+    if not re.search(
+            r"cannot lock ref 'refs/heads/[^']+': 'refs/heads/[^']+' exists; cannot create 'refs/heads/[^']+'",
+            output, re.IGNORECASE):
+        return None
+    destination = job['destination'].removeprefix('refs/heads/')
+    return (f"Push blocked: {job['remote']}/{destination} conflicts with an existing remote branch name. "
+            "Git cannot use both a branch and a nested branch with the same prefix. "
+            "This rejection will not succeed on retry. Stop background push, then publish "
+            "to a nonconflicting remote branch name. Your local commits and uncommitted "
+            "changes are preserved.")
+
+
 def rejected_push_error(job, result, remote_tip):
     """Diagnose history rejection without exposing Git output or touching the index."""
     rejected = any(line.startswith('!\t') and line.endswith(
@@ -781,6 +796,9 @@ def work(directory, commit_only=False):
                 result = git('-c', 'credential.interactive=false', 'push', '--porcelain', job['remote'],
                              job['sha'] + ':' + job['destination'], check=False, timeout=120, env=env)
                 if result.returncode:
+                    permanent = permanent_push_error(job, result)
+                    if permanent:
+                        raise RuntimeError(permanent)
                     # A later finalized job may already have published this one.
                     published = git('ls-remote', job['remote'], job['destination'], check=False, timeout=30)
                     tip = published.stdout.split()[0] if published.returncode == 0 and published.stdout.strip() else ''
@@ -795,6 +813,9 @@ def work(directory, commit_only=False):
                                          job['remote'], job['sha'] + ':' + job['destination'],
                                          check=False, timeout=120, env=env)
                             if result.returncode:
+                                permanent = permanent_push_error(job, result)
+                                if permanent:
+                                    raise RuntimeError(permanent)
                                 error = rejected_push_error(job, result, '')
                                 if error:
                                     raise RuntimeError('The remote advanced again after Lindsey sync. Retry the background job.')

@@ -3,6 +3,9 @@
 const vscode = require('vscode');
 const crypto = require('crypto');
 const path = require('path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 const { TEXT_EXTENSIONS } = require('./extract');
 const { ask } = require('./ollama');
 
@@ -41,6 +44,74 @@ function escapeHtmlAttribute(value) {
   return String(value).replace(/[\x00-\x1f\x7f]/g, ' ').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[character]));
+}
+
+
+function isWithinDirectory(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+
+// A leading slash is repository-relative on GitHub, but workspace-relative in
+// VS Code. Use a source-file-relative URL when an editor in this repository is
+// open under a workspace rooted above (or inside) the repository.
+function buildRepositoryMarkdownLink(result, uri, repositoryRoot, workspaceUri, editorUri) {
+  const root = path.resolve(repositoryRoot);
+  const target = path.resolve(uri.fsPath);
+  if (!isWithinDirectory(root, target)) throw new Error('Search result is outside its Git repository.');
+  const folder = result.kind === 'folder';
+  const line = Math.max(0, Number(result.line) || 0) + 1;
+  const rootRelative = path.relative(root, target).split(path.sep).join('/');
+  const rootWorkspace = workspaceUri?.scheme === 'file' &&
+    path.resolve(workspaceUri.fsPath) === root;
+  const editorFile = editorUri?.scheme === 'file' && editorUri.fsPath &&
+    /\.(?:md|markdown)$/i.test(path.extname(editorUri.fsPath).toLowerCase()) &&
+    isWithinDirectory(root, path.resolve(editorUri.fsPath));
+  let targetPath = '/' + rootRelative;
+  if (!rootWorkspace && editorFile) {
+    targetPath = path.relative(path.dirname(editorUri.fsPath), target).split(path.sep).join('/');
+    if (!targetPath.startsWith('.')) targetPath = './' + targetPath;
+  }
+  const encodedPath = targetPath.split('/').map(segment =>
+    encodeURIComponent(segment).replace(/[()]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase())
+  ).join('/');
+  const label = (folder ? result.relative : result.relative + ':' + line)
+    .replace(/[\\[\]]/g, '\\$&');
+  return '[' + label + '](' + encodedPath + (folder ? '' : '#L' + line) + ')';
+}
+
+function matchingResultRanges(document, result, query) {
+  const line = Math.min(Math.max(0, Math.trunc(Number(result.line) || 0)), Math.max(0, document.lineCount - 1));
+  const text = document.lineAt(line).text;
+  const lower = text.toLowerCase();
+  const search = String(query || '').trim().toLowerCase();
+  const wordRanges = [];
+  const addRange = (start, length) => wordRanges.push(new vscode.Range(line, start, line, start + length));
+
+  // Prefer the actual phrase (including a full URL) over individual terms.
+  const phraseStart = search ? lower.indexOf(search) : -1;
+  if (phraseStart >= 0) {
+    addRange(phraseStart, search.length);
+  } else {
+    const terms = [...new Set(search.match(/[a-z0-9_$.-]{2,}/g) || [])];
+    for (const term of terms) {
+      let start = lower.indexOf(term);
+      while (start >= 0 && wordRanges.length < 24) {
+        addRange(start, term.length);
+        start = lower.indexOf(term, start + term.length);
+      }
+      if (wordRanges.length >= 24) break;
+    }
+    wordRanges.sort((a, b) => a.start.character - b.start.character);
+  }
+
+  // Semantic-only hits have no literal term: keep the indexed line visible.
+  const column = wordRanges[0]?.start.character || 0;
+  return {
+    lineRange: new vscode.Range(line, 0, line, text.length),
+    wordRanges,
+    focusRange: new vscode.Range(line, column, line, column)
+  };
 }
 
 class WorkspaceSearchViewProvider {
@@ -93,17 +164,20 @@ class WorkspaceSearchViewProvider {
     if (message?.type === 'copyPath') {
       const result = this.lastResults[Number(message.index)];
       if (result) {
-        const uri = vscode.Uri.parse(result.uri);
-        const folder = result.kind === 'folder';
-        const line = Math.max(0, result.line || 0) + 1;
-        const link = vscode.Uri.from({
-          scheme: vscode.env.uriScheme,
-          authority: 'file',
-          path: folder ? uri.path : `${uri.path}:${line}`
-        }).toString();
-        const label = (folder ? result.relative : `${result.relative}:${line}`).replace(/[\\[\]]/g, '\\$&');
-        await vscode.env.clipboard.writeText(`[${label}](${link})`);
-        this.post({ type: 'copied', index: Number(message.index) });
+        try {
+          const uri = vscode.Uri.parse(result.uri);
+          if (uri.scheme !== 'file' || !uri.fsPath) throw new Error('Only local Git files can be linked.');
+          const repositoryRoot = await this.findGitRoot(uri, result.kind === 'folder');
+          const link = buildRepositoryMarkdownLink(
+            result, uri, repositoryRoot,
+            vscode.workspace.getWorkspaceFolder(uri)?.uri,
+            vscode.window.activeTextEditor?.document?.uri
+          );
+          await vscode.env.clipboard.writeText(link);
+          this.post({ type: 'copied', index: Number(message.index) });
+        } catch {
+          this.post({ type: 'error', message: 'Cannot copy a relative link: the result must belong to a local Git repository.' });
+        }
       }
       return;
     }
@@ -113,7 +187,47 @@ class WorkspaceSearchViewProvider {
     }
   }
 
+  async findGitRoot(uri, isFolder = false) {
+    const { stdout } = await execFileAsync('git',
+      ['-C', isFolder ? uri.fsPath : path.dirname(uri.fsPath), 'rev-parse', '--show-toplevel'],
+      { timeout: 10000 });
+    return stdout.trim();
+  }
+
+  clearResultHighlight() {
+    if (!this.highlightedEditor) return;
+    this.highlightedEditor.setDecorations(this.resultLineDecoration, []);
+    this.highlightedEditor.setDecorations(this.resultTextDecoration, []);
+    this.highlightedEditor = undefined;
+  }
+
+  highlightResult(editor, match) {
+    if (!this.resultLineDecoration) {
+      this.resultLineDecoration = vscode.window.createTextEditorDecorationType({
+        isWholeLine: true,
+        backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+        border: '1px solid',
+        borderColor: new vscode.ThemeColor('editor.rangeHighlightBorder'),
+        overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.findMatchForeground'),
+        overviewRulerLane: vscode.OverviewRulerLane.Center
+      });
+      this.resultTextDecoration = vscode.window.createTextEditorDecorationType({
+        backgroundColor: new vscode.ThemeColor('editor.findMatchBackground'),
+        border: '1px solid',
+        borderColor: new vscode.ThemeColor('editor.findMatchBorder')
+      });
+      this.editorChangeSubscription = vscode.window.onDidChangeActiveTextEditor(activeEditor => {
+        if (this.highlightedEditor && activeEditor !== this.highlightedEditor) this.clearResultHighlight();
+      });
+    }
+    this.highlightedEditor = editor;
+    editor.setDecorations(this.resultLineDecoration, [match.lineRange]);
+    editor.setDecorations(this.resultTextDecoration, match.wordRanges);
+    editor.revealRange(match.focusRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+
   async openResult(result) {
+    this.clearResultHighlight();
     const uri = vscode.Uri.parse(result.uri);
     if (result.kind === 'folder') {
       await vscode.commands.executeCommand('revealInExplorer', uri);
@@ -122,14 +236,24 @@ class WorkspaceSearchViewProvider {
     const ext = path.extname(uri.path).toLowerCase();
     if (TEXT_EXTENSIONS.has(ext)) {
       const document = await vscode.workspace.openTextDocument(uri);
-      const line = Math.min(Math.max(0, result.line || 0), Math.max(0, document.lineCount - 1));
-      await vscode.window.showTextDocument(document, {
+      const line = Math.min(Math.max(0, Math.trunc(Number(result.line) || 0)), Math.max(0, document.lineCount - 1));
+      // File-name-only hits have no passage to highlight.
+      const match = result.kind === 'filename' ? null : matchingResultRanges(document, result, this.lastQuery);
+      const editor = await vscode.window.showTextDocument(document, {
         preview: true,
-        selection: new vscode.Range(line, 0, line, 0)
+        selection: match?.focusRange || new vscode.Range(line, 0, line, 0)
       });
+      if (match) this.highlightResult(editor, match);
       return;
     }
     await vscode.commands.executeCommand('vscode.open', uri);
+  }
+
+  dispose() {
+    this.clearResultHighlight();
+    this.editorChangeSubscription?.dispose();
+    this.resultLineDecoration?.dispose();
+    this.resultTextDecoration?.dispose();
   }
 
   async askOllama() {
@@ -240,4 +364,4 @@ query.focus();
   }
 }
 
-module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore };
+module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore, buildRepositoryMarkdownLink, matchingResultRanges };

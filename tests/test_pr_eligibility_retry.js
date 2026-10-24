@@ -5,21 +5,22 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
-const warningPreference = source.match(/function scmToolkitHighlightPrWarnings\([\s\S]*?\n}/)[0];
 const refresh = source.match(/    const refreshPullRequest = \(\) => \{[\s\S]*?\n    };/)[0];
 const settingsAttachment = source.match(/function scmToolkitAttachCommitSettings\([\s\S]*?\n}\n\nasync function scmToolkitPullCleanRepository/)[0];
 assert.match(settingsAttachment, /widget\.element\.append\(button\)/,
   'Magic Settings must remain reachable while VS Code has no action dropdown');
 assert.match(settingsAttachment, /const destination = dropdown \|\| widget\.element/,
   'Magic Settings must return to its inline fallback when action rows are recycled');
+const warningPreference = source.match(/function scmToolkitHighlightPrWarnings\([\s\S]*?\n}/)?.[0];
+assert.ok(warningPreference, 'PR eligibility test must include the warning-preference helper');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function harness(executeCommand) {
   const timers = new Map();
   let nextTimer = 0;
   const context = vm.createContext({
-    settings: { mcpPullRequest: true, remote: 'origin' },
     configuration: { getValue() { return undefined; } },
+    settings: { mcpPullRequest: true, remote: 'origin' },
     currentBranch: 'draft', currentDefaultBranch: 'main', currentBranchRevision: 'head1',
     currentRepositoryUri: { toString: () => 'file:///workspace/repository' },
     pullRequestEligibilityKey: undefined, pullRequestEligibility: undefined,

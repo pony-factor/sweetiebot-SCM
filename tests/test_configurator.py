@@ -85,6 +85,29 @@ class SubmissionTests(unittest.TestCase):
         for name in names:
             self.assertIn(f'name="{name}"', page)
 
+    def test_github_refresh_controls_round_trip(self):
+        values = form_values()
+        values.pop("mergeAutoRefresh", None)
+        values.update(mergeRefreshIntervalSeconds=["180"], githubRateLimitCooldownSeconds=["600"])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertFalse(payload["mergeAutoRefresh"])
+        self.assertEqual(payload["mergeRefreshIntervalSeconds"], 180)
+        self.assertEqual(payload["githubRateLimitCooldownSeconds"], 600)
+        for name, value in [("mergeRefreshIntervalSeconds", "29"), ("githubRateLimitCooldownSeconds", "59")]:
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(dict(values, **{name: [value]}))
+
+    def test_merge_summaries_are_opt_in_and_persist(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["mergePostSummaries"])
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["mergePostSummaries"])
+        values["mergePostSummaries"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["mergePostSummaries"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="mergePostSummaries" value="true" checked', page)
+
     def test_sync_commit_filter_defaults_on_and_persists(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],

@@ -258,6 +258,38 @@ def run():
         print("PASS: exhausted-message promotions retain Rated Limited initially and after dynamic insertion")
         print("PASS: Chromium usage accent with absent theme token, override and reset")
         print("PASS: headless Chromium computed CSS, header, activity and 75 React-style rewrites")
+        # Queued previews repeat arbitrary user text in aria-label. They must
+        # never be interpreted as native rate-limit statuses or attachments.
+        queue_page = browser.new_page()
+        queue_page.set_content("""<main><section id="composer-region">
+          <div id="queue-row">
+            <div data-scm-toolkit-rate-limit-pony-companion="true"><img id="old-decoration"></div>
+            <div role="group" tabindex="0" aria-label="Preview queued message 1: rate limit reached">
+              <span id="queued-copy">Rate limited</span><img id="real-attachment" src="user-image.png">
+            </div><button aria-label="Queued message actions">More</button>
+          </div><textarea id="queued-editor">Keep this draft</textarea>
+        </section></main>""")
+        rate_script = (ASSETS / 'rate-limit-controls.js').read_text().replace(
+            '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"', '"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII="'
+        ).replace('"__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__"', 'true')
+        queue_page.add_script_tag(content=rate_script)
+        assert queue_page.evaluate('scmToolkitFooterRateLimitNotice(document).card === null')
+        assert queue_page.locator('#queued-copy').inner_text() == 'Rate limited'
+        assert queue_page.locator('#old-decoration').count() == 0
+        assert queue_page.locator('#real-attachment').count() == 1
+        assert queue_page.locator('#queued-editor').input_value() == 'Keep this draft'
+        queue_page.evaluate("""() => {
+          const status = document.createElement('div');
+          status.id = 'native-limit'; status.setAttribute('role', 'status');
+          status.textContent = 'Rate limited';
+          document.querySelector('#composer-region').append(status);
+          scmToolkitSyncRateLimitPony(document);
+        }""")
+        queue_page.wait_for_selector('#native-limit[data-scm-toolkit-rate-limit-pony] img')
+        assert queue_page.locator('#queue-row [data-scm-toolkit-rate-limit-pony]').count() == 0
+        assert queue_page.locator('#real-attachment').count() == 1
+        queue_page.close()
+        print('PASS: queued rate-limit prose is untouched; only native status gets artwork; real attachments survive')
         browser.close()
 
 if __name__ == "__main__":
