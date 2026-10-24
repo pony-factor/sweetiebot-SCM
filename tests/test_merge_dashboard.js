@@ -76,10 +76,10 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   assert(selectedPrompt.includes('Do not edit a human-authored comment'));
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'));
   const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
-    blockerOptions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
+    manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
   assert(conflictPrompt.includes('Never create a per-file inline comment'));
   const alternativesPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
-    blockerOptions({ state: 'conflict' }).find(option => option.id === 'suggest-options'));
+    manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'suggest-options'));
   assert(alternativesPrompt.includes('never invent choices for compatible integrations'));
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
