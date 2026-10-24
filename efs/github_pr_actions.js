@@ -310,7 +310,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     try {
       // Never invoke a merge with an unresolved or mismatched PR identity.
       if (!url) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
-      progress?.report?.({ message: `PR #${model.number}: checking merge eligibility…` });
+      progress?.report?.({ message: 'Checking merge eligibility…' });
       const confirmNonMain = async ({ number, base }) => {
         const action = `Squash into ${base}`;
         const choice = await vscode.window.showWarningMessage(
@@ -382,7 +382,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     if (clicked.url && busy.has(clicked.url)) return;
     return vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: clicked.number ? `Starting squash merge for PR #${clicked.number}…` : 'Starting squash merge…',
+      title: clicked.number ? `Squash merge PR #${clicked.number}` : 'Squash merge',
       cancellable: false
     }, progress => processMerge(node, progress));
   };

@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
-const { createWorkspaceDirectory } = require('./workspace_layout');
+const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { openSharedMainWorkspace } = require('./shared_main');
 
 const OPEN_WORKSPACE_COMMAND = 'sweetiebot.openIndependentWorkspace';
@@ -96,7 +96,7 @@ async function openIndependentClone(vscode, {
 
   // Multi-root workspaces are grouped under their first repository.
   const firstLabel = labelFor(roots.values().next().value);
-  const directory = await createWorkspaceDirectory(baseDirectory, firstLabel, io);
+  const directory = await createWorkspaceDirectory(baseDirectory, firstLabel, io, { branch: 'main' });
   try {
     const destinations = new Map();
     const usedNames = new Set();
@@ -121,7 +121,7 @@ async function openIndependentClone(vscode, {
       name: source.name
     }));
     const target = targets.length === 1
-      ? targets[0].path : path.join(directory, 'workspace.code-workspace');
+      ? targets[0].path : path.join(directory, workspaceFileName(directory));
     let workspaceFileContents = null;
     if (targets.length > 1) {
       workspaceFileContents = JSON.stringify({

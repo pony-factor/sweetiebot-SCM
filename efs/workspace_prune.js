@@ -71,7 +71,8 @@ async function eligibleGroup(io, group, baseDirectory, now, alive) {
   catch { return null; }
   if (!lastActive.isFile() || now - lastActive.mtimeMs < IDLE_MS) return null;
 
-  const allowed = new Set([MANIFEST, ACTIVATED, PROOFS, 'workspace.code-workspace', ...names]);
+  const workspaceNames = new Set(['workspace.code-workspace', path.basename(group) + '.code-workspace']);
+  const allowed = new Set([MANIFEST, ACTIVATED, PROOFS, ...workspaceNames, ...names]);
   const entries = await io.readdir(group, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name.startsWith(SESSION_PREFIX) && entry.isFile()) {
@@ -84,15 +85,17 @@ async function eligibleGroup(io, group, baseDirectory, now, alive) {
     if (names.includes(entry.name) && !entry.isDirectory()) return null;
     if (entry.name === PROOFS && !entry.isDirectory()) return null;
     if ((entry.name === MANIFEST || entry.name === ACTIVATED ||
-         entry.name === 'workspace.code-workspace') && !entry.isFile()) return null;
+         workspaceNames.has(entry.name)) && !entry.isFile()) return null;
   }
   for (const name of names) if (!await isPlainDirectory(io, path.join(group, name))) return null;
   // .code-workspace files are not part of Git status. Preserve user edits.
+  // Support legacy workspace.code-workspace and new branch-color filenames.
+  const workspaceFiles = entries.filter(entry => workspaceNames.has(entry.name));
   if (names.length > 1) {
-    if (typeof manifest.workspaceFileContents !== 'string' ||
-        await io.readFile(path.join(group, 'workspace.code-workspace'), 'utf8')
+    if (workspaceFiles.length !== 1 || typeof manifest.workspaceFileContents !== 'string' ||
+        await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8')
           !== manifest.workspaceFileContents) return null;
-  } else if (entries.some(entry => entry.name === 'workspace.code-workspace')) return null;
+  } else if (workspaceFiles.length) return null;
   // Only our own per-repository proof files may live in the proof directory.
   if (entries.some(entry => entry.name === PROOFS)) {
     const proofs = await io.readdir(path.join(group, PROOFS), { withFileTypes: true });

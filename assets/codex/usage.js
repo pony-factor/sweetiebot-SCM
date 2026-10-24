@@ -12,6 +12,18 @@ function scmToolkitUsagePiePercent(value) {
     return Math.round(Math.max(0, Math.min(100, percent)));
 }
 
+// Time progress is independent of usage allowance: 100% means a full reset
+// interval remains; 0% means the next reset is due.
+function scmToolkitResetTimePercent(resetAt, windowMinutes, now = Date.now()) {
+    const reset = Number(resetAt);
+    const minutes = Number(windowMinutes);
+    const current = Number(now);
+    if (resetAt == null || !Number.isFinite(reset) || !Number.isFinite(minutes)
+        || minutes <= 0 || !Number.isFinite(current)) return null;
+    return Math.round(Math.max(0, Math.min(100,
+        ((reset * 1000 - current) / (minutes * 60000)) * 100)));
+}
+
 function scmToolkitRelativeUsageReset(resetAt, windowMinutes, now = Date.now()) {
     const reset = Number(resetAt);
     const current = Number(now);
@@ -157,7 +169,7 @@ function scmToolkitKeepUsageFresh(refetch) {
     const tag = 'scm-toolkit-usage-pie';
     if (customElements.get(tag)) return;
     customElements.define(tag, class extends HTMLElement {
-        static get observedAttributes() { return ['percent']; }
+        static get observedAttributes() { return ['percent', 'kind']; }
         connectedCallback() {
             this.style.display = 'inline-block';
             this.style.width = '12px';
@@ -185,7 +197,9 @@ function scmToolkitKeepUsageFresh(refetch) {
                 : 'currentColor';
             this.style.background =
                 `conic-gradient(from 0deg, color-mix(in srgb, currentColor 20%, transparent) 0 ${degrees}deg, ${foreground} ${degrees}deg 360deg)`;
-            const label = `${percent}% Codex usage remaining`;
+            const label = this.getAttribute('kind') === 'reset'
+                ? `${percent}% of Codex reset interval remaining`
+                : `${percent}% Codex usage remaining`;
             this.setAttribute('role', 'img');
             this.setAttribute('aria-label', label);
             this.setAttribute('title', label);
@@ -216,7 +230,32 @@ function scmToolkitKeepUsageFresh(refetch) {
             }
             const windowMinutes = Number(this.getAttribute('window-minutes'));
             const relative = scmToolkitRelativeUsageReset(reset, windowMinutes);
-            this.textContent = windowMinutes >= 10080 && relative ? `${relative} left` : relative;
+            const label = windowMinutes >= 10080 && relative ? `${relative} left` : relative;
+            const percent = this.hasAttribute('show-pie')
+                ? scmToolkitResetTimePercent(reset, windowMinutes)
+                : null;
+            if (percent == null || !relative) {
+                this.textContent = label;
+                this._scmToolkitResetPie = null;
+                this._scmToolkitResetLabel = null;
+                return;
+            }
+            if (!this._scmToolkitResetPie || this._scmToolkitResetPie.parentElement !== this) {
+                this.textContent = '';
+                const pie = document.createElement('scm-toolkit-usage-pie');
+                pie.setAttribute('kind', 'reset');
+                pie.style.marginRight = '4px';
+                const text = document.createElement('span');
+                this.append(pie, text);
+                this._scmToolkitResetPie = pie;
+                this._scmToolkitResetLabel = text;
+            }
+            if (this._scmToolkitResetPie.getAttribute('percent') !== String(percent)) {
+                this._scmToolkitResetPie.setAttribute('percent', percent);
+            }
+            if (this._scmToolkitResetLabel.textContent !== label) {
+                this._scmToolkitResetLabel.textContent = label;
+            }
         }
     });
 })();

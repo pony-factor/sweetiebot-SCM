@@ -14,7 +14,8 @@ const BASE_OID = 'a'.repeat(40);
 function fixture({
   activated = true, ageHours = 2, active = false, dirty = false,
   merged = true, extra = false, unrecognized = false, missingProof = false,
-  openPr = false, offline = false, extraBranch = false, stash = false, nested = false, symlinkParent = false
+  openPr = false, offline = false, extraBranch = false, stash = false, nested = false, symlinkParent = false,
+  unexpectedWorkspaceFile = false
 } = {}) {
   const GROUP = nested ? path.join(BASE, 'pony', 'ABC123') : path.join(BASE, 'pony-ABC123');
   const deleted = [], invocations = [];
@@ -39,12 +40,14 @@ function fixture({
   if (activated) nodes.set(path.join(GROUP, '.sweetiebot-activated'), 'file');
   if (active) nodes.set(path.join(GROUP, '.sweetiebot-session-999-test.json'), 'file');
   if (extra) nodes.set(path.join(GROUP, 'private-note.txt'), 'file');
+  if (unexpectedWorkspaceFile) nodes.set(path.join(GROUP, path.basename(GROUP) + '.code-workspace'), 'file');
   const listing = new Map([
     [BASE, ['pony-ABC123']],
     [GROUP, ['pony', '.sweetiebot-workspace.json', '.sweetiebot-merged',
       ...(activated ? ['.sweetiebot-activated'] : []),
       ...(active ? ['.sweetiebot-session-999-test.json'] : []),
-      ...(extra ? ['private-note.txt'] : [])]]
+      ...(extra ? ['private-note.txt'] : []),
+      ...(unexpectedWorkspaceFile ? [path.basename(GROUP) + '.code-workspace'] : [])]]
   ]);
   if (nested) {
     nodes.set(path.join(BASE, 'pony'), symlinkParent ? 'symlink' : 'dir');
@@ -133,6 +136,7 @@ function fixture({
     recentlyUsed: { ageHours: 0.1 },
     liveWindow: { active: true },
     unexpectedFiles: { extra: true },
+    unexpectedWorkspaceFile: { unexpectedWorkspaceFile: true },
     unmergedPR: { merged: false },
     openPR: { openPr: true },
     githubOffline: { offline: true },

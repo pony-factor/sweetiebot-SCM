@@ -37,7 +37,8 @@ async function openedRoot(result) {
     const second = await openIndependentWorkspace(editor(root), options);
     assert.notEqual(first.target, second.target, 'Window identities remain independent');
     assert.equal(path.dirname(first.directory), path.join(baseDirectory, 'repo'));
-    assert.match(path.basename(first.directory), /^[0-9a-f-]{36}$/);
+    assert.match(path.basename(first.directory), /^main-[a-z]+$/);
+    assert.equal(path.basename(first.target), path.basename(first.directory) + '.code-workspace');
     assert.equal(await openedRoot(first), root);
     assert.equal(await openedRoot(second), root);
     await fs.writeFile(path.join(root, 'file.txt'), 'pending shared main\n');
@@ -53,8 +54,9 @@ async function openedRoot(result) {
     const topicWorkspace = topicEditor.commands.calls.at(-1)[1].fsPath;
     const topic = await openedRoot({ target: topicWorkspace });
     assert.equal(path.dirname(path.dirname(topic)), path.join(baseDirectory, 'repo'));
-    assert.match(path.basename(path.dirname(topic)), /^[0-9a-f-]{36}$/);
+    assert.match(path.basename(path.dirname(topic)), /^topic-(?:\d+-)?[a-z]+$/);
     assert.equal(path.dirname(path.dirname(topicWorkspace)), path.join(baseDirectory, 'repo'));
+    assert.equal(path.basename(topicWorkspace), path.basename(path.dirname(topicWorkspace)) + '.code-workspace');
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main', 'Never switch the shared main folder');
     assert.equal(await originalRepository(topic, options), root);
@@ -107,6 +109,21 @@ async function openedRoot(result) {
     const saved = moving.commands.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1];
     assert.equal(saved.workspace, first.target, 'Keep the existing workspace identity');
     assert.equal(saved.plan.destination, topic);
+
+    // Returning to main keeps the same workspace and chat, too.
+    moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: topic }, name: 'Repo' }];
+    moving.commands.calls.length = 0;
+    assert.equal(await routeBranch(moving, { rootUri: { fsPath: topic } },
+      { ...options, branch: 'main', forceNewWindow: true }), true);
+    assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: root }, name: 'Repo' }]);
+    assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'),
+      'Returning to main must keep the existing workbench');
+    const homeHandoff = moving.commands.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1];
+    assert.equal(homeHandoff.workspace, first.target);
+    assert.equal(homeHandoff.plan.destination, root);
+    assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'private topic edit\n');
+    assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
+    moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
 
     await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
     moving.commands.calls.length = 0;
