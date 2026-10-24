@@ -4,6 +4,8 @@ Never write uploaded artwork into a repository, Git config, or extension setting
 Only an opt-in local installer embeds the bytes into the Codex webview.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import tempfile

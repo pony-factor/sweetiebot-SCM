@@ -23,6 +23,33 @@ def archive(entries):
 
 
 class UpdateTests(unittest.TestCase):
+    def setUp(self):
+        # Archive fixtures below describe packaging, not executable installers.
+        self.import_check = patch.object(update, 'installer_imports', return_value=True)
+        self.real_import_check = update.installer_imports
+        self.import_check.start()
+        self.addCleanup(self.import_check.stop)
+
+    def test_installer_import_check_catches_runtime_errors_without_running_main(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scripts').mkdir()
+            installer = root / 'scripts/install.py'
+            installer.write_text('raise TypeError("unsupported annotation")\n')
+            self.assertFalse(self.real_import_check(root))
+            installer.write_text('if __name__ == "__main__":\n    raise RuntimeError("must not install")\n')
+            self.assertTrue(self.real_import_check(root))
+
+    def test_manual_rebuild_rejects_an_unloadable_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'upstream.git').mkdir()
+            payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
+                       'scripts/repair.py': 'repair'}
+            with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]), \
+                    patch.object(update, 'installer_imports', return_value=False):
+                self.assertIsNone(update.prepare_update(root, force=True))
+
     def test_nested_images_survive_all_distribution_paths(self):
         import build_installer_app
         entries = {

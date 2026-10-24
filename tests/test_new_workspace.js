@@ -55,7 +55,7 @@ function editor(paths) {
     assert.equal(manifest.kind, 'independent-clone');
     assert.equal(path.basename(clone), 'original', 'No ordinal prefix on the checkout');
     assert.equal(path.dirname(initial.directory), path.join(copies, 'original'));
-    assert.match(path.basename(initial.directory), /^[0-9a-f-]{36}$/, 'Workspace uses an ID');
+    assert.match(path.basename(initial.directory), /^main-(?:\d+-)?[a-z]+$/, 'Workspace uses branch-color name');
     assert.equal(git('-C', clone, 'branch', '--show-current'), 'main');
     assert.equal(await fs.readFile(path.join(clone, 'tracked.txt'), 'utf8'), 'main snapshot\n');
     assert.equal(git('-C', original, 'branch', '--show-current'), 'topic');
@@ -83,7 +83,8 @@ function editor(paths) {
     const data = JSON.parse(await fs.readFile(combined.target, 'utf8'));
     assert.equal(data.folders.length, 2);
     assert.equal(path.dirname(combined.directory), path.join(copies, 'original'));
-    assert.match(path.basename(combined.directory), /^[0-9a-f-]{36}$/);
+    assert.match(path.basename(combined.directory), /^main-(?:\d+-)?[a-z]+$/);
+    assert.equal(path.basename(combined.target), path.basename(combined.directory) + '.code-workspace');
     assert.deepEqual(data.folders.map(folder => path.basename(folder.path)), ['original', 'other']);
     assert.equal(git('-C', data.folders[0].path, 'branch', '--show-current'), 'main');
     assert.equal(git('-C', data.folders[1].path, 'branch', '--show-current'), 'main');
