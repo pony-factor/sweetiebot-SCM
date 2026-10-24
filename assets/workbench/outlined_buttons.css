@@ -51,3 +51,31 @@
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings:hover {
     background: var(--vscode-toolbar-hoverBackground) !important;
 }
+
+/* Outlined mode acknowledges a press with the theme's accent outline. */
+.scm-view:not(.scm-history-view) .button-container > .monaco-button:not(.disabled):active,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown:not(.disabled):has(> .monaco-button:first-child:not(.disabled):active),
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button:not(.disabled),
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown:not(.disabled) {
+    border-color: var(--vscode-focusBorder) !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown:not(.disabled) {
+    animation: scm-toolkit-action-flash 260ms ease-out;
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button:not(.disabled):active,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown:not(.disabled):has(> .monaco-button:first-child:not(.disabled):active) {
+    box-shadow: 0 0 0 2px var(--vscode-focusBorder) !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button:not(.disabled):active,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:first-child:not(.disabled):active,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button:not(.disabled),
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown > .monaco-button:first-child:not(.disabled) {
+    background: transparent !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown > .monaco-button:first-child {
+    animation: none;
+}
