@@ -263,6 +263,12 @@ __RATE_LIMIT_FORMATTER__
     parent.appendChild(node);
     return node;
   }
+  function pullRequestPriority(pr) {
+    if (pr.state === 'merged') return 3;
+    if (pr.state === 'closed') return 2;
+    if (pr.localReview || ['review', 'conflict', 'blocked', 'updated'].includes(pr.state)) return 0;
+    return 1;
+  }
   function dispatch(type, number, url) { vscode.postMessage({ type, number, url }); }
   function showTextPanel(parent, heading, content, missing, markdown = false) {
     const panel = el('section', markdown ? 'panel markdown-panel' : 'panel');
@@ -392,7 +398,10 @@ __RATE_LIMIT_FORMATTER__
     const list = byId('prs');
     const listScroll = list.scrollTop;
     list.replaceChildren();
-    for (const pr of model.prs) {
+    // Sort a copy so live presentation never changes the merge selection order.
+    const visiblePrs = model.prs.slice().sort((a, b) => pullRequestPriority(a) - pullRequestPriority(b));
+    if (selected === null && visiblePrs.length) selected = visiblePrs[0].number;
+    for (const pr of visiblePrs) {
       const button = show('button', 'pr', undefined, list);
       button.setAttribute('aria-current', String(pr.number === selected));
       const row = show('div', 'row', undefined, button);
@@ -435,7 +444,6 @@ __RATE_LIMIT_FORMATTER__
       }
     }
     events.scrollTop = eventScroll;
-    if (selected === null && model.prs.length) selected = model.prs[0].number;
     renderDetail();
   }
   window.addEventListener('message', event => {
