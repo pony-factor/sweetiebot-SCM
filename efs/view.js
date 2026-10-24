@@ -3,6 +3,9 @@
 const vscode = require('vscode');
 const crypto = require('crypto');
 const path = require('path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 const { TEXT_EXTENSIONS } = require('./extract');
 const { ask } = require('./ollama');
 
@@ -43,6 +46,40 @@ function escapeHtmlAttribute(value) {
   }[character]));
 }
 
+
+function isWithinDirectory(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+
+// A leading slash is repository-relative on GitHub, but workspace-relative in
+// VS Code. Use a source-file-relative URL when an editor in this repository is
+// open under a workspace rooted above (or inside) the repository.
+function buildRepositoryMarkdownLink(result, uri, repositoryRoot, workspaceUri, editorUri) {
+  const root = path.resolve(repositoryRoot);
+  const target = path.resolve(uri.fsPath);
+  if (!isWithinDirectory(root, target)) throw new Error('Search result is outside its Git repository.');
+  const folder = result.kind === 'folder';
+  const line = Math.max(0, Number(result.line) || 0) + 1;
+  const rootRelative = path.relative(root, target).split(path.sep).join('/');
+  const rootWorkspace = workspaceUri?.scheme === 'file' &&
+    path.resolve(workspaceUri.fsPath) === root;
+  const editorFile = editorUri?.scheme === 'file' && editorUri.fsPath &&
+    /\.(?:md|markdown)$/i.test(path.extname(editorUri.fsPath).toLowerCase()) &&
+    isWithinDirectory(root, path.resolve(editorUri.fsPath));
+  let targetPath = '/' + rootRelative;
+  if (!rootWorkspace && editorFile) {
+    targetPath = path.relative(path.dirname(editorUri.fsPath), target).split(path.sep).join('/');
+    if (!targetPath.startsWith('.')) targetPath = './' + targetPath;
+  }
+  const encodedPath = targetPath.split('/').map(segment =>
+    encodeURIComponent(segment).replace(/[()]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase())
+  ).join('/');
+  const label = (folder ? result.relative : result.relative + ':' + line)
+    .replace(/[\\[\]]/g, '\\$&');
+  return '[' + label + '](' + encodedPath + (folder ? '' : '#L' + line) + ')';
+}
+
 function matchingResultRanges(document, result, query) {
   const line = Math.min(Math.max(0, Math.trunc(Number(result.line) || 0)), Math.max(0, document.lineCount - 1));
   const text = document.lineAt(line).text;
@@ -78,8 +115,9 @@ function matchingResultRanges(document, result, query) {
 }
 
 class WorkspaceSearchViewProvider {
-  constructor(index, getSettings) {
+  constructor(index, getSettings, githubIndex = index) {
     this.index = index;
+    this.githubIndex = githubIndex;
     this.getSettings = getSettings;
     this.view = undefined;
     this.lastQuery = '';
@@ -108,7 +146,8 @@ class WorkspaceSearchViewProvider {
       if (!query) return;
       this.post({ type: 'busy', label: 'Searching…', requestId });
       try {
-        const result = await this.index.search(query, message.mode);
+        const selectedIndex = message.scope === 'github' ? this.githubIndex : this.index;
+        const result = await selectedIndex.search(query, message.mode);
         if (generation !== this.searchGeneration) return;
         this.lastResults = result.results;
         this.post({ type: 'results', query, ...result, requestId });
@@ -125,17 +164,20 @@ class WorkspaceSearchViewProvider {
     if (message?.type === 'copyPath') {
       const result = this.lastResults[Number(message.index)];
       if (result) {
-        const uri = vscode.Uri.parse(result.uri);
-        const folder = result.kind === 'folder';
-        const line = Math.max(0, result.line || 0) + 1;
-        const link = vscode.Uri.from({
-          scheme: vscode.env.uriScheme,
-          authority: 'file',
-          path: folder ? uri.path : `${uri.path}:${line}`
-        }).toString();
-        const label = (folder ? result.relative : `${result.relative}:${line}`).replace(/[\\[\]]/g, '\\$&');
-        await vscode.env.clipboard.writeText(`[${label}](${link})`);
-        this.post({ type: 'copied', index: Number(message.index) });
+        try {
+          const uri = vscode.Uri.parse(result.uri);
+          if (uri.scheme !== 'file' || !uri.fsPath) throw new Error('Only local Git files can be linked.');
+          const repositoryRoot = await this.findGitRoot(uri, result.kind === 'folder');
+          const link = buildRepositoryMarkdownLink(
+            result, uri, repositoryRoot,
+            vscode.workspace.getWorkspaceFolder(uri)?.uri,
+            vscode.window.activeTextEditor?.document?.uri
+          );
+          await vscode.env.clipboard.writeText(link);
+          this.post({ type: 'copied', index: Number(message.index) });
+        } catch {
+          this.post({ type: 'error', message: 'Cannot copy a relative link: the result must belong to a local Git repository.' });
+        }
       }
       return;
     }
@@ -143,6 +185,13 @@ class WorkspaceSearchViewProvider {
       if (this.getSettings().askOllama) await this.askOllama();
       return;
     }
+  }
+
+  async findGitRoot(uri, isFolder = false) {
+    const { stdout } = await execFileAsync('git',
+      ['-C', isFolder ? uri.fsPath : path.dirname(uri.fsPath), 'rev-parse', '--show-toplevel'],
+      { timeout: 10000 });
+    return stdout.trim();
   }
 
   clearResultHighlight() {
@@ -232,7 +281,7 @@ class WorkspaceSearchViewProvider {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
 html,body{height:100%}body{box-sizing:border-box;min-height:100vh;margin:0;padding:10px;color:var(--vscode-foreground);background:var(--vscode-sideBar-background);font:var(--vscode-font-size) var(--vscode-font-family);display:flex;flex-direction:column}
-form{display:flex;gap:6px}input,select,button{font:inherit;color:inherit}input,select{border:1px solid var(--vscode-input-border,transparent);background:var(--vscode-input-background);color:var(--vscode-input-foreground);border-radius:999px;min-height:30px;padding:5px 11px}.search-input{position:relative;display:flex;min-width:0;flex:1}.search-input input{box-sizing:border-box;width:100%;min-width:0;padding-right:64px}.search-input input::-webkit-search-cancel-button{display:none}.search-input .search-button,.search-input .clear-button{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:4px;background:transparent;color:var(--vscode-input-foreground);border-radius:999px}.search-input .search-button{right:8px}.search-input .clear-button{right:34px}.search-input .clear-button[hidden]{display:none}.search-input .search-button:hover,.search-input .clear-button:hover{background:var(--vscode-toolbar-hoverBackground)}.search-button:focus-visible,.clear-button:focus-visible{outline:1px solid var(--vscode-focusBorder)}.search-mode{position:relative;display:flex;flex-shrink:0}.search-mode::after{content:"";position:absolute;right:12px;top:50%;width:5px;height:5px;border-right:1.5px solid var(--vscode-input-foreground);border-bottom:1.5px solid var(--vscode-input-foreground);transform:translateY(-70%) rotate(45deg);pointer-events:none}select{appearance:none;max-width:84px;padding-right:28px}button{border:0;border-radius:3px;padding:5px 8px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-button-border,var(--vscode-widget-border))}.actions{display:flex;gap:6px;margin:8px 0}.status{margin:8px 0;color:var(--vscode-descriptionForeground)}.warning{margin:8px 0;color:var(--vscode-editorWarning-foreground)}.error{margin:8px 0;color:var(--vscode-errorForeground)}.status:empty,.warning:empty,.error:empty{display:none}.answer{white-space:pre-wrap;margin:8px 0;padding:8px;background:var(--vscode-textBlockQuote-background);border-left:2px solid var(--vscode-textBlockQuote-border)}.search-content{position:relative;flex:1;min-height:0}.file-group{border-top:1px solid var(--vscode-panel-border)}.file-heading{display:grid;grid-template-columns:14px minmax(0,1fr);grid-template-rows:auto auto;column-gap:4px;width:100%;min-width:0;padding:8px 4px 4px;overflow:hidden;text-align:left;background:transparent;color:inherit;border:0;border-radius:0;cursor:pointer}.file-heading:hover{background:var(--vscode-list-hoverBackground)}.file-heading:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}.folder-tree{grid-column:1;grid-row:1 / span 2;position:relative;align-self:stretch;min-height:28px}.folder-tree::before{content:'';position:absolute;left:6px;top:7px;bottom:7px;border-left:1px solid var(--vscode-tree-indentGuidesStroke,var(--vscode-widget-border))}.folder-tree::after{content:'';position:absolute;left:6px;bottom:7px;width:7px;border-bottom:1px solid var(--vscode-tree-indentGuidesStroke,var(--vscode-widget-border))}.folder-route{grid-column:2;grid-row:1;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vscode-descriptionForeground);font-size:calc(var(--vscode-font-size)*.92)}.folder-route::before{content:'▾';padding-right:4px;color:var(--vscode-disabledForeground,var(--vscode-descriptionForeground))}.folder-segment{display:inline}.folder-segment:not(:last-child)::after{content:' › ';color:var(--vscode-disabledForeground,var(--vscode-descriptionForeground))}.file-name{grid-column:2;grid-row:2;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vscode-foreground);font-weight:600}.result{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;margin:0;padding:6px 4px 7px 14px;border:0;border-radius:0;background:transparent;color:inherit}.result:hover{background:var(--vscode-list-hoverBackground)}.result-meta{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}.line-number{color:var(--vscode-descriptionForeground)}.score{color:var(--vscode-textLink-foreground);font-weight:400}.copy-status{position:relative;display:inline-flex;width:14px;height:14px;flex:0 0 14px;align-items:center;justify-content:center;border-radius:50%;opacity:0;transform:scale(.65);transition:opacity .12s ease,transform .16s ease;--copy-check-color:#fff}.copy-status::before{content:'';position:absolute;inset:0;border-radius:50%;background:var(--vscode-focusBorder,var(--vscode-textLink-foreground));transform:scale(0);transition:transform .16s ease}.copy-status::after{content:'✓';position:relative;z-index:1;color:var(--copy-check-color);font-size:10px;font-weight:700;line-height:14px;opacity:0;transition:opacity .08s ease .08s}.copy-status.copied{opacity:1;transform:scale(1)}.copy-status.copied::before{transform:scale(1)}.copy-status.copied::after{opacity:1}.snippet{display:-webkit-box;min-width:0;flex:1;margin:0;color:var(--vscode-descriptionForeground);overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}.more-results{display:block;width:100%;margin:0;padding:2px 4px 7px 14px;text-align:left;background:transparent;color:var(--vscode-descriptionForeground);font-size:16px;line-height:1;border:0;border-radius:0}.more-results:hover{background:var(--vscode-list-hoverBackground);color:var(--vscode-foreground)}.empty{padding:10px 0;color:var(--vscode-descriptionForeground)}.result-summary{margin:8px 4px 0;padding-top:6px;border-top:1px solid var(--vscode-panel-border);color:var(--vscode-descriptionForeground);font-size:calc(var(--vscode-font-size)*.92)}.result-summary:empty{display:none}.idle-mark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;overflow:hidden}.idle-mark[hidden]{display:none}.idle-mark svg{width:clamp(112px,42vw,160px);min-width:112px;height:auto;color:var(--vscode-descriptionForeground);opacity:.13;filter:blur(.65px);transform:scale(.98);transition:opacity .18s ease,filter .18s ease}.idle-mark .efs-stroke{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.35}.idle-mark .efs-fill{fill:currentColor}
+form{display:flex;gap:6px}input,select,button{font:inherit;color:inherit}input,select{border:1px solid var(--vscode-input-border,transparent);background:var(--vscode-input-background);color:var(--vscode-input-foreground);border-radius:999px;min-height:30px;padding:5px 11px}.search-input{position:relative;display:flex;min-width:0;flex:1}.search-input input{box-sizing:border-box;width:100%;min-width:0;padding-right:64px}.search-input input::-webkit-search-cancel-button{display:none}.search-input .search-button,.search-input .clear-button{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:4px;background:transparent;color:var(--vscode-input-foreground);border-radius:999px}.search-input .search-button{right:8px}.search-input .clear-button{right:34px}.search-input .clear-button[hidden]{display:none}.search-input .search-button:hover,.search-input .clear-button:hover{background:var(--vscode-toolbar-hoverBackground)}.search-button:focus-visible,.clear-button:focus-visible{outline:1px solid var(--vscode-focusBorder)}.search-mode{position:relative;display:flex;flex-shrink:0}.search-mode::after{content:"";position:absolute;right:12px;top:50%;width:5px;height:5px;border-right:1.5px solid var(--vscode-input-foreground);border-bottom:1.5px solid var(--vscode-input-foreground);transform:translateY(-70%) rotate(45deg);pointer-events:none}select{appearance:none;max-width:84px;padding-right:28px}#scope{max-width:112px}button{border:0;border-radius:3px;padding:5px 8px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-button-border,var(--vscode-widget-border))}.actions{display:flex;gap:6px;margin:8px 0}.status{margin:8px 0;color:var(--vscode-descriptionForeground)}.warning{margin:8px 0;color:var(--vscode-editorWarning-foreground)}.error{margin:8px 0;color:var(--vscode-errorForeground)}.status:empty,.warning:empty,.error:empty{display:none}.answer{white-space:pre-wrap;margin:8px 0;padding:8px;background:var(--vscode-textBlockQuote-background);border-left:2px solid var(--vscode-textBlockQuote-border)}.search-content{position:relative;flex:1;min-height:0}.file-group{border-top:1px solid var(--vscode-panel-border)}.file-heading{display:grid;grid-template-columns:14px minmax(0,1fr);grid-template-rows:auto auto;column-gap:4px;width:100%;min-width:0;padding:8px 4px 4px;overflow:hidden;text-align:left;background:transparent;color:inherit;border:0;border-radius:0;cursor:pointer}.file-heading:hover{background:var(--vscode-list-hoverBackground)}.file-heading:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}.folder-tree{grid-column:1;grid-row:1 / span 2;position:relative;align-self:stretch;min-height:28px}.folder-tree::before{content:'';position:absolute;left:6px;top:7px;bottom:7px;border-left:1px solid var(--vscode-tree-indentGuidesStroke,var(--vscode-widget-border))}.folder-tree::after{content:'';position:absolute;left:6px;bottom:7px;width:7px;border-bottom:1px solid var(--vscode-tree-indentGuidesStroke,var(--vscode-widget-border))}.folder-route{grid-column:2;grid-row:1;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vscode-descriptionForeground);font-size:calc(var(--vscode-font-size)*.92)}.folder-route::before{content:'▾';padding-right:4px;color:var(--vscode-disabledForeground,var(--vscode-descriptionForeground))}.folder-segment{display:inline}.folder-segment:not(:last-child)::after{content:' › ';color:var(--vscode-disabledForeground,var(--vscode-descriptionForeground))}.file-name{grid-column:2;grid-row:2;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vscode-foreground);font-weight:600}.result{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;margin:0;padding:6px 4px 7px 14px;border:0;border-radius:0;background:transparent;color:inherit}.result:hover{background:var(--vscode-list-hoverBackground)}.result-meta{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}.line-number{color:var(--vscode-descriptionForeground)}.score{color:var(--vscode-textLink-foreground);font-weight:400}.copy-status{position:relative;display:inline-flex;width:14px;height:14px;flex:0 0 14px;align-items:center;justify-content:center;border-radius:50%;opacity:0;transform:scale(.65);transition:opacity .12s ease,transform .16s ease;--copy-check-color:#fff}.copy-status::before{content:'';position:absolute;inset:0;border-radius:50%;background:var(--vscode-focusBorder,var(--vscode-textLink-foreground));transform:scale(0);transition:transform .16s ease}.copy-status::after{content:'✓';position:relative;z-index:1;color:var(--copy-check-color);font-size:10px;font-weight:700;line-height:14px;opacity:0;transition:opacity .08s ease .08s}.copy-status.copied{opacity:1;transform:scale(1)}.copy-status.copied::before{transform:scale(1)}.copy-status.copied::after{opacity:1}.snippet{display:-webkit-box;min-width:0;flex:1;margin:0;color:var(--vscode-descriptionForeground);overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}.more-results{display:block;width:100%;margin:0;padding:2px 4px 7px 14px;text-align:left;background:transparent;color:var(--vscode-descriptionForeground);font-size:16px;line-height:1;border:0;border-radius:0}.more-results:hover{background:var(--vscode-list-hoverBackground);color:var(--vscode-foreground)}.empty{padding:10px 0;color:var(--vscode-descriptionForeground)}.result-summary{margin:8px 4px 0;padding-top:6px;border-top:1px solid var(--vscode-panel-border);color:var(--vscode-descriptionForeground);font-size:calc(var(--vscode-font-size)*.92)}.result-summary:empty{display:none}.idle-mark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;overflow:hidden}.idle-mark[hidden]{display:none}.idle-mark svg{width:clamp(112px,42vw,160px);min-width:112px;height:auto;color:var(--vscode-descriptionForeground);opacity:.13;filter:blur(.65px);transform:scale(.98);transition:opacity .18s ease,filter .18s ease}.idle-mark .efs-stroke{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.35}.idle-mark .efs-fill{fill:currentColor}
 .history-toggle{flex:0 0 auto;min-width:30px;height:30px;padding:2px;border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:999px;background:transparent;color:var(--vscode-input-foreground)}
 .history-toggle:hover,.history-toggle[aria-expanded="true"]{background:var(--vscode-toolbar-hoverBackground)}
 .history-toggle:focus-visible,.history-entry:focus-visible,.history-clear:focus-visible{outline:1px solid var(--vscode-focusBorder)}
@@ -247,7 +296,7 @@ form{display:flex;gap:6px}input,select,button{font:inherit;color:inherit}input,s
 .history-empty{padding:8px;color:var(--vscode-descriptionForeground)}
 @media(max-width:340px){form{flex-direction:column}.search-input{flex:none;width:100%}.search-mode{align-self:flex-start}}
 </style></head><body>
-<form id="search"><div class="search-input"><input id="query" type="search" aria-label="Search your workspace" placeholder="${searchPlaceholder}" autocomplete="off"><button id="clear-query" class="clear-button" type="button" aria-label="Clear search" title="Clear search" hidden><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4 4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button><button class="search-button" type="submit" aria-label="Search" title="Search (Enter)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="m10 10 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div><span class="search-mode"><select id="mode" title="Search mode"><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option><option value="exact">Exact</option></select></span><button id="history-toggle" class="history-toggle" type="button" aria-label="Recent searches" aria-controls="history-panel" aria-expanded="false" title="Recent searches">↶</button></form>
+<form id="search"><div class="search-input"><input id="query" type="search" aria-label="Search your workspace" placeholder="${searchPlaceholder}" autocomplete="off"><button id="clear-query" class="clear-button" type="button" aria-label="Clear search" title="Clear search" hidden><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4 4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button><button class="search-button" type="submit" aria-label="Search" title="Search (Enter)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="m10 10 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div><span class="search-mode"><select id="scope" aria-label="Search scope" title="Search scope"><option value="workspace">Workspace</option><option value="github">~/GitHub</option></select></span><span class="search-mode"><select id="mode" title="Search mode"><option value="hybrid">Hybrid</option><option value="semantic">Semantic</option><option value="exact">Exact</option></select></span><button id="history-toggle" class="history-toggle" type="button" aria-label="Recent searches" aria-controls="history-panel" aria-expanded="false" title="Recent searches">↶</button></form>
 <div id="history-panel" class="history-panel" hidden><div class="history-heading"><span>Recent searches</span><button id="history-clear" class="history-clear" type="button">Clear history</button></div><div id="history-list"></div></div>
 ${actions}
 <div class="search-content">
@@ -266,15 +315,15 @@ ${actions}
   </div>
 </div>
 <script nonce="${nonce}">
-const vscode=acquireVsCodeApi();const form=document.getElementById('search');const query=document.getElementById('query');const clearQuery=document.getElementById('clear-query');const mode=document.getElementById('mode');const status=document.getElementById('status');const answer=document.getElementById('answer');const results=document.getElementById('results');const summary=document.getElementById('summary');const idle=document.getElementById('idle');const ask=document.getElementById('ask');const historyToggle=document.getElementById('history-toggle');const historyPanel=document.getElementById('history-panel');const historyList=document.getElementById('history-list');const historyClear=document.getElementById('history-clear');
+const vscode=acquireVsCodeApi();const form=document.getElementById('search');const query=document.getElementById('query');const clearQuery=document.getElementById('clear-query');const mode=document.getElementById('mode');const scope=document.getElementById('scope');const status=document.getElementById('status');const answer=document.getElementById('answer');const results=document.getElementById('results');const summary=document.getElementById('summary');const idle=document.getElementById('idle');const ask=document.getElementById('ask');const historyToggle=document.getElementById('history-toggle');const historyPanel=document.getElementById('history-panel');const historyList=document.getElementById('history-list');const historyClear=document.getElementById('history-clear');
 let searchTimer;let requestId=0;let submittedQuery='';let submittedMode='';let composing=false;let copiedIndicator;let searching=false;let queryEditing=false;
 const MAX_RESULTS_PER_FILE=7;
 const HISTORY_LIMIT=20;const INACTIVITY_MS=8*60*60*1000;
-const savedState=vscode.getState?.()||{};
+const savedState=vscode.getState?.()||{};scope.value=savedState.scope==='github'?'github':'workspace';
 let history=Array.isArray(savedState.history)?savedState.history.filter(item=>item&&typeof item.query==='string'&&['hybrid','semantic','exact'].includes(item.mode)).map(item=>({query:item.query.slice(0,500),mode:item.mode})).slice(0,HISTORY_LIMIT):[];
 let lastActivityAt=Number.isFinite(savedState.lastActivityAt)&&savedState.lastActivityAt>0?savedState.lastActivityAt:Date.now();
 let inactivityTimer;let historyVisible=false;
-function saveHistoryState(){vscode.setState?.({history,lastActivityAt})}
+function saveHistoryState(){vscode.setState?.({history,lastActivityAt,scope:scope.value})}
 function renderHistory(){historyList.replaceChildren();history.forEach((item,index)=>{const button=document.createElement('button');button.type='button';button.className='history-entry';button.dataset.historyIndex=String(index);button.title=item.query+' ('+item.mode+')';const term=document.createElement('span');term.className='history-term';term.textContent=item.query;const searchMode=document.createElement('span');searchMode.className='history-mode';searchMode.textContent=item.mode;button.append(term,searchMode);historyList.append(button)});if(!history.length){const empty=document.createElement('div');empty.className='history-empty';empty.textContent='No recent searches.';historyList.append(empty)}historyPanel.hidden=!historyVisible;historyToggle.setAttribute('aria-expanded',String(historyVisible))}
 function addSearchHistory(term,searchMode){if(!term)return;history=[{query:term.slice(0,500),mode:searchMode},...history.filter(item=>item.query!==term||item.mode!==searchMode)].slice(0,HISTORY_LIMIT);saveHistoryState();renderHistory()}
 function scheduleInactivityCheck(){clearTimeout(inactivityTimer);inactivityTimer=setTimeout(checkInactivity,Math.max(1,INACTIVITY_MS-(Date.now()-lastActivityAt)))}
@@ -288,7 +337,7 @@ function showCopyConfirmation(index){const indicator=results.querySelector('[dat
 function updateIdleState(){idle.hidden=Boolean(query.value.trim())&&!searching}
 function updateQueryControls(){clearQuery.hidden=!query.value;updateIdleState()}
 function clearResults(){answer.textContent='';answer.className='';results.replaceChildren();summary.textContent='';copiedIndicator=undefined;status.textContent='';status.className='status';if(ask)ask.disabled=true;updateQueryControls()}
-function search(){clearTimeout(searchTimer);if(composing)return;submittedQuery=query.value.trim();submittedMode=mode.value;searching=Boolean(submittedQuery);if(submittedQuery)addSearchHistory(submittedQuery,submittedMode);clearResults();vscode.postMessage({type:'search',query:submittedQuery,mode:submittedMode,requestId:++requestId})}
+function search(){clearTimeout(searchTimer);if(composing)return;submittedQuery=query.value.trim();submittedMode=mode.value;searching=Boolean(submittedQuery);if(submittedQuery)addSearchHistory(submittedQuery,submittedMode);clearResults();vscode.postMessage({type:'search',query:submittedQuery,mode:submittedMode,scope:scope.value,requestId:++requestId})}
 function scheduleSearch(){clearTimeout(searchTimer);if(ask)ask.disabled=true;searching=Boolean(query.value.trim());updateQueryControls();if(!query.value.trim()){search();return}if(!composing)searchTimer=setTimeout(search,350)}
 form.addEventListener('submit',event=>{event.preventDefault();markActivity();search()});
 historyToggle.addEventListener('click',()=>{markActivity();historyVisible=!historyVisible;renderHistory()});
@@ -302,7 +351,7 @@ query.addEventListener('pointerdown',()=>{queryEditing=true});
 query.addEventListener('keydown',event=>{const key=String(event.key||'');const pasteShortcut=(event.metaKey||event.ctrlKey)&&key.toLowerCase()==='v';if(!pasteShortcut&&!['Meta','Control','Shift','Alt'].includes(key))queryEditing=true});
 query.addEventListener('blur',()=>{queryEditing=false});
 window.addEventListener('paste',event=>{if(queryEditing&&event.target===query)return;const text=event.clipboardData?.getData('text');if(typeof text!=='string')return;event.preventDefault();query.value=text;query.focus();query.setSelectionRange?.(query.value.length,query.value.length);scheduleSearch()});
-mode.addEventListener('change',()=>{markActivity();search()});
+mode.addEventListener('change',()=>{markActivity();search()});scope.addEventListener('change',()=>{markActivity();saveHistoryState();search()});
 ask?.addEventListener('click',()=>vscode.postMessage({type:'ask'}));
 results.addEventListener('click',event=>{const button=event.target.closest('[data-index]');if(button)vscode.postMessage({type:'open',index:Number(button.dataset.index)})});
 results.addEventListener('contextmenu',event=>{const button=event.target.closest('[data-index]');if(button){event.preventDefault();vscode.postMessage({type:'copyPath',index:Number(button.dataset.index)})}});
@@ -315,4 +364,4 @@ query.focus();
   }
 }
 
-module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore, matchingResultRanges };
+module.exports = { WorkspaceSearchViewProvider, groupSearchResults, splitResultPath, formatResultScore, buildRepositoryMarkdownLink, matchingResultRanges };

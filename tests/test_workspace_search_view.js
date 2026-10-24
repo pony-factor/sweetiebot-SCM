@@ -43,14 +43,18 @@ async function run() {
       }
     },
     Uri: {
-      parse(value) { return {path: String(value).replace(/^file:\/\//, '')}; },
-      from(parts) { return {toString: () => `${parts.scheme}://${parts.authority}${parts.path}`}; }
+      parse(value) {
+        const pathname = decodeURIComponent(String(value).replace(/^file:\/\//, ''));
+        return {scheme: 'file', path: pathname, fsPath: pathname};
+      }
     },
     env: {
       uriScheme: 'vscode',
       clipboard: {async writeText(value) { clipboard.push(value); }}
     },
-    commands: {async executeCommand(command, uri) {commands.push({command, uri});}}
+    commands: {async executeCommand(command, uri) {commands.push({command, uri});}},
+    workspace: {getWorkspaceFolder() {return {uri: {scheme: 'file', fsPath: '/tmp/repo'}};}},
+    window: {activeTextEditor: undefined}
   };
   const sandbox = { module: { exports: {} }, require(name) {
     if (name === 'vscode') return vscodeStub;
@@ -74,6 +78,18 @@ async function run() {
   assert.equal(splitResultPath('src/search/view.js').filename, 'view.js');
   assert.equal(formatResultScore(.87), '.87');
   assert.equal(formatResultScore(1), '1.00');
+  const githubRequests = [];
+  const githubProvider = new sandbox.module.exports.WorkspaceSearchViewProvider(
+    {search: async () => ({results: []})}, () => ({}),
+    {search: async (query, mode) => {
+      githubRequests.push({query, mode});
+      return {results: [{relative: 'repo/Wormhole.md'}], warning: '', mode};
+    }}
+  );
+  githubProvider.view = {webview: {postMessage() {}}};
+  await githubProvider.onMessage({type: 'search', query: 'Wormhole', mode: 'exact', scope: 'github', requestId: 1});
+  assert.equal(githubRequests.length, 1);
+  assert.equal(githubProvider.lastResults[0].relative, 'repo/Wormhole.md');
   const pending = [];
   const provider = new sandbox.module.exports.WorkspaceSearchViewProvider({
     search: () => new Promise((resolve, reject) => pending.push({resolve, reject}))
@@ -95,17 +111,46 @@ async function run() {
   assert.equal(messages.filter(m => m.type === 'error').length, 0);
   assert.equal(provider.lastResults.length, 0);
 
-  provider.lastResults = [{uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 4}];
+  const gitCalls = [];
+  provider.findGitRoot = async (...args) => {gitCalls.push(args); return '/tmp/repo';};
+  provider.lastResults = [{uri: 'file:///tmp/repo/references/aguliar.md', relative: 'references/aguliar.md', line: 6}];
   await provider.onMessage({type: 'copyPath', index: 0});
-  assert.equal(clipboard[0], '[new.txt:5](vscode://file/tmp/new.txt:5)');
+  assert.equal(clipboard[0], '[references/aguliar.md:7](/references/aguliar.md#L7)',
+    'Links from the repository workspace root must work in any file in the repo');
   assert.equal(messages.at(-1).type, 'copied');
   assert.equal(messages.at(-1).index, 0);
-  provider.lastResults = [{kind: 'folder', uri: 'file:///tmp/research', relative: 'research', line: 0}];
+  assert.doesNotMatch(clipboard[0], /vscode:\/\/file|\/tmp\/repo/);
+
+  // When the workspace is a parent GitHub directory, VS Code resolves a
+  // leading slash against that parent instead. Link from the active Markdown
+  // document when it lives in the same repository.
+  vscodeStub.workspace.getWorkspaceFolder = () => ({uri: {scheme: 'file', fsPath: '/tmp'}});
+  vscodeStub.window.activeTextEditor = {document: {uri: {scheme: 'file', fsPath: '/tmp/repo/notes/draft.md'}}};
   await provider.onMessage({type: 'copyPath', index: 0});
-  assert.equal(clipboard[1], '[research](vscode://file/tmp/research)', 'Folder links must not append a line number');
+  assert.equal(clipboard[1], '[references/aguliar.md:7](../references/aguliar.md#L7)');
+  vscodeStub.window.activeTextEditor = {document: {uri: {scheme: 'file', fsPath: '/tmp/another-repo/draft.md'}}};
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[2], '[references/aguliar.md:7](/references/aguliar.md#L7)',
+    'The active editor in a different repository must not determine the relative path');
+
+  provider.lastResults = [{kind: 'folder', uri: 'file:///tmp/repo/research', relative: 'research', line: 0}];
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[3], '[research](/research)', 'Folder links must not append a line number');
+  assert.equal(gitCalls.at(-1)[1], true, 'Folders use their own path when resolving the Git root');
   await provider.onMessage({type: 'open', index: 0});
   assert.equal(commands.at(-1).command, 'revealInExplorer', 'Opening a folder result reveals it in Explorer');
-  assert.equal(commands.at(-1).uri.path, '/tmp/research');
+  assert.equal(commands.at(-1).uri.path, '/tmp/repo/research');
+
+  provider.lastResults = [{uri: 'file:///tmp/repo/core%20refs/file%20(1)%23.md', relative: 'core refs/file (1)#.md', line: 0}];
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[4], '[core refs/file (1)#.md:1](/core%20refs/file%20%281%29%23.md#L1)',
+    'Spaces, parentheses, and literal hashes in filenames must be URL-encoded');
+
+  provider.findGitRoot = async () => {throw new Error('not a git repository');};
+  const before = clipboard.length;
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard.length, before, 'Failure must not copy an absolute private filesystem path');
+  assert.equal(messages.at(-1).type, 'error');
 
   // Opening a passage must outline the target line and mark the actual text.
   provider.lastQuery = 'needle';
@@ -159,8 +204,8 @@ async function run() {
     remove() { this.removed = true; }
   });
   const elements = new Map();
-  for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
-    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : '', focus() {}}));
+  for (const id of ['search', 'query', 'clear-query', 'mode', 'scope', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
+    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : id === 'scope' ? 'workspace' : '', focus() {}}));
   }
   const windowListeners = {};
   const timers = new Map(); let nextTimer = 0; const sent = [];let pageState;let currentTime=Date.now();

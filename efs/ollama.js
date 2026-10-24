@@ -125,4 +125,4 @@ async function ask(settings, model, query, results) {
   return String(response.message?.content || '').trim();
 }
 
-module.exports = { normalizeBaseUrl, requestJson, getJson, embedTexts, resolveChatModel, ask };
+module.exports = { normalizeBaseUrl, requestJson, getJson, embedTexts, resolveChatModel, ask, readGitConfig };

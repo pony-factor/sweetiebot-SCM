@@ -9,7 +9,7 @@ const {
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
-const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/merge_blocker_actions');
+const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt } = require('../efs/merge_blocker_actions');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -30,19 +30,28 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     { id: 6, html_url: url + '#comment-6', body: REVIEW_MARKER + '\nNeed owner decision' },
     { id: 7, html_url: url + '#comment-7', body: REPORT_MARKER + '\nNew report' },
   ];
+  comments.push({id:9,path:'options.js',body:'<!-- sweetiebot-merge-analysis -->\n### Preserve storage keys\nMain and PR add distinct keys; retain both.'});
   const notes = reportFromComments(comments);
+  assert.equal(notes.analysis.length,1);
+  assert.equal(notes.analysis[0].path,'options.js');
   const optionsBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
     { id: 'preserve-api', label: 'Keep the current API', description: 'Add compatibility for the PR.', prompt: 'Preserve the current API and add the proposed compatibility layer.', engine: 'shell' },
+    { id: 'replace-api', label: 'Adopt the new API', prompt: 'Update callers to the new interface.' },
     { id: '../unsafe', label: 'Bad', prompt: 'bad' },
     { id: 'invalid', label: 'Empty prompt', prompt: '' }
   ] }) + '\n-->';
   const parsedOptions = parseReportOptions(optionsBlock);
-  assert.equal(parsedOptions.length, 1);
+  assert.equal(parsedOptions.length, 2);
   assert.equal(parsedOptions[0].engine, undefined, 'Report content cannot select an execution engine');
   const actionable = reportFromComments([{ id: 8, body: REPORT_MARKER + '\nKeep main.\n' + optionsBlock }]);
   assert.equal(actionable.report.text, 'Keep main.', 'Machine-readable choices are not rendered as report text');
   const choices = blockerOptions({ state: 'blocked', report: actionable.report });
-  assert.equal(choices[0].id, 'keep-main');
+  assert.equal(choices[0].id, 'report-preserve-api');
+  assert.equal(choices.length, 2, 'Only real competing implementations are selectable');
+  const singleBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [{ id: 'apply-file-plan', label: 'Apply the plan', prompt: 'Keep the independent additions.' }] }) + '\n-->';
+  assert.deepEqual(parseReportOptions(singleBlock), [], 'Legacy one-choice prompts are ignored');
+  assert.deepEqual(blockerOptions({state:'conflict',localReview:{options:[parsedOptions[0]]}}), [], 'Local single choices are also suppressed');
+  assert.deepEqual(blockerOptions({ state: 'conflict', localReview: { options: [{ id: 'preserve-both' }, { id: 'report-review-first' }] } }), [], 'Legacy generic recovery prompts are removed');
   assert(choices.some(option => option.id === 'report-preserve-api'));
   const recommendation = parseReportOptions('<!-- sweetiebot-merge-options\n' + JSON.stringify({ version: 1, options: [
     { id: 'compatibility', label: 'Add a compatibility layer', prompt: 'Keep both interfaces with an adapter.', recommended: true },
@@ -53,7 +62,12 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(recommendedChoices[0].id, 'report-compatibility', 'The specific recommendation precedes generic recovery actions');
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
-  const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[1]);
+  const manual = manualBlockerActions({state:'conflict'});
+  assert.equal(manual.length, 5);
+  assert(manual.every(action => action.manual && !action.reaction));
+  assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
+  assert.deepEqual(manualBlockerActions({state:'merged'}), []);
+  const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert.equal(notes.report.text, 'New report');
@@ -95,6 +109,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
+      if (key === 'mergePostSummaries') { layoutConfig.mergePostSummaries = mode; return; }
       assert.equal(key, 'mergeTimelineTimestampMode');
       assert.equal(target, 1, 'Save globally across independent merge windows');
       savedModes.push(mode);
@@ -118,6 +133,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
       return panel;
     } },
     Uri: { parse: value => value },
+    commands: { async executeCommand(command, options) { assert.equal(command, 'workbench.action.browser.open'); assert.equal(options.openToSide, true); openings.push(options.url); } },
     env: { async openExternal(target) { openings.push(target); } }
   };
   let info = {
@@ -127,15 +143,28 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   let commentsForPr = [];
   let inlineCommentsForPr = [];
   let reactionVotes = [];
-  let fileRequests = 0;
+  const reactionWrites = [];
+  let fileRequests = 0, apiRequests = 0;
   const fakeFetch = async (address, options) => {
+    apiRequests++;
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
+    if (options.method === 'DELETE' && /\/reactions\/\d+$/.test(pathname)) {
+      reactionWrites.push({method:options.method,pathname});
+      reactionVotes=reactionVotes.filter(vote=>!pathname.endsWith('/'+vote.id));
+      return {ok:true,status:204};
+    }
+    if (options.method === 'POST' && pathname.endsWith('/reactions')) {
+      const vote={id:101,user:{id:41,type:'User'},content:JSON.parse(options.body).content,created_at:'2026-10-23T12:02:00Z'};
+      reactionWrites.push({method:options.method,pathname,content:vote.content});reactionVotes.push(vote);
+      return {ok:true,json:async()=>vote};
+    }
     let result;
     if (pathname === '/user') result = { id: 41, type: 'User' };
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
+    else if (pathname.endsWith('/commits')) result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
@@ -146,6 +175,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     return { ok: true, json: async () => result };
   };
   const actionLaunches = [];
+  panel.visible = false;
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
     context: { globalStorageUri: { fsPath: reactionStorage } },
@@ -155,8 +185,19 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     setTimer(callback) { pollCallback = callback; return 17; },
     clearTimer(id) { assert.equal(id, 17); stopped = true; }
   });
+  assert.equal(apiRequests, 0, 'A dashboard opened in a background tab does not fetch');
+  panel.visible = true;
+  await dashboard.refresh();
+  panel.visible = false; const hiddenRequests = apiRequests; await dashboard.refresh();
+  assert.equal(apiRequests, hiddenRequests, 'Hidden dashboards do not poll');
+  panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
+  assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
+  assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
+  assert(!panel.webview.html.includes('id="count"'), 'Hide the redundant status text next to selected PRs');
+  assert(!panel.webview.html.includes('Live GitHub updates · roughly every'), 'Hide the polling cadence from the UI');
+  assert(!Object.hasOwn(events.at(-1), 'nextRefreshSeconds'), 'Do not send discarded polling metadata to the webview');
   assert(panel.webview.html.includes('@media(max-width:650px)'),
     'Dashboard stacks its timeline and details in compact merge windows');
   assert(!panel.webview.html.includes('__NONCE__'));
@@ -226,6 +267,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
   assert.deepEqual(openings, [url, url + '/files', 'https://example.org/reference'],
     'Only validated web links open through the extension host');
+  commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'blocked');
@@ -236,7 +278,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await messageHandler(actionMessage);
   assert.equal(actionLaunches.length, 1);
   assert.equal(actionLaunches[0][6], 'web', 'GPT web is the default destination');
-  assert.equal(actionLaunches[0][5].id, 'keep-main');
+  assert.equal(actionLaunches[0][5].id, 'report-preserve-api');
   await messageHandler({ ...actionMessage, engine: 'codex' });
   assert.equal(actionLaunches[1][6], 'codex');
   await messageHandler({ ...actionMessage, optionKey: 'forged' });
@@ -257,7 +299,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const inlinePr = events.at(-1).prs[0];
   assert.equal(inlinePr.review.text, 'Which API should this conflict preserve?');
   assert.equal(inlinePr.review.url, url + '#discussion_r90');
-  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-preserve-api');
+  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-90-preserve-api');
   assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
   const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
     actionId: inlineChoice.id, optionKey: inlineChoice.key };
@@ -284,13 +326,28 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(actionLaunches[3][4].review.url, url + '#discussion_r90');
   await dashboard.refresh();
   assert.equal(actionLaunches.length, 4, 'Polling cannot repeat the reaction task');
+  const buttonChoice=events.at(-1).prs[0].blockerOptions.find(option=>option.reaction==='+1');
+  await messageHandler({type:'blocker-action',number:12,headSha:nextSha,actionId:buttonChoice.id,optionKey:buttonChoice.key});
+  assert.deepEqual(reactionWrites.map(write=>write.method),['DELETE','POST'],'A button changes only the signed-in user’s reaction');
+  assert.equal(reactionWrites[1].content,'+1');
+  assert.equal(actionLaunches.length,5,'The recorded reaction drives the implementation route');
+  await dashboard.refresh();
+  assert.equal(actionLaunches.length,5,'Button and polling cannot dispatch the same reaction twice');
+
   const stateBeforeProgress = events.at(-1).prs[0].state;
-  dashboard.recordLocalProgress({ number: 12, stage: 'preparing' });
+  dashboard.recordLocalProgress({ number: 12, stage: 'preparing', description: 'Preserve the existing API and add optional tax.' });
+  assert.equal(events.at(-1).prs[0].localExplanation, 'Preserve the existing API and add optional tax.');
+  assert.equal(events.at(-1).postSummaries, false);
+  await messageHandler({ type: 'post-summaries', enabled: true });
+  assert.equal(events.at(-1).postSummaries, true);
+  await messageHandler({ type: 'post-summaries', enabled: false });
+  assert.equal(events.at(-1).postSummaries, false);
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
   dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
     path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
   assert(events.at(-1).events.at(-1).details.includes('Keep both APIs'));
   assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
+  assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
   dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha });
   assert.match(events.at(-1).events.at(-1).message, /not merged/);
   dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
@@ -304,7 +361,10 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(events.at(-1).events.length, eventCount);
   const batchState = { repository: selection.repository,
     deferred: [{ number: 12, reason: 'Refresh the selected head before another merge attempt.' }] };
+  batchState.history = [{ number: 12, explanation: 'Restored local explanation', decisions: [{ path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Restored decision' }] }];
   dashboard.recordBatchState(batchState);
+  assert.equal(events.at(-1).prs[0].localExplanation, 'Restored local explanation');
+  assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Restored decision');
   assert.match(events.at(-1).events.at(-1).message, /Deferred for this batch/);
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
@@ -317,7 +377,13 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     merge_commit_sha: 'c'.repeat(40) };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'merged');
+  assert.equal(events.at(-1).prs[0].conflictCleared, true, 'Verified cleared conflicts remain counted after merge');
   assert(events.at(-1).events.some(event => event.state === 'merged'));
+  const mergedRequestCount=apiRequests;
+  await dashboard.refresh();
+  assert.equal(apiRequests,mergedRequestCount,'Verified merged PRs do not consume requests on every timer tick');
+  await dashboard.refresh({force:true});
+  assert(apiRequests>mergedRequestCount,'Explicit refresh can still update merged PR comments');
   disposeHandler();
   assert(stopped);
   assert(configurationDisposed);
@@ -328,6 +394,25 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
 
   await assert.rejects(githubGet(async () => ({ ok: false, status: 403 }), 'test-token',
     'pony-factor/example', '/pulls/12'), /HTTP 403/);
+  const requestFailure = cause => githubGet(async () => { throw new TypeError('fetch failed', { cause }); },
+    'test-token', 'pony-factor/example', '/pulls/12/files');
+  await assert.rejects(requestFailure({ code: 'ENOTFOUND' }), error => {
+    assert(error.message.includes('GET /repos/pony-factor/example/pulls/12/files'));
+    assert(error.message.includes('Could not resolve api.github.com'));
+    assert(!error.message.includes('test-token'));
+    return true;
+  });
+  await assert.rejects(requestFailure({ errors: [{ code: 'ECONNREFUSED' }] }), /connection was refused/);
+  await assert.rejects(requestFailure({ code: 'UND_ERR_CONNECT_TIMEOUT' }), /Connecting to GitHub timed out/);
+  await assert.rejects(requestFailure(undefined), /No HTTP response was received/);
+  await assert.rejects(githubGet(async () => ({ ok: false, status: 401 }), 'test-token',
+    'pony-factor/example', '/pulls/12'), /HTTP 401.*Sign in again/);
+  await assert.rejects(githubGet(async () => ({ ok: false, status: 429,
+    json: async () => ({ message: 'API rate limit exceeded' }) }), 'test-token',
+  'pony-factor/example', '/pulls/12'), error => error.rateLimited === true && error.retryAt > Date.now());
+  await assert.rejects(githubGet(async () => ({ ok: true,
+    json: async () => { throw new SyntaxError('Unexpected token'); } }), 'test-token',
+  'pony-factor/example', '/pulls/12'), /response could not be read as JSON/);
   assert(fs.readFileSync(require('node:path').join(__dirname, '../efs/merge_dashboard.html'),
     'utf8').includes('Changed files'));
   // A mock DOM tests Markdown semantics without trusting any source HTML.

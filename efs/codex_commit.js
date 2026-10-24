@@ -249,4 +249,4 @@ function registerCodexCommitCommand(vscode, extensionContext) {
   }));
 }
 
-module.exports = { generateMessage, registerCodexCommitCommand };
+module.exports = { generateMessage, registerCodexCommitCommand, coauthorTrailer, readCommitGitSetting };
