@@ -9,6 +9,7 @@ const { randomUUID } = require('node:crypto');
 const { runKefania, runKefaniaPonyCache } = require('./kefania_runner');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { createDraftHandoff } = require('./draft_handoff');
+const { openKefaniaMergeHelp } = require('./kefania_merge_help');
 const { squashMergePullRequest } = require('./merge_pull_request');
 const { displayName } = require('./pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
@@ -544,6 +545,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         const session = await require('./github_session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
       },
+      onMergeHelp: result => openKefaniaMergeHelp(vscode, context, repository.rootUri,
+        input.repository, { ...result, head: branch, base: options.base }),
       onClose: async () => {
       if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
