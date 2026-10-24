@@ -4,6 +4,8 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const MAX_REQUEST_BYTES = 100000;
+const DRAFT_IDLE_MS = 60 * 60 * 1000;
+const DRAFT_MAX_AGE_MS = 12 * DRAFT_IDLE_MS;
 
 // Each independent workflow returns through a same-origin local intake page.
 // Collecting a result never calls the publisher; only the confirmation button does.
@@ -38,7 +40,14 @@ async function createDraftHandoff(publish) {
     if (request.headers.host !== new URL(origin).host || !match) return fail(404, 'Unknown draft.');
     const kind = match[2];
     const state = drafts.get(match[1]);
-    if (!state || (state.expires < Date.now() && kind !== 'close')) return fail(410, 'This confirmation page expired. Start the workflows again.');
+    const now = Date.now();
+    if (!state || (state.expires < now && kind !== 'close')) return fail(410, 'This confirmation page expired. Start the workflows again.');
+    // The confirmation window polls /state while open. Keep a live workflow
+    // usable during long-running commit/push and draft preparation, but still
+    // expire unattended pages and enforce a hard cap on old capabilities.
+    if (state && kind === 'state' && request.method === 'GET') {
+      state.expires = Math.min(now + DRAFT_IDLE_MS, state.registeredAt + DRAFT_MAX_AGE_MS);
+    }
     if (request.method === 'GET') {
       if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, mergeChoice: state.mergeChoice, publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
       if (kind === 'close' || kind === 'merge' || kind === 'merge-history') return fail(405, 'Use the confirmation page controls.');
@@ -104,7 +113,7 @@ async function createDraftHandoff(publish) {
   // Draft writes expire, but the close control lives until this host is disposed.
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { drafts.set(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, expires: Date.now() + 3600000}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, onMergePreservingCommits, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { drafts.clear(); server.close(); }
   };
