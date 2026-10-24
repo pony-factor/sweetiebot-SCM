@@ -122,7 +122,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <div id="notice" class="notice" hidden></div>
 <div class="layout">
 <aside aria-label="Merge timeline">
-  <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
+  <div class="section-heading"><h2>Selected pull requests</h2></div>
   <div id="prs" class="prs"></div>
   <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
   <div id="timeline" class="events">
@@ -391,8 +391,6 @@ __RATE_LIMIT_FORMATTER__
     byId('progress').textContent = merged + '/' + model.prs.length +
       ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
-    byId('count').textContent = 'Live GitHub updates · roughly every ' +
-      (model.nextRefreshSeconds || 15) + ' seconds';
     byId('notice').hidden = !model.error;
     byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
     const list = byId('prs');
