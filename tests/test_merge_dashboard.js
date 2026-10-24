@@ -389,8 +389,8 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
       html_url: url + '#pullrequestreview-71', user: { login: 'reviewer' } },
     { id: 72, state: 'PENDING', body: 'Not submitted yet',
       html_url: url + '#pullrequestreview-72', user: { login: 'reviewer' } }];
-  inlineCommentsForPr.push({ id: 91, path: 'src/file.js', line: 22,
-    html_url: url + '#discussion_r91', user: { login: 'reviewer' },
+  inlineCommentsForPr.push({ id: 92, path: 'src/file.js', line: 22,
+    html_url: url + '#discussion_r92', user: { login: 'reviewer' },
     body: 'This branch still needs a fallback.' });
   commentsForPr.push({ id: 18, html_url: url + '#issuecomment-18',
     user: { login: 'reviewer' }, body: 'Posted an additional review note.' });
@@ -400,7 +400,7 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   assert(reviewEvents().some(event => event.message === 'PR review submitted' &&
     event.url === url + '#pullrequestreview-71'));
   assert(reviewEvents().some(event => event.message === 'Inline review comment posted' &&
-    event.details.includes('src/file.js:22') && event.url === url + '#discussion_r91'));
+    event.details.includes('src/file.js:22') && event.url === url + '#discussion_r92'));
   assert(reviewEvents().some(event => event.message === 'PR conversation comment posted' &&
     event.details.includes('@reviewer')));
   assert(!reviewEvents().some(event => event.details.includes('Not submitted yet')));
