@@ -162,7 +162,7 @@ function installPullRequestRefresh(vscode, view, owner) {
     }
     if (mergingUrls.has(model.url)) return;
     mergingUrls.add(model.url);
-    progress?.report?.({ message: `PR #${model.number}: checking merge eligibility…` });
+    progress?.report?.({ message: 'Checking merge eligibility…' });
     markMergeRow(model.url, node, 'merging');
     try {
       // The inline action owns the progress notification; avoid a duplicate
@@ -187,7 +187,7 @@ function installPullRequestRefresh(vscode, view, owner) {
     // stale row before it can safely identify the requested pull request.
     return vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: clicked.number ? `Starting squash merge for PR #${clicked.number}…` : 'Starting squash merge…',
+      title: clicked.number ? `Squash merge PR #${clicked.number}` : 'Squash merge',
       cancellable: false
     }, progress => mergeTreeRow(node, progress));
   }));

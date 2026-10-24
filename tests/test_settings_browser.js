@@ -52,6 +52,7 @@ async function run() {
       if (name === 'node:os') return { homedir: () => '/stable-home' };
       if (name === 'node:path') return require('node:path');
       if (name === './kefania_close_position') return require('../efs/kefania_close_position');
+      if (name === './extension_cache') return { invalidateUserExtensionCache() {} };
       if (name === './workspace_activity') {
         return { stopManagedWindowActivity: async () => { managedActivityStops++; } };
       }
@@ -212,10 +213,23 @@ async function run() {
   await open();
   assert.equal(children[2].spawnArgs.at(-1), '--token=-synthetic-test-token',
     'Tokens beginning with a dash must remain an option value');
+  children[2].stdout.emit('data', '{"rebuildComplete":false}\n');
+  await tick();
+  assert(!calls.some(call => call.id === 'workbench.action.reloadWindow'));
+  children[2].stdout.emit('data', '{"rebuildComplete":true}\n{"rebuildComplete":true}\n');
+  await tick();
+  assert.equal(children[2].killed, true, 'Stop the owning settings server before reloading');
+  assert(!calls.some(call => call.id === 'workbench.action.reloadWindow'), 'Wait until its port is released');
+  children[2].exitCode = 0;
+  children[2].emit('exit', 0);
+  await tick();
+  assert.equal(calls.filter(call => call.id === 'workbench.action.reloadWindow').length, 1,
+    'A successful rebuild reloads its window exactly once');
+  await open();
   const shutdown = sandbox.module.exports.deactivate();
   await tick(); // Managed workspace cleanup runs before the settings-server shutdown.
-  assert.equal(children[2].killed, true, 'Closing the extension must stop its server');
-  children[2].emit('exit', 0);
+  assert.equal(children[3].killed, true, 'Closing the extension must stop its server');
+  children[3].emit('exit', 0);
   await shutdown;
   assert.equal(managedActivityStops, 1, 'Closing the extension must stop managed workspace activity');
   assert.equal(errors.length, 0);

@@ -414,7 +414,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
 
         self.assertIn("const scmToolkitSettings = ", js)
         self.assertIn("editor.inlineSuggest.enabled", js)
-        self.assertIn("commands.executeCommand('git.refresh', repositoryArgument)", js)
+        self.assertIn("commands.executeCommand('sweetiebot.refreshRepository', repositoryArgument)", js)
         self.assertNotIn("scm-toolkit-refreshing", js)
         self.assertIn("historyItemRemoteRef.get()", js)
         self.assertIn("resolveHistoryItemRefsCommonAncestor", js)

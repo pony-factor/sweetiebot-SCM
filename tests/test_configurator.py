@@ -1256,8 +1256,9 @@ class ServerTests(unittest.TestCase):
             return "Rebuild complete. Reload VS Code."
         with patch("configurator.webbrowser.open", side_effect=open_browser), \
              patch("configurator._manual_rebuild", side_effect=rebuild) as installer, \
-             patch("configurator.print"):
-            thread = threading.Thread(target=configurator.run_configurator, args=(install.DEFAULT_SETTINGS,))
+             patch("configurator.print") as protocol:
+            thread = threading.Thread(target=configurator.run_configurator, args=(install.DEFAULT_SETTINGS,),
+                                      kwargs={"parent_pid": configurator.os.getpid()})
             thread.start()
             self.assertTrue(opened.wait(5))
             parsed = urllib.parse.urlsplit(captured["url"])
@@ -1282,8 +1283,9 @@ class ServerTests(unittest.TestCase):
                 threading.Event().wait(0.05)
             self.assertTrue(status["finished"])
             self.assertFalse(status["error"])
-            self.assertIn("Reload VS Code", status["message"])
+            self.assertIn("Reloading this VS Code window", status["message"])
             installer.assert_called_once()
+            protocol.assert_any_call(json.dumps({"rebuildComplete": True}), flush=True)
             urllib.request.urlopen(urllib.request.Request(endpoint("/save"), data=b"action=cancel", method="POST")).close()
             thread.join(5)
             self.assertFalse(thread.is_alive())

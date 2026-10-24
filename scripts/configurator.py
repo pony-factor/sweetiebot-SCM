@@ -1107,7 +1107,7 @@ async function pollRebuildStatus() {{
   }}
 }}
 rebuildButton?.addEventListener('click', async () => {{
-  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? Reload VS Code after a successful rebuild.')) return;
+  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? This VS Code window will reload when the rebuild succeeds.')) return;
   rebuildButton.disabled = true;
   rebuildStatus.textContent = 'Saving settings…';
   if (autosaveTimer) {{
@@ -1583,7 +1583,13 @@ def run_configurator(
             message = f"Rebuild failed: {error}"
             failed = True
         with rebuild_lock:
+            if not failed and parent_pid is not None:
+                message = "Rebuild complete. Reloading this VS Code window…"
             rebuild_status.update(running=False, finished=True, error=failed, message=message)
+        if not failed and parent_pid is not None:
+            # The owning extension host reloads only its own VS Code window.
+            # Failed rebuilds keep the settings page and error visible.
+            print(json.dumps({"rebuildComplete": True}), flush=True)
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, content: str, status: int = 200) -> None:
