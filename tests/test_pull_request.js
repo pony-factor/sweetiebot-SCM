@@ -153,7 +153,7 @@ async function run() {
     conversationContext: 'Full Codex transcript context',
     conversationModel: { name: 'GPT-6 Codex', effort: 'Extra High' }
   });
-  assert(withOrigin.includes('Originating conversation browser link: ' + share));
+  assert(withOrigin.includes('Originating conversation browser link (primary and ONLY supplied conversation text source): ' + share));
   assert(!withOrigin.includes('Full Codex transcript context'), 'Shared online URL replaces transcript text');
   assert(withOrigin.includes('GPT-6 Codex'));
   assert(withOrigin.includes('Extra High'));
