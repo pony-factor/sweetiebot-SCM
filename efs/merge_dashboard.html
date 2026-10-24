@@ -15,6 +15,7 @@ header{padding:16px 20px;border-bottom:1px solid var(--vscode-panel-border,#555)
 h1{margin:0;font-size:20px;font-weight:700}
 h2{font-size:16px;margin:0 0 12px}
 h3{margin:16px 0 8px;font-size:13px}
+.owner-logo{display:block;width:28px;height:28px;object-fit:contain;border-radius:4px;margin-top:6px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
 .overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
@@ -113,7 +114,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 </head>
 <body>
 <header>
-<div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
+<div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
 <div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
@@ -368,7 +369,13 @@ __TIMESTAMP_FORMATTER__
     outer.scrollTop = scroll;
   }
   function render() {
-    byId('repository').textContent = model.repository || 'GitHub';
+    const ownerLogo = byId('repository');
+    const owner = String(model.repository || '').split('/')[0];
+    ownerLogo.hidden = !owner;
+    ownerLogo.alt = owner + ' logo';
+    ownerLogo.title = model.repository || '';
+    const ownerLogoUrl = 'https://github.com/' + encodeURIComponent(owner) + '.png?size=64';
+    if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
     const merged = model.prs.filter(p => p.state === 'merged').length;
     const resolved = model.prs.filter(p => p.state === 'resolved').length;
     const problems = model.prs.filter(p => ['conflict','review','blocked'].includes(p.state)).length;
