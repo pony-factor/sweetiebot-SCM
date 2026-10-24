@@ -321,6 +321,11 @@ __RATE_LIMIT_FORMATTER__
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
+    if (pr.localRecovery?.stage) showTextPanel(parent,
+      'Saved local recovery · not GitHub status',
+      'Last local operation: ' + pr.localRecovery.stage +
+      (pr.localRecovery.lastPushedHead ? '\\nLast prepared commit: ' + pr.localRecovery.lastPushedHead.slice(0, 12) : '') +
+      '\\nMerge eligibility is always rechecked against GitHub.', '');
     if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
     if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
       pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
@@ -442,7 +447,8 @@ __RATE_LIMIT_FORMATTER__
     list.replaceChildren();
     // Sort a copy so live presentation never changes the merge selection order.
     const visiblePrs = model.prs.slice().sort((a, b) => pullRequestPriority(a) - pullRequestPriority(b));
-    if (selected === null && visiblePrs.length) selected = visiblePrs[0].number;
+    if (selected === null && visiblePrs.length) selected = visiblePrs.some(pr => pr.number === model.selectedNumber)
+      ? model.selectedNumber : visiblePrs[0].number;
     for (const pr of visiblePrs) {
       const button = show('button', 'pr', undefined, list);
       button.setAttribute('aria-current', String(pr.number === selected));
@@ -451,7 +457,7 @@ __RATE_LIMIT_FORMATTER__
       show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
       const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
       branchLine.title = pr.head + ' → ' + pr.base;
-      button.addEventListener('click', () => { selected = pr.number; render(); });
+      button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
     }
     list.scrollTop = listScroll;
     const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
@@ -460,7 +466,7 @@ __RATE_LIMIT_FORMATTER__
       show('span', '', 'Needs attention', blockerNotice);
       for (const pr of blockers) {
         const button = show('button', 'secondary', (pr.blockerOptions?.length ? 'Review #' + pr.number + ' options' : 'View #' + pr.number + ' integration'), blockerNotice);
-        button.addEventListener('click', () => { selected = pr.number; render(); });
+        button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
       }
     }
     const events = byId('events');
@@ -486,6 +492,7 @@ __RATE_LIMIT_FORMATTER__
         show('summary', 'muted', 'Details', detail);
         show('div', 'event-details', event.details, detail);
       }
+      if (event.historical) show('div', 'muted', 'Saved activity · live GitHub state may have changed', node);
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {
         const stamp = show('div', 'event-time', label, node);

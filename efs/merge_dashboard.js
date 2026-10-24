@@ -5,6 +5,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, launchBlockerAction } = require('./merge_blocker_actions');
 const { createReactionChoices } = require('./merge_reaction_choices');
+const { createMergeDashboardPersistence } = require('./merge_dashboard_persistence');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -256,10 +257,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replace('__RATE_LIMIT_FORMATTER__', require('./github_rate_limit').rateLimitMessage.toString())
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
   const catalog = ponyCatalog();
+  const persistence = createMergeDashboardPersistence(context, selection);
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], inlineReviewComments: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: context?.workspaceState?.get('sweetiebot.sawConflict.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, events: []
+    files: [], inlineReviewComments: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: context?.workspaceState?.get('sweetiebot.sawConflict.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, localRecovery: persistence.restoredRecovery[pr.number] || null,
+    events: persistence.restoredEvents.filter(event => event.number === pr.number).slice(-35)
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -267,7 +270,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let cycle = 0;
   let rateLimitedUntil = initialRateLimit?.retryAt || 0;
   let error = initialRateLimit?.message || '';
-  const events = [];
+  const events = [...persistence.restoredEvents];
   const launchingActions = new Set();
   const inlineComments = new Map();
   const observedReviewActivity = new Map();
@@ -305,6 +308,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     pr.events.push(event);
     if (events.length > 400) events.shift();
     if (pr.events.length > 35) pr.events.shift();
+    persistence.recordEvent(event);
   }
   function publish() {
     if (disposed) return;
@@ -313,6 +317,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
+      selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode)
     });
@@ -458,6 +463,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh({ force: true });
+    if (message?.type === 'select-pr') {
+      if (Number.isSafeInteger(message.number) && byNumber.has(message.number)) persistence.select(message.number);
+      return;
+    }
     if (message?.type === 'post-summaries') {
       if (typeof message.enabled !== 'boolean') return;
       try {
@@ -562,7 +571,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
   publish();
   void refresh();
-  return { panel, refresh, selection, recordLocalProgress(event) {
+  return { panel, refresh, selection, flushLocalState: () => persistence.flush(), recordLocalProgress(event) {
     const pr = byNumber.get(event?.number);
     if (!pr) return;
     const stages = {
@@ -599,6 +608,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
     addEvent(pr, 'progress', stages[event.stage],
       [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
+    pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
+      event.stage, pr.lastPushedHead || '') || pr.localRecovery;
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
@@ -665,6 +676,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : 'Local preparation stopped · merge not confirmed';
       const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason].filter(Boolean).join('\n');
       addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
+      pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
+        item.status, pushed || '') || pr.localRecovery;
     }
     publish();
   } };
