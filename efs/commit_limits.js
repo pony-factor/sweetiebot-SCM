@@ -336,11 +336,37 @@ async function confirmCommitLimits(vscode, cwd, status) {
 function registerCommitLimitCommand(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand(
     'sweetiebot.checkCommitLimits',
-    async uri => {
+    async (uri, options = {}) => {
       const root = vscode.Uri.from(uri?.rootUri ?? uri);
-      if (root.scheme !== 'file') return true;
+      if (root.scheme !== 'file') return options.captureTree ? { approved: false } : true;
+      const captureTree = options.captureTree === true;
+      // The background queue needs proof that it is committing the *same*
+      // staged tree inspected before title generation. Comparing tree IDs is
+      // much cheaper than repeating the raw-diff and blob-size inspection.
+      const tree = async () => (await gitBuffer(root.fsPath, ['write-tree']))
+        .toString('ascii').trim();
+      const before = captureTree ? await tree() : '';
       const status = await inspectCommitLimits(root.fsPath);
-      return confirmCommitLimits(vscode, root.fsPath, status);
+      if (captureTree && await tree() !== before) {
+        await vscode.window.showWarningMessage(
+          'The staged files changed during commit validation. Review them and retry the commit.'
+        );
+        return { approved: false };
+      }
+      const allowed = await confirmCommitLimits(vscode, root.fsPath, status);
+      if (!captureTree) return allowed;
+      if (!allowed) return { approved: false };
+      const after = await tree();
+      // An approved oversized-file split intentionally changes the staged
+      // tree and re-inspects the result in confirmCommitLimits. Otherwise a
+      // changed index would invalidate the original diff-limit approval.
+      if (!status.oversized?.length && after !== before) {
+        await vscode.window.showWarningMessage(
+          'The staged files changed after commit validation. Review them and retry the commit.'
+        );
+        return { approved: false };
+      }
+      return { approved: true, stagedTree: after };
     }
   ));
 }
