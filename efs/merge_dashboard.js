@@ -126,11 +126,7 @@ async function githubGet(fetchImpl, token, repository, endpoint) {
       'X-GitHub-Api-Version': '2022-11-28'
     }
   });
-  if (!response.ok) {
-    const error = new Error('GitHub refresh failed (HTTP ' + response.status + ').');
-    if (response.status === 403 || response.status === 429) error.rateLimited = true;
-    throw error;
-  }
+  if (!response.ok) throw await require('./github_rate_limit').githubResponseError(response, 'GitHub refresh failed (HTTP ' + response.status + ').');
   return response.json();
 }
 
@@ -311,19 +307,23 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   }
 
-  async function refresh() {
+  async function refresh({ force = false } = {}) {
     if (working || disposed || Date.now() < rateLimitedUntil) return;
     working = true;
     cycle++;
     error = '';
     try {
       // Limit simultaneous GitHub calls so selections of 50 PRs remain polite.
-      for (let start = 0; start < prs.length && !disposed; start += 3) {
-        await Promise.all(prs.slice(start, start + 3).map(async pr => {
+      const active = prs.filter(pr => force || pr.state !== 'merged');
+      for (let start = 0; start < active.length && !disposed; start += 3) {
+        await Promise.all(active.slice(start, start + 3).map(async pr => {
           try { await refreshOne(pr); }
           catch (failure) {
             error = failure.message;
-            if (failure.rateLimited) rateLimitedUntil = Date.now() + 120000;
+            if (failure.rateLimited) {
+              rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt || Date.now() + 60000);
+              void require('./github_rate_limit').promptRateLimit(vscode, failure).catch(() => {});
+            }
             if (pr.lastError !== failure.message) {
               pr.lastError = failure.message;
               addEvent(pr, 'error', failure.message);
@@ -340,7 +340,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
 
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'ready') return publish();
-    if (message?.type === 'refresh') return refresh();
+    if (message?.type === 'refresh') return refresh({ force: true });
     if (message?.type === 'post-summaries') {
       if (typeof message.enabled !== 'boolean') return;
       try {
@@ -475,6 +475,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    if (state.rateLimit) { rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message; }
     for (const item of state.history || []) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;

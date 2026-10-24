@@ -43,9 +43,7 @@ function createReactionChoices({ repository, token, fetchImpl, storageDirectory,
       'X-GitHub-Api-Version': '2022-11-28'
     } });
     if (!response.ok) {
-      const error = Error('GitHub reaction lookup failed (HTTP ' + response.status + ').');
-      error.rateLimited = response.status === 403 || response.status === 429;
-      throw error;
+      throw await require('./github_rate_limit').githubResponseError(response, 'GitHub reaction lookup failed (HTTP ' + response.status + ').');
     }
     return response.status === 204 ? null : response.json();
   }

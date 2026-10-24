@@ -226,6 +226,10 @@ async function resumePRSession(vscode, context) {
         }),
         execute: runLocal,
         onState: async state => {
+          if (state.rateLimit) {
+            const error = Object.assign(Error(state.rateLimit.message), {rateLimited:true,retryAt:state.rateLimit.retryAt});
+            void require('./github_rate_limit').promptRateLimit(vscode, error, {context,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
+          }
           for (const deferred of state.deferred) {
             if (blockerReports[deferred.number]) continue;
             const pr = (state.pullRequests || selection.pullRequests).find(pr => pr.number === deferred.number);
@@ -254,7 +258,7 @@ async function resumePRSession(vscode, context) {
       });
       }
       context.subscriptions?.push(handoff);
-      if (!handoff.url) return;
+      if (!handoff.url) { await resumeMergeDashboard(vscode, directory, context); return; }
       url.href = handoff.url;
     }
     try { await require('./pr_workflows').openWorkflow(vscode, url.href); }

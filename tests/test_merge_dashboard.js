@@ -135,8 +135,9 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   let inlineCommentsForPr = [];
   let reactionVotes = [];
   const reactionWrites = [];
-  let fileRequests = 0;
+  let fileRequests = 0, apiRequests = 0;
   const fakeFetch = async (address, options) => {
+    apiRequests++;
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
     if (options.method === 'DELETE' && /\/reactions\/\d+$/.test(pathname)) {
@@ -356,6 +357,11 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'merged');
   assert(events.at(-1).events.some(event => event.state === 'merged'));
+  const mergedRequestCount=apiRequests;
+  await dashboard.refresh();
+  assert.equal(apiRequests,mergedRequestCount,'Verified merged PRs do not consume requests on every timer tick');
+  await dashboard.refresh({force:true});
+  assert(apiRequests>mergedRequestCount,'Explicit refresh can still update merged PR comments');
   disposeHandler();
   assert(stopped);
   assert(configurationDisposed);

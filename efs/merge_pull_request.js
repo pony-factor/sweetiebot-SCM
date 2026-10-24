@@ -14,7 +14,7 @@ const SHA = /^[a-f0-9]{40}$/i;
 // GitHub applies repository permissions, reviews, and branch protection.
 function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn) {
   return new Promise((resolve, reject) => {
-    const args = ['api', '--hostname', 'github.com', '--method', method, endpoint];
+    const args = ['api', '--include', '--hostname', 'github.com', '--method', method, endpoint];
     if (body !== undefined) args.push('--input', '-');
     const command = process.env.KEFANIA_GH_COMMAND ||
       ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
@@ -42,9 +42,14 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
     child.stdin.on('error', () => {});
     child.on('error', () => finish(new Error('GitHub CLI is unavailable. Install gh and authenticate with gh auth login.')));
     child.on('close', code => {
-      if (code !== 0) return finish(new Error('GitHub rejected the merge (' +
-        (stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
-      try { finish(null, JSON.parse(output || (method === 'DELETE' ? 'null' : ''))); }
+      const response = require('./github_rate_limit').parseCLIResponse(output);
+      if (code !== 0) {
+        let message = stderr;
+        try { message += ' ' + JSON.parse(response.body).message; } catch { /* gh can return only stderr. */ }
+        const limited = require('./github_rate_limit').rateLimitError({ status: response.status || Number(stderr.match(/HTTP (\d{3})/)?.[1]) || (/rate.?limit/i.test(message) ? 403 : 0), headers: response.headers, message });
+        return finish(limited || new Error('GitHub rejected the request (' + (response.status || stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
+      }
+      try { finish(null, JSON.parse(response.body || (method === 'DELETE' ? 'null' : ''))); }
       catch { finish(new Error('GitHub returned an invalid merge response. Check the PR before retrying.')); }
     });
     child.stdin.end(body === undefined ? undefined : JSON.stringify(body));

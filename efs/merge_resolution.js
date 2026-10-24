@@ -45,7 +45,9 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
   // Validate the entire batch before any PR can be changed.
   const items = validateResolution(input, selection);
   const results = [];
+  let rateLimit;
   for (const item of items) {
+    if (rateLimit) { results.push({number:item.number,status:'waiting',...rateLimit}); continue; }
     try {
       const result = await merge(selection.repository, item.number, {
         api, git, expected: item, onProgress,
@@ -53,7 +55,9 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
-      results.push({ number: item.number, status: error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
+      if (error.rateLimited) rateLimit = {rateLimited:true,retryAt:error.retryAt,reason:error.message};
+      results.push({ number: item.number, status: error.rateLimited ? 'waiting' : error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
+        ...(rateLimit || {}),
         reason: error.message, ...(SHA.test(error.preparedHead || '') ?
           { preparedHead: error.preparedHead, originalHead: error.originalHead } : {}),
         ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?

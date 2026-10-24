@@ -73,7 +73,7 @@ async function fetchOpenPullRequests(repositoryUrl, accessToken, fetchImpl = glo
         }
       }
     );
-    if (!response.ok) throw new Error(`GitHub pull-request lookup failed (${response.status}).`);
+    if (!response.ok) throw await require('./github_rate_limit').githubResponseError(response, `GitHub pull-request lookup failed (${response.status}).`);
     const pageItems = await response.json();
     if (!Array.isArray(pageItems)) throw new Error('GitHub returned an invalid pull-request list.');
     for (const pr of pageItems) {
@@ -306,6 +306,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       await (dependencies.launchMergeSession || launchMergeSession)(
         vscode, context, selectedRepository.repository.rootUri, url, handoff);
     } catch (error) {
+      if (await require('./github_rate_limit').promptRateLimit(vscode, error, { context, retry: () => mergePullRequests(all) })) return;
       vscode.window.showErrorMessage(`Unable to prepare pull-request bulk merge: ${error.message}`);
     }
   };

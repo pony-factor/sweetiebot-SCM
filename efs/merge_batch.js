@@ -10,9 +10,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   const original = validateSelection(rawSelection);
   const entries = new Map(original.pullRequests.map(pr => [pr.number, { ...pr, attempts: 0 }]));
   const merged = [], deferred = [], history = [], bridges = [];
-  let round = 0, emptyRounds = 0, disposed = false;
+  let round = 0, emptyRounds = 0, disposed = false, rateLimit;
 
-  const state = () => ({ repository: original.repository, pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], deferred: [...deferred], history: [...history] });
+  const state = () => ({ ...(rateLimit ? {rateLimit} : {}), repository: original.repository, pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], deferred: [...deferred], history: [...history] });
   const remaining = () => [...entries.values()].filter(pr => !merged.some(item => item.number === pr.number)
     && !deferred.some(item => item.number === pr.number));
 
@@ -57,7 +57,13 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
 
   async function startRound() {
     if (disposed) return null;
-    await refreshRemaining();
+    if (rateLimit) return null;
+    try { await refreshRemaining(); } catch (error) {
+      if (!error.rateLimited) throw error;
+      rateLimit = {message:error.message,retryAt:error.retryAt};
+      await onState(state());
+      return null;
+    }
     if (!remaining().length || round >= maxRounds) {
       for (const pr of remaining()) deferred.push({ number: pr.number, reason: 'Automatic integration retry limit reached; inspect the latest report.' });
       await onState(state());
@@ -81,6 +87,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           const pr = entries.get(item.number);
           const input = submitted.results.find(entry => entry.number === item.number);
           if (!pr || !input) throw Error('Local result does not match the submitted round.');
+          if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt}; continue; }
           pr.attempts++;
           const detail = { number: item.number, title: pr.title, base: pr.base,
             status: item.status, explanation: input.explanation, decisions: require('./resolution_commits').validateDecisions(input.decisions), reason: item.reason || '',
