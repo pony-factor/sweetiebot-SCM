@@ -438,10 +438,10 @@ async function main() {
   const mergeOperation = handler({ url, number: 12 });
   assert.equal(progressOptions.length, 1, 'The start notification appears before any asynchronous PR lookup');
   assert.equal(progressOptions[0].location, 15);
-  assert.equal(progressOptions[0].title, 'Starting squash merge for PR #12…');
+  assert.equal(progressOptions[0].title, 'Squash merge PR #12');
   assert.equal(progressOptions[0].cancellable, false);
   assert.deepEqual(await mergeOperation, { state: 'merged' });
-  assert.deepEqual(progressUpdates, [{ message: 'PR #12: checking merge eligibility…' }]);
+  assert.deepEqual(progressUpdates, [{ message: 'Checking merge eligibility…' }]);
   assert.deepEqual(successNotices, ['PR #12 merged into main.']);
   const managedOperation = handler({ url, number: 12 }, { progressManaged: true });
   assert.equal(progressOptions.length, 1, 'The PR sidebar must not open a nested notification');

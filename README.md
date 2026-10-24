@@ -567,6 +567,34 @@ The wrapper supports two independently configurable models:
 
 The low-memory path never escalates to the larger primary model when the fallback is missing. During normal-memory operation, the smaller model may be used if the primary model is not installed.
 
+### ChatGPT Spellcheck Only native-browser transport (experimental)
+
+The optional **Sweetiebot: Review Text with ChatGPT Spellcheck Only** command
+tests the authenticated communication layer independently of the local Ollama
+spellchecking pipeline. It explicitly asks for text or accepts a command
+argument, launches ChatGPT in VS Code's existing **Integrated Browser**, selects
+the **Spellcheck Only** app mention (following Fractured-GH's approach), and
+opens the response in a **new, unsaved review document**. It does **not** edit,
+stage, commit, or automatically apply the result.
+
+The extension host creates a **one-time 256-bit bearer token** and a temporary
+HTTP server bound **only to 127.0.0.1**. The native browser's privileged preload
+transfers the text and completion over this authenticated channel. The token is
+validated for every message; web-origin requests, unexpected hosts, oversized
+messages, and duplicate job claims are rejected. The bearer ticket is removed
+from ChatGPT's URL before prompt insertion. The listener closes on completion,
+error, cancellation, or timeout. ChatGPT credentials and cookies never leave the
+browser's existing signed-in profile. Nothing runs automatically: the command
+is the user-consent boundary.
+
+Because VS Code's Integrated Browser does not load Fractured's Chrome extension,
+Sweetiebot uses a dedicated, scoped native-browser preload adapter. This
+transport **does not claim** a hidden tab, unattended background correction,
+verified model identity, or automatic fallback to Ollama; those need further
+end-to-end native-browser integration testing. Ollama remains the production
+default, with unchanged commit metadata. ChatGPT/plugin UI changes or an
+unavailable app fail closed without modifying repository files.
+
 ### Spellcheck Changes customization
 
 **Spellcheck reasoning effort** is a separate option for draft subjects and
