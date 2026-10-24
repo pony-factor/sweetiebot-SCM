@@ -267,6 +267,12 @@
     "configuration": {
       "title": "Sweetiebot SCM",
       "properties": {
+        "scmToolkit.postCommitSpellcheck": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Allow post-commit Markdown Spellcheck Changes when global Spellcheck is on. Set false in the repository's .vscode/settings.json to opt out only there without disabling spellcheck elsewhere."
+        },
         "scmToolkit.automaticBranchCleanup": {
           "type": "boolean",
           "default": true,

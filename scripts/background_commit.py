@@ -912,10 +912,11 @@ def work(directory, commit_only=False):
             # Existing spellcheck guards refuse edits when users have moved on.
             if core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
                 import post_commit_spellcheck as spellcheck
-                paths = git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', job['sha']).splitlines()
-                paths = [name for name in paths if name.lower().endswith(('.md', '.mdx'))]
-                os.environ.pop('GIT_INDEX_FILE', None)
-                spellcheck.spawn_post_commit([], paths, job['sha'], str(Path(__file__).with_name('ai_commit.py')), job['parent'])
+                if not spellcheck.repository_spellcheck_disabled([]):
+                    paths = git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', job['sha']).splitlines()
+                    paths = [name for name in paths if name.lower().endswith(('.md', '.mdx'))]
+                    os.environ.pop('GIT_INDEX_FILE', None)
+                    spellcheck.spawn_post_commit([], paths, job['sha'], str(Path(__file__).with_name('ai_commit.py')), job['parent'])
         except (OSError, subprocess.TimeoutExpired):
             log_event('background_commit', 'interrupted', outcome='retry')
         except Exception as exc:

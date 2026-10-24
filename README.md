@@ -286,6 +286,16 @@ When the opt-in post-commit Markdown spellcheck produces edits and you keep them
 
 Enable automatic post-commit spellcheck with the **Spellcheck** toggle beside the Source Control commit message, or with `git config --global scm-toolkit.post-commit-spellcheck true`. The toggle saves the same global Git setting used by Sweetiebot Settings; it is off by default.
 
+Keep Spellcheck **on globally** but disable post-commit Markdown corrections in one repository with the following setting in its `.vscode/settings.json` (create the file if needed):
+
+```json
+{
+  "scmToolkit.postCommitSpellcheck": false
+}
+```
+
+Only this repository opts out. Other repositories continue spellchecking normally. Remove the entry or set it to `true` to re-enable corrections. VS Code JSON-with-comments (including trailing commas) is supported. Manual **Spellcheck Only**, filename spellcheck, and draft commit-subject spellcheck are unaffected. Sweetiebot Settings → **Spellcheck Changes** explains this override too.
+
 The prepared message includes the model that actually generated the corrections:
 
 ```text
