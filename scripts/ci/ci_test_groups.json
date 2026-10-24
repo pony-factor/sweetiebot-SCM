@@ -207,6 +207,8 @@
         "efs/merge_reaction_choices.js",
         "efs/github_rate_limit.js",
         "efs/github_session.js",
+        "efs/github_user_api.js",
+        "efs/merge_commit_proposal.js",
         "efs/merge_review_repair.js",
         "efs/merge_handoff.js",
         "efs/merge_patch.js",

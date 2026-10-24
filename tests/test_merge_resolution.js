@@ -59,6 +59,15 @@ const input = { version: 1, repository: 'owner/repo', results: [{
     assert.equal(options.rewriteReason, undefined);
     return { merged: false, status: 'blocked' };
   } });
+  await executeResolution(input, selection, { authorHandoff: true, merge: async (repo, number, options) => {
+    assert.equal(options.allowHistoryRewrite, true, 'Trusted local merge handoff enables the necessary author preparation');
+    assert.equal(options.rewriteReason, 'preserve-human-author');
+    return { merged: false, status: 'waiting' };
+  } });
+  await executeResolution({ ...input, results: input.results.map(item => ({ ...item, operation: 'sync' })) }, selection, { authorHandoff: true, merge: async (repo, number, options) => {
+    assert.equal(options.allowHistoryRewrite, undefined, 'Branch-only synchronization never gains rewrite permission');
+    return { merged: false, status: 'synced' };
+  } });
   const pushedFailure = await executeResolution(input, selection, { merge: async () => {
     throw Object.assign(Error('PR changed after guarded push'), { preparedHead: 'c'.repeat(40), originalHead: head });
   } });
