@@ -187,6 +187,7 @@
         "test_merge_dashboard_resize.js",
         "test_merge_reaction_choices.js",
         "test_github_rate_limit.js",
+        "test_github_session.js",
         "test_merge_resolution.js",
         "test_merge_resolution_git.js",
         "test_pr_session.js",
