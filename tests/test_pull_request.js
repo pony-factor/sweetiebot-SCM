@@ -587,7 +587,8 @@ async function run() {
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));
-  assert(codexPrompt.includes(codexSnapshot.text));
+  assert(codexPrompt.includes(share), 'Attached online link is forwarded unchanged');
+  assert(!codexPrompt.includes(codexSnapshot.text), 'Online link suppresses the transcript');
 
   calls.length = 0;
   await uriHandler.handleUri({ path: '/codex/019c56c3-06fc-7db3-a928-9c3607e17129' });
