@@ -58,6 +58,27 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert.equal(notes.report.text, 'New report');
   assert.equal(notes.review.text, 'Need owner decision');
+  const liveDecisions = '<!-- sweetiebot-merge-options\n' + JSON.stringify({
+    version: 1, headSha: sha, baseSha: 'c'.repeat(40), options: [
+      { id: 'keep-api', label: 'Keep API', prompt: 'Keep the original API.' },
+      { id: 'adapt-api', label: 'Use adapter', prompt: 'Introduce an adapter.' }
+    ]
+  }) + '\n-->';
+  const activeReview = { id: 20, body: REVIEW_MARKER + '\nWhich interface?\n' + liveDecisions };
+  assert.equal(reportFromComments([comments[1]], { headSha: sha, baseSha: 'c'.repeat(40) }).review, null,
+    'A historical marker without live implementation decisions cannot block a merge');
+  assert.equal(reportFromComments([activeReview], { headSha: sha, baseSha: 'c'.repeat(40) }).review.id, 20);
+  assert.equal(reportFromComments([activeReview], { headSha: nextSha, baseSha: 'c'.repeat(40) }).review, null,
+    'A new PR head invalidates choices made for its earlier revision');
+  assert.equal(reportFromComments([activeReview], { headSha: sha, baseSha: 'd'.repeat(40) }).review, null,
+    'A new base invalidates historical choices');
+  assert.equal(reportFromComments([{ ...activeReview, body: activeReview.body +
+    '\n<!-- sweetiebot-merge-review-resolved -->' }],
+  { headSha: sha, baseSha: 'c'.repeat(40) }).review, null,
+  'Explicitly resolved decisions must not block future polls');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'clean' },
+    { review: { id: 20 }, report: { id: 21 } }), 'review',
+  'An unrelated AI report must not hide an actual current human decision');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
   assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked');
@@ -121,7 +142,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     env: { async openExternal(target) { openings.push(target); } }
   };
   let info = {
-    number: 12, base: { ref: 'main' }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
+    number: 12, base: { ref: 'main', sha: 'c'.repeat(40) }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
     state: 'open', merged: false, mergeable: false, mergeable_state: 'dirty', body: 'Why this PR exists'
   };
   let commentsForPr = [];
@@ -251,13 +272,13 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     'A changed blocking reason is reported even when the phase stays blocked');
   inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
     html_url: url + '#discussion_r90',
-    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + optionsBlock }];
+    body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + liveDecisions }];
   info = { ...info, head: { ...info.head, sha }, mergeable_state: 'clean', mergeable: true };
   await dashboard.refresh();
   const inlinePr = events.at(-1).prs[0];
   assert.equal(inlinePr.review.text, 'Which API should this conflict preserve?');
   assert.equal(inlinePr.review.url, url + '#discussion_r90');
-  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-preserve-api');
+  const inlineChoice = inlinePr.blockerOptions.find(option => option.id === 'report-keep-api');
   assert(inlineChoice, 'Inline code-thread choices are available in the dashboard');
   const inlineAction = { type: 'blocker-action', number: 12, headSha: sha,
     actionId: inlineChoice.id, optionKey: inlineChoice.key };
@@ -265,6 +286,9 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(actionLaunches.length, 3, 'Inline options survive the fresh action lookup');
   assert.equal(actionLaunches[2][4].review.url, url + '#discussion_r90');
   inlineCommentsForPr = [];
+  await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].review, null, 'Removed live review is cleared on the next poll');
+  assert.notEqual(events.at(-1).prs[0].state, 'review');
   await messageHandler(inlineAction);
   assert.equal(actionLaunches.length, 3, 'Removed inline choices cannot execute from a stale dashboard');
   const reactionBlock = '<!-- sweetiebot-merge-options\n' + JSON.stringify({
