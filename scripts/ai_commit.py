@@ -4,6 +4,8 @@ from __future__ import annotations
 from difflib import SequenceMatcher
 from contextvars import ContextVar
 from functools import wraps, lru_cache
+import fcntl
+import secrets
 import json
 import os
 import re
@@ -1168,6 +1170,54 @@ def emoji_priority_rules(instructions: str) -> list[tuple[str, list[str], bool]]
     return rules
 
 
+def choose_bug_emoji(choices: list[str]) -> str:
+    """Reuse a PR branch's first bug emoji; independently randomize on main."""
+    branch = current_branch()
+    base = configured_default_branch()
+    if not branch:
+        return secrets.choice(choices)
+    if branch == base:
+        # Independent main commits get a new draw, excluding the latest
+        # bug-fix emoji when another permitted option is available.
+        previous = next((match[0] for subject in git_output(
+            "log", "-50", "--format=%s").splitlines()
+            if (match := re.match(EMOJI_PATTERN, subject)) and match[0] in choices), "")
+        available = [emoji for emoji in choices if emoji != previous] or choices
+        return secrets.choice(available)
+
+    # Stacked PRs must not borrow the emoji from their parent PR branch.
+    parent = git_output("config", "--local", "--get",
+                        f"branch.{branch}.sweetiebot-stack-parent").strip() or base
+    subjects = git_output("log", f"{parent}..HEAD", "--format=%s")
+    for subject in reversed(subjects.splitlines()):
+        match = re.match(EMOJI_PATTERN, subject)
+        if match and match[0] in choices:
+            return match[0]
+
+    # Preserve the first selection across simultaneous background generators:
+    # they can all see provisional commit subjects before any is finalized.
+    common_dir = git_output("rev-parse", "--git-common-dir").strip()
+    if not common_dir:
+        return secrets.choice(choices)
+    key = f"branch.{branch}.sweetiebot-bug-emoji"
+    try:
+        with (Path(common_dir) / "sweetiebot-bug-emoji.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            saved = git_output("config", "--local", "--get", key).strip()
+            if saved in choices:
+                return saved
+            selected = secrets.choice(choices)
+            result = subprocess.run(
+                [REAL_GIT, *GIT_GLOBAL_ARGS, "config", "--local", "--replace-all", key, selected],
+                check=False, capture_output=True, text=True,
+            )
+            if result.returncode:
+                log_event("commit_title", "branch_emoji_save_failed", outcome="fallback")
+            return selected
+    except OSError:
+        return secrets.choice(choices)
+
+
 def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
                           stat: str, diff: str, file_context: str,
                           conversation_context: str) -> str:
@@ -1243,15 +1293,11 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
     if selected is None:
         raise RuntimeError("No emoji priority rule matches this change. Update the instructions or enter an explicit message.")
     condition, choices, fallback = rules[selected]
-    # Reuse a branch's bug emoji without borrowing from main's history.
-    branch = current_branch()
-    if "same one" in condition.lower() and branch and branch != configured_default_branch():
-        base = configured_default_branch()
-        for subject in git_output("log", f"{base}..HEAD", "--format=%s").splitlines():
-            match = re.match(EMOJI_PATTERN, subject)
-            if match and match[0] in choices:
-                return match[0]
-    if len(choices) > 1 and not fallback and "random" not in condition.lower():
+    if len(choices) > 1 and re.search(r"\b(?:bugs?|bugfix(?:es)?)\b", condition, re.I):
+        return choose_bug_emoji(choices)
+    if len(choices) > 1 and re.search(r"\brandom\b", condition, re.I):
+        return secrets.choice(choices)
+    if len(choices) > 1 and not fallback:
         # Some bullets map different emojis to different cases (policy/code,
         # or United States/general policy); these are not random-choice lists.
         prompt = (
@@ -1278,8 +1324,7 @@ def select_priority_emoji(model: str, rules: list[tuple[str, list[str], bool]],
             except (ValueError, TypeError, AttributeError, OSError, urllib.error.URLError):
                 pass
         raise RuntimeError("Could not verify the emoji assigned by the matching priority rule. Try again or enter an explicit message.")
-    # For equivalent choices use the first permitted emoji, never randomness.
-    # Branch-specific bug emoji reuse is handled above.
+    # For equivalent nonrandom choices, use the first permitted emoji.
     return choices[0]
 
 
@@ -1293,7 +1338,7 @@ def emoji_for_change(title: str, files: list[str]) -> str:
     """Deterministic semantic emoji when no configured priority rule applies."""
     wording = re.sub(EMOJI_PATTERN, "", title).strip().lower()
     if re.match(r"(?:fix|repair|correct|resolve|prevent|restore|guard)\b", wording):
-        return "🐛"
+        return choose_bug_emoji(["🐛", "🐜", "🐝", "🐞", "🦗", "🕷️", "🦟"])
     if re.search(r"\b(?:colou?rs?|theme|palette|contrast|accent|tint)\b", wording):
         return "🎨"
     if re.search(r"\b(?:test|tests|testing|validation|validate|assertion|coverage|regression)\b", wording):
