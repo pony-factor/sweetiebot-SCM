@@ -271,8 +271,9 @@ def enqueue(request, start=True):
         message = request.get('message', '')
         context = request.get('context', '')
         trailer = request.get('trailer', '')
+        description = request.get('description', '')
         if not all(isinstance(value, str) and '\x00' not in value
-                   for value in (message, context, trailer)):
+                   for value in (message, context, trailer, description)):
             raise ValueError('Invalid background commit request.')
         if trailer and ('\n' in trailer or not trailer.startswith('Co-authored-by: ')):
             raise ValueError('Invalid co-author trailer.')
@@ -333,7 +334,7 @@ def enqueue(request, start=True):
         directory = jobs_home() / secrets.token_hex(8)
         directory.mkdir(mode=0o700)
         job = dict(id=directory.name, root=root, gitdir=str(meta), branch=branch, parent=parent,
-                   tree=tree, message=message, context=context[-6000:], trailer=trailer,
+                   tree=tree, message=message, context=context[-6000:], trailer=trailer, description=description[:6000],
                    push=push, remote=remote, destination=destination, tracking=tracking,
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
                    no_verify=request.get('noVerify') is True,
@@ -738,6 +739,8 @@ def work(directory, commit_only=False):
                 if not job['message'].strip():
                     job['provisional'] = True
                     job['message'] = PLACEHOLDER + job['id']
+                    if job.get('description'):
+                        job['message'] += '\n\n' + job['description']
                 if job['trailer'] and job['trailer'] not in job['message'].splitlines():
                     job['message'] += '\n\n' + job['trailer']
                 if state() != (job['branch'], job['parent']):

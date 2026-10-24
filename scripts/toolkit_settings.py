@@ -439,6 +439,7 @@ VSCODE_SETTINGS = {
         "kefaniaCloseButtonPosition": "kefaniaCloseButtonPosition",
         "chatgptProjectUrl": "chatgptProjectUrl",
         "codexKeepAwake": "codexKeepAwake",
+        "codexHidePermissionsIcon": "codexHidePermissionsIcon",
         "durableBackgroundCommits": "durableBackgroundCommits",
     },
     "appUpdateSettings": {"mode": "nativeAppUpdateMode"},

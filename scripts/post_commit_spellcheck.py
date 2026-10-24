@@ -570,6 +570,10 @@ def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: l
         **({"model": model} if model else {}),
         **({"title": title} if title else {}),
     }
+    tree = git_run(global_args, "rev-parse", expected_head + "^{tree}", text=True)
+    branch = active_branch(global_args)
+    if tree.returncode == 0 and re.fullmatch(r"[a-f0-9]{40,64}", tree.stdout.strip()) and branch:
+        payload.update(tree=tree.stdout.strip(), branch=branch)
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(

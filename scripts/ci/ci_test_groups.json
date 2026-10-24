@@ -147,12 +147,13 @@
         "test_codex_keep_awake.js",
         "test_codex_keep_awake.py",
         "test_codex_label.py",
+        "test_codex_permissions.js",
         "test_codex_rate_limit_controls.js",
-        "test_codex_sticker.py",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
         "test_codex_short_model_labels.js",
         "test_codex_startup.py",
+        "test_codex_sticker.py",
         "test_codex_usage.js",
         "test_codex_usage.py",
         "test_codex_video_drop.js",
@@ -161,6 +162,8 @@
       ],
       "syntax": [
         "assets/codex/image-drop.js",
+        "assets/codex/permissions-host.js",
+        "assets/codex/permissions-webview.js",
         "assets/codex/video-frames.js"
       ]
     },

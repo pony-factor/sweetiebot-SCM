@@ -37,7 +37,9 @@ function parseNotice(content) {
     if (data.title !== undefined && (typeof data.title !== 'string' || !data.title.startsWith('Spellcheck ')
         || data.title.length > 72 || /[\r\n<>]/.test(data.title)
         || data.title.trim().split(/\s+/).length < 4 || data.title.trim().split(/\s+/).length > 6)) return null;
-    return { head: data.head, paths, ...(data.model ? { model: data.model.trim() } : {}), ...(data.title ? { title: data.title.trim() } : {}) };
+    if (data.tree !== undefined && !SHA.test(data.tree || '')) return null;
+    if (data.branch !== undefined && (typeof data.branch !== 'string' || !data.branch || data.branch.length > 256 || /[\x00-\x20]/.test(data.branch))) return null;
+    return { head: data.head, paths, ...(data.tree ? {tree: data.tree, branch: data.branch} : {}), ...(data.model ? { model: data.model.trim() } : {}), ...(data.title ? { title: data.title.trim() } : {}) };
   } catch { return null; }
 }
 
@@ -119,7 +121,13 @@ async function takeNotice(repository, dependencies = {}) {
     const metadata = await io.lstat(destination);
     if (!metadata.isFile() || metadata.size > 16384) return null;
     const notice = parseNotice(await io.readFile(destination, 'utf8'));
-    if (!notice || await run(root, ['rev-parse', 'HEAD']) !== notice.head) return null;
+    if (!notice) return null;
+    const currentHead = await run(root, ['rev-parse', 'HEAD']);
+    if (currentHead !== notice.head) {
+      if (!notice.tree || !notice.branch || await run(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']) !== notice.branch
+          || await run(root, ['rev-parse', 'HEAD^{tree}']) !== notice.tree) return null;
+      notice.head = currentHead;
+    }
     await repository.status();
     const changed = new Set([
       ...(repository.state.workingTreeChanges || []),
@@ -224,6 +232,18 @@ async function normalizeReviewedWhitespace(root, paths) {
   });
 }
 
+async function verifyPreviewHead(session) {
+  if (!session.head) return;
+  const current = await session.readGit(session.root, ['rev-parse', 'HEAD']);
+  if (current === session.head) return;
+  if (!session.headTree || !session.branch
+      || await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch
+      || await session.readGit(session.root, ['rev-parse', 'HEAD^{tree}']) !== session.headTree) {
+    throw new Error('The repository changed commits. Reopen the spelling preview.');
+  }
+  session.head = current;
+}
+
 async function finishSpellcheckPreview(vscode, sessionId, action, message, runAction = gitAction,
   normalize = normalizeReviewedWhitespace, generateTitle = generateReviewedCommitMessage) {
   const session = previewSessions.get(sessionId);
@@ -238,6 +258,7 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
     && vscode.workspace?.getConfiguration?.('git', vscode.Uri.file(session.root))
       ?.get('postCommitCommand', 'none') === 'push';
   session.acting = true;
+  let queuedCommit = false;
   try {
     for (const file of session.paths) {
       const uri = vscode.Uri.file(path.resolve(session.root, file));
@@ -249,9 +270,7 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
       'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...session.paths
     ]);
     if (current !== session.patch) throw new Error('The files changed outside this preview. Reopen the diff before accepting or reverting.');
-    if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) {
-      throw new Error('The repository changed commits. Reopen the spelling preview.');
-    }
+    await verifyPreviewHead(session);
     if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
       throw new Error('The repository changed branches. Reopen the spelling preview.');
     }
@@ -275,24 +294,33 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
         stagedByPreview = await session.readDiff(session.root, [
           'diff', '--cached', '--no-ext-diff', '--no-color', '--', ...session.paths
         ]);
-        const generated = await generateTitle(session.root, session.paths);
-        if (!generated || typeof generated.title !== 'string' || !generated.title.trim()) {
-          throw new Error('The normal commit-title generator did not return a title.');
+        if ((await vscode.commands?.getCommands?.(true) || []).includes('sweetiebot.queueCommit')) {
+          const result = await vscode.commands.executeCommand('sweetiebot.queueCommit', vscode.Uri.file(session.root), {
+            paths: session.paths, message: '', description: message.trim(), trailer: session.trailer,
+            push: commitAndPush, skipSpellcheck: true
+          });
+          if (result?.queued !== true) throw new Error('The reviewed spellcheck commit was not queued.');
+          queuedCommit = true;
+        } else {
+          const generated = await generateTitle(session.root, session.paths);
+          if (!generated || typeof generated.title !== 'string' || !generated.title.trim()) {
+            throw new Error('The normal commit-title generator did not return a title.');
+          }
+          if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) {
+            throw new Error('The repository advanced while generating the title. Reopen the spelling preview.');
+          }
+          if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
+            throw new Error('The active branch changed while generating the title. Reopen the spelling preview.');
+          }
+          const args = ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim',
+            '--message', generated.title];
+          const body = [generated.description, message.trim()].filter(Boolean).join('\n\n');
+          if (body) args.push('--message', body);
+          // Append attribution AFTER the usual subject and explanatory body.
+          if (session.trailer) args.push('--message', session.trailer);
+          args.push('--', ...session.paths);
+          await runAction(session.root, args);
         }
-        if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) {
-          throw new Error('The repository advanced while generating the title. Reopen the spelling preview.');
-        }
-        if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
-          throw new Error('The active branch changed while generating the title. Reopen the spelling preview.');
-        }
-        const args = ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim',
-          '--message', generated.title];
-        const body = [generated.description, message.trim()].filter(Boolean).join('\n\n');
-        if (body) args.push('--message', body);
-        // Append attribution AFTER the usual subject and explanatory body.
-        if (session.trailer) args.push('--message', session.trailer);
-        args.push('--', ...session.paths);
-        await runAction(session.root, args);
       } catch (error) {
         // Only undo our staging while the branch, commit, and selected index
         // entries still match. Never discard concurrent work or rewrite files.
@@ -318,6 +346,7 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
     closeSpellcheckPopup(sessionId);
     // A refresh failure must not turn a completed commit/revert into a retry.
     try { await session.repository.status?.(); } catch { /* Refresh next polling cycle. */ }
+    if (queuedCommit) return {action, queued: true};
     if (!commitAndPush) return {action};
     try {
       if (!session.branch) {
@@ -365,8 +394,12 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
   let branch;
   try { branch = await readConfig(notice.root, ['symbolic-ref', '--quiet', 'HEAD']); }
   catch { /* Detached HEAD has no branch name. */ }
+  let headTree = notice.tree;
+  if (!headTree && notice.head) {
+    try { const tree = await readConfig(notice.root, ['rev-parse', notice.head + '^{tree}']); if (SHA.test(tree)) headTree = tree; } catch { /* Old previews retain strict commit identity. */ }
+  }
   const session = {
-    id: randomUUID(), root: notice.root, paths: notice.paths, head: notice.head, branch,
+    id: randomUUID(), root: notice.root, paths: notice.paths, head: notice.head, headTree, branch,
     title: SPELLCHECK_LABEL, readDiff, readGit: readConfig, repository,
     message: '', trailer: coauthor(email, notice.model)
   };

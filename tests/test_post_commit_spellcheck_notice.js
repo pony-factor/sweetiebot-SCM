@@ -629,3 +629,33 @@ test('normal titled spellcheck commit contains only reviewed staged files and pr
     await fs.rm(root, {recursive: true, force: true});
   }
 });
+
+
+test('Accept queues reviewed corrections behind pending titles and survives a title-only head replacement', async () => {
+  const f = fixture();
+  const tree = 'c'.repeat(40);
+  let current = head;
+  const readGit = async (root, args) => {
+    if (args[0] === 'symbolic-ref') return 'refs/heads/topic';
+    if (args[0] === 'rev-parse') return args[1].endsWith('^{tree}') ? tree : current;
+    return f.git(root, args);
+  };
+  await showNotice({}, f.repo, {head, root:'/repo', paths:['notes/report.md']},
+    async (_root, args) => args.includes('--cached') ? '' : patch, readGit);
+  const preview = takeSpellcheckPopup();
+  current = 'b'.repeat(40);
+  const calls = [];
+  const vscode = {Uri:{file:fsPath=>({fsPath})}, workspace:{textDocuments:[]}, commands:{
+    getCommands:async()=>['sweetiebot.queueCommit'],
+    executeCommand:async(command,uri,options)=>{calls.push({command,uri,options});return {queued:true};}
+  }};
+  const mutations=[];
+  const result = await finishSpellcheckPreview(vscode,preview.sessionId,'accept','Keep my description',
+    async (_root,args)=>mutations.push(args[1]),async()=>{},async()=>{throw Error('Must not wait for a title');});
+  assert.deepEqual(result,{action:'accept',queued:true});
+  assert.deepEqual(mutations,['add']);
+  assert.equal(calls[0].command,'sweetiebot.queueCommit');
+  assert.deepEqual(calls[0].options.paths,['notes/report.md']);
+  assert.equal(calls[0].options.description,'Keep my description');
+  assert.equal(calls[0].options.skipSpellcheck,true);
+});
