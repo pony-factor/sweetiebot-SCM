@@ -173,6 +173,110 @@ async function cleanClone(group, name, io, run) {
   return true;
 }
 
+// A linked worktree shares its Git objects with the original repository. Never
+// recursively remove the checkout: Git must detach it from the shared database.
+async function cleanWorktree(group, name, kind, io, run, dryRun) {
+  const cwd = path.join(group, name);
+  if (await run('git', ['rev-parse', '--show-toplevel'], cwd) !== cwd) return false;
+  const common = await run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
+  if (!common || path.basename(common) !== '.git') return false;
+  const original = path.dirname(common);
+  if (path.resolve(original) === path.resolve(cwd) ||
+      !await isPlainDirectory(io, original)) return false;
+  const branch = await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd);
+  if (!branch || (kind === 'main-worktree' ? branch !== 'main' : branch === 'main')) return false;
+  const recorded = await jsonFile(io, path.join(group, MANIFEST));
+  if (recorded.branch && recorded.branch !== branch) return false;
+  const worktrees = await run('git', ['worktree', 'list', '--porcelain'], original);
+  if (!worktrees || !worktrees.split('\n\n').some(block => {
+    const lines = block.split('\n');
+    return lines.includes('worktree ' + cwd) && lines.includes('branch refs/heads/' + branch);
+  })) return false;
+  if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '') return false;
+  // Stashes live in the common Git database. Do not erase associated worktree
+  // state while there is anything left to recover.
+  if (await run('git', ['rev-parse', '--verify', '--quiet', 'refs/stash'], cwd) !== null) return false;
+  const head = await run('git', ['rev-parse', 'HEAD'], cwd);
+  if (!head || await run('git', ['rev-parse', 'refs/heads/' + branch], original) !== head) return false;
+  const origin = await run('git', ['remote', 'get-url', 'origin'], original);
+  const match = origin?.match(/^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+  if (!match || await run('git', ['fetch', '--prune', '--no-tags', 'origin'], original) === null) return false;
+
+  if (kind === 'main-worktree') {
+    // In particular, do not discard local main commits that were never pushed.
+    if (await run('git', ['merge-base', '--is-ancestor', 'HEAD',
+      'refs/remotes/origin/main'], cwd) === null) return false;
+  } else {
+    const repository = match[1] + '/' + match[2];
+    const open = await run('gh', ['pr', 'list', '--repo', repository, '--head',
+      branch, '--state', 'open', '--limit', '1', '--json', 'number'], cwd);
+    if (open === null) return false;
+    try { if (JSON.parse(open).length) return false; } catch { return false; }
+    const merged = await run('gh', ['pr', 'list', '--repo', repository, '--head',
+      branch, '--state', 'merged', '--limit', '100', '--json', 'number'], cwd);
+    if (merged === null) return false;
+    let candidates;
+    try { candidates = JSON.parse(merged); } catch { return false; }
+    if (!Array.isArray(candidates) || candidates.length > 100) return false;
+    let verified = false;
+    for (const { number } of candidates) {
+      if (!Number.isSafeInteger(number) || number < 1) return false;
+      const value = await run('gh', ['pr', 'view', String(number), '--repo',
+        repository, '--json', 'state,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository,commits'], cwd);
+      if (value === null) return false;
+      let pr;
+      try { pr = JSON.parse(value); } catch { return false; }
+      if (pr.state === 'MERGED' && pr.mergedAt && !pr.isCrossRepository &&
+          pr.baseRefName === 'main' && pr.headRefName === branch &&
+          (pr.headRefOid ?? pr.commits?.at(-1)?.oid) === head) {
+        verified = true;
+        break;
+      }
+    }
+    if (!verified) return false;
+  }
+
+  // Repeat checks immediately before invoking Git's non-forced worktree
+  // removal. A concurrent writer makes Git refuse the removal as well.
+  if (!await eligibleGroup(io, group, path.dirname(path.dirname(group)), Date.now(), isAlive)) return false;
+  if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '' ||
+      await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd) !== branch ||
+      await run('git', ['rev-parse', 'HEAD'], cwd) !== head) return false;
+  if (dryRun) return true;
+  if (await run('git', ['worktree', 'remove', '--', cwd], original) === null) return false;
+  if (kind === 'topic-worktree') {
+    // Squash merges require -D, since the original PR commits are not
+    // ancestors of main. The branch tip was verified against the merged PR.
+    if (await run('git', ['rev-parse', 'refs/heads/' + branch], original) === head) {
+      await run('git', ['branch', '-D', '--', branch], original);
+    }
+  }
+  // Git removed the checkout; only Sweetiebot's small metadata remains.
+  await io.rm(group, { recursive: true, force: false });
+  return true;
+}
+
+// A saved workspace (including an edited one) may still refer to the checkout.
+// Remove that workspace first, or preserve the worktree for reopening.
+async function hasSavedWorkspaceReference(io, groups, worktree) {
+  for (const group of groups) {
+    const manifest = await jsonFile(io, path.join(group, MANIFEST));
+    if (manifest?.kind !== 'shared-main') continue;
+    const filename = path.join(group, 'workspace.code-workspace');
+    let saved;
+    try { saved = JSON.parse(await io.readFile(filename, 'utf8')); }
+    catch { return true; } // Unknown references are not proof of safety.
+    if (!Array.isArray(saved.folders)) return true;
+    for (const folder of saved.folders) {
+      if (typeof folder.path !== 'string' || !path.isAbsolute(folder.path)) return true;
+      const relative = path.relative(worktree, folder.path);
+      if (relative === '' || (relative !== '..' &&
+          !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))) return true;
+    }
+  }
+  return false;
+}
+
 async function pruneManagedWorkspaces({
   baseDirectory = independentWorkspaceParent(), io = fs, run = command,
   now = Date.now(), alive = isAlive, dryRun = false, log = () => {}
@@ -202,24 +306,44 @@ async function pruneManagedWorkspaces({
         log('Preserved ' + parent + ': ' + error.message);
       }
     }
+    // Metadata first; a linked checkout may only be removed once every
+    // saved workspace pointing at it is gone.
+    const ranks = { 'shared-main': 0, 'topic-worktree': 1,
+      'main-worktree': 2, 'independent-clone': 3 };
+    const kinds = new Map();
+    for (const group of candidates) {
+      const manifest = await jsonFile(io, path.join(group, MANIFEST));
+      kinds.set(group, manifest?.kind);
+    }
+    candidates.sort((a, b) => (ranks[kinds.get(a)] ?? 4) - (ranks[kinds.get(b)] ?? 4));
     for (const group of candidates) {
       try {
         const names = await eligibleGroup(io, group, baseDirectory, now, alive);
         if (!names) continue;
+        const kind = kinds.get(group);
         let safe = true;
-        for (const name of names) if (!await cleanClone(group, name, io, run)) {
-          safe = false; break;
-        }
-        if (!safe || !await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) continue;
-        // Recheck the worktrees after remote access and immediately before
-        // the destructive operation; abort if a user has begun writing.
-        for (const name of names) {
-          const dirty = await run('git',
-            ['status', '--porcelain', '--ignored', '--untracked-files=all'], path.join(group, name));
-          if (dirty !== '') { safe = false; break; }
-        }
-        if (!safe) continue;
-        if (!dryRun) await io.rm(group, { recursive: true, force: false });
+        if (kind === 'independent-clone') {
+          for (const name of names) if (!await cleanClone(group, name, io, run)) {
+            safe = false; break;
+          }
+          if (!safe || !await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) continue;
+          // Recheck the clones immediately before the destructive operation.
+          for (const name of names) {
+            const dirty = await run('git',
+              ['status', '--porcelain', '--ignored', '--untracked-files=all'], path.join(group, name));
+            if (dirty !== '') { safe = false; break; }
+          }
+          if (!safe) continue;
+          if (!dryRun) await io.rm(group, { recursive: true, force: false });
+        } else if (kind === 'shared-main') {
+          if (!await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) continue;
+          if (!dryRun) await io.rm(group, { recursive: true, force: false });
+        } else if (kind === 'topic-worktree' || kind === 'main-worktree') {
+          if (await hasSavedWorkspaceReference(io, candidates.filter(candidate =>
+            candidate !== group && (!pruned.includes(candidate) || dryRun)),
+          path.join(group, names[0]))) continue;
+          if (!await cleanWorktree(group, names[0], kind, io, run, dryRun)) continue;
+        } else continue;
         pruned.push(group);
         log((dryRun ? 'Would prune ' : 'Pruned ') + group);
       } catch (error) {
@@ -252,4 +376,5 @@ function registerWorkspaceCleanup(vscode, context) {
 }
 
 module.exports = { pruneManagedWorkspaces, eligibleGroup, mergedEvidence, cleanClone,
-  registerWorkspaceCleanup, MANIFEST, ACTIVATED, PROOFS, SESSION_PREFIX };
+  cleanWorktree, hasSavedWorkspaceReference, registerWorkspaceCleanup,
+  MANIFEST, ACTIVATED, PROOFS, SESSION_PREFIX };

@@ -35,6 +35,34 @@ const {
     }
   });
   assert.deepEqual(groups, [group]);
+  // The main branch may be checked out in a linked worktree, while the saved
+  // VS Code window file has its own identity. Both must receive live markers.
+  const saved = path.join(base, 'pony', 'saved-main');
+  const mainGroup = path.join(base, 'pony', 'main-id');
+  const mainCheckout = path.join(mainGroup, 'pony');
+  const tracked = await findManagedGroups({ workspace: {
+    workspaceFile: { scheme: 'file', fsPath: path.join(saved, 'workspace.code-workspace') },
+    workspaceFolders: [{ uri: { scheme: 'file', fsPath: mainCheckout } }]
+  } }, {
+    baseDirectory: base,
+    io: {
+      async lstat(folder) {
+        return { isDirectory: () => [saved, mainGroup, mainCheckout].includes(folder) };
+      },
+      async readFile(file) {
+        if (file === path.join(saved, '.sweetiebot-workspace.json')) {
+          return JSON.stringify({ version: 1, kind: 'shared-main', repositories: [] });
+        }
+        if (file === path.join(mainGroup, '.sweetiebot-workspace.json')) {
+          return JSON.stringify({ version: 1, kind: 'main-worktree', repositories: ['pony'] });
+        }
+        throw Error('Unexpected manifest: ' + file);
+      }
+    },
+    async gitRoot() { return mainCheckout; }
+  });
+  assert.deepEqual(new Set(tracked), new Set([saved, mainGroup]));
+
   const context = { subscriptions: [] };
   const oldSet = global.setInterval, oldClear = global.clearInterval;
   try {

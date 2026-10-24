@@ -170,6 +170,10 @@ async function openedRoot(result) {
     await fs.writeFile(path.join(legacy, 'file.txt'), 'separate old edits\n');
     await assert.rejects(reconnectManagedMain(editor(legacy), options), /separate pending edits/);
     assert.equal(await fs.readFile(path.join(legacy, 'file.txt'), 'utf8'), 'separate old edits\n');
+    git('-C', legacy, 'add', 'file.txt');
+    git('-C', legacy, 'commit', '-m', 'Unpublished legacy-only commit');
+    await assert.rejects(reconnectManagedMain(editor(legacy), options), /separate commits/,
+      'A legacy clone cannot be reconnected just because its own main contains its commit');
     assert.equal(await reconnectManagedMain(editor(topic), options), false, 'Topic windows stay disconnected');
     git('-C', root, 'switch', '-c', 'external-topic');
     await fs.writeFile(path.join(root, 'file.txt'), 'original topic edits\n');
@@ -179,17 +183,32 @@ async function openedRoot(result) {
     const originalIndex = git('-C', root, 'diff', '--cached');
     const fallbackEditor = editor(root);
     const fallback = await openIndependentWorkspace(fallbackEditor, options);
-    assert.equal(git('-C', fallback.target, 'branch', '--show-current'), 'main');
-    assert.equal(await fs.readFile(path.join(fallback.target, 'file.txt'), 'utf8'), 'committed main\n');
+    const linkedMain = await openedRoot(fallback);
+    assert.equal(git('-C', linkedMain, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(linkedMain, 'file.txt'), 'utf8'), 'committed main\n');
+    assert.equal(git('-C', linkedMain, 'rev-parse', '--path-format=absolute', '--git-common-dir'),
+      path.join(root, '.git'), 'Main shares the original Git database, not a clone');
+    const mainManifest = JSON.parse(await fs.readFile(
+      path.join(path.dirname(linkedMain), '.sweetiebot-workspace.json'), 'utf8'));
+    assert.equal(mainManifest.kind, 'main-worktree');
     assert.deepEqual(fallbackEditor.commands.calls.at(-1)[2], { forceNewWindow: true });
     assert.equal(git('-C', root, 'branch', '--show-current'), 'external-topic');
     assert.equal(git('-C', root, 'status', '--porcelain'), originalStatus);
     assert.equal(git('-C', root, 'diff', '--cached'), originalIndex);
     assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'additional unstaged topic edits\n');
-    assert.equal(await reconnectManagedMain(editor(fallback.target), options), false,
-      'New main clone remains usable while the original is on a topic');
+    assert.equal(await reconnectManagedMain(editor(linkedMain), options), false,
+      'Existing main worktree must never reconnect to a topic checkout');
+    const anotherMain = await openIndependentWorkspace(editor(root), options);
+    assert.equal(await openedRoot(anotherMain), linkedMain,
+      'A second main window reuses the existing main worktree');
     const legacyFallback = await openIndependentWorkspace(editor(legacy), options);
-    assert.equal(git('-C', legacyFallback.target, 'branch', '--show-current'), 'main');
+    assert.equal(await openedRoot(legacyFallback), linkedMain,
+      'Legacy clones may reopen the shared linked main worktree');
+    const returningFromOriginal = editor(root);
+    assert.equal(await routeBranch(returningFromOriginal, { rootUri: { fsPath: root } },
+      { ...options, branch: 'main' }), true);
+    assert.equal(await openedRoot({ target: returningFromOriginal.commands.calls.at(-1)[1].fsPath }),
+      linkedMain, 'Returning to main preserves the original topic checkout');
     const originalTopicEditor = editor(root);
     assert.equal(await routeBranch(originalTopicEditor, { rootUri: { fsPath: root } }, {
       ...options, branch: 'new-from-original-topic', create: true, start: 'refs/heads/main'
