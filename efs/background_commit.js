@@ -234,7 +234,14 @@ function registerBackgroundCommit(vscode, context) {
       });
     }
     if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
-    if (await vscode.commands.executeCommand('sweetiebot.checkCommitLimits', root) === false) return { cancelled: true };
+    // Validate the final staged selection once, before capturing Codex context,
+    // saving a placeholder or starting any title-generation worker.
+    const limits = await vscode.commands.executeCommand(
+      'sweetiebot.checkCommitLimits', root, { captureTree: true }
+    );
+    if (limits?.approved !== true || !/^[0-9a-f]{40,64}$/.test(limits.stagedTree ?? '')) {
+      return { cancelled: true };
+    }
     let snapshot = '';
     if (options.codex && !String(options.message ?? '').trim()) {
       try {
@@ -251,7 +258,7 @@ function registerBackgroundCommit(vscode, context) {
       trailer: options.trailer ?? '', push: options.push ?? configuration.get('postCommitCommand') === 'push',
       sign: options.sign ?? configuration.get('enableCommitSigning') === true,
       signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
-      noVerify: options.noVerify === true,
+      noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
       remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
     });
     if (result.queued === false) {
