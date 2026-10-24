@@ -202,8 +202,9 @@ async function run() {
   assert.equal(jobs.at(-1).message, manualMessage);
   status = {};
   repository.state.mergeChanges = ['conflict'];
+  const beforeConflict = jobs.length;
   await assert.rejects(commit(root), /Resolve conflicts/);
-  assert.equal(jobs.length, 4, 'conflicts never stage or enqueue');
+  assert.equal(jobs.length, beforeConflict, 'conflicts never stage or enqueue');
   repository.state.mergeChanges = [];
   await commit(root, { push: true });
   assert.equal(titleContexts.at(-1), true, 'Commit & Push sets the title before the next status poll');
