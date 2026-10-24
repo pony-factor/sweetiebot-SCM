@@ -246,7 +246,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const before = item.state;
     const previousMessage = item.statusMessage;
     if (changed) {
-      item.localBlocker = '';
+      if (cycle > 1) item.localBlocker = '';
       item.currentHead = info.head?.sha || '';
       addEvent(item, 'updated', 'PR head changed; reviewing the new GitHub diff');
     }
