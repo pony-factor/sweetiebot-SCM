@@ -1257,7 +1257,10 @@ function registerBranchCommands(vscode, context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.listBranchStrip', async (uri, options = {}) => {
       const repository = await resolveRepository(uri);
-      const defaultBranch = await resolveDefaultBranch(repository, options.remote || 'origin');
+      // The workbench already knows this base; avoid an unnecessary ls-remote
+      // before the first local-only branch listing.
+      const defaultBranch = options.defaultBranch ||
+        await resolveDefaultBranch(repository, options.remote || 'origin');
       return listBranchStrip(repository, { ...options, defaultBranch });
     }),
     vscode.commands.registerCommand('sweetiebot.checkoutBranchStrip', async (uri, options = {}) => {
