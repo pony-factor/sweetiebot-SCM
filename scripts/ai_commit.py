@@ -336,7 +336,7 @@ def title_generation_parallelism(available: int | None) -> int:
     """
     if available is None:
         return 2
-    return max(1, min(MAX_TITLE_GENERATORS, available // TITLE_MEMORY_PER_SLOT))
+    return min(MAX_TITLE_GENERATORS, 1 + max(0, available) // TITLE_MEMORY_PER_SLOT)
 
 
 @contextmanager
