@@ -8,7 +8,9 @@ const listeners = {};
 const components = new Map();
 const context = vm.createContext({
     HTMLElement: class {
-        constructor() { this.style = {}; this.attributes = {}; }
+        constructor() { this.style = {}; this.attributes = {}; this.children = []; }
+        append(...elements) { for (const child of elements) { child.parentElement = this; this.children.push(child); } }
+        hasAttribute(name) { return Object.hasOwn(this.attributes, name); }
         getAttribute(name) { return this.attributes[name] ?? null; }
         setAttribute(name, value) { this.attributes[name] = String(value); }
         removeAttribute(name) { delete this.attributes[name]; }
@@ -26,6 +28,10 @@ const context = vm.createContext({
     },
     document: {
         hidden: false,
+        createElement(name) {
+            const Element = components.get(name);
+            return Element ? new Element() : { textContent: "", style: {} };
+        },
         addEventListener(type, fn) { listeners[`document:${type}`] = fn; },
     },
 });
@@ -55,6 +61,15 @@ assert.equal(piePercent(-5), 0);
 assert.equal(piePercent(105), 100);
 assert.equal(piePercent('not-a-number'), null);
 
+// Reset pies reflect time until renewal, never the remaining message allowance.
+const resetTimePercent = context.scmToolkitResetTimePercent;
+const now = 1_800_000_000_000;
+assert.equal(resetTimePercent((now + 150 * 60000) / 1000, 300, now), 50);
+assert.equal(resetTimePercent((now + 10080 * 60000) / 1000, 10080, now), 100);
+assert.equal(resetTimePercent((now - 60000) / 1000, 300, now), 0);
+assert.equal(resetTimePercent((now + 60000) / 1000, 0, now), null);
+assert.equal(resetTimePercent(null, 300, now), null);
+
 // The user's VS Code JSON theme accent applies only at ten percent or below.
 const UsagePie = components.get('scm-toolkit-usage-pie');
 const indicator = new UsagePie();
@@ -72,9 +87,26 @@ for (const [percent, color] of [
     assert.ok(indicator.style.background.includes(`, ${color} `), `${percent}% foreground`);
     assert.equal(indicator.getAttribute('aria-label'), `${percent}% Codex usage remaining`);
 }
+indicator.setAttribute('kind', 'reset');
+indicator.setAttribute('percent', 50);
+indicator.update();
+assert.equal(indicator.getAttribute('aria-label'), '50% of Codex reset interval remaining');
+indicator.removeAttribute('kind');
 indicator.setAttribute('percent', 'unavailable');
 indicator.update();
 assert.equal(indicator.style.background, 'transparent');
+const MenuReset = components.get('scm-toolkit-menu-reset');
+const resetMenu = new MenuReset();
+resetMenu.setAttribute('window-minutes', '300');
+resetMenu.setAttribute('reset-at', (Date.now() + 150 * 60000) / 1000);
+resetMenu.setAttribute('show-pie', 'true');
+resetMenu.update();
+assert.equal(resetMenu.children.length, 2);
+assert.equal(resetMenu.children[0].getAttribute('kind'), 'reset');
+assert.equal(Number(resetMenu.children[0].getAttribute('percent')), 50);
+assert.match(resetMenu.children[1].textContent, /2h 30m/);
+resetMenu.update();
+assert.equal(resetMenu.children.length, 2, 'Updating the countdown reuses the same pie');
 const keepFresh = context.scmToolkitKeepUsageFresh;
 let firstRefreshes = 0;
 let latestRefreshes = 0;
