@@ -39,16 +39,14 @@ function readStatus(script, cwd) {
 }
 
 function blockedNotification(root, status) {
-  const name = root.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
   const conflict = /merge conflicts?/i.test(status.error || '');
   const files = Array.isArray(status.conflictPaths) ? status.conflictPaths : [];
   const branch = status.branch?.replace(/^refs\/heads\//, '');
-  const label = name + (branch ? ' (' + branch + ')' : '');
   const count = files.length ? ` in ${files.length} file${files.length === 1 ? '' : 's'}` : '';
   return {
     message: conflict
-      ? `${label}: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
-      : `${label}: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
+      ? `Sweetiebot: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
+      : `Sweetiebot: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
     action: conflict ? 'View conflicting files' : 'View details',
     detail: [
       'Repository: ' + root, ...(branch ? ['Branch: ' + branch] : []), '',
@@ -168,7 +166,7 @@ function registerBackgroundCommit(vscode, context) {
             });
         } else if (status.phase === 'pushing' && previous?.phase !== 'pushing') {
           const name = root.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-          void vscode.window.showInformationMessage(`${name}: Push is pending and will retry automatically.`);
+          void vscode.window.showInformationMessage('Sweetiebot: Push is pending and will retry automatically.');
         } else if (previous?.id && !status.id) {
           await repository.status();
         }

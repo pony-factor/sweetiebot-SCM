@@ -81,7 +81,7 @@ async function openSettingsBrowser(url, session = configuratorProcess) {
     return true;
   } catch {
     session?.kill();
-    vscode.window.showErrorMessage('Unable to open Sweetiebot SCM settings in the Integrated Browser. Try again.');
+    vscode.window.showErrorMessage('Sweetiebot: Unable to open settings in the Integrated Browser. Try again.');
     return false;
   }
 }
@@ -247,7 +247,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
         }
         if (settingUpdates.length) {
           void Promise.all(settingUpdates).catch(error =>
-            vscode.window.showErrorMessage(`Unable to apply Sweetie Bot settings: ${error.message}`)
+            vscode.window.showErrorMessage(`Sweetiebot: Unable to apply settings: ${error.message}`)
           );
           continue;
         }
@@ -275,13 +275,13 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   child.on('error', error => {
     clear();
     const launchError = pythonLaunchError(error);
-    vscode.window.showErrorMessage(`Unable to open Sweetiebot SCM settings: ${launchError.message}`);
+    vscode.window.showErrorMessage(`Sweetiebot: Unable to open settings: ${launchError.message}`);
   });
   child.on('exit', code => {
     clear();
     if (code && code !== 0) {
       vscode.window.showErrorMessage(
-        `Sweetiebot SCM settings exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : '.'}`
+        `Sweetiebot: Settings exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : '.'}`
       );
     }
   });
@@ -289,7 +289,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
 
 async function openSettings(context) {
   if (!(await vscode.commands.getCommands(true)).includes(SETTINGS_BROWSER_COMMAND)) {
-    vscode.window.showErrorMessage('Update VS Code to a version with the Integrated Browser to open Sweetiebot SCM settings.');
+    vscode.window.showErrorMessage('Sweetiebot: Update VS Code to a version with the Integrated Browser to open settings.');
     return;
   }
   return ensureSettingsServer(context, true);

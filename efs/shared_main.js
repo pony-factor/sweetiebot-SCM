@@ -354,7 +354,7 @@ function registerSharedMain(vscode, context) {
     if (running) return;
     running = true;
     try { await reconnectManagedMain(vscode); }
-    catch (error) { vscode.window.showWarningMessage('Sweetiebot shared main: ' + error.message); }
+    catch (error) { vscode.window.showWarningMessage('Sweetiebot: ' + error.message); }
     finally { running = false; }
   };
   // A newly opened saved shared workspace already points outside Workspaces,

@@ -1227,8 +1227,8 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
         label = name + (' (' + branch + ')' if branch else '')
         if job and job.get('phase') == 'blocked' and job.get('error'):
             reason = 'Push blocked by merge conflicts.' if 'merge conflict' in job['error'].lower() else 'Commit & Push paused.'
-            raise RuntimeError(label + ': ' + reason + ' ' + job['error'])
-        raise RuntimeError(label + ': Commit & Push is still running. Let it finish before modifying pending history or committing again.')
+            raise RuntimeError('Sweetiebot: ' + reason + ' ' + job['error'])
+        raise RuntimeError('Sweetiebot: Commit & Push is still running. Let it finish before modifying pending history or committing again.')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 {
   "name": "sweetiebot-scm",
-  "displayName": "Sweetiebot SCM",
+  "displayName": "Sweetiebot",
   "description": "Local semantic and hybrid workspace search in the Source Control sidebar using Ollama.",
   "version": "0.3.2",
   "publisher": "pony-factor",
