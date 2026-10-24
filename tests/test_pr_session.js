@@ -155,6 +155,9 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       await resumePRSession(instrumented, context);
       const launchPayload = new URLSearchParams(new URL(dashboardCalls[3][1].url).hash.slice(1));
       assert(launchPayload.get('return_to').includes('/lindsey-merge/'));
+      assert.match(launchPayload.get('return_to'), /^http:\/\/127\.0\.0\.1:\d+\/lindsey-merge\/[\da-f-]{36}$/);
+      assert(launchPayload.get('q').includes('LOCAL LINDSEY CLI HANDOFF'));
+      assert(launchPayload.get('q').includes('COMPLETE git unified diff'));
       assert.deepEqual(dashboardCalls.map((call, index) => index === 3 ? [call[0]] : call), [
         ...layoutCommands.map(command => [command]),
         ['workbench.action.browser.open'],
