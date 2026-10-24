@@ -6,7 +6,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
-const { createWorkspaceDirectory } = require('./workspace_layout');
+const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('./python_runtime');
 const { prepareCodexHandoff } = require('./codex_workspace_handoff');
 
@@ -62,7 +62,7 @@ async function mainRoot(root, options = {}) {
 }
 
 async function openFolders(vscode, folders, { forceNewWindow = false,
-  baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main', handoff } = {}) {
+  baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main', handoff, branch = 'main' } = {}) {
   const workspace = vscode.workspace.workspaceFile;
   if (!forceNewWindow && workspace?.scheme === 'file') {
     // Keep the existing workbench and workspace identity. Opening a different
@@ -83,8 +83,8 @@ async function openFolders(vscode, folders, { forceNewWindow = false,
       throw error;
     }
   }
-  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(folders[0].path), io);
-  const target = path.join(directory, 'workspace.code-workspace');
+  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(folders[0].path), io, { branch });
+  const target = path.join(directory, workspaceFileName(directory));
   try {
     // A unique workspace file permits separate windows on the SAME main
     // folder. It does not introduce another Git checkout or another main ref.
@@ -258,11 +258,11 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
-    await switchRepository(vscode, root, destination, options);
+    await switchRepository(vscode, root, destination, { ...options, branch });
     return true;
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();
-  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original));
+  const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original), fs, { branch });
   const destination = path.join(directory, path.basename(original));
   let added = false;
   let transferred = false;
@@ -300,7 +300,7 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
     // Its turn was stopped before creating the checkout; the destination host
     // resumes the same thread only after verifying its execution directory.
     await replaceRepository(vscode, root, destination,
-      { ...options, forceNewWindow: false, handoff: handoff && { ...handoff, destination } });
+      { ...options, branch, forceNewWindow: false, handoff: handoff && { ...handoff, destination } });
     return true;
   } catch (error) {
     if (handoff) {
