@@ -109,8 +109,10 @@ async function run() {
           repository.state.indexChanges = ['prepared'];
         } else {
           assert.equal(id, 'sweetiebot.checkCommitLimits');
+          assert.equal(options.captureTree, true,
+            'durable commits inspect and pin their exact final staged tree');
           events.push('limits');
-          return limitsAllowed;
+          return { approved: limitsAllowed, stagedTree: 'a'.repeat(40) };
         }
       }
     }
@@ -153,6 +155,8 @@ async function run() {
     'queue refreshes once before preflight and once after the local commit');
   assert.equal(preparations[0].statusFresh, true,
     'preparation reuses the verified Git state');
+  assert.equal(jobs[0].expectedTree, 'a'.repeat(40),
+    'the approved staged tree must reach the Python commit worker');
   await commit(root, { message: 'Staged selection' });
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
