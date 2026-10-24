@@ -298,6 +298,23 @@ def enqueue(request, start=True):
         if core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
         tree = git('write-tree')
+        selected = request.get('paths')
+        if selected is not None:
+            if (not isinstance(selected, list) or not selected or len(selected) > 100
+                    or any(not isinstance(name, str) or not name or Path(name).is_absolute()
+                           or '..' in Path(name).parts or '\x00' in name or '\n' in name
+                           or Path(name).suffix.lower() not in ('.md', '.mdx') for name in selected)):
+                raise ValueError('Invalid reviewed spellcheck file selection.')
+            entries_for_paths = git('--literal-pathspecs', 'ls-files', '--stage', '-z', '--', *selected)
+            entries_list = [entry for entry in entries_for_paths.split('\x00') if entry]
+            if {entry.partition('\t')[2] for entry in entries_list} != set(selected) or any(' 0\t' not in entry for entry in entries_list):
+                raise RuntimeError('The reviewed spellcheck index entries changed.')
+            with tempfile.TemporaryDirectory(prefix='sweetiebot-reviewed-index-') as temporary:
+                env = os.environ.copy()
+                env['GIT_INDEX_FILE'] = str(Path(temporary) / 'index')
+                git('read-tree', parent, env=env)
+                git('update-index', '-z', '--index-info', input=entries_for_paths + ('\x00' if not entries_for_paths.endswith('\x00') else ''), env=env)
+                tree = git('write-tree', env=env)
         baseline = git('rev-parse', 'HEAD^{tree}', check=False).stdout.strip()
         if tree == baseline or not git('diff', '--cached', '--name-only'):
             raise RuntimeError('Stage the intended changes before queuing a commit.')
@@ -320,6 +337,7 @@ def enqueue(request, start=True):
                    push=push, remote=remote, destination=destination, tracking=tracking,
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
                    no_verify=request.get('noVerify') is True,
+                   skip_spellcheck=request.get('skipSpellcheck') is True,
                    include_description=core.should_add_default_branch_description(),
                    phase='preparing', enqueue_pid=os.getpid())
         write_journal(directory / 'job.json', job)
@@ -636,6 +654,26 @@ def reconcile_published_jobs(meta):
             continue
 
 
+def start_spellcheck(job, journal):
+    if job.get('spellcheck_started') or job.get('skip_spellcheck') or not job.get('sha'):
+        return
+    if not core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
+        return
+    import post_commit_spellcheck as spellcheck
+    paths = git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', job['sha']).splitlines()
+    paths = [name for name in paths if name.lower().endswith(('.md', '.mdx'))]
+    if not paths:
+        return
+    index = os.environ.pop('GIT_INDEX_FILE', None)
+    try:
+        spellcheck.spawn_post_commit([], paths, job['sha'], str(Path(__file__).with_name('ai_commit.py')), job['parent'])
+        job['spellcheck_started'] = True
+        write_journal(journal, job)
+    finally:
+        if index is not None:
+            os.environ['GIT_INDEX_FILE'] = index
+
+
 def work(directory, commit_only=False):
     saved = read_journal(directory / 'job.json')
     if saved and saved.get('phase') == 'blocked':
@@ -720,6 +758,7 @@ def work(directory, commit_only=False):
                     raise RuntimeError('A hook changed the captured tree; push was paused.')
                 job.update(sha=sha, phase='committed')
                 write_journal(file, job)
+            start_spellcheck(job, file)
             if commit_only:
                 return
             with repository_lock(job['gitdir']):
@@ -818,13 +857,6 @@ def work(directory, commit_only=False):
                 save_queue(marker, queue_entries(marker))
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
             log_event('background_commit', 'completed', outcome='success')
-            # Existing spellcheck guards refuse edits when users have moved on.
-            if core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
-                import post_commit_spellcheck as spellcheck
-                paths = git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', job['sha']).splitlines()
-                paths = [name for name in paths if name.lower().endswith(('.md', '.mdx'))]
-                os.environ.pop('GIT_INDEX_FILE', None)
-                spellcheck.spawn_post_commit([], paths, job['sha'], str(Path(__file__).with_name('ai_commit.py')), job['parent'])
         except (OSError, subprocess.TimeoutExpired):
             log_event('background_commit', 'interrupted', outcome='retry')
         except Exception as exc:
