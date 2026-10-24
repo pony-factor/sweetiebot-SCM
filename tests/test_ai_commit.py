@@ -391,8 +391,10 @@ class TitleGenerationAdmissionTests(unittest.TestCase):
         gib = 1024**3
         expected = {
             None: 2, 0: 1, 3 * gib: 1, 7 * gib: 1,
-            8 * gib: 1, 16 * gib: 2, 24 * gib: 3,
-            32 * gib: 4, 48 * gib: 6, 96 * gib: 6,
+            8 * gib: 2, 15 * gib: 2, 16 * gib: 3,
+            23 * gib: 3, 24 * gib: 4, 31 * gib: 4,
+            32 * gib: 5, 39 * gib: 5, 40 * gib: 6,
+            48 * gib: 6, 96 * gib: 6,
         }
         for available, slots in expected.items():
             with self.subTest(available=available):
