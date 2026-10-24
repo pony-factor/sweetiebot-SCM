@@ -199,18 +199,19 @@
       "syntax": [
         "efs/lindsey_bulk_merge.js",
         "efs/local_human_squash.js",
-        "efs/pushed_pr.js",
         "efs/merge_batch.js",
         "efs/merge_checks.js",
         "efs/merge_dashboard.js",
         "efs/merge_dashboard_diff.js",
         "efs/merge_dashboard_markdown.js",
-        "efs/merge_reaction_choices.js",
         "efs/merge_handoff.js",
         "efs/merge_patch.js",
+        "efs/merge_reaction_choices.js",
         "efs/merge_resolution.js",
         "efs/merge_resolution_cli.js",
+        "efs/merge_session_completion.js",
         "efs/pull_request_batch.js",
+        "efs/pushed_pr.js",
         "efs/resolution_commits.js"
       ]
     },

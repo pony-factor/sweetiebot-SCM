@@ -244,3 +244,20 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     await fs.rm(storage, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+const {updateMergeSessionCompletion} = require('../efs/merge_session_completion');
+(async () => {
+  const local = {label:'Lindsey · Local merge'}, other = {label:'My unrelated ChatGPT conversation'};
+  const closed = [], callbacks = [];
+  const vscode = {window:{tabGroups:{all:[{tabs:[local,other]}],close:async tabs=>closed.push(tabs)}}};
+  const selection = {repository:'owner/repo',pullRequests:[{number:1},{number:2}]};
+  const schedule = callback => {callbacks.push(callback); return {unref(){}};};
+  updateMergeSessionCompletion(vscode,selection,{repository:'owner/repo',merged:[{number:1}],deferred:[]},schedule);
+  assert.equal(callbacks.length,0);
+  const finished = {repository:'owner/repo',merged:[{number:1}],deferred:[{number:2,reason:'Checks failed'}]};
+  updateMergeSessionCompletion(vscode,selection,finished,schedule);
+  updateMergeSessionCompletion(vscode,selection,finished,schedule);
+  assert.equal(callbacks.length,1);
+  callbacks[0](); await Promise.resolve();
+  assert.deepEqual(closed,[[local]],'Close only the completed local callback, preserving dashboard and unrelated chats');
+})().catch(error=>{console.error(error);process.exitCode=1;});

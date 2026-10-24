@@ -191,6 +191,11 @@ async function resumePRSession(vscode, context) {
           onResult: async result => {
             const controller = await resumeMergeDashboard(vscode, directory, context);
             controller?.recordLocalResult?.(result);
+            const state = {repository: selection.repository, history: result.results,
+              merged: result.results.filter(pr => pr.merged === true),
+              deferred: result.results.filter(pr => pr.merged !== true).map(pr => ({number: pr.number, reason: pr.reason || pr.status}))};
+            await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), {mode: 0o600});
+            require('./merge_session_completion').updateMergeSessionCompletion(vscode, selection, state);
           }
         });
         url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: handoff.url,
@@ -214,6 +219,7 @@ async function resumePRSession(vscode, context) {
         onState: async state => {
           await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 });
           mergeDashboardController?.recordBatchState?.(state);
+          require('./merge_session_completion').updateMergeSessionCompletion(vscode, selection, state);
         },
         onResult: async result => {
           const controller = await resumeMergeDashboard(vscode, directory, context);
