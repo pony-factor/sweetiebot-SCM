@@ -261,28 +261,56 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
         'diff', '--cached', '--no-ext-diff', '--no-color', '--', ...session.paths
       ]);
       if (staged.trim()) throw new Error('These files also have staged changes. Unstage them before accepting this preview.');
-      await normalize(session.root, session.paths);
-      // Stage reviewed files BEFORE normal title generation. --only later
-      // restricts the commit to these files, preserving unrelated staged work.
-      await runAction(session.root, ['--literal-pathspecs', 'add', '--', ...session.paths]);
-      const generated = await generateTitle(session.root, session.paths);
-      if (!generated || typeof generated.title !== 'string' || !generated.title.trim()) {
-        throw new Error('The normal commit-title generator did not return a title.');
+      let stagedByPreview;
+      try {
+        await normalize(session.root, session.paths);
+        // Normalization can change the reviewed patch even when title generation
+        // fails. Keep the next attempt aligned with the actual worktree.
+        session.patch = await session.readDiff(session.root, [
+          'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...session.paths
+        ]);
+        // Stage reviewed files BEFORE normal title generation. --only later
+        // restricts the commit to these files, preserving unrelated staged work.
+        await runAction(session.root, ['--literal-pathspecs', 'add', '--', ...session.paths]);
+        stagedByPreview = await session.readDiff(session.root, [
+          'diff', '--cached', '--no-ext-diff', '--no-color', '--', ...session.paths
+        ]);
+        const generated = await generateTitle(session.root, session.paths);
+        if (!generated || typeof generated.title !== 'string' || !generated.title.trim()) {
+          throw new Error('The normal commit-title generator did not return a title.');
+        }
+        if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) {
+          throw new Error('The repository advanced while generating the title. Reopen the spelling preview.');
+        }
+        if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
+          throw new Error('The active branch changed while generating the title. Reopen the spelling preview.');
+        }
+        const args = ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim',
+          '--message', generated.title];
+        const body = [generated.description, message.trim()].filter(Boolean).join('\n\n');
+        if (body) args.push('--message', body);
+        // Append attribution AFTER the usual subject and explanatory body.
+        if (session.trailer) args.push('--message', session.trailer);
+        args.push('--', ...session.paths);
+        await runAction(session.root, args);
+      } catch (error) {
+        // Only undo our staging while the branch, commit, and selected index
+        // entries still match. Never discard concurrent work or rewrite files.
+        if (stagedByPreview?.trim()) {
+          try {
+            if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) throw new Error('The repository advanced.');
+            if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) throw new Error('The branch changed.');
+            const stagedNow = await session.readDiff(session.root, [
+              'diff', '--cached', '--no-ext-diff', '--no-color', '--', ...session.paths
+            ]);
+            if (stagedNow !== stagedByPreview) throw new Error('The staged files changed.');
+            await runAction(session.root, ['--literal-pathspecs', 'restore', '--staged', '--', ...session.paths]);
+          } catch (cleanupError) {
+            throw new Error((error.message || error) + ' Reviewed files could not be unstaged safely: ' + (cleanupError.message || cleanupError));
+          }
+        }
+        throw error;
       }
-      if (session.head && await session.readGit(session.root, ['rev-parse', 'HEAD']) !== session.head) {
-        throw new Error('The repository advanced while generating the title. Reviewed edits remain staged.');
-      }
-      if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
-        throw new Error('The active branch changed while generating the title. Reviewed edits remain staged.');
-      }
-      const args = ['--literal-pathspecs', 'commit', '--only', '--cleanup=verbatim',
-        '--message', generated.title];
-      const body = [generated.description, message.trim()].filter(Boolean).join('\n\n');
-      if (body) args.push('--message', body);
-      // Append attribution AFTER the usual subject and explanatory body.
-      if (session.trailer) args.push('--message', session.trailer);
-      args.push('--', ...session.paths);
-      await runAction(session.root, args);
     } else {
       // The preview compares with the index, so revert to that same baseline.
       await runAction(session.root, ['--literal-pathspecs', 'restore', '--worktree', '--', ...session.paths]);
