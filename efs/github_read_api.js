@@ -4,6 +4,8 @@
 // for merges, pushes, reactions, identity lookups or other writes.
 const { separateAppsEnabled, getRoleInstallationToken } = require('./github_app_identity');
 const REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/;
+// Share one token-acquisition pipeline for default callers in this extension host.
+const sharedReaders = new Map();
 
 function createLindseyReadFetch(repository, {
   env = process.env, fetchImpl = globalThis.fetch,
@@ -11,6 +13,9 @@ function createLindseyReadFetch(repository, {
 } = {}) {
   if (!REPO.test(repository || '')) throw Error('Invalid GitHub repository for Lindsey reads.');
   if (!separateAppsEnabled(env)) return fetchImpl;
+  const share = env === process.env && fetchImpl === globalThis.fetch &&
+    getToken === getRoleInstallationToken && now === Date.now;
+  if (share && sharedReaders.has(repository)) return sharedReaders.get(repository);
   const prefix = '/repos/' + repository;
   let credential, pending;
   async function installationToken() {
@@ -27,7 +32,7 @@ function createLindseyReadFetch(repository, {
     }).finally(() => { pending = undefined; });
     return pending;
   }
-  return async (url, options = {}) => {
+  const read = async (url, options = {}) => {
     let parsed;
     try { parsed = new URL(url); } catch { throw Error('Invalid Lindsey read URL.'); }
     if ((options.method || 'GET').toUpperCase() !== 'GET' ||
@@ -41,6 +46,8 @@ function createLindseyReadFetch(repository, {
     return fetchImpl(parsed.href, { ...options, method: 'GET',
       headers: { ...options.headers, Authorization: 'Bearer ' + token } });
   };
+  if (share) sharedReaders.set(repository, read);
+  return read;
 }
 
 module.exports = { createLindseyReadFetch };
