@@ -61,7 +61,7 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
       });
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
-      if (error.rateLimited) rateLimit = {rateLimited:true,retryAt:error.retryAt,reason:error.message};
+      if (error.rateLimited) rateLimit = {rateLimited:true,retryAt:error.retryAt,configured:error.configured,reason:error.message};
       results.push({ number: item.number, status: error.rateLimited ? 'waiting' : error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
         ...(rateLimit || {}),
         reason: error.message, ...(SHA.test(error.preparedHead || '') ?

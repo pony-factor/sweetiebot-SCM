@@ -43,7 +43,9 @@ assert.equal(firstDiffAnchor('not a patch'), null);
   assert.equal(writes[0].body.comments.length,2);
   assert.equal(writes[0].body.comments[0].line,5); assert.equal(writes[0].body.commit_id,pr.headSha);
   assert(writes[0].body.comments[0].body.includes(decisions[0].description));
-  assert(!writes[0].body.body.includes('sweetiebot-merge-options'),'Compatible changes do not request reaction approval');
+  for (const body of [writes[0].body.body, ...writes[0].body.comments.map(note => note.body)]) {
+    assert(!/sweetiebot-merge-options|React with|implementation action|matching Lindsey action/.test(body), 'Compatible changes never request reaction approval, including inline threads');
+  }
   assert((await run({decisions})).posted);
   assert.equal(writes[1].method,'PUT','Update the same review summary');
   assert.equal(writes[2].method,'PATCH');

@@ -141,6 +141,15 @@ f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback),
 f.tick(2500); assert.equal(f.navigations.length, 0);
 f.setStreaming(false); f.tick(2500);
 assert.deepEqual(f.navigations, [mergeReturn], 'Collect a completed local merge result automatically for sequential continuation');
+for (const invalid of [mergeReturn.replace(':1234', ':4567'),
+  mergeReturn + '&command=arbitrary', mergeReturn.replace('11111111', '99999999')]) {
+  f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: [invalid] });
+  f.tick(3000);
+  assert.equal(f.navigations.length, 0, 'Reject wrong local callback or unexpected fragment fields');
+}
+f = fixture({ url: fragmentUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: [mergeReturn] });
+f.tick(3000);
+assert.equal(f.navigations.length, 0, 'A PR drafting launch cannot invoke Lindsey merge callback');
 
 const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';

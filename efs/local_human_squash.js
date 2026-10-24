@@ -12,6 +12,7 @@ const { existsSync } = require('node:fs');
 const { SQUASH_SEPARATOR, squashMessage, readCommits } = require('./squash_attribution');
 const { patchPaths, safePatchPath } = require('./merge_patch');
 const { readMergeChecks, waitForMergeChecks } = require('./merge_checks');
+const { readPushedPR } = require('./pushed_pr');
 
 const exec = promisify(execFile);
 const SHA = /^[a-f\d]{40}$/i;
@@ -174,6 +175,15 @@ async function humanSquashMerge(repository, number, {
     const remote = 'https://github.com/' + repository + '.git';
     await git('clone', '--quiet', '--no-checkout', remote, temp);
     const inRepo = (...args) => git('-C', temp, ...args);
+    const verifyPushedPR = preparedSha => readPushedPR({
+      original, preparedSha, readPR: () => api(prPath),
+      readHead: async () => {
+        const ref = 'refs/heads/' + head;
+        const lines = (await inRepo('ls-remote', '--refs', 'origin', ref)).split('\n');
+        const match = lines.find(line => line.split(/\s+/)[1] === ref);
+        return match?.split(/\s+/)[0];
+      }
+    });
     // Fetch both exact branch tips. Never work inside the user's editor checkout.
     await inRepo('fetch', '--quiet', 'origin', 'refs/heads/' + base, 'refs/heads/' + head);
     const liveBase = await inRepo('rev-parse', 'refs/remotes/origin/' + base);
@@ -295,10 +305,10 @@ async function humanSquashMerge(repository, number, {
       // An exact-head lease plus the ancestry check above guarantees this is
       // an append-only update, including if someone rewinds the remote ref.
       await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
+      pushedSha = prepared.sha;
       progress('pushed', { sha: prepared.sha });
       progress('verifying-push', { sha: prepared.sha });
-      const updated = await api(prPath);
-      if (updated.state !== 'open' || updated.head?.sha !== prepared.sha) throw Error('Could not verify the synchronized PR head.');
+      await verifyPushedPR(prepared.sha);
       // A conflict-free merge request already authorizes this integration.
       // Keep the check, identity and live-base gates in finish(), without an
       // extra AI round and clone just to merge the head we have verified.
@@ -319,7 +329,7 @@ async function humanSquashMerge(repository, number, {
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
     await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      '-c', 'commit.gpgsign=false', 'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+      'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
     const preparedSha = await inRepo('rev-parse', 'HEAD');
     const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
     const newTree = await inRepo('rev-parse', 'HEAD^{tree}');
@@ -340,11 +350,7 @@ async function humanSquashMerge(repository, number, {
     pushedSha = preparedSha;
     progress('pushed', { sha: preparedSha });
     progress('verifying-push', { sha: preparedSha });
-    const rewritten = await api(prPath);
-    if (rewritten?.state !== 'open' || rewritten.draft || rewritten.title !== original.title || rewritten.head?.sha !== preparedSha ||
-        rewritten.base?.ref !== base) {
-      throw Error('PR changed after guarded push; inspect the selected branch before merging.');
-    }
+    await verifyPushedPR(preparedSha);
     if (await readBaseTip() !== baseSha) throw refreshBase();
     // Native GitHub rebase merge records the same bot-opened PR as merged.
     return await finish(preparedSha, message);
@@ -353,8 +359,7 @@ async function humanSquashMerge(repository, number, {
       if (pushedSha) Object.assign(error, { sha: pushedSha, previousHeadSha: originalSha });
       throw error;
     }
-    if (pushedSha) throw Object.assign(Error(error.message + ' Prepared head: ' + pushedSha + '; original head: ' + originalSha + '. Retry from a fresh selection after checks/reviews pass.'),
-      { preparedHead: pushedSha, originalHead: originalSha });
+    if (pushedSha) throw Object.assign(error, { preparedHead: pushedSha, originalHead: originalSha });
     throw error;
   } finally {
     if (temp) await fs.rm(temp, { recursive: true, force: true });

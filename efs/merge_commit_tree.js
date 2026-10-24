@@ -13,6 +13,8 @@ function commitTreeLayout(commits) {
     for (const sha of parents) children.set(sha, (children.get(sha) || 0) + 1);
     nodes.push(node); bySha.set(node.sha, node);
   }
+  // Calculate lanes from ancestry, then display the newest end at the top.
+  nodes.reverse().forEach((node, row) => { node.row = row; });
   return { nodes, lanes, edges: nodes.flatMap(node => node.parents.filter(sha => bySha.has(sha))
     .map(sha => ({ from: bySha.get(sha), to: node }))) };
 }

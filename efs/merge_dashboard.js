@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
+const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, launchBlockerAction } = require('./merge_blocker_actions');
 const { createReactionChoices } = require('./merge_reaction_choices');
 const { createLindseyReadFetch } = require('./github_read_api');
 
@@ -120,15 +120,45 @@ function normalizeFiles(files) {
 
 async function githubGet(fetchImpl, token, repository, endpoint) {
   const url = 'https://api.github.com/repos/' + repository + endpoint;
-  const response = await fetchImpl(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: 'Bearer ' + token,
-      'X-GitHub-Api-Version': '2022-11-28'
-    }
-  });
-  if (!response.ok) throw await require('./github_rate_limit').githubResponseError(response, 'GitHub refresh failed (HTTP ' + response.status + ').');
-  return response.json();
+  const request = 'GitHub request failed: GET /repos/' + repository + endpoint;
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: 'Bearer ' + token,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    });
+  } catch (failure) {
+    const causes = [failure, failure?.cause, ...(failure?.cause?.errors || [])];
+    const reasons = {
+      ENOTFOUND: 'Could not resolve api.github.com. Check your network or DNS settings.',
+      EAI_AGAIN: 'DNS lookup temporarily failed. Retry the refresh.',
+      ECONNREFUSED: 'The connection was refused. Check your proxy or firewall.',
+      ECONNRESET: 'The connection was interrupted. Retry the refresh.',
+      ETIMEDOUT: 'The connection timed out. Check your network and retry.',
+      UND_ERR_CONNECT_TIMEOUT: 'Connecting to GitHub timed out. Check your network and retry.',
+      UND_ERR_HEADERS_TIMEOUT: 'GitHub did not respond in time. Retry the refresh.',
+      UND_ERR_SOCKET: 'The connection closed before the response completed. Retry the refresh.',
+      CERT_HAS_EXPIRED: 'The TLS certificate has expired. Check your system clock and proxy.',
+      UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'The TLS certificate could not be verified. Check your network or proxy certificate configuration.'
+    };
+    const code = causes.map(cause => cause?.code).find(code => Object.hasOwn(reasons, code));
+    throw Error(request + '. ' + (code ? reasons[code] + ' (' + code + ')' :
+      'No HTTP response was received. Check your network or proxy, then use Refresh GitHub status.'), { cause: failure });
+  }
+  if (!response.ok) {
+    const hints = { 401: 'GitHub authentication was rejected. Sign in again.',
+      403: 'GitHub denied access. Check repository permissions.',
+      404: 'The repository or PR was not found, or your account cannot access it.',
+      502: 'GitHub is temporarily unavailable. Retry the refresh.',
+      503: 'GitHub is temporarily unavailable. Retry the refresh.' };
+    throw await require('./github_rate_limit').githubResponseError(response,
+      request + ' (HTTP ' + response.status + '). ' + (hints[response.status] || 'Retry the refresh; check GitHub status if this continues.'));
+  }
+  try { return await response.json(); }
+  catch (failure) { throw Error(request + '. The response could not be read as JSON. Retry the refresh.', { cause: failure }); }
 }
 
 async function paged(fetchImpl, token, repository, endpoint, maxPages = 3) {
@@ -155,7 +185,7 @@ async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
 // Observe GitHub state and dispatch explicit user decisions. Never infer
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
-  intervalMs, setTimer = setInterval, clearTimer = clearInterval,
+  initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   const readFetch = createLindseyReadFetch(selection.repository, { fetchImpl });
@@ -175,14 +205,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: false, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, events: []
+    files: [], commits: context?.workspaceState?.get('sweetiebot.prCommits.' + selection.repository + '.' + pr.number, []) || [], report: null, review: null, sawConflict: context?.workspaceState?.get('sweetiebot.sawConflict.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, conflictCleared: context?.workspaceState?.get('sweetiebot.conflictCleared.' + selection.repository + '.' + pr.number + '.' + pr.headSha, false) === true, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
   let working = false;
   let cycle = 0;
-  let rateLimitedUntil = 0;
-  let error = '';
+  let rateLimitedUntil = initialRateLimit?.retryAt || 0;
+  let error = initialRateLimit?.message || '';
   const events = [];
   const launchingActions = new Set();
   const inlineComments = new Map();
@@ -225,7 +255,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository,
       rateLimitRetryAt: rateLimitedUntil,
-      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode),
@@ -282,11 +312,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     const next = mergePhase(info, item);
     item.state = next;
-    if (!item.conflictCleared && (next === 'resolved' || (next === 'merged' && item.sawConflict))) {
+    if (!item.conflictCleared && (item.sawConflict && ((info.mergeable === true && info.head?.sha !== item.originalHead) || next === 'merged'))) {
       item.conflictCleared = true;
       await context?.workspaceState?.update('sweetiebot.conflictCleared.' + selection.repository + '.' + item.number + '.' + item.originalHead, true);
     }
-    if (next === 'conflict') item.sawConflict = true;
+    if (next === 'conflict') {
+      item.sawConflict = true;
+      await context?.workspaceState?.update('sweetiebot.sawConflict.' + selection.repository + '.' + item.number + '.' + item.originalHead, true);
+    }
     const labels = {
       merged: 'GitHub confirms the pull request was merged',
       closed: 'PR was closed without merging',
@@ -400,7 +433,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const notes = await readReports(readFetch, token, selection.repository, pr.number, 3);
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
           baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }) };
-        const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);
+        const option = [...blockerOptions(snapshot), ...manualBlockerActions(snapshot)].find(item => item.id === message.actionId && item.key === message.optionKey);
         if (!option) throw Error('That implementation option changed. Refresh the report and choose again.');
         const engine = option.engine || message.engine || 'web';
         if (option.reaction) {
@@ -497,10 +530,16 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
-    if (state.rateLimit) { rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message; }
+    if (state.rateLimit) {
+      rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message;
+      if (rateLimitedUntil > Date.now()) void require('./github_rate_limit').promptRateLimit(vscode,
+        Object.assign(Error(error), { rateLimited: true, retryAt: rateLimitedUntil, configured: true }),
+        { context, retryPriority: 1, retry: () => vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests') }).catch(() => {});
+    }
     for (const item of state.history || []) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      if (item.status === 'needs_resolution' || item.conflictPaths?.length) pr.sawConflict = true;
       if (typeof item.explanation === 'string' && item.explanation.trim()) {
         pr.localExplanation = item.explanation.trim().slice(0, 4000);
       }

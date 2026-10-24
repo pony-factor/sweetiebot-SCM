@@ -60,7 +60,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
     if (rateLimit) return null;
     try { await refreshRemaining(); } catch (error) {
       if (!error.rateLimited) throw error;
-      rateLimit = {message:error.message,retryAt:error.retryAt};
+      rateLimit = {message:error.message,retryAt:error.retryAt,configured:error.configured};
       await onState(state());
       return null;
     }
@@ -87,7 +87,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           const pr = entries.get(item.number);
           const input = submitted.results.find(entry => entry.number === item.number);
           if (!pr || !input) throw Error('Local result does not match the submitted round.');
-          if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt}; continue; }
+          if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt,configured:item.configured}; continue; }
           pr.attempts++;
           const detail = { number: item.number, title: pr.title, base: pr.base,
             status: item.status, explanation: input.explanation, decisions: require('./resolution_commits').validateDecisions(input.decisions), reason: item.reason || '',

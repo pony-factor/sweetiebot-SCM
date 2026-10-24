@@ -158,7 +158,7 @@ async function main() {
     const first = clickMerge(clicked);
     assert.equal(rowProgress.length, 1, 'Show progress synchronously, before PR row hydration');
     assert.equal(rowProgress[0].location, 15);
-    assert.equal(rowProgress[0].title, 'Starting squash merge for PR #12…');
+    assert.equal(rowProgress[0].title, 'Squash merge PR #12');
     assert.equal(rowProgress[0].cancellable, false);
     await new Promise(setImmediate);
     const during = await rowOwner.getTreeItem(clicked);
@@ -169,7 +169,7 @@ async function main() {
     assert.equal(rowRefreshes.at(-1), clicked);
     await clickMerge(clicked);
     assert.equal(rowProgress.length, 1, 'Duplicate clicks must not create duplicate notifications');
-    assert.deepEqual(rowProgressUpdates, [{ message: 'PR #12: checking merge eligibility…' }]);
+    assert.deepEqual(rowProgressUpdates, [{ message: 'Checking merge eligibility…' }]);
     assert.deepEqual(dispatched, [url], 'The second click must not dispatch another merge');
     completeMerge({ state: 'merged' });
     assert.deepEqual(await first, { state: 'merged' });

@@ -20,6 +20,7 @@ function parseReportOptions(text) {
     let data;
     try { data = JSON.parse(match[1]); } catch { continue; }
     if (data?.version !== 1 || !Array.isArray(data.options)) continue;
+    const start = options.length, priorRecommended = recommended;
     for (const option of data.options.slice(0, 6)) {
       if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(option?.id || '') || seen.has(option.id) ||
           ROUTINE_ACTIONS.has(option.id) || typeof option.label !== 'string' || !option.label.trim() || option.label.length > 120 ||
@@ -34,6 +35,10 @@ function parseReportOptions(text) {
         ...(CHOICE_REACTIONS.includes(option.reaction) ? { reaction: option.reaction } : {}),
         ...(isRecommended ? { recommended: true } : {}) });
     }
+    if (options.length - start < 2) {
+      for (const option of options.splice(start)) seen.delete(option.id.replace(/^report-/, ''));
+      recommended = priorRecommended;
+    }
   }
   return options;
 }
@@ -46,18 +51,31 @@ function blockerOptions(pr) {
   const suggestions = [...(pr.localReview?.options || []), ...(pr.review?.options || []), ...(pr.report?.options || [])].filter(option => !ROUTINE_ACTIONS.has(option.id.replace(/^report-/, ''))).slice(0, 6);
   const choices = [...suggestions.filter(option => option.recommended), ...suggestions];
   const seen = new Set(), labels = new Set();
-  return choices.filter(option => {
+  const distinct = choices.filter(option => {
     const label = option.label.toLowerCase().trim();
     if (seen.has(option.id) || labels.has(label)) return false;
     seen.add(option.id); labels.add(label); return true;
   }).map(option => ({
     ...option, key: createHash('sha256').update(JSON.stringify(option)).digest('hex')
   }));
+  return distinct.length >= 2 ? distinct : [];
+}
+
+function manualBlockerActions(pr) {
+  if (['merged', 'closed'].includes(pr.state)) return [];
+  if (!['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
+  return [
+    { id: 'fix-checks', label: 'Investigate and fix failing checks', description: 'Find the actual failures and make the smallest appropriate repair.', prompt: 'Inspect the failing checks on this PR and repair the actual failure. Preserve unrelated work and verify the repair.' },
+    { id: 'resolve-conflicts', label: 'Resolve conflicts while preserving both changes', description: 'Keep the intent of main and the PR; explain any decision that remains ambiguous.', prompt: 'Inspect and resolve the actual conflicts, preserving compatible intentions from main and this PR automatically. Ask only when materially different behaviors require human judgment.' },
+    { id: 'sync-checks', label: 'Bring the branch up to main and rerun checks', description: 'Incorporate the latest base changes, then reassess the checks.', prompt: 'Synchronize this PR branch with current main through the branch-only handoff, preserve both intended behaviors and rerun the relevant checks.' },
+    { id: 'suggest-options', label: 'Ask GPT for implementation options', description: 'Explain real tradeoffs and add specific alternatives when human input is needed.', prompt: 'Inspect the competing edits and explain concrete implementation alternatives and tradeoffs. Publish selectable choices only for an unresolved human decision with at least two meaningful outcomes. Do not invent choices for compatible integrations.' },
+    { id: 'inspect-codex', label: 'Open branch workspace in Codex', description: 'Start a separate Codex task on this PR branch.', prompt: 'Inspect this PR in its branch workspace, explain the concrete blocker and prepare the appropriate repair, preserving compatible main and PR intentions.', engine: 'codex' }
+  ].map(option => ({ ...option, manual: true, key: createHash('sha256').update(JSON.stringify(option)).digest('hex') }));
 }
 
 function blockerPrompt(repository, pr, option) {
   return [
-    'The user selected this implementation option in Lindsey: ' + option.label,
+    (option.manual ? 'The user requested this manual action in Lindsey: ' : 'The user selected this implementation option in Lindsey: ') + option.label,
     'USER-SELECTED TASK:\n' + option.prompt,
     'Work only on PR #' + pr.number + ' in ' + repository + ': ' + pr.url,
     'Verified branch snapshot: ' + JSON.stringify({ head: pr.head, headSha: pr.headSha, base: pr.base }),
@@ -123,5 +141,5 @@ async function launchBlockerAction(vscode, context, rootUri, repository, pr, opt
   return require('./pr_session').launchBlockerWebSession(vscode, context, rootUri, url, pr.number, syncSelection);
 }
 
-module.exports = { parseReportOptions, stripReportOptions, blockerOptions, blockerPrompt,
+module.exports = { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, blockerPrompt,
   reportOptionsInstructions, launchBlockerAction, openCodexBranch };

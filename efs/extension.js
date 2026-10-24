@@ -10,6 +10,7 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerCommitShortcut } = require('./commit_shortcut');
 const { registerBackgroundCommit } = require('./background_commit');
+const { registerAutoCodexCommit } = require('./auto_codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { resumePRSession } = require('./pr_session');
 const { configureWorkspaceBrowserStorage } = require('./browser_storage');
@@ -31,10 +32,12 @@ const { registerCodexRefresh } = require('./codex_refresh');
 const { registerCodexDraftCommands } = require('./codex_drafts');
 const { registerCommitLimitCommand } = require('./commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./spellcheck_preview');
+const { registerNativeSpellcheckBridge } = require('./native_spellcheck_bridge');
 const { registerPostCommitSpellcheckNotice } = require('./post_commit_spellcheck_notice');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
 const { registerLegacyCommandAliases } = require('./command_aliases');
 const { kefaniaClosePosition } = require('./kefania_close_position');
+const { invalidateUserExtensionCache } = require('./extension_cache');
 
 const VIEW_ID = 'scmToolkit.workspaceSearch';
 const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
@@ -133,6 +136,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       incomingSyncLabel: scm.get('incomingSyncLabel', ''),
       outgoingSyncLabel: scm.get('outgoingSyncLabel', ''),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
+      autoCommitWithCodex: scm.get('autoCommitWithCodex', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
@@ -185,6 +189,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   configuratorURL = undefined;
   let output = '';
   let stderr = '';
+  let rebuildReloadRequested = false;
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', chunk => {
     output += chunk;
@@ -194,6 +199,19 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       output = output.slice(newline + 1);
       try {
         const message = JSON.parse(line);
+        if (message.rebuildComplete === true) {
+          if (rebuildReloadRequested || configuratorProcess !== child) continue;
+          rebuildReloadRequested = true;
+          void (async () => {
+            await stopSettingsServer();
+            invalidateUserExtensionCache(context);
+            await vscode.commands.executeCommand('workbench.action.reloadWindow');
+          })().catch(error => {
+            rebuildReloadRequested = false;
+            vscode.window.showErrorMessage(`Rebuild completed, but this window could not reload: ${error.message}`);
+          });
+          continue;
+        }
         const settingUpdates = [];
         if (message.workspaceSearch) {
           const cfg = vscode.workspace.getConfiguration(CONFIG_ROOT);
@@ -374,6 +392,7 @@ async function activate(context) {
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
+  registerNativeSpellcheckBridge(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
     console.warn('Sweetiebot spellcheck notification initialization:', error.message);
   });
@@ -405,6 +424,7 @@ async function activate(context) {
   registerCodexCommitCommand(vscode, context);
   registerCommitShortcut(vscode, context);
   registerBackgroundCommit(vscode, context);
+  registerAutoCodexCommit(vscode, context);
   registerPullRequestCommand(vscode, context);
   // Schedule after activation completes so command execution never waits on
   // the activation promise that is currently registering its own handler.

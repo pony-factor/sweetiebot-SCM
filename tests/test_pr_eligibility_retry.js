@@ -6,6 +6,11 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
 const refresh = source.match(/    const refreshPullRequest = \(\) => \{[\s\S]*?\n    };/)[0];
+const settingsAttachment = source.match(/function scmToolkitAttachCommitSettings\([\s\S]*?\n}\n\nasync function scmToolkitPullCleanRepository/)[0];
+assert.match(settingsAttachment, /widget\.element\.append\(button\)/,
+  'Magic Settings must remain reachable while VS Code has no action dropdown');
+assert.match(settingsAttachment, /const destination = dropdown \|\| widget\.element/,
+  'Magic Settings must return to its inline fallback when action rows are recycled');
 const warningPolicy = source.match(/function scmToolkitHighlightPrWarnings\([^)]*\) \{[\s\S]*?\n}/)?.[0] || '';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -22,7 +27,7 @@ function harness(executeCommand) {
     pending: false, deletingBranch: false, creatingPullRequest: false, creatingPonyBranch: false,
     pullRequestButton: { setAttribute() {}, classList: { toggle() {} } }, pullRequestTooltip: {},
     commands: { executeCommand },
-    setTimeout(callback, delay) { assert.equal(delay, 15000); timers.set(++nextTimer, callback); return nextTimer; },
+    setTimeout(callback, delay) { assert([15000, 60000].includes(delay)); timers.set(++nextTimer, { callback, delay }); return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
   });
   vm.runInContext(`${warningPolicy}\n${refresh}\nthis.refresh = refreshPullRequest;`, context);
@@ -39,7 +44,7 @@ async function run() {
   await tick();
   assert.equal(context.pullRequestButton.disabled, false, 'Access failures stay clickable for setup recovery');
   assert.equal(timers.size, 1);
-  const retry = [...timers.values()][0];
+  const retry = [...timers.values()][0].callback;
   timers.clear();
   retry();
   await tick();
@@ -47,6 +52,13 @@ async function run() {
   assert.equal(context.pullRequestButton.disabled, false, 'Repair enables New PR without a head change or window reload');
   context.refresh();
   assert.equal(attempts, 2, 'Successful evidence remains cached');
+
+  const throttled = harness(async () => { throw new Error('GitHub App request failed (HTTP 422).'); });
+  throttled.context.refresh();
+  await tick();
+  assert.equal([...throttled.timers.values()][0].delay, 60000,
+    'Avoid high-frequency token issuance after GitHub rejects an App check');
+  assert.equal(throttled.context.pullRequestButton.disabled, false, 'A manual retry remains possible');
 
   const blocked = harness(async () => { throw new Error('Setup unavailable'); });
   blocked.context.refresh();

@@ -10,7 +10,8 @@ const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
 const SHA = /^[a-f0-9]{40}$/i;
 
-// The merge runs under the user's existing gh login, not the PR-creation bot.
+// VS Code callers provide the signed-in user's transport; local handoffs
+// inherit that same session through GH_TOKEN, never the PR-creation bot.
 // GitHub applies repository permissions, reviews, and branch protection.
 function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn) {
   // Preserve /user and every merge write under gh's human authentication.
@@ -41,14 +42,14 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
     }, 60000);
     child.stdout.on('data', chunk => {
       output += chunk;
-      if (output.length > 100000) {
+      if (Buffer.byteLength(output) > 4 * 1024 * 1024) {
         child.kill();
         finish(new Error('Unexpectedly large GitHub merge response.'));
       }
     });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-2000); });
     child.stdin.on('error', () => {});
-    child.on('error', () => finish(new Error('GitHub CLI is unavailable. Install gh and authenticate with gh auth login.')));
+    child.on('error', () => finish(new Error('GitHub CLI is unavailable. Install gh; Sweetiebot uses your VS Code GitHub sign-in.')));
     child.on('close', code => {
       const response = require('./github_rate_limit').parseCLIResponse(output);
       if (code !== 0) {
