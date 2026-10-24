@@ -41,6 +41,7 @@ const run = promisify(execFile);
     const baseSha = await repo('rev-parse', 'HEAD');
     await repo('push', '--quiet', 'origin', 'main', 'feature');
     let merged = false, pushed = false;
+    let stalePushReads = 0;
     const pushes = [];
     const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
     const author = { name: 'John Wooten', email: 'human@example.test' };
@@ -80,7 +81,8 @@ const run = promisify(execFile);
       if (endpoint.endsWith('/pulls/12')) return {
         state: merged ? 'closed' : 'open', merged, merged_at: merged ? '2026-10-21' : null,
         title: '🐛 Resolve feature', mergeable: !resolving || pushed, user: { type: 'Bot', login: 'codex-pony[bot]' },
-        head: { ref: 'feature', sha: await branch('feature'), repo: { full_name: 'owner/repo' } },
+        head: { ref: 'feature', sha: pushed && stalePushReads > 0 && --stalePushReads >= 0
+          ? headSha : await branch('feature'), repo: { full_name: 'owner/repo' } },
         base: { ref: 'main', sha: merged ? baseSha : await branch('main'), repo: { full_name: 'owner/repo' } },
         merge_commit_sha: merged ? await branch('main') : null
       };
@@ -132,7 +134,10 @@ const run = promisify(execFile);
     } }), /stale info|rejected/);
     assert.equal(await branch('feature'), competing, 'A normal push preserves the competing head');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
+    pushed = false;
+    stalePushReads = 2;
     const incremental = await attempt();
+    assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     assert.equal(incremental.status, 'synced', 'Default integration appends commits');
     assert(!pushes.at(-1).some(arg => arg.startsWith('--force')), 'Incremental updates use an ordinary push');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
@@ -147,6 +152,7 @@ const run = promisify(execFile);
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, incremental.sha);
     pushed = false;
     const progress = [];
+    stalePushReads = 2;
     let result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
       onProgress: event => progress.push(event), allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
       expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch, decisions,
