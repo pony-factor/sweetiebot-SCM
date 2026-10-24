@@ -509,8 +509,9 @@ When blank-message commits use local AI, Source Control displays **Generating co
 
 **Reusable commit-size preflight:** With durable background commits enabled, Sweetiebot
 stages the intended changes (if needed), checks GitHub's file and diff limits
-once per unchanged staged tree, and only then captures Codex context
-or starts the commit/title worker. The approved Git tree ID is passed to the
+once per unchanged staged tree before creating a commit or starting the title
+worker. Optional Codex context cannot override that verified selection. The
+approved Git tree ID is passed to the
 worker. If staging changes during validation or before Python accepts the job,
 Sweetiebot automatically inspects the new selection again (up to three retries),
 without creating an unvalidated commit or starting title generation. Direct
