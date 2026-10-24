@@ -110,6 +110,14 @@ const run = promisify(execFile);
       api, git: localGit, expected, resolutionPatch, decisions,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
+    if (!resolving) {
+      const cleanSync = await attempt({ operation: 'sync' });
+      assert.equal(cleanSync.status, 'synced');
+      assert.equal(cleanSync.unchanged, true, 'Conflict-free branch-only handoffs are no-ops');
+      assert.equal(cleanSync.sha, headSha);
+      assert.equal(await branch('feature'), headSha);
+      assert.equal(pushes.length, 0, 'Clean preparation must not push base-only commits');
+    }
     await assert.rejects(attempt({ expected: { ...expected, headSha: 'a'.repeat(40) } }), /changed/);
     if (resolving) await assert.rejects(attempt({ expected: { ...expected, baseSha: 'b'.repeat(40) } }), /changed|Base changed/);
     await assert.rejects(attempt({ api: async (endpoint, ...rest) => {

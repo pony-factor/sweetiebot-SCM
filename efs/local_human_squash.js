@@ -171,6 +171,10 @@ async function humanSquashMerge(repository, number, {
       author, base, baseSha, number,
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
+  // GitHub can squash a clean human-opened PR without a preliminary sync.
+  if (operation === 'merge' && resolutionPatch === null && original.mergeable === true && nativeSquash) {
+    return finish(originalSha, preparedMessage, 'squash');
+  }
   if (operation === 'merge' && alreadyPrepared && resolutionPatch === null) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
@@ -211,7 +215,7 @@ async function humanSquashMerge(repository, number, {
     }
     if (mergeBase === liveBase && resolutionPatch === null) {
       if (operation === 'sync') return { merged: false, status: 'synced', number,
-        sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+        sha: originalSha, previousHeadSha: originalSha, base, baseSha, unchanged: true,
         reason: 'PR branch already contains the current base; no incremental commit or push was needed.' };
       if (nativeSquash) return finish(originalSha, preparedMessage, 'squash');
       if (!rewriteApproved) return { merged: false, status: 'blocked', number,
@@ -288,6 +292,13 @@ async function humanSquashMerge(repository, number, {
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
           conflictPaths: conflicts, reason: 'Resolve the overlapping edits against the current base, preserving both intentions.' };
       }
+    }
+    // A clean integration is not a conflict resolution. Do not append main-only
+    // changes or restart CI merely because the base branch advanced.
+    if (operation === 'sync' && resolutionPatch === null && !conflicts.length) {
+      return { merged: false, status: 'synced', unchanged: true, number,
+        sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+        reason: 'No merge conflicts or explicit resolution changes; left the PR branch unchanged.' };
     }
     const staged = await inRepo('diff', '--cached', '--name-only', '-z');
     if (!staged.trim()) throw Error('Squash would make no changes; refusing empty commit.');
