@@ -158,7 +158,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       assert.deepEqual(dashboardCalls.map((call, index) => index === 3 ? [call[0]] : call), [
         ...layoutCommands.map(command => [command]),
         ['workbench.action.browser.open'],
-        ['vscode.setEditorLayout', { orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }] }]
+        ['vscode.setEditorLayout', { orientation: 0, groups: [{}] }]
       ]);
       assert.equal(launches, 1);
       await resumePRSession(instrumented, context);

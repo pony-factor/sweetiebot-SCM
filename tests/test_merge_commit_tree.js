@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { commitTreeLayout } = require('../efs/merge_commit_tree');
+const { commitTreeLayout, mergeCommitHistory } = require('../efs/merge_commit_tree');
 const sha = digit => digit.repeat(40);
 const node = (digit, parents) => ({ sha: sha(digit), parents: parents.map(digit => ({ sha: sha(digit) })), commit: { message: 'Commit ' + digit } });
 const graph = commitTreeLayout([node('a', []), node('b', ['a']), node('c', ['a']), node('d', ['b', 'c'])]);
@@ -9,4 +9,10 @@ assert.equal(graph.nodes[1].lane, graph.nodes[0].lane);
 assert.notEqual(graph.nodes[2].lane, graph.nodes[1].lane, 'A fork gets its own lane');
 assert.equal(commitTreeLayout([node('b', ['a'])]).edges.length, 0, 'Do not invent an unavailable parent node');
 assert.equal(commitTreeLayout([{ sha: '../unsafe' }]).nodes.length, 0);
+const many=Array.from({length:180},(_,i)=>({sha:i.toString(16).padStart(40,'0'),commit:{message:'Commit '+i},parents:[]}));
+assert.equal(commitTreeLayout(many).nodes.length,180,'Show all PR commits, not only the latest 100');
+const first=mergeCommitHistory([], [node('a',[]),node('b',['a'])]);
+const next=mergeCommitHistory(first,[node('b',['a']),node('c',['b'])]);
+assert.deepEqual(next.map(c=>c.sha),[sha('a'),sha('b'),sha('c')],'Keep original commits when a later head omits them');
+assert.deepEqual(next.map(c=>c.isNew),[false,false,true]);
 console.log('Commit tree parent, fork, merge and missing-parent checks passed.');

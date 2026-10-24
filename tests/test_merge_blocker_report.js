@@ -6,7 +6,7 @@ const pr = { number: 68, title: 'Feature', headSha: 'a'.repeat(40), head: 'featu
 assert.deepEqual(firstDiffAnchor('@@ -4 +4,2 @@\n context\n+new'), { line: 5, side: 'RIGHT' });
 assert.equal(firstDiffAnchor('not a patch'), null);
 (async () => {
-  let writes = [], comments = [], moved = false;
+  let writes = [], comments = [], reviews = [], moved = false;
   const paths = ['options.html','options.js'];
   const decisions = [
     {path:paths[0],title:'Retain the independent checkboxes',description:'Main adds sidebar controls. The PR adds heading controls. Keep both sets under the existing section with distinct IDs; neither replaces the other.'},
@@ -15,31 +15,43 @@ assert.equal(firstDiffAnchor('not a patch'), null);
   const api = async (endpoint, options) => {
     if (options) {
       writes.push({endpoint,...options});
-      const existing = comments.find(c => endpoint === 'repos/o/r/pulls/comments/'+c.id);
-      if(existing) existing.body=options.body.body;
-      else { assert.equal(endpoint,'repos/o/r/pulls/68/comments'); comments.push({id:comments.length+1,path:options.body.path,user:{login:'me'},body:options.body.body}); }
-      return {html_url:'https://github.com/o/r/pull/68#discussion_r'+comments.length};
+      if (endpoint === 'repos/o/r/pulls/68/reviews') {
+        const review={id:50,commit_id:pr.headSha,user:{login:'me'},body:options.body.body,html_url:'https://github.com/o/r/pull/68#pullrequestreview-50'};
+        reviews.push(review);
+        comments=options.body.comments.map((note,i)=>({...note,id:i+1,pull_request_review_id:50,user:{login:'me'},reactions:{total_count:0}}));
+        return review;
+      }
+      if (endpoint === 'repos/o/r/pulls/68/reviews/50') {reviews[0].body=options.body.body;return reviews[0];}
+      const existing=comments.find(c=>endpoint==='repos/o/r/pulls/comments/'+c.id);
+      assert(existing);
+      if(options.method==='DELETE'){comments=comments.filter(c=>c!==existing);return null;}
+      existing.body=options.body.body;
+      return {html_url:'https://github.com/o/r/pull/68#discussion_r'+existing.id};
     }
     if (endpoint === 'user') return {login:'me'};
     if (endpoint.includes('/branches/')) return {commit:{sha:'b'.repeat(40)}};
     if (endpoint.includes('/files?')) return paths.map(filename=>({filename,patch:'@@ -4 +4,2 @@\n context\n+new'}));
     if (endpoint.includes('/comments?')) return comments;
+    if (endpoint.includes('/reviews?')) return reviews;
     return {state:'open',title:pr.title,head:{sha:moved?'c'.repeat(40):pr.headSha,ref:pr.head},base:{ref:pr.base}};
   };
   const run = extra => publishBlockerReport({repository:'o/r',pr,reason:'Patch error',paths,api,...extra});
   const empty=await run(); assert(!empty.posted); assert.equal(writes.length,0,'Do not turn file names into fabricated analysis or choices');
   assert.deepEqual(blockerOptions({state:'conflict'}),[],'Preserving both intentions is automatic, not a generic choice');
   assert((await run({decisions})).posted);
-  assert.equal(writes.length,2,'Each substantive file gets its own code comment');
-  assert.equal(writes[0].body.line,5); assert.equal(writes[0].body.commit_id,pr.headSha);
-  assert(writes[0].body.body.includes(decisions[0].description));
+  assert.equal(writes.length,1,'One review groups every file comment under its summary');
+  assert.equal(writes[0].body.comments.length,2);
+  assert.equal(writes[0].body.comments[0].line,5); assert.equal(writes[0].body.commit_id,pr.headSha);
+  assert(writes[0].body.comments[0].body.includes(decisions[0].description));
   assert(!writes[0].body.body.includes('sweetiebot-merge-options'),'Compatible changes do not request reaction approval');
-  assert((await run({decisions})).posted); assert.equal(writes[2].method,'PATCH');
-  assert.equal(writes[2].endpoint,'repos/o/r/pulls/comments/1','Use the actual GitHub review-comment update endpoint');
+  assert((await run({decisions})).posted);
+  assert.equal(writes[1].method,'PUT','Update the same review summary');
+  assert.equal(writes[2].method,'PATCH');
+  assert.equal(writes[2].endpoint,'repos/o/r/pulls/comments/1','Update the existing inline comment in the grouped review');
   comments[0].body='<!-- sweetiebot-merge-review -->\n### Automatic integration stopped\nOld generic choices';
   assert((await run({decisions})).posted); assert(!comments[0].body.includes('Automatic integration stopped'),'Replace legacy boilerplate in place');
   moved=true;
   const stopped=await run({decisions}); assert(!stopped.posted); assert.equal(stopped.notes.length,2,'Substantive local explanations survive GitHub publication failure');
-  assert.equal(writes.length,6,'Never post against a changed head');
+  assert.equal(writes.length,7,'Never post against a changed head');
   console.log('Per-file analysis, real anchors, legacy replacement and snapshot checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

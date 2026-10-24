@@ -44,7 +44,7 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
     child.on('close', code => {
       if (code !== 0) return finish(new Error('GitHub rejected the merge (' +
         (stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
-      try { finish(null, JSON.parse(output)); }
+      try { finish(null, JSON.parse(output || (method === 'DELETE' ? 'null' : ''))); }
       catch { finish(new Error('GitHub returned an invalid merge response. Check the PR before retrying.')); }
     });
     child.stdin.end(body === undefined ? undefined : JSON.stringify(body));

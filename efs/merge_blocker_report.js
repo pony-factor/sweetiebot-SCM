@@ -2,6 +2,7 @@
 const { githubApi } = require('./merge_pull_request');
 const { safePatchPath } = require('./merge_patch');
 const MARKER = '<!-- sweetiebot-merge-analysis -->';
+const REVIEW_GROUP = '<!-- sweetiebot-merge-analysis-review -->';
 const LEGACY_MARKER = '<!-- sweetiebot-merge-review -->';
 
 function blockerReport(pr, reason, paths, explanation = '', decisions = []) {
@@ -27,7 +28,7 @@ function firstDiffAnchor(patch) {
   return null;
 }
 
-async function publishBlockerReport({ repository, pr, reason, paths, explanation, decisions = [], api = githubApi }) {
+async function publishBlockerReport({ repository, pr, reason, paths, explanation, decisions = [], summary, api = githubApi }) {
   paths = [...new Set(paths || [])].filter(safePatchPath);
   const report = blockerReport(pr, reason, paths, explanation, decisions);
   // A filename or executor failure cannot establish the competing code intentions.
@@ -53,24 +54,49 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
       comments.push(...next); if (next.length < 100) break;
       if (page === 20) throw Error('Existing review history is incomplete.');
     }
-    for (const note of report.notes) {
-      const file = files.find(file => file.filename === note.path);
-      const anchor = firstDiffAnchor(file?.patch);
+    const anchors = report.notes.map(note => {
+      const anchor = firstDiffAnchor(files.find(file => file.filename === note.path)?.patch);
       if (!anchor) throw Error('Cannot anchor the analysis for ' + note.path + ' in the current diff.');
-      const existing = comments.find(comment => comment.path === note.path && comment.user?.login === actor.login &&
-        (comment.body?.startsWith(MARKER) || (comment.body?.startsWith(LEGACY_MARKER) && /### Automatic integration stopped/.test(comment.body))));
-      const latest = await api(prefix + '/pulls/' + pr.number);
-      const latestBase = await api(prefix + '/branches/' + encodeURIComponent(pr.base));
-      if (!matches(latest) || latestBase.commit?.sha !== base.commit.sha) throw Error('The PR or base advanced; refresh the code analysis.');
-      const body = MARKER + '\n### ' + note.title + '\n\n' + note.description;
-      const posted = await api(existing ? prefix + '/pulls/comments/' + existing.id : prefix + '/pulls/' + pr.number + '/comments', {
-        method: existing ? 'PATCH' : 'POST', body: existing ? { body } : {
-          body, commit_id: pr.headSha, path: note.path, ...anchor
-        }
-      });
-      postedNotes.push({ ...note, url: posted.html_url });
+      return { ...note, anchor, body: MARKER + '\n### ' + note.title + '\n\n' + note.description };
+    });
+    const owned = comments.filter(comment => comment.user?.login === actor.login &&
+      (comment.body?.startsWith(MARKER) || (comment.body?.startsWith(LEGACY_MARKER) && /### Automatic integration stopped/.test(comment.body))));
+    const reviews = [];
+    for (let page = 1; page <= 20; page++) {
+      const next = await api(prefix + '/pulls/' + pr.number + '/reviews?per_page=100&page=' + page);
+      reviews.push(...next); if (next.length < 100) break;
+      if (page === 20) throw Error('Existing review list is incomplete.');
     }
-    return { ...report, posted: true, comments: postedNotes };
+    const existingReview = [...reviews].reverse().find(review => review.user?.login === actor.login &&
+      review.body?.startsWith(REVIEW_GROUP) && review.commit_id === pr.headSha &&
+      anchors.every(note => owned.some(comment => comment.pull_request_review_id === review.id && comment.path === note.path)));
+    const latest = await api(prefix + '/pulls/' + pr.number);
+    const latestBase = await api(prefix + '/branches/' + encodeURIComponent(pr.base));
+    if (!matches(latest) || latestBase.commit?.sha !== base.commit.sha) throw Error('The PR or base advanced; refresh the code analysis.');
+    const reviewBody = REVIEW_GROUP + '\n' + (summary || 'Integrate ' + pr.title + ' with current ' + pr.base + '. The inline notes explain the competing edits and combined behavior for each affected file.');
+    let review;
+    if (existingReview) {
+      review = await api(prefix + '/pulls/' + pr.number + '/reviews/' + existingReview.id, {method:'PUT', body:{body:reviewBody}});
+      for (const note of anchors) {
+        const existing = owned.find(comment => comment.pull_request_review_id === existingReview.id && comment.path === note.path);
+        const posted = await api(prefix + '/pulls/comments/' + existing.id, {method:'PATCH',body:{body:note.body}});
+        postedNotes.push({...note,url:posted.html_url});
+      }
+    } else {
+      review = await api(prefix + '/pulls/' + pr.number + '/reviews', {method:'POST',body:{
+        commit_id:pr.headSha,event:'COMMENT',body:reviewBody,
+        comments:anchors.map(note=>({path:note.path,...note.anchor,body:note.body}))
+      }});
+      for (const note of anchors) postedNotes.push({...note,url:review.html_url});
+      // Migrate only our unused generated notes. Preserve threads with any user
+      // replies or reactions; those discussions must not be discarded.
+      for (const old of owned) {
+        if (!anchors.some(note=>note.path===old.path) || old.reactions?.total_count !== 0 ||
+            comments.some(comment=>comment.in_reply_to_id===old.id)) continue;
+        await api(prefix + '/pulls/comments/' + old.id, {method:'DELETE'});
+      }
+    }
+    return { ...report, posted: true, reviewUrl: review.html_url, comments: postedNotes };
   } catch (error) { return { ...report, posted: false, comments: postedNotes, error: error.message }; }
 }
 module.exports = { blockerReport, firstDiffAnchor, publishBlockerReport };
