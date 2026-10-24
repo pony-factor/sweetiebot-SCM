@@ -9,6 +9,7 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   const originalPath = process.env.PATH;
   const originalCommand = process.env.KEFANIA_GH_COMMAND;
   const spawned = [];
+  let apiOutput = '{"ok":true}';
   const spawnProcess = (command, args) => {
     spawned.push({command, args});
     const child = new EventEmitter();
@@ -16,7 +17,7 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
     child.stderr = new EventEmitter();
     child.stdin = new EventEmitter();
     child.stdin.end = () => queueMicrotask(() => {
-      child.stdout.emit('data', '{"ok":true}');
+      child.stdout.emit('data', apiOutput);
       child.emit('close', 0);
     });
     return child;
@@ -31,6 +32,8 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
     process.env.KEFANIA_GH_COMMAND = '/custom/bin/gh';
     await githubApi('user', {}, spawnProcess);
     assert.equal(spawned[1].command, '/custom/bin/gh', 'Explicit CLI override wins');
+    apiOutput = JSON.stringify([{ body: 'Normal repository PR metadata '.repeat(20000) }]);
+    assert.equal((await githubApi('repos/owner/repo/pulls?per_page=100', {}, spawnProcess)).length, 1, 'Normal PR-list responses can exceed 100 KB');
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;

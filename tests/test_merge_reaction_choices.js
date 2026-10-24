@@ -21,6 +21,7 @@ const { reportOptionsInstructions } = require('../efs/merge_blocker_actions');
     commit_id: pr.headSha, updated_at: '2026-10-23T12:00:00Z' };
   let votes = [{ id: 100, user: actor, content: '+1', created_at: '2026-10-23T12:01:00Z' }];
   assert.equal(reactionDecision(comment, pr, votes, actor).option.id, 'report-adapter');
+  assert.equal(reactionDecision({ ...comment, body: body([options[0]]) }, pr, votes, actor), null, 'A single implementation path is automatic and cannot request a reaction');
   assert.equal(reactionDecision(comment, pr, [{ ...votes[0], content: 'heart' }], actor).option.id, 'report-new-api');
   assert.equal(reactionDecision(comment, pr, [{ ...votes[0], user: { id: 99, type: 'User' } }], actor), null);
   assert.equal(reactionDecision(comment, pr, votes, { ...actor, type: 'Bot' }), null);

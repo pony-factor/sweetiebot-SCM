@@ -426,15 +426,88 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
         self.assertEqual((self.repo / 'story.txt').read_text(), 'New unstaged work\n')
 
-    def test_external_commit_blocks_placeholder_replacement(self):
+    def test_linear_external_commit_survives_pending_title_and_push(self):
         directory = self.queue(message='', push=True)
+        placeholder = self.git('rev-parse', 'HEAD')
         self.git('commit', '-q', '--allow-empty', '-m', 'Later external commit')
+        original_tip = self.git('rev-parse', 'HEAD')
+        original_tree = self.git('rev-parse', 'HEAD^{tree}')
+        (self.repo / 'story.txt').write_text('Staged afterward\n')
+        self.git('add', 'story.txt')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Final queued title', '')):
+            worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'done')
+        self.assertNotEqual(self.git('rev-parse', 'HEAD'), original_tip)
+        self.assertNotEqual(job['sha'], placeholder)
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), job['sha'])
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'Later external commit')
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'HEAD^'), '🧪 Final queued title')
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), original_tree)
+        self.assertEqual(self.git('show', ':story.txt'), 'Staged afterward')
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'rev-parse', 'refs/heads/main'), job['sha'])
+        self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/recovery/' + job['id'] + '/' + original_tip),
+                         original_tip)
+
+    def test_published_external_commit_blocks_placeholder_replacement(self):
+        directory = self.queue(message='', push=True)
+        self.git('commit', '-q', '--allow-empty', '-m', 'Already published')
+        self.git('push', '-q', 'origin', 'main')
+        original_tip = self.git('rev-parse', 'HEAD')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Pending title', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
+
+    def test_external_merge_blocks_placeholder_replacement(self):
+        directory = self.queue(message='', push=True)
+        self.git('branch', 'side')
+        self.git('commit', '-q', '--allow-empty', '-m', 'Main follow-up')
+        self.git('switch', '-q', 'side')
+        self.git('commit', '-q', '--allow-empty', '-m', 'Side follow-up')
+        self.git('switch', '-q', 'main')
+        self.git('merge', '--no-ff', '-q', '-m', 'External merge', 'side')
         sha = self.git('rev-parse', 'HEAD')
-        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Branch advanced')):
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Merge must block')):
             worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'blocked')
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
+    def test_reset_branch_blocks_placeholder_replacement(self):
+        directory = self.queue(message='', push=True)
+        alternate = self.git('commit-tree', 'HEAD^{tree}', input='Unrelated root\n')
+        self.git('update-ref', 'refs/heads/main', alternate)
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Reset must block')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'main'), alternate)
+
+    def test_finalized_commit_allows_linear_followup_without_rewriting_it(self):
+        directory = self.queue(push=True)
+        original = self.job(directory)['sha']
+        self.git('commit', '-q', '--allow-empty', '-m', 'Later finalized commit')
+        tip = self.git('rev-parse', 'HEAD')
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), tip)
+        self.assertEqual(self.job(directory)['sha'], original)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'rev-parse', 'refs/heads/main'), original)
+
+    def test_signed_external_commit_replays_with_valid_signature(self):
+        self.enable_test_gpg_signing()
+        directory = self.queue(message='')
+        self.git('commit', '-q', '--allow-empty', '-m', 'Signed follow-up')
+        external = self.git('rev-parse', 'HEAD')
+        self.git('config', 'commit.gpgsign', 'false')
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Signed ancestor title', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertNotEqual(self.git('rev-parse', 'HEAD'), external)
+        self.assert_signed('HEAD')
+        self.assert_signed('HEAD^')
 
     def test_rejected_placeholder_keeps_staged_changes(self):
         hook = self.repo / '.git' / 'hooks' / 'pre-commit'
@@ -458,6 +531,30 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('diff', '--cached', '--name-only'), 'story.txt')
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_remote_branch_namespace_collision_blocks_push_without_retry(self):
+        # Git cannot create remote "fix" while "fix/..." already exists.
+        self.git('checkout', '-q', '-b', 'fix')
+        directory = self.queue(push=True)
+        sha = self.git('rev-parse', 'HEAD')
+        nested = 'refs/heads/fix/efs-repository-relative-copy-links-20261024'
+        self.git('push', '-q', 'origin', f'HEAD:{nested}')
+        worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertIn('conflicts with an existing remote branch name', job['error'])
+        self.assertIn('Stop background push', job['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'rev-parse', nested), sha)
+        self.assertNotIn('refs/heads/fix\n', self.git('--git-dir=' + str(self.root / 'remote'),
+                                                     'for-each-ref', '--format=%(refname)') + '\n')
+        status = json.loads(subprocess.check_output(
+            [sys.executable, worker.__file__, '--status'], text=True))
+        self.assertEqual(status['phase'], 'blocked')
+        self.assertFalse(status['pushPending'])
+        worker.work(directory)
+        self.assertEqual(self.job(directory), job, 'Blocked ref conflicts are not retried')
 
     def test_offline_push_resumes_without_recommitting(self):
         directory = self.queue(push=True)

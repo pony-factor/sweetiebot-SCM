@@ -22,6 +22,35 @@ assert(handoffPolicy.includes('GITHUB REVIEW PUBLICATION POLICY'));
 assert(handoffPolicy.includes('publish zero inline comments'));
 assert(handoffPolicy.includes('local handoff record'));
 (async () => {
+  // Exercise signing selection without accessing the user's private key store.
+  const path = require('node:path');
+  const directory = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'resolution-signing-test-'));
+  try {
+    await fs.mkdir(path.join(directory, '.git'));
+    for (const enabled of [true, false]) {
+      const created = [];
+      const git = async (...args) => {
+        if (args[0] === 'config') return String(enabled);
+        if (args[0] === 'ls-tree') return '100644 blob ' + head + '\tfile.txt\0';
+        if (args.includes('commit-tree')) { created.push(args); return head; }
+        return base;
+      };
+      const options = { git, directory, headSha: head, baseSha: base, finalTree: base,
+        conflicts: ['file.txt'], decisions: [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: 'Keep both changes.' }],
+        author: { name: 'Human', email: 'human@example.test' }, base: 'main' };
+      await require('../efs/resolution_commits').createResolutionCommits(options);
+      assert.equal(created.length, 2, 'Sign both file decisions and the final synchronization');
+      assert(created.every(args => args.includes('-S') === enabled));
+      assert(created.every(args => !args.includes('commit.gpgsign=false')));
+      if (enabled) {
+        await assert.rejects(require('../efs/resolution_commits').createResolutionCommits({ ...options,
+          git: async (...args) => {
+            if (args.includes('commit-tree')) throw Error('Signing failed');
+            return git(...args);
+          } }), /Signing failed/, 'Signing failures must stop preparation, never retry unsigned');
+      }
+    }
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
   for (const bad of [
     { ...input, repository: 'other/repo' }, { ...input, results: [input.results[0], input.results[0]] },
     ...[{ number: 13 }, { headSha: 'c'.repeat(40) }, { baseSha: '' }, { patch: '' }, { patch: 'x'.repeat(60001) }]
@@ -65,6 +94,15 @@ assert(handoffPolicy.includes('local handoff record'));
     assert.equal(options.allowHistoryRewrite, undefined, 'A web result cannot approve its own history rewrite');
     assert.equal(options.rewriteReason, undefined);
     return { merged: false, status: 'blocked' };
+  } });
+  await executeResolution(input, selection, { authorHandoff: true, merge: async (repo, number, options) => {
+    assert.equal(options.allowHistoryRewrite, true, 'Trusted local merge handoff enables the necessary author preparation');
+    assert.equal(options.rewriteReason, 'preserve-human-author');
+    return { merged: false, status: 'waiting' };
+  } });
+  await executeResolution({ ...input, results: input.results.map(item => ({ ...item, operation: 'sync' })) }, selection, { authorHandoff: true, merge: async (repo, number, options) => {
+    assert.equal(options.allowHistoryRewrite, undefined, 'Branch-only synchronization never gains rewrite permission');
+    return { merged: false, status: 'synced' };
   } });
   const pushedFailure = await executeResolution(input, selection, { merge: async () => {
     throw Object.assign(Error('PR changed after guarded push'), { preparedHead: 'c'.repeat(40), originalHead: head });

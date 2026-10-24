@@ -1434,6 +1434,17 @@ function scmToolkitWatchDraftSpellcheck(
     };
 }
 
+// Prefer explicit VS Code scope overrides; otherwise use the Git-backed preference.
+// Keep preflight and eligibility messages working even when warning colors are off.
+function scmToolkitHighlightPrWarnings(configuration, settings) {
+    const key = 'scmToolkit.prWarningHighlights';
+    const inspected = configuration.inspect?.(key);
+    const configured = inspected
+        ? inspected.workspaceFolderValue ?? inspected.workspaceValue ?? inspected.userValue
+        : configuration.getValue(key);
+    return typeof configured === 'boolean' ? configured : settings.prWarningHighlights === true;
+}
+
 function scmToolkitCreateControls(widget, observe, commands, notifications, configuration, mcpService, settings) {
     scmToolkitWatchSpellcheckPopups(widget.element.ownerDocument, commands);
     scmToolkitExpireNotifications(notifications);
@@ -1953,7 +1964,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         pullRequestButton.disabled = pending || deletingBranch || creatingPullRequest
             || creatingPonyBranch || unavailable || !pullRequestEligibility
             || (pullRequestEligibility.allowed !== true && pullRequestEligibility.reason !== 'unavailable');
-        pullRequestButton.classList.toggle('scm-toolkit-pr-needs-attention', pullRequestEligibility?.reason === 'unavailable');
+        pullRequestButton.classList.toggle('scm-toolkit-pr-needs-attention',
+            scmToolkitHighlightPrWarnings(configuration, settings) && pullRequestEligibility?.reason === 'unavailable');
         const previous = pullRequestEligibility?.pullRequest;
         pullRequestTooltip.textContent = branch === currentDefaultBranch
             ? `${currentDefaultBranch} is the pull-request base branch`
@@ -1974,6 +1986,10 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                                 : `Research a pull request for ${branch ?? 'the current branch'} in ChatGPT and publish with Kefania`;
         pullRequestButton.setAttribute('aria-label', pullRequestTooltip.textContent);
     };
+
+    widget.disposables.add(configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.prWarningHighlights')) refreshPullRequest();
+    }));
 
     const createPullRequest = async event => {
         event.stopPropagation();

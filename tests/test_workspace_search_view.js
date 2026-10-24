@@ -6,25 +6,64 @@ const vm = require('node:vm');
 async function run() {
   const clipboard = [];
   const commands = [];
+  const decorations = [];
+  const opened = [];
+  const lines = [
+    'Preface.',
+    'A long paragraph that hides the needle in the surrounding text.',
+    'A completely unrelated paragraph.',
+    'The alpha and beta terms are both here, followed by alpha again.',
+    'A semantic-only passage without a matching phrase.'
+  ];
+  const document = {lineCount: lines.length, lineAt(index) { return {text: lines[index]}; }};
+  let editorChangeListener;
+  class Range {
+    constructor(startLine, startColumn, endLine, endColumn) {
+      this.start = {line: startLine, character: startColumn};
+      this.end = {line: endLine, character: endColumn};
+    }
+  }
+  const editor = {
+    document,
+    setDecorations(type, ranges) { decorations.push({type, ranges}); },
+    revealRange(range) { this.revealed = range; }
+  };
   const vscodeStub = {
+    Range,
+    ThemeColor: class ThemeColor { constructor(id) { this.id = id; } },
+    OverviewRulerLane: {Center: 2},
+    TextEditorRevealType: {InCenterIfOutsideViewport: 2},
+    workspace: {async openTextDocument() { return document; }},
+    window: {
+      async showTextDocument(_document, options) { opened.push(options); return editor; },
+      createTextEditorDecorationType(options) { return {options, dispose() {this.disposed = true;}}; },
+      onDidChangeActiveTextEditor(listener) {
+        editorChangeListener = listener;
+        return {dispose() {editorChangeListener = undefined;}};
+      }
+    },
     Uri: {
-      parse(value) { return {path: String(value).replace(/^file:\/\//, '')}; },
-      from(parts) { return {toString: () => `${parts.scheme}://${parts.authority}${parts.path}`}; }
+      parse(value) {
+        const pathname = decodeURIComponent(String(value).replace(/^file:\/\//, ''));
+        return {scheme: 'file', path: pathname, fsPath: pathname};
+      }
     },
     env: {
       uriScheme: 'vscode',
       clipboard: {async writeText(value) { clipboard.push(value); }}
     },
-    commands: {async executeCommand(command, uri) {commands.push({command, uri});}}
+    commands: {async executeCommand(command, uri) {commands.push({command, uri});}},
+    workspace: {getWorkspaceFolder() {return {uri: {scheme: 'file', fsPath: '/tmp/repo'}};}},
+    window: {activeTextEditor: undefined}
   };
   const sandbox = { module: { exports: {} }, require(name) {
     if (name === 'vscode') return vscodeStub;
-    if (name === './extract') return { TEXT_EXTENSIONS: new Set() };
+    if (name === './extract') return { TEXT_EXTENSIONS: new Set(['.txt', '.md']) };
     if (name === './ollama') return {};
     return require(name);
   }};
   vm.runInNewContext(fs.readFileSync(require.resolve('../efs/view'), 'utf8'), sandbox);
-  const {groupSearchResults, splitResultPath, formatResultScore} = sandbox.module.exports;
+  const {groupSearchResults, splitResultPath, formatResultScore, scoreIconSize} = sandbox.module.exports;
   const grouped = groupSearchResults([
     {uri: 'file:///top/a.md', relative: 'top/a.md', score: .99},
     {uri: 'file:///other/b.md', relative: 'other/b.md', score: .91},
@@ -39,6 +78,22 @@ async function run() {
   assert.equal(splitResultPath('src/search/view.js').filename, 'view.js');
   assert.equal(formatResultScore(.87), '.87');
   assert.equal(formatResultScore(1), '1.00');
+  const githubRequests = [];
+  const githubProvider = new sandbox.module.exports.WorkspaceSearchViewProvider(
+    {search: async () => ({results: []})}, () => ({}),
+    {search: async (query, mode) => {
+      githubRequests.push({query, mode});
+      return {results: [{relative: 'repo/Wormhole.md'}], warning: '', mode};
+    }}
+  );
+  githubProvider.view = {webview: {postMessage() {}}};
+  await githubProvider.onMessage({type: 'search', query: 'Wormhole', mode: 'exact', scope: 'github', requestId: 1});
+  assert.equal(githubRequests.length, 1);
+  assert.equal(githubProvider.lastResults[0].relative, 'repo/Wormhole.md');
+  assert.equal(scoreIconSize(0, 3), 12);
+  assert.equal(scoreIconSize(3, 3), 30);
+  assert.ok(scoreIconSize(.9, .9) > scoreIconSize(.7, .9), 'stronger matches have larger icons');
+  assert.equal(scoreIconSize(NaN, 3), 12, 'invalid scores use the smallest icon');
   const pending = [];
   const provider = new sandbox.module.exports.WorkspaceSearchViewProvider({
     search: () => new Promise((resolve, reject) => pending.push({resolve, reject}))
@@ -60,20 +115,85 @@ async function run() {
   assert.equal(messages.filter(m => m.type === 'error').length, 0);
   assert.equal(provider.lastResults.length, 0);
 
-  provider.lastResults = [{uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 4}];
+  const gitCalls = [];
+  provider.findGitRoot = async (...args) => {gitCalls.push(args); return '/tmp/repo';};
+  provider.lastResults = [{uri: 'file:///tmp/repo/references/aguliar.md', relative: 'references/aguliar.md', line: 6}];
   await provider.onMessage({type: 'copyPath', index: 0});
-  assert.equal(clipboard[0], '[new.txt:5](vscode://file/tmp/new.txt:5)');
+  assert.equal(clipboard[0], '[references/aguliar.md:7](/references/aguliar.md#L7)',
+    'Links from the repository workspace root must work in any file in the repo');
   assert.equal(messages.at(-1).type, 'copied');
   assert.equal(messages.at(-1).index, 0);
-  provider.lastResults = [{kind: 'folder', uri: 'file:///tmp/research', relative: 'research', line: 0}];
+  assert.doesNotMatch(clipboard[0], /vscode:\/\/file|\/tmp\/repo/);
+
+  // When the workspace is a parent GitHub directory, VS Code resolves a
+  // leading slash against that parent instead. Link from the active Markdown
+  // document when it lives in the same repository.
+  vscodeStub.workspace.getWorkspaceFolder = () => ({uri: {scheme: 'file', fsPath: '/tmp'}});
+  vscodeStub.window.activeTextEditor = {document: {uri: {scheme: 'file', fsPath: '/tmp/repo/notes/draft.md'}}};
   await provider.onMessage({type: 'copyPath', index: 0});
-  assert.equal(clipboard[1], '[research](vscode://file/tmp/research)', 'Folder links must not append a line number');
+  assert.equal(clipboard[1], '[references/aguliar.md:7](../references/aguliar.md#L7)');
+  vscodeStub.window.activeTextEditor = {document: {uri: {scheme: 'file', fsPath: '/tmp/another-repo/draft.md'}}};
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[2], '[references/aguliar.md:7](/references/aguliar.md#L7)',
+    'The active editor in a different repository must not determine the relative path');
+
+  provider.lastResults = [{kind: 'folder', uri: 'file:///tmp/repo/research', relative: 'research', line: 0}];
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[3], '[research](/research)', 'Folder links must not append a line number');
+  assert.equal(gitCalls.at(-1)[1], true, 'Folders use their own path when resolving the Git root');
   await provider.onMessage({type: 'open', index: 0});
   assert.equal(commands.at(-1).command, 'revealInExplorer', 'Opening a folder result reveals it in Explorer');
-  assert.equal(commands.at(-1).uri.path, '/tmp/research');
+  assert.equal(commands.at(-1).uri.path, '/tmp/repo/research');
+
+  provider.lastResults = [{uri: 'file:///tmp/repo/core%20refs/file%20(1)%23.md', relative: 'core refs/file (1)#.md', line: 0}];
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard[4], '[core refs/file (1)#.md:1](/core%20refs/file%20%281%29%23.md#L1)',
+    'Spaces, parentheses, and literal hashes in filenames must be URL-encoded');
+
+  provider.findGitRoot = async () => {throw new Error('not a git repository');};
+  const before = clipboard.length;
+  await provider.onMessage({type: 'copyPath', index: 0});
+  assert.equal(clipboard.length, before, 'Failure must not copy an absolute private filesystem path');
+  assert.equal(messages.at(-1).type, 'error');
+
+  // Opening a passage must outline the target line and mark the actual text.
+  provider.lastQuery = 'needle';
+  provider.lastResults = [{uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 1, text: lines[1]}];
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(opened.at(-1).selection.start.line, 1);
+  assert.equal(opened.at(-1).selection.start.character, lines[1].indexOf('needle'),
+    'the cursor should land at the matching word, not column zero');
+  assert.equal(decorations.at(-2).ranges[0].start.line, 1, 'outline the selected passage line');
+  assert.equal(decorations.at(-1).ranges[0].start.character, lines[1].indexOf('needle'),
+    'highlight the matching text inside the line');
+  assert.equal(decorations.at(-1).type.options.borderColor.id, 'editor.findMatchBorder');
+  assert.equal(editor.revealed.start.line, 1, 'reveal the matched line in the editor');
+
+  provider.lastQuery = 'alpha beta';
+  provider.lastResults[0].line = 3;
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(decorations.at(-1).ranges.length, 3, 'mark all matching terms when a full phrase is absent');
+
+  provider.lastQuery = 'synonym not present';
+  provider.lastResults[0].line = 4;
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(decorations.at(-2).ranges[0].start.line, 4, 'semantic-only hits still outline their line');
+  assert.equal(decorations.at(-1).ranges.length, 0, 'do not invent a textual match for semantic results');
+
+  provider.lastResults[0] = {kind: 'filename', uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 0};
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(opened.at(-1).selection.start.line, 0);
+  assert.equal(decorations.at(-1).ranges.length, 0, 'filename-only hits must clear passage highlights');
+  provider.lastResults[0] = {uri: 'file:///tmp/new.txt', line: 1};
+  provider.lastQuery = 'needle';
+  await provider.onMessage({type: 'open', index: 0});
+  editorChangeListener(undefined);
+  assert.equal(decorations.at(-1).ranges.length, 0, 'navigating away clears the temporary highlight');
+  provider.dispose();
+  assert.equal(editorChangeListener, undefined, 'provider disposal releases editor listeners');
 
   const makeNode = tagName => ({
-    tagName, children: [], dataset: {}, listeners: {},
+    tagName, children: [], dataset: {}, listeners: {}, style: {setProperty(name, value) {this[name] = value;}},
     addEventListener(event, listener) { this.listeners[event] = listener; },
     append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } },
     replaceChildren(...children) { this.children = []; this.append(...children); },
@@ -88,8 +208,8 @@ async function run() {
     remove() { this.removed = true; }
   });
   const elements = new Map();
-  for (const id of ['search', 'query', 'clear-query', 'mode', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
-    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : '', focus() {}}));
+  for (const id of ['search', 'query', 'clear-query', 'mode', 'scope', 'score-toggle', 'status', 'answer', 'results', 'summary', 'idle', 'history-toggle', 'history-panel', 'history-list', 'history-clear']) {
+    elements.set(id, Object.assign(makeNode(id), {value: id === 'mode' ? 'hybrid' : id === 'scope' ? 'workspace' : '', focus() {}}));
   }
   const windowListeners = {};
   const timers = new Map(); let nextTimer = 0; const sent = [];let pageState;let currentTime=Date.now();
@@ -116,6 +236,8 @@ async function run() {
   assert.match(html, /message\.type==='results'\)\{searching=false;updateIdleState\(\)/);
   assert.match(html, /MAX_RESULTS_PER_FILE=7/);
   assert.match(html, /id="history-toggle"/);
+  assert.match(html, /id="score-toggle" class="score-toggle"/);
+  assert.match(html, /#results\.score-icons-active \.score\{display:none\}/);
   assert.match(html, /id="history-panel"/);
   assert.match(html, /id="history-clear"/);
   assert.match(html, /INACTIVITY_MS=8\*60\*60\*1000/);
@@ -131,7 +253,7 @@ async function run() {
   assert.match(html, /' and '\+folderCount\+' folder'/);
   assert.doesNotMatch(html, /' · '\+message\.mode/);
   assert.match(html, /className='line-number'/);
-  assert.match(html, /meta\.append\(score,copied\)/);
+  assert.match(html, /meta\.append\(score,scoreIcon,copied\)/);
   assert.match(html, /slice\(0,MAX_RESULTS_PER_FILE\)/);
   assert.match(html, /more\.textContent='…'/);
   const page = {document: {getElementById: id => elements.get(id), createElement: makeNode,
@@ -212,6 +334,22 @@ async function run() {
   ]}});
   const sections = elements.get('results').children;
   assert.equal(sections.length, 2, 'multiple hits for one file share a clickable heading');
+  const firstScoreIcon = sections[0].children[1].children[0].children[1].children[2];
+  const secondScoreIcon = sections[0].children[1].children[1].children[1].children[2];
+  assert.equal(firstScoreIcon.className, 'score-icon');
+  assert.equal(firstScoreIcon['aria-label'], 'Relevance .90');
+  assert.ok(parseInt(firstScoreIcon.style['--score-size']) > parseInt(secondScoreIcon.style['--score-size']));
+  const scoreToggle = elements.get('score-toggle');
+  assert.equal(scoreToggle['aria-pressed'], 'false', 'numerical scores remain the default');
+  const beforeToggleMessages = sent.length;
+  scoreToggle.listeners.click();
+  assert.equal(scoreToggle['aria-pressed'], 'true');
+  assert.equal(elements.get('results').className, 'score-icons-active');
+  assert.equal(pageState.useScoreIcons, true, 'score display preference persists alongside search history');
+  assert.equal(sent.length, beforeToggleMessages, 'switching score displays does not rerun search');
+  scoreToggle.listeners.click();
+  assert.equal(elements.get('results').className, '');
+  assert.equal(pageState.useScoreIcons, false);
   const fileHeading = sections[0].children[0];
   assert.equal(fileHeading.tagName, 'button', 'file headings are keyboard-accessible buttons');
   assert.equal(fileHeading.dataset.index, '0', 'file headings open the top-ranked hit');
