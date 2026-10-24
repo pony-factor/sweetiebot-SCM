@@ -169,7 +169,7 @@ def linear_branch_extension(previous, actual):
     for sha in extension:
         subject = git('show', '-s', '--format=%s', sha)
         if (git('show', '-s', '--format=%P', sha) != parent
-                or re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \\[[0-9a-f]{16}\\])', subject)):
+                or re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject)):
             raise RuntimeError(error)
         parent = sha
     if parent != actual:
