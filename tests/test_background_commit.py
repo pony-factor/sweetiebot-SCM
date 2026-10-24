@@ -62,6 +62,36 @@ class BackgroundCommitTests(unittest.TestCase):
         worker.write_journal(directory / 'job.json', job)
         return directory
 
+    def test_durable_commit_rejects_changed_stage_after_approved_preflight(self):
+        """A cheap tree comparison guards the one staged-size inspection."""
+        approved_tree = self.git('write-tree')
+        (self.repo / 'later.txt').write_text('Not included in approval\n')
+        self.git('add', 'later.txt')
+        staged_before = self.git('write-tree')
+        self.assertNotEqual(approved_tree, staged_before)
+        with self.assertRaisesRegex(RuntimeError, 'Staged changes changed'):
+            worker.enqueue({
+                'message': '🧪 Reject stale inspected tree',
+                'expectedTree': approved_tree,
+            }, start=False)
+        self.assertEqual(self.git('write-tree'), staged_before)
+        self.assertEqual(self.git('diff', '--cached', '--name-only'),
+                         'later.txt\nstory.txt')
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_durable_commit_accepts_matching_staged_tree(self):
+        approved_tree = self.git('write-tree')
+        directory = self.queue(expectedTree=approved_tree)
+        self.assertEqual(self.job(directory)['tree'], approved_tree)
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), approved_tree)
+
+    def test_durable_commit_rejects_invalid_preflight_tree_id(self):
+        with self.assertRaisesRegex(ValueError, 'Invalid approved staged-tree'):
+            worker.enqueue({
+                'message': '🧪 Invalid preflight',
+                'expectedTree': 'not-a-git-object',
+            }, start=False)
+
     def test_status_retires_published_jobs_after_external_merge_without_touching_work(self):
         first = self.queue(push=True)
         self.git('branch', 'side')

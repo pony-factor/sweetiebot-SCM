@@ -507,6 +507,19 @@ Without a dedicated title preference, titles default to one professional emoji f
 
 When blank-message commits use local AI, Source Control displays **Generating commit message** immediately on pressing Commit—even while preflight checks run. The notice stays visible during generation and closes on cancellation or failure. Background commits use the same sparkle notice with **Generating commit message asynchronously**, which closes quietly after one second while generation continues in the background. Local saves and completed commits produce no success notification; optional pushes still run independently.
 
+**Reusable commit-size preflight:** With durable background commits enabled, Sweetiebot
+stages the intended changes (if needed), checks GitHub's file and diff limits
+once per unchanged staged tree before creating a commit or starting the title
+worker. Optional Codex context cannot override that verified selection. The
+approved Git tree ID is passed to the
+worker. If staging changes during validation or before Python accepts the job,
+Sweetiebot automatically inspects the new selection again (up to three retries),
+without creating an unvalidated commit or starting title generation. Direct
+commits use the same inspection command. When a background job declines a
+special operation such as oversized automatic splitting, the direct path reuses
+an earlier approval only if the staged Git tree is unchanged; otherwise it
+runs a new inspection.
+
 **Durable background Commit and Push:** Ordinary staged Commit actions and the
 Codex co-author button immediately commit the staged tree locally. Blank-message
 commits use a temporary `placeholder_<16 hex digits>` subject, so committed

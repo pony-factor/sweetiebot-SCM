@@ -281,6 +281,19 @@ def enqueue(request, start=True):
             files = [name for name in core.git_output('diff', '--cached', '--name-only', '-z').split('\x00') if name]
             if not trailer and len(core.github_split_groups(files)) > 1:
                 return {'queued': False}  # Preserve the existing oversized-commit splitter.
+        # The VS Code command inspected the exact staged tree once. Reject
+        # later staged edits without rescanning its diff or blob sizes; this
+        # also protects the time spent capturing optional Codex context.
+        expected_tree = request.get('expectedTree')
+        if expected_tree is not None:
+            if (not isinstance(expected_tree, str)
+                    or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', expected_tree)):
+                raise ValueError('Invalid approved staged-tree identifier.')
+            if git('write-tree') != expected_tree:
+                raise RuntimeError(
+                    'Staged changes changed after the commit-size check. '
+                    'Review the staged selection and retry the commit.'
+                )
         if core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
         tree = git('write-tree')
