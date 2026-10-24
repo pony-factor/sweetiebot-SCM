@@ -60,7 +60,13 @@ async function run() {
           }
           assert(args.includes('--enqueue'));
           assert(repository.state.indexChanges.length, 'prepare before enqueueing');
-          jobs.push(JSON.parse(input)); events.push('enqueue');
+          events.push('enqueue');
+          if (declineEnqueue) {
+            child.stdout.emit('data', JSON.stringify({ queued: false }));
+            child.emit('close', 0);
+            return;
+          }
+          jobs.push(JSON.parse(input));
           child.stdout.emit('data', JSON.stringify({ queued: true, id: String(jobs.length) }));
           child.emit('close', 0);
         };
@@ -151,6 +157,19 @@ async function run() {
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
   assert.equal(preparations[1].all, 'tracked');
+
+  declineEnqueue = true;
+  const jobsBeforeDecline = jobs.length;
+  const declined = await commit(root, { message: '' });
+  assert.equal(declined.queued, false);
+  assert.equal(declined.preflightApproved, true,
+    'the queue can reuse an approved size check when the Python worker declines');
+  assert.equal(jobs.length, jobsBeforeDecline,
+    'a declined background job leaves Git commitment to the direct path');
+  declineEnqueue = false;
+  assert.equal(notQueued.preflightApproved, undefined,
+    'onlyIfPending exits before preflight and cannot claim approval');
+
   status = { id: 'older', phase: 'generating', titleJobs: ['older'] };
   const manualMessage = '🧪 Manual subject\n\nCo-authored-by: Codex <noreply@openai.com>';
   await commit(root, { message: manualMessage, onlyIfPending: true });
