@@ -6,8 +6,10 @@ function scmToolkitRegisterCodexPermissionsMenu(api) {
         if (event.data?.type === 'sweetiebot-permissions-visibility') {
             document.documentElement.toggleAttribute('data-sweetiebot-hide-permissions', event.data.hidden === true);
         } else if (event.data?.type === 'sweetiebot-open-permissions') {
-            const button = document.querySelector('button[data-composer-navigation-target="permissions"]');
-            if (!button) return;
+            const button = [...document.querySelectorAll('button[data-composer-navigation-target="permissions"]')]
+                .find(element => element.getClientRects().length);
+            const reply = opened => api.postMessage({type: 'sweetiebot-permissions-opened', id: event.data.id, opened: !!opened});
+            if (!button) {reply(false); return;}
             window.focus?.();
             button.focus?.({preventScroll: true});
             button.click();
@@ -15,6 +17,8 @@ function scmToolkitRegisterCodexPermissionsMenu(api) {
                 if (!document.querySelector('[role="menu"], [role="dialog"][data-state="open"]')) {
                     button.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowDown', bubbles: true}));
                 }
+                requestAnimationFrame(() => reply(button.getAttribute('aria-expanded') === 'true'
+                    || button.getAttribute('data-state') === 'open' || document.querySelector('[role="menu"], [role="dialog"][data-state="open"]')));
             });
         }
     });
