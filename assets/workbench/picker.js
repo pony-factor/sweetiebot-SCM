@@ -556,11 +556,11 @@ function scmToolkitEnableBlankStateRefresh(
             refreshing = true;
             try {
                 if (blankStateRefresh) {
-                    await commands.executeCommand('git.refresh', repositoryArgument);
+                    await commands.executeCommand('sweetiebot.refreshRepository', repositoryArgument);
                 }
                 startAutoPull();
             } catch {
-                // The built-in Git extension owns refresh errors; keep blank-state polling best-effort.
+                // Keep blank-state polling best-effort while checkouts change.
             } finally {
                 refreshing = false;
                 if (!disposed && !hasChanges()) schedule(750);

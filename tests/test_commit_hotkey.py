@@ -140,6 +140,29 @@ class CommitHotkeyTests(unittest.TestCase):
             update_commit_hotkey(self.path, "f9", "workbench.action.files.save")
         self.assertEqual(self.path.read_text(), original)
 
+    def test_hotkey_status_does_not_resize_descriptions(self):
+        page = configurator.render_form(
+            dict(DEFAULT_SETTINGS), [], "", "test", "Save",
+            commit_hotkey="f6", codex_commit_hotkey="f7",
+        )
+        self.assertEqual(page.count('class="setting hotkey-setting"'), 2)
+        self.assertIn(
+            ".hotkey-setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px)",
+            page,
+        )
+        self.assertIn(
+            ".hotkey-actions{display:grid;grid-template-columns:max-content max-content max-content minmax(0,1fr)",
+            page,
+        )
+        self.assertIn(
+            ".hotkey-status{grid-column:1/-1;min-width:0;overflow-wrap:anywhere",
+            page,
+        )
+        self.assertIn(
+            "@media(max-width:1080px){.hotkey-setting{grid-template-columns:minmax(0,1fr);gap:8px}}",
+            page,
+        )
+
     def test_page_has_inline_recorder_and_no_default(self):
         current = dict(DEFAULT_SETTINGS)
         page = configurator.render_form(current, [], "", "test", "Save", commit_hotkey="", codex_commit_hotkey="")

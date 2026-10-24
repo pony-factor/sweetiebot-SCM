@@ -428,7 +428,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
 
         self.assertIn("const scmToolkitSettings = ", js)
         self.assertIn("editor.inlineSuggest.enabled", js)
-        self.assertIn("commands.executeCommand('git.refresh', repositoryArgument)", js)
+        self.assertIn("commands.executeCommand('sweetiebot.refreshRepository', repositoryArgument)", js)
         self.assertNotIn("scm-toolkit-refreshing", js)
         self.assertIn("historyItemRemoteRef.get()", js)
         self.assertIn("resolveHistoryItemRefsCommonAncestor", js)
@@ -1179,6 +1179,7 @@ class CodexCountdownTests(unittest.TestCase):
     def test_countdown_is_off_by_default(self):
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsageResetCountdown"])
         self.assertFalse(install.DEFAULT_SETTINGS["codexUsagePieIndicator"])
+        self.assertFalse(install.DEFAULT_SETTINGS["codexResetTimePieIndicator"])
         self.assertFalse(install.DEFAULT_SETTINGS["codexHideUsageResetTimes"])
 
     def test_hide_reset_times_without_countdown(self):
