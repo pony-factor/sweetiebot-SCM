@@ -872,7 +872,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexHideChatTimestamps", "codexShowCannon",
+                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps", "codexShowCannon",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'
