@@ -232,6 +232,8 @@ function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummari
 function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis.fetch, dependencies = {}) {
   const mergePullRequests = async (all) => {
     try {
+      const cooldown = require('./github_rate_limit').activeRateLimit(vscode);
+      if (cooldown) throw cooldown;
       const repositories = await workspaceGitHubRepositories(vscode);
       const selectedRepository = await chooseRepository(vscode, repositories);
       if (!selectedRepository) return;

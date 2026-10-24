@@ -344,6 +344,7 @@ async function run() {
     authentication: {
       async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
+        if (options.silent) return undefined;
         assert.deepEqual(scopes, ['repo']);
         assert.equal(options.createIfNone, true);
         return { accessToken: 'linked-token' };

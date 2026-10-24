@@ -57,7 +57,12 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
     const anchors = report.notes.map(note => {
       const anchor = firstDiffAnchor(files.find(file => file.filename === note.path)?.patch);
       if (!anchor) throw Error('Cannot anchor the analysis for ' + note.path + ' in the current diff.');
-      return { ...note, anchor, body: MARKER + '\n### ' + note.title + '\n\n' + note.description };
+      const option = { id: 'apply-file-plan', label: note.title.slice(0, 120), reaction: '+1', recommended: true,
+        description: 'Apply the integration described for ' + note.path + '.',
+        prompt: 'Implement the following integration for ' + note.path + ': ' + note.description + '\nInspect the other grouped review notes and preserve their combined intentions. Verify the resulting behavior. Do not merge or rewrite history.' };
+      return { ...note, anchor, body: MARKER + '\n<!-- sweetiebot-merge-review -->\n### ' + note.title + '\n\n' + note.description +
+        '\n\n👍 **' + option.label + '**: apply the file plan above. React with 👍 on this file comment, or click the matching Lindsey action. This starts implementation; it does not authorize merging or history rewriting. Compatible integration remains the default for the running batch.\n\n<!-- sweetiebot-merge-options\n' +
+        JSON.stringify({ version: 1, headSha: pr.headSha, baseSha: base.commit.sha, options: [option] }) + '\n-->' };
     });
     const owned = comments.filter(comment => comment.user?.login === actor.login &&
       (comment.body?.startsWith(MARKER) || (comment.body?.startsWith(LEGACY_MARKER) && /### Automatic integration stopped/.test(comment.body))));
@@ -73,7 +78,7 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
     const latest = await api(prefix + '/pulls/' + pr.number);
     const latestBase = await api(prefix + '/branches/' + encodeURIComponent(pr.base));
     if (!matches(latest) || latestBase.commit?.sha !== base.commit.sha) throw Error('The PR or base advanced; refresh the code analysis.');
-    const reviewBody = REVIEW_GROUP + '\n' + (summary || 'Integrate ' + pr.title + ' with current ' + pr.base + '. The inline notes explain the competing edits and combined behavior for each affected file.');
+    const reviewBody = REVIEW_GROUP + '\n' + (summary || 'Integrate ' + pr.title + ' with current ' + pr.base + '. The inline notes explain the competing edits and combined behavior for each affected file.') + '\n\nEach file comment includes a 👍 implementation action. React on the relevant file comment or use its matching Lindsey button. No reaction is required for compatible integration already in progress; these actions do not authorize merging or history rewriting.';
     let review;
     if (existingReview) {
       review = await api(prefix + '/pulls/' + pr.number + '/reviews/' + existingReview.id, {method:'PUT', body:{body:reviewBody}});

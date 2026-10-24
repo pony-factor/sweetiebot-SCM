@@ -379,6 +379,12 @@ async function activate(context) {
   });
   // Register PR merge commands before compatibility aliases and awaited startup
   // work so a stale legacy command cannot leave contributed actions without handlers.
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.githubRateLimited', message => {
+    const error = require('./github_rate_limit').rateLimitError({ status: 403, message });
+    if (error) return require('./github_rate_limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.repairMergeReview', () =>
+    require('./merge_review_repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);

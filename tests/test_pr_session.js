@@ -135,6 +135,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
       authentication: { async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
+        if (options.silent) return undefined;
         assert.deepEqual(scopes, ['repo']);
         assert.equal(options.createIfNone, true);
         return { accessToken: 'merge-session-token' };

@@ -11,7 +11,7 @@ function rateLimitError({ status, headers, message = '' }, now = Date.now()) {
   const retryAt = deadlines.length ? Math.max(...deadlines) + 1000 : now + 60000;
   const time = new Date(retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   const error = Error('GitHub API rate limit reached. Requests are paused until ' + time + '.');
-  Object.assign(error, { code: 'GITHUB_RATE_LIMIT', rateLimited: true, retryAt, status });
+  Object.assign(error, { code: 'GITHUB_RATE_LIMIT', rateLimited: true, retryAt, status, configured: deadlines.length > 0 });
   return error;
 }
 
@@ -22,8 +22,16 @@ async function githubResponseError(response, fallback) {
 }
 
 const notices = new WeakMap();
+const cooldowns = new WeakMap();
 async function promptRateLimit(vscode, error, { retry, context, schedule = setTimeout } = {}) {
   if (!error?.rateLimited) return false;
+  if (!error.configured && error.retryAt <= Date.now() + 61000) {
+    const seconds = Number(vscode.workspace?.getConfiguration?.('scmToolkit')?.get('githubRateLimitCooldownSeconds', 900));
+    error.retryAt = Math.max(error.retryAt, Date.now() + Math.max(60, Math.min(3600, seconds || 900)) * 1000);
+    error.message = 'GitHub API rate limit reached. Requests are paused until ' + new Date(error.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) + '.';
+  }
+  error.configured = true;
+  cooldowns.set(vscode.window, error);
   if (notices.get(vscode.window) >= error.retryAt) return true;
   notices.set(vscode.window, error.retryAt);
   const action = 'Retry after reset';
@@ -49,4 +57,6 @@ function parseCLIResponse(output) {
   return { body, status, headers };
 }
 
-module.exports = { rateLimitError, githubResponseError, promptRateLimit, parseCLIResponse };
+function activeRateLimit(vscode) { const error = cooldowns.get(vscode.window); return error?.retryAt > Date.now() ? error : null; }
+
+module.exports = { activeRateLimit, rateLimitError, githubResponseError, promptRateLimit, parseCLIResponse };

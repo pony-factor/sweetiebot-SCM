@@ -166,6 +166,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     return { ok: true, json: async () => result };
   };
   const actionLaunches = [];
+  panel.visible = false;
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
     context: { globalStorageUri: { fsPath: reactionStorage } },
@@ -175,6 +176,12 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     setTimer(callback) { pollCallback = callback; return 17; },
     clearTimer(id) { assert.equal(id, 17); stopped = true; }
   });
+  assert.equal(apiRequests, 0, 'A dashboard opened in a background tab does not fetch');
+  panel.visible = true;
+  await dashboard.refresh();
+  panel.visible = false; const hiddenRequests = apiRequests; await dashboard.refresh();
+  assert.equal(apiRequests, hiddenRequests, 'Hidden dashboards do not poll');
+  panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
   assert(panel.webview.html.includes('@media(max-width:650px)'),
@@ -356,6 +363,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     merge_commit_sha: 'c'.repeat(40) };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'merged');
+  assert.equal(events.at(-1).prs[0].conflictCleared, true, 'Verified cleared conflicts remain counted after merge');
   assert(events.at(-1).events.some(event => event.state === 'merged'));
   const mergedRequestCount=apiRequests;
   await dashboard.refresh();

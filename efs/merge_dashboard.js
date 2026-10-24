@@ -81,14 +81,14 @@ function reportFromComments(comments) {
         url: comment.html_url || '', id: comment.id };
     }
     if (body.includes(REVIEW_MARKER)) {
-      reviewNotes.push({ text: stripReportOptions(body.replace(REVIEW_MARKER, '')).slice(0, 12000),
+      reviewNotes.push({ text: stripReportOptions(body.replace(REVIEW_MARKER, '').replace('<!-- sweetiebot-merge-analysis -->', '')).slice(0, 12000),
         options: parseReportOptions(body).map(option => comment.path && Number.isSafeInteger(comment.id)
           ? { ...option, sourceId: option.id, commentId: comment.id, id: 'report-' + comment.id + '-' + option.id.replace(/^report-/, '') } : option),
         url: comment.html_url || '', id: comment.id });
     }
   }
   if (reviewNotes.length) review = { ...reviewNotes.at(-1), text: reviewNotes.map(note => note.text).join('\n\n'), options: reviewNotes.flatMap(note => note.options) };
-  const analysis = (comments || []).filter(comment => String(comment.body || '').startsWith('<!-- sweetiebot-merge-analysis -->')).map(comment => ({ text: comment.body.replace('<!-- sweetiebot-merge-analysis -->', '').trim(), url: comment.html_url, path: comment.path }));
+  const analysis = (comments || []).filter(comment => String(comment.body || '').startsWith('<!-- sweetiebot-merge-analysis -->')).map(comment => ({ text: stripReportOptions(comment.body.replace('<!-- sweetiebot-merge-analysis -->', '').replace(REVIEW_MARKER, '')), url: comment.html_url, path: comment.path }));
   return { report, review, analysis };
 }
 
@@ -312,7 +312,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   async function refresh({ force = false } = {}) {
-    if (working || disposed || Date.now() < rateLimitedUntil || (!force && !isActive())) return;
+    if (working || disposed || Date.now() < rateLimitedUntil || require('./github_rate_limit').activeRateLimit(vscode) || (!force && !isActive())) return;
     working = true;
     cycle++;
     error = '';
@@ -326,7 +326,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             error = failure.message;
             if (failure.rateLimited) {
               rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt || Date.now() + 60000);
-              void require('./github_rate_limit').promptRateLimit(vscode, failure).catch(() => {});
+              void require('./github_rate_limit').promptRateLimit(vscode, failure, { context, retry: () => refresh({ force: true }) }).catch(() => {});
+              rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt);
             }
             if (pr.lastError !== failure.message) {
               pr.lastError = failure.message;

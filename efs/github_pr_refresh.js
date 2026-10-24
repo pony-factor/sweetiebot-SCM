@@ -215,7 +215,9 @@ function installPullRequestRefresh(vscode, view, owner) {
     const now = Date.now();
     if (now < blockedUntil) return; // Deduplicate multiple repository failures.
     consecutiveLimits = Math.min(consecutiveLimits + 1, 3);
-    blockedUntil = now + Math.min(3600000, 900000 * 2 ** (consecutiveLimits - 1));
+    const fallback = Math.max(60, Math.min(3600, Number(config().get('githubRateLimitCooldownSeconds', 900)) || 900));
+    blockedUntil = now + Math.min(3600000, fallback * 1000 * 2 ** (consecutiveLimits - 1));
+    void Promise.resolve(vscode.commands.executeCommand('sweetiebot.githubRateLimited', String(message))).catch(() => {});
   };
   globalThis.__sweetiebotGitHubPrRefreshError = reportFetchError;
   const refresh = async () => {
