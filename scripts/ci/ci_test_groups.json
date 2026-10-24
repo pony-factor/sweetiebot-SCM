@@ -171,12 +171,14 @@
         "test_kefania_app_environment.js",
         "test_kefania_chat_window.js",
         "test_kefania_close_position.js",
+        "test_kefania_merge_help.js",
         "test_kefania_paths.js",
         "test_kefania_runner.js"
       ],
       "syntax": [
         "efs/github_app_identity.js",
         "efs/github_app_settings.js",
+        "efs/kefania_merge_help.js",
         "efs/kefania_runner.js"
       ]
     },
