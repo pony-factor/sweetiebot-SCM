@@ -14,6 +14,14 @@ const SHA = /^[a-f0-9]{40}$/i;
 // inherit that same session through GH_TOKEN, never the PR-creation bot.
 // GitHub applies repository permissions, reviews, and branch protection.
 function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn) {
+  // Preserve /user and every merge write under gh's human authentication.
+  if (method === 'GET' && spawnProcess === spawn &&
+      /^repos\/[\w.-]+\/[\w.-]+(?:[/?]|$)/.test(endpoint) &&
+      require('./github_app_identity').separateAppsEnabled()) {
+    const repository = endpoint.split('/').slice(1, 3).join('/');
+    const readFetch = require('./github_read_api').createLindseyReadFetch(repository);
+    return require('./github_user_api').githubUserAPI('unused-user-token', readFetch)(endpoint);
+  }
   return new Promise((resolve, reject) => {
     const args = ['api', '--include', '--hostname', 'github.com', '--method', method, endpoint];
     if (body !== undefined) args.push('--input', '-');

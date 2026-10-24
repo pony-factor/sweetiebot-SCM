@@ -30,6 +30,10 @@ async function main() {
           return handlers.get(id)(...args);
         }
       },
+      authentication: {
+        getSession: async () => ({ scopes: ['repo'], accessToken: 'mock-user-token',
+          account: { id: 'tester', label: 'Tester' } })
+      },
       ProgressLocation: { Notification: 15 },
       window: {
         state: { focused: true }, onDidChangeWindowState: event,
