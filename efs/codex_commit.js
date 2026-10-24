@@ -2,6 +2,7 @@
 
 const { spawn, execFile } = require('child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('./python_runtime');
+const { isCodex, withModel, collapse } = require('./codex_attribution');
 
 function generateMessage(script, cwd, context) {
   return new Promise((resolve, reject) => {
@@ -62,22 +63,30 @@ async function resolveCommitRepository(vscode, uri) {
   const repositories = api.repositories || [];
   if (!repositories.length) throw new Error('No Git repository is open.');
   if (repositories.length === 1) return repositories[0];
+  // A keyboard shortcut has no SCM repository argument. When a commit title
+  // has already been drafted, prefer the repository that owns that draft,
+  // even if an unrelated file is still the active editor.
+  const withDrafts = repositories.filter(repository =>
+    typeof repository.inputBox?.value === 'string' && repository.inputBox.value.trim()
+  );
+  const candidates = withDrafts.length ? withDrafts : repositories;
+  if (candidates.length === 1) return candidates[0];
   const editorPath = vscode.window.activeTextEditor?.document?.uri?.fsPath;
   if (editorPath) {
-    const matching = repositories.filter(repository => {
+    const matching = candidates.filter(repository => {
       const rootPath = repository.rootUri.fsPath;
       const relative = path.relative(rootPath, editorPath);
       return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
     }).sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length);
     if (matching.length) return matching[0];
   }
-  const selections = repositories.map(repository => ({
+  const selections = candidates.map(repository => ({
     label: path.basename(repository.rootUri.fsPath),
     description: repository.rootUri.fsPath,
     repository
   }));
   const selection = await vscode.window.showQuickPick(selections, {
-    title: 'Commit with Codex co-author',
+    title: 'Choose repository to commit',
     placeHolder: 'Choose the repository to commit'
   });
   return selection?.repository;
@@ -101,10 +110,20 @@ function coauthorTrailer(name, email) {
 }
 
 function withCoauthorTrailer(message, trailer) {
-  const base = message.trimEnd();
-  if (!base) return '';
-  if (base.split(/\r?\n/).some(line => line.trim() === trailer)) return base;
-  return base + '\n\n' + trailer;
+  return collapse(message, trailer);
+}
+
+// Read only the active Codex window's displayed model and effort; never
+// request conversation text solely for co-author attribution.
+async function activeCodexModel(vscode) {
+  try {
+    const extension = vscode.extensions.getExtension('openai.chatgpt');
+    if (!extension) return undefined;
+    if (!extension.isActive) await extension.activate();
+    if (!(await vscode.commands.getCommands(true)).includes('sweetiebot.readCodexModel')) return undefined;
+    const model = await vscode.commands.executeCommand('sweetiebot.readCodexModel');
+    return model && typeof model === 'object' ? model : undefined;
+  } catch { return undefined; }
 }
 
 async function commitWithCodex(vscode, uri, options = {}) {
@@ -121,12 +140,17 @@ async function commitWithCodex(vscode, uri, options = {}) {
     const configuredEmail = options.trailer === undefined
       ? await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-email', 'noreply@openai.com')
       : null;
-    const trailer = options.trailer === undefined
+    let trailer = options.trailer === undefined
       ? coauthorTrailer(configuredName, configuredEmail)
       : options.trailer;
     // Validate even caller-provided trailers; no arbitrary commit-message injection.
     if (typeof trailer !== 'string' || !/^Co-authored-by: [^\r\n<>]+ <[^\s<>@\r\n]+@[^\s<>@\r\n]+>$/.test(trailer)) {
       throw new Error('Invalid Codex co-author trailer.');
+    }
+    const parts = /^Co-authored-by: (.+?) <([^<>]+)>$/.exec(trailer);
+    if (isCodex(parts[1], parts[2])) {
+      const model = await activeCodexModel(vscode);
+      trailer = coauthorTrailer(withModel(parts[1], model), parts[2]);
     }
     const input = repository.inputBox;
     const originalMessage = options.message === undefined ? (input?.value ?? '') : options.message;
@@ -139,8 +163,13 @@ async function commitWithCodex(vscode, uri, options = {}) {
     }
     const push = vscode.workspace.getConfiguration('git', root).get('postCommitCommand') === 'push';
     if (vscode.workspace.getConfiguration('scmToolkit', root).get('durableBackgroundCommits', false) === true) {
+      const preparedMessage = originalMessage.trim()
+        ? withCoauthorTrailer(originalMessage, trailer) : '';
+      // The background worker appends a missing trailer verbatim. Once the
+      // message is consolidated, passing the old trailer would duplicate it.
       return await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
-        message: originalMessage, codex: true, codexCommitContext: useCodexContext, trailer, push
+        message: preparedMessage, codex: true, codexCommitContext: useCodexContext,
+        trailer: preparedMessage ? '' : trailer, push
       });
     }
     let message = originalMessage;
@@ -249,4 +278,4 @@ function registerCodexCommitCommand(vscode, extensionContext) {
   }));
 }
 
-module.exports = { generateMessage, registerCodexCommitCommand };
+module.exports = { generateMessage, registerCodexCommitCommand, resolveCommitRepository, coauthorTrailer, readCommitGitSetting };
