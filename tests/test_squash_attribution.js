@@ -116,6 +116,12 @@ async function run(){
  let calls=0;
  assert.equal((await readCommits(async()=>{calls++;return commits},'owner/repo',269)).length,2);
  assert.equal(calls,1);
+ const { validateCommitProposal } = require('../efs/merge_commit_proposal');
+ const accepted = validateCommitProposal({ title: legacyBullets.title, message: legacyBullets.message }, legacyBullets);
+ assert(accepted.proposed && !accepted.adjusted);
+ const corrected = validateCommitProposal({ title: legacyBullets.title, message: 'An incomplete web proposal' }, legacyBullets);
+ assert(corrected.adjusted); assert.equal(corrected.message, legacyBullets.message, 'Missing original content or credits are restored locally');
+ assert.throws(() => validateCommitProposal({ title: 'Wrong PR title', message: legacyBullets.message }, legacyBullets), /exactly match/);
  await assert.rejects(readCommits(async()=>({}),'owner/repo',269),/Invalid/);
 }
 run().catch(e=>{console.error(e);process.exitCode=1});

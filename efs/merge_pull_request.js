@@ -57,7 +57,7 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 }
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
-  { humanMerge = humanSquashMerge, method = 'squash' } = {}) {
+  { humanMerge = humanSquashMerge, method = 'squash', gitToken } = {}) {
   if (!['squash', 'merge'].includes(method)) throw new Error('Unknown merge method.');
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
@@ -130,7 +130,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       }
       return request(endpoint, { method, body });
     };
-    const landed = await humanMerge(repository, result.number, { api, offerAuthorChoice: true,
+    const landed = await humanMerge(repository, result.number, { api, gitToken, offerAuthorChoice: true,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),

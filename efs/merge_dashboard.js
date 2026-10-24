@@ -167,6 +167,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
     .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'merge_commit_tree.js'), 'utf8'))
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
+    .replace('__RATE_LIMIT_FORMATTER__', require('./github_rate_limit').rateLimitMessage.toString())
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
   const catalog = ponyCatalog();
   const prs = selection.pullRequests.map(pr => ({
@@ -221,6 +222,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (disposed) return;
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository,
+      rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       timestampMode: configuredTimelineMode(vscode),

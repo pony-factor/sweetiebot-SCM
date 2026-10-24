@@ -21,7 +21,7 @@ const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh
 const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
-  api, git, expected, resolutionPatch = null, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
+  api, git, gitToken, expected, resolutionPatch = null, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
   allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
@@ -35,7 +35,7 @@ async function humanSquashMerge(repository, number, {
     '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
     '-c', 'credential.helper=!' + gh + ' auth git-credential', ...args],
   { timeout: 120000, maxBuffer: 4 * 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
+    env: { ...process.env, ...(gitToken ? { GH_TOKEN: gitToken } : {}), GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
     } catch { throw Error('Local Git operation failed; no file contents are included in this report.'); }
   };
   const endpoint = 'repos/' + repository;

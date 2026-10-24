@@ -333,7 +333,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         }
         return userAPI(endpoint, { method, ...(method === 'GET' ? {} : { body }) });
       };
-      const result = await merge(url, execute, confirmNonMain, { humanMerge: (repo, number, options) => humanSquashMerge(repo, number, { ...options, api: humanAPI }) });
+      const result = await merge(url, execute, confirmNonMain, { humanMerge: (repo, number, options) => humanSquashMerge(repo, number, { ...options, api: humanAPI, gitToken: session.accessToken }) });
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {

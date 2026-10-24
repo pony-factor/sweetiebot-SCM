@@ -5,6 +5,10 @@ const {executeResolution}=require('../efs/merge_resolution');
 const {createMergeBatch}=require('../efs/merge_batch');
 (async()=>{
  const now=Date.now();
+ const {rateLimitMessage}=require('../efs/github_rate_limit');
+ assert.match(rateLimitMessage(now+121000,'relative',now), /3m/);
+ assert.match(rateLimitMessage(now+45000,'relative',now), /45s/);
+ assert.match(rateLimitMessage(now-1,'relative',now), /Ready to retry/);
  assert.equal(rateLimitError({status:403,message:'Resource not accessible by integration'},now),null,'Permission errors are not rate limits');
  const headers={'x-ratelimit-remaining':'0','x-ratelimit-reset':String(Math.floor(now/1000)+90)};
  const limited=rateLimitError({status:403,headers},now);

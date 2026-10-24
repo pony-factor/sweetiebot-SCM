@@ -1,5 +1,16 @@
 'use strict';
 
+function rateLimitMessage(retryAt, mode = 'clock', now = Date.now()) {
+  if (mode === 'relative') {
+    const seconds = Math.max(0, Math.ceil((retryAt - now) / 1000));
+    if (!seconds) return 'GitHub API rate-limit pause ended. Ready to retry.';
+    const minutes = Math.ceil(seconds / 60);
+    const duration = seconds < 60 ? seconds + 's' : minutes < 60 ? minutes + 'm' : Math.floor(minutes / 60) + 'h ' + (minutes % 60) + 'm';
+    return 'GitHub API rate limit reached. Requests are paused for ' + duration + '.';
+  }
+  return 'GitHub API rate limit reached. Requests are paused until ' + new Date(retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) + '.';
+}
+
 function rateLimitError({ status, headers, message = '' }, now = Date.now()) {
   const header = name => headers?.get?.(name) ?? headers?.[name];
   const remaining = header('x-ratelimit-remaining');
@@ -9,8 +20,7 @@ function rateLimitError({ status, headers, message = '' }, now = Date.now()) {
   const retryDelay = retry && /^\d+(?:\.\d+)?$/.test(retry) ? now + Number(retry) * 1000 : Date.parse(retry || '');
   const deadlines = [remaining === '0' && reset, retryDelay].filter(value => Number.isFinite(value) && value > now);
   const retryAt = deadlines.length ? Math.max(...deadlines) + 1000 : now + 60000;
-  const time = new Date(retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-  const error = Error('GitHub API rate limit reached. Requests are paused until ' + time + '.');
+  const error = Error(rateLimitMessage(retryAt));
   Object.assign(error, { code: 'GITHUB_RATE_LIMIT', rateLimited: true, retryAt, status, configured: deadlines.length > 0 });
   return error;
 }
@@ -30,6 +40,7 @@ async function promptRateLimit(vscode, error, { retry, context, schedule = setTi
     error.retryAt = Math.max(error.retryAt, Date.now() + Math.max(60, Math.min(3600, seconds || 900)) * 1000);
     error.message = 'GitHub API rate limit reached. Requests are paused until ' + new Date(error.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) + '.';
   }
+  error.message = rateLimitMessage(error.retryAt, vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden'));
   error.configured = true;
   cooldowns.set(vscode.window, error);
   if (notices.get(vscode.window) >= error.retryAt) return true;
@@ -59,4 +70,4 @@ function parseCLIResponse(output) {
 
 function activeRateLimit(vscode) { const error = cooldowns.get(vscode.window); return error?.retryAt > Date.now() ? error : null; }
 
-module.exports = { activeRateLimit, rateLimitError, githubResponseError, promptRateLimit, parseCLIResponse };
+module.exports = { rateLimitMessage, activeRateLimit, rateLimitError, githubResponseError, promptRateLimit, parseCLIResponse };

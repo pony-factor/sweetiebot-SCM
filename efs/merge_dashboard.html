@@ -151,6 +151,7 @@ __COMMIT_TREE__
 </script>
 <script nonce="__NONCE__">
 __TIMESTAMP_FORMATTER__
+__RATE_LIMIT_FORMATTER__
 </script>
 <script nonce="__NONCE__">
 (() => {
@@ -385,7 +386,7 @@ __TIMESTAMP_FORMATTER__
     byId('count').textContent = 'Live GitHub updates · roughly every ' +
       (model.nextRefreshSeconds || 15) + ' seconds';
     byId('notice').hidden = !model.error;
-    byId('notice').textContent = model.error || '';
+    byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
     const list = byId('prs');
     const listScroll = list.scrollTop;
     list.replaceChildren();
@@ -451,6 +452,7 @@ __TIMESTAMP_FORMATTER__
   });
   function refreshRelativeEventTimes() {
     if (model.timestampMode !== 'relative') return;
+    if (model.rateLimitRetryAt && model.error) byId('notice').textContent = rateLimitMessage(model.rateLimitRetryAt, 'relative');
     for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
       stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
     }

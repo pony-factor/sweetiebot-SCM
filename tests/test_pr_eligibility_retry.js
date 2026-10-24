@@ -6,12 +6,14 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(require.resolve('../assets/workbench/picker.js'), 'utf8');
 const refresh = source.match(/    const refreshPullRequest = \(\) => \{[\s\S]*?\n    };/)[0];
+const warningPolicy = source.match(/function scmToolkitHighlightPrWarnings\([^)]*\) \{[\s\S]*?\n}/)?.[0] || '';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function harness(executeCommand) {
   const timers = new Map();
   let nextTimer = 0;
   const context = vm.createContext({
+    configuration: { getValue() { return undefined; } },
     settings: { mcpPullRequest: true, remote: 'origin' },
     currentBranch: 'draft', currentDefaultBranch: 'main', currentBranchRevision: 'head1',
     currentRepositoryUri: { toString: () => 'file:///workspace/repository' },
@@ -23,7 +25,7 @@ function harness(executeCommand) {
     setTimeout(callback, delay) { assert.equal(delay, 15000); timers.set(++nextTimer, callback); return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
   });
-  vm.runInContext(`${refresh}\nthis.refresh = refreshPullRequest;`, context);
+  vm.runInContext(`${warningPolicy}\n${refresh}\nthis.refresh = refreshPullRequest;`, context);
   return { context, timers };
 }
 
