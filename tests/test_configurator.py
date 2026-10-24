@@ -85,6 +85,29 @@ class SubmissionTests(unittest.TestCase):
         for name in names:
             self.assertIn(f'name="{name}"', page)
 
+    def test_github_refresh_controls_round_trip(self):
+        values = form_values()
+        values.pop("mergeAutoRefresh", None)
+        values.update(mergeRefreshIntervalSeconds=["180"], githubRateLimitCooldownSeconds=["600"])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertFalse(payload["mergeAutoRefresh"])
+        self.assertEqual(payload["mergeRefreshIntervalSeconds"], 180)
+        self.assertEqual(payload["githubRateLimitCooldownSeconds"], 600)
+        for name, value in [("mergeRefreshIntervalSeconds", "29"), ("githubRateLimitCooldownSeconds", "59")]:
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(dict(values, **{name: [value]}))
+
+    def test_merge_summaries_are_opt_in_and_persist(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["mergePostSummaries"])
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["mergePostSummaries"])
+        values["mergePostSummaries"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["mergePostSummaries"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="mergePostSummaries" value="true" checked', page)
+
     def test_sync_commit_filter_defaults_on_and_persists(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],
@@ -287,6 +310,24 @@ class SubmissionTests(unittest.TestCase):
         page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
         self.assertIn('name="hideIncomingSyncCount" value="true" checked', page)
         self.assertIn('name="hideOutgoingSyncCount" value="true"', page)
+
+    def test_pr_warning_highlights_require_opt_in(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["prWarningHighlights"])
+        values = form_values()
+        values.pop("prWarningHighlights", None)
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true"', page)
+        self.assertNotIn('name="prWarningHighlights" value="true" checked', page)
+        self.assertFalse(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+
+        values["prWarningHighlights"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["prWarningHighlights"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true" checked', page)
 
     def test_sync_direction_arrow_toggles_round_trip(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])

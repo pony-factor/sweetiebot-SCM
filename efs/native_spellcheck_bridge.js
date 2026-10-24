@@ -10,6 +10,25 @@ const MAX_INPUT = 60000;
 const MAX_REPLY = 120000;
 const DEFAULT_TIMEOUT_MS = 180000;
 
+// Quoted Markdown is source material, not prose the assistant may revise.
+// Include unmarked lazy continuation lines until a blank or a new block starts.
+function blockquoteLines(body) {
+  const lines = body.split('\n');
+  const quoted = [];
+  let inside = false;
+  for (const line of lines) {
+    const text = line.replace(/\r$/, '');
+    if (/^[ \t]*>/.test(text)) inside = true;
+    else if (!text.trim() || /^ {0,3}(?:#{1,6}(?:[ \t]|$)|[-+*][ \t]|\d+[.)][ \t]|`{3,}|~{3,})/.test(text)) inside = false;
+    if (inside) quoted.push(line);
+  }
+  return quoted;
+}
+
+function blockquotesUnchanged(original, corrected) {
+  return JSON.stringify(blockquoteLines(original)) === JSON.stringify(blockquoteLines(corrected));
+}
+
 function validDraft(draft) {
   return draft && typeof draft === 'object'
     && typeof draft.title === 'string' && draft.title.length <= 512
@@ -104,6 +123,10 @@ async function startNativeSpellcheckBridge(draft, {timeoutMs = DEFAULT_TIMEOUT_M
         }
         const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
         if (!validReply(value)) throw new Error('Invalid response shape');
+        if (value.status === 'complete' && !blockquotesUnchanged(draft.body, value.result.body)) {
+          reply(res, 422, {error: 'Spellcheck changed a protected Markdown blockquote'});
+          return;
+        }
         reply(res, 200, {ok: true});
         if (value.status === 'error') finish(new Error('ChatGPT Spellcheck Only: ' + value.error));
         else finish(null, value.result);
@@ -175,5 +198,5 @@ function registerNativeSpellcheckBridge(vscode, context, start = startNativeSpel
 
 module.exports = {
   startNativeSpellcheckBridge, registerNativeSpellcheckBridge,
-  validDraft, validReply
+  validDraft, validReply, blockquotesUnchanged
 };

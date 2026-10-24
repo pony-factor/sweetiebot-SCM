@@ -33,6 +33,7 @@ async function main() {
       }, executeCommand: (id, arg) => {
         if (commands.has(id)) return commands.get(id)(arg);
         if (id === 'sweetiebot.squashMergePullRequest') { merges.push(arg); return Promise.resolve(); }
+        if (id === 'sweetiebot.githubRateLimited') return Promise.resolve();
         assert.equal(id, 'pr.refreshList'); calls++;
         return new Promise(done => { resolve = done; });
       } }

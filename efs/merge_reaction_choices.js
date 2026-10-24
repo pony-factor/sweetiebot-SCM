@@ -5,7 +5,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { parseReportOptions } = require('./merge_blocker_actions');
 
-function reactionDecision(comment, pr, reactions, actor) {
+function decisionOptions(comment, pr, actor) {
   if (!/^[a-f0-9]{40}$/i.test(pr.headSha || '') || !/^[a-f0-9]{40}$/i.test(pr.baseSha || '')) return null;
   if (!comment?.body?.includes('<!-- sweetiebot-merge-review -->') ||
       !Number.isSafeInteger(comment.id) || !comment.path || !comment.line ||
@@ -19,6 +19,12 @@ function reactionDecision(comment, pr, reactions, actor) {
   const options = parseReportOptions(comment.body);
   if (options.length < 2 || options.length > 3 || options.some(option => !option.reaction) ||
       new Set(options.map(option => option.reaction)).size !== options.length) return null;
+  return options;
+}
+
+function reactionDecision(comment, pr, reactions, actor) {
+  const options = decisionOptions(comment, pr, actor);
+  if (!options) return null;
   const updated = Date.parse(comment.updated_at);
   if (!Number.isFinite(updated)) return null;
   const votes = reactions.filter(reaction => reaction.user?.id === actor.id &&
@@ -31,18 +37,17 @@ function reactionDecision(comment, pr, reactions, actor) {
 
 function createReactionChoices({ repository, token, fetchImpl, storageDirectory, launch }) {
   let actor;
-  async function get(endpoint) {
-    const response = await fetchImpl('https://api.github.com' + endpoint, { headers: {
-      Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token,
+  async function request(endpoint, method = 'GET', body) {
+    const response = await fetchImpl('https://api.github.com' + endpoint, { method, ...(body ? { body: JSON.stringify(body) } : {}), headers: {
+      'Content-Type': 'application/json', Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token,
       'X-GitHub-Api-Version': '2022-11-28'
     } });
     if (!response.ok) {
-      const error = Error('GitHub reaction lookup failed (HTTP ' + response.status + ').');
-      error.rateLimited = response.status === 403 || response.status === 429;
-      throw error;
+      throw await require('./github_rate_limit').githubResponseError(response, 'GitHub reaction lookup failed (HTTP ' + response.status + ').');
     }
-    return response.json();
+    return response.status === 204 ? null : response.json();
   }
+  const get = endpoint => request(endpoint);
   async function reactions(id) {
     const result = [];
     for (let page = 1; page <= 3; page++) {
@@ -54,7 +59,28 @@ function createReactionChoices({ repository, token, fetchImpl, storageDirectory,
     // A truncated list cannot establish that the user chose exactly one option.
     return [];
   }
-  return { async inspect(pr, comments) {
+  return {
+    async select(pr, comment, option) {
+      actor ||= await get('/user');
+      const endpoint = '/repos/' + repository + '/pulls/comments/' + comment.id;
+      const fresh = await get(endpoint);
+      if (fresh.body !== comment.body || fresh.updated_at !== comment.updated_at) throw Error('The code choices changed. Refresh before choosing.');
+      const options = decisionOptions(fresh, pr, actor);
+      const selected = options?.find(candidate => candidate.id === (option.sourceId || option.id) && candidate.prompt === option.prompt && candidate.reaction === option.reaction);
+      if (!selected) throw Error('This choice is not bound to the current PR head and base.');
+      const votes = await reactions(comment.id);
+      // A button selects one choice: remove this user's competing or stale votes.
+      // Never touch anyone else's reactions or unrelated reaction types.
+      for (const vote of votes) {
+        if (vote.user?.id !== actor.id || !options.some(item => item.reaction === vote.content)) continue;
+        if (vote.content === selected.reaction && Date.parse(vote.created_at) > Date.parse(fresh.updated_at)) continue;
+        await request(endpoint + '/reactions/' + vote.id, 'DELETE');
+      }
+      const vote = await request(endpoint + '/reactions', 'POST', { content: selected.reaction });
+      if (vote.user?.id !== actor.id || vote.user?.type !== 'User') throw Error('GitHub did not confirm the reaction as your signed-in user.');
+      return vote;
+    },
+    async inspect(pr, comments, engine = 'web') {
     if (!storageDirectory || ['merged', 'closed'].includes(pr.state)) return;
     for (const comment of comments) {
       if (!comment.body?.includes('<!-- sweetiebot-merge-review -->') ||
@@ -74,7 +100,7 @@ function createReactionChoices({ repository, token, fetchImpl, storageDirectory,
       catch (error) { if (error.code === 'EEXIST') continue; throw error; }
       // Claim before dispatch: reopening windows or an uncertain launch failure
       // must never replay a code-changing task. A new reaction can retry.
-      await launch(pr, fresh, checked.option);
+      await launch(pr, fresh, checked.option, engine);
       return;
     }
   } };

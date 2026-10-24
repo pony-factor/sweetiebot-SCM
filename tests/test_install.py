@@ -45,6 +45,7 @@ SETTINGS = {
     "aiLowMemoryGiB": "4",
     "aiModelPicker": True,
     "mcpPullRequest": True,
+    "prWarningHighlights": False,
     "mcpPrServer": "codex-drafter",
     "mcpPrTool": "github_create_pull_request",
     "codexUsageResetCountdown": False,
@@ -119,6 +120,39 @@ def browser_resolver_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_live_component_assets_update_without_repatching_workbench(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as root:
+            app = Path(root)
+            base = app / "sweetiebot"
+            self.assertTrue(install.sync_live_components(app, check=True))
+            self.assertFalse(base.exists(), "--check must not create component assets")
+            self.assertTrue(install.sync_live_components(app))
+            self.assertFalse(install.sync_live_components(app, check=True))
+            manifest = json.loads((base / "manifest.json").read_text())
+            self.assertEqual(manifest["schema"], 1)
+            spec = manifest["modules"][0]
+            self.assertEqual(spec["name"], "codex-file-drag")
+            asset = (base / spec["file"]).read_bytes()
+            self.assertEqual(hashlib.sha256(asset).hexdigest(), spec["version"])
+            (base / spec["file"]).write_text("// modified")
+            self.assertTrue(install.sync_live_components(app, check=True))
+            self.assertTrue(install.sync_live_components(app))
+            self.assertEqual((base / spec["file"]).read_bytes(), asset)
+            self.assertTrue(install.sync_live_components(app, remove=True))
+            self.assertFalse(base.exists())
+            self.assertFalse(install.sync_live_components(app, remove=True, check=True))
+
+    def test_live_components_reject_symlinked_paths(self):
+        with tempfile.TemporaryDirectory() as root:
+            app = Path(root)
+            elsewhere = app / "elsewhere"
+            elsewhere.mkdir()
+            (app / "sweetiebot").symlink_to(elsewhere, target_is_directory=True)
+            with self.assertRaisesRegex(RuntimeError, "symlinked"):
+                install.sync_live_components(app)
+            self.assertEqual(list(elsewhere.iterdir()), [])
+
     def test_window_naming_preserves_defaults_and_independent_templates(self):
         native = '''class Title {
 initialize(){this.checkTitleVariables(),this.registerListeners()}
@@ -408,6 +442,19 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             ".scm-view .scm-editor > .scm-toolkit-sync-branch:hover:not(:disabled)",
             css,
         )
+
+    def test_pr_warning_icon_is_neutral_by_default(self):
+        self.assertFalse(install.DEFAULT_SETTINGS["prWarningHighlights"])
+        js, css = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)
+        self.assertIn("scmToolkitHighlightPrWarnings(configuration, settings)", js)
+        self.assertIn("settings.prWarningHighlights === true", js)
+        self.assertIn(
+            "scmToolkitHighlightPrWarnings(configuration, settings) && pullRequestEligibility?.reason === 'unavailable'",
+            js,
+        )
+        self.assertIn("event.affectsConfiguration('scmToolkit.prWarningHighlights')", js)
+        self.assertIn("color: var(--vscode-descriptionForeground);", css)
+        self.assertIn(".scm-toolkit-pr-needs-attention", css)
 
     def test_install_injects_valid_settings_line(self):
         js, css = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)

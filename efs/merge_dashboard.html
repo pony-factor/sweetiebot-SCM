@@ -15,8 +15,9 @@ header{padding:16px 20px;border-bottom:1px solid var(--vscode-panel-border,#555)
 h1{margin:0;font-size:20px;font-weight:700}
 h2{font-size:16px;margin:0 0 12px}
 h3{margin:16px 0 8px;font-size:13px}
+.owner-logo{display:block;width:28px;height:28px;object-fit:contain;border-radius:4px;margin-top:6px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
-.overview{display:flex;align-items:center;gap:12px}
+.overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
 .refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
 .refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
@@ -56,6 +57,8 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
+.event.review-comment{border-color:var(--vscode-charts-blue,#468cdb)}
+.event-link{font-weight:600;color:var(--vscode-textLink-foreground,#4ca5ff)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
 .event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
 .event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
@@ -104,6 +107,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .diff-line--hunk,.diff-line--meta{background:var(--vscode-diffEditor-unchangedRegionBackground,var(--vscode-editorWidget-background,transparent));color:var(--vscode-diffEditor-unchangedRegionForeground,var(--vscode-descriptionForeground))}
 .diff-line--note{color:var(--vscode-descriptionForeground)}
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
+.pr-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px}.pr-commit-tree{position:sticky;top:0;align-self:start;max-height:70vh;overflow:auto;border-left:1px solid var(--vscode-panel-border,#555);padding-left:12px}.commit-tree-list{position:relative}.commit-tree-list svg{position:absolute;left:0;top:0;stroke:var(--vscode-charts-green,#62b879);fill:var(--vscode-charts-green,#62b879)}.commit-tree-item{display:block;height:52px;overflow:hidden;text-align:left;border:0;background:transparent;font-size:11px;max-width:150px;overflow-wrap:anywhere}.local-runner-details{white-space:pre-wrap;overflow-wrap:anywhere}.blocker-notice{padding:8px 20px}.blocker-notice button{margin-left:8px}@media(max-width:850px){.pr-detail-layout{display:block}.pr-commit-tree{position:static;max-height:240px;border-left:0;border-top:1px solid var(--vscode-panel-border,#555);margin-top:14px}}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
 /* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
@@ -112,14 +116,15 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 </head>
 <body>
 <header>
-<div><h1>Lindsey · Bulk merge</h1><div class="subtitle" id="repository">Connecting to GitHub…</div></div>
-<div class="overview"><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
+<div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+<div id="blocker-notice" class="blocker-notice" hidden></div>
 <div id="notice" class="notice" hidden></div>
 <div class="layout">
 <aside aria-label="Merge timeline">
-  <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
+  <div class="section-heading"><h2>Selected pull requests</h2></div>
   <div id="prs" class="prs"></div>
   <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
   <div id="timeline" class="events">
@@ -144,9 +149,11 @@ __MARKDOWN_RENDERER__
 </script>
 <script nonce="__NONCE__">
 __DIFF_RENDERER__
+__COMMIT_TREE__
 </script>
 <script nonce="__NONCE__">
 __TIMESTAMP_FORMATTER__
+__RATE_LIMIT_FORMATTER__
 </script>
 <script nonce="__NONCE__">
 (() => {
@@ -243,7 +250,7 @@ __TIMESTAMP_FORMATTER__
   let selected = null;
   let actionEngine = 'web';
   const labels = {
-    waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Resolved',
+    waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Conflicts cleared',
     conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
     queued: 'Queued', updated: 'Updated', closed: 'Closed'
   };
@@ -257,6 +264,12 @@ __TIMESTAMP_FORMATTER__
     const node = el(tag, cls, text);
     parent.appendChild(node);
     return node;
+  }
+  function pullRequestPriority(pr) {
+    if (pr.state === 'merged') return 3;
+    if (pr.state === 'closed') return 2;
+    if (pr.localReview || ['review', 'conflict', 'blocked', 'updated'].includes(pr.state)) return 0;
+    return 1;
   }
   function dispatch(type, number, url) { vscode.postMessage({ type, number, url }); }
   function showTextPanel(parent, heading, content, missing, markdown = false) {
@@ -274,9 +287,11 @@ __TIMESTAMP_FORMATTER__
     return body;
   }
   function renderDetail() {
-    const parent = byId('details');
-    const scroll = parent.scrollTop;
-    parent.replaceChildren();
+    const outer = byId('details');
+    const scroll = outer.scrollTop;
+    outer.replaceChildren();
+    const layout = show('div', 'pr-detail-layout', undefined, outer);
+    const parent = show('div', '', undefined, layout);
     const pr = model.prs.find(p => p.number === selected);
     if (!pr) return;
     const top = show('div', 'detail-top', undefined, parent);
@@ -298,13 +313,30 @@ __TIMESTAMP_FORMATTER__
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
-    if (pr.review && pr.state !== 'merged') showTextPanel(parent,
+    if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
+    if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
+      pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
+    if (pr.review && !pr.analysis?.length && pr.state !== 'merged') showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
-    showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
-      'No AI merge report yet. The ChatGPT session can post one after verifying the work.', true);
-    if (pr.blockerOptions?.length) {
+    const localInfo = [pr.localExplanation,
+      ...Object.values(pr.localDecisions || {}).map(item =>
+        [item.title, item.path, item.description].filter(Boolean).join('\n')),
+      pr.localResultReason].filter(Boolean).join('\n\n');
+    if (localInfo) {
+      const concise = String(pr.localExplanation || pr.localResultReason || '').split(/(?<=[.!?])\s+/)
+        .filter(sentence => !/^(Verified|Reverified|Current main|Original|The original|Oldest|Use |Require |The local|PR #|Selected|Inspected|Codex |Preserve the exact)/i.test(sentence)).join(' ');
+      showTextPanel(parent, 'AI explanation · Local session', (concise || pr.localResultReason || 'Prepared an integration preserving the current base and this PR’s changes.').slice(0, 600), '', true);
+      const runner = show('details', '', undefined, parent);
+      show('summary', 'muted', 'Runner details', runner);
+      show('div', 'local-runner-details', localInfo, runner);
+    }
+    if (pr.report?.text) showTextPanel(parent, 'AI explanation · GitHub report', pr.report.text, '', true);
+    if (!localInfo && !pr.report?.text && !pr.localReview?.text && !pr.review?.text && !pr.analysis?.length) showTextPanel(parent, 'AI explanation', '',
+      'No explanation available yet.', true);
+    for (const [heading, actions] of [['Decision needed', pr.blockerOptions], ['Manual actions', pr.manualActions]]) {
+      if (!actions?.length) continue;
       const choices = show('section', 'panel', undefined, parent);
-      show('h3', '', 'Choose how to proceed', choices);
+      show('h3', '', heading, choices);
       const destination = show('label', 'actions', 'Run with ', choices);
       const engine = show('select', '', undefined, destination);
       engine.setAttribute('aria-label', 'Implementation destination');
@@ -314,9 +346,10 @@ __TIMESTAMP_FORMATTER__
       }
       engine.value = actionEngine;
       engine.addEventListener('change', () => { actionEngine = engine.value; });
-      for (const option of pr.blockerOptions) {
+      for (const option of actions) {
         const row = show('div', 'blocker-choice', undefined, choices);
-        const button = show('button', 'secondary', option.label, row);
+        const emoji = { '+1': '👍', heart: '❤️', rocket: '🚀' }[option.reaction];
+        const button = show('button', 'secondary', (emoji ? emoji + ' ' : '') + option.label, row);
         button.disabled = Boolean(pr.actionPending);
         button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
           headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
@@ -327,7 +360,7 @@ __TIMESTAMP_FORMATTER__
         show('summary', 'muted', 'View instructions', instructions);
         show('p', '', option.prompt, instructions);
       }
-      if (pr.actionPending) show('p', 'muted', 'Opening the selected implementation…', choices);
+      if (pr.actionPending) show('p', 'muted', 'Opening the requested task…', choices);
     }
     showTextPanel(parent, 'Original PR description', pr.description,
       'No PR description supplied.', true);
@@ -341,24 +374,34 @@ __TIMESTAMP_FORMATTER__
       else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
-    parent.scrollTop = scroll;
+    const tree = show('section', 'pr-commit-tree', undefined, layout);
+    renderCommitTree(tree, pr.commits, sha => dispatch('open-commit', pr.number, sha));
+    if (pr.commitError) show('p', 'muted', 'Commit history unavailable: ' + pr.commitError, tree);
+    outer.scrollTop = scroll;
   }
   function render() {
-    byId('repository').textContent = model.repository || 'GitHub';
+    const ownerLogo = byId('repository');
+    const owner = String(model.repository || '').split('/')[0];
+    ownerLogo.hidden = !owner;
+    ownerLogo.alt = owner + ' logo';
+    ownerLogo.title = model.repository || '';
+    const ownerLogoUrl = 'https://github.com/' + encodeURIComponent(owner) + '.png?size=64';
+    if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
     const merged = model.prs.filter(p => p.state === 'merged').length;
-    const resolved = model.prs.filter(p => p.state === 'resolved').length;
+    const resolved = model.prs.filter(p => p.conflictCleared).length;
     const problems = model.prs.filter(p => ['conflict','review','blocked'].includes(p.state)).length;
     byId('progress').textContent = merged + '/' + model.prs.length +
-      ' merged · ' + resolved + ' resolved · ' + problems + ' need attention';
+      ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
-    byId('count').textContent = 'Live GitHub updates · roughly every ' +
-      (model.nextRefreshSeconds || 15) + ' seconds';
     byId('notice').hidden = !model.error;
-    byId('notice').textContent = model.error || '';
+    byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
     const list = byId('prs');
     const listScroll = list.scrollTop;
     list.replaceChildren();
-    for (const pr of model.prs) {
+    // Sort a copy so live presentation never changes the merge selection order.
+    const visiblePrs = model.prs.slice().sort((a, b) => pullRequestPriority(a) - pullRequestPriority(b));
+    if (selected === null && visiblePrs.length) selected = visiblePrs[0].number;
+    for (const pr of visiblePrs) {
       const button = show('button', 'pr', undefined, list);
       button.setAttribute('aria-current', String(pr.number === selected));
       const row = show('div', 'row', undefined, button);
@@ -369,16 +412,38 @@ __TIMESTAMP_FORMATTER__
       button.addEventListener('click', () => { selected = pr.number; render(); });
     }
     list.scrollTop = listScroll;
+    const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
+    const blockerNotice = byId('blocker-notice'); blockerNotice.replaceChildren(); blockerNotice.hidden = !blockers.length;
+    if (blockers.length) {
+      show('span', '', 'Needs attention', blockerNotice);
+      for (const pr of blockers) {
+        const button = show('button', 'secondary', (pr.blockerOptions?.length ? 'Review #' + pr.number + ' options' : 'View #' + pr.number + ' integration'), blockerNotice);
+        button.addEventListener('click', () => { selected = pr.number; render(); });
+      }
+    }
     const events = byId('events');
     const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
       ? model.timestampMode : 'hidden';
     byId('timeline-time-mode').value = timestampMode;
+    byId('post-summaries').checked = model.postSummaries === true;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
     for (const event of model.events.slice(-400).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
-      show('strong', '', '#' + event.number + ' ' + event.message, node);
-      if (event.details) show('div', 'event-details', event.details, node);
+      const heading = show(event.url ? 'a' : 'strong', event.url ? 'event-link' : '',
+        '#' + event.number + ' ' + event.message, node);
+      if (event.url) {
+        heading.href = event.url;
+        heading.addEventListener('click', click => {
+          click.preventDefault();
+          dispatch('open-link', undefined, event.url);
+        });
+      }
+      if (event.details) {
+        const detail = show('details', '', undefined, node);
+        show('summary', 'muted', 'Details', detail);
+        show('div', 'event-details', event.details, detail);
+      }
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {
         const stamp = show('div', 'event-time', label, node);
@@ -387,7 +452,6 @@ __TIMESTAMP_FORMATTER__
       }
     }
     events.scrollTop = eventScroll;
-    if (selected === null && model.prs.length) selected = model.prs[0].number;
     renderDetail();
   }
   window.addEventListener('message', event => {
@@ -406,6 +470,7 @@ __TIMESTAMP_FORMATTER__
   });
   function refreshRelativeEventTimes() {
     if (model.timestampMode !== 'relative') return;
+    if (model.rateLimitRetryAt && model.error) byId('notice').textContent = rateLimitMessage(model.rateLimitRetryAt, 'relative');
     for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
       stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
     }
@@ -422,6 +487,7 @@ __TIMESTAMP_FORMATTER__
     render();
     vscode.postMessage({ type: 'timestamp-mode', mode });
   });
+  byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   setInterval(refreshRelativeEventTimes, 30000);
   dispatch('ready');
