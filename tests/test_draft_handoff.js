@@ -136,6 +136,33 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal((await choicePost('/merge-history')).status, 200);
     await choicePost('/merge-history');
     assert.equal(preserved, 1, 'A replay cannot merge twice');
+    const blockerId='77777777-2222-4333-8444-555555555555';
+    let helped = 0;
+    handoff.register(blockerId, { onMerge: async () => { throw Error('Resolve the overlapping edits against the current base, preserving both intentions.'); },
+      onMergeHelp: async () => { helped++; return true; } });
+    const blockerUrl = handoff.origin+'/kefania-draft/'+blockerId;
+    const blockerPost = suffix => fetch(blockerUrl+suffix, {method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
+    assert.equal((await blockerPost('/merge-help')).status,409,'Recovery cannot open before a failed merge');
+    assert.equal((await fetch(blockerUrl,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body})).status,200,'Publish the test PR before testing merge failure');
+    assert.equal((await fetch(blockerUrl+'/merge-help')).status,405,'Recovery requires a POST');
+    assert.equal((await blockerPost('/merge')).status,409);
+    const blockedState = await (await fetch(blockerUrl+'/state')).json();
+    assert.equal(blockedState.mergeIssue.kind,'conflict','Overlapping edits surface as an actual conflict state');
+    assert.match(blockedState.mergeIssue.message,/overlapping edits/);
+    assert.equal(blockedState.mergeResult,undefined,'Recovery never pretends a merge completed');
+    assert.equal(blockedState.mergeHelpAvailable,true);
+    assert.equal((await blockerPost('/merge-help')).status,200);
+    assert.equal(helped,1,'A deliberate click opens the shared Lindsey recovery dashboard');
+    assert.equal((await (await fetch(blockerUrl+'/state')).json()).mergeHelpOpened,true);
+    assert.equal((await fetch(blockerUrl+'/merge-help',{method:'POST',headers:{Origin:'https://malicious.example','Content-Type':'application/json'},body:'{}'})).status,403);
+    const failureId='88888888-2222-4333-8444-555555555555';
+    handoff.register(failureId,{onMerge:async()=>{throw Object.assign(Error('Human authorship requires another method.'),{code:'SQUASH_AUTHOR_CHOICE_REQUIRED'});}});
+    const failureUrl=handoff.origin+'/kefania-draft/'+failureId;
+    const failurePost=suffix=>fetch(failureUrl+suffix,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
+    assert.equal((await fetch(failureUrl,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body})).status,200);
+    await failurePost('/merge');
+    assert.equal((await (await fetch(failureUrl+'/state')).json()).mergeIssue.kind,'method','Authorship choice is not mislabeled a merge conflict');
+    assert.equal((await failurePost('/merge-help')).status,503,'Unavailable resolution view is not falsely reported open');
     // Active confirmation polling renews the idle deadline while preserving
     // the original security limit for stale pages and background callbacks.
     const clock = Date.now;

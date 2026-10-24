@@ -6,7 +6,42 @@ const vm = require('node:vm');
 async function run() {
   const clipboard = [];
   const commands = [];
+  const decorations = [];
+  const opened = [];
+  const lines = [
+    'Preface.',
+    'A long paragraph that hides the needle in the surrounding text.',
+    'A completely unrelated paragraph.',
+    'The alpha and beta terms are both here, followed by alpha again.',
+    'A semantic-only passage without a matching phrase.'
+  ];
+  const document = {lineCount: lines.length, lineAt(index) { return {text: lines[index]}; }};
+  let editorChangeListener;
+  class Range {
+    constructor(startLine, startColumn, endLine, endColumn) {
+      this.start = {line: startLine, character: startColumn};
+      this.end = {line: endLine, character: endColumn};
+    }
+  }
+  const editor = {
+    document,
+    setDecorations(type, ranges) { decorations.push({type, ranges}); },
+    revealRange(range) { this.revealed = range; }
+  };
   const vscodeStub = {
+    Range,
+    ThemeColor: class ThemeColor { constructor(id) { this.id = id; } },
+    OverviewRulerLane: {Center: 2},
+    TextEditorRevealType: {InCenterIfOutsideViewport: 2},
+    workspace: {async openTextDocument() { return document; }},
+    window: {
+      async showTextDocument(_document, options) { opened.push(options); return editor; },
+      createTextEditorDecorationType(options) { return {options, dispose() {this.disposed = true;}}; },
+      onDidChangeActiveTextEditor(listener) {
+        editorChangeListener = listener;
+        return {dispose() {editorChangeListener = undefined;}};
+      }
+    },
     Uri: {
       parse(value) {
         const pathname = decodeURIComponent(String(value).replace(/^file:\/\//, ''));
@@ -23,7 +58,7 @@ async function run() {
   };
   const sandbox = { module: { exports: {} }, require(name) {
     if (name === 'vscode') return vscodeStub;
-    if (name === './extract') return { TEXT_EXTENSIONS: new Set() };
+    if (name === './extract') return { TEXT_EXTENSIONS: new Set(['.txt', '.md']) };
     if (name === './ollama') return {};
     return require(name);
   }};
@@ -120,6 +155,42 @@ async function run() {
   await provider.onMessage({type: 'copyPath', index: 0});
   assert.equal(clipboard.length, before, 'Failure must not copy an absolute private filesystem path');
   assert.equal(messages.at(-1).type, 'error');
+
+  // Opening a passage must outline the target line and mark the actual text.
+  provider.lastQuery = 'needle';
+  provider.lastResults = [{uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 1, text: lines[1]}];
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(opened.at(-1).selection.start.line, 1);
+  assert.equal(opened.at(-1).selection.start.character, lines[1].indexOf('needle'),
+    'the cursor should land at the matching word, not column zero');
+  assert.equal(decorations.at(-2).ranges[0].start.line, 1, 'outline the selected passage line');
+  assert.equal(decorations.at(-1).ranges[0].start.character, lines[1].indexOf('needle'),
+    'highlight the matching text inside the line');
+  assert.equal(decorations.at(-1).type.options.borderColor.id, 'editor.findMatchBorder');
+  assert.equal(editor.revealed.start.line, 1, 'reveal the matched line in the editor');
+
+  provider.lastQuery = 'alpha beta';
+  provider.lastResults[0].line = 3;
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(decorations.at(-1).ranges.length, 3, 'mark all matching terms when a full phrase is absent');
+
+  provider.lastQuery = 'synonym not present';
+  provider.lastResults[0].line = 4;
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(decorations.at(-2).ranges[0].start.line, 4, 'semantic-only hits still outline their line');
+  assert.equal(decorations.at(-1).ranges.length, 0, 'do not invent a textual match for semantic results');
+
+  provider.lastResults[0] = {kind: 'filename', uri: 'file:///tmp/new.txt', relative: 'new.txt', line: 0};
+  await provider.onMessage({type: 'open', index: 0});
+  assert.equal(opened.at(-1).selection.start.line, 0);
+  assert.equal(decorations.at(-1).ranges.length, 0, 'filename-only hits must clear passage highlights');
+  provider.lastResults[0] = {uri: 'file:///tmp/new.txt', line: 1};
+  provider.lastQuery = 'needle';
+  await provider.onMessage({type: 'open', index: 0});
+  editorChangeListener(undefined);
+  assert.equal(decorations.at(-1).ranges.length, 0, 'navigating away clears the temporary highlight');
+  provider.dispose();
+  assert.equal(editorChangeListener, undefined, 'provider disposal releases editor listeners');
 
   const makeNode = tagName => ({
     tagName, children: [], dataset: {}, listeners: {}, style: {setProperty(name, value) {this[name] = value;}},
