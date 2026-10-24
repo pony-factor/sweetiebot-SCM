@@ -50,15 +50,57 @@ async function originalRepository(root, {
   throw new Error('Cannot locate this repository’s original checkout under ~/GitHub. Its independent checkout was preserved.');
 }
 
+function checkedOutMain(listing) {
+  const blocks = listing.split('\0\0');
+  for (const block of blocks) {
+    const lines = block.split('\0');
+    if (!lines.includes('branch refs/heads/main')) continue;
+    const worktree = lines.find(line => line.startsWith('worktree '));
+    if (worktree) return worktree.slice('worktree '.length);
+  }
+  return null;
+}
+
 async function mainRoot(root, options = {}) {
   const run = options.run || git;
+  const io = options.io || fs;
   const original = await originalRepository(root, options);
-  if (await run(['-C', original, 'branch', '--show-current']) !== 'main') {
-    const error = new Error('The original checkout at ' + original + ' must be on main before reconnecting. Its topic files were preserved.');
-    error.code = 'SWEETIEBOT_ORIGINAL_ON_TOPIC';
+  const listMain = async () => checkedOutMain(await run([
+    '-C', original, 'worktree', 'list', '--porcelain', '-z'
+  ]));
+  const existing = await listMain();
+  if (existing) return await io.realpath(existing);
+
+  // An original repository may still have a topic checked out. Since Git
+  // allows only one worktree per branch, create main only when it is free.
+  const directory = await createWorkspaceDirectory(
+    options.baseDirectory || independentWorkspaceParent(), path.basename(original), io
+  );
+  const destination = path.join(directory, path.basename(original));
+  let added = false;
+  try {
+    await run(['-C', original, 'worktree', 'add', '--', destination, 'main']);
+    added = true;
+    await io.writeFile(path.join(directory, '.sweetiebot-workspace.json'),
+      JSON.stringify({ version: 1, kind: 'main-worktree',
+        repositories: [path.basename(original)] }, null, 2) + '\n',
+      { mode: 0o600 });
+    return destination;
+  } catch (error) {
+    if (added) {
+      // A newly registered worktree must be detached via Git, never by
+      // recursively deleting its working directory.
+      await run(['-C', original, 'worktree', 'remove', '--', destination])
+        .catch(() => {});
+    }
+    if (!added || !await io.lstat(destination).then(() => true, () => false)) {
+      await io.rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+    // Another window may have checked out main during our Git operation.
+    const winner = await listMain().catch(() => null);
+    if (winner) return await io.realpath(winner);
     throw error;
   }
-  return original;
 }
 
 async function openFolders(vscode, folders, { forceNewWindow = false,
@@ -90,7 +132,8 @@ async function openFolders(vscode, folders, { forceNewWindow = false,
     // folder. It does not introduce another Git checkout or another main ref.
     await io.writeFile(target, JSON.stringify({ folders }, null, 2) + '\n');
     await io.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
-      version: 1, kind, repositories: []
+      version: 1, kind, repositories: [], workspaceFileContents:
+        JSON.stringify({ folders }, null, 2) + '\n'
     }, null, 2) + '\n');
     if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', { workspace: target, plan: handoff });
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(target),
@@ -238,9 +281,9 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   const original = await originalRepository(root, options);
   const current = await run(['-C', root, 'branch', '--show-current']);
   if (branch === 'main') {
-    if (root === original && current === 'main') return false;
-    await mainRoot(root, options);
-    await switchRepository(vscode, root, original, options);
+    const main = await mainRoot(root, options);
+    if (root === main && current === 'main') return false;
+    await switchRepository(vscode, root, main, options);
     return true;
   }
   if (!create && !adoptExisting && (root !== original || current !== 'main')) return false;
@@ -330,9 +373,11 @@ async function reconnectManagedMain(vscode, options = {}) {
     if (error.code === 'SWEETIEBOT_ORIGINAL_ON_TOPIC') return false;
     throw error;
   }
+  const main = await mainRoot(root, options);
+  if (root === main) return false;
   if (root === original) {
     if (path.resolve(folder.uri.fsPath) === original) return false;
-    await switchRepository(vscode, root, original, options);
+    await switchRepository(vscode, root, main, options);
     return true;
   }
   if (await run(['-C', root, 'status', '--porcelain'])) {
@@ -342,9 +387,11 @@ async function reconnectManagedMain(vscode, options = {}) {
   const unfinished = await run(['-C', root, 'log', '--format=%s', '--extended-regexp',
     '--grep=^(placeholder_[0-9a-f]{16}|💭 Generate local commit message \\[[0-9a-f]{16}\\])$', sha]);
   if (unfinished) throw new Error('This main checkout is still finalizing a commit. It will reconnect after finalization.');
-  try { await run(['-C', original, 'merge-base', '--is-ancestor', sha, 'main']); }
-  catch { throw new Error('This old main checkout has separate commits. Preserve them in the original repo before reconnecting.'); }
-  await switchRepository(vscode, root, original, options);
+  // Compare with the actual shared main checkout, never the legacy clone's
+  // own main ref: that independent ref can contain unpublished commits.
+  try { await run(['-C', main, 'merge-base', '--is-ancestor', sha, 'HEAD']); }
+  catch { throw new Error('This old main checkout has separate commits. Preserve them before reconnecting.'); }
+  await switchRepository(vscode, root, main, options);
   return true;
 }
 
@@ -357,8 +404,8 @@ function registerSharedMain(vscode, context) {
     catch (error) { vscode.window.showWarningMessage('Sweetiebot: ' + error.message); }
     finally { running = false; }
   };
-  // A newly opened saved shared workspace already points outside Workspaces,
-  // so it will not reopen itself on subsequent activations.
+  // Saved shared-main windows may point at a managed main worktree; those
+  // checkouts are already the target and must not be reconnected again.
   setImmediate(() => void reconnect());
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => void reconnect()));
 }

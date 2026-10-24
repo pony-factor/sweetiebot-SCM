@@ -1,35 +1,51 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {commitTreeLayout,renderCommitTree,refreshCommitTimestamps} = require('../efs/merge_commit_tree');
-const {formatTimelineTimestamp} = require('../efs/merge_dashboard_timestamps');
-const a='a'.repeat(40), b='b'.repeat(40), c='c'.repeat(40);
-const commits=[
-  {sha:a,parents:[],commit:{message:'First',author:{date:'2026-10-23T10:00:00Z'},committer:{date:'2026-10-24T10:00:00Z'}}},
-  {sha:b,parents:[{sha:a}],commit:{message:'Second',committer:{date:'bad'},author:{date:'2026-10-24T10:30:00Z'}}},
-  {sha:c,parents:[{sha:b}],commit:{message:'No timestamp'}}
-];
-const layout=commitTreeLayout(commits);
-assert.equal(layout.nodes.find(n=>n.sha===a).committedAt,'2026-10-24T10:00:00Z','Prefer the Git committer timestamp');
-assert.equal(layout.nodes.find(n=>n.sha===b).committedAt,'2026-10-24T10:30:00Z','Use author time when committer metadata is invalid');
-const elements=[];
-const document={
-  createElement(tag){const node={tag,ownerDocument:document,children:[],style:{},dataset:{},events:{},attributes:{},appendChild(child){this.children.push(child);},setAttribute(key,value){this.attributes[key]=value;},addEventListener(type,fn){this.events[type]=fn;},querySelectorAll(){return elements.filter(n=>n.tag==='time'&&n.dataset.commitAt);}};elements.push(node);return node;},
-  createElementNS(ns,tag){const node=this.createElement(tag);node.namespaceURI=ns;return node;}
+const { commitTreeLayout, renderCommitTree, mergeCommitHistory } = require('../efs/merge_commit_tree');
+const sha = digit => digit.repeat(40);
+const node = (digit, parents) => ({ sha: sha(digit), parents: parents.map(digit => ({ sha: sha(digit) })), commit: { message: 'Commit ' + digit } });
+const graph = commitTreeLayout([node('a', []), node('b', ['a']), node('c', ['a']), node('d', ['b', 'c'])]);
+assert.equal(graph.edges.length, 4, 'Draw actual parents, including both merge parents');
+assert.deepEqual(graph.nodes.map(n => n.sha), ['d','c','b','a'].map(sha), 'Newest commit is at the top, earliest at the bottom');
+assert(graph.edges.every(edge => edge.from.row > edge.to.row), 'Parent connections extend downward toward earlier commits');
+assert.equal(graph.nodes.find(n=>n.sha===sha('b')).lane, graph.nodes.find(n=>n.sha===sha('a')).lane);
+assert.notEqual(graph.nodes.find(n=>n.sha===sha('c')).lane, graph.nodes.find(n=>n.sha===sha('b')).lane, 'A fork gets its own lane');
+assert.equal(commitTreeLayout([node('b', ['a'])]).edges.length, 0, 'Do not invent an unavailable parent node');
+assert.equal(commitTreeLayout([{ sha: '../unsafe' }]).nodes.length, 0);
+const many=Array.from({length:180},(_,i)=>({sha:i.toString(16).padStart(40,'0'),commit:{message:'Commit '+i},parents:[]}));
+assert.equal(commitTreeLayout(many).nodes.length,180,'Show all PR commits, not only the latest 100');
+const first=mergeCommitHistory([], [node('a',[]),node('b',['a'])]);
+const next=mergeCommitHistory(first,[node('b',['a']),node('c',['b'])]);
+assert.deepEqual(next.map(c=>c.sha),[sha('a'),sha('b'),sha('c')],'Keep original commits when a later head omits them');
+assert.deepEqual(next.map(c=>c.isNew),[false,false,true]);
+// Abbreviated hashes get inline-code styling; preserve the title and commit link.
+const document = {
+  createElement(tag) {
+    return {
+      tag, children: [], style: {}, listeners: {},
+      appendChild(child) { this.children.push(child); return child; },
+      addEventListener(event, callback) { this.listeners[event] = callback; },
+      set textContent(value) { this.text = String(value); this.children = []; },
+      get textContent() { return this.text ?? this.children.map(child => child.textContent).join(''); }
+    };
+  },
+  createElementNS(namespaceURI, tag) {
+    return { tag, namespaceURI, children: [], attributes: {},
+      setAttribute(key, value) { this.attributes[key] = value; },
+      appendChild(child) { this.children.push(child); } };
+  }
 };
-const originalNow=Date.now;
-Date.now=()=>Date.parse('2026-10-24T11:00:00Z');
-try {
-  const parent=document.createElement('section'), opened=[];
-  renderCommitTree(parent,commits,sha=>opened.push(sha),'relative');
-  const first=elements.find(n=>n.tag==='button'&&n.title.startsWith(a));
-  assert.equal(first.children[1].textContent,'1h ago');
-  assert(first.children[1].title.startsWith('Committed '));
-  first.events.click();assert.deepEqual(opened,[a]);
-  assert.equal(elements.find(n=>n.tag==='button'&&n.title.startsWith(c)).children[1].textContent,'Time unavailable');
-  Date.now=()=>Date.parse('2026-10-24T12:00:00Z');refreshCommitTimestamps(parent,'relative');
-  assert.equal(first.children[1].textContent,'2h ago');
-  const clockParent=document.createElement('section');renderCommitTree(clockParent,[commits[0]],()=>{},'clock');
-  assert.equal(elements.at(-1).textContent,formatTimelineTimestamp('2026-10-24T10:00:00Z','clock'));
-  assert.equal(elements.find(n=>n.tag==='svg').attributes.height,156,'Timestamp rows preserve graph spacing');
-} finally {Date.now=originalNow;}
-console.log('PR commit timestamps, date fallback, relative refresh, links, and graph spacing passed.');
+const root = document.createElement('section'); root.ownerDocument = document;
+const clicked = [];
+renderCommitTree(root, [{ ...node('a', []), isNew: true }], hash => clicked.push(hash));
+const list = root.children.find(child => child.className === 'commit-tree-list');
+const button = list.children.find(child => child.tag === 'button');
+const code = button.children.find(child => child.tag === 'code');
+assert.equal(code.className, 'commit-tree-sha');
+assert.equal(code.textContent, 'aaaaaaa');
+assert.equal(button.textContent, 'New · aaaaaaa Commit a');
+assert.equal(button.title, sha('a') + '\nCommit a');
+button.listeners.click();
+assert.deepEqual(clicked, [sha('a')], 'Code-styled SHA rows still open their full commit');
+assert(require('node:fs').readFileSync(require('node:path').join(__dirname, '../efs/merge_dashboard.html'), 'utf8')
+  .includes('.commit-tree-sha{display:inline-block'), 'The SHA has dedicated code styling');
+console.log('Commit tree parent, fork, merge, missing-parent and code hash checks passed.');

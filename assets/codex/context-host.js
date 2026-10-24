@@ -43,13 +43,28 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null });
                 return;
             }
-            const text = typeof message.text === 'string' ? message.text.trim().slice(-6000) : '';
+            if (request.modelOnly) {
+                const label = value => typeof value === 'string' && value.length <= 100
+                    ? value.replace(/\s+/g, ' ').trim() : '';
+                request.resolve({ name: label(message.model?.name), effort: label(message.model?.effort) });
+                return;
+            }
+            // Keep a substantial transcript for PR intent, not merely its last
+            // few turns. URL transport will independently enforce its 70 KB cap.
+            const clipped = typeof message.text === 'string' ? message.text.trim().slice(-95000) : '';
+            // Never start the URL-bound context with a split UTF-16 surrogate.
+            const text = /^[\uDC00-\uDFFF]/.test(clipped) ? clipped.slice(1) : clipped;
             if (!text) {
                 request.reject(new Error('Open a Codex conversation with text in this window first.'));
                 return;
             }
             if (request.includeSource) {
-                request.resolve({ text, source: sourceFor(message.conversationId) });
+                const label = value => typeof value === 'string' && value.length <= 100
+                    ? value.replace(/\s+/g, ' ').trim() : '';
+                const name = label(message.model?.name);
+                const effort = label(message.model?.effort);
+                request.resolve({ text, source: sourceFor(message.conversationId),
+                    ...((name || effort) ? { model: { name, effort } } : {}) });
             } else {
                 request.resolve(text);
             }
@@ -68,7 +83,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const capture = (includeSource, identityOnly = false) => {
+    const capture = (includeSource, identityOnly = false, modelOnly = false) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -90,9 +105,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 pending.delete(id);
                 reject(new Error('Codex text capture timed out. Reopen this window after installing the toolkit.'));
             }, 5000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly });
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
-            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, allowHidden }).then(sent => {
+            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -115,6 +130,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         () => capture(true)
     );
     const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
+    const modelCommand = vscode.commands.registerCommand('sweetiebot.readCodexModel', () => capture(false, false, true));
     const legacyTextCommand = vscode.commands.registerCommand(
         'scmToolkit.readCodexContext', () => capture(false)
     );
@@ -126,6 +142,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         textCommand.dispose();
         sourceCommand.dispose();
         identityCommand.dispose();
+        modelCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
         provider.initializeWebview = originalInitialize;

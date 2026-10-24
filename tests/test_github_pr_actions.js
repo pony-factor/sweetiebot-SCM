@@ -41,7 +41,7 @@ async function main() {
     '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
     '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
     '-f', 'commit_title=🐛 Correct caching (#12)',
-    '-f', `commit_message=- Change\n\n__________\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Codex Web <noreply@openai.com>`]);
+    '-f', `commit_message=- Change\n\n__________\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex (Web) <noreply@openai.com>`]);
   assert.deepEqual(happy.calls[5], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
     `${asyncPath}/${requestId}`]);
   assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
@@ -346,7 +346,7 @@ async function main() {
   const registeredIds = [];
   const errors = [];
   const refreshes = [];
-  registerGitHubPullRequestActions({
+  registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
     commands: { getCommands: async () => [], registerCommand: (id, fn) => { registeredIds.push(id); handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
     ProgressLocation: { Window: 10 },
@@ -361,7 +361,7 @@ async function main() {
   assert.deepEqual(refreshes, ['pr.refreshList', 'pr.refreshList']);
   const conflictErrors = [];
   const conflictRefreshes = [];
-  registerGitHubPullRequestActions({
+  registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
     commands: { getCommands: async () => [], registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async id => conflictRefreshes.push(id) },
     ProgressLocation: { Window: 10 },
@@ -377,7 +377,7 @@ async function main() {
 
   const mergeErrors = [];
   let mergeFailure = new Error('Required checks have not passed');
-  registerGitHubPullRequestActions({
+  registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
     commands: { getCommands: async () => [], registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async () => {} },
     ProgressLocation: { Window: 10 },
@@ -392,7 +392,7 @@ async function main() {
   ]);
   const selected = [];
   const notices = [];
-  registerGitHubPullRequestActions({
+  registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
     commands: { getCommands: async () => [], registerCommand: (id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async id => refreshes.push(id) },
     ProgressLocation: { Window: 10 },
@@ -417,7 +417,7 @@ async function main() {
   // Progress becomes a notification immediately on click, without a premature
   // completion toast. Success still has exactly one informational notice.
   const successNotices = [], progressOptions = [], progressUpdates = [];
-  registerGitHubPullRequestActions({
+  registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
     commands: { registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async () => {} },
     ProgressLocation: { Window: 10, Notification: 15 },
@@ -466,7 +466,7 @@ async function main() {
       showInformationMessage: () => {}
     }
   };
-  registerGitHubPullRequestActions(renderedVscode, { subscriptions: [] }, async clicked => {
+  registerGitHubPullRequestActions({ ...renderedVscode, authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) } }, { subscriptions: [] }, async clicked => {
     renderedMerges.push(clicked);
     return { merged: false, number: 12 };
   });
@@ -495,7 +495,7 @@ async function main() {
   // The inline button warns before launching a non-main merge; dismissal does nothing.
   const targetDialogs = [], targetNotices = [], targetMerges = [];
   let approveAlternate = false;
-  registerGitHubPullRequestActions({
+  registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
     commands: {
       registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
       executeCommand: async () => {}
@@ -565,7 +565,7 @@ async function main() {
     assert.equal(clicked, firstClick, 'Resolve the exact clicked row, not another selected PR');
     return rowReady ? { url, number: 12 } : { number: 12 };
   });
-  registerGitHubPullRequestActions(firstClickVscode, { subscriptions: [] }, async selectedUrl => {
+  registerGitHubPullRequestActions({ ...firstClickVscode, authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) } }, { subscriptions: [] }, async selectedUrl => {
     firstClickMerges.push(selectedUrl);
     return { merged: false, number: 12 };
   });
@@ -609,7 +609,7 @@ async function main() {
       }
     }
   };
-  registerGitHubPullRequestActions(lateVscode, { subscriptions: [] }, async selectedUrl => {
+  registerGitHubPullRequestActions({ ...lateVscode, authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) } }, { subscriptions: [] }, async selectedUrl => {
     lateMerges.push(selectedUrl);
     return { merged: false, number: 12 };
   });
@@ -686,7 +686,7 @@ async function main() {
     }
   };
   let mergeState = 'queued';
-  registerGitHubPullRequestActions(actionVscode, { subscriptions: [] }, async () => {
+  registerGitHubPullRequestActions({ ...actionVscode, authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) } }, { subscriptions: [] }, async () => {
     if (mergeState === 'cancelled') return { cancelled: true, merged: false };
     if (mergeState === 'error') throw new Error('Unable to merge');
     if (mergeState === 'queued') return { merged: false, number: 12 };

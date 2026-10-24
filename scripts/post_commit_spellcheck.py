@@ -71,6 +71,37 @@ def git_run(global_args: list[str], *args: str, text: bool = False) -> subproces
     )
 
 
+# VS Code settings.json allows comments and trailing commas. Preserve quoted
+# strings so comments or commas inside a setting value are never changed.
+_JSONC_COMMENTS = re.compile(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/')
+_JSONC_TRAILING_COMMAS = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
+
+
+def repository_spellcheck_disabled(global_args: list[str]) -> bool:
+    """Honor the opt-out in the current Git root, not a parent workspace."""
+    result = git_run(global_args, "rev-parse", "--show-toplevel")
+    if result.returncode != 0:
+        return False
+    root = Path(os.fsdecode(result.stdout).rstrip("\r\n"))
+    if not root.is_absolute():
+        return False
+    config = root / ".vscode" / "settings.json"
+    try:
+        if config.stat().st_size > 512 * 1024:
+            return False
+        source = config.read_text(encoding="utf-8-sig")
+        without_comments = _JSONC_COMMENTS.sub(
+            lambda match: match.group() if match.group().startswith('"') else ' ', source
+        )
+        normalized = _JSONC_TRAILING_COMMAS.sub(
+            lambda match: match.group() if match.group().startswith('"') else '', without_comments
+        )
+        settings = json.loads(normalized)
+        return isinstance(settings, dict) and settings.get("scmToolkit.postCommitSpellcheck") is False
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return False
+
+
 def has_unstaged_changes(global_args: list[str]) -> bool:
     tracked = git_run(global_args, "diff", "--quiet", "--no-ext-diff", "--")
     if tracked.returncode != 0:
@@ -489,6 +520,8 @@ def index_is_clean(global_args: list[str]) -> bool:
 
 
 def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str], expected_head: str, model: str | None = None, expected_branch: str = "") -> dict[str, tuple[bytes, bytes]]:
+    if repository_spellcheck_disabled(global_args):
+        return {}
     if model is None:
         model, _ = core.selected_model(core.installed_local_model_names())
     if model is None:
@@ -504,6 +537,7 @@ def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str],
         or has_unstaged_changes(global_args)
         or not index_is_clean(global_args)
         or not core.git_config_bool("scm-toolkit.post-commit-spellcheck", False)
+        or repository_spellcheck_disabled(global_args)
     ):
         return {}
     root_result = git_run(global_args, "rev-parse", "--show-toplevel")
@@ -658,6 +692,9 @@ def run_post_commit_job() -> int:
     except (KeyError, TypeError, ValueError):
         return 0
 
+    if repository_spellcheck_disabled(global_args):
+        return 0
+
     if push_gate and not wait_for_push_gate(global_args, push_gate, expected_head, expected_branch):
         return 0
 
@@ -694,7 +731,7 @@ def run_post_commit_job() -> int:
 
 
 def spawn_post_commit(global_args: list[str], paths: list[str], committed_head: str, core_path: str, previous_head: str = "", wait_for_push: bool = False) -> None:
-    if not paths or not committed_head:
+    if not paths or not committed_head or repository_spellcheck_disabled(global_args):
         return
     env = os.environ.copy()
     env["SCM_TOOLKIT_COMMIT_CORE"] = core_path

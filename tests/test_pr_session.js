@@ -5,10 +5,41 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession } = require('../efs/pr_session');
+const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
+  publishOptionalMergeSummaries } = require('../efs/pr_session');
 const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs/merge_blocker_actions');
 
 (async () => {
+  // Disabled or irrelevant optional summaries must not even load their module.
+  const summaryPayload = { selection: { repository: 'pony-factor/example' },
+    input: { results: [{ number: 12, explanation: 'Integrated the change.' }] },
+    result: { results: [{ number: 12, status: 'merged', merged: true, sha: 'a'.repeat(40) }] },
+    token: 'token' };
+  const unavailable = () => { throw Error('The publisher should not be loaded'); };
+  assert.deepEqual(await publishOptionalMergeSummaries({ ...summaryPayload, enabled: false }, unavailable), []);
+  assert.deepEqual(await publishOptionalMergeSummaries({
+    ...summaryPayload, enabled: true, result: { results: [{ number: 12, status: 'synced', merged: false }] }
+  }, unavailable), []);
+  const staleErrors = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true }, () => undefined);
+  assert.equal(staleErrors[0].number, 12);
+  assert.match(staleErrors[0].error, /out of date/);
+  const loadErrors = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true }, () => {
+    throw Error('Cannot find module');
+  });
+  assert.match(loadErrors[0].error, /Cannot find module/);
+  const rejected = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
+    async () => { throw Error('GitHub unavailable'); });
+  assert.match(rejected[0].error, /out of date/); // An asynchronous loader is not a synchronous publisher.
+  const publisherErrors = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
+    () => async () => { throw Error('GitHub unavailable'); });
+  assert.match(publisherErrors[0].error, /GitHub unavailable/);
+  const published = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
+    () => async args => {
+      assert.deepEqual(args, { ...summaryPayload, enabled: true });
+      return [];
+    });
+  assert.deepEqual(published, []);
+
   const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-pr-session-')));
   const originalHome = os.homedir;
   os.homedir = () => storage;
@@ -126,6 +157,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
         assert.deepEqual(snapshot, selection);
         assert.equal(token, 'merge-session-token');
         launches++;
+        return { recordBatchState(state) { assert.equal(state.repository, selection.repository); } };
       } }
     };
     const dashboardCalls = [];
@@ -135,6 +167,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
       authentication: { async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
+        if (options.silent) return undefined;
         assert.deepEqual(scopes, ['repo']);
         assert.equal(options.createIfNone, true);
         return { accessToken: 'merge-session-token' };
@@ -161,7 +194,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       assert.deepEqual(dashboardCalls.map((call, index) => index === 3 ? [call[0]] : call), [
         ...layoutCommands.map(command => [command]),
         ['workbench.action.browser.open'],
-        ['vscode.setEditorLayout', { orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }] }]
+        ['vscode.setEditorLayout', { orientation: 0, groups: [{}] }]
       ]);
       assert.equal(launches, 1);
       await resumePRSession(instrumented, context);
@@ -174,7 +207,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       else delete require.cache[dashboardModulePath];
     }
     const pr = { ...selection.pullRequests[0], state: 'blocked', headSha: selection.pullRequests[0].headSha };
-    const option = blockerOptions(pr)[0];
+    const option = blockerOptions({ ...pr, review: { options: [{id:'report-retain-api',suggested:true,label:'Retain the public API',description:'Keep callers compatible.',prompt:'Preserve what is already on the current main branch and adapt the new feature internally.'},{id:'report-replace-api',suggested:true,label:'Adopt the new interface',prompt:'Update callers to the new interface.'}] } })[0];
     await launchBlockerAction(source, context, root, selection.repository, pr, option, 'web');
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);

@@ -25,6 +25,10 @@ async function run() {
     document: {
       querySelectorAll(selector) {
         if (selector === '[data-thread-user-message-navigation-content]') return transcripts;
+        if (selector === 'button[data-composer-navigation-target="model"]')
+          return [{ innerText: '6.1 Codex', getAttribute: () => '', getClientRects: () => [1] }];
+        if (selector === 'button[data-composer-navigation-target="reasoning"]')
+          return [{ innerText: 'Uber', getAttribute: () => '', getClientRects: () => [1] }];
         if (selector.includes('[data-conversation-id]')) return [];
         throw new Error(`Unexpected selector: ${selector}`);
       }
@@ -37,6 +41,8 @@ async function run() {
   receive({ data: { type: 'scm-toolkit-context-request', id: 'request' } });
   assert.equal(responses[0].text, 'Current window conversation');
   assert.equal(responses[0].conversationId, conversationId);
+  assert.equal(responses[0].model.name, 'GPT-6.1 Codex');
+  assert.equal(responses[0].model.effort, 'Extra High');
 
   transcripts.splice(0, transcripts.length, {
     innerText: 'Retained hidden chat',
@@ -44,6 +50,10 @@ async function run() {
   });
   receive({ data: { type: 'scm-toolkit-context-request', id: 'hidden' } });
   assert.equal(responses[1].text, 'Retained hidden chat');
+  receive({ data: { type: 'scm-toolkit-context-request', id: 'model', modelOnly: true } });
+  assert.equal(responses[2].model.name, 'GPT-6.1 Codex');
+  assert.equal(responses[2].model.effort, 'Extra High');
+  assert.equal('text' in responses[2], false, 'No transcript for model-only requests');
 
   let mounted, changed;
   const frames = [], clicks = [];
@@ -125,11 +135,14 @@ async function run() {
   listener({
     type: 'scm-toolkit-context-response',
     id: messages[1].id,
-    text: 'Window-local source text',
-    conversationId
+    text: '🦄' + 'x'.repeat(94999),
+    conversationId,
+    model: { name: 'GPT-6.1 Codex', effort: 'Extra High' }
   });
   const snapshot = await sourcePending;
-  assert.equal(snapshot.text, 'Window-local source text');
+  assert.equal(snapshot.text, 'x'.repeat(94999), 'Clipping must not leave a lone low surrogate');
+  assert.equal(snapshot.model.name, 'GPT-6.1 Codex');
+  assert.equal(snapshot.model.effort, 'Extra High');
   assert.equal(snapshot.source.kind, 'codex');
   assert.equal(snapshot.source.uuid, conversationId);
   assert.match(snapshot.source.url, /^https:\/\/vscode\.dev\/redirect\?url=/);
@@ -157,6 +170,13 @@ async function run() {
   const ambiguous = registered.get('sweetiebot.readCodexIdentity')();
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, hasConversation: true });
   await assert.rejects(ambiguous, /identify/);
+  assert(registered.has('sweetiebot.readCodexModel'));
+  const modelPending = registered.get('sweetiebot.readCodexModel')();
+  assert.equal(messages.at(-1).modelOnly, true);
+  listener({type:'scm-toolkit-context-response',id:messages.at(-1).id,
+    model:{name:'GPT-6.1 Codex',effort:'Medium'}});
+  assert.deepEqual(JSON.parse(JSON.stringify(await modelPending)),
+    {name:'GPT-6.1 Codex',effort:'Medium'});
 
   provider.sidebarViews.clear();
   assert.throws(

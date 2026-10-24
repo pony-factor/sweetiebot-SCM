@@ -1,50 +1,60 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { integrationSummary, appendMergeSummary, publishIntegrationSummary } = require('../efs/merge_summary');
-const a = 'a'.repeat(40), b = 'b'.repeat(40), c = 'c'.repeat(40);
+const { publishMergeSummaries, MARKER } = require('../efs/merge_summary');
+const sha = 'a'.repeat(40);
+const selection = { repository: 'owner/repo', pullRequests: [{ number: 12, title: '✨ Add optional tax', url: 'https://github.com/owner/repo/pull/12', base: 'main', head: 'feature' }] };
+const input = { results: [{ number: 12, explanation: 'Add an optional tax parameter while retaining the corrected multiplier.' }] };
+const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] };
+
 (async () => {
-  const { readMergeChecks } = require('../efs/merge_checks');
-  const evidence = await readMergeChecks(async endpoint => endpoint.includes('/check-runs?')
-    ? { check_runs: [{ name: 'unit tests', status: 'completed', conclusion: 'failure' }] }
-    : endpoint.includes('/check-suites?') ? { check_suites: [] } : { statuses: [] },
-    'owner/repo', a, { collectEvidence: true });
-  assert.equal(evidence.state, 'failed');
-  assert.deepEqual(evidence.evidence, [{ name: 'unit tests', result: 'failure' }]);
-  const result = { merged: true, sha: c, headSha: b,
-    checks: { state: 'passed', hasChecks: true, evidence: [{ name: 'GitHub pull requests', result: 'success' }] } };
-  const summary = integrationSummary('owner/repo', 438,
-    { headSha: a, explanation: 'Load the real warning preference helper in the isolated test harness.' }, result);
-  assert(summary.includes('GitHub pull requests: success'));
-  assert(summary.includes('Merge confirmed.'));
-  for (const ref of ['pull/438', 'commit/' + a, 'commit/' + b, 'commit/' + c]) assert.equal(summary.split(ref).length, 2);
-  const message = appendMergeSummary('Original changes\n\n__________\n\nCo-authored-by: Codex Web <noreply@openai.com>', summary);
-  assert(message.indexOf(summary) < message.indexOf('__________'), 'Keep authorship trailers last');
-  const pending = integrationSummary('owner/repo', 438, { headSha: a }, { status: 'synced', sha: b });
-  assert(pending.includes('Checks were not evaluated'));
-  assert(!pending.includes('Merge confirmed'));
-  assert(!pending.includes('tests passed'));
-  const calls = []; let comments = [], fresh = { merged: true, merge_commit_sha: c, head: { sha: b } };
-  const api = async (endpoint, method = 'GET', fields) => {
-    calls.push({endpoint, method, fields});
-    if (endpoint === 'user') return { login: 'human' };
-    if (endpoint.includes('/comments?')) return comments;
-    if (endpoint.endsWith('/pulls/438')) return fresh;
-    return {};
+  const options = { selection, input, result, token: 'test-token' };
+  const { batchMergePrompt } = require('../efs/pull_request_batch');
+  const promptOptions = { repositoryUrl: 'https://github.com/owner/repo', pullRequests: selection.pullRequests, localHandoff: true };
+  assert(!batchMergePrompt(promptOptions).includes('OPTIONAL GITHUB SUMMARY ENABLED'));
+  assert(batchMergePrompt({ ...promptOptions, postMergeSummaries: true }).includes('concise standalone summary'));
+
+  await publishMergeSummaries({ ...options, enabled: false,
+    identity: () => assert.fail('Disabled summaries must not authenticate') });
+  await publishMergeSummaries({ ...options, enabled: true,
+    result: { results: [{ number: 12, status: 'synced', merged: false }] },
+    identity: () => assert.fail('Preparation must never publish a merge summary') });
+  let comments = [], confirmed = true, failWrites = false;
+  const writes = [];
+  const fetchImpl = async (url, request) => {
+    assert.equal(request.headers.Authorization, 'Bearer test-token');
+    if (request.method !== 'GET') {
+      if (failWrites) return { ok: false, status: 403 };
+      const body = JSON.parse(request.body).body;
+      writes.push({ url, method: request.method, body });
+      comments = [{ id: 44, user: { login: 'test-user' }, body }];
+      return { ok: true, json: async () => ({ id: 44 }) };
+    }
+    return { ok: true, json: async () => url.endsWith('/pulls/12')
+      ? { merged: confirmed, merge_commit_sha: sha, base: { ref: 'main' }, head: { ref: 'feature' } }
+      : comments };
   };
-  await publishIntegrationSummary(api, 'owner/repo', 438, b, result, summary);
-  assert.equal(calls.at(-1).method, 'POST');
-  comments = [{ id: 1, user: { login: 'another-human' }, body: summary },
-    { id: 2, user: { login: 'human' }, body: '<!-- sweetiebot-merge-summary -->\nPrevious attempt' }];
-  await publishIntegrationSummary(api, 'owner/repo', 438, b, result, summary);
-  assert.equal(calls.at(-1).endpoint, 'repos/owner/repo/issues/comments/2');
-  assert.equal(calls.at(-1).method, 'PATCH');
-  comments[1].body = summary;
-  const writes = () => calls.filter(call => call.method !== 'GET').length;
-  const before = writes();
-  await publishIntegrationSummary(api, 'owner/repo', 438, b, result, summary);
-  assert.equal(writes(), before, 'A replay does not duplicate an unchanged summary');
-  fresh = { ...fresh, head: { sha: a } };
-  await assert.rejects(publishIntegrationSummary(api, 'owner/repo', 438, b, result, summary), /PR changed/);
-  assert.equal(writes(), before, 'Stale heads cannot publish a misleading summary');
-  console.log('Factual integration summaries, check evidence, merge trailers, ownership, deduplication and stale-head guards passed.');
+  const run = () => publishMergeSummaries({ ...options, enabled: true, fetchImpl,
+    identity: async () => ({ token: 'test-token', login: 'test-user' }) });
+  assert.deepEqual(await run(), []);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].method, 'POST');
+  assert(writes[0].body.startsWith(MARKER));
+  assert(writes[0].body.includes(input.results[0].explanation));
+  assert.deepEqual(await run(), []);
+  assert.equal(writes.length, 1, 'A replay must not create another comment');
+  input.results[0].explanation = 'Clarified summary of the optional tax parameter.';
+  assert.deepEqual(await run(), []);
+  assert.equal(writes[1].method, 'PATCH');
+  assert(writes[1].url.endsWith('/issues/comments/44'));
+  comments = [{ id: 55, user: { login: 'another-user' }, body: MARKER + '\nTheir summary' }];
+  assert.deepEqual(await run(), []);
+  assert.equal(writes.at(-1).method, 'POST', 'Never overwrite another author’s comment');
+  confirmed = false;
+  const count = writes.length;
+  assert.match((await run())[0].error, /not confirmed/);
+  assert.equal(writes.length, count, 'GitHub must independently confirm the exact merge before publication');
+  confirmed = true; failWrites = true; comments = [];
+  assert.match((await run())[0].error, /HTTP 403/);
+  assert.equal(result.results[0].merged, true, 'Summary failures do not invalidate a verified merge');
+  console.log('Opt-in summary gates, verified merge checks, deduplication and publication failures passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

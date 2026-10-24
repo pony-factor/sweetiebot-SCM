@@ -220,6 +220,7 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(completed.length, 1, 'pending title jobs do not reopen the expired notification');
+  assert.deepEqual(notices, [], 'entering the pushing phase is not a notification-worthy failure');
   assert.equal(progress.length, 1, 'polling must not show the same notification again');
   status = { id: '1', phase: 'pushing', titleJobs: [], pushPending: true };
   poll();
@@ -231,8 +232,19 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(titleContexts.at(-1), false, 'empty queue clears Pushing');
-  assert.deepEqual(notices, ['Sweetiebot: Push is pending and will retry automatically.'],
-    'no local-save or completion notifications');
+  assert.deepEqual(notices, [],
+    'ordinary background pushes, retries, and completion never show informational notifications');
+  // A worker can keep retrying after VS Code exits. Reconnecting to its
+  // already-running pushing phase must not reopen a misleading notification.
+  status = { id: 'resumed-push', phase: 'pushing', titleJobs: [], pushPending: true };
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(notices, [], 'reattaching to a pending push stays silent');
+  assert.equal(titleContexts.at(-1), true, 'pending push remains reflected in title context');
+  status = {};
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(titleContexts.at(-1), false, 'title context clears when resumed push finishes');
   const beforeRecovery = resumes;
   status = { id: 'old', phase: 'blocked', recoverable: true, titleJobs: ['old'],
     error: 'The branch advanced; message finalization was paused.' };
@@ -256,13 +268,13 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 2, 'a rejected push produces one actionable error');
-  assert.equal(errors[1], 'Sweetiebot: Push blocked by merge conflicts in 2 files. Lindsey could not sync this branch.');
+  assert.equal(errors[1], 'repo (hoofar): Push blocked by merge conflicts in 2 files. Lindsey could not sync this branch.');
   assert.deepEqual(errorActions[1], ['View conflicting files', 'Retry sync and push', 'Stop background push']);
   assert(details[0].includes('Repository: /repo\nBranch: hoofar'));
   assert(details[0].includes('  • Sources/RepoLauncher.swift'));
   assert(details[0].includes('  • Repository Launcher.app/Contents/MacOS/RepositoryLauncher'));
   const legacy = sandbox.module.exports.blockedNotification('/work/mobli', { error: status.error });
-  assert.equal(legacy.message, 'Sweetiebot: Push blocked by merge conflicts. Lindsey could not sync this branch.');
+  assert.equal(legacy.message, 'mobli: Push blocked by merge conflicts. Lindsey could not sync this branch.');
   assert.equal(progress.length, 2, 'a separate generation batch gets a new notification');
   assert.equal(completed.length, 2, 'jobs finishing early close their notification immediately');
   assert.equal(noticeTimers[1].cancelled, true, 'early completion cancels the one-second timer');

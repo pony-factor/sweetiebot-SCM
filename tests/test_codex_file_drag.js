@@ -3,19 +3,34 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const listeners = new Map();
-let style;
+let style, activate, removed = false;
 const window = {
     innerWidth: 1000, innerHeight: 800,
     addEventListener(type, listener, capture) {
         assert.equal(capture, true);
         listeners.set(type, listener);
     },
+    removeEventListener(type, listener, capture) {
+        assert.equal(capture, true);
+        assert.equal(listeners.get(type), listener);
+        listeners.delete(type);
+    },
 };
 const document = {
-    createElement: () => ({}),
+    createElement: () => ({ remove() { removed = true; } }),
     head: { appendChild(element) { style = element; } },
 };
-vm.runInNewContext(fs.readFileSync(require.resolve('../assets/workbench/codex_file_drag.js'), 'utf8'), { window, document });
+vm.runInNewContext(fs.readFileSync(require.resolve('../assets/workbench/codex_file_drag.js'), 'utf8'), {
+    window, document,
+    globalThis: { __sweetiebotWorkbenchComponents: {
+        register(name, callback) {
+            assert.equal(name, 'codex-file-drag');
+            activate = callback;
+        }
+    } }
+});
+assert.equal(style, undefined, 'Registration must not install the component before activation');
+const component = activate({ window, document });
 const fileDrag = { dataTransfer: { types: ['Files'], items: [], files: [] } };
 assert.equal(style.disabled, true);
 assert.match(style.textContent, /extensionId=openai\.chatgpt&/);
@@ -37,4 +52,7 @@ listeners.get('dragover')({ dataTransfer: { types: ['text/plain'] } });
 assert.equal(style.disabled, true, 'text and layout drags retain native behavior');
 listeners.get('dragover')({ dataTransfer: { items: [{ kind: 'file' }] } });
 assert.equal(style.disabled, false, 'file items also identify external drags');
-console.log('Codex workbench file-drag checks passed.');
+component.dispose();
+assert.equal(removed, true, 'Unloading the component removes its style');
+assert.equal(listeners.size, 0, 'Unloading the component releases event listeners');
+console.log('Codex workbench file-drag lifecycle checks passed.');

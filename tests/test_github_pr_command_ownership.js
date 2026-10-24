@@ -16,6 +16,7 @@ async function main() {
     const url = 'https://github.com/owner/repo/pull/13';
     const event = () => ({ dispose() {} });
     const vscode = {
+      authentication: { getSession: async () => ({ accessToken: "test-session", scopes: ["repo"] }) },
       commands: {
         registerCommand(id, handler) {
           assert(!handlers.has(id), `Command ${id} already exists`);
@@ -28,6 +29,10 @@ async function main() {
           assert(handlers.has(id), `Missing command ${id}`);
           return handlers.get(id)(...args);
         }
+      },
+      authentication: {
+        getSession: async () => ({ scopes: ['repo'], accessToken: 'mock-user-token',
+          account: { id: 'tester', label: 'Tester' } })
       },
       ProgressLocation: { Notification: 15 },
       window: {

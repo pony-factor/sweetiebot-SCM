@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const {startNativeSpellcheckBridge, registerNativeSpellcheckBridge, validDraft, validReply}
+const {startNativeSpellcheckBridge, registerNativeSpellcheckBridge, validDraft, validReply, blockquotesUnchanged}
   = require('../efs/native_spellcheck_bridge');
 
 function request(port, ticket, method, path, data, headers = {}) {
@@ -27,6 +27,32 @@ function request(port, ticket, method, path, data, headers = {}) {
     req.end(body);
   });
 }
+
+test('quoted Markdown including nested quotes and lazy lines stays verbatim', () => {
+  const original = 'Teh introduction.\n> Thsi is quoted.\n> > Anothre quote.\ncontinued text teh\n\n# Heading\nTeh conclusion.';
+  const corrected = 'The introduction.\n> Thsi is quoted.\n> > Anothre quote.\ncontinued text teh\n\n# Heading\nThe conclusion.';
+  assert.equal(blockquotesUnchanged(original, corrected), true);
+  assert.equal(blockquotesUnchanged(original, corrected.replace('Thsi', 'This')), false);
+  assert.equal(blockquotesUnchanged(original, corrected.replace('continued text teh', 'continued text the')), false);
+  assert.equal(blockquotesUnchanged(original, corrected.replace('> >', '>')), false);
+  assert.equal(blockquotesUnchanged('> A quote\r\n', '> A quote\n'), false);
+  assert.equal(blockquotesUnchanged('> A quote\n# Hedaing', '> A quote\n# Heading'), true);
+});
+
+test('the authenticated channel rejects rewritten blockquotes but accepts changes outside them', async () => {
+  const original = 'Teh start.\n> Thsi is quoted.\nlazy continuaton\n\nTeh end.';
+  const session = await startNativeSpellcheckBridge({title: '', body: original}, {timeoutMs: 10000});
+  const fields = new URLSearchParams(new URL(session.url).hash.slice(1));
+  const port = Number(fields.get('port')), ticket = fields.get('ticket');
+  assert.equal((await request(port, ticket, 'GET', '/job')).status, 200);
+  const changedQuote = 'The start.\n> This is quoted.\nlazy continuation\n\nThe end.';
+  assert.equal((await request(port, ticket, 'POST', '/result',
+    {status: 'complete', result: {title: '', body: changedQuote}})).status, 422);
+  const safe = 'The start.\n> Thsi is quoted.\nlazy continuaton\n\nThe end.';
+  assert.equal((await request(port, ticket, 'POST', '/result',
+    {status: 'complete', result: {title: '', body: safe}})).status, 200);
+  assert.deepEqual(await session.completed, {title: '', body: safe});
+});
 
 test('strict loopback token transport accepts exactly one claimed result', async () => {
   const session = await startNativeSpellcheckBridge({title: '', body: 'Fxi teh wrds.'}, {timeoutMs: 10000});
@@ -206,6 +232,7 @@ test('the scoped native preload exchanges a real authenticated job without Chrom
   assert.equal(location.hash, '', 'transient bearer credentials must be removed from the URL');
   assert.equal(sent.length, 1);
   assert.match(sent[0], /Spellcheck this text/);
+  assert.match(sent[0], /Leave Markdown blockquotes completely unchanged/);
   assert.match(sent[0], /Fxi teh wrds\./);
   assert.doesNotMatch(sent[0], /Bearer|127\.0\.0\.1|sweetiebot_spellcheck/);
 });
