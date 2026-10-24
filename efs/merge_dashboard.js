@@ -88,6 +88,31 @@ function reportFromComments(comments) {
   return { report, review };
 }
 
+// Summarize GitHub code-review threads without trusting comment HTML or losing
+// their original file locations when GitHub marks a diff position outdated.
+function normalizeInlineReviewComments(comments) {
+  const validLine = value => Number.isInteger(value) && value > 0 ? value : null;
+  return (comments || []).filter(comment => typeof comment?.path === 'string' &&
+    comment.path.trim()).map(comment => {
+    const text = stripReportOptions(String(comment.body || '')
+      .replaceAll(REVIEW_MARKER, '').replaceAll(REPORT_MARKER, '')).trim().slice(0, 12000);
+    const firstLine = text.split('\n').map(line => line.trim()).find(Boolean) || 'Code review comment';
+    const cleanTitle = firstLine.replace(/^(?:#{1,6}\s+|>\s*|[-*+]\s+)/, '').trim();
+    const title = (cleanTitle || 'Code review comment').slice(0, 110);
+    const line = validLine(comment.line) || validLine(comment.original_line);
+    const startLine = validLine(comment.start_line) || validLine(comment.original_start_line);
+    return {
+      id: comment.id,
+      path: comment.path,
+      location: line ? (startLine && startLine !== line
+        ? 'L' + startLine + '–L' + line : 'L' + line) : 'Line unavailable',
+      outdated: !validLine(comment.line) && Boolean(validLine(comment.original_line)),
+      title, text, author: String(comment.user?.login || ''),
+      url: String(comment.html_url || '')
+    };
+  });
+}
+
 function mergePhase(pr, previous) {
   if (pr.merged || pr.merged_at) return 'merged';
   if (pr.state === 'closed') return 'closed';
@@ -171,7 +196,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], report: null, review: null, sawConflict: false, events: []
+    files: [], report: null, review: null, inlineReviewComments: [], sawConflict: false, events: []
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -266,6 +291,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       }
       item.report = notes.report;
       item.review = notes.review;
+      item.inlineReviewComments = normalizeInlineReviewComments(notes.inlineComments);
     }
     const next = mergePhase(info, item);
     item.state = next;
@@ -457,4 +483,4 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
 }
 
 module.exports = { REPORT_MARKER, REVIEW_MARKER, validateSelection,
-  reportFromComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard, branchDisplayLabel };
+  reportFromComments, normalizeInlineReviewComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard, branchDisplayLabel };
