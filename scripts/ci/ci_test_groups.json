@@ -227,6 +227,7 @@
         "test_spellcheck_popup.js",
         "test_spellcheck_popup_viewport.js",
         "test_terminal_actions.js",
+        "test_workbench_live_runtime.js",
         "test_window_title_configurator.py"
       ],
       "syntax": [
@@ -235,7 +236,8 @@
         "scripts/message_bar.py",
         "scripts/message_bar_configurator.py",
         "scripts/model_picker.py",
-        "scripts/window_title_configurator.py"
+        "scripts/window_title_configurator.py",
+        "assets/workbench/live_runtime.js"
       ]
     },
     "efs-search": {
