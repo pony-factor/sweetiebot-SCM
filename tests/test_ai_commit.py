@@ -1724,7 +1724,7 @@ class ArtifactContextTests(unittest.TestCase):
             ),
             (
                 ["tests/test_commit.py", "tests/test_push.py"],
-                "Change totals: 2 added\\n\\nStatus:\\nA\\ttests/test_commit.py\\nA\\ttests/test_push.py",
+                "Change totals: 2 added\n\nStatus:\nA\ttests/test_commit.py\nA\ttests/test_push.py",
                 "🧪 Add tests",
             ),
             (
@@ -1740,11 +1740,11 @@ class ArtifactContextTests(unittest.TestCase):
 
     def test_offline_fallback_uses_captured_diff_for_added_files(self):
         diff = (
-            "diff --git a/src/session.ts b/src/session.ts\\n"
-            "new file mode 100644\\n"
-            "--- /dev/null\\n"
-            "+++ b/src/session.ts\\n"
-            "+export function session() {}\\n"
+            "diff --git a/src/session.ts b/src/session.ts\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/src/session.ts\n"
+            "+export function session() {}\n"
         )
         self.assertEqual(
             ai_commit.fallback_title(["src/session.ts"], diff=diff),
@@ -1757,8 +1757,8 @@ class ArtifactContextTests(unittest.TestCase):
 
     def test_offline_fallback_describes_deletions_without_staged_claims(self):
         context = (
-            "Change totals: 2 deleted\\n\\nStatus:\\n"
-            "D\\tdocs/old.md\\nD\\tdocs/unused.md"
+            "Change totals: 2 deleted\n\nStatus:\n"
+            "D\tdocs/old.md\nD\tdocs/unused.md"
         )
         self.assertEqual(
             ai_commit.fallback_message(["docs/old.md", "docs/unused.md"], True, context),
@@ -1776,7 +1776,7 @@ class ArtifactContextTests(unittest.TestCase):
         )
 
     def test_missing_model_uses_smart_fallback_without_querying_ollama(self):
-        with patch.object(ai_commit, "installed_local_model_names", return_value=set()), \\
+        with patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
                 patch.object(ai_commit, "ollama_json") as ollama:
             title, description = ai_commit.generate_message(
                 "", "diff --git a/tests/test_api.py b/tests/test_api.py",
@@ -1788,7 +1788,7 @@ class ArtifactContextTests(unittest.TestCase):
             ollama.assert_not_called()
 
     def test_single_file_status_tracks_rename(self):
-        context = "Change totals: 1 renamed\\n\\nStatus:\\nR100\\told.py\\tnew.py"
+        context = "Change totals: 1 renamed\n\nStatus:\nR100\told.py\tnew.py"
         self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename new.py")
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
