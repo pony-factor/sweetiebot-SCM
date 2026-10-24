@@ -5,6 +5,7 @@
       "tests": [
         "test_ai_commit.py",
         "test_async_commit.py",
+        "test_auto_codex_commit.js",
         "test_auto_publish.js",
         "test_background_commit.js",
         "test_background_commit.py",
@@ -106,6 +107,7 @@
         "test_github_pr_refresh.js",
         "test_human_squash_merge.js",
         "test_merge_pull_request.js",
+        "test_merge_preserve_history.js",
         "test_pr_commit_wait.js",
         "test_pr_eligibility_retry.js",
         "test_pr_explorer.js",
@@ -185,8 +187,13 @@
         "test_lindsey_conflicts.js",
         "test_merge_batch.js",
         "test_merge_dashboard.js",
+        "test_merge_summary.js",
+        "test_merge_commit_tree.js",
+        "test_merge_blocker_report.js",
         "test_merge_dashboard_resize.js",
         "test_merge_reaction_choices.js",
+        "test_github_rate_limit.js",
+        "test_github_session.js",
         "test_merge_resolution.js",
         "test_merge_resolution_git.js",
         "test_pushed_pr.js",
@@ -200,9 +207,17 @@
         "efs/merge_batch.js",
         "efs/merge_checks.js",
         "efs/merge_dashboard.js",
+        "efs/merge_summary.js",
+        "efs/merge_commit_tree.js",
+        "efs/merge_blocker_report.js",
         "efs/merge_dashboard_diff.js",
         "efs/merge_dashboard_markdown.js",
         "efs/merge_reaction_choices.js",
+        "efs/github_rate_limit.js",
+        "efs/github_session.js",
+        "efs/github_user_api.js",
+        "efs/merge_commit_proposal.js",
+        "efs/merge_review_repair.js",
         "efs/merge_handoff.js",
         "efs/merge_patch.js",
         "efs/merge_resolution.js",
@@ -227,6 +242,7 @@
         "test_spellcheck_popup.js",
         "test_spellcheck_popup_viewport.js",
         "test_terminal_actions.js",
+        "test_workbench_live_runtime.js",
         "test_window_title_configurator.py"
       ],
       "syntax": [
@@ -235,12 +251,14 @@
         "scripts/message_bar.py",
         "scripts/message_bar_configurator.py",
         "scripts/model_picker.py",
-        "scripts/window_title_configurator.py"
+        "scripts/window_title_configurator.py",
+        "assets/workbench/live_runtime.js"
       ]
     },
     "efs-search": {
       "label": "EFS and workspace search",
       "tests": [
+        "test_filename_spellcheck.js",
         "test_workspace_activity.js",
         "test_workspace_prune.js",
         "test_workspace_search.py",
@@ -254,7 +272,8 @@
         "efs/extract.js",
         "efs/search_index.js",
         "efs/view.js",
-        "scripts/workspace_search.py"
+        "scripts/workspace_search.py",
+        "efs/filename_spellcheck.js"
       ]
     },
     "installation": {

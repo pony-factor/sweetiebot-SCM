@@ -30,10 +30,12 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
   }
   const messageFile = path.join(directory, '.git', 'sweetiebot-resolution-message');
+  // commit-tree requires -S explicitly; Git supplies the configured signing key.
+  const sign = (await git('config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign')) === 'true';
   const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
     return git('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      '-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', parent,
+      'commit-tree', ...(sign ? ['-S'] : []), tree, '-p', parent,
       ...(incoming ? ['-p', incoming] : []), '-F', messageFile);
   };
   await git('read-tree', headSha);
