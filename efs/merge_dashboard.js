@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
+const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, launchBlockerAction } = require('./merge_blocker_actions');
 const { createReactionChoices } = require('./merge_reaction_choices');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
@@ -223,7 +223,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository,
       rateLimitRetryAt: rateLimitedUntil,
-      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode),
@@ -398,7 +398,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const notes = await readReports(fetchImpl, token, selection.repository, pr.number, 3);
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
           baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }) };
-        const option = blockerOptions(snapshot).find(item => item.id === message.actionId && item.key === message.optionKey);
+        const option = [...blockerOptions(snapshot), ...manualBlockerActions(snapshot)].find(item => item.id === message.actionId && item.key === message.optionKey);
         if (!option) throw Error('That implementation option changed. Refresh the report and choose again.');
         const engine = option.engine || message.engine || 'web';
         if (option.reaction) {

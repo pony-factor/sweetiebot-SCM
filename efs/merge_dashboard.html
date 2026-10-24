@@ -324,9 +324,10 @@ __RATE_LIMIT_FORMATTER__
     if (pr.report?.text) showTextPanel(parent, 'AI explanation · GitHub report', pr.report.text, '', true);
     if (!localInfo && !pr.report?.text) showTextPanel(parent, 'AI explanation', '',
       'No explanation available yet.', true);
-    if (pr.blockerOptions?.length) {
+    for (const [heading, actions] of [['Decision needed', pr.blockerOptions], ['Manual actions', pr.manualActions]]) {
+      if (!actions?.length) continue;
       const choices = show('section', 'panel', undefined, parent);
-      show('h3', '', 'Choose how to proceed', choices);
+      show('h3', '', heading, choices);
       const destination = show('label', 'actions', 'Run with ', choices);
       const engine = show('select', '', undefined, destination);
       engine.setAttribute('aria-label', 'Implementation destination');
@@ -336,7 +337,7 @@ __RATE_LIMIT_FORMATTER__
       }
       engine.value = actionEngine;
       engine.addEventListener('change', () => { actionEngine = engine.value; });
-      for (const option of pr.blockerOptions) {
+      for (const option of actions) {
         const row = show('div', 'blocker-choice', undefined, choices);
         const emoji = { '+1': '👍', heart: '❤️', rocket: '🚀' }[option.reaction];
         const button = show('button', 'secondary', (emoji ? emoji + ' ' : '') + option.label, row);
@@ -350,7 +351,7 @@ __RATE_LIMIT_FORMATTER__
         show('summary', 'muted', 'View instructions', instructions);
         show('p', '', option.prompt, instructions);
       }
-      if (pr.actionPending) show('p', 'muted', 'Recording your choice and opening its implementation…', choices);
+      if (pr.actionPending) show('p', 'muted', 'Opening the requested task…', choices);
     }
     showTextPanel(parent, 'Original PR description', pr.description,
       'No PR description supplied.', true);

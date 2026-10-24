@@ -9,7 +9,7 @@ const {
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_dashboard_timestamps');
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
-const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/merge_blocker_actions');
+const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt } = require('../efs/merge_blocker_actions');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -62,6 +62,11 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(recommendedChoices[0].id, 'report-compatibility', 'The specific recommendation precedes generic recovery actions');
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
+  const manual = manualBlockerActions({state:'conflict'});
+  assert.equal(manual.length, 5);
+  assert(manual.every(action => action.manual && !action.reaction));
+  assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
+  assert.deepEqual(manualBlockerActions({state:'merged'}), []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
