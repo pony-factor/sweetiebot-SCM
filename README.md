@@ -306,11 +306,13 @@ The model name comes from the completed spellcheck job, including when the low-m
 
 ## Configuration
 
-Toolkit settings live in your global Git config under the `scm-toolkit` section. This keeps feature settings in the normal `~/.gitconfig` file and leaves room for new options later.
+**Use Sweetiebot Settings in VS Code.** Click the gear at the right end of the Source Control message row to open the settings page in the Integrated Browser. The page reuses its existing tab, shows your current values, and saves changes automatically. You do not need to copy a long list of Git commands to configure Sweetiebot.
 
-### Local web configurator
+Git-backed options are stored under `[scm-toolkit]` in your global `~/.gitconfig`; extension-specific options use VS Code's user settings. The settings page manages both.
 
-Run the configurator without installing anything:
+### Settings page
+
+To open the same local configurator from a repository checkout, without installing Sweetiebot first, run:
 
 ```sh
 python3 scripts/configure.py
@@ -319,8 +321,6 @@ python3 scripts/configure.py
 It opens an app-like settings page in the default browser, prefilled with the current Git configuration. The page includes every toolkit switch plus the Ollama model choices and low-memory threshold. Changes save automatically to global Git config after you edit a setting, with an inline status showing whether the latest values were saved. A dedicated **Startup** section exposes **Open Sweetie Bot on startup**; when opened through VS Code, that checkbox also updates the real `scmToolkit.openPanelOnStartup` global user setting. The **Branch names** section lets you toggle individual packs, add custom names, and paste third-party packs as JSON. If Ollama is running on `127.0.0.1:11434`, locally installed models appear as suggestions; model tags can still be entered manually when it is offline. PGP secret-key import remains tied to the final action instead of autosaving private key material while it is being entered.
 
 The **Updates** section controls VS Code's native app update mode, extension update checks, and automatic extension updates. When opened through the extension, it reads your current VS Code preferences and saves changes back to those same global preferences. VS Code's normal update and startup notices continue to work; release-note preferences are preserved.
-
-After installation, the gear at the right end of the Source Control message row opens the same local settings page directly. The companion extension starts the loopback configurator and opens it in VS Code’s native Integrated Browser in the current window. Clicking the gear again focuses the existing settings tab. This requires a VS Code version with the Integrated Browser; older versions show an update message. The repository checkout and manual URL entry are not required.
 
 Every toolkit setting and companion-extension preference is available on this gear page. **Automatically publish new branches** controls the saved publishing preference; **Auto-publish toggle** controls whether the cloud icon appears. Publishing works even when the icon is hidden. The page loads the current VS Code preferences and saves publishing, startup, keep-awake, inline suggestions, post-commit actions, and search options to global user settings immediately. **Automatically pull clean branches** is also available independently of blank-state refresh.
 
@@ -336,123 +336,18 @@ The configurator uses only the Python standard library, binds to a random loopba
 
 **Keep awake while Codex works** is enabled by default on macOS. It prevents idle system sleep while any Codex task in the window is active and releases the assertion when all tasks finish, fail, or are interrupted. The display can still turn off. Set `scmToolkit.codexKeepAwake` to `false` in VS Code Settings to disable it immediately, or change the default in the toolkit configurator (`scm-toolkit.codex-keep-awake`). Reload the window after first installing the feature. It has no effect on other operating systems.
 
-Set options with `git config --global`:
+### Optional command-line configuration
+
+For scripts or troubleshooting, you can still set individual options with `git config --global`. For example:
 
 ```sh
-git config --global scm-toolkit.branch-picker true
 git config --global scm-toolkit.horizontal-branch-selector true
-git config --global scm-toolkit.pony-branch true
-git config --global scm-toolkit.message-placeholder "Message"
-git config --global scm-toolkit.commit-button-label "Send"
-git config --global scm-toolkit.commit-and-send-button-label "Send"
-git config --global scm-toolkit.source-control-label "Sweetiebot"
-git config --global scm-toolkit.open-panel-on-startup true
-git config --global scm-toolkit.workspace-search-activity-bar false
-git config --global scm-toolkit.workspace-search-label EFS
-git config --global scm-toolkit.filled-buttons false
-git config --global scm-toolkit.commit-and-push true
-git config --global scm-toolkit.branch-cleanup true
-git config --global scm-toolkit.autocomplete-toggle true
-git config --global scm-toolkit.codex-coauthor true
-git config --global scm-toolkit.codex-coauthor-name "Codex"
-git config --global scm-toolkit.codex-coauthor-email "noreply@openai.com"
-git config --global scm-toolkit.hide-outgoing-sync-count true
-git config --global scm-toolkit.incoming-sync-label "Incoming"
-git config --global scm-toolkit.outgoing-sync-label "Outgoing"
-git config --global scm-toolkit.blank-state-refresh true
-git config --global scm-toolkit.auto-pull-clean true
-git config --global scm-toolkit.cmd-click-close-others false
-git config --global scm-toolkit.browser-chatgpt-home true
-git config --global scm-toolkit.graph-open-working-file true
-git config --global scm-toolkit.ai-commit true
-git config --global scm-toolkit.ai-commit-async false
-git config --global scm-toolkit.ai-default-branch-description true
 git config --global scm-toolkit.ai-commit-model qwen2.5-coder:7b
-git config --global scm-toolkit.ai-commit-low-memory-model qwen2.5-coder:3b
-git config --global scm-toolkit.ai-low-memory-gib 4
-git config --global scm-toolkit.ai-model-picker true
-git config --global scm-toolkit.mcp-pull-request true
-git config --global scm-toolkit.mcp-pr-server codex-drafter
-git config --global scm-toolkit.mcp-pr-tool github_create_pull_request
-git config --global scm-toolkit.codex-usage-reset-countdown true
-git config --global scm-toolkit.codex-hide-promotions true
-git config --global scm-toolkit.chatgpt-custom-instructions ""
-git config --global scm-toolkit.chatgpt-web-codex-coauthor true
-git config --global scm-toolkit.codex-hide-chat-timestamps true
-git config --global scm-toolkit.codex-hide-dictation true
-git config --global scm-toolkit.codex-short-model-labels true
-git config --global scm-toolkit.default-branch main
-git config --global scm-toolkit.remote origin
-git config --global scm-toolkit.branch-name-disabled-packs "pony-life,idw-comics"
-git config --global scm-toolkit.branch-custom-names ""
-git config --global scm-toolkit.branch-name-imports '[]'
 ```
 
-The equivalent `~/.gitconfig` block is:
+These commands update the same `[scm-toolkit]` section in `~/.gitconfig` that the settings page reads. Set only the options you want to override; the full, evolving set of controls and their current values is available through **Sweetiebot Settings**, including **Message bar**, **Source control**, **Branch names**, **Search**, **Ollama**, **Codex**, and **GitHub**.
 
-```gitconfig
-[scm-toolkit]
-    branch-picker = true
-    horizontal-branch-selector = true
-    pony-branch = true
-    message-placeholder = Message
-    commit-button-label = Send
-    commit-and-send-button-label = Send
-    source-control-label = Sweetiebot
-    open-panel-on-startup = true
-    workspace-search-activity-bar = false
-    workspace-search-label = EFS
-    filled-buttons = false
-    commit-and-push = true
-    branch-cleanup = true
-    autocomplete-toggle = true
-    codex-coauthor = true
-    codex-coauthor-name = Codex
-    codex-coauthor-email = noreply@openai.com
-    hide-outgoing-sync-count = true
-    incoming-sync-label = Incoming
-    outgoing-sync-label = Outgoing
-    blank-state-refresh = true
-    auto-pull-clean = true
-    cmd-click-close-others = false
-    browser-chatgpt-home = true
-    graph-open-working-file = true
-    ai-commit = true
-    ai-commit-custom-instructions = false
-    ai-default-branch-description = true
-    ai-commit-model = qwen2.5-coder:7b
-    ai-commit-low-memory-model = qwen2.5-coder:3b
-    ai-low-memory-gib = 4
-    ai-model-picker = true
-    mcp-pull-request = true
-    mcp-pr-server = codex-drafter
-    mcp-pr-tool = github_create_pull_request
-    codex-usage-reset-countdown = true
-    codex-hide-promotions = true
-    chatgpt-custom-instructions =
-    chatgpt-web-codex-coauthor = true
-    codex-hide-chat-timestamps = true
-    codex-hide-dictation = true
-    default-branch = main
-    remote = origin
-    branch-name-disabled-packs = pony-life,idw-comics
-    branch-custom-names =
-    branch-name-imports = []
-```
-
-<<<<<<< HEAD
-The filled-button style, standalone Workspace Search Activity Bar, Cmd-click close-others gesture, Codex usage-reset countdown, Codex promotion hiding, Codex chat timestamp hiding, Codex dictation hiding, and ChatGPT browser homepage default to `false`; the other boolean SCM feature switches default to `true`. The Source Control app-bar label defaults to `Sweetiebot`, and the optional standalone Workspace Search container label defaults to `EFS`. With filled buttons disabled, the branch selector and native Commit button use a transparent background and a theme-aware border instead of VS Code's accent fill. The default AI models are `qwen2.5-coder:7b` for normal operation and `qwen2.5-coder:3b` for low-memory operation. The low-memory threshold defaults to 4 GiB of estimated available memory. The default protected branch is `main`, and the default remote is `origin`.
-=======
-The filled-button style, standalone Workspace Search Activity Bar, Cmd-click close-others gesture, Codex usage-reset countdown, Codex promotion hiding, Codex chat timestamp hiding, and ChatGPT browser homepage default to `false`; the other boolean SCM feature switches default to `true`. The Source Control app-bar label defaults to `Sweetie Bot`, and the optional standalone Workspace Search container label defaults to `EFS`. With filled buttons disabled, the branch selector and native Commit button use a transparent background and a theme-aware border instead of VS Code's accent fill. The default AI models are `qwen2.5-coder:7b` for normal operation and `qwen2.5-coder:3b` for low-memory operation. The low-memory threshold defaults to 4 GiB of estimated available memory. The default protected branch is `main`, and the default remote is `origin`.
->>>>>>> origin/main
-
-After changing toolkit Git config, rerun:
-
-```sh
-python3 scripts/install.py
-```
-
-Then reload Visual Studio Code. The installer resolves the Git-config values and embeds that configuration into the installed patch.
+If you change an install-time workbench option manually, rerun `python3 scripts/install.py` and reload VS Code to apply the patch. Changes made in the settings page are saved automatically; extension preferences handled at runtime may take effect without a reinstall.
 
 ### Native stacked pony branches
 
