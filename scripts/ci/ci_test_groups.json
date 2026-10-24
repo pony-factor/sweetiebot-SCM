@@ -258,6 +258,7 @@
     "efs-search": {
       "label": "EFS and workspace search",
       "tests": [
+        "test_filename_spellcheck.js",
         "test_workspace_activity.js",
         "test_workspace_prune.js",
         "test_workspace_search.py",
@@ -271,7 +272,8 @@
         "efs/extract.js",
         "efs/search_index.js",
         "efs/view.js",
-        "scripts/workspace_search.py"
+        "scripts/workspace_search.py",
+        "efs/filename_spellcheck.js"
       ]
     },
     "installation": {
