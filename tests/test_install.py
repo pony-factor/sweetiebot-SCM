@@ -64,6 +64,8 @@ def workbench_fixture():
     return "".join(
         [
             'dispose(){this.disposables?.dispose()}setButton(o){if(this.clear(),!!o){',
+            'this.button.onDidClick(async()=>await this.executeCommand(o.command.id,...o.command.arguments||[])',
+            'run:async()=>{await this.executeCommand(n.id,...n.arguments||[])}',
             'layout(e,t){if(super.layout(e,t),native(this.configurationService)){this.nativeHostService.updateWindowControls({height:t})}}',
             'cmd=svc("commandService")',
             'registry.registerCommand("noop",()=>{});',
