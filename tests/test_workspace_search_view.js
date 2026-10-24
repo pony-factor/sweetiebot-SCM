@@ -33,8 +33,9 @@ async function run() {
     ThemeColor: class ThemeColor { constructor(id) { this.id = id; } },
     OverviewRulerLane: {Center: 2},
     TextEditorRevealType: {InCenterIfOutsideViewport: 2},
-    workspace: {async openTextDocument() { return document; }},
+    workspace: {async openTextDocument() { return document; }, getWorkspaceFolder() {return {uri: {scheme: 'file', fsPath: '/tmp/repo'}};}}, 
     window: {
+      activeTextEditor: undefined,
       async showTextDocument(_document, options) { opened.push(options); return editor; },
       createTextEditorDecorationType(options) { return {options, dispose() {this.disposed = true;}}; },
       onDidChangeActiveTextEditor(listener) {
@@ -52,9 +53,7 @@ async function run() {
       uriScheme: 'vscode',
       clipboard: {async writeText(value) { clipboard.push(value); }}
     },
-    commands: {async executeCommand(command, uri) {commands.push({command, uri});}},
-    workspace: {getWorkspaceFolder() {return {uri: {scheme: 'file', fsPath: '/tmp/repo'}};}},
-    window: {activeTextEditor: undefined}
+    commands: {async executeCommand(command, uri) {commands.push({command, uri});}}
   };
   const sandbox = { module: { exports: {} }, require(name) {
     if (name === 'vscode') return vscodeStub;
