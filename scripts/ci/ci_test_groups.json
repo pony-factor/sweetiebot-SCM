@@ -5,6 +5,7 @@
       "tests": [
         "test_ai_commit.py",
         "test_async_commit.py",
+        "test_auto_codex_commit.js",
         "test_auto_publish.js",
         "test_background_commit.js",
         "test_background_commit.py",
@@ -21,6 +22,7 @@
         "test_commit_shortcut.js",
         "test_finalized_commit_recovery.js",
         "test_local_codex_commit.py",
+        "test_native_spellcheck_bridge.js",
         "test_ollama_concurrency.py",
         "test_pony_git_publish.js",
         "test_pony_publish_retry.js",
@@ -33,6 +35,8 @@
       ],
       "syntax": [
         "efs/ollama.js",
+        "efs/native_spellcheck_bridge.js",
+        "assets/browser/spellcheck_bridge.js",
         "scripts/ai_commit.py",
         "scripts/commit_diagnostics_dashboard.py",
         "scripts/sweetiebot_async_commit.py"
@@ -62,6 +66,7 @@
         "test_merged_branch.js",
         "test_merged_branch.py",
         "test_new_workspace.js",
+        "test_workspace_layout.js",
         "test_prune_merged_branches.py",
         "test_routine_sync.js",
         "test_shared_main.js",

@@ -90,10 +90,13 @@ stickerReset?.addEventListener('click', async () => {
 """
 
 COMMIT_HOTKEY_STYLE = """
-.hotkey-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px}
-.hotkey-status{display:block;color:var(--muted);font-size:12px}
+.hotkey-setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);align-items:center}
+.hotkey-actions{display:grid;grid-template-columns:max-content max-content max-content minmax(0,1fr);align-items:center;gap:8px;min-width:0}
+.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px;white-space:nowrap}
+.hotkey-actions button{white-space:nowrap}
+.hotkey-status{grid-column:1/-1;min-width:0;overflow-wrap:anywhere;color:var(--muted);font-size:12px}
 .hotkey-status.error-state{color:#ffb3ad}
+@media(max-width:1080px){.hotkey-setting{grid-template-columns:minmax(0,1fr);gap:8px}}
 """
 COMMIT_HOTKEY_SCRIPT = r"""
 const hotkeyNames = {
@@ -205,7 +208,7 @@ def _commit_hotkey_control(
             "shortcuts may still take precedence." if available else
             "Open this page from Sweetiebot in VS Code to edit its shortcut.")
     return (
-        f'<div class="setting"><span><strong>{html.escape(label)}</strong>'
+        f'<div class="setting hotkey-setting"><span><strong>{html.escape(label)}</strong>'
         f'<small>{html.escape(description)}</small></span>'
         '<div class="hotkey-actions">'
         f'<output id="{prefix}-value" class="hotkey-value">{shown}</output>'
@@ -320,6 +323,7 @@ SETTINGS = (
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
     Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
+    Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
     Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
     Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
@@ -349,6 +353,7 @@ SETTINGS = (
     Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Usage pie indicator", "Replace the Codex remaining-usage percentage with a circular indicator that empties as the five-hour allowance is used.", "Codex"),
+    Setting("codexResetTimePieIndicator", "scm-toolkit.codex-reset-time-pie-indicator", "Reset countdown pie indicators", "Show a time-remaining pie beside each five-hour and weekly Codex usage-menu reset countdown. Pies empty as the reset approaches; hiding reset times overrides this setting. Off by default.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
@@ -871,7 +876,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexHideChatTimestamps",
+                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'

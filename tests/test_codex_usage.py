@@ -22,6 +22,16 @@ class CodexUsageTests(unittest.TestCase):
                 else:
                     self.assertIn('"reset-at":bucket.resetsAt', patched)
 
+    def test_reset_time_pie_is_opt_in_reversible_and_independent(self):
+        patched = codex_usage.transform(FIXTURE, reset_countdown=False, reset_time_pie=True)
+        self.assertIn('"show-pie":"true"', patched)
+        self.assertIn('"window-minutes":bucket.windowDurationMins', patched)
+        self.assertEqual(codex_usage.transform(patched, reset_countdown=False, reset_time_pie=True), patched)
+        self.assertEqual(codex_usage.transform(patched, enabled=False), FIXTURE)
+        self.assertNotIn('"show-pie":"true"', codex_usage.transform(FIXTURE, reset_countdown=True))
+        hidden = codex_usage.transform(FIXTURE, reset_time_pie=True, hide_reset_times=True)
+        self.assertNotIn('"show-pie":"true"', hidden)
+
     def test_hide_only_is_independent_of_countdown(self):
         patched = codex_usage.transform(FIXTURE, hide_reset_times=True, reset_countdown=False)
         self.assertIn('scmToolkitStripUsageResetTime', patched)

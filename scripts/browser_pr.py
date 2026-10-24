@@ -6,6 +6,7 @@ START = '\n/* sweetiebot-browser-pr:start */\n'
 END = '\n/* sweetiebot-browser-pr:end */\n'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/browser/pull_request_submit.js'
 THINKING_ASSET = ASSET.with_name('maximize_thinking.js')
+SPELLCHECK_ASSET = ASSET.with_name('spellcheck_bridge.js')
 BACKGROUND_ASSET = ASSET.with_name('pr_background.js')
 BACKGROUND_START = '/* sweetiebot-browser-background:start */'
 BACKGROUND_END = '/* sweetiebot-browser-background:end */'
@@ -82,7 +83,7 @@ def transform(source, remove=False):
         return source
     if 'vscode:browserView:preloadReady' not in source:
         raise ValueError('Unsupported Integrated Browser preload.')
-    return source + START + THINKING_ASSET.read_text() + '\n' + ASSET.read_text() + END
+    return source + START + THINKING_ASSET.read_text() + '\n' + ASSET.read_text() + '\n' + SPELLCHECK_ASSET.read_text() + END
 
 
 def patch_files(app, remove=False):
