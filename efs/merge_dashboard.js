@@ -173,12 +173,43 @@ async function paged(fetchImpl, token, repository, endpoint, maxPages = 3) {
 }
 
 async function readReports(fetchImpl, token, repository, number, maxPages = 2) {
-  const [conversation, inline] = await Promise.all([
+  const [conversation, inline, reviews] = await Promise.all([
     paged(fetchImpl, token, repository, '/issues/' + number + '/comments', maxPages),
-    paged(fetchImpl, token, repository, '/pulls/' + number + '/comments', maxPages)
+    paged(fetchImpl, token, repository, '/pulls/' + number + '/comments', maxPages),
+    paged(fetchImpl, token, repository, '/pulls/' + number + '/reviews', maxPages)
   ]);
   // Inline decision requests take precedence over legacy Conversation requests.
-  return { ...reportFromComments([...conversation, ...inline]), inlineComments: inline };
+  return { ...reportFromComments([...conversation, ...inline]),
+    inlineComments: inline, conversationComments: conversation, reviews };
+}
+
+// New GitHub review activity is observed separately from merge reports. GitHub
+// review bodies, line comments, and Conversation comments have distinct APIs.
+function postedReviewActivity(notes) {
+  const entries = [];
+  function include(entry, kind, message, location = '', skipMergeMarkers = false) {
+    const body = String(entry?.body || '');
+    if (!Number.isSafeInteger(entry?.id) || !body.trim() ||
+        (skipMergeMarkers && (body.includes(REPORT_MARKER) || body.includes(REVIEW_MARKER)))) return;
+    const author = /^[\w-]{1,39}$/.test(entry.user?.login || '') ? '@' + entry.user.login : '';
+    const preview = body.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ').trim().slice(0, 180);
+    entries.push({ key: kind + ':' + entry.id, message,
+      details: [author, location, preview].filter(Boolean).join(' · '),
+      url: typeof entry.html_url === 'string' ? entry.html_url : '' });
+  }
+  for (const review of notes.reviews || []) {
+    if (review.state !== 'PENDING') include(review, 'review', 'PR review submitted');
+  }
+  for (const comment of notes.inlineComments || []) {
+    const line = Number.isSafeInteger(comment.line) ? comment.line : comment.original_line;
+    const location = typeof comment.path === 'string'
+      ? comment.path.slice(0, 180) + (Number.isSafeInteger(line) && line > 0 ? ':' + line : '') : '';
+    include(comment, 'inline', 'Inline review comment posted', location, true);
+  }
+  for (const comment of notes.conversationComments || []) {
+    include(comment, 'conversation', 'PR conversation comment posted', '', true);
+  }
+  return entries;
 }
 
 // Observe GitHub state and dispatch explicit user decisions. Never infer
@@ -214,6 +245,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const events = [];
   const launchingActions = new Set();
   const inlineComments = new Map();
+  const observedReviewActivity = new Map();
   const reportedDeferrals = new Set();
   const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
     storageDirectory: context?.globalStorageUri?.fsPath,
@@ -241,8 +273,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   });
 
-  function addEvent(pr, state, message, details) {
-    const event = { number: pr.number, state, message, ...(details ? { details } : {}), at: new Date().toISOString() };
+  function addEvent(pr, state, message, details, url = '') {
+    const event = { number: pr.number, state, message, ...(details ? { details } : {}),
+      ...(url ? { url } : {}), at: new Date().toISOString() };
     events.push(event);
     pr.events.push(event);
     if (events.length > 400) events.shift();
@@ -258,6 +291,24 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode)
     });
+  }
+
+  function recordReviewActivity(item, notes) {
+    const entries = postedReviewActivity(notes);
+    const seen = observedReviewActivity.get(item.number);
+    if (!seen) {
+      // The first complete fetch establishes history; old PR comments are not new work.
+      observedReviewActivity.set(item.number, new Set(entries.map(entry => entry.key)));
+      return;
+    }
+    for (const entry of entries) {
+      if (seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      // Only the selected PR's GitHub discussion URLs become timeline links.
+      const url = entry.url.startsWith(item.url + '#') ||
+        entry.url.startsWith(item.url + '/files#') ? entry.url : '';
+      addEvent(item, 'review-comment', entry.message, entry.details, url);
+    }
   }
 
   async function refreshOne(item) {
@@ -297,6 +348,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const notes = await readReports(fetchImpl, token, selection.repository, item.number);
       decisionComments = notes.inlineComments;
       inlineComments.set(item.number, decisionComments);
+      recordReviewActivity(item, notes);
       if (notes.report?.id !== item.report?.id && notes.report) {
         addEvent(item, 'reported', 'AI merge explanation recorded on the pull request');
       }
