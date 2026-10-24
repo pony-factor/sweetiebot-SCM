@@ -401,7 +401,7 @@ function registerSharedMain(vscode, context) {
     if (running) return;
     running = true;
     try { await reconnectManagedMain(vscode); }
-    catch (error) { vscode.window.showWarningMessage('Sweetiebot shared main: ' + error.message); }
+    catch (error) { vscode.window.showWarningMessage('Sweetiebot: ' + error.message); }
     finally { running = false; }
   };
   // Saved shared-main windows may point at a managed main worktree; those

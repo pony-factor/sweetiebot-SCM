@@ -16,7 +16,7 @@ const RETRY_DELAYS_MS = [15000, 60000, 300000];
 // by an extension change must be reconciled before reloading the window.
 function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   if (process.platform !== 'darwin' || vscode.env.remoteName) return;
-  const output = vscode.window.createOutputChannel('Sweetie Bot app repair');
+  const output = vscode.window.createOutputChannel('Sweetiebot app repair');
   let child, timer, settleTimer, disposed = false, pending = false, reloadRevision;
   let extensionGeneration = 0;
   let focused = vscode.window.state?.focused ?? true;
@@ -31,7 +31,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   const reportReloadBlock = reason => {
     if (reloadLoopReported) return;
     reloadLoopReported = true;
-    const message = `Sweetie Bot paused automatic reloads (${reason}). Check Output → Sweetie Bot app repair and reload manually if needed.`;
+    const message = `Sweetiebot: Automatic reloads paused (${reason}). Check Output → Sweetiebot app repair and reload manually if needed.`;
     output.appendLine(message);
     void vscode.window.showWarningMessage?.(message);
   };

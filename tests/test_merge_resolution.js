@@ -141,6 +141,9 @@ assert(handoffPolicy.includes('local handoff record'));
   }
   assert.throws(() => patchPaths('new file mode 120000\n', '1\t0\tfile.txt\0', ['file.txt']), /regular text/);
   assert.throws(() => patchPaths('', '1\t1\tunrelated.txt\0', ['file.txt']), /unrelated/);
+  assert.deepEqual(patchPaths('', '1\t1\ttests/test_regression.js\0', ['file.txt'], { allowCheckRepairTests: true }), ['tests/test_regression.js']);
+  assert.throws(() => patchPaths('', '1\t1\ttests/test_regression.js\0', ['file.txt']), /unrelated/);
+  assert.throws(() => patchPaths('', '1\t1\tproduction.js\0', ['file.txt'], { allowCheckRepairTests: true }), /unrelated/);
   assert.throws(() => patchPaths('GIT binary patch\n', '', ['file.txt']), /regular text/);
 
   let executions = 0, finish;
