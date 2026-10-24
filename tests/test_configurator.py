@@ -412,9 +412,10 @@ class SubmissionTests(unittest.TestCase):
             for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
             for key in toolkit_settings.VSCODE_SETTINGS[group]
         }
-        # These two extension-native controls do not belong to the
-        # Sweetiebot configurator's managed settings.
+        # Extension-native and repository-scoped settings do not belong
+        # to the global Git-backed configurator's managed controls.
         self.assertEqual(properties - exposed, {
+            "scmToolkit.postCommitSpellcheck",
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
         })
