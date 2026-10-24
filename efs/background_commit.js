@@ -235,7 +235,7 @@ function registerBackgroundCommit(vscode, context) {
     }
     if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
     let snapshot = '';
-    if (options.codex && !String(options.message ?? '').trim()) {
+    if (options.codex && options.codexCommitContext !== false && !String(options.message ?? '').trim()) {
       try {
         const codex = vscode.extensions.getExtension('openai.chatgpt');
         if (codex && !codex.isActive) await codex.activate();

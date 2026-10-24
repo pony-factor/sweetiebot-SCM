@@ -139,6 +139,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
       codexKeepAwake: scm.get('codexKeepAwake', true),
+      codexHidePermissionsIcon: scm.get('codexHidePermissionsIcon', false),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),
@@ -194,6 +195,10 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       output = output.slice(newline + 1);
       try {
         const message = JSON.parse(line);
+        if (message.codexPermissions === true) {
+          void vscode.commands.executeCommand('sweetiebot.codex.openPermissions').catch(error => vscode.window.showErrorMessage(error.message));
+          continue;
+        }
         if (message.rebuildComplete === true) {
           if (rebuildReloadRequested || configuratorProcess !== child) continue;
           rebuildReloadRequested = true;

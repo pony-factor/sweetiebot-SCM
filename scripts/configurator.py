@@ -98,6 +98,19 @@ COMMIT_HOTKEY_STYLE = """
 .hotkey-status.error-state{color:#ffb3ad}
 @media(max-width:1080px){.hotkey-setting{grid-template-columns:minmax(0,1fr);gap:8px}}
 """
+PERMISSIONS_SCRIPT = r"""
+document.getElementById('codex-permissions')?.addEventListener('click', async () => {
+  const status = document.getElementById('codex-permissions-status');
+  try {
+    const response = await fetch('/codex-permissions' + location.search, {method:'POST'});
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error);
+    status.textContent = 'Choose permissions in the Codex menu.';
+  } catch (error) { status.textContent = error.message; }
+});
+"""
+
+
 COMMIT_HOTKEY_SCRIPT = r"""
 const hotkeyNames = {
   Space:'space', Enter:'enter', Tab:'tab', Escape:'escape',
@@ -355,6 +368,7 @@ SETTINGS = (
     Setting("codexResetTimePieIndicator", "scm-toolkit.codex-reset-time-pie-indicator", "Reset countdown pie indicators", "Show a time-remaining pie beside each five-hour and weekly Codex usage-menu reset countdown. Pies empty as the reset approaches; hiding reset times overrides this setting. Off by default.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
+    Setting("codexHidePermissionsIcon", "scm-toolkit.codex-hide-permissions-icon", "Hide permissions icon", "Choose permissions from Change permissions below instead of the Codex composer icon.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
     Setting("codexInlineLocation", "scm-toolkit.codex-inline-location", "Computer and usage beside access", "Move the native computer and usage control beside the access icon.", "Codex"),
     Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Place a clipboard action beside the Codex send control. Submit when idle, or use native queued follow-ups while a task is running.", "Codex"),
@@ -888,6 +902,7 @@ def render_form(
                 for heading, is_time in (("Time", True), ("Customization", False))
             )
         if section == "Codex":
+            controls += '<div class="setting"><span><strong>Codex permissions</strong><small>Use Codex’s permissions menu, including its access confirmations.</small></span><button type="button" id="codex-permissions">Change permissions…</button><span id="codex-permissions-status" role="status"></span></div>'
             image_status = ("Custom image cached on this computer" if codex_sticker.sticker_path().is_file()
                             else "Bundled Twilight image")
             controls += (
@@ -1016,6 +1031,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 {COMMIT_HOTKEY_SCRIPT}
 {APP_SCRIPT}
 {STICKER_SCRIPT}
+{PERMISSIONS_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
@@ -1690,6 +1706,13 @@ def run_configurator(
                 self._send_json({"error": "Request too large."}, 413)
                 return
             data = self.rfile.read(length)
+            if path == "/codex-permissions":
+                if parent_pid is None:
+                    self._send_json({"error": "Open Magic Settings from VS Code to change Codex permissions."}, 409)
+                    return
+                print(json.dumps({"codexPermissions": True}), flush=True)
+                self._send_json({"opened": True})
+                return
             if path == "/sticker-upload":
                 # Reject cross-origin requests; the token is required as well.
                 origin = self.headers.get("Origin")

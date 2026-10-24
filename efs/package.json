@@ -308,7 +308,11 @@
         },
         "scmToolkit.mergeTimelineTimestampMode": {
           "type": "string",
-          "enum": ["hidden", "relative", "clock"],
+          "enum": [
+            "hidden",
+            "relative",
+            "clock"
+          ],
           "enumDescriptions": [
             "Hide event timestamps in Lindsey's activity timeline.",
             "Show updating elapsed times (for example, 2m ago).",
@@ -377,7 +381,7 @@
         },
         "scmToolkit.workspaceSearch.placeholder": {
           "type": "string",
-          "default": "Search your workspace…",
+          "default": "Search your workspace\u2026",
           "description": "Hint shown in the empty EFS search box; set to SATS or any custom text. Leave blank to restore the original hint."
         },
         "scmToolkit.workspaceSearch.ollamaUrl": {
@@ -526,7 +530,11 @@
         },
         "scmToolkit.kefaniaCloseButtonPosition": {
           "type": "string",
-          "enum": ["left", "middle", "right"],
+          "enum": [
+            "left",
+            "middle",
+            "right"
+          ],
           "enumDescriptions": [
             "Fix the X to the upper-left corner of the window.",
             "Right-align the X above the pony card inside the main display column.",
@@ -546,7 +554,12 @@
           "default": 120,
           "minimum": 30,
           "maximum": 3600,
-          "description": "Seconds between automatic PR list refreshes (30–3600). Manual refresh is unaffected."
+          "description": "Seconds between automatic PR list refreshes (30\u20133600). Manual refresh is unaffected."
+        },
+        "scmToolkit.codexHidePermissionsIcon": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the Codex permissions icon; use Change permissions in Magic Settings instead."
         }
       }
     }

@@ -44,13 +44,15 @@ def transform(source, kind, enabled=True):
     if kind == 'host':
         replacement = original.replace('.push(',
             f'.push(scmToolkitRegisterCodexSnapshotProvider({match["provider"]},{match["vscode"]}),'
-            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}),', 1)
+            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}),'
+            f'scmToolkitRegisterCodexPermissions({match["provider"]},{match["vscode"]}),', 1)
     else:
-        replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}))'
+        replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}),scmToolkitRegisterCodexPermissionsMenu({match["api"]}))'
     source = source.replace(original, replacement, 1)
     helper = (ASSETS / f'context-{kind}.js').read_text()
     if kind == 'host':
         helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
+    helper += '\n' + (ASSETS / f'permissions-{kind}.js').read_text()
     result = (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
               + helper + END)
     return codex_drafts.transform_host(result) if had_drafts else result

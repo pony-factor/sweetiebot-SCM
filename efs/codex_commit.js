@@ -140,7 +140,7 @@ async function commitWithCodex(vscode, uri, options = {}) {
     const push = vscode.workspace.getConfiguration('git', root).get('postCommitCommand') === 'push';
     if (vscode.workspace.getConfiguration('scmToolkit', root).get('durableBackgroundCommits', false) === true) {
       return await vscode.commands.executeCommand('sweetiebot.queueCommit', root, {
-        message: originalMessage, codex: true, trailer, push
+        message: originalMessage, codex: true, codexCommitContext: useCodexContext, trailer, push
       });
     }
     let message = originalMessage;
