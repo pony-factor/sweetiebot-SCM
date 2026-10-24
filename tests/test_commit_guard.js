@@ -218,6 +218,8 @@ async function run(allowed, failCommit = false) {
   }
   for (const outcome of [
     { result: { cancelled: true }, allowed: true, expectedCommits: 0, expectedChecks: 0 },
+    { result: { queued: false, preflightApproved: true }, allowed: true,
+      expectedCommits: 1, expectedChecks: 0 },
     { result: { queued: false }, allowed: true, expectedCommits: 1, expectedChecks: 1 },
     { result: { queued: false }, allowed: false, expectedCommits: 0, expectedChecks: 1 },
   ]) {
