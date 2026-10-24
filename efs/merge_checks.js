@@ -11,7 +11,7 @@ async function checkPages(api, endpoint, field) {
   throw Error('GitHub check history is incomplete.');
 }
 
-async function readMergeChecks(api, repository, sha, { expectChecks = false } = {}) {
+async function readMergeChecks(api, repository, sha, { expectChecks = false, collectEvidence = false } = {}) {
   const root = 'repos/' + repository + '/commits/' + sha;
   const runs = await checkPages(api, root + '/check-runs', 'check_runs');
   const suites = await checkPages(api, root + '/check-suites', 'check_suites');
@@ -40,21 +40,25 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false } = 
   failed.push(...activeStatuses.filter(status => ['failure', 'error'].includes(status.state)).map(status => String(status.context)));
   failed.push(...suites.filter(suite => suite.status === 'completed' && suite.conclusion && !passing.has(suite.conclusion) &&
     !runs.some(run => suite.id && run.check_suite?.id === suite.id)).map(suite => String(suite.app?.name || 'GitHub check suite')));
-  if (failed.length) return { state: 'failed', names: [...new Set(failed)], hasChecks: true };
+  const evidence = collectEvidence ? { evidence: [
+    ...activeRuns.map(run => ({ name: String(run.name || 'GitHub check'), result: run.status === 'completed' ? String(run.conclusion) : String(run.status) })),
+    ...activeStatuses.map(status => ({ name: String(status.context), result: String(status.state) }))
+  ] } : {};
+  if (failed.length) return { state: 'failed', names: [...new Set(failed)], hasChecks: true, ...evidence };
   const hasChecks = Boolean(runs.length || activeSuites.length || statuses.length);
   const pending = activeRuns.some(run => run.status !== 'completed') ||
     activeSuites.some(suite => suite.status !== 'completed') ||
     activeStatuses.some(status => status.state !== 'success') ||
     (expectChecks && !hasChecks);
-  return { state: pending ? 'pending' : 'passed', names: [], hasChecks };
+  return { state: pending ? 'pending' : 'passed', names: [], hasChecks, ...evidence };
 }
 
 async function waitForMergeChecks(api, repository, sha, { expectChecks = false,
-  timeoutMs = 8 * 60 * 1000, intervalMs = 15000, now = Date.now,
+  collectEvidence = false, timeoutMs = 8 * 60 * 1000, intervalMs = 15000, now = Date.now,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   const deadline = now() + timeoutMs;
   for (;;) {
-    const result = await readMergeChecks(api, repository, sha, { expectChecks });
+    const result = await readMergeChecks(api, repository, sha, { expectChecks, collectEvidence });
     if (result.state !== 'pending' || now() >= deadline) return result;
     await sleep(intervalMs);
   }

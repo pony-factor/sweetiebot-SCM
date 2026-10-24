@@ -8,14 +8,14 @@ function safePatchPath(name) {
       /\.(?:pem|key|p12|pfx|keystore)$/i.test(part));
 }
 
-function patchPaths(patch, numstat, allowedPaths) {
+function patchPaths(patch, numstat, allowedPaths, { allowCheckRepairTests = false } = {}) {
   if (/^(?:GIT binary patch|Binary files |rename from |rename to |copy from |copy to )/m.test(patch) ||
       /^(?:(?:new|deleted) file mode|old mode|new mode) (?:120000|160000)$/m.test(patch)) {
     throw Error('Resolution patches support regular text files only; no binary, symlink, submodule or rename changes.');
   }
   const paths = numstat.split('\0').filter(Boolean).map(line => {
     const match = /^\d+\t\d+\t([^\0]+)$/.exec(line);
-    if (!match || !safePatchPath(match[1]) || !allowedPaths.includes(match[1])) {
+    if (!match || !safePatchPath(match[1]) || (!allowedPaths.includes(match[1]) && !(allowCheckRepairTests && /^tests\/test_[\w.-]+\.(?:js|py)$/.test(match[1])))) {
       throw Error('Resolution patch contains an unsafe, secret-bearing or unrelated path.');
     }
     return match[1];

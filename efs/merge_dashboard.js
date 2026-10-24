@@ -467,7 +467,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : item.status === 'checks_failed' ? 'Integrated-head checks failed · PR remains unmerged'
         : pushed ? 'Stopped after pushing the prepared PR branch · merge not confirmed'
         : 'Local preparation stopped · merge not confirmed';
-      const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason].filter(Boolean).join('\n');
+      const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason, item.summaryWarning].filter(Boolean).join('\n');
       addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
     }
     publish();

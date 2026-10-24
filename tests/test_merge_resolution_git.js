@@ -261,6 +261,8 @@ async function successiveMerges() {
        assert(fields.includes('merge_method=squash'), 'Human-opened PRs prefer a native squash without rewriting');
        const message = fields.find(value => value.startsWith('commit_title=')).slice('commit_title='.length) + '\n\n' +
          fields.find(value => value.startsWith('commit_message=')).slice('commit_message='.length);
+       assert(message.includes('Lindsey integration summary for https://github.com/owner/repo/pull/' + number));
+       assert(message.includes('price tests: success'), 'The actual squash contains verified passing checks');
        const messageFile = path.join(root, 'native-squash-message');
        await fs.writeFile(messageFile, message);
        const squash = await git('--git-dir=' + remote, 'commit-tree', head + '^{tree}', '-p', base, '-F', messageFile);

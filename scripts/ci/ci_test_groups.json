@@ -198,7 +198,8 @@
         "test_merge_resolution_git.js",
         "test_pr_session.js",
         "test_pull_request_batch.js",
-        "test_pushed_pr.js"
+        "test_pushed_pr.js",
+        "test_merge_summary.js"
       ],
       "syntax": [
         "efs/lindsey_bulk_merge.js",
@@ -217,7 +218,8 @@
         "efs/merge_session_completion.js",
         "efs/pull_request_batch.js",
         "efs/pushed_pr.js",
-        "efs/resolution_commits.js"
+        "efs/resolution_commits.js",
+        "efs/merge_summary.js"
       ]
     },
     "browser-ui": {
