@@ -51,12 +51,11 @@ function verifyCommit(commit, expected, author) {
 }
 
 
-async function humanSquashMerge(repository, number, { api, allowHistoryRewrite = false, localMerge } = {}) {
+async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localMerge } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
-  api ||= async (endpoint, method = 'GET', fields = []) =>
-    JSON.parse((await exec(gh, ['api', '-X', method, endpoint, ...fields], { timeout: 120000 })).stdout);
+  api ||= require('./github_user_api').legacyAPI(require('./merge_pull_request').githubApi);
 
   const root = 'repos/' + repository;
   const prPath = root + '/pulls/' + number;
@@ -90,7 +89,7 @@ async function humanSquashMerge(repository, number, { api, allowHistoryRewrite =
     // human attribution, and checks before its exact-head leased push.
     localMerge ||= require('./local_human_squash').humanSquashMerge;
     return localMerge(repository, number, {
-      api, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
+      api, gitToken, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
       expected: { headSha, baseSha, head, base, title: original.title }
     });
   };

@@ -12,7 +12,9 @@ async function pendingPRCommits(vscode, context, root, dependencies = {}) {
   if (!current) throw new Error('Could not check commit naming before creating the PR.');
   if (!current.id && !current.titleJobs?.length) return undefined;
   return () => vscode.window.withProgress({
-    location: vscode.ProgressLocation.Notification,
+    // A long-lived notification pauses the integrated browser, even while
+    // the background commit continues. Keep the wait visible in the status bar.
+    location: vscode.ProgressLocation.Window,
     title: 'Waiting for commit naming and push before preparing the PR', cancellable: false,
   }, async () => {
     while (current.id || current.titleJobs?.length) {

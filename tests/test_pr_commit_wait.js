@@ -6,7 +6,7 @@ const { pendingPRCommits } = require('../efs/pr_commit_wait');
   const progress = [];
   const vscode = {
     Uri: { joinPath: () => ({ fsPath: '/extension/background_commit.py' }) },
-    ProgressLocation: { Notification: 1 },
+    ProgressLocation: { Notification: 1, Window: 2 },
     window: { withProgress(options, task) { progress.push(options); return task(); } },
   };
   const root = { fsPath: '/repo' };
@@ -24,6 +24,8 @@ const { pendingPRCommits } = require('../efs/pr_commit_wait');
   assert.equal(pauses, 0, 'Discover pending work without delaying window creation');
   await wait();
   assert.equal(pauses, 2, 'Wait for publication as well as finalized local titles');
+  assert.equal(progress[0].location, vscode.ProgressLocation.Window,
+    'Background commit wait stays in the status bar and does not pause the integrated browser');
   current = { id: 'job', phase: 'blocked', error: 'Push failed' };
   await assert.rejects((await pendingPRCommits(vscode, context, root, dependencies))(), /Push failed/);
   current = null;
