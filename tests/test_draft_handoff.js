@@ -136,6 +136,16 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal((await choicePost('/merge-history')).status, 200);
     await choicePost('/merge-history');
     assert.equal(preserved, 1, 'A replay cannot merge twice');
+    const now=Date.now;
+    try {
+      Date.now=()=>now()+3600001;
+      assert.equal((await fetch(url+'/state')).status,410,'Draft state expires');
+      assert.equal((await post('/merge',{})).status,410,'Expiry still blocks PR mutations');
+      const beforeClose=closes;
+      assert.equal((await post('/close',{})).status,200,'Close remains available after draft expiry');
+      assert.equal(closes,beforeClose+1);
+      assert.equal((await fetch(url+'/close',{method:'POST',headers:{Origin:'https://example.com','Content-Type':'application/json'},body:'{}'})).status,403,'Expired close retains its same-origin guard');
+    } finally { Date.now=now; }
     console.log('Local browser draft handoff and close checks passed.');
   } finally {handoff.dispose();}
 })().catch(error => {console.error(error);process.exitCode=1;});
