@@ -57,6 +57,8 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
 .event.merged,.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
+.event.review-comment{border-color:var(--vscode-charts-blue,#468cdb)}
+.event-link{font-weight:600;color:var(--vscode-textLink-foreground,#4ca5ff)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
 .event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
 .event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
@@ -88,6 +90,13 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .markdown-content th,.markdown-content td{padding:5px 8px;border:1px solid var(--vscode-widget-border,#555);text-align:left}
 .markdown-content hr{border:0;border-top:1px solid var(--vscode-widget-border,#555);margin:12px 0}
 .empty{color:var(--vscode-descriptionForeground);font-style:italic}
+.review-comment{border:1px solid var(--vscode-widget-border,#555);border-radius:6px;margin:8px 0;overflow:hidden;white-space:normal}
+.review-comment>summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
+.review-comment>summary:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:-2px}
+.review-comment-title{font-weight:600}
+.review-comment-location{display:block;color:var(--vscode-descriptionForeground);font:11px/1.5 var(--vscode-editor-font-family,monospace);padding-left:18px;overflow-wrap:anywhere}
+.review-comment-body{padding:0 12px 12px;border-top:1px solid var(--vscode-widget-border,#555)}
+.review-comment-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0;font-size:11px;color:var(--vscode-descriptionForeground)}
 .file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
@@ -122,7 +131,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <div id="notice" class="notice" hidden></div>
 <div class="layout">
 <aside aria-label="Merge timeline">
-  <div class="section-heading"><h2>Selected pull requests</h2><span id="count" class="muted"></span></div>
+  <div class="section-heading"><h2>Selected pull requests</h2></div>
   <div id="prs" class="prs"></div>
   <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
   <div id="timeline" class="events">
@@ -164,6 +173,7 @@ __RATE_LIMIT_FORMATTER__
   let sidebarRatio = validRatio(savedLayout.sidebarRatio) ? savedLayout.sidebarRatio : null;
   let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
   let layoutPreferences = savedLayout.layoutPreferences || null;
+  const expandedReviewComments = new Set();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   function saveLayout() {
     vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
@@ -311,11 +321,50 @@ __RATE_LIMIT_FORMATTER__
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
+    if (pr.localRecovery?.stage) showTextPanel(parent,
+      'Saved local recovery · not GitHub status',
+      'Last local operation: ' + pr.localRecovery.stage +
+      (pr.localRecovery.lastPushedHead ? '\\nLast prepared commit: ' + pr.localRecovery.lastPushedHead.slice(0, 12) : '') +
+      '\\nMerge eligibility is always rechecked against GitHub.', '');
     if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
     if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
       pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
-    if (pr.review && !pr.analysis?.length && pr.state !== 'merged') showTextPanel(parent,
+    if (pr.review && !pr.analysis?.length && pr.state !== 'merged' &&
+        !(pr.inlineReviewComments || []).some(comment => String(comment.id) === String(pr.review.id))) showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
+    const inlineReview = pr.inlineReviewComments || [];
+    if (inlineReview.length) {
+      const section = show('section', 'panel markdown-panel', undefined, parent);
+      show('h3', '', 'Code review comments (' + inlineReview.length + ')', section);
+      for (const comment of inlineReview) {
+        const key = pr.number + ':' + comment.id;
+        const details = show('details', 'review-comment', undefined, section);
+        details.open = expandedReviewComments.has(key);
+        details.addEventListener('toggle', () => {
+          if (details.open) expandedReviewComments.add(key);
+          else expandedReviewComments.delete(key);
+        });
+        const summary = show('summary', '', undefined, details);
+        show('span', 'review-comment-title', comment.title, summary);
+        show('span', 'review-comment-location',
+          comment.path + ' · ' + comment.location + (comment.outdated ? ' · outdated' : ''), summary);
+        const body = show('div', 'review-comment-body markdown-content', undefined, details);
+        const meta = show('div', 'review-comment-meta', undefined, body);
+        if (comment.author) show('span', '', '@' + comment.author, meta);
+        if (comment.url.startsWith('https://github.com/')) {
+          const link = show('a', '', 'View on GitHub', meta);
+          link.href = comment.url;
+          link.addEventListener('click', event => {
+            event.preventDefault();
+            dispatch('open-link', undefined, comment.url);
+          });
+        }
+        renderMergeMarkdown(body, comment.text || 'No comment text.', {
+          baseUrl: 'https://github.com/' + model.repository + '/',
+          openLink: url => dispatch('open-link', undefined, url)
+        });
+      }
+    }
     const localInfo = [pr.localExplanation,
       ...Object.values(pr.localDecisions || {}).map(item =>
         [item.title, item.path, item.description].filter(Boolean).join('\n')),
@@ -391,8 +440,6 @@ __RATE_LIMIT_FORMATTER__
     byId('progress').textContent = merged + '/' + model.prs.length +
       ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
-    byId('count').textContent = 'Live GitHub updates · roughly every ' +
-      (model.nextRefreshSeconds || 15) + ' seconds';
     byId('notice').hidden = !model.error;
     byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
     const list = byId('prs');
@@ -400,7 +447,8 @@ __RATE_LIMIT_FORMATTER__
     list.replaceChildren();
     // Sort a copy so live presentation never changes the merge selection order.
     const visiblePrs = model.prs.slice().sort((a, b) => pullRequestPriority(a) - pullRequestPriority(b));
-    if (selected === null && visiblePrs.length) selected = visiblePrs[0].number;
+    if (selected === null && visiblePrs.length) selected = visiblePrs.some(pr => pr.number === model.selectedNumber)
+      ? model.selectedNumber : visiblePrs[0].number;
     for (const pr of visiblePrs) {
       const button = show('button', 'pr', undefined, list);
       button.setAttribute('aria-current', String(pr.number === selected));
@@ -409,7 +457,7 @@ __RATE_LIMIT_FORMATTER__
       show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
       const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
       branchLine.title = pr.head + ' → ' + pr.base;
-      button.addEventListener('click', () => { selected = pr.number; render(); });
+      button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
     }
     list.scrollTop = listScroll;
     const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
@@ -418,7 +466,7 @@ __RATE_LIMIT_FORMATTER__
       show('span', '', 'Needs attention', blockerNotice);
       for (const pr of blockers) {
         const button = show('button', 'secondary', (pr.blockerOptions?.length ? 'Review #' + pr.number + ' options' : 'View #' + pr.number + ' integration'), blockerNotice);
-        button.addEventListener('click', () => { selected = pr.number; render(); });
+        button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
       }
     }
     const events = byId('events');
@@ -430,12 +478,21 @@ __RATE_LIMIT_FORMATTER__
     events.replaceChildren();
     for (const event of model.events.slice(-400).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
-      show('strong', '', '#' + event.number + ' ' + event.message, node);
+      const heading = show(event.url ? 'a' : 'strong', event.url ? 'event-link' : '',
+        '#' + event.number + ' ' + event.message, node);
+      if (event.url) {
+        heading.href = event.url;
+        heading.addEventListener('click', click => {
+          click.preventDefault();
+          dispatch('open-link', undefined, event.url);
+        });
+      }
       if (event.details) {
         const detail = show('details', '', undefined, node);
         show('summary', 'muted', 'Details', detail);
         show('div', 'event-details', event.details, detail);
       }
+      if (event.historical) show('div', 'muted', 'Saved activity · live GitHub state may have changed', node);
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {
         const stamp = show('div', 'event-time', label, node);

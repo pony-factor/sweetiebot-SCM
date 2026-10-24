@@ -62,22 +62,30 @@ async function resolveCommitRepository(vscode, uri) {
   const repositories = api.repositories || [];
   if (!repositories.length) throw new Error('No Git repository is open.');
   if (repositories.length === 1) return repositories[0];
+  // A keyboard shortcut has no SCM repository argument. When a commit title
+  // has already been drafted, prefer the repository that owns that draft,
+  // even if an unrelated file is still the active editor.
+  const withDrafts = repositories.filter(repository =>
+    typeof repository.inputBox?.value === 'string' && repository.inputBox.value.trim()
+  );
+  const candidates = withDrafts.length ? withDrafts : repositories;
+  if (candidates.length === 1) return candidates[0];
   const editorPath = vscode.window.activeTextEditor?.document?.uri?.fsPath;
   if (editorPath) {
-    const matching = repositories.filter(repository => {
+    const matching = candidates.filter(repository => {
       const rootPath = repository.rootUri.fsPath;
       const relative = path.relative(rootPath, editorPath);
       return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
     }).sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length);
     if (matching.length) return matching[0];
   }
-  const selections = repositories.map(repository => ({
+  const selections = candidates.map(repository => ({
     label: path.basename(repository.rootUri.fsPath),
     description: repository.rootUri.fsPath,
     repository
   }));
   const selection = await vscode.window.showQuickPick(selections, {
-    title: 'Commit with Codex co-author',
+    title: 'Choose repository to commit',
     placeHolder: 'Choose the repository to commit'
   });
   return selection?.repository;
@@ -249,4 +257,4 @@ function registerCodexCommitCommand(vscode, extensionContext) {
   }));
 }
 
-module.exports = { generateMessage, registerCodexCommitCommand, coauthorTrailer, readCommitGitSetting };
+module.exports = { generateMessage, registerCodexCommitCommand, resolveCommitRepository, coauthorTrailer, readCommitGitSetting };
