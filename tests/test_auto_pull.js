@@ -86,14 +86,14 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
     assert.equal([...timers.values()][0].delay, 300);
     await tick();
     const expected = hidden ? [] : [
-      ...(settings.blankStateRefresh ? ['git.refresh'] : []),
+      ...(settings.blankStateRefresh ? ['sweetiebot.refreshRepository'] : []),
       ...(settings.autoPullClean ? ['sweetiebot.autoPullClean'] : [])
     ];
     assert.deepEqual(calls, expected);
     assert.equal([...timers.values()][0].delay, hidden ? 5000 : 750);
     await tick();
     if (slowAutoPull) {
-      assert.equal(calls.filter(command => command === 'git.refresh').length, 2,
+      assert.equal(calls.filter(command => command === 'sweetiebot.refreshRepository').length, 2,
         'SCM keeps refreshing even when an upstream fetch has not completed');
       assert.equal(calls.filter(command => command === 'sweetiebot.autoPullClean').length, 1,
         'SCM does not launch a second fetch while one is outstanding');
