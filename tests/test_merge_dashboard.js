@@ -384,6 +384,8 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
   // A new review body, inline comment, and Conversation comment have distinct
   // timeline entries. Pending reviews, previously seen comments, and special
   // merge-report markers do not create duplicate review-comment events.
+  const reviewEvents = () => events.at(-1).events.filter(event => event.state === 'review-comment');
+  const previousReviewEvents = reviewEvents().length;
   reviewsForPr = [...reviewsForPr,
     { id: 71, state: 'COMMENTED', body: 'Reviewed the changed behavior.',
       html_url: url + '#pullrequestreview-71', user: { login: 'reviewer' } },
@@ -394,9 +396,8 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
     body: 'This branch still needs a fallback.' });
   commentsForPr.push({ id: 18, html_url: url + '#issuecomment-18',
     user: { login: 'reviewer' }, body: 'Posted an additional review note.' });
-  const reviewEvents = () => events.at(-1).events.filter(event => event.state === 'review-comment');
   for (let attempt = 0; attempt < 3; attempt++) await dashboard.refresh();
-  assert.equal(reviewEvents().length, 3, 'Each newly submitted comment type has one activity entry');
+  assert.equal(reviewEvents().length, previousReviewEvents + 3, 'Each new comment type adds exactly one activity entry without deleting earlier activity');
   assert(reviewEvents().some(event => event.message === 'PR review submitted' &&
     event.url === url + '#pullrequestreview-71'));
   assert(reviewEvents().some(event => event.message === 'Inline review comment posted' &&
@@ -405,10 +406,10 @@ const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt 
     event.details.includes('@reviewer')));
   assert(!reviewEvents().some(event => event.details.includes('Not submitted yet')));
   for (let attempt = 0; attempt < 3; attempt++) await dashboard.refresh();
-  assert.equal(reviewEvents().length, 3, 'Repeated GitHub polling never duplicates comment entries');
+  assert.equal(reviewEvents().length, previousReviewEvents + 3, 'Repeated GitHub polling never duplicates comment entries');
   reviewsForPr[2].state = 'COMMENTED';
   for (let attempt = 0; attempt < 3; attempt++) await dashboard.refresh();
-  assert.equal(reviewEvents().length, 4, 'A pending review creates an event only after submission');
+  assert.equal(reviewEvents().length, previousReviewEvents + 4, 'A pending review creates an event only after submission');
 
   const stateBeforeProgress = events.at(-1).prs[0].state;
   dashboard.recordLocalProgress({ number: 12, stage: 'preparing', description: 'Preserve the existing API and add optional tax.' });
