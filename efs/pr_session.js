@@ -182,6 +182,7 @@ async function resumePRSession(vscode, context) {
       const auth = await require('./github_session').githubSession(vscode);
       const { invokeResolutionCLI } = require('./merge_resolution');
       const { githubGet } = require('./merge_dashboard');
+      const readFetch = require('./github_read_api').createLindseyReadFetch(selection.repository);
       const prefix = 'repos/' + selection.repository;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
       const runLocal = async (result, snapshot) => {
@@ -214,7 +215,7 @@ async function resumePRSession(vscode, context) {
       handoff = await require('./merge_batch').createMergeBatch(selection, {
         api: endpoint => {
           if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
-          return githubGet(globalThis.fetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
+          return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
         },
         destination: url.origin + url.pathname,
         makePrompt: snapshot => require('./pull_request_batch').batchMergePrompt({

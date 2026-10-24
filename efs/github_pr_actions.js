@@ -16,7 +16,8 @@ const executeGh = args => run(gh, args, { timeout: 120000 });
 // Keep one-off squash merges scoped to the selected PR and let GitHub enforce
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
-  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000, humanMerge = humanSquashMerge } = {}) {
+  { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000,
+    humanMerge = humanSquashMerge, readAPI } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -48,7 +49,15 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
 
   const endpoint = `repos/${repo}/pulls/${number}/merge-async`;
   const versionHeader = ['-H', 'X-GitHub-Api-Version: 2026-03-10'];
-  const api = async args => JSON.parse((await execute(['api', ...versionHeader, ...args])).stdout);
+  const api = async args => {
+    const endpoint = args.length === 1 ? args[0] : '';
+    // Writes and async-merge requests always retain the user's GH_TOKEN.
+    if (readAPI && endpoint.startsWith('repos/' + repo + '/') &&
+        /\/(?:pulls\/[0-9]+(?:\/commits(?:\?.*)?)?|git\/commits\/[a-f0-9]{40})$/i.test(endpoint)) {
+      return readAPI(endpoint);
+    }
+    return JSON.parse((await execute(['api', ...versionHeader, ...args])).stdout);
+  };
   // An async merge of a native stacked PR also includes its open downstack
   // ancestors. The one-click action is only for one-offs; the bulk workflow
   // owns intentional stack merges and their attribution checks.
@@ -326,14 +335,22 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         catch (error) { throw require('./github_rate_limit').rateLimitError({ status: 403, message: error.stderr || error.message }) || error; }
       };
       const userAPI = require('./github_user_api').githubUserAPI(session.accessToken);
+      const repo = new URL(url).pathname.slice(1).split('/').slice(0, 2).join('/');
+      const appRead = require('./github_user_api').githubUserAPI(session.accessToken,
+        require('./github_read_api').createLindseyReadFetch(repo));
       const humanAPI = (endpoint, method = 'GET', fields = []) => {
         const body = {};
         for (let i = 0; i < fields.length; i += 2) {
           const split = fields[i + 1].indexOf('='); body[fields[i + 1].slice(0, split)] = fields[i + 1].slice(split + 1);
         }
-        return userAPI(endpoint, { method, ...(method === 'GET' ? {} : { body }) });
+        return (method === 'GET' && endpoint.startsWith('repos/' + repo + '/') ? appRead : userAPI)
+          (endpoint, { method, ...(method === 'GET' ? {} : { body }) });
       };
-      const result = await merge(url, execute, confirmNonMain, { humanMerge: (repo, number, options) => humanSquashMerge(repo, number, { ...options, api: humanAPI, gitToken: session.accessToken }) });
+      const result = await merge(url, execute, confirmNonMain, {
+        readAPI: appRead,
+        humanMerge: (repo, number, options) => humanSquashMerge(repo, number,
+          { ...options, api: humanAPI, gitToken: session.accessToken })
+      });
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
       if (!result.merged) {

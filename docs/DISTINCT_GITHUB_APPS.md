@@ -16,6 +16,10 @@ them on the intended repositories. Choose the actual app slugs yourself.
 | Kefania | Read | Read and write | Read and write |
 | Lindsey | Read and write | Read and write | Read and write |
 
+For Lindsey's read-only status, diff and check transport, also grant
+**Checks: Read** and **Commit statuses: Read** to the Lindsey App and approve
+the upgraded installation permissions.
+
 Grant only the repositories and privileges needed. Each app needs its **App ID**
 (not OAuth client ID), its own generated PEM private key and an installation
 covering the repository. Keep keys out of source control, logs, issue bodies
@@ -81,6 +85,19 @@ editing its separate repository. The `gh` CLI must be installed and usable.
 The old Kefania hosted/MCP flows in `pony-factor/kefania` are **not migrated**
 by this PR; they must be updated separately to accept the new App slug and
 credentials before using those entry points with the Kefania identity.
+
+When **Separate Kefania and Lindsey Apps** is enabled, Sweetiebot-owned
+merge dashboard and batch refreshes read PR status, changed-file diffs, commit
+history, comments and checks with a repository-scoped Lindsey installation
+token. The token requests only read permissions (contents, pull requests,
+issues, checks and statuses); refresh is cached per repository and shared
+across concurrent reads. App authorization failures do not fall back to the
+VS Code user's quota. Legacy mode keeps the old user-token behavior.
+The native GitHub Pull Requests extension's own tree fetches are not rerouted.
+
+Merges, pushes, Git writes, reactions and user identity lookups still use
+the human's existing VS Code or GH CLI login. Inactive-window polling stays
+paused; primary and secondary rate limits still apply.
 
 The optional headless Lindsey `scripts/bulk-merge.js` receives Lindsey's own
 installation token. Its current safety restrictions (including linked/native

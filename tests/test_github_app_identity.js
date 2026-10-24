@@ -65,6 +65,12 @@ async function run() {
     const header = fake.requests[0].init.headers.Authorization;
     assert.equal(header.split('.').length, 3, 'App JWT is signed');
   }
+  const readOnly = mockGitHub('lindsey');
+  await getRoleInstallationToken('lindsey', 'pony-factor/sweetiebot-SCM',
+    { env, now, readOnly: true, fetchImpl: readOnly.fetchImpl });
+  assert.deepEqual(JSON.parse(readOnly.requests[2].init.body).permissions,
+    { contents: 'read', pull_requests: 'read', issues: 'read',
+      checks: 'read', statuses: 'read' });
   const keychainEnv = { ...env, SWEETIEBOT_KEFANIA_APP_PRIVATE_KEY: undefined,
     SWEETIEBOT_KEFANIA_APP_KEYCHAIN: 'true' };
   let retrievedRole;
