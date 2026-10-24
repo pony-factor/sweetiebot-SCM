@@ -10,6 +10,7 @@ const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_da
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
 const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/merge_blocker_actions');
+const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dashboard_persistence');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -71,6 +72,44 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert.equal(mergePhase({ state: 'closed', merged_at: '2026-01-01' }, {}), 'merged');
   assert.equal(normalizeFiles([{ filename: 'x.js', additions: 2,
     deletions: 1, patch: '@@ some patch' }])[0].patch, '@@ some patch');
+
+  // Saved activity must survive reload without ever restoring an old merge decision.
+  const persisted = new Map();
+  const workspaceState = {
+    get(key) { return persisted.get(key); },
+    async update(key, value) { persisted.set(key, JSON.parse(JSON.stringify(value))); }
+  };
+  const localContext = { workspaceState };
+  const history = createMergeDashboardPersistence(localContext, selection);
+  assert.equal(history.selectedNumber(), null);
+  history.select(12);
+  history.recordEvent({ number: 12, state: 'conflict', message: 'Historical conflict',
+    at: '2026-10-24T14:00:00.000Z' });
+  history.recordEvent({ number: 99, state: 'merged', message: 'Unselected PR',
+    at: '2026-10-24T14:00:00.000Z' });
+  history.recordRecovery(12, sha, 'pushed', nextSha);
+  await history.flush();
+  const saved = createMergeDashboardPersistence(localContext, selection);
+  assert.equal(saved.selectedNumber(), 12);
+  assert.equal(saved.restoredEvents.length, 1);
+  assert.equal(saved.restoredEvents[0].historical, true);
+  assert.equal(saved.restoredRecovery[12].lastPushedHead, nextSha);
+  assert.equal(saved.restoredRecovery[12].stage, 'pushed');
+  assert.equal(saved.restoredEvents[0].message, 'Historical conflict');
+  assert.notEqual(stateKey(selection), stateKey({ ...selection, pullRequests: [
+    { ...selection.pullRequests[0], headSha: nextSha }] }),
+  'Separate selected PR snapshots must not share local history or recovery');
+  const poisonedKey = stateKey(selection);
+  persisted.set(poisonedKey, { version: 1, selectedNumber: 999,
+    events: [{ number: 12, state: 'merged', message: 'old merged', at: 'bad date' },
+      { number: 999, state: 'merged', message: 'unrelated', at: '2026-10-24T14:00:00.000Z' }],
+    recovery: { 12: { headSha: nextSha, stage: 'merged',
+      at: '2026-10-24T14:00:00.000Z' } } });
+  const invalid = createMergeDashboardPersistence(localContext, selection);
+  assert.equal(invalid.selectedNumber(), null);
+  assert.deepEqual(invalid.restoredEvents, []);
+  assert.deepEqual(invalid.restoredRecovery, {});
+  persisted.delete(poisonedKey);
 
   const events = [];
   let messageHandler;
@@ -148,7 +187,7 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   const actionLaunches = [];
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
-    context: { globalStorageUri: { fsPath: reactionStorage } },
+    context: { globalStorageUri: { fsPath: reactionStorage }, workspaceState },
     launchAction: async (...args) => { actionLaunches.push(args); return true; },
     fetchImpl: fakeFetch,
     intervalMs: 25000,
@@ -182,6 +221,8 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
     'Relative verified merge times continue updating');
   assert(!panel.webview.html.includes('__TIMESTAMP_FORMATTER__'));
   assert(panel.webview.html.includes('id="timeline-time-mode"'));
+  assert(panel.webview.html.includes("dispatch('select-pr', pr.number)"));
+  assert(panel.webview.html.includes('Saved activity · live GitHub state may have changed'));
   assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
   assert.equal(configuredTimelineMode(vscode), 'hidden');
   assert.equal(events.at(-1).timestampMode, 'hidden', 'Timestamps start hidden');
@@ -197,6 +238,10 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(events.at(-1).prs[0].state, 'conflict');
   assert(events.at(-1).events.some(event => event.message.includes('merge conflicts')));
+  await dashboard.flushLocalState();
+  assert(createMergeDashboardPersistence(localContext, selection).restoredEvents.some(event =>
+    event.message.includes('merge conflicts')), 'Timeline history persists without persisting merge state');
+  assert.equal(events.at(-1).prs[0].state, 'conflict', 'Live GitHub alone determines merge eligibility');
   await messageHandler({ type: 'timestamp-mode', mode: 'relative' });
   assert.deepEqual(savedModes, ['relative']);
   assert.equal(events.at(-1).timestampMode, 'relative', 'Relative mode is reflected immediately');
@@ -292,6 +337,8 @@ const { parseReportOptions, blockerOptions, blockerPrompt } = require('../efs/me
   assert(events.at(-1).events.at(-1).details.includes('Keep both APIs'));
   assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
   dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha });
+  await dashboard.flushLocalState();
+  assert.equal(createMergeDashboardPersistence(localContext, selection).restoredRecovery[12].stage, 'pushed');
   assert.match(events.at(-1).events.at(-1).message, /not merged/);
   dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
     status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });

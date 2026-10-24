@@ -5,6 +5,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, launchBlockerAction } = require('./merge_blocker_actions');
 const { createReactionChoices } = require('./merge_reaction_choices');
+const { createMergeDashboardPersistence } = require('./merge_dashboard_persistence');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -168,10 +169,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
     .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
   const catalog = ponyCatalog();
+  const persistence = createMergeDashboardPersistence(context, selection);
   const prs = selection.pullRequests.map(pr => ({
     ...pr, originalHead: pr.headSha, currentHead: pr.headSha, state: 'waiting',
     headLabel: branchDisplayLabel(pr.head, catalog), baseLabel: branchDisplayLabel(pr.base, catalog),
-    files: [], report: null, review: null, sawConflict: false, events: []
+    files: [], report: null, review: null, sawConflict: false,
+    // No saved merge eligibility is restored; every PR begins unverified.
+    localRecovery: persistence.restoredRecovery[pr.number] || null,
+    events: persistence.restoredEvents.filter(event => event.number === pr.number).slice(-35)
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let disposed = false;
@@ -179,7 +184,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   let cycle = 0;
   let rateLimitedUntil = 0;
   let error = '';
-  const events = [];
+  const events = [...persistence.restoredEvents];
   const launchingActions = new Set();
   const inlineComments = new Map();
   const reportedDeferrals = new Set();
@@ -215,12 +220,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     pr.events.push(event);
     if (events.length > 400) events.shift();
     if (pr.events.length > 35) pr.events.shift();
+    persistence.recordEvent(event);
   }
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode),
       nextRefreshSeconds: Math.ceil(actualInterval / 1000)
@@ -328,6 +335,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh();
+    if (message?.type === 'select-pr') {
+      if (Number.isSafeInteger(message.number) && byNumber.has(message.number)) persistence.select(message.number);
+      return;
+    }
     if (message?.type === 'timestamp-mode') {
       if (!TIMELINE_MODES.includes(message.mode)) return;
       try {
@@ -396,7 +407,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
   publish();
   void refresh();
-  return { panel, refresh, selection, recordLocalProgress(event) {
+  return { panel, refresh, selection, flushLocalState: () => persistence.flush(), recordLocalProgress(event) {
     const pr = byNumber.get(event?.number);
     if (!pr) return;
     const stages = {
@@ -422,6 +433,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
     addEvent(pr, 'progress', stages[event.stage],
       [[file, sha && 'Commit: ' + sha.slice(0, 12)].filter(Boolean).join(' · '), decision].filter(Boolean).join('\n'));
+    pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
+      event.stage, pr.lastPushedHead || '') || pr.localRecovery;
     publish();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
@@ -451,6 +464,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : 'Local preparation stopped · merge not confirmed';
       const details = [pushed && 'Pushed commit: ' + pushed.slice(0, 12), item.reason].filter(Boolean).join('\n');
       addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked', message, details);
+      pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
+        item.status, pushed || '') || pr.localRecovery;
     }
     publish();
   } };

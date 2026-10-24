@@ -298,6 +298,11 @@ __TIMESTAMP_FORMATTER__
     } else if (pr.state === 'resolved') {
       showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
     }
+    if (pr.localRecovery?.stage) showTextPanel(parent,
+      'Saved local recovery · not GitHub status',
+      'Last local operation: ' + pr.localRecovery.stage +
+      (pr.localRecovery.lastPushedHead ? '\\nLast prepared commit: ' + pr.localRecovery.lastPushedHead.slice(0, 12) : '') +
+      '\\nMerge eligibility is always rechecked against GitHub.', '');
     if (pr.review && pr.state !== 'merged') showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
     showTextPanel(parent, 'AI explanation · GitHub report', pr.report && pr.report.text,
@@ -366,7 +371,7 @@ __TIMESTAMP_FORMATTER__
       show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
       const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
       branchLine.title = pr.head + ' → ' + pr.base;
-      button.addEventListener('click', () => { selected = pr.number; render(); });
+      button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
     }
     list.scrollTop = listScroll;
     const events = byId('events');
@@ -379,6 +384,7 @@ __TIMESTAMP_FORMATTER__
       const node = show('div', 'event ' + event.state, undefined, events);
       show('strong', '', '#' + event.number + ' ' + event.message, node);
       if (event.details) show('div', 'event-details', event.details, node);
+      if (event.historical) show('div', 'muted', 'Saved activity · live GitHub state may have changed', node);
       const label = formatTimelineTimestamp(event.at, timestampMode);
       if (label) {
         const stamp = show('div', 'event-time', label, node);
@@ -387,7 +393,8 @@ __TIMESTAMP_FORMATTER__
       }
     }
     events.scrollTop = eventScroll;
-    if (selected === null && model.prs.length) selected = model.prs[0].number;
+    if (selected === null && model.prs.length) selected = model.prs.some(pr => pr.number === model.selectedNumber)
+      ? model.selectedNumber : model.prs[0].number;
     renderDetail();
   }
   window.addEventListener('message', event => {
