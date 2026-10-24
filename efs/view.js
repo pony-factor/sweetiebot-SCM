@@ -131,7 +131,7 @@ class WorkspaceSearchViewProvider {
         try {
           const uri = vscode.Uri.parse(result.uri);
           if (uri.scheme !== 'file' || !uri.fsPath) throw new Error('Only local Git files can be linked.');
-          const repositoryRoot = await this.findGitRoot(uri);
+          const repositoryRoot = await this.findGitRoot(uri, result.kind === 'folder');
           const link = buildRepositoryMarkdownLink(
             result, uri, repositoryRoot,
             vscode.workspace.getWorkspaceFolder(uri)?.uri,
@@ -151,9 +151,9 @@ class WorkspaceSearchViewProvider {
     }
   }
 
-  async findGitRoot(uri) {
+  async findGitRoot(uri, isFolder = false) {
     const { stdout } = await execFileAsync('git',
-      ['-C', path.dirname(uri.fsPath), 'rev-parse', '--show-toplevel'],
+      ['-C', isFolder ? uri.fsPath : path.dirname(uri.fsPath), 'rev-parse', '--show-toplevel'],
       { timeout: 10000 });
     return stdout.trim();
   }

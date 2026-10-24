@@ -455,6 +455,8 @@ Set `scm-toolkit.workspace-search-activity-bar` to `true` to move the same Works
 
 Customize the search-box hint separately from the panel title with `scm-toolkit.workspace-search-placeholder` (or **Search box placeholder** under Sweetiebot Settings → Workspace Search). For example, `git config --global scm-toolkit.workspace-search-placeholder SATS` shows **SATS** in the empty search box. The default remains **Search your workspace…**; blank restores that hint. VS Code Settings also exposes `scmToolkit.workspaceSearch.placeholder`. Changes to that setting update the open EFS view without clearing a search.
 
+Right-click a file or folder search result to copy a Markdown link without an absolute local `vscode://file` path. In a repository-root workspace, links begin with `/` and resolve from the Git repository root on GitHub and the workspace root in VS Code. If the open workspace is above or below the repository and an active Markdown editor is in the same repository, EFS instead copies a path relative to that editor; otherwise it uses the GitHub-compatible repository-root form. File links include a `#L` line reference for GitHub (VS Code opens the file but does not interpret that fragment as a line jump). Files outside local Git repositories cannot be copied this way.
+
 The EFS Activity Bar icon is adapted from Fallout: Equestria Game imagery credited to The Overmare Studios. The source and attribution are recorded in `efs/THIRD_PARTY_NOTICES.md`.
 
 Install the default local embedding model once:

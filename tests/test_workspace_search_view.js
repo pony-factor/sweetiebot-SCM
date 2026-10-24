@@ -64,7 +64,8 @@ async function run() {
   assert.equal(messages.filter(m => m.type === 'error').length, 0);
   assert.equal(provider.lastResults.length, 0);
 
-  provider.findGitRoot = async () => '/tmp/repo';
+  const gitCalls = [];
+  provider.findGitRoot = async (...args) => {gitCalls.push(args); return '/tmp/repo';};
   provider.lastResults = [{uri: 'file:///tmp/repo/references/aguliar.md', relative: 'references/aguliar.md', line: 6}];
   await provider.onMessage({type: 'copyPath', index: 0});
   assert.equal(clipboard[0], '[references/aguliar.md:7](/references/aguliar.md#L7)',
@@ -88,6 +89,7 @@ async function run() {
   provider.lastResults = [{kind: 'folder', uri: 'file:///tmp/repo/research', relative: 'research', line: 0}];
   await provider.onMessage({type: 'copyPath', index: 0});
   assert.equal(clipboard[3], '[research](/research)', 'Folder links must not append a line number');
+  assert.equal(gitCalls.at(-1)[1], true, 'Folders use their own path when resolving the Git root');
   await provider.onMessage({type: 'open', index: 0});
   assert.equal(commands.at(-1).command, 'revealInExplorer', 'Opening a folder result reveals it in Explorer');
   assert.equal(commands.at(-1).uri.path, '/tmp/repo/research');
