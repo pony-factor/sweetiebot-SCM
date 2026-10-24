@@ -32,6 +32,12 @@ async function run() {
   git(remote, 'update-ref', 'refs/heads/new-remote', git(remote, 'rev-parse', 'main'));
   const repository = { rootUri: { fsPath: local } };
   const options = { defaultBranch: 'main' };
+  // The local-first pass must not depend on origin or GitHub authentication.
+  const localFirst = await listBranchStrip(repository, { ...options, localOnly: true });
+  assert.equal(localFirst.remoteStatus, 'loading');
+  assert.equal(localFirst.prStatus, 'loading');
+  assert(localFirst.branches.length > 0);
+  assert(localFirst.branches.every(branch => branch.local && !branch.origin));
   const result = await listBranchStrip(repository, options);
   assert.equal(result.remoteStatus, 'available');
   assert(!result.branches.some(branch => branch.name === 'deleted-remote'));
