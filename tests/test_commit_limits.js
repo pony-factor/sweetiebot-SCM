@@ -116,19 +116,53 @@ const {
     assert.deepEqual(approved, { approved: true, stagedTree: tree });
     assert.equal(await inspect(uri), true, 'normal direct commits retain the boolean API');
     assert.deepEqual(warnings, []);
-    // The user can stage changes while reading a nonmodal GitHub diff warning.
-    // Do not approve an index different from the one that was inspected.
+    // Changing the staged tree in a warning prompt invalidates the inspected
+    // snapshot. Re-inspect the new tree rather than rejecting it immediately.
     fs.writeFileSync(path.join(repo, 'large.txt'), 'many lines\n'.repeat(21_000));
     cp.execFileSync('git', ['add', 'large.txt'], { cwd: repo });
+    let prompts = 0;
     vscode.window.showWarningMessage = async message => {
       warnings.push(message);
-      fs.writeFileSync(path.join(repo, 'late.txt'), 'changed after approval\n');
-      cp.execFileSync('git', ['add', 'late.txt'], { cwd: repo });
+      if (++prompts === 1) {
+        fs.writeFileSync(path.join(repo, 'late.txt'), 'changed after approval\n');
+        cp.execFileSync('git', ['add', 'late.txt'], { cwd: repo });
+      }
       return 'Commit anyway';
     };
-    const invalidated = await inspect(uri, { captureTree: true });
-    assert.equal(invalidated.approved, false,
-      'late staging invalidates the snapshot without silently approving extra content');
+    const revalidated = await inspect(uri, { captureTree: true });
+    const newTree = cp.execFileSync('git', ['write-tree'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.deepEqual(revalidated, { approved: true, stagedTree: newTree });
+    assert.equal(prompts, 2, 'staging changes cause a fresh inspection and warning');
+
+    // Reusing this exact approved tree must not rerun or reprompt the costly
+    // diff/size inspection. A new staged tree invalidates this cache.
+    vscode.window.showWarningMessage = async message => {
+      warnings.push(message);
+      return undefined;  // Decline any newly required warnings.
+    };
+    assert.equal(await inspect(uri, { approvedTree: newTree }), true,
+      'reuse the one approved diff inspection while the Git tree is unchanged');
+    fs.writeFileSync(path.join(repo, 'other.txt'), 'another change\n');
+    cp.execFileSync('git', ['add', 'other.txt'], { cwd: repo });
+    assert.equal(await inspect(uri, { approvedTree: newTree }), false,
+      'a changed tree must run a new inspection and honor canceled warnings');
+
+    // A rapidly changing staged tree must not trap the commit action in an
+    // unlimited validation loop or approve an unstable selection.
+    let churn = 0;
+    vscode.window.showWarningMessage = async message => {
+      warnings.push(message);
+      if (/GitHub may warn/.test(message)) {
+        churn++;
+        fs.writeFileSync(path.join(repo, 'churn-' + churn + '.txt'), 'new staged data\n');
+        cp.execFileSync('git', ['add', 'churn-' + churn + '.txt'], { cwd: repo });
+        return 'Commit anyway';
+      }
+      return undefined;
+    };
+    const unstable = await inspect(uri, { captureTree: true });
+    assert.equal(unstable.approved, false);
+    assert.equal(churn, 3, 'only three inspection attempts are allowed for a changing index');
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
