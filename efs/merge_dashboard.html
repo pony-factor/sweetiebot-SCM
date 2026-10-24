@@ -61,6 +61,12 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event-link{font-weight:600;color:var(--vscode-textLink-foreground,#4ca5ff)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
 .event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.event-disclosure>summary{cursor:pointer;overflow-wrap:anywhere}
+.event-disclosure>summary:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+.event-summary{font-weight:650;overflow-wrap:anywhere}
+.event-commit-sha{display:inline-block;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-weight:400;color:inherit;background:var(--vscode-textCodeBlock-background,var(--vscode-editorWidget-background,#333));padding:1px 4px;border-radius:3px;white-space:nowrap}
+.event-expanded{margin:5px 0 4px 12px;overflow-wrap:anywhere}
+.event-status{font-weight:600;font-size:12px}
 .event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
 main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -157,6 +163,7 @@ __MARKDOWN_RENDERER__
 <script nonce="__NONCE__">
 __DIFF_RENDERER__
 __COMMIT_TREE__
+__ACTIVITY_RENDERER__
 </script>
 <script nonce="__NONCE__">
 __TIMESTAMP_FORMATTER__
@@ -174,6 +181,7 @@ __RATE_LIMIT_FORMATTER__
   let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
   let layoutPreferences = savedLayout.layoutPreferences || null;
   const expandedReviewComments = new Set();
+  const openActivities = new Set();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   function saveLayout() {
     vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
@@ -478,19 +486,33 @@ __RATE_LIMIT_FORMATTER__
     events.replaceChildren();
     for (const event of model.events.slice(-400).reverse()) {
       const node = show('div', 'event ' + event.state, undefined, events);
-      const heading = show(event.url ? 'a' : 'strong', event.url ? 'event-link' : '',
-        '#' + event.number + ' ' + event.message, node);
+      const presentation = mergeActivityPresentation(event, model.prs);
+      const key = event.id ?? (event.at + ':' + event.number + ':' + event.message);
+      const line = presentation.expandable
+        ? show('details', 'event-disclosure', undefined, node) : node;
+      if (presentation.expandable) {
+        line.open = openActivities.has(key);
+        line.addEventListener('toggle', () => {
+          if (!line.isConnected) return;
+          if (line.open) openActivities.add(key);
+          else openActivities.delete(key);
+        });
+      }
+      const summary = show(presentation.expandable ? 'summary' : 'div',
+        'event-summary', undefined, line);
+      const content = event.url ? show('a', 'event-link', undefined, summary) : summary;
+      renderMergeActivitySummary(content, event.number, presentation);
       if (event.url) {
-        heading.href = event.url;
-        heading.addEventListener('click', click => {
+        content.href = event.url;
+        content.addEventListener('click', click => {
           click.preventDefault();
           dispatch('open-link', undefined, event.url);
         });
       }
-      if (event.details) {
-        const detail = show('details', '', undefined, node);
-        show('summary', 'muted', 'Details', detail);
-        show('div', 'event-details', event.details, detail);
+      if (presentation.expandable) {
+        const body = show('div', 'event-expanded', undefined, line);
+        if (presentation.status) show('div', 'event-status', presentation.status, body);
+        if (presentation.explanation) show('div', 'event-details', presentation.explanation, body);
       }
       if (event.historical) show('div', 'muted', 'Saved activity · live GitHub state may have changed', node);
       const label = formatTimelineTimestamp(event.at, timestampMode);

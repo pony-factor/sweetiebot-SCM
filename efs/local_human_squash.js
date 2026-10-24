@@ -130,9 +130,10 @@ async function humanSquashMerge(repository, number, {
     sections[1].includes('Co-authored-by: Codex Web <noreply@openai.com>') &&
     !sections[1].includes('Co-authored-by: ' + author.name + ' <');
   const message = alreadyPrepared ? existing : preparedMessage;
+  let operationCommitTitle = commits.at(-1)?.commit?.message?.split('\n')[0] || prepared.title;
   const initialChecks = await readMergeChecks(api, repository, originalSha);
   const finish = async (sha, expected, method = 'rebase') => {
-    progress('waiting-checks', { sha });
+    progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
       ...checkOptions, expectChecks: initialChecks.hasChecks
     });
@@ -140,7 +141,7 @@ async function humanSquashMerge(repository, number, {
       sha, previousHeadSha: originalSha, base, baseSha, number, author,
       reason: checks.state === 'pending' ? 'Waiting for checks on the integrated PR head'
         : 'Checks failed on the integrated PR head: ' + checks.names.join(', ') };
-    progress('checks-passed', { sha });
+    progress('checks-passed', { sha, title: operationCommitTitle });
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title || fresh.head?.sha !== sha ||
         fresh.base?.ref !== base ||
@@ -148,7 +149,7 @@ async function humanSquashMerge(repository, number, {
       throw Error('PR changed before GitHub merge; inspect the updated head and base.');
     }
     if (await readBaseTip() !== baseSha) throw Object.assign(refreshBase(), { sha, previousHeadSha: originalSha });
-    progress('merging', { sha });
+    progress('merging', { sha, title: operationCommitTitle });
     const outcome = await api(prPath + '/merge', 'PUT',
       ['-f', 'sha=' + sha, '-f', 'merge_method=' + method,
         ...(method === 'squash' ? ['-f', 'commit_title=' + prepared.title, '-f', 'commit_message=' + prepared.message] : [])]);
@@ -298,7 +299,8 @@ async function humanSquashMerge(repository, number, {
         conflicts, decisions, author, base,
         onCommit: decision => progress('decision-commit', decision)
       });
-      progress('sync-prepared', { sha: prepared.sha });
+      operationCommitTitle = '🔄 Sync branch to ' + base;
+      progress('sync-prepared', { sha: prepared.sha, title: operationCommitTitle });
       // The PR history is append-only. No reference on main is updated here.
       await inRepo('merge-base', '--is-ancestor', originalSha, prepared.sha);
       const fresh = await api(prPath);
@@ -310,8 +312,8 @@ async function humanSquashMerge(repository, number, {
       // an append-only update, including if someone rewinds the remote ref.
       await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
       pushedSha = prepared.sha;
-      progress('pushed', { sha: prepared.sha });
-      progress('verifying-push', { sha: prepared.sha });
+      progress('pushed', { sha: prepared.sha, title: operationCommitTitle });
+      progress('verifying-push', { sha: prepared.sha, title: operationCommitTitle });
       await verifyPushedPR(prepared.sha);
       // A conflict-free merge request already authorizes this integration.
       // Keep the check, identity and live-base gates in finish(), without an
@@ -341,7 +343,8 @@ async function humanSquashMerge(repository, number, {
     const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
     const newTree = await inRepo('rev-parse', 'HEAD^{tree}');
     if (!SHA.test(preparedSha) || newTree === baseTree) throw Error('No new verified squash tree.');
-    progress('prepared', { sha: preparedSha });
+    operationCommitTitle = prepared.title;
+    progress('prepared', { sha: preparedSha, title: operationCommitTitle });
     // Re-read GitHub before the ONLY force-with-lease, scoped strictly to the selected head.
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title || fresh.head?.sha !== originalSha ||
@@ -355,8 +358,8 @@ async function humanSquashMerge(repository, number, {
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
     pushedSha = preparedSha;
-    progress('pushed', { sha: preparedSha });
-    progress('verifying-push', { sha: preparedSha });
+    progress('pushed', { sha: preparedSha, title: operationCommitTitle });
+    progress('verifying-push', { sha: preparedSha, title: operationCommitTitle });
     await verifyPushedPR(preparedSha);
     if (await readBaseTip() !== baseSha) throw refreshBase();
     // Native GitHub rebase merge records the same bot-opened PR as merged.
