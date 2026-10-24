@@ -90,6 +90,13 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .markdown-content th,.markdown-content td{padding:5px 8px;border:1px solid var(--vscode-widget-border,#555);text-align:left}
 .markdown-content hr{border:0;border-top:1px solid var(--vscode-widget-border,#555);margin:12px 0}
 .empty{color:var(--vscode-descriptionForeground);font-style:italic}
+.review-comment{border:1px solid var(--vscode-widget-border,#555);border-radius:6px;margin:8px 0;overflow:hidden;white-space:normal}
+.review-comment>summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
+.review-comment>summary:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:-2px}
+.review-comment-title{font-weight:600}
+.review-comment-location{display:block;color:var(--vscode-descriptionForeground);font:11px/1.5 var(--vscode-editor-font-family,monospace);padding-left:18px;overflow-wrap:anywhere}
+.review-comment-body{padding:0 12px 12px;border-top:1px solid var(--vscode-widget-border,#555)}
+.review-comment-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0;font-size:11px;color:var(--vscode-descriptionForeground)}
 .file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
@@ -166,6 +173,7 @@ __RATE_LIMIT_FORMATTER__
   let sidebarRatio = validRatio(savedLayout.sidebarRatio) ? savedLayout.sidebarRatio : null;
   let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
   let layoutPreferences = savedLayout.layoutPreferences || null;
+  const expandedReviewComments = new Set();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   function saveLayout() {
     vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
@@ -316,8 +324,42 @@ __RATE_LIMIT_FORMATTER__
     if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
     if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
       pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
-    if (pr.review && !pr.analysis?.length && pr.state !== 'merged') showTextPanel(parent,
+    if (pr.review && !pr.analysis?.length && pr.state !== 'merged' &&
+        !(pr.inlineReviewComments || []).some(comment => String(comment.id) === String(pr.review.id))) showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
+    const inlineReview = pr.inlineReviewComments || [];
+    if (inlineReview.length) {
+      const section = show('section', 'panel markdown-panel', undefined, parent);
+      show('h3', '', 'Code review comments (' + inlineReview.length + ')', section);
+      for (const comment of inlineReview) {
+        const key = pr.number + ':' + comment.id;
+        const details = show('details', 'review-comment', undefined, section);
+        details.open = expandedReviewComments.has(key);
+        details.addEventListener('toggle', () => {
+          if (details.open) expandedReviewComments.add(key);
+          else expandedReviewComments.delete(key);
+        });
+        const summary = show('summary', '', undefined, details);
+        show('span', 'review-comment-title', comment.title, summary);
+        show('span', 'review-comment-location',
+          comment.path + ' · ' + comment.location + (comment.outdated ? ' · outdated' : ''), summary);
+        const body = show('div', 'review-comment-body markdown-content', undefined, details);
+        const meta = show('div', 'review-comment-meta', undefined, body);
+        if (comment.author) show('span', '', '@' + comment.author, meta);
+        if (comment.url.startsWith('https://github.com/')) {
+          const link = show('a', '', 'View on GitHub', meta);
+          link.href = comment.url;
+          link.addEventListener('click', event => {
+            event.preventDefault();
+            dispatch('open-link', undefined, comment.url);
+          });
+        }
+        renderMergeMarkdown(body, comment.text || 'No comment text.', {
+          baseUrl: 'https://github.com/' + model.repository + '/',
+          openLink: url => dispatch('open-link', undefined, url)
+        });
+      }
+    }
     const localInfo = [pr.localExplanation,
       ...Object.values(pr.localDecisions || {}).map(item =>
         [item.title, item.path, item.description].filter(Boolean).join('\n')),
