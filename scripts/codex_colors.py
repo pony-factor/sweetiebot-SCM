@@ -105,6 +105,8 @@ def transform(css, settings, remove=False):
         rules.append(f'{scope} button.bg-composer-primary {{ background-color: {background} !important; }}')
     if foreground:
         rules.append(f'{scope} button.bg-composer-primary .text-composer-primary {{ color: {foreground} !important; }}')
+        rules.append(f'{scope} button.bg-composer-primary.scm-toolkit-pegasus-send::after '
+                     f'{{ background-color: {foreground} !important; }}')
     if label:
         selectors = [
             f'{scope} button[data-composer-navigation-target="{target}"]{descendant}'
