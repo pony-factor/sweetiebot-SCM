@@ -61,6 +61,69 @@ function splitRawDiffSections(buffer) {
   );
 }
 
+// Stream each Git diff chunk once instead of buffering and rescanning the full diff.
+const DIFF_SECTION_MARKER = Buffer.from('diff --git ');
+
+function createDiffMetricsScanner() {
+  let totalBytes = 0;
+  let totalNewlines = 0;
+  let lastByte = 10;
+  let headerMatch = 0;
+  let section = null;
+  const sections = [];
+  return {
+    write(chunk) {
+      for (const byte of chunk) {
+        totalBytes += 1;
+        if (byte === 10) totalNewlines += 1;
+        lastByte = byte;
+        if (section) {
+          section.bytes += 1;
+          if (byte === 10) section.newlines += 1;
+          section.lastByte = byte;
+        }
+        // Git's "diff --git " header is only a boundary at the start of
+        // a line. Keep the partial match across arbitrary stdout chunks.
+        if (headerMatch >= 0) {
+          if (byte === DIFF_SECTION_MARKER[headerMatch]) {
+            headerMatch += 1;
+            if (headerMatch === DIFF_SECTION_MARKER.length) {
+              // The header prefix was tentatively attributed to the preceding
+              // section. Move those few bytes into the new section.
+              if (section) {
+                section.bytes -= DIFF_SECTION_MARKER.length;
+                section.lastByte = 10;
+              }
+              section = { bytes: DIFF_SECTION_MARKER.length, newlines: 0, lastByte: byte };
+              sections.push(section);
+              headerMatch = -1;
+            }
+          } else {
+            headerMatch = -1;
+          }
+        }
+        if (byte === 10) headerMatch = 0;
+      }
+    },
+    finish() {
+      return {
+        totalBytes,
+        totalLines: totalNewlines + Number(totalBytes > 0 && lastByte !== 10),
+        sections: sections.map(({ bytes, newlines, lastByte }) => ({
+          bytes,
+          lines: newlines + Number(lastByte !== 10)
+        }))
+      };
+    }
+  };
+}
+
+function scanDiffMetrics(rawDiff) {
+  const scanner = createDiffMetricsScanner();
+  scanner.write(rawDiff);
+  return scanner.finish();
+}
+
 function renderableCount(files) {
   return files.reduce(
     (count, file) => count + Number(RENDERABLE_EXTENSIONS.has(path.extname(file).toLowerCase())),
@@ -68,7 +131,8 @@ function renderableCount(files) {
   );
 }
 
-function evaluateCommitLimits({ files, blobs, rawDiff }) {
+function evaluateCommitLimits({ files, blobs, rawDiff, diffMetrics }) {
+  const metrics = diffMetrics || scanDiffMetrics(rawDiff);
   const hardErrors = [];
   const warnings = [];
   const oversized = blobs.filter(item => item.size > GITHUB_FILE_MAX_BYTES);
@@ -91,12 +155,11 @@ function evaluateCommitLimits({ files, blobs, rawDiff }) {
     );
   }
 
-  const totalLines = countLines(rawDiff);
-  if (totalLines > GITHUB_DIFF_MAX_LINES) {
-    warnings.push(`the diff has ${totalLines.toLocaleString()} lines (GitHub loads up to 20,000)`);
+  if (metrics.totalLines > GITHUB_DIFF_MAX_LINES) {
+    warnings.push(`the diff has ${metrics.totalLines.toLocaleString()} lines (GitHub loads up to 20,000)`);
   }
-  if (rawDiff.length > GITHUB_DIFF_MAX_BYTES) {
-    warnings.push(`the raw diff is ${(rawDiff.length / 1_000_000).toFixed(2)} MB (GitHub loads up to 1 MB)`);
+  if (metrics.totalBytes > GITHUB_DIFF_MAX_BYTES) {
+    warnings.push(`the raw diff is ${(metrics.totalBytes / 1_000_000).toFixed(2)} MB (GitHub loads up to 1 MB)`);
   }
   if (files.length > GITHUB_DIFF_MAX_FILES) {
     warnings.push(`${files.length} files are changed (GitHub displays up to 300 in one diff)`);
@@ -106,11 +169,10 @@ function evaluateCommitLimits({ files, blobs, rawDiff }) {
     warnings.push(`${renderables} renderable files are changed (GitHub displays up to 25)`);
   }
 
-  const sections = splitRawDiffSections(rawDiff);
-  if (sections.some(section => countLines(section) > GITHUB_FILE_DIFF_MAX_LINES)) {
+  if (metrics.sections.some(section => section.lines > GITHUB_FILE_DIFF_MAX_LINES)) {
     warnings.push('at least one file diff exceeds GitHub\'s 20,000-line per-file display limit');
   }
-  if (sections.some(section => section.length > GITHUB_FILE_DIFF_MAX_BYTES)) {
+  if (metrics.sections.some(section => section.bytes > GITHUB_FILE_DIFF_MAX_BYTES)) {
     warnings.push('at least one file diff exceeds GitHub\'s 500 KB per-file display limit');
   }
   return { hardErrors, warnings, oversized };
@@ -266,15 +328,35 @@ async function stagedBlobSizes(cwd, files) {
   return files.map(file => ({ path: file, size: sizes.get(shas.get(file)) || 0 }));
 }
 
+function stagedDiffMetrics(cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['diff', '--cached', '--no-ext-diff', '--no-color'], {
+      cwd, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const scanner = createDiffMetricsScanner();
+    const stderr = [];
+    child.stdout.on('data', chunk => scanner.write(chunk));
+    child.stderr.on('data', chunk => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0) {
+        reject(new Error(Buffer.concat(stderr).toString('utf8').trim() || `git exited with ${code}`));
+        return;
+      }
+      resolve(scanner.finish());
+    });
+  });
+}
+
 async function inspectCommitLimits(cwd) {
   const names = await gitBuffer(cwd, ['diff', '--cached', '--name-only', '-z', '--no-ext-diff']);
   const files = names.toString('utf8').split('\0').filter(Boolean);
   if (!files.length) return { hardErrors: [], warnings: [] };
-  const [rawDiff, blobs] = await Promise.all([
-    gitBuffer(cwd, ['diff', '--cached', '--no-ext-diff', '--no-color']),
+  const [diffMetrics, blobs] = await Promise.all([
+    stagedDiffMetrics(cwd),
     stagedBlobSizes(cwd, files)
   ]);
-  return evaluateCommitLimits({ files, blobs, rawDiff });
+  return evaluateCommitLimits({ files, blobs, diffMetrics });
 }
 
 async function confirmCommitLimits(vscode, cwd, status) {
@@ -390,6 +472,8 @@ module.exports = {
   countLines,
   splitRawDiffSections,
   evaluateCommitLimits,
+  createDiffMetricsScanner,
+  scanDiffMetrics,
   splitPartPaths,
   splitOversizedFile,
   inspectCommitLimits,
