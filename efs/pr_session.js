@@ -301,7 +301,7 @@ async function resumePRSession(vscode, context) {
               continue;
             }
             blockerReports[pr.number] = await require('./merge_blocker_report').publishBlockerReport({
-              repository: selection.repository, pr, reason: deferred.reason, paths, decisions, api: require('./github_user_api').githubUserAPI(auth.accessToken)
+              repository: selection.repository, pr, reason: deferred.reason, kind: deferred.kind, paths, decisions, api: require('./github_user_api').githubUserAPI(auth.accessToken)
             });
           }
           state.blockerReports = blockerReports;

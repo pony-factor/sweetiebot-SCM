@@ -1,6 +1,7 @@
 'use strict';
 const { githubApi } = require('./merge_pull_request');
 const { safePatchPath } = require('./merge_patch');
+const { parseReportOptions } = require('./merge_blocker_actions');
 const MARKER = '<!-- sweetiebot-merge-analysis -->';
 const REVIEW_GROUP = '<!-- sweetiebot-merge-analysis-review -->';
 const LEGACY_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -28,12 +29,30 @@ function firstDiffAnchor(patch) {
   return null;
 }
 
-async function publishBlockerReport({ repository, pr, reason, paths, explanation, decisions = [], summary, api = githubApi }) {
+function reviewSummary(notes) {
+  return notes.map(note => {
+    const sentences = note.description.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+(?=[A-Z])/u);
+    // Reuse the concrete action already explained inline, rather than the
+    // preceding history of main/PR changes or a generic review introduction.
+    const action = sentences.find(sentence => /^(?:Keep|Retain|Preserve|Add|Insert|Move|Replace|Remove|Update|Use|Wire|Restore|Ensure|Avoid|Fix|Implement|Separate|Combine|Handle|Choose)\b/.test(sentence))
+      || note.title.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    return '`' + note.path + '`: ' + action + (/[.!?]$/.test(action) ? '' : '.');
+  }).join('\n\n');
+}
+
+async function publishBlockerReport({ repository, pr, reason, paths, explanation, decisions = [], kind, api = githubApi }) {
   paths = [...new Set(paths || [])].filter(safePatchPath);
   const report = blockerReport(pr, reason, paths, explanation, decisions);
   // A filename or executor failure cannot establish the competing code intentions.
   // The reviewer must supply substantive analysis before an inline note is posted.
   if (!report.notes.length) return { ...report, posted: false };
+  // Resolution commit rationale is local bookkeeping, not a human decision.
+  // Only explicitly deferred behavior choices with distinct implementations
+  // may be published by this automatic reporter.
+  if (kind !== 'human_review') return { ...report, posted: false };
+  const decisionNotes = report.notes.filter(note => new Set(parseReportOptions(note.description)
+    .map(option => option.prompt.toLowerCase())).size >= 2);
+  if (!decisionNotes.length) return { ...report, posted: false };
   const prefix = 'repos/' + repository;
   const postedNotes = [];
   try {
@@ -43,6 +62,15 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
     if (!matches(await api(prefix + '/pulls/' + pr.number))) throw Error('The selected PR changed; refresh the code analysis.');
     const base = await api(prefix + '/branches/' + encodeURIComponent(pr.base));
     if (!/^[a-f0-9]{40}$/i.test(base.commit?.sha || '')) throw Error('Cannot verify the current base.');
+    for (const note of decisionNotes) {
+      const current = [...note.description.matchAll(/<!--\s*sweetiebot-merge-options\s*\n([\s\S]*?)\n\s*-->/g)].some(match => {
+        let payload;
+        try { payload = JSON.parse(match[1]); } catch { return false; }
+        return payload.headSha === pr.headSha && payload.baseSha === base.commit.sha
+          && new Set(parseReportOptions(match[0]).map(option => option.prompt.toLowerCase())).size >= 2;
+      });
+      if (!current) throw Error('The implementation choices need the current PR head and base snapshots.');
+    }
     const files = [], comments = [];
     for (let page = 1; page <= 30; page++) {
       const next = await api(prefix + '/pulls/' + pr.number + '/files?per_page=100&page=' + page);
@@ -54,10 +82,10 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
       comments.push(...next); if (next.length < 100) break;
       if (page === 20) throw Error('Existing review history is incomplete.');
     }
-    const anchors = report.notes.map(note => {
+    const anchors = decisionNotes.map(note => {
       const anchor = firstDiffAnchor(files.find(file => file.filename === note.path)?.patch);
       if (!anchor) throw Error('Cannot anchor the analysis for ' + note.path + ' in the current diff.');
-      return { ...note, anchor, body: MARKER + '\n### ' + note.title + '\n\n' + note.description };
+      return { ...note, anchor, body: MARKER + '\n' + LEGACY_MARKER + '\n### ' + note.title + '\n\n' + note.description };
     });
     const owned = comments.filter(comment => comment.user?.login === actor.login &&
       (comment.body?.startsWith(MARKER) || (comment.body?.startsWith(LEGACY_MARKER) && /### Automatic integration stopped/.test(comment.body))));
@@ -73,7 +101,7 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
     const latest = await api(prefix + '/pulls/' + pr.number);
     const latestBase = await api(prefix + '/branches/' + encodeURIComponent(pr.base));
     if (!matches(latest) || latestBase.commit?.sha !== base.commit.sha) throw Error('The PR or base advanced; refresh the code analysis.');
-    const reviewBody = REVIEW_GROUP + '\n' + (summary || 'Integrate ' + pr.title + ' with current ' + pr.base + '. The inline notes explain the competing edits and combined behavior for each affected file.');
+    const reviewBody = REVIEW_GROUP + '\n' + reviewSummary(decisionNotes);
     let review;
     if (existingReview) {
       review = await api(prefix + '/pulls/' + pr.number + '/reviews/' + existingReview.id, {method:'PUT', body:{body:reviewBody}});
@@ -99,4 +127,4 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
     return { ...report, posted: true, reviewUrl: review.html_url, comments: postedNotes };
   } catch (error) { return { ...report, posted: false, comments: postedNotes, error: error.message, ...(error.rateLimited ? { rateLimited: true, retryAt: error.retryAt } : {}) }; }
 }
-module.exports = { blockerReport, firstDiffAnchor, publishBlockerReport };
+module.exports = { blockerReport, firstDiffAnchor, publishBlockerReport, reviewSummary };
