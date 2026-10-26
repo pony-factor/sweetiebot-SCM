@@ -111,7 +111,7 @@ test('cancelled or stale title suggestions do not modify the Source Control fiel
   const refused = harness({warn: null});
   assert.equal(await refused.handlers['sweetiebot.suggestCommitTitleWithChatGPT'](), null);
   assert.equal(refused.starts, 0);
-  const declined = harness({approve: undefined});
+  const declined = harness({approve: null});
   assert.equal(await declined.handlers['sweetiebot.suggestCommitTitleWithChatGPT'](), '🧾 Generate title');
   assert.equal(declined.repository.inputBox.value, '');
   const changed = harness({changedInput: true});
