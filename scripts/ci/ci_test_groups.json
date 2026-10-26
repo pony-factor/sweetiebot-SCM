@@ -14,7 +14,6 @@
         "test_codex_attribution_queue.js",
         "test_codex_commit.js",
         "test_codex_commit_command.js",
-        "test_commit_button_browser.js",
         "test_commit_diagnostics_dashboard.py",
         "test_commit_guard.js",
         "test_commit_hotkey.py",
@@ -270,6 +269,7 @@
       "tests": [
         "test_browser_storage.js",
         "test_command_aliases.js",
+        "test_commit_button_browser.js",
         "test_compact_window.js",
         "test_draft_spellcheck_controls.js",
         "test_editor_actions.js",
@@ -281,8 +281,8 @@
         "test_spellcheck_popup.js",
         "test_spellcheck_popup_viewport.js",
         "test_terminal_actions.js",
-        "test_workbench_live_runtime.js",
-        "test_window_title_configurator.py"
+        "test_window_title_configurator.py",
+        "test_workbench_live_runtime.js"
       ],
       "syntax": [
         "assets/workbench/message_bar.js",
@@ -318,6 +318,7 @@
     "installation": {
       "label": "Installation and configuration",
       "tests": [
+        "test_ci_browser_routing.py",
         "test_configurator.py",
         "test_diagnostics.py",
         "test_extension_cache.js",
