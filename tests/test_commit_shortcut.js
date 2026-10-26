@@ -1,8 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerCommitShortcut } = require('../efs/commit_shortcut');
-const { resolveCommitRepository } = require('../efs/codex_commit');
+const { registerCommitShortcut } = require('../efs/commits/commit_shortcut');
+const { resolveCommitRepository } = require('../efs/commits/codex_commit');
 const manifest = require('../efs/package.json');
 
 (async () => {

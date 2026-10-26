@@ -18,7 +18,7 @@ const {
   readSweetiebotPony,
   readLudicrousMode,
   registerPullRequestCommand,
-} = require('../efs/pull_request');
+} = require('../efs/github/pull_request');
 
 async function run() {
   assert.equal(await readLudicrousMode(async (_git, args) => {

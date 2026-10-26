@@ -2,8 +2,8 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { existsSync } = require('node:fs');
-const { githubApi } = require('../efs/merge_pull_request');
-const { squashMergePullRequest } = require('../efs/merge_pull_request');
+const { githubApi } = require('../efs/merge/merge_pull_request');
+const { squashMergePullRequest } = require('../efs/merge/merge_pull_request');
 
 (async () => {
   const originalPath = process.env.PATH;

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {postCommitSpellcheck} = require('../efs/post_commit_spellcheck_notice');
+const {postCommitSpellcheck} = require('../efs/commits/post_commit_spellcheck_notice');
 
 test('post-commit spellcheck toolbar reads and persists the same global Git opt-in', async () => {
   let value;

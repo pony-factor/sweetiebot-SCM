@@ -7,7 +7,7 @@ const path = require('node:path');
 const {
   findBulkMergeScript, bulkMergeSelection, validateResult,
   invokeLindseyBulkMerge, runBulkMergeWithLindsey
-} = require('../efs/lindsey_bulk_merge');
+} = require('../efs/merge/lindsey_bulk_merge');
 
 async function run() {
   const source = [{

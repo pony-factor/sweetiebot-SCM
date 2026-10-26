@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { syncBranch } = require('../efs/branch_actions');
+const { syncBranch } = require('../efs/branches/branch_actions');
 
 const MESSAGE = '🔄 Sync brach to main\n\nCo-authored-by: Codex Web <noreply@openai.com>';
 

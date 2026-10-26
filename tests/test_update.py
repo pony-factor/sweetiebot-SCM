@@ -76,8 +76,8 @@ class UpdateTests(unittest.TestCase):
     def test_draft_confirmation_survives_update_and_installer_packaging(self):
         import build_installer_app
         import subprocess
-        asset = Path('efs/draft_confirmation.html')
-        module = Path('efs/draft_handoff.js')
+        asset = Path('efs/ui/draft_confirmation.html')
+        module = Path('efs/codex/draft_handoff.js')
         repo = Path(update.__file__).resolve().parent.parent
         entries = {path.as_posix(): (repo / path).read_text() for path in (asset, module)}
         with tempfile.TemporaryDirectory() as directory:
@@ -147,13 +147,13 @@ class UpdateTests(unittest.TestCase):
                     'scripts/install.py': 'installer', 'scripts/repair.py': 'repair',
                     'scripts/update.py': 'FORMATS = {"efs": {".js", ".html"}}',
                     'scripts/workspace_search.py': 'FORMATS = {"efs": {".js", ".html"}}',
-                    'efs/draft_handoff.js': 'handoff',
-                    'efs/draft_confirmation.html': '<html>confirmation</html>',
+                    'efs/codex/draft_handoff.js': 'handoff',
+                    'efs/ui/draft_confirmation.html': '<html>confirmation</html>',
                     update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
                     update.THINKING_ASSET.as_posix(): 'thinking guard',
                 }
                 if broken == 'asset':
-                    del payload['efs/draft_confirmation.html']
+                    del payload['efs/ui/draft_confirmation.html']
                 elif broken:
                     payload['scripts/' + broken] = 'FORMATS = {"efs": {".js"}}'
                 with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
@@ -198,7 +198,7 @@ class UpdateTests(unittest.TestCase):
                 'scripts/ai_commit.py': 'current Git wrapper',
                 'scripts/sweetiebot_async_commit.py': 'current async helper',
                 'scripts/post_commit_spellcheck.py': 'current spellcheck helper',
-                'efs/post_commit_spellcheck_notice.js': 'current notice handler',
+                'efs/commits/post_commit_spellcheck_notice.js': 'current notice handler',
                 'efs/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
             destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'

@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { configureWorkspaceBrowserStorage } = require('../efs/browser_storage');
+const { configureWorkspaceBrowserStorage } = require('../efs/ui/browser_storage');
 
 function fixture({ current = 'default', globalValue, workspaceValue, workspaceFolderValue,
     unsupported = false, fails = false } = {}) {

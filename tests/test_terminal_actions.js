@@ -8,7 +8,7 @@ const {
   TERMINAL_SELECT_ALL_COMMAND,
   TERMINAL_COPY_AND_CLEAR_SELECTION_COMMAND,
   registerTerminalActions
-} = require('../efs/terminal_actions');
+} = require('../efs/ui/terminal_actions');
 
 async function run() {
   const calls = [];

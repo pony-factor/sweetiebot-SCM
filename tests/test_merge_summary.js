@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { publishMergeSummaries, MARKER } = require('../efs/merge_summary');
+const { publishMergeSummaries, MARKER } = require('../efs/merge/merge_summary');
 const sha = 'a'.repeat(40);
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12, title: '✨ Add optional tax', url: 'https://github.com/owner/repo/pull/12', base: 'main', head: 'feature' }] };
 const input = { results: [{ number: 12, explanation: 'Add an optional tax parameter while retaining the corrected multiplier.' }] };
@@ -8,7 +8,7 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
 
 (async () => {
   const options = { selection, input, result, token: 'test-token' };
-  const { batchMergePrompt } = require('../efs/pull_request_batch');
+  const { batchMergePrompt } = require('../efs/github/pull_request_batch');
   const promptOptions = { repositoryUrl: 'https://github.com/owner/repo', pullRequests: selection.pullRequests, localHandoff: true };
   assert(!batchMergePrompt(promptOptions).includes('OPTIONAL GITHUB SUMMARY ENABLED'));
   assert(batchMergePrompt({ ...promptOptions, postMergeSummaries: true }).includes('concise standalone summary'));

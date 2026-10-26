@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { openCompactKefaniaChat, resizeMacChatWindow } = require('../efs/kefania_chat_window');
+const { openCompactKefaniaChat, resizeMacChatWindow } = require('../efs/codex/kefania_chat_window');
 
 function mockVscode({ float = true, browser = true, moveError = false, openError = false, recreateOnMove = false, rejectClose = false } = {}) {
   const calls = [], warnings = [], closed = [], workspaceTab = { name: 'Workspace' };

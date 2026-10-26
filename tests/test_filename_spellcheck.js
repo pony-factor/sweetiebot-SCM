@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const {safeFilenameSuggestion, changedFileUris, repoForPath, proposeFilename, spellcheckFilenames} = require('../efs/filename_spellcheck');
+const {safeFilenameSuggestion, changedFileUris, repoForPath, proposeFilename, spellcheckFilenames} = require('../efs/commits/filename_spellcheck');
 
 test('filename spelling preserves extensions, punctuation, paths and structural tokens', () => {
   assert.equal(safeFilenameSuggestion('finra-droppn.wd', 'finra-dropping.wd'), true);

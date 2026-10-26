@@ -1,9 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerLegacyCommandAliases } = require('../efs/command_aliases');
-const { registerGitHubPullRequestActions } = require('../efs/github_pr_actions');
-const { installPullRequestRefresh } = require('../efs/github_pr_refresh');
+const { registerLegacyCommandAliases } = require('../efs/ui/command_aliases');
+const { registerGitHubPullRequestActions } = require('../efs/github/github_pr_actions');
+const { installPullRequestRefresh } = require('../efs/github/github_pr_refresh');
 
 async function main() {
   for (const githubFirst of [true, false]) {

@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { installPullRequestRefresh } = require('../efs/github_pr_refresh');
+const { installPullRequestRefresh } = require('../efs/github/github_pr_refresh');
 async function main() {
   const originalNow=Date.now, originalSet=global.setInterval, originalClear=global.clearInterval;
   const previous=global.__sweetiebotGitHubPrRefreshError;

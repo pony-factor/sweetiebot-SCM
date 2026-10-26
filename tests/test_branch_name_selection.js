@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('../efs/branch_name_selection');
+const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('../efs/branches/branch_name_selection');
 
 async function run() {
   const pool = ['alpha', 'beta', 'gamma'];

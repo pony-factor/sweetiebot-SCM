@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const {normalizeVector} = require('../efs/core');
+const {normalizeVector} = require('../efs/search/core');
 
 async function run() {
   let model = 'first:embed', unavailable = false, persisted;
@@ -56,7 +56,7 @@ async function run() {
   };
   const sandbox = {module: {exports: {}}, Buffer, setTimeout, clearTimeout, require(name) {
     if (name === 'vscode') return vscode;
-    if (name === './core') return require('../efs/core');
+    if (name === './core') return require('../efs/search/core');
     if (name === './extract') return {extractText: async uri =>
       uri.toString() === emptyUri.toString() ? '' : `Header.\nA meaningful example passage.\nFooter.\nReference: ${exactUrl}`};
     if (name === './ollama') return {embedTexts: async (settings, texts) => {
@@ -66,7 +66,7 @@ async function run() {
     }};
     return require(name);
   }};
-  vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search_index.js'), 'utf8'), sandbox);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search/search_index.js'), 'utf8'), sandbox);
   const index = new sandbox.module.exports.SearchIndex({globalStorageUri: rootUri}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
   const githubFolder = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'efs-github-'));
   try {

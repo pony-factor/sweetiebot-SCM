@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl } = require('../efs/chatgpt_project');
+const { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl } = require('../efs/codex/chatgpt_project');
 
 const project = 'https://chatgpt.com/g/g-p-6ac73804b6b081918ef8d1f0c88d4ba0/project';
 const prompt = 'Merge #12 & #13\nVerify the diff.';

@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits}=require('../efs/squash_attribution');
+const {SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits}=require('../efs/merge/squash_attribution');
 async function run(){
  const commits=[{commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},committer:{name:'GitHub',email:'noreply@github.com'},message:'Change\n\nCo-authored-by: Codex <noreply@openai.com>'}},{commit:{author:{name:'John Wooten',email:'60260750+JFWooten4@users.noreply.github.com'},message:'Sync\n\nCo-authored-by: Codex Web <noreply@openai.com>'}}];
  assert.equal(SQUASH_SEPARATOR, '__________');
@@ -52,7 +52,7 @@ async function run(){
   'Trailers appear only in one consolidated block');
  assert.throws(()=>squashMessage('Wrong',269,[{commit:{author:{name:'A',email:'a@example.org'},message:'\nNo subject'}}]),/subject/);
 
- const {formatCommitBody} = require('../efs/squash_attribution');
+ const {formatCommitBody} = require('../efs/merge/squash_attribution');
  const wrapped = formatCommitBody('A long description with meaningful context '.repeat(12));
  assert(wrapped.split('\n').every(line => line.length <= 88 && line.startsWith('    ')));
  assert.equal(wrapped.replace(/\s+/g, ' ').trim(), 'A long description with meaningful context '.repeat(12).trim());
@@ -119,7 +119,7 @@ async function run(){
  let calls=0;
  assert.equal((await readCommits(async()=>{calls++;return commits},'owner/repo',269)).length,2);
  assert.equal(calls,1);
- const { validateCommitProposal } = require('../efs/merge_commit_proposal');
+ const { validateCommitProposal } = require('../efs/merge/merge_commit_proposal');
  const accepted = validateCommitProposal({ title: legacyBullets.title, message: legacyBullets.message }, legacyBullets);
  assert(accepted.proposed && !accepted.adjusted);
  const corrected = validateCommitProposal({ title: legacyBullets.title, message: 'An incomplete web proposal' }, legacyBullets);

@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { readPushedPR } = require('../efs/pushed_pr');
+const { readPushedPR } = require('../efs/github/pushed_pr');
 
 (async () => {
   const old = 'a'.repeat(40), preparedSha = 'b'.repeat(40), other = 'c'.repeat(40);

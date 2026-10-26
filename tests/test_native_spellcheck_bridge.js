@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const {startNativeSpellcheckBridge, registerNativeSpellcheckBridge, validDraft, validReply, blockquotesUnchanged}
-  = require('../efs/native_spellcheck_bridge');
+  = require('../efs/commits/native_spellcheck_bridge');
 
 function request(port, ticket, method, path, data, headers = {}) {
   return new Promise((resolve, reject) => {

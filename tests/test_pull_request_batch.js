@@ -12,7 +12,7 @@ const {
   squashCommitTitle,
   batchMergePrompt,
   registerPullRequestBatchCommand
-} = require('../efs/pull_request_batch');
+} = require('../efs/github/pull_request_batch');
 
 async function run() {
   const extensionSource = readFileSync(path.join(__dirname, '../efs/extension.js'), 'utf8');
@@ -201,7 +201,7 @@ async function run() {
   assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
   assert.doesNotMatch(prompt, /git commit --author/);
   assert.match(prompt, /NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED/);
-  assert(prompt.includes('node efs/human_squash_merge.js'));
+  assert(prompt.includes('node efs/merge/human_squash_merge.js'));
   assert.match(prompt, /NEVER push a squash commit directly to main/);
   assert.match(prompt, /This uses no git push and does not rewrite the PR branch/);
   assert(prompt.includes('NEVER use that route when the PR opener is codex-pony[bot]'));

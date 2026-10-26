@@ -7,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 const {
   githubRepository, reviewSyncConflicts, reportBody,
   queueSyncReport, publishSyncReports
-} = require('../efs/sync_review');
+} = require('../efs/merge/sync_review');
 
 async function run() {
   assert.equal(githubRepository('git@github.com:pony-factor/sweetiebot-SCM.git'),

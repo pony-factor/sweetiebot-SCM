@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { openIndependentClone: openIndependentWorkspace } = require('../efs/new_workspace');
+const { openIndependentClone: openIndependentWorkspace } = require('../efs/branches/new_workspace');
 
 function git(...args) {
   return execFileSync('git', args, {

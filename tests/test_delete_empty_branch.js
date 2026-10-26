@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { deleteBranch, deleteEmptyBranch, remoteBranchTip, deletePublishedBranch,
-  deleteUnverifiedLocalBranch, confirmUnverifiedLocalDeletion, registerBranchCommands } = require('../efs/branch_actions');
+  deleteUnverifiedLocalBranch, confirmUnverifiedLocalDeletion, registerBranchCommands } = require('../efs/branches/branch_actions');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-delete-empty-'));
 const git = (cwd, ...args) => execFileSync('git', args, {

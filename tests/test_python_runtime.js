@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const {
   resolvePythonExecutable,
   pythonLaunchError
-} = require('../efs/python_runtime');
+} = require('../efs/ui/python_runtime');
 
 assert.equal(
   resolvePythonExecutable('darwin', { SWEETIEBOT_PYTHON: '/custom/python3', PATH: '' }, () => false),

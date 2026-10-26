@@ -60,7 +60,7 @@ async function run() {
     }
   };
   vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, '../efs/auto_codex_commit.js'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '../efs/commits/auto_codex_commit.js'), 'utf8'),
     sandbox, { filename: 'auto_codex_commit.js' }
   );
   const { AUTO_COMMIT_INTERVAL_MS, hasPendingChanges, scanAutoCodexCommits, registerAutoCodexCommit } = sandbox.module.exports;

@@ -3,11 +3,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
-const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions } = require('../efs/merge_resolution');
-const { createMergeHandoff } = require('../efs/merge_handoff');
-const { patchPaths, safePatchPath } = require('../efs/merge_patch');
+const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions } = require('../efs/merge/merge_resolution');
+const { createMergeHandoff } = require('../efs/merge/merge_handoff');
+const { patchPaths, safePatchPath } = require('../efs/merge/merge_patch');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
-const { reviewPublicationInstructions } = require('../efs/merge_review_policy');
+const { reviewPublicationInstructions } = require('../efs/merge/merge_review_policy');
 assert(reviewPublicationInstructions().includes('Never create a per-file inline comment'));
 assert(reviewPublicationInstructions().includes('Only tag truly actionable findings'));
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12,
@@ -43,12 +43,12 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       const options = { git, directory, headSha: head, baseSha: base, finalTree: base,
         conflicts: ['file.txt'], decisions: [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: 'Keep both changes.' }],
         author: { name: 'Human', email: 'human@example.test' }, base: 'main' };
-      await require('../efs/resolution_commits').createResolutionCommits(options);
+      await require('../efs/merge/resolution_commits').createResolutionCommits(options);
       assert.equal(created.length, 2, 'Sign both file decisions and the final synchronization');
       assert(created.every(args => args.includes('-S') === enabled));
       assert(created.every(args => !args.includes('commit.gpgsign=false')));
       if (enabled) {
-        await assert.rejects(require('../efs/resolution_commits').createResolutionCommits({ ...options,
+        await assert.rejects(require('../efs/merge/resolution_commits').createResolutionCommits({ ...options,
           git: async (...args) => {
             if (args.includes('commit-tree')) throw Error('Signing failed');
             return git(...args);

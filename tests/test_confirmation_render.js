@@ -2,8 +2,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8')
-  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
+const html=fs.readFileSync(require.resolve('../efs/ui/draft_confirmation.html'),'utf8')
+  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge/merge_dashboard_markdown.js'),'utf8'));
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {

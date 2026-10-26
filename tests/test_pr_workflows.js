@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { boundedLaunch, ponyPrompt, prRules, MAX_LAUNCH_BYTES, openWorkflow } = require('../efs/pr_workflows');
-const { chatgptPullRequestUrl } = require('../efs/chatgpt_project');
+const { boundedLaunch, ponyPrompt, prRules, MAX_LAUNCH_BYTES, openWorkflow } = require('../efs/github/pr_workflows');
+const { chatgptPullRequestUrl } = require('../efs/codex/chatgpt_project');
 
 (async () => {
   const evidence = {instructions:'Do not duplicate these rules.',files:[{filename:'unicode.md',patch:'🦄 漢字 &'.repeat(20000)}]};

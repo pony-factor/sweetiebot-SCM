@@ -3,8 +3,8 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const childProcess = require('node:child_process');
-const paths = require('../efs/kefania_paths');
-const queueModule = require('../efs/pony_publish_queue');
+const paths = require('../efs/codex/kefania_paths');
+const queueModule = require('../efs/commits/pony_publish_queue');
 
 const originalSpawn = childProcess.spawn;
 const originalResolve = paths.resolveKefaniaFile;
@@ -29,7 +29,7 @@ queueModule.createPonyPublishQueue = () => ({
 });
 
 (async () => {
-  const { runKefaniaPonyCache } = require('../efs/kefania_runner');
+  const { runKefaniaPonyCache } = require('../efs/codex/kefania_runner');
   const pony = { packId: 'g4-mares', slug: 'stardom' };
   result = { hit: true, profile: 'Existing research' };
   // Deliberately leave publication unresolved: cache hits must still return.

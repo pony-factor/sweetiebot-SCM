@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { kefaniaClosePosition, normalizeKefaniaClosePosition } = require('../efs/kefania_close_position');
+const { kefaniaClosePosition, normalizeKefaniaClosePosition } = require('../efs/codex/kefania_close_position');
 
 for (const position of ['left','middle','right']) {
   assert.equal(normalizeKefaniaClosePosition(position), position);

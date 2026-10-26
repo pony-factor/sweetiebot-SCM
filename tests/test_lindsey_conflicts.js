@@ -8,7 +8,7 @@ const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const {
   lindseyScript, safeRelative, inspectPreview, applyPreview, offerConflictRecoveryOptions
-} = require('../efs/lindsey_conflicts');
+} = require('../efs/merge/lindsey_conflicts');
 
 async function run() {
   for (const invalid of ['../secret', '/tmp/abc', '.git/index', 'a//b', 'a\\b', '']) {

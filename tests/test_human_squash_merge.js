@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
-const { humanAuthor, verifiedHumanAuthor, verifyCommit, humanSquashMerge } = require('../efs/human_squash_merge');
+const { humanAuthor, verifiedHumanAuthor, verifyCommit, humanSquashMerge } = require('../efs/merge/human_squash_merge');
 
 const oldSha = 'a'.repeat(40);
 const baseSha = 'b'.repeat(40);
@@ -70,7 +70,7 @@ async function main() {
   assert.throws(() => verifyCommit({commit: { author:{name:'codex-pony[bot]',email:'bot@example.org'},
     message:originalMessage }}, originalMessage, originalAuthor), /author/);
 
-  const source = readFileSync(path.join(__dirname, '../efs/human_squash_merge.js'), 'utf8');
+  const source = readFileSync(path.join(__dirname, '../efs/merge/human_squash_merge.js'), 'utf8');
   assert(!source.includes('--force-with-lease'));
   assert(!source.includes('git(\'push\''));
   assert(!source.includes('inRepo(\'push\''));

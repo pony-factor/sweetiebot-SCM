@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { recoveryPlan } = require('../efs/finalized_commit_recovery');
-const { autoPullClean } = require('../efs/branch_actions');
+const { recoveryPlan } = require('../efs/commits/finalized_commit_recovery');
+const { autoPullClean } = require('../efs/branches/branch_actions');
 
 async function run() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-finalized-'));

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const {
   parseRemote, reviewSelection, checkPublished, parseAssessment, replyBody
-} = require('../efs/ai_review_reply');
+} = require('../efs/codex/ai_review_reply');
 
 async function run() {
   assert.equal(parseRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),

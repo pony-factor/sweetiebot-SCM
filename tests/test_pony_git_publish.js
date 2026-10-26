@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { publishPonyProfile } = require('../efs/pony_git_publish');
+const { publishPonyProfile } = require('../efs/commits/pony_git_publish');
 
 const pony = { packId: 'g4-mares', canonicalSlug: 'berry-punch', slug: 'berry-punch' };
 function git(root, ...args) {

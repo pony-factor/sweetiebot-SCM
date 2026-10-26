@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { orderMergeCandidates } = require('../efs/merge_order');
+const { orderMergeCandidates } = require('../efs/merge/merge_order');
 const pr = (number, extra = {}) => ({ number, head: 'feature-' + number, base: 'main', ...extra });
 const numbers = prs => orderMergeCandidates(prs).map(pr => pr.number);
 assert.deepEqual(numbers([pr(1, {mergeable:false}), pr(2), pr(3, {mergeable:true})]), [3, 2, 1]);

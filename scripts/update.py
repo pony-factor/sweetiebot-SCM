@@ -122,10 +122,10 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     # Older releases load this HTML during extension activation but omit it
     # from update archives and bundled repair sources. Do not replace a working
     # bootstrap with one that will remove the asset on its next repair.
-    if (candidate / "efs/draft_handoff.js").is_file():
+    if (candidate / "efs/codex/draft_handoff.js").is_file():
         packaging = (candidate / "scripts" / name for name in
                      ("update.py", "workspace_search.py"))
-        if (not (candidate / "efs/draft_confirmation.html").is_file()
+        if (not (candidate / "efs/ui/draft_confirmation.html").is_file()
                 or any(not source.is_file() or '".html"' not in source.read_text()
                        for source in packaging)):
             print('Published release omits PR HTML from automatic repair; keeping the installed sources.', flush=True)

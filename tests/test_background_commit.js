@@ -83,7 +83,7 @@ async function run() {
       } };
     }
   });
-  vm.runInContext(fs.readFileSync(require.resolve('../efs/background_commit'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(require.resolve('../efs/commits/background_commit'), 'utf8'), sandbox);
   const vscode = {
     Uri: { from: uri => uri, joinPath: (_uri, name) => ({ fsPath: '/extension/' + name }) },
     extensions: { getExtension: () => ({ async activate() { return { getAPI: () => ({ repositories: [repository], getRepository: () => repository }) }; } }) },

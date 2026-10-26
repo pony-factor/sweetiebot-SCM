@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
-const { pruneManagedWorkspaces } = require('../efs/workspace_prune');
+const { pruneManagedWorkspaces } = require('../efs/branches/workspace_prune');
 
 const BASE = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';
 const GROUP = path.join(BASE, 'pony-ABC123');

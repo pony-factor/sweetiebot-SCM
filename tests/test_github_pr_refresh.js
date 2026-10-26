@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { installPullRequestRefresh, pullRequestFromTreeNode } = require('../efs/github_pr_refresh');
+const { installPullRequestRefresh, pullRequestFromTreeNode } = require('../efs/github/github_pr_refresh');
 
 async function main() {
   const originalSetInterval = global.setInterval;

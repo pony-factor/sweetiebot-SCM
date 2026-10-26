@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { createStackedBranch, linkPublishedStack } = require('../efs/stacked_branch');
+const { createStackedBranch, linkPublishedStack } = require('../efs/branches/stacked_branch');
 
 function fixture(tracked = false) {
   const calls = [];

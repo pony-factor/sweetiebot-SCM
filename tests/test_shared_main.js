@@ -4,8 +4,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
-const { openIndependentWorkspace } = require('../efs/new_workspace');
-const { routeBranch, originalRepository, reconnectManagedMain } = require('../efs/shared_main');
+const { openIndependentWorkspace } = require('../efs/branches/new_workspace');
+const { routeBranch, originalRepository, reconnectManagedMain } = require('../efs/branches/shared_main');
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const editor = root => ({

@@ -65,7 +65,7 @@ async function run() {
         };
       }
       if (name === 'node:path') return path;
-      if (name === './codex_attribution') return require('../efs/codex_attribution');
+      if (name === './codex_attribution') return require('../efs/codex/codex_attribution');
       assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
         assert.equal(exe, '/resolved/python3');
         assert.deepEqual(Array.from(args), ['/extension/local_codex_commit.py', '--normalize-staged-whitespace']);
@@ -80,7 +80,7 @@ async function run() {
       return child;
     } }; }
   });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/codex_commit.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/commits/codex_commit.js'), 'utf8'), sandbox);
   const vscode = {
     Uri: { from: uri => uri, joinPath: (uri, file) => ({ fsPath: `${uri.fsPath}/${file}` }) },
     extensions: { getExtension: id => id === 'vscode.git'

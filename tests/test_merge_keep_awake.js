@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { createMergeKeepAwake } = require('../efs/merge_keep_awake');
+const { createMergeKeepAwake } = require('../efs/merge/merge_keep_awake');
 const children = [], timers = new Set();
 let clock = 0;
 const controller = createMergeKeepAwake({ platform: 'darwin', pid: 123,

@@ -33,7 +33,7 @@ const sandbox = vm.createContext({
     if (name === 'fs') return { existsSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); return paused; } };
     if (name === './runtime_revision') return { runtimeRevision() { return revision; } };
     if (name === './extension_cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
-    if (name === './reload_guard') return require('../efs/reload_guard');
+    if (name === './reload_guard') return require('../efs/ui/reload_guard');
     assert.equal(name, 'child_process');
     return { spawn(executable, args) {
       launches++;
@@ -49,7 +49,7 @@ const sandbox = vm.createContext({
     } };
   }
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/codex_refresh.js'), 'utf8'), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../efs/codex/codex_refresh.js'), 'utf8'), sandbox);
 const context = { subscriptions: [], extensionUri: { fsPath: '/toolkit' }, workspaceState };
 const vscode = {
   env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },

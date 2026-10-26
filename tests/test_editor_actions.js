@@ -7,7 +7,7 @@ const {
   CLOSE_ALL_EDITORS_COMMAND,
   VSCODE_CLOSE_ALL_EDITORS_COMMAND,
   registerEditorActions
-} = require('../efs/editor_actions');
+} = require('../efs/ui/editor_actions');
 
 async function run() {
   const handlers = new Map();

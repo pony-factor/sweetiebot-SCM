@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { humanSquashMerge } = require('../efs/local_human_squash');
+const { humanSquashMerge } = require('../efs/merge/local_human_squash');
 const run = promisify(execFile);
 
 (async () => {
@@ -143,7 +143,7 @@ const run = promisify(execFile);
       const invalidPatch = await attempt({ resolutionPatch: completePatch.replace('@@ -1 +1 @@', '@@ -1,9 +1,9 @@'),
         git: async (...args) => {
           try { return await localGit(...args); }
-          catch (error) { throw require('../efs/git_failure').gitFailure(error, args); }
+          catch (error) { throw require('../efs/commits/git_failure').gitFailure(error, args); }
         } });
       assert.equal(invalidPatch.status, 'needs_resolution', 'Malformed model output gets a bounded regeneration round');
       assert.deepEqual(invalidPatch.conflictPaths, ['file.txt']);
@@ -241,8 +241,8 @@ const run = promisify(execFile);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
 async function successiveMerges(checkState) {
- const { createMergeBatch } = require('../efs/merge_batch');
- const { executeResolution } = require('../efs/merge_resolution');
+ const { createMergeBatch } = require('../efs/merge/merge_batch');
+ const { executeResolution } = require('../efs/merge/merge_resolution');
  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-successive-test-'));
  const working = path.join(root, 'working'), remote = path.join(root, 'remote.git');
  const git = async (...args) => (await run('git', ['-c', 'core.hooksPath=/dev/null',

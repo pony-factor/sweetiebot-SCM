@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { deleteBranch } = require('../efs/branch_actions');
+const { deleteBranch } = require('../efs/branches/branch_actions');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-cleanup-test-'));
 const git = (cwd, ...args) => execFileSync('git', args, {

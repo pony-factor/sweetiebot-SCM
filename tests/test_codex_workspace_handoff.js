@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const vm = require('node:vm');
-const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex_workspace_handoff');
+const { registerCodexWorkspaceHandoff, keyFor } = require('../efs/codex/codex_workspace_handoff');
 
 (async () => {
   const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'codex-handoff-test-')));
