@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import shutil
 import unittest
 from unittest.mock import patch
 
@@ -49,8 +51,7 @@ class RetiredComposerPatchTests(unittest.TestCase):
             bundle = Path(directory) / 'app-initial-fixture.js'
             source = '/* composer.placeholder.localFollowUp.locally */class E{constructor(e){this.dictation=new D(e,()=>this.isInputActive)}}'
             bundle.write_text(source)
-            with self.assertRaisesRegex(ValueError, 'native clipboard'):
-                codex_composer.clipboard_module(bundle)
+            self.assertIsNone(codex_composer.clipboard_module(bundle))
             (bundle.parent / 'index.extension-current.js').write_text(
                 'import{a,b}from"./app-initial-fixture.js";b();export{a as appServices};')
             module = codex_composer.clipboard_module(bundle)
@@ -58,6 +59,51 @@ class RetiredComposerPatchTests(unittest.TestCase):
             self.assertIn('"./index.extension-current.js" /* scm-toolkit-native-clipboard */', patched)
             self.assertEqual(codex_composer.transform_layout(patched, False, True, module), patched)
             self.assertEqual(codex_composer.transform_layout(patched, False, False), source)
+
+    def test_split_composer_editor_and_rpc_bundles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / 'webview/assets'
+            assets.mkdir(parents=True)
+            composer = assets / 'renamed-composer-current.js'
+            editor = assets / 'renamed-editor-current.js'
+            composer.write_text('a.formatMessage({id:`composer.placeholder.localFollowUp.locally`,defaultMessage:`Ask`,description:`Follow up`});')
+            editor.write_text('class E{constructor(e){this.dictation=new D(e,()=>this.isInputActive)}}')
+            (assets / 'rpc-current.js').write_text('export{native as appServices};')
+            (assets / 'fr-FR-current.js').write_text('{"composer.placeholder.localFollowUp.locally":"Ask"}')
+            patches = list(codex_composer.patch_files(root, inline=True, paste_button=True))
+            self.assertEqual({p for p, _, _ in patches}, {composer, editor})
+            for path, original, patched in patches:
+                self.assertEqual(codex_composer.transform_layout(patched, True, True, './rpc-current.js'), patched)
+                self.assertEqual(codex_composer.transform_layout(patched, False, False), original)
+                if path == composer:
+                    self.assertIn('scmToolkitCodexClipboardSubmit', patched)
+                    self.assertIn('"./rpc-current.js"', patched)
+                else:
+                    self.assertIn('this.view.dom.__scmToolkitComposer=this', patched)
+                    self.assertNotIn('scmToolkitCodexClipboardSubmit', patched)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for runtime safety')
+    def test_optional_payload_failure_cannot_block_native_loading(self):
+        payload = codex_composer.runtime_payload('fixture', 'throw new Error("upstream DOM changed");')
+        script = ('const vm=require("node:vm"),assert=require("node:assert/strict");'
+                  'const jobs=[];let warnings=0;const context={document:{readyState:"complete"},'
+                  'setTimeout:job=>jobs.push(job),console:{warn(){warnings++}}};'
+                  'vm.runInNewContext(' + json.dumps(payload + 'globalThis.nativeLoaded=true;') + ',context);'
+                  'assert.equal(context.nativeLoaded,true);assert.equal(warnings,0);'
+                  'jobs.forEach(job=>job());assert.equal(warnings,1);'
+                  'vm.runInNewContext(' + json.dumps(payload) + ',{});')
+        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for runtime safety')
+    def test_native_constructor_survives_changed_or_readonly_editor_dom(self):
+        source = ('class E{constructor(e){this.view=e;this.dictation=new D(e,()=>this.isInputActive)}}')
+        patched = codex_composer.transform_layout(source, False, True, './rpc.js')
+        script = ('const assert=require("node:assert/strict");let calls=0;class D{constructor(){calls++}};'
+                  + patched + ';new E(undefined);new E({dom:Object.freeze({})});'
+                  'new E({get dom(){throw new Error("DOM moved")}});'
+                  'assert.equal(calls,3);')
+        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
 
     def test_inline_location_is_reversible_and_preserves_native_source(self):
         source = '/* composer.placeholder.localFollowUp.locally */\nbase;'

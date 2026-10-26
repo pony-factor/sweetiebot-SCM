@@ -14,9 +14,6 @@
         flex-basis: 100%; order: -1; min-width: 0; }
       :root[data-codex-window-type="extension"] [data-composer-body] div:has(> .scm-toolkit-codex-clipboard-button) {
         gap: 4px !important; }
-      button[data-composer-navigation-target="run-location"]:not(.scm-toolkit-inline-location) {
-        visibility: hidden !important;
-      }
       .scm-toolkit-inline-location { position: absolute !important; margin: 0 !important;
         z-index: 2; pointer-events: auto !important; }
       .scm-toolkit-location-overflow { overflow: visible !important;
@@ -64,23 +61,43 @@
             if (!location.classList.contains('scm-toolkit-inline-location')) {
                 location.classList.add('scm-toolkit-inline-location');
             }
-            set(access, 'marginInlineEnd', `${location.getBoundingClientRect().width + 8}px`);
+            if (!margins.has(access)) margins.set(access, {
+                start:access.style.marginInlineStart, end:access.style.marginInlineEnd,
+            });
+            const usageOnly = location.disabled && location.querySelector('scm-toolkit-usage-meter');
+            const margin = margins.get(access);
+            set(access, 'marginInlineStart', usageOnly ? `${location.getBoundingClientRect().width + 8}px` : margin.start);
+            set(access, 'marginInlineEnd', usageOnly ? margin.end : `${location.getBoundingClientRect().width + 8}px`);
             const parent = location.offsetParent;
             if (!parent) return;
             const origin = parent.getBoundingClientRect();
             const target = access.getBoundingClientRect();
-            set(location, 'left', `${target.right - origin.left - parent.clientLeft + parent.scrollLeft + 4}px`);
+            const left = usageOnly ? target.left - location.getBoundingClientRect().width - 4 : target.right + 4;
+            set(location, 'left', `${left - origin.left - parent.clientLeft + parent.scrollLeft}px`);
             set(location, 'top', `${target.top - origin.top - parent.clientTop + parent.scrollTop}px`);
         });
     }
     let pending = false;
+    let enabled = true;
+    const margins = new Map();
+    function safeScan() {
+        if (!enabled) return;
+        try { scan(); } catch {
+            enabled = false;
+            style.remove();
+            for (const [element, margin] of margins) {
+                element.style.marginInlineStart = margin.start;
+                element.style.marginInlineEnd = margin.end;
+            }
+        }
+    }
     function schedule() {
-        if (pending) return;
+        if (pending || !enabled) return;
         pending = true;
-        requestAnimationFrame(() => { pending = false; scan(); });
+        requestAnimationFrame(() => { pending = false; safeScan(); });
     }
     function start() {
-        scan();
+        safeScan();
         new MutationObserver(schedule).observe(document.documentElement, {
             childList: true, subtree: true, characterData: true, attributes: true,
             attributeFilter: ['class', 'style', 'data-composer-navigation-target'],

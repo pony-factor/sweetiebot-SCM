@@ -33,6 +33,32 @@ class CodexColorTests(unittest.TestCase):
         self.assertNotIn('--vscode-foreground:', patched)
         self.assertIn('scm-toolkit-pegasus-send::after { background-color: #ffffff !important; }', patched)
 
+    def test_flat_composer_is_opt_in_scoped_and_removable(self):
+        original = 'base stylesheet'
+        native = codex_colors.transform(original, {})
+        patched = codex_colors.transform(original, {'codexFlatComposer': True})
+        self.assertNotIn('--composer-layout-surface-shadow', native)
+        self.assertIn('--composer-layout-surface-shadow: none !important', patched)
+        self.assertIn(':root[data-codex-window-type=extension]', patched)
+        self.assertIn(':not([data-composer-surface-variant=document])', patched)
+        self.assertIn('--vscode-focusBorder', patched)
+        self.assertEqual(codex_colors.transform(patched, {'codexFlatComposer': True}), patched)
+        self.assertEqual(codex_colors.transform(patched, {}), native)
+        self.assertEqual(codex_colors.transform(patched, {}, remove=True), original)
+
+    def test_inline_appearance_bypasses_resource_cache_and_restores_html(self):
+        index = '<head><link rel="stylesheet" href="./assets/app-current.css"></head>'
+        css = codex_colors.transform('base', {'codexFlatComposer': True})
+        patched = codex_colors.webview_appearance(index, css)
+        self.assertIn('<style>', patched)
+        self.assertNotIn('base', patched)
+        self.assertIn('--composer-border-radius: 8px', patched)
+        self.assertEqual(codex_colors.webview_appearance(patched, css), patched)
+        self.assertEqual(codex_colors.webview_appearance(patched, css, remove=True), index)
+        for broken in (index + index, index + codex_colors.INLINE_START):
+            with self.assertRaises(ValueError):
+                codex_colors.webview_appearance(broken, css)
+
     def test_new_chat_dot_follows_send_button_or_uses_explicit_color(self):
         selector = 'svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"]'
         theme = ('var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
@@ -67,6 +93,20 @@ class CodexColorTests(unittest.TestCase):
         for color in ['green', '#12345', '#fff; color: red', '#fff}\nbody{display:none}']:
             with self.subTest(color=color), self.assertRaises(ValueError):
                 codex_colors.validate_color(color)
+
+    def test_follows_native_stylesheet_link_across_filename_and_class_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / 'webview/assets'
+            assets.mkdir(parents=True)
+            stylesheet = assets / 'completely-renamed.css'
+            stylesheet.write_text('native CSS after a compiler update')
+            (assets / 'unrelated.css').write_text('unrelated CSS')
+            (root / 'webview/index.html').write_text(
+                '<link href="./assets/completely-renamed.css?v=2" crossorigin rel="stylesheet">')
+            self.assertEqual(codex_colors.stylesheet_path(root), stylesheet)
+            (root / 'webview/index.html').write_text('<link rel="stylesheet" href="./assets/../../outside.css">')
+            self.assertIsNone(codex_colors.stylesheet_path(root))
 
     def test_selects_only_the_extension_stylesheet(self):
         with tempfile.TemporaryDirectory() as directory:
