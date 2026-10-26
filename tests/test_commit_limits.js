@@ -172,7 +172,15 @@ const {
     const uri = { scheme: 'file', fsPath: repo };
     const approved = await inspect(uri, { captureTree: true });
     const tree = cp.execFileSync('git', ['write-tree'], { cwd: repo, encoding: 'utf8' }).trim();
-    assert.deepEqual(approved, { approved: true, stagedTree: tree });
+    assert.equal(approved.approved, true);
+    assert.equal(approved.stagedTree, tree);
+    assert.equal(approved.validatedSnapshot.version, 1);
+    assert.equal(approved.validatedSnapshot.tree, tree);
+    assert.equal(approved.validatedSnapshot.parent, '');
+    assert.deepEqual(approved.validatedSnapshot.files, [{ path: 'code.js', size: 22 }]);
+    assert(approved.validatedSnapshot.diff.totalBytes > 0);
+    assert(approved.validatedSnapshot.diff.totalLines > 0);
+    assert.deepEqual(approved.validatedSnapshot.approvedWarnings, []);
     assert.equal(await inspect(uri), true, 'normal direct commits retain the boolean API');
     assert.deepEqual(warnings, []);
     // Changing the staged tree in a warning prompt invalidates the inspected
@@ -190,7 +198,11 @@ const {
     };
     const revalidated = await inspect(uri, { captureTree: true });
     const newTree = cp.execFileSync('git', ['write-tree'], { cwd: repo, encoding: 'utf8' }).trim();
-    assert.deepEqual(revalidated, { approved: true, stagedTree: newTree });
+    assert.equal(revalidated.approved, true);
+    assert.equal(revalidated.stagedTree, newTree);
+    assert.equal(revalidated.validatedSnapshot.tree, newTree);
+    assert(revalidated.validatedSnapshot.files.some(item => item.path === 'late.txt'));
+    assert(revalidated.validatedSnapshot.approvedWarnings.some(item => item.includes('20,000')));
     assert.equal(prompts, 2, 'staging changes cause a fresh inspection and warning');
 
     // Reusing this exact approved tree must not rerun or reprompt the costly
@@ -201,6 +213,9 @@ const {
     };
     assert.equal(await inspect(uri, { approvedTree: newTree }), true,
       'reuse the one approved diff inspection while the Git tree is unchanged');
+    const repeated = await inspect(uri, { captureTree: true, approvedTree: newTree });
+    assert.deepEqual(repeated.validatedSnapshot, revalidated.validatedSnapshot,
+      'reuse the same metadata snapshot without rerunning Git measurements');
     fs.writeFileSync(path.join(repo, 'other.txt'), 'another change\n');
     cp.execFileSync('git', ['add', 'other.txt'], { cwd: repo });
     assert.equal(await inspect(uri, { approvedTree: newTree }), false,

@@ -944,9 +944,13 @@ def _pack_large_commit_groups(metrics: list[tuple[str, int]], limit: int = AUTO_
     return groups
 
 
-def github_split_groups(files: list[str]) -> list[list[str]]:
-    """Split large staged payloads while honoring GitHub's per-file hard limit."""
-    metrics = staged_blob_sizes(files)
+def github_split_groups(files: list[str], blob_sizes: list[tuple[str, int]] | None = None) -> list[list[str]]:
+    """Split large staged payloads while honoring GitHub's per-file hard limit.
+
+    The VS Code preflight may already have validated these sizes for the exact
+    same staged tree. Other Git callers still inspect their own objects.
+    """
+    metrics = staged_blob_sizes(files) if blob_sizes is None else blob_sizes
     oversized = [(path, size) for path, size in metrics if size > GITHUB_FILE_MAX_BYTES]
     if oversized:
         path, size = max(oversized, key=lambda item: item[1])

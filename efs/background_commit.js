@@ -258,6 +258,7 @@ function registerBackgroundCommit(vscode, context) {
           sign: options.sign ?? configuration.get('enableCommitSigning') === true,
           signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
           noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
+          validatedSnapshot: limits.validatedSnapshot,
           ...(options.paths ? {paths: options.paths} : {}), description: options.description ?? '',
           skipSpellcheck: options.skipSpellcheck === true,
           remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')

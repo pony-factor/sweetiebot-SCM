@@ -11,6 +11,11 @@ async function run() {
   let status = {};
   let limitsAllowed = true, declineEnqueue = false;
   let staleEnqueueCount = 0, validatedTree = 'a'.repeat(40);
+  const snapshotFor = tree => ({
+    version: 1, tree, parent: '', files: [{ path: 'changed.txt', size: 12 }],
+    diff: { totalBytes: 30, totalLines: 2, sections: [{ bytes: 30, lines: 2 }] },
+    approvedWarnings: []
+  });
   const notices = [], progress = [], completed = [], errors = [];
   const titleContexts = [];
   const errorActions = [], details = [];
@@ -121,7 +126,10 @@ async function run() {
           assert.equal(options.captureTree, true,
             'durable commits inspect and pin their exact final staged tree');
           events.push('limits');
-          return { approved: limitsAllowed, stagedTree: validatedTree };
+          return {
+            approved: limitsAllowed, stagedTree: validatedTree,
+            validatedSnapshot: snapshotFor(validatedTree)
+          };
         }
       }
     }
@@ -166,6 +174,8 @@ async function run() {
     'preparation reuses the verified Git state');
   assert.equal(jobs[0].expectedTree, 'a'.repeat(40),
     'the approved staged tree must reach the Python commit worker');
+  assert.deepEqual(jobs[0].validatedSnapshot, snapshotFor('a'.repeat(40)),
+    'the durable worker must reuse inspected blob sizes, diff counts, and approved warnings');
   await commit(root, { message: 'Staged selection' });
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
@@ -195,6 +205,8 @@ async function run() {
     'a changed selection must create exactly one local background job');
   assert.equal(jobs.at(-1).expectedTree, 'b'.repeat(40),
     'the retried job must use the newly approved tree, not the stale hash');
+  assert.equal(jobs.at(-1).validatedSnapshot.tree, 'b'.repeat(40),
+    'a retried job must refresh its approved metadata along with the staged tree');
 
   status = { id: 'older', phase: 'generating', titleJobs: ['older'] };
   const manualMessage = '🧪 Manual subject\n\nCo-authored-by: Codex <noreply@openai.com>';

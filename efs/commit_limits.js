@@ -351,12 +351,18 @@ function stagedDiffMetrics(cwd) {
 async function inspectCommitLimits(cwd) {
   const names = await gitBuffer(cwd, ['diff', '--cached', '--name-only', '-z', '--no-ext-diff']);
   const files = names.toString('utf8').split('\0').filter(Boolean);
-  if (!files.length) return { hardErrors: [], warnings: [] };
+  if (!files.length) return {
+    hardErrors: [], warnings: [],
+    inspection: { files: [], diff: { totalBytes: 0, totalLines: 0, sections: [] } }
+  };
   const [diffMetrics, blobs] = await Promise.all([
     stagedDiffMetrics(cwd),
     stagedBlobSizes(cwd, files)
   ]);
-  return evaluateCommitLimits({ files, blobs, diffMetrics });
+  return {
+    ...evaluateCommitLimits({ files, blobs, diffMetrics }),
+    inspection: { files: blobs, diff: diffMetrics }
+  };
 }
 
 async function confirmCommitLimits(vscode, cwd, status) {
@@ -427,15 +433,21 @@ function registerCommitLimitCommand(vscode, context) {
       if (root.scheme !== 'file') return captureTree ? { approved: false } : true;
       const tree = async () => (await gitBuffer(root.fsPath, ['write-tree']))
         .toString('ascii').trim();
+      const parent = async () => gitBuffer(root.fsPath, ['rev-parse', '--verify', 'HEAD'])
+        .then(bytes => bytes.toString('ascii').trim(), () => '');
+      const identity = async () => ({ tree: await tree(), parent: await parent() });
+      const approvedResult = snapshot => captureTree
+        ? { approved: true, stagedTree: snapshot.tree, validatedSnapshot: snapshot } : true;
 
       // A durable queue may hand a declined special-mode commit back to the
       // direct Git wrapper. Reuse its approved inspection only for the exact
       // same tree; an intervening stage change invalidates the approval.
       const approvedTree = options.approvedTree;
-      if (typeof approvedTree === 'string'
-          && approvedByRepository.get(root.fsPath) === approvedTree
-          && await tree() === approvedTree) {
-        return captureTree ? { approved: true, stagedTree: approvedTree } : true;
+      const cached = approvedByRepository.get(root.fsPath);
+      if (typeof approvedTree === 'string' && cached?.tree === approvedTree
+          && (await identity()).tree === cached.tree
+          && (await parent()) === cached.parent) {
+        return approvedResult(cached);
       }
 
       // Inspect only once for a stable staged tree. If staging changes during
@@ -443,18 +455,23 @@ function registerCommitLimitCommand(vscode, context) {
       // the new tree instead of approving stale results. Bound retries so an
       // actively changing index cannot keep a commit action alive forever.
       for (let attempt = 0; attempt < 3; attempt++) {
-        const before = await tree();
+        const before = await identity();
         const status = await inspectCommitLimits(root.fsPath);
-        if (await tree() !== before) continue;
+        if (JSON.stringify(await identity()) !== JSON.stringify(before)) continue;
         const allowed = await confirmCommitLimits(vscode, root.fsPath, status);
         if (!allowed) {
           approvedByRepository.delete(root.fsPath);
           return captureTree ? { approved: false } : false;
         }
-        const after = await tree();
-        if (after !== before) continue;
-        approvedByRepository.set(root.fsPath, after);
-        return captureTree ? { approved: true, stagedTree: after } : true;
+        const after = await identity();
+        if (JSON.stringify(after) !== JSON.stringify(before)) continue;
+        const snapshot = {
+          version: 1, tree: after.tree, parent: after.parent,
+          files: status.inspection.files, diff: status.inspection.diff,
+          approvedWarnings: status.warnings
+        };
+        approvedByRepository.set(root.fsPath, snapshot);
+        return approvedResult(snapshot);
       }
       approvedByRepository.delete(root.fsPath);
       await vscode.window.showWarningMessage(
