@@ -6,6 +6,18 @@ const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'ut
   .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
 assert.match(html,/\.merge-buttons\{display:flex;flex-wrap:wrap;gap:12px/,'Merge method buttons must have distinct spacing');
 assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
+// Themed borders—including the left warning accent—must use the current
+// workbench's line color instead of a hard-coded warning border color.
+const themedBorderRule=html.match(/[^{}]+\{border-color:var\(--line\)\}/g)
+  ?.find(rule=>rule.includes('[data-theme-colors] .merge-issue'));
+assert(themedBorderRule,'The merge warning must inherit the VS Code border color');
+for(const selector of ['.card','.mark','figure','.actions','.pr-number','.status.pack-tag',
+  '.merge-issue','.lightbox-footer','.lightbox-nav','button']){
+  assert(themedBorderRule.includes('[data-theme-colors] '+selector),
+    'Missing theme border override for '+selector);
+}
+assert.match(html,/\.merge-issue\{[^}]*border-left:5px solid var\(--kefania-error,#f28f79\)/,
+  'When theme colors are disabled, keep the existing semantic warning border');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
@@ -49,12 +61,14 @@ document.documentElement={
   style:{setProperty:(key,value)=>themeProperties.set(key,value),removeProperty:key=>themeProperties.delete(key)}
 };
 context.CSS={supports:(kind,value)=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)};
-context.applyAppearance({bg:'#101010',text:'#eeeeee',button:'#00aa55',controlText:'#55dd88'});
+context.applyAppearance({bg:'#101010',text:'#eeeeee',line:'#34495e',button:'#00aa55',controlText:'#55dd88'});
 assert.equal(document.documentElement['data-theme-colors'],true);
 assert.equal(themeProperties.get('--kefania-controlText'),'#55dd88');
+assert.equal(themeProperties.get('--kefania-line'),'#34495e','Themed borders use the supplied VS Code line color');
 context.applyAppearance({bg:'#ffffff',text:'#111111'});
 assert.equal(themeProperties.get('--kefania-bg'),'#ffffff','Changing themes updates the page');
 assert.equal(themeProperties.has('--kefania-button'),false,'Missing theme colors cannot retain stale values');
+assert.equal(themeProperties.has('--kefania-line'),false,'Missing line theme color resets the old border override');
 context.applyAppearance(null);
 assert.equal(document.documentElement['data-theme-colors'],false);
 assert.equal(themeProperties.size,0);

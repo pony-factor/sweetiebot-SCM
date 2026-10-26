@@ -35,7 +35,9 @@
 /* Theme mode uses the same resolved colors as the surrounding workbench. */
 :root[data-theme-colors]{color-scheme:light dark;--bg:var(--kefania-bg);--panel:var(--kefania-panel,var(--bg));--line:var(--kefania-line,var(--muted));--text:var(--kefania-text);--muted:var(--kefania-muted,var(--text));--accent:var(--kefania-accent,var(--text))}
 [data-theme-colors] body{background:var(--bg)}
-[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox-footer{background:var(--panel);border-color:var(--line)}
+[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] .image-stage,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .lightbox-footer{background:var(--panel)}
+/* Match every visible border, including alert accents, to the user's VS Code border theme. */
+[data-theme-colors] .card,[data-theme-colors] .mark,[data-theme-colors] figure,[data-theme-colors] .actions,[data-theme-colors] .pr-number,[data-theme-colors] .status.pack-tag,[data-theme-colors] .merge-issue,[data-theme-colors] .lightbox-footer,[data-theme-colors] .lightbox-nav,[data-theme-colors] button{border-color:var(--line)}
 [data-theme-colors] .content pre{background:var(--kefania-code,var(--bg))}
 [data-theme-colors] a{color:var(--accent);text-decoration-color:currentColor}
 [data-theme-colors] button{background:var(--kefania-button,var(--accent));color:var(--kefania-buttonText,var(--bg));border-color:var(--line)}
