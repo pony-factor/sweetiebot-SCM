@@ -74,7 +74,7 @@ def patch_files(extension_path=None, enabled=True):
     webviews = []
     for path in (extension / 'webview/assets').glob('*.js'):
         text = path.read_text()
-        if START in text or WEBVIEW_ANCHOR.search(text):
+        if START in text or ('acquireVsCodeApi()' in text and WEBVIEW_ANCHOR.search(text)):
             webviews.append(path)
     if len(webviews) != 1:
         if enabled:

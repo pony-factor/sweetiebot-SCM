@@ -18,6 +18,7 @@
     `;
     document.head.append(style);
     let scheduled = false;
+    let enabled = true;
     function sync() {
         scheduled = false;
         const active = new Set();
@@ -56,9 +57,16 @@
         }
     }
     function schedule() {
-        if (scheduled) return;
+        if (scheduled || !enabled) return;
         scheduled = true;
-        requestAnimationFrame(sync);
+        requestAnimationFrame(() => {
+            try { sync(); } catch {
+                enabled = false;
+                style.remove();
+                for (const overlay of overlays.values()) overlay.remove();
+                overlays.clear();
+            }
+        });
     }
     new MutationObserver(schedule).observe(document.body, {
         subtree: true, childList: true, characterData: true,

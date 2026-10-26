@@ -60,6 +60,23 @@ assert.equal(piePercent(42.4), 42);
 assert.equal(piePercent(-5), 0);
 assert.equal(piePercent(105), 100);
 assert.equal(piePercent('not-a-number'), null);
+assert.equal(piePercent(null), null);
+assert.equal(piePercent(''), null);
+
+// Default local mode uses the native setter; cloud opt-in preserves props.
+const localProps = context.scmToolkitLocalComposerProps;
+let selected;
+const props = {composerMode:'cloud',setComposerMode:mode => selected=mode};
+const controlled = localProps(props, effect => effect());
+assert.equal(selected, 'local');
+assert.equal(controlled.composerMode, 'local');
+controlled.setComposerMode('cloud');
+assert.equal(selected, 'local');
+controlled.setComposerMode('worktree');
+assert.equal(selected, 'worktree');
+context.scmToolkitCloudTasks = true;
+assert.equal(localProps(props, effect => effect()), props);
+context.scmToolkitCloudTasks = false;
 
 // Reset pies reflect time until renewal, never the remaining message allowance.
 const resetTimePercent = context.scmToolkitResetTimePercent;

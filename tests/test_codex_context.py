@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import codex_context
@@ -16,6 +18,21 @@ class CodexContextTests(unittest.TestCase):
                 patched = codex_context.transform(original, kind)
                 self.assertEqual(codex_context.transform(patched, kind), patched)
                 self.assertEqual(codex_context.transform(patched, kind, False), original)
+
+    def test_discovers_renamed_webview_bootstrap_and_rejects_ambiguity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'out').mkdir()
+            (root / 'out/extension.js').write_text('subscriptions.push(vscode.window.registerWebviewViewProvider(View.viewType,provider,{}));')
+            assets = root / 'webview/assets'
+            assets.mkdir(parents=True)
+            webview = assets / 'message-bus-new.js'
+            webview.write_text('let api=acquireVsCodeApi();')
+            (assets / 'app-initial-old.js').write_text('bootstrap();')
+            self.assertEqual({p for p, _, _ in codex_context.patch_files(root)}, {root / 'out/extension.js', webview})
+            (assets / 'message-bus-duplicate.js').write_text(webview.read_text())
+            with self.assertRaisesRegex(ValueError, 'could not be identified'):
+                codex_context.patch_files(root)
 
     def test_split_message_bus_bootstrap_composes_and_reinstalls_safely(self):
         import tempfile

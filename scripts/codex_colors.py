@@ -3,6 +3,7 @@
 from pathlib import Path
 import json
 import re
+from html.parser import HTMLParser
 
 START = '\n/* scm-toolkit-codex-colors:start */\n'
 END = '/* scm-toolkit-codex-colors:end */\n'
@@ -13,7 +14,7 @@ COLOR_SETTINGS = (
     "codexComposerLabelColor",
     "codexDropAccent",
 )
-APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel", "codexShowQueuedDelete", "codexShowQueuePause")
+APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel", "codexFlatComposer", "codexShowQueuedDelete", "codexShowQueuePause")
 FONT_START = '/* scm-toolkit-font-fallback:'
 FONT_END = '/* scm-toolkit-font-fallback:end */'
 
@@ -47,16 +48,40 @@ def validate_color(value):
     return value
 
 
+class _StylesheetLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.names = []
+
+    def handle_starttag(self, tag, attributes):
+        attributes = dict(attributes)
+        if tag != 'link' or 'stylesheet' not in (attributes.get('rel') or '').split():
+            return
+        href = (attributes.get('href') or '').split('?', 1)[0].split('#', 1)[0]
+        if href.startswith('./assets/'):
+            name = href.removeprefix('./assets/')
+            if Path(name).name == name and name.endswith('.css'):
+                self.names.append(name)
+
+
 def stylesheet_path(extension_path=None):
     candidates = (
         [Path(extension_path)] if extension_path is not None
         else sorted((Path.home() / '.vscode/extensions').glob('openai.chatgpt-*'), reverse=True)
     )
     for candidate in candidates:
+        assets = candidate / 'webview/assets'
+        index = candidate / 'webview/index.html'
+        if index.is_file():
+            links = _StylesheetLinks()
+            links.feed(index.read_text())
+            referenced = list(dict.fromkeys(assets / name for name in links.names))
+            if len(referenced) == 1 and referenced[0].is_file():
+                return referenced[0]
         matches = []
-        for path in (candidate / 'webview/assets').glob('app-initial-*.css'):
+        for path in assets.glob('*.css'):
             css = path.read_text()
-            if ':root[data-codex-window-type=extension]' in css and '.bg-composer-primary{' in css:
+            if START in css or (':root[data-codex-window-type=extension]' in css and '.bg-composer-primary{' in css):
                 matches.append(path)
         if len(matches) == 1:
             return matches[0]
@@ -82,15 +107,28 @@ def transform(css, settings, remove=False):
         'var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
         'var(--color-text-info)))'
     )
+    # The queued-message controls share the user's theme accent.
     rules = [
         f'{scope} {{ --scm-toolkit-queue-accent: {label or background or "var(--vscode-focusBorder, var(--color-text-info))"}; }}',
         f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
         f'{{ fill: {dot_color} !important; }}'
     ]
+    # Current chat rows use a CSS dot (or a count), rather than the old SVG.
+    chat_row = f'{scope} :is(button, [role="button"], a):has([data-thread-title])'
+    rules.extend([
+        f'{scope} svg circle.fill-text-info[cx="12.6"][cy="3.2"][r="2.6"] {{ fill: {dot_color} !important; }}',
+        f'{chat_row} .icon-xs.scale-50 > :is(.bg-info-solid, .bg-text-info) '
+        f'{{ background-color: {dot_color} !important; }}',
+        f'{chat_row} span[style*="--color-text-info"] '
+        f'{{ color: {dot_color} !important; background-color: color-mix(in srgb, {dot_color} 18%, transparent) !important; '
+        f'box-shadow: inset 0 0 0 1px color-mix(in srgb, {dot_color} 72%, transparent) !important; }}',
+    ])
     if not settings.get('codexShowQueuedDelete', True):
         rules.append(f'{scope} [data-scm-toolkit-queue-id] button[aria-label="Delete queued message"] {{ display: none !important; }}')
     if settings.get('codexShowQueuePause', False):
         rules.append(f'{scope} {{ --scm-toolkit-queue-pause-display: flex; }}')
+    if settings.get('codexFlatComposer', False):
+        rules.append((Path(__file__).resolve().parent.parent / 'assets/codex/flat-composer.css').read_text())
     if settings.get('codexHideAccessLabel', False):
         # Keep the current mode in the accessibility tree via aria-describedby.
         # The icon is a sibling of the value, so it stays visible and clickable.
@@ -118,4 +156,27 @@ def transform(css, settings, remove=False):
             for target in ('permissions', 'run-location', 'add-context') for descendant in ('', ' *')
         ]
         rules.append(',\n'.join(selectors) + f' {{ color: {label} !important; }}')
-    return css + START + '\n'.join(rules) + '\n' + END if rules else css
+    # Important rules in native layers outrank unlayered important rules.
+    # Codex establishes theme first, giving our overrides the required priority.
+    return css + START + '@layer theme {\n' + '\n'.join(rules) + '\n}\n' + END if rules else css
+
+
+INLINE_START = '<!-- scm-toolkit-codex-appearance:start -->'
+INLINE_END = '<!-- scm-toolkit-codex-appearance:end -->'
+
+
+def webview_appearance(index, css, remove=False):
+    """Embed scoped overrides in fresh HTML, independent of resource caches."""
+    if index.count(INLINE_START) != index.count(INLINE_END) or index.count(INLINE_START) > 1:
+        raise ValueError('Incomplete Codex inline appearance patch.')
+    if INLINE_START in index:
+        before, rest = index.split(INLINE_START, 1)
+        _, after = rest.split(INLINE_END, 1)
+        index = before + after
+    if remove:
+        return index
+    if index.count('</head>') != 1 or css.count(START) != 1 or css.count(END) != 1:
+        raise ValueError('Codex appearance insertion point could not be identified uniquely.')
+    rules = css.split(START, 1)[1].split(END, 1)[0]
+    payload = INLINE_START + '<style>' + rules + '</style>' + INLINE_END
+    return index.replace('</head>', payload + '</head>', 1)

@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import unittest
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import codex_drafts
@@ -25,6 +26,21 @@ class DraftPatchTests(unittest.TestCase):
         patched = codex_drafts.transform_host(other)
         self.assertEqual(codex_drafts.transform_host(patched, False), other)
         self.assertEqual(patched.count('scmToolkitRegisterCodexSnapshotProvider(provider,vscode)'), 1)
+
+    def test_discovers_renamed_bootstrap_without_touching_other_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'out').mkdir()
+            (root / 'out/extension.js').write_text(self.HOST)
+            assets = root / 'webview/assets'
+            assets.mkdir(parents=True)
+            webview = assets / 'message-bus-new.js'
+            webview.write_text(self.WEB)
+            (assets / 'app-initial-old.js').write_text('bootstrap();')
+            self.assertEqual({p for p, _, _ in codex_drafts.patch_files(root)}, {root / 'out/extension.js', webview})
+            (assets / 'another-api.js').write_text(self.WEB)
+            with self.assertRaisesRegex(ValueError, 'ambiguous bootstrap'):
+                codex_drafts.patch_files(root)
 
     def test_rejects_malformed_installations(self):
         for source in ('unknown', codex_drafts.HOST_START, codex_drafts.HOST_END):

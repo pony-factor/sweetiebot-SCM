@@ -94,7 +94,10 @@ async function runClipboardChecks() {
         return { appServices: { clipboard: { readText: async () => 'native clipboard' } } };
     }, './index.extension-fixture.js'), 'native clipboard', 'native service works when browser clipboard access is denied');
     await assert.rejects(hooks.readClipboard(async () => { throw new Error('host unavailable'); },
-        './index.extension-fixture.js'), /host unavailable/);
+        './index.extension-fixture.js'), /NotAllowedError/);
+    navigator.clipboard.readText = async () => 'browser fallback';
+    assert.equal(await hooks.readClipboard(async () => { throw new Error('module renamed'); }, './old-module.js'), 'browser fallback');
+    assert.equal(await hooks.readClipboard(async () => ({}), './changed-exports.js'), 'browser fallback');
     navigator.clipboard.readText = browserRead;
     let nativeClicks = 0;
     let inputValues = [];
@@ -189,6 +192,16 @@ async function runClipboardChecks() {
     assert.equal(setCalls, 1);
     assert.equal(liveText, '', 'native Send clears the submitted document');
 
+    // Clipboard reads can await a host/permission roundtrip. User edits during
+    // that await must survive rather than being overwritten and submitted.
+    const savedRead = navigator.clipboard.readText;
+    navigator.clipboard.readText = async () => { liveText = 'typed while awaiting clipboard'; return 'clipboard after delay'; };
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(liveText, 'typed while awaiting clipboard');
+    assert.equal(nativeClicks, 2);
+    assert.match(clipboardButton.title, /preserved/);
+    navigator.clipboard.readText = savedRead;
+
     // If the native editor silently declines the replacement, never submit
     // its older nonempty draft, even when a Send button is already enabled.
     liveText = 'do not send this old draft';
@@ -200,6 +213,21 @@ async function runClipboardChecks() {
     assert.equal(timeoutTicks, 25, 'waits for the new text instead of guessing');
     assert.equal(liveText, 'do not send this old draft');
     assert.match(clipboardButton.title, /not ready/);
+
+    // An upstream editor API change must preserve the native draft. Never
+    // fall back to execCommand/contenteditable writes and accidentally submit it.
+    delete editor.value;
+    editor.textContent = 'preserve this native draft';
+    delete editor.__scmToolkitComposer;
+    editor.focus = () => { throw new Error('must not focus or rewrite an unsupported editor'); };
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(editor.textContent, 'preserve this native draft');
+    assert.equal(nativeClicks, 2);
+    assert.match(clipboardButton.title, /Could not insert/);
+    editor.__scmToolkitComposer = { view: { isDestroyed: false } };
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(nativeClicks, 2, 'missing native methods never send the old draft');
+    assert.equal(editor.textContent, 'preserve this native draft');
 }
 runClipboardChecks().then(() => console.log('Codex clipboard submission checks passed.')).catch(error => {
     console.error(error);

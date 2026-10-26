@@ -153,14 +153,16 @@
         "test_codex_image_drop.js",
         "test_codex_image_drop.py",
         "test_codex_keep_awake.js",
-        "test_codex_queue_pause.js",
         "test_codex_keep_awake.py",
         "test_codex_label.py",
         "test_codex_permissions.js",
+        "test_codex_queue_pause.js",
+        "test_codex_queued_edit.js",
+        "test_codex_queued_edit.py",
         "test_codex_rate_limit_controls.js",
-        "test_codex_send_wing.js",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
+        "test_codex_send_wing.js",
         "test_codex_short_model_labels.js",
         "test_codex_startup.py",
         "test_codex_sticker.py",
@@ -168,14 +170,19 @@
         "test_codex_usage.py",
         "test_codex_video_drop.js",
         "test_codex_window_label.js",
-        "test_codex_workspace_handoff.js"
+        "test_codex_workspace_handoff.js",
+        "test_ui_customizations.py"
       ],
       "syntax": [
-        "assets/codex/send-wing.js",
         "assets/codex/image-drop.js",
         "assets/codex/permissions-host.js",
         "assets/codex/permissions-webview.js",
-        "assets/codex/video-frames.js"
+        "assets/codex/queued-edit-bridge.js",
+        "assets/codex/queued-edit.js",
+        "assets/codex/send-wing.js",
+        "assets/codex/video-frames.js",
+        "scripts/codex_queued_edit.py",
+        "scripts/ui_customizations.py"
       ]
     },
     "kefania": {
@@ -203,13 +210,13 @@
         "test_git_failure.js",
         "test_parallel_merge_batch.js",
         "test_parallel_pr_session.js",
+        "test_lindsey_bulk_merge.js",
+        "test_lindsey_conflicts.js",
         "test_merge_keep_awake.js",
         "test_merge_order.js",
         "test_merge_handoff_page.js",
         "test_merge_progress.js",
         "test_merge_runner_layout.js",
-        "test_lindsey_bulk_merge.js",
-        "test_lindsey_conflicts.js",
         "test_merge_batch.js",
         "test_merge_commit_tree.js",
         "test_merge_dashboard.js",
@@ -346,6 +353,7 @@
   },
   "specialized_browser_tests": [
     "test_codex_webview_browser.py",
-    "test_codex_webview_iframe.py"
+    "test_codex_webview_iframe.py",
+    "test_codex_queued_edit_browser.py"
   ]
 }
