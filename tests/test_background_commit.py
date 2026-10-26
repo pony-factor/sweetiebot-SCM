@@ -318,6 +318,28 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(job['mergedBranch'], info)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
 
+    def test_user_can_retire_merged_push_without_changing_local_history(self):
+        directory = self.queue(push=True)
+        info = {'branch': 'main', 'number': 61, 'defaultBranch': 'main', 'remote': 'origin'}
+        with patch.object(merged_branch, 'require_unmerged', side_effect=merged_branch.MergedBranchPush(info)):
+            worker.work(directory)
+        paused = self.job(directory)
+        local_sha = paused['sha']
+        with self.assertRaisesRegex(ValueError, 'identifier'):
+            worker.dismiss_merged_push('wrong-job')
+        with self.assertRaisesRegex(RuntimeError, 'job changed'):
+            worker.dismiss_merged_push('f' * 16)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), local_sha)
+        self.assertTrue(worker.dismiss_merged_push(paused['id']))
+        retired = self.job(directory)
+        self.assertFalse(retired['push'])
+        self.assertEqual(retired['phase'], 'committed')
+        self.assertNotIn('mergedBranch', retired)
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), local_sha)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
     def test_status_tracks_title_jobs_independently_of_pending_push(self):
         first = self.queue(push=True)
         (self.repo / 'story.txt').write_text('Second change\n')

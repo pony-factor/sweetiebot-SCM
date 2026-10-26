@@ -169,6 +169,32 @@ async function run() {
     assert.equal(repository.inputBox.value, 'Edited during sync');
   }
   {
+    // A merged PR's follow-up keeps its old local history instead of fetching
+    // or rebasing onto main, and never pushes the old remote branch.
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'topic', commit: '1234567890abcdef' };
+    const next = { ...options, continueFromBranch: 'topic' };
+    assert.equal(await createBranch(repository, next, () => 0), 'fresh');
+    assert(calls.some(call => call[0] === 'create'
+      && call[1] === 'fresh' && call[2] === true && call[3] === '1234567890abcdef'));
+    assert(!calls.some(call => ['fetch', 'merge', 'push', 'checkout'].includes(call[0])),
+      'recovery must not touch main or publish');
+    const switched = fixture();
+    switched.repository.state.HEAD.name = 'another';
+    await assert.rejects(createBranch(switched.repository, next, () => 0),
+      /active branch changed/i);
+    assert(!switched.calls.some(call => call[0] === 'create'));
+    const moving = fixture();
+    moving.repository.state.HEAD = { name: 'topic', commit: 'original' };
+    let count = 0;
+    moving.repository.status = async () => {
+      if (++count === 2) moving.repository.state.HEAD.commit = 'advanced';
+    };
+    await assert.rejects(createBranch(moving.repository, next, () => 0),
+      /advanced or changed/i);
+    assert(!moving.calls.some(call => call[0] === 'create'));
+  }
+  {
     const { repository, calls } = fixture(true);
     assert.equal(await createBranch(repository, options, () => 0), 'fresh');
     assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'refs/heads/main']);
