@@ -15,7 +15,7 @@ class CodexUsageTests(unittest.TestCase):
         original = FIXTURE + '''function mode(e){let t=cache(3),{composerMode:n,setComposerMode:r}=e,[open,setOpen]=(0,React.useState)(false);return n}'''
         for cloud in (False, True):
             patched = codex_usage.transform(original, pie_indicator=True, cloud_tasks=cloud)
-            self.assertIn('jsx)(`scm-toolkit-usage-meter`,{percent})', patched)
+            self.assertIn('jsx)(`scm-toolkit-usage-meter`,{percent,"weekly-percent":scmToolkitWeeklyRemainingUsage(usage)??"unavailable"})', patched)
             self.assertIn('e=scmToolkitLocalComposerProps(e,React.useEffect);', patched)
             self.assertIn(f'const scmToolkitCloudTasks = {str(cloud).lower()}', patched)
             self.assertEqual(codex_usage.transform(patched, pie_indicator=True, cloud_tasks=cloud), patched)

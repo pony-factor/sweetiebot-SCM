@@ -78,7 +78,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
     if jsx is None or query is None:
         raise ValueError('Unsupported Codex build: composer usage data anchor does not match.')
     usage_label = (
-        f'(0,{jsx[1]}.jsx)(`scm-toolkit-usage-meter`,{{percent}})'
+        f'(0,{jsx[1]}.jsx)(`scm-toolkit-usage-meter`,{{percent,"weekly-percent":scmToolkitWeeklyRemainingUsage(usage)??"unavailable"}})'
         if pie_indicator else '`${percent}%`'
     )
     replacement = (
