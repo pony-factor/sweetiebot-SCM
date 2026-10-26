@@ -83,6 +83,7 @@ def transform(css, settings, remove=False):
         'var(--color-text-info)))'
     )
     rules = [
+        f'{scope} {{ --scm-toolkit-queue-accent: {label or background or "var(--vscode-focusBorder, var(--color-text-info))"}; }}',
         f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
         f'{{ fill: {dot_color} !important; }}'
     ]
