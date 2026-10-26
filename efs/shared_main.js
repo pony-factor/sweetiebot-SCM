@@ -9,6 +9,7 @@ const { independentWorkspaceParent } = require('./workspace_trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('./python_runtime');
 const { prepareCodexHandoff } = require('./codex_workspace_handoff');
+const { focusExistingBranchWindow } = require('./branch_window');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -282,11 +283,19 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   const current = await run(['-C', root, 'branch', '--show-current']);
   if (branch === 'main') {
     const main = await mainRoot(root, options);
-    if (root === main && current === 'main') return false;
+    if (root === main && current === 'main') return true;
+    if (await focusExistingBranchWindow(vscode, main, options)) return true;
     await switchRepository(vscode, root, main, options);
     return true;
   }
-  if (!create && !adoptExisting && (root !== original || current !== 'main')) return false;
+  if (!create && current === branch) return true;
+  if (!create && !adoptExisting && root !== original) {
+    // Linked topic worktrees can navigate to each other. Only old independent
+    // clones must fall back to their own ordinary Git branch checkout flow.
+    const common = await Promise.all([root, original].map(directory =>
+      run(['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'])));
+    if (common[0] !== common[1]) return false;
+  }
   if ((create || adoptExisting) && root !== original) {
     const common = await Promise.all([root, original].map(directory =>
       run(['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'])));
@@ -301,6 +310,9 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
+    // A live destination window owns its editors and Codex state. Bring it
+    // forward and close the source, rather than repointing this workspace.
+    if (await focusExistingBranchWindow(vscode, destination, options)) return true;
     await switchRepository(vscode, root, destination, { ...options, branch });
     return true;
   }

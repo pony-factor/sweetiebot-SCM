@@ -72,6 +72,17 @@ async function registerManagedWindowActivity(vscode, context, {
     try {
       const paths = groups ?? await findGroups(vscode, { io });
       const wanted = new Set(paths);
+      // Publish the actual checked-out folders and workspace identity alongside
+      // the liveness marker so another window can activate us by branch.
+      const roots = await Promise.all((vscode.workspace.workspaceFolders || [])
+        .filter(folder => folder.uri.scheme === 'file')
+        .map(async folder => {
+          try { return io.realpath ? await io.realpath(folder.uri.fsPath) : path.resolve(folder.uri.fsPath); }
+          catch { return path.resolve(folder.uri.fsPath); }
+        }));
+      const workspaceFile = vscode.workspace.workspaceFile?.scheme === 'file'
+        ? vscode.workspace.workspaceFile.fsPath : null;
+      const record = JSON.stringify({ pid, roots, workspaceFile });
       // Folder changes can happen without restarting the extension host.
       // Stop tracking the old worktree only after detecting the new one.
       for (const [group, entry] of sessions) {
@@ -80,11 +91,21 @@ async function registerManagedWindowActivity(vscode, context, {
         sessions.delete(group);
       }
       for (const group of wanted) {
-        if (sessions.has(group)) continue;
+        if (sessions.has(group)) {
+          // A saved workspace can change its first folder without changing
+          // its group/session path; update the location on every refresh.
+          const entry = sessions.get(group);
+          try { await io.writeFile(entry.session, record, { mode: 0o600 }); }
+          catch {
+            await io.rm(entry.session, { force: true }).catch(() => {});
+            sessions.delete(group);
+          }
+          continue;
+        }
         const activated = path.join(group, ACTIVATED);
         const session = path.join(group, SESSION_PREFIX + pid + '-' + uuid + '.json');
         try {
-          await io.writeFile(session, JSON.stringify({ pid }), { flag: 'wx', mode: 0o600 });
+          await io.writeFile(session, record, { flag: 'wx', mode: 0o600 });
           await io.writeFile(activated, 'Activated by Sweetiebot\\n', { mode: 0o600 });
           sessions.set(group, { activated, session });
         } catch (error) {
