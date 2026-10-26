@@ -18,7 +18,7 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/pr_sessio
     const root = path.join(temporary, 'repo');
     await fs.mkdir(root); execFileSync('git', ['init', '--quiet', root]);
     const file = fsPath => ({ scheme: 'file', fsPath });
-    const selection = { repository: 'owner/repo', pullRequests: Array.from({ length: 9 }, (_, index) => ({
+    const selection = { repository: 'owner/repo', pullRequests: Array.from({ length: 11 }, (_, index) => ({
       number: index + 1, title: 'Feature ' + (index + 1), url: 'https://github.com/owner/repo/pull/' + (index + 1),
       head: 'feature-' + (index + 1), headSha: 'a'.repeat(40), base: 'main'
     })) };
@@ -38,7 +38,7 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/pr_sessio
     };
     require.cache[dashboardPath] = { ...dashboardModule, exports: { ...dashboardExports,
       startMergeDashboard(host, selected, token, options) {
-        assert.equal(selected.pullRequests.length, 9); dashboardOptions = options;
+        assert.equal(selected.pullRequests.length, 11); dashboardOptions = options;
         return { recordBatchState(state) { recorded = state; } };
       } } };
     globalThis.fetch = async address => {
@@ -64,7 +64,7 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/pr_sessio
       const snapshot = prompt.match(/Refreshed selected snapshots: (\[[^\n]+\])/)[1];
       return JSON.parse(snapshot).map(pr => pr.number);
     });
-    assert.equal(assigned.length, 9); assert.equal(new Set(assigned).size, 9);
+    assert.equal(assigned.length, 11); assert.equal(new Set(assigned).size, 11);
     assert.equal(recorded.workers.length, 3);
     await dashboardOptions.onFocusWorker(2);
     assert.deepEqual(calls.slice(-2).map(([command]) => command),
