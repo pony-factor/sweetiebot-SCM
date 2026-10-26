@@ -66,14 +66,15 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     throw new Error(`PR #${number} belongs to a GitHub-native stack. Use the bulk merge workflow to select the intended layers.`);
   }
   // GitHub's native squash endpoint assigns the PR opener as Git author.
-  // For bot-opened PRs, locally squash on that same PR head with the original
-  // verified human author, then use GitHub's native one-commit rebase merge.
-  // Never submit a bot-authored native squash as a silent fallback.
+  // Bot-opened PRs need verified human authorship, but the one-click button
+  // must never change a PR branch's history to manufacture a squash.
+  // A pre-existing, correctly attributed single commit can rebase-merge as-is;
+  // otherwise stop and explain the non-rewriting merge alternative.
   if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
   }
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: true });
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
@@ -91,7 +92,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const commits = await readCommits(api, repo, Number(number));
   const human = verifiedHumanAuthor(commits);
   if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: true });
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
@@ -348,8 +349,10 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       };
       const result = await merge(url, execute, confirmNonMain, {
         readAPI: appRead,
+        // The sidebar merge button must never authorize history rewrites, even if a
+        // future caller accidentally requests one. Explicit author-handoff is separate.
         humanMerge: (repo, number, options) => humanSquashMerge(repo, number,
-          { ...options, api: humanAPI, gitToken: session.accessToken })
+          { ...options, allowHistoryRewrite: false, api: humanAPI, gitToken: session.accessToken })
       });
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
