@@ -172,6 +172,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     });
     assert.equal((await fetch(url)).status, 200, 'GET only serves the intake page');
     assert.equal(executions, 0);
+    assert.equal((await (await fetch(bridge.url + '/status')).json()).phase, 'ready');
     assert.equal((await post(input, { Origin: 'https://evil.invalid' })).status, 403);
     assert.equal((await post(input, { Host: 'evil.invalid' })).status, 404);
     assert.equal((await post({ ...input, results: [{ ...input.results[0], number: 99 }] })).status, 400);
@@ -180,9 +181,13 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     const deadline = Date.now() + 5000;
     while (!finish && Date.now() < deadline) await new Promise(resolve => setImmediate(resolve));
     assert(finish, 'Valid POST should reach the local executor');
+    assert.equal((await (await fetch(bridge.url + '/status')).json()).phase, 'running', 'Reload can observe execution without repeating it');
     assert.equal((await post(input)).status, 409, 'Do not run a concurrent duplicate');
     finish();
     assert.equal((await pending).status, 200);
+    const recovered = await (await fetch(bridge.url + '/status')).json();
+    assert.equal(recovered.phase, 'finished');
+    assert.deepEqual(recovered.result, result);
     assert.deepEqual(await (await post(input)).json(), result, 'Replay returns the recorded result');
     assert.equal(executions, 1);
   } finally { bridge.dispose(); }

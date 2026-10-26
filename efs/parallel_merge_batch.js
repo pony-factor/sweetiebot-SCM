@@ -3,17 +3,17 @@
 const { createMergeBatch } = require('./merge_batch');
 const { validateSelection } = require('./merge_dashboard');
 
-// A stack or a shared file makes one review unit. Different units can be
-// researched concurrently without two GPT sessions owning the same changes.
+// Keep stack dependencies and shared heads together. Shared files may be
+// reviewed independently: local writes are serialized and reject stale patches.
 function planMergeLanes(selection, files, limit = 3) {
-  const prs = selection.pullRequests;
+  const prs = [...selection.pullRequests].sort((a, b) => a.number - b.number);
   const groups = prs.map((_, index) => index);
   const find = index => groups[index] === index ? index : (groups[index] = find(groups[index]));
   const join = (a, b) => { groups[find(b)] = find(a); };
   for (let i = 0; i < prs.length; i++) for (let j = i + 1; j < prs.length; j++) {
     const a = prs[i], b = prs[j];
     if (!files.has(a.number) || !files.has(b.number) || a.base === b.head || b.base === a.head ||
-        a.head === b.head || files.get(a.number).some(file => files.get(b.number).includes(file))) join(i, j);
+        a.head === b.head) join(i, j);
   }
   const components = new Map();
   prs.forEach((pr, index) => {
@@ -21,8 +21,10 @@ function planMergeLanes(selection, files, limit = 3) {
     if (!components.has(root)) components.set(root, []);
     components.get(root).push(pr);
   });
-  const lanes = Array.from({ length: Math.min(limit, components.size) }, () => []);
-  for (const component of components.values()) {
+  const lanes = Array.from({ length: Math.min(limit, prs.length > 10 ? 3 : 2, components.size) }, () => []);
+  // Place larger dependency groups first so a long stack does not accumulate
+  // all the independent work before another worker receives its first PR.
+  for (const component of [...components.values()].sort((a, b) => b.length - a.length || a[0].number - b[0].number)) {
     const lane = lanes.reduce((best, next) => next.flat().length < best.flat().length ? next : best);
     const ordered = [], pending = [...component];
     while (pending.length) {
@@ -35,6 +37,7 @@ function planMergeLanes(selection, files, limit = 3) {
   }
   const labels = ['Oldest first', 'Newest first', 'Middle first'];
   return lanes.map((units, index) => {
+    units.sort((a, b) => a[0].number - b[0].number);
     if (index === 1) units.reverse();
     if (index === 2) {
       const middle = Math.floor(units.length / 2);
@@ -148,8 +151,9 @@ async function createParallelMergeBatch(rawSelection, options = {}) {
     for (const lane of lanes) {
       const batch = await createMergeBatch({ repository: selection.repository, pullRequests: lane.pullRequests }, {
         ...options,
+        reviewOrder: lane.label,
         makePrompt: snapshot => [makePrompt ? makePrompt(snapshot) : '',
-          'PARALLEL REVIEW LANE ' + lane.id + ' — ' + lane.label + '. Work only on your assigned PRs. Other lanes own different PRs. Local writes are coordinated; never merge directly with GitHub tools. If another lane advances the base, preserve its verified work and regenerate stale resolution patches.',
+          'PARALLEL REVIEW LANE ' + lane.id + ' — ' + lane.label + '. Work only on your assigned PRs, in the supplied order, with selected ancestors before descendants. Other lanes own different PRs and may review shared files. Local writes are coordinated; never merge directly with GitHub tools. If another lane advances the base, preserve its verified work and regenerate stale resolution patches.',
           'Recent verified merges across all lanes: ' + JSON.stringify(state().merged.slice(-12).map(item => ({
             number: item.number, title: item.title?.slice(0, 160), base: item.base,
             explanation: item.explanation?.slice(0, 240), destinationSha: item.destinationSha

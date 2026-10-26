@@ -39,7 +39,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
         if (selector.includes('Stop streaming')) return streaming ? [{ ...button, getClientRects: () => backgroundStreaming ? [] : [1] }] : hiddenStop ? [{getClientRects:()=>[]}] : [];
-        if (selector === '[data-message-author-role="assistant"] pre code') return assistantCodes.map(textContent => ({ textContent }));
+        if (selector === '[data-message-author-role="assistant"] pre code, [data-message-author-role="assistant"] pre, [data-message-author-role="assistant"] [data-testid="code-block"]') return assistantCodes.map(textContent => ({ textContent }));
         if (selector === 'button') return streamError ? [retryButton] : [];
         assert.equal(selector, 'a[href]', 'Collect exact nonce callbacks across ChatGPT message layouts');
         return resultLinks.map(href=>({href}));
@@ -153,6 +153,14 @@ f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback),
   assistantCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })] });
 f.tick(2500);
 assert.deepEqual(f.navigations, [mergeReturn], 'Complete assistant JSON recovers an omitted final apply link');
+const punctuated = {version:1, repository:'owner/repo', results:[{number:1, patch:"function f() { return ['x!']*2; }"}]};
+f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text:'',
+  resultLinks:[mergeCallback+'#result='+encodeURIComponent('{"version":1')],
+  assistantCodes:['JSON Copy code\n'+JSON.stringify(punctuated)] });
+f.tick(2500);
+assert.equal(f.navigations.length,1,'A broken Markdown link recovers from a complete assistant code block with a toolbar');
+assert(!/[!'()*]/.test(new URL(f.navigations[0]).hash),'Locally encoded handoffs contain no raw Markdown delimiters');
+assert.deepEqual(JSON.parse(new URLSearchParams(new URL(f.navigations[0]).hash.slice(1)).get('result')),punctuated);
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   resultLinks: [mergeReturn], streaming: true, backgroundStreaming: true });
 f.tick(2500);

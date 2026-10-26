@@ -1514,7 +1514,11 @@ def main():
             old.append(index_old)
             new.append(codex_colors.webview_appearance(
                 index_old, color_new, remove=args.uninstall))
-    elif any(settings.get(key) for key in codex_colors.APPEARANCE_SETTINGS):
+    elif (any(settings.get(key) for key in codex_colors.COLOR_SETTINGS)
+          or settings.get("codexHideAccessLabel", False)
+          or settings.get("codexFlatComposer", False)
+          or settings.get("codexShowQueuePause", False)
+          or not settings.get("codexShowQueuedDelete", True)):
         raise ValueError("The installed Codex composer stylesheet could not be identified.")
 
     for path, context_old, context_new in codex_context.patch_files(

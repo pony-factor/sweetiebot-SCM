@@ -6,6 +6,21 @@ import codex_colors
 
 
 class CodexColorTests(unittest.TestCase):
+    def test_queue_pause_button_is_opt_in(self):
+        rule = '--scm-toolkit-queue-pause-display: flex;'
+        enabled = codex_colors.transform('base', {'codexShowQueuePause': True})
+        self.assertIn(rule, enabled)
+        self.assertNotIn(rule, codex_colors.transform(enabled, {'codexShowQueuePause': False}))
+        self.assertNotIn(rule, codex_colors.transform('base', {}))
+
+    def test_queued_delete_visibility_is_optional_and_reversible(self):
+        selector = '[data-scm-toolkit-queue-id] button[aria-label="Delete queued message"]'
+        hidden = codex_colors.transform('base', {'codexShowQueuedDelete': False})
+        self.assertIn(selector + ' { display: none !important; }', hidden)
+        self.assertNotIn(selector, codex_colors.transform(hidden, {'codexShowQueuedDelete': True}))
+        self.assertNotIn(selector, codex_colors.transform('base', {}))
+        self.assertEqual(codex_colors.transform(hidden, {}, remove=True), 'base')
+
     def test_embedded_font_uses_local_fallback_and_restores_original(self):
         original = '@font-face{font-family:Math;src:url(data:font/woff2;base64,d09GMg==)format("woff2"),url(./math.woff)format("woff");font-weight:400}'
         patched = codex_colors.transform(original, {})

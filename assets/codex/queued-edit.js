@@ -148,25 +148,89 @@
             return this.inFlight;
         }
     }
+    class QueuePause {
+        constructor(adapter, notify = () => {}) {
+            this.adapter = adapter;
+            this.notify = notify;
+        }
+        async toggle() {
+            if (this.pending || this.disposed) return;
+            this.error = '';
+            if (this.lease) {
+                try {
+                    (this.lease[Symbol.dispose] ?? this.lease.dispose).call(this.lease);
+                    this.lease = null;
+                } catch { this.error = 'Could not resume the queue. Try Resume again.'; }
+                this.notify(this);
+                return;
+            }
+            this.pending = true;
+            this.notify(this);
+            try {
+                const coordinator = await this.adapter.coordinator();
+                if (typeof coordinator?.deferAutomaticTurns !== 'function') throw Error('Unsupported');
+                const lease = await coordinator.deferAutomaticTurns(this.adapter.threadId);
+                if (typeof (lease?.[Symbol.dispose] ?? lease?.dispose) !== 'function') throw Error('Unsupported');
+                if (this.disposed) (lease[Symbol.dispose] ?? lease.dispose).call(lease);
+                else this.lease = lease;
+            } catch { this.error = 'Queue pause is unavailable in this Codex version.'; }
+            finally { this.pending = false; this.notify(this); }
+        }
+        dispose() {
+            this.disposed = true;
+            const lease = this.lease;
+            this.lease = null;
+            try { (lease?.[Symbol.dispose] ?? lease?.dispose)?.call(lease); } catch {}
+        }
+    }
     if (globalThis.__SCM_TOOLKIT_QUEUE_EDIT_TEST__) {
-        Object.assign(globalThis.__SCM_TOOLKIT_QUEUE_EDIT_TEST__, {QueueEdit, PREFIX});
+        Object.assign(globalThis.__SCM_TOOLKIT_QUEUE_EDIT_TEST__, {QueueEdit, QueuePause, PREFIX});
         return;
     }
     if (globalThis.scmToolkitQueuedEditUi) return;
     globalThis.scmToolkitQueuedEditUi = true;
     const sessions = new Map();
+    const pausedQueues = new Map();
     const storage = localStorage;
     const OWNER_KEY = PREFIX + 'owner';
     let owner = sessionStorage.getItem(OWNER_KEY);
     if (!owner) { owner = crypto.randomUUID(); sessionStorage.setItem(OWNER_KEY, owner); }
     const style = document.createElement('style');
     style.textContent = `
+      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"] {
+        --composer-rail-tuck:0px; --composer-rail-overlap:0px;
+        margin-bottom:8px !important; padding-bottom:0 !important;
+        border:1px solid color-mix(in srgb,var(--vscode-foreground,#888) 22%,transparent);
+        border-radius:8px !important; corner-shape:round !important;
+        background:var(--vscode-input-background,var(--color-surface-primary));
+        color:var(--vscode-input-foreground,var(--vscode-foreground));
+      }
+      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"]::after { display:none; }
+      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"] [data-composer-rail-item] {
+        margin-bottom:0 !important; padding-bottom:0 !important;
+        background:transparent !important; border-color:var(--vscode-widget-border,transparent) !important;
+        color:inherit !important;
+      }
+      :root[data-codex-window-type="extension"] [data-composer-rail] button:not(.scm-toolkit-queue-save):not(.scm-toolkit-queue-cancel) {
+        color:var(--scm-toolkit-queue-accent,var(--color-codex-drop-overlay,var(--vscode-focusBorder))) !important;
+      }
+      :root[data-codex-window-type="extension"] [data-scm-toolkit-queue-preview] :is(.text-secondary,.text-codex-description) { color:var(--vscode-input-foreground,var(--vscode-foreground)) !important; }
       [data-scm-toolkit-queue-preview] { cursor:text; }
+      [data-scm-toolkit-queue-id] button[aria-label="Queued message actions"] { display:none !important; }
+      .scm-toolkit-queue-pause { display:var(--scm-toolkit-queue-pause-display,none); align-items:center; gap:6px; padding:4px 8px; }
+      .scm-toolkit-queue-pause:has(button[aria-pressed="true"]) { display:flex; }
+      .scm-toolkit-queue-pause button { border:0; border-radius:4px; padding:3px 6px; background:transparent; color:var(--scm-toolkit-queue-accent,var(--vscode-focusBorder)); cursor:pointer; font:inherit; font-size:12px; }
+      .scm-toolkit-queue-pause button:hover { background:var(--vscode-toolbar-hoverBackground); }
+      .scm-toolkit-queue-pause [role=status] { font-size:12px; color:var(--vscode-descriptionForeground); }
       .scm-toolkit-queue-editor { min-width:0; padding:8px; border:1px solid var(--vscode-focusBorder,#888); border-radius:8px; background:var(--vscode-input-background); margin:4px 0; }
       .scm-toolkit-queue-editor textarea { display:block; box-sizing:border-box; width:100%; min-height:72px; max-height:none; overflow-y:hidden; resize:vertical; border:0; outline:0; background:transparent; color:inherit; font:inherit; line-height:1.5; white-space:pre-wrap; }
       .scm-toolkit-queue-editor footer { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:12px; }
       .scm-toolkit-queue-editor [role=status] { flex:1 1 100%; opacity:.8; }
       .scm-toolkit-queue-editor button { border:0; border-radius:4px; padding:3px 8px; background:var(--vscode-button-secondaryBackground); color:inherit; cursor:pointer; }
+      .scm-toolkit-queue-editor .scm-toolkit-queue-save { margin-inline-start:auto; }
+      .scm-toolkit-queue-editor .scm-toolkit-queue-cancel { width:24px; height:24px; padding:0; background:transparent; color:var(--vscode-descriptionForeground,inherit); font-size:18px; line-height:1; }
+      .scm-toolkit-queue-editor .scm-toolkit-queue-cancel:hover { background:var(--vscode-toolbar-hoverBackground,rgba(127,127,127,.15)); color:var(--vscode-foreground,inherit); }
+      .scm-toolkit-queue-editor .scm-toolkit-queue-cancel:focus-visible { outline:1px solid var(--vscode-focusBorder,#888); outline-offset:1px; }
     `;
     document.head.append(style);
     const autoSize = field => { field.style.height = 'auto'; field.style.height = Math.max(72, field.scrollHeight) + 'px'; };
@@ -198,8 +262,11 @@
         const status = document.createElement('span');
         status.setAttribute('role', 'status');
         const save = document.createElement('button'); save.type = 'button'; save.textContent = 'Save';
-        const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
-        footer.append(status, save, cancel); box.append(field, footer);
+        save.className = 'scm-toolkit-queue-save';
+        const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '×';
+        cancel.className = 'scm-toolkit-queue-cancel';
+        cancel.setAttribute('aria-label', 'Cancel edit'); cancel.title = 'Cancel edit';
+        footer.append(status, cancel, save); box.append(field, footer);
         let focused = false;
         const edit = new QueueEdit(adapter, id, storage, state => {
             if (state.phase === 'closed') { box.remove(); sessions.delete(sessionKey); return; }
@@ -249,6 +316,48 @@
         }
     }, true);
     function maintain() {
+        const visible = new Set();
+        for (const row of document.querySelectorAll('[data-scm-toolkit-queue-id]')) {
+            const adapter = adapterFor(row);
+            if (!adapter) continue;
+            const key = JSON.stringify([adapter.hostId, adapter.threadId]);
+            if (visible.has(key)) continue;
+            visible.add(key);
+            let entry = pausedQueues.get(key);
+            if (!entry) {
+                const bar = document.createElement('div'); bar.className = 'scm-toolkit-queue-pause';
+                const button = document.createElement('button'); button.type = 'button';
+                const message = document.createElement('span'); message.setAttribute('role', 'status');
+                bar.append(button, message);
+                const pause = new QueuePause(adapter, state => {
+                    const label = state.pending ? 'Pausing…' : state.lease ? 'Resume' : 'Pause queue';
+                    if (button.textContent !== label) button.textContent = label;
+                    button.disabled = Boolean(state.pending);
+                    button.setAttribute('aria-pressed', String(Boolean(state.lease)));
+                    const text = state.error || (state.lease ? 'Queued messages are paused' : '');
+                    if (message.textContent !== text) message.textContent = text;
+                });
+                button.textContent = 'Pause queue';
+                button.title = 'Pause automatic queued sends; the current response continues';
+                button.setAttribute('aria-pressed', 'false');
+                button.addEventListener('click', () => { void pause.toggle(); });
+                entry = {bar, pause}; pausedQueues.set(key, entry);
+            }
+            const rail = row.closest('[data-composer-rail-item]');
+            const host = rail?.firstElementChild || row.parentElement;
+            if (host && entry.bar.parentElement !== host) host.prepend(entry.bar);
+        }
+        for (const [key, entry] of pausedQueues) if (!visible.has(key)) entry.bar.remove();
+        for (const button of document.querySelectorAll('[data-composer-rail] button')) {
+            if (button.textContent.trim() !== 'View changes') continue;
+            const text = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+            while (text.nextNode()) {
+                if (text.currentNode.nodeValue.includes('View changes')) {
+                    text.currentNode.nodeValue = text.currentNode.nodeValue.replace('View changes', 'Changes');
+                }
+            }
+            if (button.getAttribute('aria-label') === 'View changes') button.setAttribute('aria-label', 'Changes');
+        }
         for (const {edit, box, anchor, focus} of sessions.values()) {
             if (box.isConnected) continue;
             if (anchor.fallback.host.isConnected) {
@@ -259,6 +368,11 @@
         }
     }
     new MutationObserver(() => { try { maintain(); } catch {} }).observe(document.documentElement, {childList:true, subtree:true});
+    maintain();
+    window.addEventListener('pagehide', () => {
+        for (const {pause} of pausedQueues.values()) pause.dispose();
+        pausedQueues.clear();
+    });
     window.addEventListener('storage', event => {
         for (const {edit} of sessions.values()) if (event.key === edit.key) {
             try { edit.checkOwnership(); } catch {}

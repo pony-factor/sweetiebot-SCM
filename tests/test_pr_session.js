@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
-  publishOptionalMergeSummaries } = require('../efs/pr_session');
+  publishOptionalMergeSummaries, launchBlockerWebSession } = require('../efs/pr_session');
 const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs/merge_blocker_actions');
 
 (async () => {
@@ -168,13 +168,14 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       ProgressLocation: { Notification: 15 },
       window: { async withProgress(options, task) {
         assert.equal(options.location, 15);
-        assert.equal(options.title, 'Preparing Lindsey merge queue');
+        assert(options.title === 'Preparing Lindsey merge queue' || options.title.startsWith('Preparing Lindsey PR fix '));
         assert.equal(options.cancellable, false);
         startupVisible = true;
         try { return await task({ report(update) { startupProgress.push(update.message); } }); }
         finally { startupVisible = false; }
       } },
-      workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
+      workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }],
+        getConfiguration:()=>({get:(_key,fallback)=>fallback}),onDidChangeConfiguration:()=>({dispose(){}}) },
       authentication: { async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
         if (options.silent) return undefined;
@@ -185,7 +186,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       commands: { async executeCommand(...args) { dashboardCalls.push(args); } }
     };
     const priorFetch = globalThis.fetch;
-    globalThis.fetch = async address => {
+    const fixtureFetch = async address => {
       assert(startupVisible, 'Show startup feedback before waiting for GitHub snapshot verification');
       const endpoint = new URL(address).pathname;
       const pr = selection.pullRequests[0];
@@ -195,6 +196,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       };
       return { ok: true, json: async () => result };
     };
+    globalThis.fetch = fixtureFetch;
     try {
       await resumePRSession(instrumented, context);
       assert.equal(startupVisible, false, 'Finish startup feedback once the handoff is ready');
@@ -221,7 +223,20 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     }
     const pr = { ...selection.pullRequests[0], state: 'blocked', headSha: selection.pullRequests[0].headSha };
     const option = blockerOptions({ ...pr, review: { options: [{id:'report-retain-api',suggested:true,label:'Retain the public API',description:'Keep callers compatible.',prompt:'Preserve what is already on the current main branch and adapt the new feature internally.'},{id:'report-replace-api',suggested:true,label:'Adopt the new interface',prompt:'Update callers to the new interface.'}] } })[0];
-    await launchBlockerAction(source, context, root, selection.repository, pr, option, 'web');
+    const runners=require('../efs/merge_runner_layout');
+    const previousRunner=runners.openRepairRunner;
+    let embeddedUrl;
+    runners.openRepairRunner=async(host,url,selected)=>{
+      assert.equal(host,source);assert.equal(selected.number,12);embeddedUrl=url;return true;
+    };
+    try {await launchBlockerAction(source,context,root,selection.repository,pr,option,'web');}
+    finally {runners.openRepairRunner=previousRunner;}
+    const directPrompt=new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).get('q');
+    assert(directPrompt.includes('DIRECT WEB REPAIR'));
+    assert(directPrompt.includes('Implement the selected repair directly'));
+    assert(!new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).has('return_to'),'Direct web repairs have no local apply callback');
+    // Previously launched local handoffs remain supported and branch-only.
+    await launchBlockerWebSession(source,context,root,embeddedUrl,pr.number,selection);
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);
     assert.equal(path.basename(actionWorkspace.fsPath), 'Resolve #12 [repository].code-workspace');
@@ -232,20 +247,21 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     assert.equal(actionRequest.options.syncOnly, true, 'Implementation follow-ups receive only branch synchronization authority');
     const branchSelection = JSON.parse(await fs.readFile(path.join(actionDirectory, 'merge-selection.json'), 'utf8'));
     assert.deepEqual(branchSelection.pullRequests.map(item => item.number), [12]);
+    globalThis.fetch = fixtureFetch;
     try {
       await resumePRSession({ ...instrumented,
         workspace: { workspaceFile: actionWorkspace, workspaceFolders: [{ uri: root }] } }, context);
       const branchLaunch = new URLSearchParams(new URL(dashboardCalls.at(-1)[1].url).hash.slice(1));
       assert(branchLaunch.get('q').includes('BRANCH-ONLY EXECUTION'));
       const callback = branchLaunch.get('return_to');
-      const rejected = await fetch(callback, { method: 'POST', headers: {
+      const rejected = await priorFetch(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
           version: 1, repository: selection.repository, results: [{ number: 12,
             headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), operation: 'merge', patch: null,
             explanation: 'Attempt to merge from a branch-only task.' }] }) });
       assert.equal(rejected.status, 400, 'Branch-only handoffs reject merging before the Git executor can run');
       assert((await rejected.json()).error.includes('merging is not authorized'));
-    } finally { for (const disposable of context.subscriptions) disposable.dispose(); }
+    } finally { globalThis.fetch=priorFetch; for (const disposable of context.subscriptions) disposable.dispose(); }
 
     // Exercise an actual independent clone and verify the task resumes only
     // in its selected branch, leaving the source checkout unchanged.
@@ -303,6 +319,8 @@ const {updateMergeSessionCompletion} = require('../efs/merge_session_completion'
   const finished = {repository:'owner/repo',merged:[{number:1}],deferred:[{number:2,reason:'Checks failed'}]};
   updateMergeSessionCompletion(vscode,selection,finished,schedule);
   updateMergeSessionCompletion(vscode,selection,finished,schedule);
+  assert.equal(callbacks.length,0,'Deferred failures remain visible');
+  updateMergeSessionCompletion(vscode,selection,{repository:'owner/repo',merged:[{number:1},{number:2}],deferred:[]},schedule);
   assert.equal(callbacks.length,1);
   callbacks[0](); await Promise.resolve();
   assert.deepEqual(closed,[[local]],'Close only the completed local callback, preserving dashboard and unrelated chats');
