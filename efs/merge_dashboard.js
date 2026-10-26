@@ -492,7 +492,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             }
             if (pr.lastError !== failure.message) {
               pr.lastError = failure.message;
-              addEvent(pr, 'error', failure.message);
+              addEvent(pr, 'error', 'Fetch failed', failure.message);
             }
           }
         }));

@@ -261,7 +261,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   let reactionVotes = [];
   const reactionWrites = [];
   let fileRequests = 0, apiRequests = 0;
+  let requestFault;
   const fakeFetch = async (address, options) => {
+    if (requestFault) throw requestFault;
     apiRequests++;
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
@@ -323,6 +325,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!panel.webview.html.includes('__MARKDOWN_RENDERER__'));
   assert(panel.webview.html.includes('function renderMergeMarkdown('));
   assert(panel.webview.html.includes('function mergeActivityPresentation('));
+  const fetchFailure = mergeActivityPresentation({ number: 252, state: 'error', message: 'Fetch failed',
+    details: 'GET /repos/owner/repo/pulls/252/files · Could not resolve api.github.com (ENOTFOUND)' });
+  assert.equal(fetchFailure.summary, 'Fetch failed');
+  assert.equal(fetchFailure.expandable, true, 'Fetch failures render as expandable disclosure blocks');
+  assert(fetchFailure.explanation.includes('ENOTFOUND'));
+  const historicalFailure = mergeActivityPresentation({ state: 'error', message: 'fetch failed' });
+  assert.equal(historicalFailure.expandable, true);
+  assert(historicalFailure.explanation.includes('No request details were captured'));
   assert(!panel.webview.html.includes('__ACTIVITY_RENDERER__'));
   assert(panel.webview.html.includes('renderMergeActivitySummary(content, event.number, presentation)'));
   assert(!panel.webview.html.includes("show('summary', 'muted', 'Details'"));
@@ -580,6 +590,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
+  requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
+  await dashboard.refresh({ force: true });
+  const failedFetch = events.at(-1).events.at(-1);
+  assert.equal(failedFetch.message, 'Fetch failed');
+  assert(failedFetch.details.includes('GET /repos/pony-factor/example/pulls/12'));
+  assert(failedFetch.details.includes('ENOTFOUND'));
+  assert.equal(mergeActivityPresentation(failedFetch).expandable, true);
+  requestFault = undefined;
   info = { ...info, state: 'closed', merged: false };
   await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
