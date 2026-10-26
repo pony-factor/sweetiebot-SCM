@@ -4,6 +4,8 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8')
   .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
+assert.match(html,/\.merge-buttons\{display:flex;flex-wrap:wrap;gap:12px/,'Merge method buttons must have distinct spacing');
+assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
@@ -379,6 +381,26 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await getElementById('merge').onclick();
   assert.equal(prompts,2,'Turning the setting off restores confirmation');
   assert.equal(merges,2);
+  let signerPrompts=0,signerCalls=0;
+  state={result:{number:2},mergeChoice:'SQUASH_AUTHOR_CHOICE_REQUIRED',localSignedMergeAvailable:true,ludicrousMode:true};
+  context.confirm=()=>{signerPrompts++;return false;};
+  context.fetch=async (url,options)=>{
+    if(options?.method==='POST')signerCalls++;
+    return {ok:true,json:async()=>state};
+  };
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,1,'Even ludicrous mode needs explicit local rewrite approval');
+  assert.equal(signerCalls,0,'Cancelling cannot rewrite a branch');
+  state.mergeChoice=undefined;
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,1,'No signer action without attribution choice');
+  // Restore the normal successful merge mock for close-after-merge assertions.
+  state={result:{number:2},ludicrousMode:false};
+  context.confirm=()=>{prompts++;return true;};
+  context.fetch=async (url,options)=>{
+    if(options?.method==='POST'){merges++;return {ok:true,json:async()=>({merged:true})};}
+    return {ok:true,json:async()=>state};
+  };
   let closes=0;
   const originalClose=getElementById('close-confirmation').onclick;
   getElementById('close-confirmation').onclick=async()=>{closes++;};
