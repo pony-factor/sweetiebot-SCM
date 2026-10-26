@@ -257,6 +257,15 @@ async function resumePRSession(vscode, context) {
         if (Buffer.byteLength(url.href) > 70000) { handoff.dispose(); throw Error('Branch synchronization prompt exceeds the browser launch budget.'); }
       } else {
       const blockerReports = {};
+      const keepAwake = require('./merge_keep_awake').createMergeKeepAwake();
+      let awakeState;
+      const updateAwake = () => {
+        if (awakeState) keepAwake.update(awakeState, selection,
+          vscode.workspace.getConfiguration('scmToolkit').get('codexKeepAwake', true));
+      };
+      context.subscriptions?.push(keepAwake, vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.codexKeepAwake')) updateAwake();
+      }));
       const startBatch = progress => require('./parallel_merge_batch').createParallelMergeBatch(selection, {
         onProgress: update => progress?.report(update),
         api: endpoint => {
@@ -273,6 +282,8 @@ async function resumePRSession(vscode, context) {
         }),
         execute: runLocal,
         onState: async state => {
+          awakeState = state;
+          updateAwake();
           if (state.rateLimit) {
             const error = Object.assign(Error(state.rateLimit.message), {rateLimited:true,retryAt:state.rateLimit.retryAt,configured:state.rateLimit.configured});
             void require('./github_rate_limit').promptRateLimit(vscode, error, {context,retryPriority:1,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
@@ -304,10 +315,13 @@ async function resumePRSession(vscode, context) {
           await controller?.refresh?.();
         }
       });
-      handoff = await vscode.window.withProgress({
+      try { handoff = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: 'Preparing Lindsey merge queue', cancellable: false
-      }, startBatch);
+      }, startBatch); }
+      catch (error) { keepAwake.dispose(); throw error; }
+      const disposeBatch = handoff.dispose.bind(handoff);
+      handoff.dispose = () => { keepAwake.dispose(); disposeBatch(); };
       }
       context.subscriptions?.push(handoff);
       if (handoff.launches?.length) {

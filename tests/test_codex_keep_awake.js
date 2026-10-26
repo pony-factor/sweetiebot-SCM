@@ -6,15 +6,22 @@ const { EventEmitter } = require('node:events');
 
 function fixture(platform = 'darwin', defaultEnabled = true) {
   let notify, fatal, changed, override;
-  const children = [], disposals = [];
+  const children = [], disposals = [], timers = new Set();
   const disposable = name => ({ dispose() { disposals.push(name); } });
   const sandbox = vm.createContext({
     process: { platform, pid: 123 },
+    setTimeout(callback, delay) {
+      assert.equal(delay, 20000);
+      const timer = { callback, unref() {} };
+      timers.add(timer);
+      return timer;
+    },
+    clearTimeout(timer) { timers.delete(timer); },
     require(name) {
       assert.equal(name, 'child_process');
       return { spawn(executable, args, options) {
         assert.equal(executable, '/usr/bin/caffeinate');
-        assert.deepEqual(Array.from(args), ['-i', '-w', '123']);
+        assert.deepEqual(Array.from(args), ['-d', '-i', '-u', '-t', '30', '-w', '123']);
         assert.equal(options.stdio, 'ignore');
         const child = new EventEmitter();
         child.kill = () => { child.killed = true; };
@@ -37,7 +44,11 @@ function fixture(platform = 'darwin', defaultEnabled = true) {
   };
   const controller = vm.runInContext(`scmToolkitRegisterCodexKeepAwake(connection, vscode, ${defaultEnabled})`, sandbox);
   const event = (method, threadId, turnId, status) => notify({ method, params: { threadId, turn: { id: turnId }, status } });
-  return { children, controller, disposals, event, fatal: () => fatal(), override(value) {
+  return { children, controller, disposals, timers, event, tick() {
+    const pending = Array.from(timers);
+    timers.clear();
+    for (const timer of pending) timer.callback();
+  }, fatal: () => fatal(), override(value) {
     override = value;
     changed({ affectsConfiguration: key => key === 'scmToolkit.codexKeepAwake' });
   } };
@@ -71,6 +82,24 @@ function fixture(platform = 'darwin', defaultEnabled = true) {
   f.controller.dispose();
   assert(f.children[3].killed);
   assert.deepEqual(f.disposals, ['notifications', 'provider', 'configuration']);
+}
+{
+  const f = fixture();
+  f.event('turn/started', 'a', '1');
+  f.tick();
+  assert(f.children[0].killed, 'Renewal releases the previous assertion');
+  assert.equal(f.children.length, 2, 'Long tasks renew user activity before expiry');
+  f.children[0].emit('exit');
+  f.event('turn/started', 'b', '2');
+  assert.equal(f.children.length, 2, 'A retired child cannot clear renewed protection');
+  f.event('turn/completed', 'a', '1');
+  assert(!f.children[1].killed, 'Other active work retains protection');
+  f.event('turn/completed', 'b', '2');
+  assert(f.children[1].killed);
+  assert.equal(f.timers.size, 0, 'Idle state cancels renewal');
+  f.tick();
+  assert.equal(f.children.length, 2, 'Finished work cannot restart protection');
+  f.controller.dispose();
 }
 for (const terminal of ['idle', 'notLoaded', 'systemError']) {
   const f = fixture();

@@ -408,7 +408,7 @@
           "type": "boolean",
           "default": true,
           "scope": "window",
-          "description": "Keep macOS awake while Codex is working. Releases idle-sleep prevention when all tasks finish; the display can still turn off."
+          "description": "Keep macOS and its display awake and postpone the automatic screensaver while Codex is working. Releases protection when all tasks finish."
         },
         "scmToolkit.workspaceSearch.embeddingModel": {
           "type": "string",

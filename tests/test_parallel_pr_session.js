@@ -26,7 +26,7 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/pr_sessio
     let workspace, dashboardOptions, recorded;
     const config = () => ({ get: (key, fallback) => fallback });
     const vscode = { Uri: { file }, ProgressLocation: { Notification: 15 }, ViewColumn: { One: 1, Two: 2 },
-      workspace: { getConfiguration: config, workspaceFolders: [{ uri: file(root) }] },
+      workspace: { getConfiguration: config, onDidChangeConfiguration: () => ({ dispose() {} }), workspaceFolders: [{ uri: file(root) }] },
       window: { tabGroups: { all: [{ viewColumn: 1, tabs }] },
         withProgress: async (options, task) => task({ report() {} }) },
       authentication: { getSession: async () => ({ accessToken: 'fixture-token' }) },

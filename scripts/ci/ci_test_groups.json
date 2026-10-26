@@ -198,6 +198,7 @@
         "test_git_failure.js",
         "test_parallel_merge_batch.js",
         "test_parallel_pr_session.js",
+        "test_merge_keep_awake.js",
         "test_lindsey_bulk_merge.js",
         "test_lindsey_conflicts.js",
         "test_merge_batch.js",
