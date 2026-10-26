@@ -258,7 +258,7 @@ function postedReviewActivity(notes) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   const readFetch = createLindseyReadFetch(selection.repository, { fetchImpl });
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
@@ -283,6 +283,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     events: persistence.restoredEvents.filter(event => event.number === pr.number).slice(-35)
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
+  let workers = [];
   let disposed = false;
   let working = false;
   let activeRefresh = null;
@@ -340,7 +341,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
-      type: 'state', repository: selection.repository,
+      type: 'state', repository: selection.repository, workers,
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
@@ -506,6 +507,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   panel.webview.onDidReceiveMessage(async message => {
+    if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
+      return onFocusWorker(message.number);
+    }
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh({ force: true });
     if (message?.type === 'select-pr') {
@@ -661,6 +665,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (event.stage === 'pushed' || event.stage === 'checks-passed') void refresh();
   }, recordBatchState(state) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    workers = (Array.isArray(state.workers) ? state.workers : []).filter(worker => Number.isInteger(worker.id) && worker.id > 0 && worker.id <= 3)
+      .map(worker => ({ id: worker.id, label: String(worker.label || '').slice(0, 80),
+        phase: String(worker.phase || '').slice(0, 80), merged: Number(worker.merged) || 0,
+        total: Number(worker.total) || 0, numbers: (Array.isArray(worker.numbers) ? worker.numbers : []).filter(number => byNumber.has(number)) }));
     if (state.rateLimit) {
       rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message;
       if (rateLimitedUntil > Date.now()) void require('./github_rate_limit').promptRateLimit(vscode,

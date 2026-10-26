@@ -195,6 +195,9 @@
     "lindsey": {
       "label": "Lindsey bulk merge",
       "tests": [
+        "test_git_failure.js",
+        "test_parallel_merge_batch.js",
+        "test_parallel_pr_session.js",
         "test_lindsey_bulk_merge.js",
         "test_lindsey_conflicts.js",
         "test_merge_batch.js",
@@ -215,6 +218,8 @@
       ],
       "syntax": [
         "efs/lindsey_bulk_merge.js",
+        "efs/git_failure.js",
+        "efs/parallel_merge_batch.js",
         "efs/local_human_squash.js",
         "efs/merge_batch.js",
         "efs/merge_checks.js",

@@ -6,7 +6,7 @@ const { validateResolution, resolutionInstructions } = require('./merge_resoluti
 const SHA = /^[a-f0-9]{40}$/i;
 
 async function createMergeBatch(rawSelection, { api, execute, makePrompt, destination,
-  onResult = async () => {}, onState = async () => {}, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
+  onResult = async () => {}, onState = async () => {}, onProgress = () => {}, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
   const original = validateSelection(rawSelection);
   const entries = new Map(original.pullRequests.map(pr => [pr.number, { ...pr, attempts: 0 }]));
   const merged = [], deferred = [], history = [], bridges = [];
@@ -17,14 +17,23 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
     && !deferred.some(item => item.number === pr.number));
 
   async function refreshRemaining() {
-    for (const pr of remaining()) {
+    const pending = remaining();
+    for (const [index, pr] of pending.entries()) {
+      onProgress({ message: `Verifying PR #${pr.number} (${index + 1}/${pending.length})` });
       const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
+      // GitHub can retarget an open child when this batch merges and deletes
+      // its parent branch. Accept only that verified parent's destination;
+      // the child's selected head, title and repository must still match.
+      const parent = [...entries.values()].find(candidate => candidate.head === pr.base &&
+        merged.some(item => item.number === candidate.number));
+      const expectedBase = parent && fresh.base?.ref === parent.base ? parent.base : pr.base;
       if (fresh.state !== 'open' || fresh.merged || fresh.draft || fresh.head?.sha !== pr.headSha ||
-          fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base || fresh.title !== pr.title ||
+          fresh.head?.ref !== pr.head || fresh.base?.ref !== expectedBase || fresh.title !== pr.title ||
           fresh.head?.repo?.full_name !== original.repository) {
         deferred.push({ number: pr.number, reason: 'The selected PR changed outside this batch; review the new head or PR state.' });
         continue;
       }
+      pr.base = expectedBase;
       const base = await api('repos/' + original.repository + '/branches/' + encodeURIComponent(pr.base));
       if (!SHA.test(base.commit?.sha || '')) throw Error('Cannot verify the remaining PR base.');
       pr.baseSha = base.commit.sha;
@@ -88,7 +97,10 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           const input = submitted.results.find(entry => entry.number === item.number);
           if (!pr || !input) throw Error('Local result does not match the submitted round.');
           if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt,configured:item.configured}; continue; }
-          pr.attempts++;
+          // A parallel lane can advance the base before any local work starts.
+          // Regenerating that untouched patch is bounded by maxRounds, rather
+          // than consuming the PR's budget for actual integration failures.
+          if (!(item.status === 'needs_refresh' && item.retryableBaseAdvance === true)) pr.attempts++;
           const detail = { number: item.number, title: pr.title, base: pr.base,
             status: item.status, explanation: input.explanation, decisions: require('./resolution_commits').validateDecisions(input.decisions), reason: item.reason || '',
             sourceHeadSha: input.headSha, destinationSha: item.merged ? item.sha : undefined,

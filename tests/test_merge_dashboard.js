@@ -292,9 +292,11 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     return { ok: true, json: async () => result };
   };
   const actionLaunches = [];
+  const workerFocus = [];
   panel.visible = false;
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
+    onFocusWorker: async id => { workerFocus.push(id); },
     context: { globalStorageUri: { fsPath: reactionStorage }, workspaceState },
     launchAction: async (...args) => { actionLaunches.push(args); return true; },
     fetchImpl: fakeFetch,
@@ -566,6 +568,12 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     deferred: [{ number: 12, reason: 'Refresh the selected head before another merge attempt.' }] };
   batchState.history = [{ number: 12, explanation: 'Restored local explanation', decisions: [{ path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Restored decision' }] }];
   dashboard.recordBatchState(batchState);
+  dashboard.recordBatchState({ ...batchState, workers: [{ id: 1, label: 'Oldest first', phase: 'Reviewing',
+    numbers: [12, 999], merged: 0, total: 1 }] });
+  assert.deepEqual(events.at(-1).workers[0].numbers, [12]);
+  await messageHandler({ type: 'focus-worker', number: 1 });
+  await messageHandler({ type: 'focus-worker', number: 999 });
+  assert.deepEqual(workerFocus, [1], 'Only registered GPT review sessions can be focused');
   assert.equal(events.at(-1).prs[0].localExplanation, 'Restored local explanation');
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Restored decision');
   assert.match(events.at(-1).events.at(-1).message, /Deferred for this batch/);
