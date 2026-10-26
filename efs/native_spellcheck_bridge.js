@@ -4,7 +4,7 @@
 // preload is the only intended client; never forward ChatGPT cookies or tokens.
 const http = require('node:http');
 const {randomBytes, timingSafeEqual} = require('node:crypto');
-const {normalizeChatgptProjectUrl} = require('./chatgpt_project');
+const {normalizeChatgptProjectUrl, resolveChatgptReviewProjectUrl} = require('./chatgpt_project');
 
 const ADDRESS = '127.0.0.1';
 const MAX_INPUT = 60000;
@@ -188,7 +188,7 @@ function registerNativeSpellcheckBridge(vscode, context, start = startNativeSpel
     if (!registered.includes('workbench.action.browser.open')) {
       throw new Error('This VS Code build does not have the native Integrated Browser.');
     }
-    const projectUrl = vscode.workspace.getConfiguration?.('scmToolkit')?.get('chatgptProjectUrl', '') || '';
+    const projectUrl = resolveChatgptReviewProjectUrl(vscode.workspace.getConfiguration?.('scmToolkit'));
     const session = await start({title: '', body}, {projectUrl});
     active.add(session);
     try {

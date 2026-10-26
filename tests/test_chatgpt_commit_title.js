@@ -59,7 +59,10 @@ test('commit-title transport rejects changes to the staged diff and invalid subj
   assert.equal((await session.completed).title, '🔩 Summarize staged changes');
 });
 
-function harness({warn = 'Send to ChatGPT', approve = 'Use title', changedInput = false} = {}) {
+function harness({
+  warn = 'Send to ChatGPT', approve = 'Use title', changedInput = false,
+  reviewUrl = '', sharedUrl = 'https://chatgpt.com/g/g-p-test123/project'
+} = {}) {
   const calls = [], handlers = {};
   const repository = {rootUri: {fsPath: '/sample'}, inputBox: {value: ''}};
   const vscode = {
@@ -69,7 +72,8 @@ function harness({warn = 'Send to ChatGPT', approve = 'Use title', changedInput 
       async getCommands() {return ['workbench.action.browser.open'];},
       async executeCommand(name, arg) {calls.push([name, arg]);}
     },
-    workspace: {getConfiguration: () => ({get: () => 'https://chatgpt.com/g/g-p-test123/project'})},
+    workspace: {getConfiguration: () => ({get: key =>
+      key === 'chatgptReviewProjectUrl' ? reviewUrl : sharedUrl})},
     window: {
       async showWarningMessage() {return warn;},
       async showInformationMessage() {
@@ -114,6 +118,9 @@ test('cancelled or stale title suggestions do not modify the Source Control fiel
   const declined = harness({approve: null});
   assert.equal(await declined.handlers['sweetiebot.suggestCommitTitleWithChatGPT'](), '🧾 Generate title');
   assert.equal(declined.repository.inputBox.value, '');
+  const dedicated = harness({reviewUrl: 'https://chatgpt.com/g/g-p-test123/project',
+    sharedUrl: 'https://chatgpt.com/g/g-p-shared456/project'});
+  assert.equal(await dedicated.handlers['sweetiebot.suggestCommitTitleWithChatGPT'](), '🧾 Generate title');
   const changed = harness({changedInput: true});
   await assert.rejects(changed.handlers['sweetiebot.suggestCommitTitleWithChatGPT'](), /message changed/);
   assert.equal(changed.repository.inputBox.value, 'A newer message');
@@ -128,7 +135,10 @@ test('native manual spellcheck receives the configured project destination', asy
       async executeCommand() {}
     },
     workspace: {
-      getConfiguration: () => ({get: () => 'https://chatgpt.com/g/g-p-test123/project'}),
+      getConfiguration: () => ({get: key =>
+        key === 'chatgptReviewProjectUrl'
+          ? 'https://chatgpt.com/g/g-p-test123/project'
+          : 'https://chatgpt.com/g/g-p-other777/project'}),
       async openTextDocument(arg) {return arg;}
     },
     window: {async showTextDocument() {}}

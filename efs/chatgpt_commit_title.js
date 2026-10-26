@@ -5,6 +5,7 @@
 const {execFile} = require('node:child_process');
 const {promisify} = require('node:util');
 const {startNativeSpellcheckBridge} = require('./native_spellcheck_bridge');
+const {resolveChatgptReviewProjectUrl} = require('./chatgpt_project');
 
 const execFileAsync = promisify(execFile);
 const MAX_DIFF = 16000;
@@ -49,8 +50,8 @@ function registerChatgptCommitTitle(vscode, context, dependencies = {}) {
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open')) {
       throw new Error('This VS Code build does not have the native Integrated Browser.');
     }
-    const projectUrl = vscode.workspace.getConfiguration('scmToolkit', repository.rootUri)
-      .get('chatgptProjectUrl', '');
+    const projectUrl = resolveChatgptReviewProjectUrl(
+      vscode.workspace.getConfiguration('scmToolkit', repository.rootUri));
     const session = await start({title: originalTitle.slice(0, 512), body: data},
       {projectUrl, mode: 'commit-title'});
     try {

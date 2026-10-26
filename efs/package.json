@@ -515,7 +515,13 @@
           "type": "string",
           "default": "",
           "scope": "resource",
-          "description": "Optional ChatGPT project destination for PR drafting, pony-profile research, batch squash-merges, native Spellcheck Only and the manual ChatGPT commit-title suggestion command. Automatic commit titles and post-commit spellcheck remain on local Ollama. Blank uses normal ChatGPT chats. Example: https://chatgpt.com/g/g-p-.../project."
+          "description": "Optional shared ChatGPT Project for PR drafting, pony-profile research, batch squash-merges, and interactive ChatGPT reviews unless overridden by chatgptReviewProjectUrl. Automatic commit titles and post-commit spellcheck remain on local Ollama."
+        },
+        "scmToolkit.chatgptReviewProjectUrl": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Optional dedicated ChatGPT Project for native Spellcheck Only and manually requested ChatGPT commit titles. Leave blank to inherit chatgptProjectUrl (or regular chats when both are blank). Must be an HTTPS https://chatgpt.com/g/g-p-.../project URL. Never redirects failed Project access to ordinary chat."
         },
         "scmToolkit.automaticAppRepair": {
           "type": "boolean",

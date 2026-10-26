@@ -25,6 +25,14 @@ function chatgptPromptUrl(prompt, configuredProjectUrl = '') {
   return destination + '?q=' + encodeURIComponent(prompt);
 }
 
+// A dedicated review Project may override the shared PR/merge Project. An
+// empty override inherits the existing destination, preserving older settings.
+function resolveChatgptReviewProjectUrl(configuration) {
+  const review = configuration?.get?.('chatgptReviewProjectUrl', '') || '';
+  const shared = configuration?.get?.('chatgptProjectUrl', '') || '';
+  return normalizeChatgptProjectUrl(review || shared);
+}
+
 // Keep long PR instructions out of the HTTP request target. The browser preload
 // reads this fragment and inserts the complete prompt after ChatGPT hydrates.
 // The guarded browser preload submits merge chats when their composer is ready.
@@ -90,4 +98,4 @@ async function resolveChatgptActionProject(vscode, context) {
   return projectUrl;
 }
 
-module.exports = { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl, resolveChatgptActionProject };
+module.exports = { normalizeChatgptProjectUrl, resolveChatgptReviewProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl, resolveChatgptActionProject };
