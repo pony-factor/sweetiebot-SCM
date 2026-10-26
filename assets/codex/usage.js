@@ -7,9 +7,28 @@ function scmToolkitRemainingUsage(usage) {
 }
 
 function scmToolkitUsagePiePercent(value) {
+    if (value == null || value === '') return null;
     const percent = Number(value);
     if (!Number.isFinite(percent)) return null;
     return Math.round(Math.max(0, Math.min(100, percent)));
+}
+
+function scmToolkitUsageColor(percent) {
+    return percent <= 10
+        ? 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'
+        : 'currentColor';
+}
+
+function scmToolkitLocalComposerProps(props, useEffect) {
+    const allowCloud = typeof scmToolkitCloudTasks !== 'undefined' && scmToolkitCloudTasks;
+    useEffect(() => {
+        if (!allowCloud && props.composerMode === 'cloud') props.setComposerMode('local');
+    }, [allowCloud, props.composerMode, props.setComposerMode]);
+    if (allowCloud) return props;
+    return {...props,
+        composerMode:props.composerMode === 'cloud' ? 'local' : props.composerMode,
+        setComposerMode:mode => props.setComposerMode(mode === 'cloud' ? 'local' : mode),
+    };
 }
 
 // Time progress is independent of usage allowance: 100% means a full reset
@@ -192,9 +211,7 @@ function scmToolkitKeepUsageFresh(refetch) {
             const degrees = (100 - percent) * 3.6;
             // An embedded Codex webview may not expose the VS Code theme token.
             // Use the configured hover accent rather than the focus-outline color.
-            const foreground = percent <= 10
-                ? 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'
-                : 'currentColor';
+            const foreground = scmToolkitUsageColor(percent);
             this.style.background =
                 `conic-gradient(from 0deg, color-mix(in srgb, currentColor 20%, transparent) 0 ${degrees}deg, ${foreground} ${degrees}deg 360deg)`;
             const label = this.getAttribute('kind') === 'reset'
@@ -203,6 +220,57 @@ function scmToolkitKeepUsageFresh(refetch) {
             this.setAttribute('role', 'img');
             this.setAttribute('aria-label', label);
             this.setAttribute('title', label);
+        }
+    });
+})();
+
+(() => {
+    const tag = 'scm-toolkit-usage-meter';
+    if (customElements.get(tag)) return;
+    customElements.define(tag, class extends HTMLElement {
+        static get observedAttributes() { return ['percent']; }
+        connectedCallback() {
+            if (!this.pie) {
+                this.pie = document.createElement('scm-toolkit-usage-pie');
+                this.append(this.pie);
+            }
+            const surface = this.closest('[data-composer-surface-variant]');
+            if (surface && !this.bar) {
+                this.bar = document.createElement('div');
+                this.bar.className = 'scm-toolkit-usage-bar';
+                this.bar.setAttribute('role', 'progressbar');
+                this.bar.setAttribute('aria-label', 'Five-hour Codex usage remaining');
+                this.bar.setAttribute('aria-valuemin', '0');
+                this.bar.setAttribute('aria-valuemax', '100');
+                surface.classList.add('scm-toolkit-usage-surface');
+                surface.append(this.bar);
+            }
+            this.update();
+        }
+        disconnectedCallback() {
+            const surface = this.bar?.parentElement;
+            this.bar?.remove();
+            this.bar = null;
+            if (surface && !surface.querySelector('.scm-toolkit-usage-bar')) {
+                surface.classList.remove('scm-toolkit-usage-surface');
+            }
+        }
+        attributeChangedCallback() { this.update(); }
+        update() {
+            const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
+            this.pie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
+            if (!this.bar) return;
+            this.bar.hidden = percent == null;
+            if (percent == null) {
+                this.bar.removeAttribute('aria-valuenow');
+                return;
+            }
+            this.bar.setAttribute('aria-valuenow', percent);
+            this.bar.style.width = `${percent}%`;
+            // Resolve currentColor at the same control as the pie, rather than
+            // inheriting a potentially different color from the outer surface.
+            this.bar.style.color = getComputedStyle(this).color;
+            this.bar.style.background = scmToolkitUsageColor(percent);
         }
     });
 })();
@@ -266,15 +334,36 @@ function scmToolkitKeepUsageFresh(refetch) {
     // Native narrow-footer rules hide the entire value, including our 12px pie.
     // Keep only pie-bearing location values visible; other labels still collapse.
     const style = document.createElement('style');
+    const localOnly = typeof scmToolkitCloudTasks === 'undefined' || !scmToolkitCloudTasks;
     style.textContent = `
       button[data-composer-navigation-target="run-location"]
-      [data-composer-footer-collapse]:has(scm-toolkit-usage-pie) {
+      [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
       }
-    `;
+      scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; }
+      .scm-toolkit-usage-surface { position:relative; }
+      .scm-toolkit-usage-bar {
+        position:absolute; left:0; bottom:0; height:2px; pointer-events:none;
+        border-radius:0 1px 1px 0; z-index:1;
+      }
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) svg {
+        display:none;
+      }
+    ` + (localOnly ? `
+      button[data-composer-navigation-target="run-location"]:not(:has(:is(scm-toolkit-usage-meter, scm-toolkit-usage-pie))) { display:none !important; }
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) {
+        cursor:default; opacity:1 !important; color:inherit !important; order:-1;
+      }
+    ` : '');
     document.head.append(style);
 
     const refresh = () => {
+        if (localOnly) for (const button of document.querySelectorAll('button[data-composer-navigation-target="run-location"]')) {
+            if (!button.disabled) button.disabled = true;
+            if (button.getAttribute('aria-label') !== 'Five-hour Codex usage remaining') {
+                button.setAttribute('aria-label', 'Five-hour Codex usage remaining');
+            }
+        }
         scmToolkitApplyUsageDialogRelativeTimes(document);
         scmToolkitCorrectLastMinuteUsageLabels(document);
     };

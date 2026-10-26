@@ -10,6 +10,7 @@ This runs real JS assets in a browser DOM, not the proprietary Codex extension.
 from pathlib import Path
 import os
 import shutil
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets" / "codex"
@@ -42,6 +43,35 @@ def run():
         page = browser.new_page(viewport={"width": 740, "height": 600})
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
+        # Exercise the real composer stylesheet at sidebar widths before the
+        # rest of the webview tests replace the document.
+        page.set_content('<html data-codex-window-type="extension"><head></head><body style="margin:0;--vscode-focusBorder:#12ab34;--color-border:#444"><div data-composer-surface-variant="default" data-composer-utility-bar-variant="home"><div data-composer-body style="border-radius:28px;box-shadow:0 5px 20px black"><textarea aria-label="Prompt"></textarea><button>Send</button></div></div><div id="document" data-composer-surface-variant="document" style="border-radius:20px">Document</div></body></html>')
+        page.add_style_tag(content='@layer theme, base, components, utilities; @layer components { [data-composer-body] { border:0 !important; } }')
+        page.add_style_tag(content='@layer theme {' + (ASSETS / 'flat-composer.css').read_text() + '}')
+        for width in (260, 340, 640):
+            page.set_viewport_size({'width': width, 'height': 600})
+            surface = '[data-composer-body]'
+            assert page.eval_on_selector(surface, 'el => getComputedStyle(el).borderRadius') == '8px'
+            assert page.eval_on_selector(surface, 'el => getComputedStyle(el).boxShadow') == 'none'
+            assert page.eval_on_selector(surface, 'el => getComputedStyle(el).borderTopWidth') == '1px'
+            assert page.eval_on_selector('#document', 'el => getComputedStyle(el).borderRadius') == '20px'
+            page.locator('textarea').fill('A prompt that remains editable')
+            assert page.locator('textarea').input_value() == 'A prompt that remains editable'
+            assert page.eval_on_selector(surface, 'el => getComputedStyle(el).borderTopColor') == 'rgb(18, 171, 52)'
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.evaluate("document.documentElement.dataset.codexWindowType = 'electron'")
+        assert page.eval_on_selector('[data-composer-body]', 'el => getComputedStyle(el).borderRadius') == '28px'
+        page.set_viewport_size({'width': 740, 'height': 600})
+        # Both native chat-dot generations and unread counts follow the user's
+        # configured color without recoloring unrelated info/status elements.
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import codex_colors
+        page.set_content('<html data-codex-window-type="extension"><head><style>@layer theme,base,components,utilities; @layer utilities {.bg-info-solid{background:blue} .fill-text-info{fill:blue}}</style></head><body><button><span data-thread-title>Chat</span><span class="icon-xs scale-50"><span id="unread-dot" class="bg-info-solid"></span></span><span id="unread-count" style="color:var(--color-text-info)">3</span></button><span id="unrelated-dot" class="bg-info-solid"></span><svg><circle id="side-chat-dot" class="fill-text-info" cx="12.6" cy="3.2" r="2.6"/></svg></body></html>')
+        page.add_style_tag(content=codex_colors.transform('', {'codexNewChatDotColor':'#ab12cd'}))
+        assert page.eval_on_selector('#unread-dot', 'el => getComputedStyle(el).backgroundColor') == 'rgb(171, 18, 205)'
+        assert page.eval_on_selector('#unread-count', 'el => getComputedStyle(el).color') == 'rgb(171, 18, 205)'
+        assert page.eval_on_selector('#side-chat-dot', 'el => getComputedStyle(el).fill') == 'rgb(171, 18, 205)'
+        assert page.eval_on_selector('#unrelated-dot', 'el => getComputedStyle(el).backgroundColor') == 'rgb(0, 0, 255)'
         page.set_content(HTML)
         title = (ASSETS / "window-label.js").read_text().replace(
             "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", '"CelestAI"'
@@ -175,6 +205,51 @@ def run():
             assert page.locator('#permissions-label').is_visible() == (width > 300), width
             assert page.eval_on_selector('#compact-footer', 'el => el.scrollWidth <= el.clientWidth'), width
         assert page.locator('#codex-usage-pie').bounding_box()['width'] == 12
+        # The five-hour bar stays flush with the input surface, retreating from
+        # right to left, and shares the pie's normal and final-ten-percent colors.
+        page.evaluate("""() => {
+            document.body.insertAdjacentHTML('beforeend', `
+              <section id="meter-surface" data-composer-surface-variant="default"
+                       style="width:320px;height:100px;color:#43af49">
+                <div data-composer-body><textarea>Untouched draft</textarea></div>
+                <div class="ComposerLayoutFooter_fixture" style="display:flex;position:absolute;bottom:8px;left:8px">
+                  <button id="access-control" data-composer-navigation-target="permissions">Full access</button>
+                </div>
+                <button id="meter-control" data-composer-navigation-target="run-location">
+                  <svg width="12" height="12"></svg><scm-toolkit-usage-meter percent="100"></scm-toolkit-usage-meter>
+                </button>
+              </section>`);
+        }""")
+        meter = page.locator('scm-toolkit-usage-meter')
+        bar = page.get_by_role('progressbar', name='Five-hour Codex usage remaining')
+        surface = page.locator('#meter-surface')
+        page.wait_for_function('document.getElementById("meter-control").disabled')
+        for width in (320, 200, 640):
+            surface.evaluate('(el,width) => el.style.width=width+"px"', width)
+            for percent in (100, 50, 11, 10, 1, 0):
+                meter.evaluate('(el,p) => el.setAttribute("percent",p)', percent)
+                bounds, outer = bar.bounding_box(), surface.bounding_box()
+                assert abs(bounds['x'] - outer['x']) < 1
+                assert abs(bounds['y'] + bounds['height'] - outer['y'] - outer['height']) < 1
+                assert bounds['height'] == 2
+                assert abs(bounds['width'] - width * percent / 100) < 1
+                color = bar.evaluate('el => getComputedStyle(el).backgroundColor')
+                assert color == ('rgb(18, 171, 52)' if percent <= 10 else 'rgb(67, 175, 73)'), color
+                assert bar.get_attribute('aria-valuenow') == str(percent)
+        assert not page.locator('#meter-control svg').is_visible()
+        assert page.locator('#meter-surface textarea').input_value() == 'Untouched draft'
+        page.add_script_tag(content=(ASSETS / 'composer-controls.js').read_text())
+        page.wait_for_function('document.getElementById("meter-control").classList.contains("scm-toolkit-inline-location")')
+        circle_bounds = meter.bounding_box()
+        access_bounds = page.locator('#access-control').bounding_box()
+        outer = surface.bounding_box()
+        assert circle_bounds['x'] < access_bounds['x']
+        assert circle_bounds['x'] >= outer['x']
+        assert circle_bounds['y'] > outer['y'] + outer['height'] / 2
+        meter.evaluate('(el) => el.removeAttribute("percent")')
+        assert not bar.is_visible(), 'Unknown usage must never appear full'
+        meter.evaluate('el => el.remove()')
+        assert page.locator('.scm-toolkit-usage-bar').count() == 0
         # Promotion hiding removes the exhausted-messages upsell without hiding
         # the actual error or composer sharing its outer container.
         page.set_content("""<main>

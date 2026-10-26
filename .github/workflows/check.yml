@@ -95,6 +95,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser-backed Codex webview simulation
         run: |
+          python tests/test_codex_queued_edit_browser.py
           python tests/test_codex_webview_browser.py
           python tests/test_codex_webview_iframe.py
       - name: Node.js timestamp and heading tests

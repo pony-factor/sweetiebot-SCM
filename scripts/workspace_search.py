@@ -43,6 +43,7 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
     workspace_view = contributes["views"]["scm"][0]
     companion_views = contributes["views"]["scm"][1:]
     workspace_view["name"] = str(settings["workspaceSearchLabel"])
+    workspace_view["icon"] = "media/efs.svg"
     workspace_view["contextualTitle"] = str(settings["workspaceSearchLabel"])
     properties = contributes["configuration"]["properties"]
     properties["scmToolkit.workspaceSearch.askOllama"]["default"] = bool(
@@ -84,6 +85,43 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
         contributes["views"] = {"scm": [workspace_view, *companion_views]}
 
     return package
+
+
+def transform_view_manifest(source, settings):
+    """Update only EFS view metadata, preserving unrelated installed commands."""
+    package = json.loads(source)
+    expected = render_package(settings)
+    if (package.get('publisher'), package.get('name')) != (expected['publisher'], expected['name']):
+        raise ValueError('Not a Sweetiebot companion manifest.')
+    contributes = package.setdefault('contributes', {})
+    views = contributes.setdefault('views', {})
+    current = None
+    for location, entries in list(views.items()):
+        for entry in entries:
+            if entry.get('id') == 'scmToolkit.workspaceSearch':
+                if current is not None:
+                    raise ValueError('EFS view could not be identified uniquely.')
+                current = dict(entry)
+        views[location] = [entry for entry in entries if entry.get('id') != 'scmToolkit.workspaceSearch']
+    if current is None:
+        raise ValueError('Installed EFS view was not found.')
+    current.update(name=str(settings['workspaceSearchLabel']), contextualTitle=str(settings['workspaceSearchLabel']), icon='media/efs.svg')
+    containers = contributes.setdefault('viewsContainers', {})
+    for location, entries in list(containers.items()):
+        containers[location] = [entry for entry in entries if entry.get('id') != STANDALONE_CONTAINER_ID]
+        if not containers[location]:
+            del containers[location]
+    target = STANDALONE_CONTAINER_ID if settings['workspaceSearchActivityBar'] else 'scm'
+    views.setdefault(target, []).insert(0, current)
+    for location in list(views):
+        if not views[location] and location != 'scm':
+            del views[location]
+    if settings['workspaceSearchActivityBar']:
+        containers.setdefault('activitybar', []).append({
+            'id': STANDALONE_CONTAINER_ID, 'title': str(settings['workspaceSearchLabel']), 'icon':'media/efs.svg'})
+    if not containers:
+        contributes.pop('viewsContainers', None)
+    return json.dumps(package, indent=2) + '\n'
 
 
 def source_files(root: Path | None = None) -> dict[Path, Path]:
