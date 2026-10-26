@@ -148,13 +148,49 @@
             return this.inFlight;
         }
     }
+    class QueuePause {
+        constructor(adapter, notify = () => {}) {
+            this.adapter = adapter;
+            this.notify = notify;
+        }
+        async toggle() {
+            if (this.pending || this.disposed) return;
+            this.error = '';
+            if (this.lease) {
+                try {
+                    (this.lease[Symbol.dispose] ?? this.lease.dispose).call(this.lease);
+                    this.lease = null;
+                } catch { this.error = 'Could not resume the queue. Try Resume again.'; }
+                this.notify(this);
+                return;
+            }
+            this.pending = true;
+            this.notify(this);
+            try {
+                const coordinator = await this.adapter.coordinator();
+                if (typeof coordinator?.deferAutomaticTurns !== 'function') throw Error('Unsupported');
+                const lease = await coordinator.deferAutomaticTurns(this.adapter.threadId);
+                if (typeof (lease?.[Symbol.dispose] ?? lease?.dispose) !== 'function') throw Error('Unsupported');
+                if (this.disposed) (lease[Symbol.dispose] ?? lease.dispose).call(lease);
+                else this.lease = lease;
+            } catch { this.error = 'Queue pause is unavailable in this Codex version.'; }
+            finally { this.pending = false; this.notify(this); }
+        }
+        dispose() {
+            this.disposed = true;
+            const lease = this.lease;
+            this.lease = null;
+            try { (lease?.[Symbol.dispose] ?? lease?.dispose)?.call(lease); } catch {}
+        }
+    }
     if (globalThis.__SCM_TOOLKIT_QUEUE_EDIT_TEST__) {
-        Object.assign(globalThis.__SCM_TOOLKIT_QUEUE_EDIT_TEST__, {QueueEdit, PREFIX});
+        Object.assign(globalThis.__SCM_TOOLKIT_QUEUE_EDIT_TEST__, {QueueEdit, QueuePause, PREFIX});
         return;
     }
     if (globalThis.scmToolkitQueuedEditUi) return;
     globalThis.scmToolkitQueuedEditUi = true;
     const sessions = new Map();
+    const pausedQueues = new Map();
     const storage = localStorage;
     const OWNER_KEY = PREFIX + 'owner';
     let owner = sessionStorage.getItem(OWNER_KEY);
@@ -181,6 +217,11 @@
       :root[data-codex-window-type="extension"] [data-scm-toolkit-queue-preview] :is(.text-secondary,.text-codex-description) { color:var(--vscode-input-foreground,var(--vscode-foreground)) !important; }
       [data-scm-toolkit-queue-preview] { cursor:text; }
       [data-scm-toolkit-queue-id] button[aria-label="Queued message actions"] { display:none !important; }
+      .scm-toolkit-queue-pause { display:var(--scm-toolkit-queue-pause-display,none); align-items:center; gap:6px; padding:4px 8px; }
+      .scm-toolkit-queue-pause:has(button[aria-pressed="true"]) { display:flex; }
+      .scm-toolkit-queue-pause button { border:0; border-radius:4px; padding:3px 6px; background:transparent; color:var(--scm-toolkit-queue-accent,var(--vscode-focusBorder)); cursor:pointer; font:inherit; font-size:12px; }
+      .scm-toolkit-queue-pause button:hover { background:var(--vscode-toolbar-hoverBackground); }
+      .scm-toolkit-queue-pause [role=status] { font-size:12px; color:var(--vscode-descriptionForeground); }
       .scm-toolkit-queue-editor { min-width:0; padding:8px; border:1px solid var(--vscode-focusBorder,#888); border-radius:8px; background:var(--vscode-input-background); margin:4px 0; }
       .scm-toolkit-queue-editor textarea { display:block; box-sizing:border-box; width:100%; min-height:72px; max-height:none; overflow-y:hidden; resize:vertical; border:0; outline:0; background:transparent; color:inherit; font:inherit; line-height:1.5; white-space:pre-wrap; }
       .scm-toolkit-queue-editor footer { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:12px; }
@@ -275,6 +316,38 @@
         }
     }, true);
     function maintain() {
+        const visible = new Set();
+        for (const row of document.querySelectorAll('[data-scm-toolkit-queue-id]')) {
+            const adapter = adapterFor(row);
+            if (!adapter) continue;
+            const key = JSON.stringify([adapter.hostId, adapter.threadId]);
+            if (visible.has(key)) continue;
+            visible.add(key);
+            let entry = pausedQueues.get(key);
+            if (!entry) {
+                const bar = document.createElement('div'); bar.className = 'scm-toolkit-queue-pause';
+                const button = document.createElement('button'); button.type = 'button';
+                const message = document.createElement('span'); message.setAttribute('role', 'status');
+                bar.append(button, message);
+                const pause = new QueuePause(adapter, state => {
+                    const label = state.pending ? 'Pausing…' : state.lease ? 'Resume' : 'Pause queue';
+                    if (button.textContent !== label) button.textContent = label;
+                    button.disabled = Boolean(state.pending);
+                    button.setAttribute('aria-pressed', String(Boolean(state.lease)));
+                    const text = state.error || (state.lease ? 'Queued messages are paused' : '');
+                    if (message.textContent !== text) message.textContent = text;
+                });
+                button.textContent = 'Pause queue';
+                button.title = 'Pause automatic queued sends; the current response continues';
+                button.setAttribute('aria-pressed', 'false');
+                button.addEventListener('click', () => { void pause.toggle(); });
+                entry = {bar, pause}; pausedQueues.set(key, entry);
+            }
+            const rail = row.closest('[data-composer-rail-item]');
+            const host = rail?.firstElementChild || row.parentElement;
+            if (host && entry.bar.parentElement !== host) host.prepend(entry.bar);
+        }
+        for (const [key, entry] of pausedQueues) if (!visible.has(key)) entry.bar.remove();
         for (const button of document.querySelectorAll('[data-composer-rail] button')) {
             if (button.textContent.trim() !== 'View changes') continue;
             const text = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
@@ -296,6 +369,10 @@
     }
     new MutationObserver(() => { try { maintain(); } catch {} }).observe(document.documentElement, {childList:true, subtree:true});
     maintain();
+    window.addEventListener('pagehide', () => {
+        for (const {pause} of pausedQueues.values()) pause.dispose();
+        pausedQueues.clear();
+    });
     window.addEventListener('storage', event => {
         for (const {edit} of sessions.values()) if (event.key === edit.key) {
             try { edit.checkOwnership(); } catch {}

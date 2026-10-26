@@ -13,7 +13,7 @@ COLOR_SETTINGS = (
     "codexComposerLabelColor",
     "codexDropAccent",
 )
-APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel",)
+APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel", "codexShowQueuedDelete", "codexShowQueuePause")
 FONT_START = '/* scm-toolkit-font-fallback:'
 FONT_END = '/* scm-toolkit-font-fallback:end */'
 
@@ -87,6 +87,10 @@ def transform(css, settings, remove=False):
         f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
         f'{{ fill: {dot_color} !important; }}'
     ]
+    if not settings.get('codexShowQueuedDelete', True):
+        rules.append(f'{scope} [data-scm-toolkit-queue-id] button[aria-label="Delete queued message"] {{ display: none !important; }}')
+    if settings.get('codexShowQueuePause', False):
+        rules.append(f'{scope} {{ --scm-toolkit-queue-pause-display: flex; }}')
     if settings.get('codexHideAccessLabel', False):
         # Keep the current mode in the accessibility tree via aria-describedby.
         # The icon is a sibling of the value, so it stays visible and clickable.

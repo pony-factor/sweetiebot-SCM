@@ -151,6 +151,7 @@
         "test_codex_image_drop.js",
         "test_codex_image_drop.py",
         "test_codex_keep_awake.js",
+        "test_codex_queue_pause.js",
         "test_codex_keep_awake.py",
         "test_codex_label.py",
         "test_codex_permissions.js",
