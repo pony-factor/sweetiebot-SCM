@@ -312,6 +312,7 @@
     "installation": {
       "label": "Installation and configuration",
       "tests": [
+        "test_ci_browser_routing.py",
         "test_configurator.py",
         "test_diagnostics.py",
         "test_extension_cache.js",
