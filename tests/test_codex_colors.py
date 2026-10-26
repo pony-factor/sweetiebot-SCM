@@ -46,6 +46,7 @@ class CodexColorTests(unittest.TestCase):
         self.assertIn('[data-composer-navigation-target="run-location"]', patched)
         self.assertIn('[data-composer-navigation-target="add-context"]', patched)
         self.assertNotIn('--vscode-foreground:', patched)
+        self.assertIn('scm-toolkit-pegasus-send::after { background-color: #ffffff !important; }', patched)
 
     def test_new_chat_dot_follows_send_button_or_uses_explicit_color(self):
         selector = 'svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"]'

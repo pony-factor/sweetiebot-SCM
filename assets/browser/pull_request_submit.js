@@ -110,7 +110,7 @@
         }
         latest = url.href;
       }
-      if (mergeLaunch) {
+      if (mergeLaunch && !latest) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
         for (const code of document.querySelectorAll('[data-message-author-role="assistant"] pre code, [data-message-author-role="assistant"] pre, [data-message-author-role="assistant"] [data-testid="code-block"]')) {

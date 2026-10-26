@@ -284,22 +284,67 @@ def browser_globe_new_tab_edits(js, home_url=None):
     match = matches[0]
     original = match.group(0)
     start = f'async run({match.group("accessor")}){{'
-    # VS Code's native NewTab action unconditionally opens the URL picker,
-    # even when our browser resolver assigns a homepage. Opening with an
-    # explicit URL avoids that picker and lets the loaded page receive focus.
-    command = "Open" if home_url is not None else "NewTab"
-    destination = (
-        f',{json.dumps(home_url or "https://chatgpt.com/")}'
-        if home_url is not None else ""
-    )
+
+    # Preserve the group containing the currently active editor, including
+    # splits and auxiliary windows. Scope the override to Sweetiebot's globe;
+    # normal Browser: Open commands keep their configured placement.
+    options = '{scmToolkitPreferActiveGroup:true}'
+    if home_url is not None:
+        options = (
+            '{url:' + json.dumps(home_url or "https://chatgpt.com/")
+            + ',scmToolkitPreferActiveGroup:true}'
+        )
     replacement = original.replace(
         start,
         start + f'return {match.group("accessor")}.get({match.group("service")})'
-        f'.executeCommand({match.group("commands")}.{command}{destination});',
+        f'.executeCommand({match.group("commands")}.Open,{options});',
         1,
     )
-    return [(original, replacement)]
 
+    # Open accepts URL/side options, but ordinarily resolves the main/default
+    # editor group. Honor our opt-in group hint using the active editor pane.
+    # Explicit open-to-side still wins, and other calls remain unchanged.
+    open_anchor = rf'id:{re.escape(match.group("commands"))}\.Open,'
+    opens = list(re.finditer(open_anchor, js))
+    if len(opens) != 1:
+        raise ValueError("Unsupported VS Code build: browser open action does not match.")
+    open_segment = js[opens[0].end():opens[0].end() + 8500]
+    run = re.search(
+        rf'async run\((?P<accessor>{ident}),(?P<arg>{ident})\)\{{',
+        open_segment[:2500],
+    )
+    if not run:
+        raise ValueError("Unsupported VS Code build: browser open arguments do not match.")
+    body = open_segment[run.end():]
+    preferred = re.search(
+        rf'(?P<browser>{ident})\.getPreferredGroup\('
+        rf'(?P<options>{ident})\.openToSide\?(?P<side>{ident}):'
+        rf'(?P<fallback>void 0|undefined)\)',
+        body[:2500],
+    )
+    if not preferred:
+        raise ValueError("Unsupported VS Code build: browser open placement does not match.")
+    before = body[:preferred.start()]
+    after = body[preferred.end():preferred.end() + 4000]
+    bindings = re.findall(
+        rf'(?<![\w$])({ident})\s*=\s*{re.escape(run.group("accessor"))}'
+        rf'\.get\({ident}\)',
+        before,
+    )
+    editors = [
+        name for name in bindings
+        if re.search(rf'(?<![\w$]){re.escape(name)}\.openEditor\(', after)
+    ]
+    if len(editors) != 1:
+        raise ValueError("Unsupported VS Code build: browser open editor service does not match.")
+    native_original = preferred.group(0)
+    native_replacement = (
+        f'{preferred.group("browser")}.getPreferredGroup('
+        f'{preferred.group("options")}.openToSide?{preferred.group("side")}:'
+        f'{preferred.group("options")}.scmToolkitPreferActiveGroup?'
+        f'{editors[0]}.activeEditorPane?.group:{preferred.group("fallback")})'
+    )
+    return [(original, replacement), (native_original, native_replacement)]
 
 
 def browser_cross_window_reopen_edits(js):
@@ -1529,14 +1574,15 @@ def main():
     # Clean the legacy source edits while retaining the requested native-control placement.
     inline_location = settings["codexInlineLocation"] and not args.uninstall
     clipboard_submit = settings["codexClipboardSubmit"] and not args.uninstall
+    send_wing = settings.get("codexSendWing", True) and not args.uninstall
     for composer_path, composer_old, composer_new in codex_composer.patch_files(
-        args.codex_extension, inline=inline_location, paste_button=clipboard_submit
+        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing
     ):
         if composer_path in paths:
             index = paths.index(composer_path)
             new[index] = codex_composer.transform_layout(
                 new[index], inline_location, clipboard_submit,
-                codex_composer.clipboard_module(composer_path) if clipboard_submit else None)
+                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing)
         else:
             paths.append(composer_path)
             old.append(composer_old)

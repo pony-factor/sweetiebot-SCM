@@ -120,14 +120,16 @@
         "test_pr_pending_commit_eligibility.js",
         "test_pr_workflows.js",
         "test_pull_request.js",
-        "test_squash_attribution.js"
+        "test_squash_attribution.js",
+        "test_ai_review_reply.js"
       ],
       "syntax": [
         "efs/github_pr_actions.js",
         "efs/github_rate_limit.js",
         "efs/github_user_api.js",
         "efs/human_squash_merge.js",
-        "efs/merge_pull_request.js"
+        "efs/merge_pull_request.js",
+        "efs/ai_review_reply.js"
       ]
     },
     "codex": {
@@ -156,6 +158,7 @@
         "test_codex_label.py",
         "test_codex_permissions.js",
         "test_codex_rate_limit_controls.js",
+        "test_codex_send_wing.js",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
         "test_codex_short_model_labels.js",
@@ -168,6 +171,7 @@
         "test_codex_workspace_handoff.js"
       ],
       "syntax": [
+        "assets/codex/send-wing.js",
         "assets/codex/image-drop.js",
         "assets/codex/permissions-host.js",
         "assets/codex/permissions-webview.js",

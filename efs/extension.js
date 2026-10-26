@@ -10,6 +10,7 @@ const { registerBranchCommands } = require('./branch_actions');
 const { registerCodexCommitCommand } = require('./codex_commit');
 const { registerCommitShortcut } = require('./commit_shortcut');
 const { registerBackgroundCommit } = require('./background_commit');
+const { registerAiReviewReply } = require('./ai_review_reply');
 const { registerAutoCodexCommit } = require('./auto_codex_commit');
 const { registerPullRequestCommand } = require('./pull_request');
 const { resumePRSession } = require('./pr_session');
@@ -431,6 +432,7 @@ async function activate(context) {
   registerCodexCommitCommand(vscode, context);
   registerCommitShortcut(vscode, context);
   registerBackgroundCommit(vscode, context);
+  registerAiReviewReply(vscode, context);
   registerAutoCodexCommit(vscode, context);
   registerPullRequestCommand(vscode, context);
   // Schedule after activation completes so command execution never waits on

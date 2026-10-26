@@ -121,6 +121,18 @@ def browser_resolver_fixture():
     )
 
 
+def browser_open_action_fixture():
+    # Minified native Open action: default placement differs from a clicked
+    # title-bar globe when multiple editor groups or auxiliary windows exist.
+    return (
+        'id:Fc.Open,title:O(2,"Open Integrated Browser")}'
+        'async run(o,n){const a=o.get(EditorService),b=o.get(TelemetryService),c=o.get(BrowserService);'
+        'const t=typeof n=="string"?{url:n}:n??{},'
+        'r=await c.getPreferredGroup(t.openToSide?SIDE_GROUP:void 0);'
+        'await a.openEditor({resource:"browser",options:{viewState:{url:t.url}}},r)}'
+    )
+
+
 class TransformTests(unittest.TestCase):
     def test_live_component_assets_update_without_repatching_workbench(self):
         import hashlib
@@ -678,18 +690,31 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
                   'if(e.getContextualBrowserViews().size>0){'
                   'await t.executeCommand(Fc.QuickOpen);return}'
                   'await t.executeCommand(Fc.Open)}')
-        original = workbench_fixture() + action
+        original = workbench_fixture() + action + browser_open_action_fixture()
         enabled = dict(SETTINGS, browserGlobeNewTab=True)
         patched = install.transform(original, "base-css", settings=enabled)
-        self.assertIn('async run(o){return o.get(be).executeCommand(Fc.NewTab);', patched[0])
+        self.assertIn(
+            'async run(o){return o.get(be).executeCommand(Fc.Open,'
+            '{scmToolkitPreferActiveGroup:true});',
+            patched[0],
+        )
+        self.assertIn(
+            'c.getPreferredGroup(t.openToSide?SIDE_GROUP:'
+            't.scmToolkitPreferActiveGroup?a.activeEditorPane?.group:void 0)',
+            patched[0],
+        )
         self.assertEqual(install.transform(*patched, remove=True, settings=enabled), (original, "base-css"))
         disabled = install.transform(*patched, settings=dict(enabled, browserGlobeNewTab=False))
         self.assertIn(action, disabled[0])
+        self.assertIn(browser_open_action_fixture(), disabled[0])
         with self.assertRaisesRegex(ValueError, "browser globe action"):
             install.browser_globe_new_tab_edits("unsupported")
         with self.assertRaisesRegex(ValueError, "browser globe action"):
             install.browser_globe_new_tab_edits(action + action)
-
+        with self.assertRaisesRegex(ValueError, "browser open action"):
+            install.browser_globe_new_tab_edits(action)
+        with self.assertRaisesRegex(ValueError, "browser open placement"):
+            install.browser_globe_new_tab_edits(action + 'id:Fc.Open,async run(o,n){return 1}')
 
     def test_browser_globe_homepage_does_not_focus_address_picker(self):
         action = ('id:Fc.OpenOrList,title:O(1,"Browser"),icon:L.globe}'
@@ -697,7 +722,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
                   'if(e.getContextualBrowserViews().size>0){'
                   'await t.executeCommand(Fc.QuickOpen);return}'
                   'await t.executeCommand(Fc.Open)}')
-        original = workbench_fixture() + action + browser_resolver_fixture()
+        original = workbench_fixture() + action + browser_open_action_fixture() + browser_resolver_fixture()
         for requested_url in ("https://chatgpt.com/", "https://example.com/chat", ""):
             with self.subTest(url=requested_url):
                 enabled = dict(
@@ -708,7 +733,8 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
                 destination = requested_url or "https://chatgpt.com/"
                 # URL-bearing Open skips the native NewTab URL picker.
                 self.assertIn(
-                    f'async run(o){{return o.get(be).executeCommand(Fc.Open,{json.dumps(destination)});',
+                    f'async run(o){{return o.get(be).executeCommand(Fc.Open,'
+                    f'{{url:{json.dumps(destination)},scmToolkitPreferActiveGroup:true}});',
                     patched[0],
                 )
                 self.assertNotIn(
@@ -723,6 +749,42 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
                     install.transform(*patched, remove=True, settings=enabled),
                     (original, "base-css"),
                 )
+
+    def test_browser_globe_targets_active_split_without_changing_other_opens(self):
+        import shutil
+
+        if not shutil.which("node"):
+            self.skipTest("Node.js is unavailable")
+        action = ('id:Fc.OpenOrList,title:O(1,"Browser"),icon:L.globe}'
+                  'async run(o){let e=o.get(cd),t=o.get(be);'
+                  'if(e.getContextualBrowserViews().size>0){'
+                  'await t.executeCommand(Fc.QuickOpen);return}'
+                  'await t.executeCommand(Fc.Open)}')
+        original = action + browser_open_action_fixture()
+        patches = install.browser_globe_new_tab_edits(original, "https://chatgpt.com/")
+        for old, new in patches:
+            self.assertEqual(original.count(old), 1)
+            original = original.replace(old, new)
+        native_action = original.split('id:Fc.Open,title:O(2,"Open Integrated Browser")}', 1)[1]
+        script = (
+            'const EditorService="editor",TelemetryService="telemetry",'
+            'BrowserService="browser",SIDE_GROUP="side";'
+            'const opened=[];'
+            'const editor={activeEditorPane:{group:{id:"right"}},'
+            'async openEditor(resource,group){opened.push({resource,group})}};'
+            'const browser={async getPreferredGroup(group){return group??{id:"first"}}};'
+            'const accessor={get(id){return id==="editor"?editor:id==="browser"?browser:{}}};'
+            'const native={' + native_action + '};'
+            '(async()=>{'
+            'await native.run(accessor,{url:"https://chatgpt.com/",scmToolkitPreferActiveGroup:true});'
+            'await native.run(accessor,{url:"https://example.com"});'
+            'await native.run(accessor,{openToSide:true,scmToolkitPreferActiveGroup:true});'
+            'if(opened.length!==3||opened[0].group.id!=="right"'
+            '||opened[1].group.id!=="first"||opened[2].group!=="side")'
+            'throw Error(JSON.stringify(opened));'
+            '})().catch(e=>{console.error(e);process.exit(1)});'
+        )
+        subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
 
     def test_cross_window_browser_views_reopen_without_reusing_foreign_ids(self):
         original = workbench_fixture() + browser_cross_window_fixture()

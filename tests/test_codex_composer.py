@@ -30,6 +30,20 @@ class RetiredComposerPatchTests(unittest.TestCase):
         self.assertIn(codex_composer.PLACEHOLDER_DISPLAY_START, patched)
         self.assertEqual(codex_composer.transform_placeholders(patched, {}), original)
 
+    def test_send_wing_patch_is_independent_and_reversible(self):
+        source = '/* composer.placeholder.localFollowUp.locally */\nbase;'
+        wing = codex_composer.transform_layout(source, inline=False, wing_button=True)
+        self.assertIn(codex_composer.WING_START, wing)
+        self.assertIn('scm-toolkit-pegasus-send', wing)
+        self.assertNotIn(codex_composer.LAYOUT_START, wing)
+        self.assertEqual(codex_composer.transform_layout(wing, False, wing_button=True), wing)
+        self.assertEqual(codex_composer.transform_layout(wing, False), source)
+        both = codex_composer.transform_layout(source, False, paste_button=True, wing_button=True)
+        self.assertIn(codex_composer.PASTE_START, both)
+        self.assertEqual(codex_composer.transform_layout(both, False), source)
+        with self.assertRaisesRegex(ValueError, 'send wing'):
+            codex_composer.transform_layout(source + codex_composer.WING_START, False)
+
     def test_clipboard_native_service_discovery_and_reinstallation(self):
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory) / 'app-initial-fixture.js'
