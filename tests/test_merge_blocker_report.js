@@ -8,7 +8,7 @@ assert.equal(firstDiffAnchor('not a patch'), null);
 (async () => {
   let writes = [], comments = [], reviews = [], moved = false;
   const paths = ['options.html','options.js'];
-  const decisions = [
+  let decisions = [
     {path:paths[0],title:'Retain the independent checkboxes',description:'Main adds sidebar controls. The PR adds heading controls. Keep both sets under the existing section with distinct IDs; neither replaces the other.'},
     {path:paths[1],title:'Wire all settings through persistence',description:'Main and the PR add separate storage keys. Retain each default, load/save assignment, and listener so toggling either preference survives reopening.'}
   ];
@@ -38,22 +38,36 @@ assert.equal(firstDiffAnchor('not a patch'), null);
   const run = extra => publishBlockerReport({repository:'o/r',pr,reason:'Patch error',paths,api,...extra});
   const empty=await run(); assert(!empty.posted); assert.equal(writes.length,0,'Do not turn file names into fabricated analysis or choices');
   assert.deepEqual(blockerOptions({state:'conflict'}),[],'Preserving both intentions is automatic, not a generic choice');
-  assert((await run({decisions})).posted);
+  assert(!(await run({decisions})).posted, 'Routine compatible integration stays local');
+  assert(!(await run({decisions, kind:'human_review'})).posted, 'No invented choice when there are no distinct implementations');
+  assert.equal(writes.length, 0);
+  decisions = decisions.map(note => ({ ...note, description: note.description + '\n\n<!-- sweetiebot-merge-options\n' + JSON.stringify({
+    version:1, headSha:pr.headSha, baseSha:'b'.repeat(40), options:[
+      {id:'shared-settings',label:'Share the existing settings',prompt:'Use the existing shared storage keys for both controls.'},
+      {id:'isolated-settings',label:'Keep settings independent',prompt:'Give the two controls separate storage keys and defaults.'}
+    ]
+  }) + '\n-->' }));
+  assert((await run({decisions, kind:'human_review'})).posted);
   assert.equal(writes.length,1,'One review groups every file comment under its summary');
   assert.equal(writes[0].body.comments.length,2);
+  assert.equal(writes[0].body.body, '<!-- sweetiebot-merge-analysis-review -->\n'
+    + '`options.html`: Keep both sets under the existing section with distinct IDs; neither replaces the other.\n\n'
+    + '`options.js`: Retain each default, load/save assignment, and listener so toggling either preference survives reopening.');
+  assert(!writes[0].body.body.includes(pr.title), 'The review summary does not repeat the PR title');
   assert.equal(writes[0].body.comments[0].line,5); assert.equal(writes[0].body.commit_id,pr.headSha);
   assert(writes[0].body.comments[0].body.includes(decisions[0].description));
-  for (const body of [writes[0].body.body, ...writes[0].body.comments.map(note => note.body)]) {
-    assert(!/sweetiebot-merge-options|React with|implementation action|matching Lindsey action/.test(body), 'Compatible changes never request reaction approval, including inline threads');
-  }
-  assert((await run({decisions})).posted);
+  assert(!writes[0].body.body.includes('sweetiebot-merge-options'), 'Structured choice metadata stays out of the summary');
+  assert(writes[0].body.comments.every(note => note.body.includes('sweetiebot-merge-options') && note.body.includes('<!-- sweetiebot-merge-review -->')), 'Real decisions expose selectable choices to Lindsey');
+  assert((await run({decisions, kind:'human_review'})).posted);
   assert.equal(writes[1].method,'PUT','Update the same review summary');
   assert.equal(writes[2].method,'PATCH');
   assert.equal(writes[2].endpoint,'repos/o/r/pulls/comments/1','Update the existing inline comment in the grouped review');
   comments[0].body='<!-- sweetiebot-merge-review -->\n### Automatic integration stopped\nOld generic choices';
-  assert((await run({decisions})).posted); assert(!comments[0].body.includes('Automatic integration stopped'),'Replace legacy boilerplate in place');
+  assert((await run({decisions, kind:'human_review'})).posted); assert(!comments[0].body.includes('Automatic integration stopped'),'Replace legacy boilerplate in place');
+  const stale = decisions.map(note => ({...note,description:note.description.replace('b'.repeat(40),'c'.repeat(40))}));
+  assert(!(await run({decisions:stale, kind:'human_review'})).posted, 'Stale choices never publish against a newer base');
   moved=true;
-  const stopped=await run({decisions}); assert(!stopped.posted); assert.equal(stopped.notes.length,2,'Substantive local explanations survive GitHub publication failure');
+  const stopped=await run({decisions, kind:'human_review'}); assert(!stopped.posted); assert.equal(stopped.notes.length,2,'Substantive local explanations survive GitHub publication failure');
   assert.equal(writes.length,7,'Never post against a changed head');
   console.log('Per-file analysis, real anchors, legacy replacement and snapshot checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -43,7 +43,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       conflictPaths: secondAttempt === 1 ? ['price.js'] : [], baseSha: d }] };
   } });
   try {
-    assert(batch.instructions.includes('Return the oldest eligible remaining PR'));
+    assert(batch.instructions.includes('INTELLIGENT MERGE ORDER'));
     const tooMany = await submit(batch.url, [item(1, c), item(2, c)]);
     assert.equal(tooMany.status, 400);
     assert.equal(calls, 0, 'Do not prepare stale multi-PR patches in one round');
@@ -71,6 +71,28 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(calls, 3, 'Replaying an earlier round cannot execute it twice');
   } finally { batch.dispose(); }
 
+  let repairAttempts=0;
+  const repairSelection={...selection,pullRequests:[selection.pullRequests[0]]};
+  const repair=await createMergeBatch(repairSelection,{api,destination:'https://chatgpt.com/',branchOnly:true,
+    execute:async body=>{
+      assert.equal(body.results[0].operation,'sync');repairAttempts++;
+      return {repository:selection.repository,results:[{number:1,status:repairAttempts===1?'needs_resolution':'synced',
+        merged:false,sha:a,previousHeadSha:a,conflictPaths:repairAttempts===1?['options.html']:[]}]};
+    }});
+  try {
+    const forbidden=await submit(repair.url,[{...item(1,c),operation:'merge'}]);
+    assert.equal(forbidden.status,400);assert.equal(repairAttempts,0);
+    const first=await submit(repair.url,[{...item(1,c),operation:'sync'}]);
+    assert(first.value.continueUrl,'Manual PR repair automatically continues after discovering conflicts');
+    const prompt=new URLSearchParams(new URL(first.value.continueUrl).hash.slice(1)).get('q');
+    assert(prompt.includes('BRANCH-ONLY EXECUTION'));
+    assert(prompt.includes('options.html'));
+    const second=await submit(first.value.continueUrl,[{...item(1,c,'complete patch\n'),operation:'sync'}]);
+    assert.equal(second.value.batch.prepared.length,1);
+    assert.equal(second.value.batch.merged.length,0,'A branch fix never claims a merge');
+    assert.equal(second.value.continueUrl,undefined,'Successful synchronization finishes the repair loop');
+  } finally {repair.dispose();}
+
   // GitHub retargets children to the merged parent's destination when its
   // branch is deleted. Unrelated base changes still require a fresh selection.
   for (const [retarget, headChanged] of [['main', false], ['unrelated', false], ['main', true]]) {
@@ -95,6 +117,9 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       }
     });
     try {
+      const premature = await submit(stacked.url, [item(2, c)]);
+      assert.equal(premature.status, 400, 'A selected child cannot merge before its ancestor');
+      assert.equal(parentMerged, false, 'Dependency rejection performs no local execution');
       const first = await submit(stacked.url, [item(1, c)]);
       if (retarget === 'main' && !headChanged) {
         assert.equal(first.value.batch.pullRequests.find(pr => pr.number === 2).base, 'main');
@@ -182,11 +207,11 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   const pageScript = page.match(/<script>([\s\S]*?)<\/script>/)[1];
   const next = 'https://chatgpt.com/#sweetiebot_merge=1&q=Refreshed%20round';
   for (const destination of [next, 'https://example.com/#sweetiebot_merge=1']) {
-    const elements = { status: {}, results: {} }, navigations = [];
+    const elements = { status: {}, results: {after(){}} }, navigations = [];
     await require('node:vm').runInNewContext(pageScript, { URL, URLSearchParams,
       location: { hash: '#result=' + encodeURIComponent('{}'), pathname: '/lindsey-merge/fixture', assign: url => navigations.push(url) },
-      history: { replaceState() {} }, document: { getElementById: id => elements[id] },
-      setTimeout: callback => callback(), fetch: async () => ({ ok: true, json: async () => ({
+      history: { replaceState() {} }, document: { getElementById: id => elements[id], createElement:()=>({}) },
+      setInterval: () => 1, clearInterval() {}, fetch: async () => ({ ok: true, json: async () => ({
         results: [], batch: { merged: [1], deferred: [] }, continueUrl: destination }) }) });
     assert.deepEqual(navigations, destination === next ? [next] : [], 'Only a verified ChatGPT merge continuation is followed');
   }

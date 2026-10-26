@@ -14,7 +14,7 @@ COLOR_SETTINGS = (
     "codexComposerLabelColor",
     "codexDropAccent",
 )
-APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel", "codexFlatComposer")
+APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel", "codexFlatComposer", "codexShowQueuedDelete", "codexShowQueuePause")
 FONT_START = '/* scm-toolkit-font-fallback:'
 FONT_END = '/* scm-toolkit-font-fallback:end */'
 
@@ -107,7 +107,9 @@ def transform(css, settings, remove=False):
         'var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
         'var(--color-text-info)))'
     )
+    # The queued-message controls share the user's theme accent.
     rules = [
+        f'{scope} {{ --scm-toolkit-queue-accent: {label or background or "var(--vscode-focusBorder, var(--color-text-info))"}; }}',
         f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
         f'{{ fill: {dot_color} !important; }}'
     ]
@@ -121,6 +123,10 @@ def transform(css, settings, remove=False):
         f'{{ color: {dot_color} !important; background-color: color-mix(in srgb, {dot_color} 18%, transparent) !important; '
         f'box-shadow: inset 0 0 0 1px color-mix(in srgb, {dot_color} 72%, transparent) !important; }}',
     ])
+    if not settings.get('codexShowQueuedDelete', True):
+        rules.append(f'{scope} [data-scm-toolkit-queue-id] button[aria-label="Delete queued message"] {{ display: none !important; }}')
+    if settings.get('codexShowQueuePause', False):
+        rules.append(f'{scope} {{ --scm-toolkit-queue-pause-display: flex; }}')
     if settings.get('codexFlatComposer', False):
         rules.append((Path(__file__).resolve().parent.parent / 'assets/codex/flat-composer.css').read_text())
     if settings.get('codexHideAccessLabel', False):

@@ -63,7 +63,7 @@
   }
   const collectResult = () => {
     if (!callback) return;
-    const expires = Date.now() + (mergeLaunch ? 3600000 : 1200000);
+    const expires = Date.now() + (mergeLaunch ? 6 * 3600000 : 1200000);
     let previous, stableSince;
     let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
     let recoveryAllowed = true;
@@ -113,11 +113,21 @@
       if (mergeLaunch && !latest) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
-        for (const code of document.querySelectorAll('[data-message-author-role="assistant"] pre code')) {
+        for (const code of document.querySelectorAll('[data-message-author-role="assistant"] pre code, [data-message-author-role="assistant"] pre, [data-message-author-role="assistant"] [data-testid="code-block"]')) {
           try {
-            const input = JSON.parse(code.textContent || '');
+            const text = code.textContent || '';
+            // Some ChatGPT code blocks include their language/copy toolbar
+            // in pre.textContent and have no nested <code> element.
+            const start = text.indexOf('{'), end = text.lastIndexOf('}');
+            if (start < 0 || end < start) continue;
+            const input = JSON.parse(text.slice(start, end + 1));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
-            const url = callback.href + '#result=' + encodeURIComponent(JSON.stringify(input));
+            // encodeURIComponent leaves Markdown delimiters such as () raw.
+            // Build the URL locally with strict encoding so patch syntax
+            // cannot terminate a rendered Markdown destination.
+            const encoded = encodeURIComponent(JSON.stringify(input)).replace(/[!'()*]/g,
+              character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
+            const url = callback.href + '#result=' + encoded;
             if (url.length <= 80000) latest = url;
           } catch { /* Incomplete code blocks remain in the chat until complete. */ }
         }
