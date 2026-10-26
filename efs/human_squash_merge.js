@@ -96,7 +96,7 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
   };
   if (commits.length !== 1) {
     if (allowHistoryRewrite) return prepareSquash();
-    throw Error('No-force-push policy: cannot squash multiple original PR commits under a verified human author without rewriting the PR branch. The PR remains open; request human review.');
+    throw Error('No-force-push policy: cannot squash multiple original PR commits under a verified human author without rewriting the PR branch. No push was attempted. Use Merge preserving commits to retain the original history.');
   }
   const originalCommit = commits[0];
   if (originalCommit.sha && originalCommit.sha !== headSha) {
@@ -113,7 +113,7 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
           (/(?:\bWeb|\bWeb\))$/i.test(coauthor[1]));
       })) {
     if (allowHistoryRewrite) return prepareSquash();
-    throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title, ten-underscore separator, and required Codex Web credit. Leave the PR open rather than rewriting it.');
+    throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title, ten-underscore separator, and required Codex Web credit. No push was attempted. Use Merge preserving commits rather than rewriting this PR branch.');
   }
   const repositoryInfo = await api(root);
   if (repositoryInfo?.allow_rebase_merge !== true) {
