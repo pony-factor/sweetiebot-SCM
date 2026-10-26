@@ -28,7 +28,7 @@ async function asyncCommitPending(repository, { background = true, refs = ['HEAD
   // A checkout may have a .git directory or a linked-worktree .git file.
   // If a real checkout's metadata cannot be inspected, fail closed.
   try {
-    const installedScript = path.join(__dirname, '../commits/background_commit.py');
+    const installedScript = path.join(__dirname, '../background_commit.py');
     const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/background_commit.py');
     const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
       script, background ? '--pending' : '--pending-legacy', ...refs
@@ -584,7 +584,7 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     unfinishedBase = /^(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])$/.test(stdout.trim());
   }
   if (unfinishedBase || await asyncCommitPending(repository, { refs: [`refs/heads/${defaultBranch}`] })) {
-    const installedScript = path.join(__dirname, '../commits/background_commit.py');
+    const installedScript = path.join(__dirname, '../background_commit.py');
     const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/background_commit.py');
     forkScript = script;
   } else if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {

@@ -48,9 +48,9 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
         else { main.state.HEAD.behind = 0; callback(null, '', ''); }
       }
     } };
-    if (name === './lindsey_conflicts') return require('../efs/merge/lindsey_conflicts');
+    if (name === '../merge/lindsey_conflicts') return require('../efs/merge/lindsey_conflicts');
     if (name === './branch_name_selection') return require('../efs/branches/branch_name_selection');
-    if (name.startsWith('./')) return require('../efs/' + name.slice(2));
+    if (name.startsWith('.')) return require(path.resolve(__dirname, '../efs/branches', name));
     return require(name);
   },
   Date: { now() { return clock; } },

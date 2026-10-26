@@ -238,7 +238,7 @@ class UpdateTests(unittest.TestCase):
             self.assertIsNotNone(prepare())
             legacy.with_name(legacy.name + '-spellcheck.py').symlink_to(helper)
             self.assertIsNone(prepare())
-            for target in [destination / 'post_commit_spellcheck_notice.js', destination / 'ai_commit.py', wrapper, helper, async_helper]:
+            for target in [destination / 'commits' / 'post_commit_spellcheck_notice.js', destination / 'ai_commit.py', wrapper, helper, async_helper]:
                 expected = target.read_bytes()
                 target.write_text('stale runtime')
                 self.assertIsNotNone(prepare())

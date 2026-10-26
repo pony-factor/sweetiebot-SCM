@@ -21,7 +21,7 @@ function branchDisplayLabel(branch, catalog) {
 }
 
 function ponyCatalog() {
-  for (const file of [path.join(__dirname, '../branches/branch_name_packs.json'),
+  for (const file of [path.join(__dirname, '../branch_name_packs.json'),
     path.join(__dirname, '../../', 'scripts', 'branch_name_packs.json')]) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* Optional display enrichment. */ }
   }

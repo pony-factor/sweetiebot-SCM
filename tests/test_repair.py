@@ -59,7 +59,7 @@ class RepairTests(unittest.TestCase):
             self.assertIn(install.BACKGROUND_GIT_START, git_extension.read_text())
             destination = workspace_search.extension_destination(extensions)
             helper = wrapper_path.with_name(wrapper_path.name + '-spellcheck.py')
-            notice = destination / 'post_commit_spellcheck_notice.js'
+            notice = destination / 'commits' / 'post_commit_spellcheck_notice.js'
             # A later startup must repair these even when the app patch is current.
             helper.write_text('stale helper')
             notice.write_text('stale notice')
@@ -67,7 +67,7 @@ class RepairTests(unittest.TestCase):
                 install.main()
                 write.assert_not_called()
             self.assertEqual(helper.read_bytes(), (install.HERE / 'post_commit_spellcheck.py').read_bytes())
-            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / notice.name).read_bytes())
+            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / 'commits' / notice.name).read_bytes())
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=wrapper_path))
             self.assertFalse(workspace_search.sync_extension(check=True, settings=dict(toolkit_settings.DEFAULT_SETTINGS)))
             picker.assert_not_called()
@@ -78,7 +78,7 @@ class RepairTests(unittest.TestCase):
             self.assertIn(Path('codex-customizations/assets/workbench') / name, sources)
         self.assertIn(Path('codex-customizations/scripts/repair.py'), sources)
         self.assertIn(Path('codex-customizations/scripts/update.py'), sources)
-        for name in ('github_pr_refresh.js', 'github_pr_actions.js', 'package.json'):
+        for name in ('github/github_pr_refresh.js', 'github/github_pr_actions.js', 'package.json'):
             self.assertIn(Path('codex-customizations/efs') / name, sources)
 
     def test_remote_update_check_is_shared_between_windows(self):

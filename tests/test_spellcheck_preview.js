@@ -42,7 +42,7 @@ async function run() {
     clearTimeout: () => {},
     require(name) {
       if (name === 'child_process') return { spawn };
-      if (name === './python_runtime') {
+      if (name === '../ui/python_runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
           pythonLaunchError: error => error

@@ -7,8 +7,8 @@ const { promisify } = require('node:util');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
 
 async function mergedBranchAction(repository, ...args) {
-  const script = existsSync(path.join(__dirname, 'merged_branch.py'))
-    ? path.join(__dirname, 'merged_branch.py') : path.join(__dirname, '../../scripts/merged_branch.py');
+  const script = existsSync(path.join(__dirname, '../merged_branch.py'))
+    ? path.join(__dirname, '../merged_branch.py') : path.join(__dirname, '../../scripts/merged_branch.py');
   const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [script, ...args], {
     cwd: repository.rootUri.fsPath, timeout: 120000
   });

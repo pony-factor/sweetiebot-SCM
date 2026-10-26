@@ -8,7 +8,7 @@ let tick, cleared = false, enabled = true, refreshed = 0, outputDisposed = false
 const child = () => { const result = new EventEmitter(); result.stdout = new EventEmitter(); result.stderr = new EventEmitter(); result.kill = () => { result.killed = true; }; return result; };
 const sandbox = { module: {exports:{}}, process,
   require(name) {
-    if (name === './python_runtime') return {resolvePythonExecutable(){return '/resolved/python3';}};
+    if (name === '../ui/python_runtime') return {resolvePythonExecutable(){return '/resolved/python3';}};
     assert.equal(name,'child_process'); return {spawn(executable,args,options) {
     assert.equal(executable,'/resolved/python3');
     assert.deepEqual(Array.from(args), ['/extension/prune_merged_branches.py','--force','--repo','/repo with spaces']);

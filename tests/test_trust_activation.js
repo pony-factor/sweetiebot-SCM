@@ -17,7 +17,7 @@ async function fixture(trusted) {
   const sandbox = { module: { exports: {} }, console, setImmediate,
     require(name) {
       if (name === 'vscode') return vscode;
-      if (name === './workspace_trust') return {
+      if (name === './branches/workspace_trust') return {
         registerIndependentWorkspaceTrustCommand() { calls.registrations++; },
         async promptForIndependentWorkspaceTrust() { calls.prompts++; }
       };

@@ -9,7 +9,7 @@ function kefaniaCandidates(repositoryPath, { home = homedir(), moduleDirectory =
   return [...new Set([
     path.join(parent, 'kefania'),
     path.join(path.dirname(parent), 'pony-factor', 'kefania'),
-    path.resolve(moduleDirectory, '..', '..', 'kefania'),
+    path.resolve(moduleDirectory, '..', '..', '..', 'kefania'),
     path.join(home, 'GitHub', 'pony-factor', 'kefania'),
   ])];
 }

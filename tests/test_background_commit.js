@@ -40,8 +40,8 @@ async function run() {
     },
     setInterval(callback) { poll = callback; return 1; }, clearInterval() {},
     require(name) {
-      if (name === './python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
-      if (name === './merged_branch') return {
+      if (name === '../ui/python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
+      if (name === '../branches/merged_branch') return {
         mergedBranchStatus: async () => merged,
         warnMergedBranch: async (_vscode, _repository, info) => { mergedWarnings.push(info); return false; }
       };

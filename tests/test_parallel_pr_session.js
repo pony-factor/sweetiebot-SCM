@@ -5,14 +5,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const moduleRoot = path.resolve(__dirname, process.env.LINDSEY_MODULE_ROOT || '../efs');
-const { launchMergeSession, resumePRSession } = require(moduleRoot + '/pr_session');
+const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr_session');
 
 (async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'parallel-pr-session-'));
   const originalFetch = globalThis.fetch;
-  const dashboardPath = require.resolve(moduleRoot + '/merge_dashboard');
+  const dashboardPath = require.resolve(moduleRoot + '/merge/merge_dashboard');
   const dashboardModule = require.cache[dashboardPath];
-  const dashboardExports = require(moduleRoot + '/merge_dashboard');
+  const dashboardExports = require(moduleRoot + '/merge/merge_dashboard');
   const context = { globalStorageUri: { fsPath: temporary }, subscriptions: [] };
   try {
     const root = path.join(temporary, 'repo');

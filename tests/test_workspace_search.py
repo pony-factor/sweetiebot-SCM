@@ -122,9 +122,9 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             "registerCommand('scmToolkit.workspaceSearch.reindex'",
             extension,
         )
-        view = (workspace_search.SOURCE / "view.js").read_text()
-        search_index = (workspace_search.SOURCE / "search_index.js").read_text()
-        ollama = (workspace_search.SOURCE / "ollama.js").read_text()
+        view = (workspace_search.SOURCE / "search" / "view.js").read_text()
+        search_index = (workspace_search.SOURCE / "search" / "search_index.js").read_text()
+        ollama = (workspace_search.SOURCE / "search" / "ollama.js").read_text()
         self.assertNotIn("Reindex", view)
         self.assertNotIn("type:'reindex'", view)
         self.assertNotIn("this.index.dirty.size", view)
@@ -155,7 +155,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
 
         self.assertTrue(properties["scmToolkit.workspaceSearch.askOllama"]["default"])
         self.assertEqual(properties["scmToolkit.workspaceSearch.chatModel"]["default"], "qwen3:8b")
-        view = (workspace_search.SOURCE / "view.js").read_text()
+        view = (workspace_search.SOURCE / "search" / "view.js").read_text()
         self.assertIn("if (this.getSettings().askOllama) await this.askOllama()", view)
         self.assertIn("const askButton = askEnabled", view)
         self.assertNotIn("resolveChatModel", view)

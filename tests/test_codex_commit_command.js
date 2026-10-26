@@ -58,7 +58,7 @@ async function run() {
       return setTimeout(callback, delay);
     },
     require: name => {
-      if (name === './python_runtime') {
+      if (name === '../ui/python_runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
           pythonLaunchError: error => error
