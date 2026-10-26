@@ -185,11 +185,11 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   const pageScript = page.match(/<script>([\s\S]*?)<\/script>/)[1];
   const next = 'https://chatgpt.com/#sweetiebot_merge=1&q=Refreshed%20round';
   for (const destination of [next, 'https://example.com/#sweetiebot_merge=1']) {
-    const elements = { status: {}, results: {} }, navigations = [];
+    const elements = { status: {}, results: {after(){}} }, navigations = [];
     await require('node:vm').runInNewContext(pageScript, { URL, URLSearchParams,
       location: { hash: '#result=' + encodeURIComponent('{}'), pathname: '/lindsey-merge/fixture', assign: url => navigations.push(url) },
-      history: { replaceState() {} }, document: { getElementById: id => elements[id] },
-      setTimeout: callback => callback(), fetch: async () => ({ ok: true, json: async () => ({
+      history: { replaceState() {} }, document: { getElementById: id => elements[id], createElement:()=>({}) },
+      setInterval: () => 1, clearInterval() {}, fetch: async () => ({ ok: true, json: async () => ({
         results: [], batch: { merged: [1], deferred: [] }, continueUrl: destination }) }) });
     assert.deepEqual(navigations, destination === next ? [next] : [], 'Only a verified ChatGPT merge continuation is followed');
   }

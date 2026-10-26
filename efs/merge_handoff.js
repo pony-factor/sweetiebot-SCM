@@ -20,7 +20,12 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
     const json = (code, value) => { response.writeHead(code, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(value)); };
-    if (request.headers.host !== new URL(origin).host || request.url !== route) return json(404, { error: 'Unknown merge handoff.' });
+    if (request.headers.host !== new URL(origin).host || ![route, route + '/status'].includes(request.url)) return json(404, { error: 'Unknown merge handoff.' });
+    if (request.url === route + '/status') {
+      if (request.method !== 'GET') return json(405, { error: 'Read-only handoff status.' });
+      return json(200, { phase: running ? (outcome ? 'continuing' : 'running') : failure ? 'failed' : outcome ? 'finished' : 'ready',
+        ...(!running && outcome ? { result: outcome } : {}), ...(failure ? { error: failure } : {}) });
+    }
     if (request.method === 'GET') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(page); return;
@@ -58,7 +63,13 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   server.unref();
-  const expiry = setTimeout(() => server.close(), ttlMs);
+  // An accepted local operation must remain observable until it finishes.
+  const expire = () => {
+    if (!running) { server.close(); return; }
+    expiry = setTimeout(expire, 30000);
+    expiry.unref();
+  };
+  let expiry = setTimeout(expire, ttlMs);
   expiry.unref();
   return { url: 'http://127.0.0.1:' + server.address().port + route,
     dispose() { clearTimeout(expiry); server.close(); } };

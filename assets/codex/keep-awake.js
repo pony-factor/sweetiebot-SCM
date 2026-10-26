@@ -51,7 +51,10 @@ function scmToolkitRegisterCodexKeepAwake(connection, vscode, defaultEnabled) {
             if (active.get(thread) === params.turn?.id || active.get(thread) === null) active.delete(thread);
         } else if (method === 'thread/status/changed') {
             if (params.status?.type === 'active') {
-                if (!active.has(thread)) active.set(thread, null);
+                const waiting = (params.status.activeFlags || []).some(flag =>
+                    /waiting.*(?:approval|input)/i.test(String(flag)));
+                if (waiting) active.delete(thread);
+                else if (!active.has(thread)) active.set(thread, null);
             } else if (['idle', 'notLoaded', 'systemError'].includes(params.status?.type)) active.delete(thread);
         } else if (['thread/closed', 'thread/archived', 'thread/deleted'].includes(method)) {
             active.delete(thread);

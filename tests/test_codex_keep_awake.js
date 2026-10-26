@@ -107,6 +107,18 @@ for (const terminal of ['idle', 'notLoaded', 'systemError']) {
   f.event('thread/status/changed', 'a', undefined, { type: terminal });
   assert(f.children[0].killed);
 }
+for (const waiting of ['waitingOnApproval', 'waitingOnUserInput']) {
+  const f = fixture();
+  f.event('turn/started', 'a', '1');
+  f.event('thread/status/changed', 'a', undefined, {type:'active',activeFlags:[waiting]});
+  assert(f.children[0].killed, 'Waiting for the user permits idle sleep');
+  assert.equal(f.timers.size,0);
+  f.event('thread/status/changed', 'a', undefined, {type:'active',activeFlags:[]});
+  assert.equal(f.children.length,2,'Resumed work restores protection');
+  f.event('turn/completed', 'a', '1');
+  assert(f.children[1].killed);
+  f.controller.dispose();
+}
 {
   const f = fixture('darwin', false);
   f.event('turn/started', 'a', '1');
