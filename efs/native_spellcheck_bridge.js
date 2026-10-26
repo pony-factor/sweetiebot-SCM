@@ -4,6 +4,7 @@
 // preload is the only intended client; never forward ChatGPT cookies or tokens.
 const http = require('node:http');
 const {randomBytes, timingSafeEqual} = require('node:crypto');
+const {normalizeChatgptProjectUrl} = require('./chatgpt_project');
 
 const ADDRESS = '127.0.0.1';
 const MAX_INPUT = 60000;
@@ -49,8 +50,13 @@ function validReply(value) {
     && !result.title.includes('\0');
 }
 
-async function startNativeSpellcheckBridge(draft, {timeoutMs = DEFAULT_TIMEOUT_MS} = {}) {
+async function startNativeSpellcheckBridge(draft, {
+  timeoutMs = DEFAULT_TIMEOUT_MS, projectUrl = '', mode = 'spellcheck'
+} = {}) {
+  if (!['spellcheck', 'commit-title'].includes(mode)) throw new Error('Unsupported ChatGPT review mode.');
   if (!validDraft(draft)) throw new Error('The spellcheck draft must have a nonempty, bounded body.');
+  // Invalid configured projects never silently downgrade to a general chat.
+  const destination = normalizeChatgptProjectUrl(projectUrl) || 'https://chatgpt.com/';
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600000) {
     throw new Error('Invalid spellcheck session timeout.');
   }
@@ -106,7 +112,8 @@ async function startNativeSpellcheckBridge(draft, {timeoutMs = DEFAULT_TIMEOUT_M
     if (req.method === 'GET' && req.url === '/job') {
       if (claimed) { reply(res, 409, {error: 'Already claimed'}); return; }
       claimed = true;
-      reply(res, 200, {title: draft.title, body: draft.body});
+      reply(res, 200, {title: draft.title, body: draft.body,
+        ...(mode === 'commit-title' ? {mode} : {})});
       return;
     }
     if (req.method === 'POST' && req.url === '/result') {
@@ -123,8 +130,16 @@ async function startNativeSpellcheckBridge(draft, {timeoutMs = DEFAULT_TIMEOUT_M
         }
         const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
         if (!validReply(value)) throw new Error('Invalid response shape');
-        if (value.status === 'complete' && !blockquotesUnchanged(draft.body, value.result.body)) {
+        if (value.status === 'complete' && mode === 'spellcheck'
+            && !blockquotesUnchanged(draft.body, value.result.body)) {
           reply(res, 422, {error: 'Spellcheck changed a protected Markdown blockquote'});
+          return;
+        }
+        if (value.status === 'complete' && mode === 'commit-title'
+            && (value.result.body !== '' || !value.result.title.trim()
+              || value.result.title.length > 72
+              || /[\r\n\x00-\x1f]/.test(value.result.title))) {
+          reply(res, 422, {error: 'Invalid ChatGPT commit-title suggestion'});
           return;
         }
         reply(res, 200, {ok: true});
@@ -150,10 +165,11 @@ async function startNativeSpellcheckBridge(draft, {timeoutMs = DEFAULT_TIMEOUT_M
   const port = server.address().port;
   timer = setTimeout(() => finish(new Error('Native Spellcheck Only timed out.')), timeoutMs);
   const hash = new URLSearchParams({
-    sweetiebot_spellcheck: '1', port: String(port), ticket
+    sweetiebot_spellcheck: '1', port: String(port), ticket,
+    ...(mode === 'commit-title' ? {mode} : {})
   });
   return {
-    url: 'https://chatgpt.com/#' + hash.toString(),
+    url: destination + '#' + hash.toString(),
     completed,
     cancel() { finish(new Error('Native Spellcheck Only was cancelled.')); }
   };
@@ -172,7 +188,8 @@ function registerNativeSpellcheckBridge(vscode, context, start = startNativeSpel
     if (!registered.includes('workbench.action.browser.open')) {
       throw new Error('This VS Code build does not have the native Integrated Browser.');
     }
-    const session = await start({title: '', body});
+    const projectUrl = vscode.workspace.getConfiguration?.('scmToolkit')?.get('chatgptProjectUrl', '') || '';
+    const session = await start({title: '', body}, {projectUrl});
     active.add(session);
     try {
       await vscode.commands.executeCommand('workbench.action.browser.open', {
