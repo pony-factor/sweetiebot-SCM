@@ -139,6 +139,17 @@ const run = promisify(execFile);
       return api(endpoint, ...rest);
     } }), /No verified original human/);
     await assert.rejects(attempt({ resolutionPatch: completePatch.replaceAll('file.txt', 'other.txt') }), /unrelated/);
+    if (resolving) {
+      const invalidPatch = await attempt({ resolutionPatch: completePatch.replace('@@ -1 +1 @@', '@@ -1,9 +1,9 @@'),
+        git: async (...args) => {
+          try { return await localGit(...args); }
+          catch (error) { throw require('../efs/git_failure').gitFailure(error, args); }
+        } });
+      assert.equal(invalidPatch.status, 'needs_resolution', 'Malformed model output gets a bounded regeneration round');
+      assert.deepEqual(invalidPatch.conflictPaths, ['file.txt']);
+      assert(invalidPatch.reason.includes('correct hunk lengths'));
+      assert.equal(pushes.length, 0, 'Reject invalid patch syntax before any branch write');
+    }
     assert.equal(await branch('feature'), headSha, 'Every blocked preflight leaves the selected branch unchanged');
     assert.equal(await branch('main'), baseSha, 'Every blocked preflight leaves main unchanged');
     // An ordinary fast-forward push must preserve a competing branch update.

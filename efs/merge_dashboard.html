@@ -137,6 +137,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <div id="notice" class="notice" hidden></div>
 <div class="layout">
 <aside aria-label="Merge timeline">
+  <nav id="merge-workers" aria-label="GPT review sessions" hidden></nav>
   <div class="section-heading"><h2>Selected pull requests</h2></div>
   <div id="prs" class="prs"></div>
   <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
@@ -444,12 +445,21 @@ __RATE_LIMIT_FORMATTER__
     if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
     const merged = model.prs.filter(p => p.state === 'merged').length;
     const resolved = model.prs.filter(p => p.conflictCleared).length;
-    const problems = model.prs.filter(p => ['conflict','review','blocked'].includes(p.state)).length;
+    const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
+    const problems = blockers.length;
     byId('progress').textContent = merged + '/' + model.prs.length +
       ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
     byId('notice').hidden = !model.error;
     byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
+    const workerList = byId('merge-workers');
+    workerList.replaceChildren();
+    workerList.hidden = !model.workers?.length;
+    for (const worker of model.workers || []) {
+      const button = show('button', 'pr', worker.label + ' · ' + worker.phase + ' · ' + worker.merged + '/' + worker.total + ' merged', workerList);
+      button.title = 'GPT session ' + worker.id + ' · ' + worker.numbers.map(number => '#' + number).join(', ');
+      button.addEventListener('click', () => dispatch('focus-worker', worker.id));
+    }
     const list = byId('prs');
     const listScroll = list.scrollTop;
     list.replaceChildren();
@@ -468,7 +478,6 @@ __RATE_LIMIT_FORMATTER__
       button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
     }
     list.scrollTop = listScroll;
-    const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
     const blockerNotice = byId('blocker-notice'); blockerNotice.replaceChildren(); blockerNotice.hidden = !blockers.length;
     if (blockers.length) {
       show('span', '', 'Needs attention', blockerNotice);

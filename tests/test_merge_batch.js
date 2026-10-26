@@ -71,6 +71,43 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(calls, 3, 'Replaying an earlier round cannot execute it twice');
   } finally { batch.dispose(); }
 
+  // GitHub retargets children to the merged parent's destination when its
+  // branch is deleted. Unrelated base changes still require a fresh selection.
+  for (const [retarget, headChanged] of [['main', false], ['unrelated', false], ['main', true]]) {
+    let parentMerged = false;
+    const stack = { ...selection, pullRequests: selection.pullRequests.map(pr =>
+      pr.number === 2 ? { ...pr, base: 'feature-1' } : pr) };
+    const stacked = await createMergeBatch(stack, {
+      destination: 'https://chatgpt.com/',
+      api: async endpoint => {
+        if (endpoint.includes('/branches/')) return { commit: { sha: parentMerged ? d : c } };
+        const pr = stack.pullRequests.find(pr => endpoint.endsWith('/' + pr.number));
+        return { state: 'open', draft: false, title: pr.title,
+          head: { ref: pr.head, sha: pr.number === 2 && parentMerged && headChanged ? e : pr.headSha,
+            repo: { full_name: stack.repository } },
+          base: { ref: pr.number === 2 && parentMerged ? retarget : pr.base } };
+      },
+      execute: async (input, snapshot) => {
+        const number = input.results[0].number;
+        if (number === 2) assert.equal(snapshot.pullRequests[0].base, 'main');
+        parentMerged = true;
+        return { repository: stack.repository, results: [{ number, status: 'merged', merged: true, sha: d }] };
+      }
+    });
+    try {
+      const first = await submit(stacked.url, [item(1, c)]);
+      if (retarget === 'main' && !headChanged) {
+        assert.equal(first.value.batch.pullRequests.find(pr => pr.number === 2).base, 'main');
+        assert.deepEqual(first.value.batch.deferred, []);
+        const second = await submit(first.value.continueUrl, [item(2, d)]);
+        assert.equal(second.value.batch.merged.length, 2);
+      } else {
+        assert.equal(first.value.continueUrl, undefined);
+        assert.equal(first.value.batch.deferred[0].number, 2);
+      }
+    } finally { stacked.dispose(); }
+  }
+
   // A prepared head is accepted only as a result of our own local executor.
   const one = { ...selection, pullRequests: [selection.pullRequests[0]] };
   let currentHead = a, attempts = 0;

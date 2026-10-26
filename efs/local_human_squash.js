@@ -37,7 +37,7 @@ async function humanSquashMerge(repository, number, {
     '-c', 'credential.helper=!' + gh + ' auth git-credential', ...args],
   { timeout: 120000, maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, ...(gitToken ? { GH_TOKEN: gitToken } : {}), GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
-    } catch { throw Error('Local Git operation failed; no file contents are included in this report.'); }
+    } catch (error) { throw require('./git_failure').gitFailure(error, args); }
   };
   const endpoint = 'repos/' + repository;
   const progress = (stage, detail = {}) => {
@@ -181,7 +181,7 @@ async function humanSquashMerge(repository, number, {
     // A different base requires a new integrated tree and checks, not a blind retry.
   }
   await checkHeadWritable();
-  let temp, pushedSha;
+  let temp, pushedSha, conflicts = [];
   try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
   catch { throw Error('Invalid Git branch name.'); }
   try {
@@ -234,7 +234,7 @@ async function humanSquashMerge(repository, number, {
     }
     const requiredFiles = originalFiles.filter(name => treeEntries.get(liveBase).get(name) !== treeEntries.get(liveHead).get(name));
     await inRepo('checkout', '--quiet', '--detach', liveBase);
-    let resolvedFiles, conflicts = [];
+    let resolvedFiles;
     if (resolutionPatch !== null) {
       // Determine actual conflicts independently of model-supplied metadata.
       try { await inRepo('merge', '--squash', '--no-commit', liveHead); }
@@ -382,6 +382,11 @@ async function humanSquashMerge(repository, number, {
     // Native GitHub rebase merge records the same bot-opened PR as merged.
     return await finish(preparedSha, message);
   } catch (error) {
+    if (error.code === 'INVALID_RESOLUTION_PATCH' && !pushedSha) {
+      return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
+        conflictPaths: conflicts, reason: error.message +
+          ' Regenerate the complete current-base unified diff with correct hunk lengths and context. No branch was pushed.' };
+    }
     if (error.code === 'MERGE_BASE_CHANGED') {
       if (pushedSha) Object.assign(error, { sha: pushedSha, previousHeadSha: originalSha });
       throw error;

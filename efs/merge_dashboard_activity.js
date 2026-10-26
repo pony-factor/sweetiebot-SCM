@@ -12,10 +12,13 @@ function mergeActivityPresentation(event, prs = []) {
   const sha = gitCommit?.sha || safeHash;
   const title = (String(gitCommit?.commit?.message || '').split('\n')[0].trim() ||
     String(event?.commitTitle || '').split('\n')[0].trim()).slice(0, 160);
+  const fetchFailure = event?.state === 'error' && /^(?:fetch failed|GitHub (?:request|refresh) failed)/i.test(message);
   const explanation = details.split('\n').map(line =>
     line.replace(/(?:^|\s+·\s+)(?:Pushed )?Commit:\s*[a-f0-9]{7,64}\b/i, '').trim()
-  ).filter(Boolean).join('\n');
-  const summary = title || message || (sha ? 'Commit' : 'Activity');
+  ).filter(Boolean).join('\n') || (fetchFailure ? /^fetch failed\.?$/i.test(message)
+    ? 'No request details were captured for this earlier error. Use Refresh GitHub status to retry with diagnostics.'
+    : message : '');
+  const summary = title || (fetchFailure ? 'Fetch failed' : message) || (sha ? 'Commit' : 'Activity');
   const status = sha && title && message !== title ? message : '';
   return { sha, shortSha: sha.slice(0, 7), summary, status, explanation,
     expandable: Boolean(status || explanation) };

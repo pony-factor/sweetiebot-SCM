@@ -88,3 +88,44 @@ const invalid = fixture({ sidebarRatio: Infinity, timelineRatio: -3 });
 assert.equal(invalid.nodes.aside.clientWidth, 994 * 0.37);
 assert.equal(invalid.nodes.timeline.offsetHeight, 524 * 0.34);
 console.log('Dashboard drag, keyboard, cancellation, saved layout and resize checks passed.');
+
+// A locally deferred PR can still be clean on GitHub. The header must agree
+// with the actionable blocker list, including after a later merge or closure.
+const dashboardHtml = fs.readFileSync(require.resolve('../efs/merge_dashboard.html'), 'utf8');
+const progressScript = dashboardHtml.slice(dashboardHtml.indexOf('    const merged = model.prs.filter'),
+  dashboardHtml.indexOf("    byId('bar-fill')"));
+const deferred = { state: 'waiting', localReview: { text: 'Local execution stopped.' } };
+for (const [state, expected] of [['waiting', '1/3 merged · 0 conflicts cleared · 1 need attention'],
+  ['closed', '1/3 merged · 0 conflicts cleared · 0 need attention'],
+  ['merged', '2/3 merged · 0 conflicts cleared · 0 need attention']]) {
+  const progress = {};
+  vm.runInNewContext(progressScript, {
+    model: { prs: [{ ...deferred, state }, { state: 'merged', localReview: deferred.localReview }, { state: 'waiting' }] },
+    byId: () => progress
+  });
+  assert.equal(progress.textContent, expected);
+}
+console.log('Dashboard attention count includes local blockers and excludes settled PRs.');
+
+const workerScript = dashboardHtml.slice(dashboardHtml.indexOf("    const workerList = byId('merge-workers');"),
+  dashboardHtml.indexOf("    const list = byId('prs');"));
+const workerList = { children: [], replaceChildren() { this.children = []; } };
+const workerActions = [];
+const workerContext = {
+  model: { workers: [{ id: 1, label: 'Oldest first', phase: 'Applying', numbers: [12], merged: 1, total: 3 }] },
+  byId: () => workerList,
+  show(tag, cls, text, parent) {
+    const node = { text, addEventListener(type, callback) { this[type] = callback; } };
+    parent.children.push(node); return node;
+  },
+  dispatch: (...args) => workerActions.push(args)
+};
+vm.runInNewContext(workerScript, workerContext);
+assert.equal(workerList.hidden, false);
+assert.equal(workerList.children[0].text, 'Oldest first · Applying · 1/3 merged');
+workerList.children[0].click();
+assert.deepEqual(workerActions, [['focus-worker', 1]]);
+workerContext.model.workers = [];
+vm.runInNewContext(workerScript, { ...workerContext });
+assert.equal(workerList.hidden, true, 'Ordinary sequential batches keep the existing sidebar');
+console.log('GPT review session status and tab-focus controls passed.');
