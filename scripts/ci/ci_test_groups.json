@@ -157,6 +157,7 @@
         "test_codex_label.py",
         "test_codex_permissions.js",
         "test_codex_rate_limit_controls.js",
+        "test_codex_send_wing.js",
         "test_codex_recent_chats.py",
         "test_codex_refresh.js",
         "test_codex_short_model_labels.js",
@@ -169,6 +170,7 @@
         "test_codex_workspace_handoff.js"
       ],
       "syntax": [
+        "assets/codex/send-wing.js",
         "assets/codex/image-drop.js",
         "assets/codex/permissions-host.js",
         "assets/codex/permissions-webview.js",

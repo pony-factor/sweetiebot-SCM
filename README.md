@@ -189,7 +189,7 @@ EFS is a **local file index**, not a complete historical archive of every ChatGP
 
 ## Codex, browser, and window controls
 
-Sweetiebot also has settings for supported Codex composer controls, usage-limit displays, promotion cards, dictation visibility, sidebar labels, and **Keep awake while Codex works**. Other controls affect Integrated Browser blank-tab URLs, browser tab handling, window labels, notifications, and title-bar buttons. Availability depends on the installed VS Code/Codex build and whether the corresponding patch anchors are supported.
+Sweetiebot also has settings for supported Codex composer controls, usage-limit displays, promotion cards, dictation visibility, sidebar labels, and **Keep awake while Codex works**. **Codex → Customization → Pegasus wing Send icon** replaces the Send arrow with a white-outline SVG wing by default. Its color follows the VS Code theme or the existing **Send button icon** override; Queue and Stop keep their native appearance. Disable it to restore the arrow. Other controls affect Integrated Browser blank-tab URLs, browser tab handling, window labels, notifications, and title-bar buttons. Availability depends on the installed VS Code/Codex build and whether the corresponding patch anchors are supported.
 
 Prefer the live settings page for the current option names and defaults rather than old release-specific instructions.
 
