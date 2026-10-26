@@ -63,7 +63,7 @@
   }
   const collectResult = () => {
     if (!callback) return;
-    const expires = Date.now() + 1200000;
+    const expires = Date.now() + (mergeLaunch ? 3600000 : 1200000);
     let previous, stableSince;
     let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
     let recoveryAllowed = true;
@@ -88,7 +88,8 @@
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
-        .some(button => button.getClientRects().length > 0);
+        .some(button => mergeLaunch ? !button.hidden && !button.disabled &&
+          button.getAttribute?.('aria-disabled') !== 'true' : button.getClientRects().length > 0);
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
@@ -101,7 +102,25 @@
         const result = new URLSearchParams(url.hash.slice(1));
         const expectedKeys = mergeLaunch ? ['result'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
         if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
+        if (mergeLaunch) {
+          try {
+            const input = JSON.parse(result.get('result'));
+            if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
+          } catch { continue; } // Streaming hrefs can contain a truncated JSON string.
+        }
         latest = url.href;
+      }
+      if (mergeLaunch && !latest) {
+        // A fenced final payload is sufficient even if ChatGPT omitted its
+        // link. Restrict extraction to assistant code, never the launch prompt.
+        for (const code of document.querySelectorAll('[data-message-author-role="assistant"] pre code')) {
+          try {
+            const input = JSON.parse(code.textContent || '');
+            if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
+            const url = callback.href + '#result=' + encodeURIComponent(JSON.stringify(input));
+            if (url.length <= 80000) latest = url;
+          } catch { /* Incomplete code blocks remain in the chat until complete. */ }
+        }
       }
       // A response can repeat its return link with a revised draft. Stabilize
       // the final candidate once, rather than resetting for every earlier link.

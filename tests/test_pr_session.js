@@ -161,9 +161,19 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
       } }
     };
     const dashboardCalls = [];
+    const startupProgress = [];
+    let startupVisible = false;
     context.subscriptions = [];
     const instrumented = { ...target,
-      window: {},
+      ProgressLocation: { Notification: 15 },
+      window: { async withProgress(options, task) {
+        assert.equal(options.location, 15);
+        assert.equal(options.title, 'Preparing Lindsey merge queue');
+        assert.equal(options.cancellable, false);
+        startupVisible = true;
+        try { return await task({ report(update) { startupProgress.push(update.message); } }); }
+        finally { startupVisible = false; }
+      } },
       workspace: { workspaceFile: dashboardWorkspace, workspaceFolders: [{ uri: root }] },
       authentication: { async getSession(provider, scopes, options) {
         assert.equal(provider, 'github');
@@ -176,6 +186,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     };
     const priorFetch = globalThis.fetch;
     globalThis.fetch = async address => {
+      assert(startupVisible, 'Show startup feedback before waiting for GitHub snapshot verification');
       const endpoint = new URL(address).pathname;
       const pr = selection.pullRequests[0];
       const result = endpoint.endsWith('/branches/main') ? { commit: { sha: 'b'.repeat(40) } } : {
@@ -186,6 +197,8 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     };
     try {
       await resumePRSession(instrumented, context);
+      assert.equal(startupVisible, false, 'Finish startup feedback once the handoff is ready');
+      assert.deepEqual(startupProgress, ['Verifying PR #12 (1/1)']);
       const launchPayload = new URLSearchParams(new URL(dashboardCalls[3][1].url).hash.slice(1));
       assert(launchPayload.get('return_to').includes('/lindsey-merge/'));
       assert.match(launchPayload.get('return_to'), /^http:\/\/127\.0\.0\.1:\d+\/lindsey-merge\/[\da-f-]{36}$/);

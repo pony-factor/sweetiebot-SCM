@@ -125,6 +125,7 @@ async function publishOptionalMergeSummaries({ enabled, selection, input, result
 
 let mergeDashboardStarted = false;
 let mergeDashboardController;
+const mergeWorkerTabs = new Map();
 
 async function resumeMergeDashboard(vscode, directory, context) {
   if (mergeDashboardStarted) return mergeDashboardController;
@@ -139,6 +140,18 @@ async function resumeMergeDashboard(vscode, directory, context) {
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
   // A dedicated merge workspace owns this layout; no edits to the source window.
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
+    onFocusWorker: async id => {
+      const tab = mergeWorkerTabs.get(id);
+      const groups = vscode.window.tabGroups?.all || [];
+      const group = groups.find(group => group.tabs.includes(tab));
+      if (!group) return;
+      const names = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth'];
+      const column = (group.viewColumn || groups.indexOf(group) + 1) - 1;
+      const index = group.tabs.indexOf(tab);
+      if (!names[column] || index < 0 || index > 8) return;
+      await vscode.commands.executeCommand('workbench.action.focus' + names[column] + 'EditorGroup');
+      await vscode.commands.executeCommand('workbench.action.openEditorAtIndex' + (index + 1));
+    },
     initialRateLimit: savedState?.rateLimit,
     viewColumn: hasEditors ? (vscode.ViewColumn?.Two || 2) : (vscode.ViewColumn?.One || 1),
     context, rootUri: vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri
@@ -244,7 +257,8 @@ async function resumePRSession(vscode, context) {
         if (Buffer.byteLength(url.href) > 70000) { handoff.dispose(); throw Error('Branch synchronization prompt exceeds the browser launch budget.'); }
       } else {
       const blockerReports = {};
-      handoff = await require('./merge_batch').createMergeBatch(selection, {
+      const startBatch = progress => require('./parallel_merge_batch').createParallelMergeBatch(selection, {
+        onProgress: update => progress?.report(update),
         api: endpoint => {
           if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
           return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
@@ -290,8 +304,23 @@ async function resumePRSession(vscode, context) {
           await controller?.refresh?.();
         }
       });
+      handoff = await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Preparing Lindsey merge queue', cancellable: false
+      }, startBatch);
       }
       context.subscriptions?.push(handoff);
+      if (handoff.launches?.length) {
+        try {
+          for (const launch of handoff.launches) {
+            const close = await require('./pr_workflows').openWorkflow(vscode, launch.url);
+            if (close.tab) mergeWorkerTabs.set(launch.id, close.tab);
+          }
+        } catch (error) { handoff.dispose(); throw error; }
+        const controller = await resumeMergeDashboard(vscode, directory, context);
+        controller?.recordBatchState?.(handoff.state());
+        return;
+      }
       if (!handoff.url) { await resumeMergeDashboard(vscode, directory, context); return; }
       url.href = handoff.url;
     }

@@ -49,11 +49,13 @@ async function openWorkflow(vscode, url, { openToSide = false } = {}) {
   // get distinct tabs and a fresh preload rather than reusing a project chat.
   await vscode.commands.executeCommand('workbench.action.browser.open', { url, openToSide });
   const tab = vscode.window.tabGroups?.all.flatMap(group => group.tabs).find(candidate => !before.has(candidate));
-  return async () => {
+  const close = async () => {
     if (tab && vscode.window.tabGroups.all.some(group => group.tabs.includes(tab))) {
       await vscode.window.tabGroups.close(tab, true);
     }
   };
+  close.tab = tab;
+  return close;
 }
 
 module.exports = { MAX_LAUNCH_BYTES, MAX_RESULT_BYTES, prRules, ponyRules, ponyPrompt, boundedLaunch, openWorkflow };
