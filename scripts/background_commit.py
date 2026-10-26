@@ -142,13 +142,15 @@ def recover_finalization(meta):
     file.unlink()
 
 
-def fork_branch(source, name, expected_head, destination=None):
+def fork_branch(source, name, expected_head, destination=None, expected_tip=None):
     """Capture a pending base and its subscription under the finalizer's lock."""
     meta = Path(git('rev-parse', '--absolute-git-dir'))
     with repository_lock(meta):
         recover_finalization(meta)
         if state()[0] != expected_head:
             raise RuntimeError('The active branch changed while preparing the new branch.')
+        if expected_tip and branch_tip(expected_head) != expected_tip:
+            raise RuntimeError('The original branch advanced before the recovery fork. Review its commits.')
         if (meta / 'sweetiebot-async-commit.json').exists():
             raise RuntimeError('Wait for the existing commit message to finish before branching.')
         git('check-ref-format', '--branch', name)
@@ -1360,6 +1362,8 @@ if __name__ == '__main__':
             print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
         elif len(sys.argv) == 5 and sys.argv[1] == '--fork-branch':
             print(fork_branch(*sys.argv[2:]))
+        elif len(sys.argv) == 6 and sys.argv[1] == '--fork-verified':
+            print(fork_branch(*sys.argv[2:5], expected_tip=sys.argv[5]))
         elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
             print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:

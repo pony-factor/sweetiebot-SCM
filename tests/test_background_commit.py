@@ -318,6 +318,24 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(job['mergedBranch'], info)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
 
+    def test_recovery_forks_old_local_tip_without_syncing_main(self):
+        directory = self.queue(push=True)
+        info = {'branch': 'main', 'number': 61, 'defaultBranch': 'main', 'remote': 'origin'}
+        with patch.object(merged_branch, 'require_unmerged', side_effect=merged_branch.MergedBranchPush(info)):
+            worker.work(directory)
+        original_tip = self.git('rev-parse', 'HEAD')
+        with self.assertRaisesRegex(RuntimeError, 'advanced'):
+            worker.fork_branch('refs/heads/main', 'stale-followup', 'refs/heads/main',
+                               expected_tip='f' * 40)
+        self.assertEqual(self.git('branch', '--show-current'), 'main')
+        worker.fork_branch('refs/heads/main', 'new-followup', 'refs/heads/main',
+                           expected_tip=original_tip)
+        self.assertEqual(self.git('branch', '--show-current'), 'new-followup')
+        self.assertEqual(self.git('rev-parse', 'new-followup'), original_tip)
+        self.assertEqual(self.git('rev-parse', 'main'), original_tip)
+        self.assertFalse(self.job(directory)['push'])
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
     def test_user_can_retire_merged_push_without_changing_local_history(self):
         directory = self.queue(push=True)
         info = {'branch': 'main', 'number': 61, 'defaultBranch': 'main', 'remote': 'origin'}
