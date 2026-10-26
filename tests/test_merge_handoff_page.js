@@ -3,15 +3,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const script = fs.readFileSync(require.resolve('../efs/merge_handoff.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
-async function page({raw, state, result}) {
+async function page({raw, state, result, statusFailsDuringPost = false}) {
   const status = {}, results = {after(){}}, navigations = [], posts = [];
+  let poll;
   const sandbox = {URL,URLSearchParams,JSON,Error,
     document:{getElementById:id=>id==='status'?status:results,createElement:()=>({})},
     location:{hash:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
-    history:{replaceState(){}},setInterval:()=>1,clearInterval(){},
+    history:{replaceState(){}},setInterval:callback=>{poll=callback;return 1;},clearInterval(){},
     fetch:async (path,options)=> {
-      if(options?.method==='POST') {posts.push(options.body);return {ok:true,status:200,json:async()=>result};}
+      if(options?.method==='POST') {
+        posts.push(options.body);
+        if (statusFailsDuringPost) {poll();await new Promise(resolve=>setImmediate(resolve));}
+        return {ok:true,status:200,json:async()=>result};
+      }
       assert.equal(path,'/lindsey-merge/nonce/status');
+      if(statusFailsDuringPost) return {ok:false,status:404};
       return {ok:true,json:async()=>state};
     }
   };
@@ -23,6 +29,9 @@ async function page({raw, state, result}) {
   const fresh=await page({raw:JSON.stringify({version:1}),result});
   assert.equal(fresh.posts.length,1);
   assert.deepEqual(fresh.navigations,[result.continueUrl],'Continue immediately without a background-tab timer');
+  const legacy=await page({raw:'{}',result,statusFailsDuringPost:true});
+  assert.deepEqual(legacy.navigations,[result.continueUrl],'A missing status endpoint cannot discard a successful original apply response');
+  assert.equal(legacy.posts.length,1,'Failed status polling never retries Git execution');
   const reload=await page({state:{phase:'finished',result}});
   assert.equal(reload.posts.length,0,'Reload never repeats local Git execution');
   assert.deepEqual(reload.navigations,[result.continueUrl],'Reload recovers a completed continuation');

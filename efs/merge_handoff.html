@@ -10,7 +10,7 @@
   const fragment = new URLSearchParams(location.hash.slice(1));
   const raw = fragment.get('result');
   history.replaceState(null, '', location.pathname);
-  let finished = false, timer;
+  let finished = false, timer, postPending = false;
   const stop = () => { finished = true; clearInterval(timer); };
   function display(result) {
     if (finished) return;
@@ -33,7 +33,14 @@
   }
   async function recover() {
     const response = await fetch(location.pathname + '/status');
-    if (!response.ok) throw Error('This handoff is unavailable or expired. Return to Lindsey and start a fresh task; no automatic retry was submitted.');
+    if (!response.ok) {
+      if (postPending) {
+        clearInterval(timer);
+        status.textContent = 'Live progress is unavailable from this handoff. Waiting for the original local execution result; no retry was submitted.';
+        return 'legacy';
+      }
+      throw Error('This handoff is unavailable or expired. Return to Lindsey and start a fresh task; no automatic retry was submitted.');
+    }
     const state = await response.json();
     if (state.phase === 'finished') display(state.result);
     else if (state.phase === 'failed') { stop(); status.textContent = state.error; }
@@ -43,6 +50,11 @@
   }
   const watch = () => {
     timer = setInterval(() => { if (!finished) void recover().catch(error => {
+      if (postPending) {
+        clearInterval(timer);
+        status.textContent = 'Live progress is unavailable. Waiting for the original local execution result; no retry was submitted.';
+        return;
+      }
       stop(); status.textContent = 'Cannot contact the local handoff: ' + error.message;
     }); }, 2000);
   };
@@ -57,9 +69,11 @@
     try { input = JSON.parse(raw); }
     catch { throw Error('The prepared result is incomplete or malformed. No Git operation was started. Return to GPT web and use the complete final Apply with Lindsey link.'); }
     status.textContent = 'Applying the prepared handoff through the local Git CLI…';
+    postPending = true;
     watch();
     const response = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     const result = await response.json();
+    postPending = false;
     if (response.status === 409 && /in progress/.test(result.error || '')) { await recover(); return; }
     if (!response.ok || result.error) throw Error(result.error || 'Local merge failed.');
     display(result);

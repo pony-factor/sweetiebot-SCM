@@ -8,7 +8,7 @@ const { validateSelection } = require('./merge_dashboard');
 const { validateResolution, executeResolution } = require('./merge_resolution');
 
 async function createMergeHandoff(rawSelection, { execute = executeResolution, validate = validateResolution,
-  onResult = () => {}, ttlMs = 3600000 } = {}) {
+  onResult = () => {}, ttlMs = 6 * 3600000 } = {}) {
   const selection = validateSelection(rawSelection);
   const route = '/lindsey-merge/' + randomUUID();
   const page = readFileSync(path.join(__dirname, 'merge_handoff.html'), 'utf8');

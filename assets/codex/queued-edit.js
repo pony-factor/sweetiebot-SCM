@@ -180,6 +180,7 @@
       }
       :root[data-codex-window-type="extension"] [data-scm-toolkit-queue-preview] :is(.text-secondary,.text-codex-description) { color:var(--vscode-input-foreground,var(--vscode-foreground)) !important; }
       [data-scm-toolkit-queue-preview] { cursor:text; }
+      [data-scm-toolkit-queue-id] button[aria-label="Queued message actions"] { display:none !important; }
       .scm-toolkit-queue-editor { min-width:0; padding:8px; border:1px solid var(--vscode-focusBorder,#888); border-radius:8px; background:var(--vscode-input-background); margin:4px 0; }
       .scm-toolkit-queue-editor textarea { display:block; box-sizing:border-box; width:100%; min-height:72px; max-height:none; overflow-y:hidden; resize:vertical; border:0; outline:0; background:transparent; color:inherit; font:inherit; line-height:1.5; white-space:pre-wrap; }
       .scm-toolkit-queue-editor footer { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:12px; }
