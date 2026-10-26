@@ -1492,7 +1492,10 @@ def main():
         paths.append(color_path)
         old.append(color_old)
         new.append(color_new)
-    elif any(settings.get(key) for key in codex_colors.APPEARANCE_SETTINGS):
+    elif (any(settings.get(key) for key in codex_colors.COLOR_SETTINGS)
+          or settings.get('codexHideAccessLabel', False)
+          or settings.get('codexShowQueuePause', False)
+          or not settings.get('codexShowQueuedDelete', True)):
         raise ValueError("The installed Codex composer stylesheet could not be identified.")
 
     for path, context_old, context_new in codex_context.patch_files(

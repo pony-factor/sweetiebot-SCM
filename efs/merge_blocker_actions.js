@@ -108,7 +108,6 @@ function dashboardActionPlan(pr) {
     actions: [byId('investigate-blocker')], workspaceAction };
 }
 
-function blockerPrompt(repository, pr, option) {
 function blockerPrompt(repository, pr, option, engine = 'web') {
   return [
     (option.manual ? 'The user requested this manual action in Lindsey: ' : 'The user selected this implementation option in Lindsey: ') + option.label,
