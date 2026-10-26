@@ -81,7 +81,8 @@
     "onCommand:sweetiebot.endCommit",
     "onCommand:scmToolkit.endCommit",
     "onCommand:sweetiebot.codexDraft.read",
-    "onCommand:sweetiebot.codexDraft.write"
+    "onCommand:sweetiebot.codexDraft.write",
+    "onCommand:sweetiebot.respondToAiReview"
   ],
   "contributes": {
     "views": {
@@ -193,6 +194,12 @@
         "command": "sweetiebot.repairMergeReview",
         "title": "Refresh grouped merge review",
         "category": "Sweetiebot"
+      },
+      {
+        "command": "sweetiebot.respondToAiReview",
+        "title": "Respond to AI Code Review",
+        "category": "Sweetiebot",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
@@ -248,6 +255,11 @@
         {
           "command": "sweetiebot.spellcheckFilenames",
           "group": "navigation@90"
+        },
+        {
+          "command": "sweetiebot.respondToAiReview",
+          "when": "!isWeb",
+          "group": "navigation@80"
         }
       ],
       "scm/resourceState/context": [

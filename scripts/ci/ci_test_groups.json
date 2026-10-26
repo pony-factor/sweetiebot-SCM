@@ -120,14 +120,16 @@
         "test_pr_pending_commit_eligibility.js",
         "test_pr_workflows.js",
         "test_pull_request.js",
-        "test_squash_attribution.js"
+        "test_squash_attribution.js",
+        "test_ai_review_reply.js"
       ],
       "syntax": [
         "efs/github_pr_actions.js",
         "efs/github_rate_limit.js",
         "efs/github_user_api.js",
         "efs/human_squash_merge.js",
-        "efs/merge_pull_request.js"
+        "efs/merge_pull_request.js",
+        "efs/ai_review_reply.js"
       ]
     },
     "codex": {
