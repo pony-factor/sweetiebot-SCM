@@ -10,7 +10,7 @@ const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_da
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { mergeActivityPresentation, renderMergeActivitySummary } = require('../efs/merge_dashboard_activity');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
-const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt, reportOptionsInstructions } = require('../efs/merge_blocker_actions');
+const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../efs/merge_blocker_actions');
 const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dashboard_persistence');
 
 (async () => {
@@ -65,10 +65,26 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
   const manual = manualBlockerActions({state:'conflict'});
-  assert.equal(manual.length, 5);
+  assert.equal(manual.length, 6);
   assert(manual.every(action => action.manual && !action.reaction));
   assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
   assert.deepEqual(manualBlockerActions({state:'merged'}), []);
+  const checksPlan = dashboardActionPlan({ state: 'blocked', mergeableState: 'unstable' });
+  assert.equal(checksPlan.kind, 'checks');
+  assert.deepEqual(checksPlan.actions.map(action => action.id), ['fix-checks']);
+  assert.equal(checksPlan.workspaceAction.id, 'inspect-codex');
+  const conflictPlan = dashboardActionPlan({ state: 'conflict' });
+  assert.equal(conflictPlan.kind, 'conflict');
+  assert.deepEqual(conflictPlan.actions.map(action => action.id), ['resolve-conflicts']);
+  assert(!conflictPlan.actions.some(action => action.id === 'suggest-options'),
+    'There is no separate ask-for-options step');
+  const decisionPlan = dashboardActionPlan({ state: 'conflict', report: actionable.report });
+  assert.equal(decisionPlan.kind, 'choice');
+  assert.deepEqual(decisionPlan.actions.map(action => action.id), choices.map(option => option.id),
+    'The current review choices are the implementation buttons');
+  assert.equal(dashboardActionPlan({ state: 'updated' }).actions[0].id, 'sync-checks');
+  assert.equal(dashboardActionPlan({ state: 'blocked', mergeableState: 'blocked' }).actions[0].id, 'investigate-blocker');
+  assert.deepEqual(dashboardActionPlan({ state: 'merged' }).actions, []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
@@ -316,6 +332,13 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
+  assert(panel.webview.html.includes('runner-switch'), 'Runner uses the theme-aware sliding pill');
+  assert(panel.webview.html.includes("runner.dataset.engine = value"), 'Runner animation follows the selected destination');
+  assert(panel.webview.html.includes("workspaceRow.hidden = value !== 'codex'"),
+    'Codex branch workspace is visible only with the Codex runner');
+  assert(!panel.webview.html.includes("'View instructions'"), 'Implementation prompts are not shown in disclosure balloons');
+  assert(!panel.webview.html.includes("show('select', '', undefined, destination)"),
+    'Runner no longer uses a dropdown');
   assert(!panel.webview.html.includes('id="count"'), 'Hide the redundant status text next to selected PRs');
   assert(!panel.webview.html.includes('Live GitHub updates · roughly every'), 'Hide the polling cadence from the UI');
   assert(!Object.hasOwn(events.at(-1), 'nextRefreshSeconds'), 'Do not send discarded polling metadata to the webview');
