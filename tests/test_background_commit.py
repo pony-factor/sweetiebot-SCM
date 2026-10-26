@@ -105,6 +105,48 @@ class BackgroundCommitTests(unittest.TestCase):
                     }, start=False)
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
 
+    def test_preflight_normalizes_before_approval_without_repeating_work(self):
+        (self.repo / 'story.txt').write_text('Needs normalized newline')
+        self.git('add', 'story.txt')
+        original = self.git('write-tree')
+        prepared = worker.prepare_staged_preflight()['stagedTree']
+        self.assertNotEqual(original, prepared)
+        self.assertEqual(self.git('write-tree'), prepared)
+        snapshot = self.approved_snapshot()
+        self.assertEqual(snapshot['tree'], prepared)
+        with patch.object(worker.core, 'normalize_staged_final_newlines',
+                          side_effect=AssertionError('Normalization must not repeat')):
+            directory = self.queue(expectedTree=prepared, normalizedTree=prepared,
+                                   validatedSnapshot=snapshot)
+        self.assertEqual(self.job(directory)['tree'], prepared)
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), prepared)
+
+    def test_normalized_stage_approval_rejects_concurrent_changes(self):
+        prepared = worker.prepare_staged_preflight()['stagedTree']
+        snapshot = self.approved_snapshot()
+        (self.repo / 'late.txt').write_text('Later staged change\n')
+        self.git('add', 'late.txt')
+        with self.assertRaisesRegex(RuntimeError, 'Staged changes changed'):
+            worker.enqueue({
+                'message': '🧪 Reject changed selection',
+                'expectedTree': prepared,
+                'normalizedTree': prepared,
+                'validatedSnapshot': snapshot,
+            }, start=False)
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_unverified_normalization_cannot_bypass_the_normalizer(self):
+        snapshot = self.approved_snapshot()
+        for bad_request in (
+            {'normalizedTree': snapshot['tree']},
+            {'expectedTree': snapshot['tree'], 'normalizedTree': 'f' * 40,
+             'validatedSnapshot': snapshot},
+        ):
+            with self.assertRaises(ValueError):
+                worker.enqueue({'message': '🧪 Require verified normalization',
+                                **bad_request}, start=False)
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
     def test_normalization_invalidates_old_inspection_and_requires_reapproval(self):
         (self.repo / 'story.txt').write_text('Missing final newline')
         self.git('add', 'story.txt')

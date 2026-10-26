@@ -29,6 +29,29 @@ function enqueue(script, cwd, request, action = '--enqueue') {
   });
 }
 
+function normalizeStage(script, cwd) {
+  return new Promise((resolve, reject) => {
+    // Staged content is normalized before its final diff and limit inspection.
+    execFile(resolvePythonExecutable(), [script, '--prepare-stage'], {
+      cwd, timeout: 120000
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || pythonLaunchError(error).message));
+        return;
+      }
+      try {
+        const { stagedTree } = JSON.parse(stdout);
+        if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(stagedTree ?? '')) {
+          throw new Error('Could not verify the normalized staged tree.');
+        }
+        resolve(stagedTree);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
 function readStatus(script, cwd) {
   return new Promise(resolve => {
     execFile(resolvePythonExecutable(), [script, '--status'], { cwd, timeout: 10000 },
@@ -241,15 +264,26 @@ function registerBackgroundCommit(vscode, context) {
     }
     const configuration = vscode.workspace.getConfiguration('git', root);
     let result;
-    // Verify the final staged selection before creating any placeholder or
-    // starting title generation. If staging changes before the Python worker
-    // can capture it, re-run the limit inspection on the new selection.
+    // Normalize first, then inspect the exact staged content that will be
+    // committed. Concurrent staging requires another normalization/inspection
+    // pair; no approval can be reused across distinct trees.
     for (let attempt = 0; attempt < 3; attempt++) {
+      const normalizedTree = await normalizeStage(script, root.fsPath);
       const limits = await vscode.commands.executeCommand(
         'sweetiebot.checkCommitLimits', root, { captureTree: true }
       );
-      if (limits?.approved !== true || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(limits.stagedTree ?? '')) {
+      if (limits?.approved !== true || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(limits.stagedTree ?? '')) {
         return { cancelled: true };
+      }
+      if (limits.stagedTree !== normalizedTree) {
+        if (attempt === 2) {
+          throw new Error('Staged files changed repeatedly during normalization. Review and retry.');
+        }
+        await repository.status();
+        if (repository.state.mergeChanges.length) {
+          throw new Error('Resolve conflicts before queuing a commit.');
+        }
+        continue;
       }
       try {
         result = await enqueue(script, root.fsPath, {
@@ -258,7 +292,7 @@ function registerBackgroundCommit(vscode, context) {
           sign: options.sign ?? configuration.get('enableCommitSigning') === true,
           signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
           noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
-          validatedSnapshot: limits.validatedSnapshot,
+          normalizedTree, validatedSnapshot: limits.validatedSnapshot,
           ...(options.paths ? {paths: options.paths} : {}), description: options.description ?? '',
           skipSpellcheck: options.skipSpellcheck === true,
           remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
@@ -297,4 +331,4 @@ function registerBackgroundCommit(vscode, context) {
   }));
 }
 
-module.exports = { enqueue, readStatus, blockedNotification, registerBackgroundCommit };
+module.exports = { enqueue, normalizeStage, readStatus, blockedNotification, registerBackgroundCommit };

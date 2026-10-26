@@ -321,6 +321,15 @@ def install_agent(script):
                        check=True, capture_output=True)
 
 
+def prepare_staged_preflight():
+    """Normalize the staged index under the queue lock before size inspection."""
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    with repository_lock(meta):
+        if core.staged_whitespace_enabled():
+            core.normalize_staged_final_newlines()
+        return {'stagedTree': git('write-tree')}
+
+
 def validated_preflight_files(snapshot, tree, parent):
     """Consume an approved VS Code snapshot only for its exact tree and HEAD.
 
@@ -426,11 +435,19 @@ def enqueue(request, start=True):
                     'Staged changes changed after the commit-size check. '
                     'Review the staged selection and retry the commit.'
                 )
-        if core.staged_whitespace_enabled():
+        normalized_tree = request.get('normalizedTree')
+        if normalized_tree is not None:
+            # Only the exact approved index can skip a second normalization.
+            # Legacy and direct callers continue normalizing inside enqueue.
+            if (not isinstance(normalized_tree, str)
+                    or normalized_tree != expected_tree
+                    or request.get('validatedSnapshot') is None):
+                raise ValueError('Invalid pre-normalized staged-tree identifier.')
+        elif core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
         tree = git('write-tree')
-        # Normalization may rewrite staged blobs. Never reuse old approval for
-        # changed contents; the UI re-inspects the new tree on its bounded retry.
+        # Legacy normalization can modify the tree; never reuse its old
+        # approval without another staged-tree verification.
         if expected_tree is not None and tree != expected_tree:
             raise RuntimeError(
                 'Staged changes changed after the commit-size check. '
@@ -1401,6 +1418,8 @@ if __name__ == '__main__':
             print(fork_branch(*sys.argv[2:]))
         elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
             print(fork_branch(*sys.argv[2:]))
+        elif sys.argv[1:] == ['--prepare-stage']:
+            print(json.dumps(prepare_staged_preflight()))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:
