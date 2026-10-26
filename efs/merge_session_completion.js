@@ -2,8 +2,8 @@
 const pending = new WeakMap();
 function updateMergeSessionCompletion(vscode, selection, state, schedule = setTimeout, cancel = clearTimeout) {
   if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
-  const settled = new Set([...(state.merged || []), ...state.deferred].map(item => item.number));
-  const complete = !state.rateLimit && selection.pullRequests.every(pr => settled.has(pr.number));
+  const settled = new Set([...(state.merged || []), ...(state.prepared || [])].map(item => item.number));
+  const complete = !state.rateLimit && !state.deferred.length && selection.pullRequests.every(pr => settled.has(pr.number));
   const prior = pending.get(vscode.window);
   if (!complete) {
     if (prior) cancel(prior);

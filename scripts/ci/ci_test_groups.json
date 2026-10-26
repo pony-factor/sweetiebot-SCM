@@ -202,6 +202,8 @@
         "test_merge_keep_awake.js",
         "test_merge_order.js",
         "test_merge_handoff_page.js",
+        "test_merge_progress.js",
+        "test_merge_runner_layout.js",
         "test_lindsey_bulk_merge.js",
         "test_lindsey_conflicts.js",
         "test_merge_batch.js",
