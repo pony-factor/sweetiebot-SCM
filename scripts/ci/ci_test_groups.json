@@ -9,6 +9,7 @@
         "test_auto_publish.js",
         "test_background_commit.js",
         "test_background_commit.py",
+        "test_chatgpt_commit_title.js",
         "test_coauthor_identity.js",
         "test_codex_attribution.js",
         "test_codex_attribution_queue.js",
@@ -37,6 +38,7 @@
       "syntax": [
         "efs/codex_attribution.js",
         "efs/codex_commit.js",
+        "efs/chatgpt_commit_title.js",
         "efs/ollama.js",
         "efs/native_spellcheck_bridge.js",
         "assets/browser/spellcheck_bridge.js",
