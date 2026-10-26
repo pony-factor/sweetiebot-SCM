@@ -113,7 +113,13 @@
       if (mergeLaunch && !latest) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
-        for (const code of document.querySelectorAll('[data-message-author-role="assistant"] pre code, [data-message-author-role="assistant"] pre, [data-message-author-role="assistant"] [data-testid="code-block"]')) {
+        // Current conversation-role markers label the message header; the
+        // response body is its sibling inside the same message container.
+        const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
+            .map(node => node.parentElement).filter(Boolean)];
+        const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
+        for (const code of codes) {
           try {
             const text = code.textContent || '';
             // Some ChatGPT code blocks include their language/copy toolbar

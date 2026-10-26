@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   const timers = new Map();
   const listeners = new Map();
@@ -39,7 +39,13 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
         if (selector.includes('Stop streaming')) return streaming ? [{ ...button, getClientRects: () => backgroundStreaming ? [] : [1] }] : hiddenStop ? [{getClientRects:()=>[]}] : [];
-        if (selector === '[data-message-author-role="assistant"] pre code, [data-message-author-role="assistant"] pre, [data-message-author-role="assistant"] [data-testid="code-block"]') return assistantCodes.map(textContent => ({ textContent }));
+        const message = values => ({ querySelectorAll(selector) {
+          assert.equal(selector, 'pre code, pre, [data-testid="code-block"]');
+          return values.map(textContent => ({ textContent }));
+        } });
+        if (selector === '[data-message-author-role="assistant"]') return assistantCodes.length ? [message(assistantCodes)] : [];
+        // The role is on a header sibling, not an ancestor of the code block.
+        if (selector === '[data-conversation-role="assistant"]') return conversationCodes.length ? [{ parentElement: message(conversationCodes) }] : [];
         if (selector === 'button') return streamError ? [retryButton] : [];
         assert.equal(selector, 'a[href]', 'Collect exact nonce callbacks across ChatGPT message layouts');
         return resultLinks.map(href=>({href}));
@@ -153,6 +159,13 @@ f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback),
   assistantCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })] });
 f.tick(2500);
 assert.deepEqual(f.navigations, [mergeReturn], 'Complete assistant JSON recovers an omitted final apply link');
+// The live ChatGPT conversation layout uses data-conversation-role.
+f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
+  conversationCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })], streaming: true });
+f.tick(2500);
+assert.equal(f.navigations.length, 0, 'New conversation markup still waits for response completion');
+f.setStreaming(false); f.tick(2500);
+assert.deepEqual(f.navigations, [mergeReturn], 'Collect final handoffs from the current ChatGPT conversation markup');
 const punctuated = {version:1, repository:'owner/repo', results:[{number:1, patch:"function f() { return ['x!']*2; }"}]};
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text:'',
   resultLinks:[mergeCallback+'#result='+encodeURIComponent('{"version":1')],
