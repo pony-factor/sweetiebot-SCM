@@ -65,10 +65,14 @@ async function registerManagedWindowActivity(vscode, context, {
   const sessions = new Map();
   let disposed = false;
   let refreshing = false;
+  let refreshFinished = Promise.resolve();
 
   const refresh = async () => {
-    if (disposed || refreshing) return;
+    if (disposed) return;
+    if (refreshing) return refreshFinished;
     refreshing = true;
+    let finishRefresh;
+    refreshFinished = new Promise(resolve => { finishRefresh = resolve; });
     try {
       const paths = groups ?? await findGroups(vscode, { io });
       const wanted = new Set(paths);
@@ -113,7 +117,7 @@ async function registerManagedWindowActivity(vscode, context, {
           console.warn('Sweetiebot could not register workspace activity:', error.message);
         }
       }
-    } finally { refreshing = false; }
+    } finally { refreshing = false; finishRefresh(); }
   };
   await refresh();
   const tick = async () => {
@@ -135,6 +139,9 @@ async function registerManagedWindowActivity(vscode, context, {
     disposed = true;
     clearInterval(timer);
     listener?.dispose();
+    // A heartbeat refresh may still be writing the session file. Wait for it
+    // before deleting markers so shutdown cannot recreate stale sessions.
+    await refreshFinished;
     await Promise.all([...sessions.values()].map(entry =>
       io.rm(entry.session, { force: true }).catch(() => {})
     ));
