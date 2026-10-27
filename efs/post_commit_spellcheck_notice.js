@@ -37,9 +37,10 @@ function parseNotice(content) {
     if (data.title !== undefined && (typeof data.title !== 'string' || !data.title.startsWith('Spellcheck ')
         || data.title.length > 72 || /[\r\n<>]/.test(data.title)
         || data.title.trim().split(/\s+/).length < 4 || data.title.trim().split(/\s+/).length > 6)) return null;
+    if (data.requestedAtMs !== undefined && (!Number.isSafeInteger(data.requestedAtMs) || data.requestedAtMs <= 0)) return null;
     if (data.tree !== undefined && !SHA.test(data.tree || '')) return null;
     if (data.branch !== undefined && (typeof data.branch !== 'string' || !data.branch || data.branch.length > 256 || /[\x00-\x20]/.test(data.branch))) return null;
-    return { head: data.head, paths, ...(data.tree ? {tree: data.tree, branch: data.branch} : {}), ...(data.model ? { model: data.model.trim() } : {}), ...(data.title ? { title: data.title.trim() } : {}) };
+    return { head: data.head, paths, ...(data.tree ? {tree: data.tree, branch: data.branch} : {}), ...(data.model ? { model: data.model.trim() } : {}), ...(data.title ? { title: data.title.trim() } : {}), ...(data.requestedAtMs ? {requestedAtMs: data.requestedAtMs} : {}) };
   } catch { return null; }
 }
 
@@ -122,6 +123,13 @@ async function takeNotice(repository, dependencies = {}) {
     if (!metadata.isFile() || metadata.size > 16384) return null;
     const notice = parseNotice(await io.readFile(destination, 'utf8'));
     if (!notice) return null;
+    // A review belongs to the editor session that initiated the spellcheck.
+    // A detached worker can finish after VS Code has quit, even after the
+    // next launch. Legacy notices fall back to the on-disk write time.
+    if (Number.isFinite(dependencies.sessionStartedAt)) {
+      const originatedAt = notice.requestedAtMs ?? metadata.mtimeMs;
+      if (!Number.isFinite(originatedAt) || originatedAt < dependencies.sessionStartedAt) return null;
+    }
     const currentHead = await run(root, ['rev-parse', 'HEAD']);
     if (currentHead !== notice.head) {
       if (!notice.tree || !notice.branch || await run(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']) !== notice.branch
@@ -409,6 +417,9 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
 }
 
 async function registerPostCommitSpellcheckNotice(vscode, extensionContext, dependencies = {}) {
+  // Capture before Git activation: anything initiated in a prior session is
+  // never offered for review when this window is reopened or reloaded.
+  const sessionStartedAt = Date.now();
   extensionContext.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.postCommitSpellcheck', action =>
       postCommitSpellcheck(action)),
@@ -436,7 +447,7 @@ async function registerPostCommitSpellcheckNotice(vscode, extensionContext, depe
       const root = repository.rootUri?.fsPath;
       if (!root || pending.has(root)) continue;
       pending.add(root);
-      void takeNotice(repository, dependencies)
+      void takeNotice(repository, {...dependencies, sessionStartedAt})
         .then(notice => notice && !disposed ? showNotice(vscode, repository, notice, dependencies.diff || gitDiff, dependencies.git || git) : undefined)
         .catch(error => console.warn('Sweetiebot spellcheck notification:', error.message))
         .finally(() => pending.delete(root));
