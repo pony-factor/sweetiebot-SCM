@@ -350,6 +350,9 @@ const warningCopy = "You've hit your usage limit. Upgrade your plan or add credi
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy), true);
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy.replace('Try', 'try')), true);
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), false);
+context.scmToolkitHideRateLimitTimes = true;
+assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), true);
+context.scmToolkitHideRateLimitTimes = false;
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning('Upgrade your plan or add credits'), false);
 const warningParts = [
     {nodeType: 3, textContent: "You've hit your usage limit. "},

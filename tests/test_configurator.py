@@ -136,7 +136,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashOmitBulletsForEmojiTitles"])
         page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
         self.assertIn('name="squashOmitBulletsForEmojiTitles" value="true" checked', page)
-        self.assertIn("Hide bullets for emoji-only squash summaries", page)
+        self.assertIn("Omit hyphens when every commit title starts with an emoji", page)
 
     def test_squash_separator_style_round_trip(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["squashTrailerSeparatorStyle"], "underscores")

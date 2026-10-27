@@ -351,8 +351,8 @@ __RATE_LIMIT_FORMATTER__
     if (pr.localRecovery?.stage) showTextPanel(parent,
       'Saved local recovery · not GitHub status',
       'Last local operation: ' + pr.localRecovery.stage +
-      (pr.localRecovery.lastPushedHead ? '\\nLast prepared commit: ' + pr.localRecovery.lastPushedHead.slice(0, 12) : '') +
-      '\\nMerge eligibility is always rechecked against GitHub.', '');
+      (pr.localRecovery.lastPushedHead ? '\nLast prepared commit: ' + pr.localRecovery.lastPushedHead.slice(0, 12) : '') +
+      '\nMerge eligibility is always rechecked against GitHub.', '');
     if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
     if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
       pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);

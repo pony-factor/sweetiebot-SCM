@@ -1244,6 +1244,21 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched), patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
+    def test_hiding_times_compacts_timed_transcript_before_render(self):
+        original = "(0,J.jsx)(Message,{id:`localConversation.usageLimit.retry`,defaultMessage:`You've hit your usage limit. Try again at {resetDate}.`});"
+        patched = install.transform_codex(original, hide_reset_times=True, sticker_enabled=False)
+        self.assertIn('id:`localConversation.usageLimit.retry.scmShort`,defaultMessage:`Rate limited`', patched)
+        self.assertEqual(install.transform_codex(patched, hide_reset_times=True, sticker_enabled=False), patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
+    def test_hiding_times_compacts_backend_banner_before_render(self):
+        original = 'let{title:E,description:D}=T,O;if(changed){let e=n.ctas.filter(xt);render(e)};format({id:`codex.rateLimitUpsellBanner.dismiss`,defaultMessage:`Dismiss usage banner`});'
+        patched = install.transform_codex(original, hide_reset_times=True, sticker_enabled=False)
+        self.assertIn('let{title:E,description:D}=scmToolkitCompactHiddenLimitBanner(T),O', patched)
+        self.assertIn('let e=scmToolkitIsHiddenLimitBanner(T)?[]:n.ctas.filter(xt);', patched)
+        self.assertEqual(install.transform_codex(patched, hide_reset_times=True, sticker_enabled=False), patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+
     def test_transcript_compaction_never_targets_unrelated_messages(self):
         original = "(0,J.jsx)(Message,{id:`other.noReset`,defaultMessage:`Try again later.`});"
         self.assertEqual(install.transform_codex(original), original)

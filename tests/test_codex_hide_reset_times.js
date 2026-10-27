@@ -47,4 +47,24 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/hide-reset
 assert.equal(message.textContent, 'Your rate limit resets. ');
 assert.equal(upgrade.textContent, 'Upgrade');
 
+// Simulate the separate module scopes loaded by the native app. Only the first
+// module should register a document watcher or perform the startup scan.
+let watchers = 0;
+let scans = 0;
+let onMutation;
+const shared = vm.createContext({
+    document: { querySelectorAll() { scans++; return [banner]; } },
+    MutationObserver: class {
+        constructor(callback) { watchers++; onMutation = callback; }
+        observe() {}
+    },
+});
+const asset = fs.readFileSync(path.join(__dirname, '../assets/codex/hide-reset-times.js'), 'utf8');
+for (let i = 0; i < 35; i++) vm.runInContext(`(() => {${asset}\n})();`, shared);
+assert.equal(watchers, 1);
+assert.equal(scans, 2, 'only one startup scan of headings and elements');
+message.textContent = 'Your rate limit resets, 2:00 AM. ';
+onMutation();
+assert.equal(message.textContent, 'Your rate limit resets. ', 'shared watcher still hides later updates');
+
 console.log('Codex reset time hiding checks passed.');
