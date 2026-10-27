@@ -24,6 +24,6 @@ git branch -vv
 git worktree list --porcelain
 ```
 
-Never directly remove registered Git metadata. Use Git's worktree operations after establishing safety. Evidence: [branch actions](../efs/branch_actions.js), [shared main](../efs/shared_main.js), [stack logic](../efs/stacked_branch.js), [cleanup](../efs/workspace_prune.js), [sync](../scripts/cloud_repo_sync.py).
+Never directly remove registered Git metadata. Use Git's worktree operations after establishing safety. Evidence: [branch actions](../extension/branches/actions.js), [shared main](../extension/branches/shared_main.js), [stack logic](../extension/branches/stacked_branch.js), [cleanup](../extension/branches/workspace_prune.js), [sync](../scripts/cloud_repo_sync.py).
 
 See [PR workflow](pull-requests-and-merges.md) for stack merging and [troubleshooting](troubleshooting.md) for blocked branch changes.
