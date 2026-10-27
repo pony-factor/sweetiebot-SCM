@@ -31,6 +31,12 @@ def mode_edits(js):
     return edits
 
 
+def hide_reset_runtime():
+    # The installer may also add reset hiding to this same ES module.
+    # Keep this copy's helper declarations out of the shared module scope.
+    return ';(() => {\n' + HIDE_ASSET.read_text() + '\n})();\n'
+
+
 def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, reset_countdown=True,
               reset_time_pie=False, cloud_tasks=False):
     # The explicit hide-time preference wins over time visualizations.
@@ -60,7 +66,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
             js = js.replace(original, replacement, 1)
         asset = 'const scmToolkitHideUsageResetTimes = true;\n'
         asset += f'const scmToolkitCloudTasks = {str(bool(cloud_tasks)).lower()};\n'
-        asset += ASSET.read_text() + '\n' + HIDE_ASSET.read_text()
+        asset += ASSET.read_text() + '\n' + hide_reset_runtime()
         return js + START + '/* edits:' + json.dumps(edits) + ' */\n' + asset + END
 
     functions = list(re.finditer(rf'function ({IDENTIFIER})\(', js))
@@ -130,7 +136,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
     asset = f'const scmToolkitUsageResetCountdown = {str(bool(reset_countdown)).lower()};\n' + asset
     if hide_reset_times:
         asset = 'const scmToolkitHideUsageResetTimes = true;\n' + asset
-        asset += '\n' + HIDE_ASSET.read_text()
+        asset += '\n' + hide_reset_runtime()
     return js + START + '/* edits:' + json.dumps(edits) + ' */\n' + asset + END
 
 
