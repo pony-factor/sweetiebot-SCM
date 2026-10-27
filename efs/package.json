@@ -36,6 +36,7 @@
     "onCommand:sweetiebot.prepareCodexCommit",
     "onCommand:sweetiebot.commitWithMessage",
     "onCommand:sweetiebot.generateCodexCommitMessage",
+    "onCommand:sweetiebot.suggestCommitTitleWithChatGPT",
     "onCommand:sweetiebot.previewCommitSpellcheck",
     "onCommand:sweetiebot.spellcheckWithChatGPT",
     "onCommand:sweetiebot.postCommitSpellcheck",
@@ -108,6 +109,12 @@
         "title": "Commit (Same as Source Control Button)",
         "category": "Sweetiebot",
         "icon": "$(check)"
+      },
+      {
+        "command": "sweetiebot.suggestCommitTitleWithChatGPT",
+        "title": "Suggest Commit Title with ChatGPT Project",
+        "category": "Sweetiebot",
+        "icon": "$(sparkle)"
       },
       {
         "command": "sweetiebot.spellcheckWithChatGPT",
@@ -515,7 +522,13 @@
           "type": "string",
           "default": "",
           "scope": "resource",
-          "description": "ChatGPT project URL used for PR drafting, independent pony-profile research, and batch squash-merges. Blank opens normal ChatGPT chats. Example: https://chatgpt.com/g/g-p-.../project."
+          "description": "Optional shared ChatGPT Project for PR drafting, pony-profile research, batch squash-merges, and interactive ChatGPT reviews unless overridden by chatgptReviewProjectUrl. Automatic commit titles and post-commit spellcheck remain on local Ollama."
+        },
+        "scmToolkit.chatgptReviewProjectUrl": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Optional dedicated ChatGPT Project for native Spellcheck Only and manually requested ChatGPT commit titles. Leave blank to inherit chatgptProjectUrl (or regular chats when both are blank). Must be an HTTPS https://chatgpt.com/g/g-p-.../project URL. Never redirects failed Project access to ordinary chat."
         },
         "scmToolkit.automaticAppRepair": {
           "type": "boolean",

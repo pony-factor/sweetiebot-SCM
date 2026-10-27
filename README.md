@@ -7,6 +7,10 @@ Sweetiebot extends **Visual Studio Code on macOS** with Source Control controls,
 > [!IMPORTANT]
 > Sweetiebot patches installed VS Code workbench files and certain supported extensions. VS Code updates may replace patches, unsupported versions may be refused, and VS Code can show an installation-integrity warning. Review changes before installing, and only trust repositories and workspace roots you control.
 
+## Documentation
+
+Browse the [documentation index](docs/index.md) for installation, settings, commits, worktrees, PR workflows, Workspace Search, Codex/UI, troubleshooting, and development. The [functionality audit](docs/functionality-audit.md) links implemented behavior to source and tests and distinguishes code inspection from live macOS verification.
+
 ## Installation
 
 ### Requirements
@@ -115,7 +119,9 @@ Spellcheck features have independent controls:
 - **Draft commit-title correction** can suggest conservative spelling/grammar changes after an idle delay, with a preview or automatic handling.
 - **Sweetiebot: Spellcheck Filenames** previews name corrections from the Command Palette or a file context menu; it does not stage or commit a rename automatically.
 - **Post-commit Markdown spellcheck** is **off by default**. When enabled, it proposes changed Markdown prose as unstaged edits for review in **Spellchecks Performed**. Keep or discard reviewed changes before a follow-up commit.
-- **Spellcheck Only** is a separate manual action.
+- **Spellcheck Only** is a separate manual action. The native ChatGPT browser session follows `scmToolkit.chatgptReviewProjectUrl` if configured, otherwise it inherits `scmToolkit.chatgptProjectUrl` (or uses regular chats when neither is set). An inaccessible Project fails rather than silently submitting outside it.
+
+**Sweetiebot: Suggest Commit Title with ChatGPT Project** is an optional, explicitly initiated command. After your confirmation, it sends a bounded staged diff to the signed-in ChatGPT browser and previews a suggested title. It only fills the Source Control message box after your approval, without committing. It uses the dedicated optional `scmToolkit.chatgptReviewProjectUrl` if present, or the shared `scmToolkit.chatgptProjectUrl` otherwise. **Automatic** commit-title generation and the post-commit Markdown spellchecker continue using local Ollama, including unattended jobs; configuring a ChatGPT Project does not change their model provider.
 
 To keep post-commit Markdown spellcheck enabled globally while disabling it in one repository, add to that repository's `.vscode/settings.json`:
 
@@ -161,7 +167,7 @@ The layers action creates a stacked branch from the current topic branch, wherea
 
 Sweetiebot's New PR button starts a dedicated **Pull Request workspace** and a ChatGPT research/drafting session. Local **Kefania** supplies the published branch diff, verified head/base information, and the bot publication flow. Review the proposed title and body; the confirmation link hands them back to Kefania for publication as **codex-pony** after rechecking the head. Opening the chat alone does not publish a PR.
 
-The GitHub App, GitHub CLI, local Kefania service, VS Code, and ChatGPT account can have distinct permissions and sessions. A local service can be registered as `codex-drafter`; no public Kefania domain is required for that workflow. See [separate GitHub App identities](docs/DISTINCT_GITHUB_APPS.md) for setup and keep secrets in an appropriate credential store, never in repository files.
+The GitHub App, GitHub CLI, local Kefania service, VS Code, and ChatGPT account can have distinct permissions and sessions. A local service can be registered as `codex-drafter`; no public Kefania domain is required for that workflow. See [separate GitHub App identities](docs/distinct-github-apps.md) for setup and keep secrets in an appropriate credential store, never in repository files.
 
 A **ChatGPT project for PR and pony research** is optional. When a branch name identifies a pony, local pony info or independent research can open separately without inserting character notes into the PR description. Keep the dedicated PR workspace open until the session completes.
 
@@ -185,7 +191,7 @@ ollama pull qwen3-embedding:0.6b
 
 **Ask Ollama** is optional and uses a separate local chat model. EFS indexes eligible local text/code and supported document text, skips common generated and Git metadata paths, and incrementally refreshes changed content. The search scope can include other local repositories under `~/GitHub` as well as the active workspace. Search results can open matching passages and copy repository-relative Markdown links.
 
-EFS is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
+EFS is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [EFS details](docs/workspace-search.md) and [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
 
 ## Codex, browser, and window controls
 

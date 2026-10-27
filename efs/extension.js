@@ -34,6 +34,7 @@ const { registerCodexDraftCommands } = require('./codex/codex_drafts');
 const { registerCommitLimitCommand } = require('./commits/commit_limits');
 const { registerSpellcheckPreviewCommand } = require('./commits/spellcheck_preview');
 const { registerNativeSpellcheckBridge } = require('./commits/native_spellcheck_bridge');
+const { registerChatgptCommitTitle } = require('./commits/chatgpt_commit_title');
 const { registerPostCommitSpellcheckNotice } = require('./commits/post_commit_spellcheck_notice');
 const { registerFilenameSpellcheck } = require('./commits/filename_spellcheck');
 const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python_runtime');
@@ -401,6 +402,7 @@ async function activate(context) {
   registerSpellcheckPreviewCommand(vscode, context);
   registerFilenameSpellcheck(vscode, context);
   registerNativeSpellcheckBridge(vscode, context);
+  registerChatgptCommitTitle(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {
     console.warn('Sweetiebot spellcheck notification initialization:', error.message);
   });

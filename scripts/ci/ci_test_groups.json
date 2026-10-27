@@ -9,6 +9,7 @@
         "test_auto_publish.js",
         "test_background_commit.js",
         "test_background_commit.py",
+        "test_chatgpt_commit_title.js",
         "test_coauthor_identity.js",
         "test_codex_attribution.js",
         "test_codex_attribution_queue.js",
@@ -37,6 +38,7 @@
       "syntax": [
         "efs/codex/codex_attribution.js",
         "efs/commits/codex_commit.js",
+        "efs/commits/chatgpt_commit_title.js",
         "efs/search/ollama.js",
         "efs/commits/native_spellcheck_bridge.js",
         "assets/browser/spellcheck_bridge.js",
@@ -80,7 +82,7 @@
       ],
       "syntax": [
         "efs/merge/sync_review.js",
-        "efs/branch_window.js"
+        "efs/branches/branch_window.js"
       ]
     },
     "branch-names": {

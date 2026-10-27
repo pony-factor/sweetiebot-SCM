@@ -83,7 +83,7 @@ mode with this short-lived installation token via `GH_TOKEN`. This bypasses
 Kefania's **currently codex-pony-only** internal App slug check without
 editing its separate repository. The `gh` CLI must be installed and usable.
 The old Kefania hosted/MCP flows in `pony-factor/kefania` are **not migrated**
-by this PR; they must be updated separately to accept the new App slug and
+by this Sweetiebot integration; they must be updated separately to accept the new App slug and
 credentials before using those entry points with the Kefania identity.
 
 When **Separate Kefania and Lindsey Apps** is enabled, Sweetiebot-owned
@@ -99,7 +99,8 @@ Merges, pushes, Git writes, reactions and user identity lookups still use
 the human's existing VS Code or GH CLI login. Inactive-window polling stays
 paused; primary and secondary rate limits still apply.
 
-The optional headless Lindsey `scripts/bulk-merge.js` receives Lindsey's own
+The optional external Lindsey `bulk-merge.js`, discovered by
+Sweetiebot's `efs/lindsey_bulk_merge.js`, receives Lindsey's own
 installation token. Its current safety restrictions (including linked/native
 stacks and ambiguous attribution) still apply; authentication does not relax
 merge policy.
@@ -130,3 +131,5 @@ References:
 - [GitHub installation authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)
 - https://github.com/pony-factor/kefania/blob/main/src/github.js
 - https://github.com/pony-factor/lindsey-sync/blob/main/README.md
+
+See [PR workflows](pull-requests-and-merges.md) and [the audit](functionality-audit.md). These local instructions do not establish that independently hosted services are deployed.
