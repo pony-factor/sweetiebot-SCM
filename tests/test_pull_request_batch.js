@@ -327,11 +327,11 @@ async function run() {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
       return { get(key, fallback) {
-        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles', 'mergePostSummaries'].includes(key),
+        assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles', 'mergePostSummaries', 'mergePostStatusUpdates'].includes(key),
           'Unexpected SCM configuration key: ' + key);
         if (key === 'chatgptProjectUrl') return configuredProject || fallback;
         if (key === 'filterSyncCommitSummaries') return filterSyncSummaries;
-        if (key === 'mergePostSummaries') return fallback;
+        if (['mergePostSummaries', 'mergePostStatusUpdates'].includes(key)) return fallback;
         return emojiOnlySummaries;
       } };
     } },

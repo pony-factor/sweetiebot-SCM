@@ -113,7 +113,7 @@ function dashboardActionPlan(pr) {
     actions: [byId('investigate-blocker')], workspaceAction };
 }
 
-function blockerPrompt(repository, pr, option, engine = 'web') {
+function blockerPrompt(repository, pr, option, engine = 'web', { postStatusUpdates = false } = {}) {
   return [
     (option.manual ? 'The user requested this manual action in Lindsey: ' : 'The user selected this implementation option in Lindsey: ') + option.label,
     'USER-SELECTED TASK:\n' + option.prompt,
@@ -125,6 +125,7 @@ function blockerPrompt(repository, pr, option, engine = 'web') {
       [pr.localReview?.text, pr.review?.text, pr.report?.text].filter(Boolean).join('\n\n').slice(0, 14000),
     'After inspecting the original Lindsey review and the current GitHub threads, preserve every existing bot and human review comment verbatim. Publish substantive findings or a completed resolution in one comprehensive GitHub pull request review with inline comments on the changed code and a short summary of the changes, using the connected GitHub app authenticated as the user, never Lindsey or any bot account. For a material follow-up to an existing inline finding, prefer reply_to_review_comment on its top-level review comment ID to keep the response in its thread; do not repeat that explanation in a new root comment. Group any new code-specific explanations in the single review. If the relevant code cannot be anchored or the required review capability is unavailable, report the exact limitation locally instead of posting a standalone PR Conversation comment. Reference the original concern, changed behavior, fixing commit, actual verification and any remaining decision. Never call update_review_comment or update_issue_comment; never edit, overwrite or impersonate an existing comment. Do not present unverified work as resolved. If user-authenticated GitHub commenting is unavailable, explain the exact limitation and do not fall back to bot-authored responses. If an unresolved choice genuinely needs a new vote, publish a separate NEW inline review comment on the current diff referencing the original, using the structured options below; do not alter old choices or invent decisions.',
     reviewPublicationInstructions(),
+    require('./merge_review_policy').statusUpdateInstructions(postStatusUpdates),
     reportOptionsInstructions()
   ].join('\n\n');
 }
@@ -169,7 +170,9 @@ async function openCodexBranch(vscode, context, root, repository, pr, prompt, {
 
 async function launchBlockerAction(vscode, context, rootUri, repository, pr, option, engine) {
   if (!rootUri?.fsPath) throw Error('The selected repository workspace is unavailable.');
-  const prompt = blockerPrompt(repository, pr, option, engine);
+  const prompt = blockerPrompt(repository, pr, option, engine, {
+    postStatusUpdates: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true
+  });
   if (engine === 'codex') return openCodexBranch(vscode, context, rootUri.fsPath, repository, pr, prompt);
   if (engine !== 'web') throw Error('Unknown implementation destination.');
   const { resolveChatgptActionProject, chatgptMergeUrl } = require('./chatgpt_project');

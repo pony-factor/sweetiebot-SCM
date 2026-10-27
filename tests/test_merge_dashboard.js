@@ -91,6 +91,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(dashboardActionPlan({ state: 'blocked', mergeableState: 'blocked' }).actions[0].id, 'investigate-blocker');
   assert.deepEqual(dashboardActionPlan({ state: 'merged' }).actions, []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
+  assert(selectedPrompt.includes('OPTIONAL GITHUB STATUS UPDATES DISABLED'));
+  assert(blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0], 'web',
+    { postStatusUpdates: true }).includes('OPTIONAL GITHUB STATUS UPDATES ENABLED'));
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert(selectedPrompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
@@ -245,7 +248,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
-      if (key === 'mergePostSummaries') { layoutConfig.mergePostSummaries = mode; return; }
+      if (['mergePostSummaries', 'mergePostStatusUpdates'].includes(key)) {
+        assert.equal(target, 1); layoutConfig[key] = mode; return;
+      }
       assert.equal(key, 'mergeTimelineTimestampMode');
       assert.equal(target, 1, 'Save globally across independent merge windows');
       savedModes.push(mode);
@@ -582,6 +587,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(events.at(-1).postSummaries, true);
   await messageHandler({ type: 'post-summaries', enabled: false });
   assert.equal(events.at(-1).postSummaries, false);
+  assert.equal(events.at(-1).postStatusUpdates, false);
+  await messageHandler({ type: 'post-status-updates', enabled: true });
+  assert.equal(events.at(-1).postStatusUpdates, true);
+  assert.equal(events.at(-1).postSummaries, false, 'Status updates have an independent preference');
+  await messageHandler({ type: 'post-status-updates', enabled: 'false' });
+  assert.equal(events.at(-1).postStatusUpdates, true, 'Invalid messages cannot change the preference');
+  await messageHandler({ type: 'post-status-updates', enabled: false });
+  assert.equal(events.at(-1).postStatusUpdates, false);
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
   dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
     path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });

@@ -249,7 +249,8 @@ async function resumePRSession(vscode, context) {
             return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
           },
           destination: url.origin + url.pathname,
-          makePrompt: () => initialPrompt,
+          makePrompt: () => initialPrompt + '\n\n' + require('./merge_review_policy').statusUpdateInstructions(
+            vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true),
           execute: runLocal,
           onResult: async result => {
             const controller = await resumeMergeDashboard(vscode, directory, context);
@@ -281,6 +282,7 @@ async function resumePRSession(vscode, context) {
         destination: url.origin + url.pathname,
         makePrompt: snapshot => require('./pull_request_batch').batchMergePrompt({
           repositoryUrl: 'https://github.com/' + snapshot.repository,
+          postStatusUpdates: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
           postMergeSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
           pullRequests: snapshot.pullRequests, localHandoff: true,
           filterSyncCommitSummaries: !initialPrompt.includes('SYNC COMMIT FILTER DISABLED'),

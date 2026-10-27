@@ -148,7 +148,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <body>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
-<div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="muted" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="blocker-notice" class="blocker-notice" hidden></div>
@@ -526,6 +526,7 @@ __RATE_LIMIT_FORMATTER__
     const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
       ? model.timestampMode : 'hidden';
     byId('timeline-time-mode').value = timestampMode;
+    byId('post-status-updates').checked = model.postStatusUpdates === true;
     byId('post-summaries').checked = model.postSummaries === true;
     const eventScroll = events.scrollTop;
     events.replaceChildren();
@@ -604,6 +605,7 @@ __RATE_LIMIT_FORMATTER__
     render();
     vscode.postMessage({ type: 'timestamp-mode', mode });
   });
+  byId('post-status-updates').addEventListener('change', event => vscode.postMessage({ type: 'post-status-updates', enabled: event.target.checked }));
   byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   setInterval(refreshRelativeEventTimes, 30000);

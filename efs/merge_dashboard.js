@@ -344,6 +344,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       type: 'state', repository: selection.repository, workers,
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      postStatusUpdates: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
@@ -525,12 +526,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (Number.isSafeInteger(message.number) && byNumber.has(message.number)) persistence.select(message.number);
       return;
     }
-    if (message?.type === 'post-summaries') {
+    if (['post-summaries', 'post-status-updates'].includes(message?.type)) {
       if (typeof message.enabled !== 'boolean') return;
       try {
         await vscode.workspace.getConfiguration('scmToolkit').update(
-          'mergePostSummaries', message.enabled, vscode.ConfigurationTarget.Global);
-      } catch (failure) { error = 'Could not save the AI summary preference: ' + failure.message; }
+          message.type === 'post-status-updates' ? 'mergePostStatusUpdates' : 'mergePostSummaries', message.enabled, vscode.ConfigurationTarget.Global);
+      } catch (failure) { error = 'Could not save the GitHub posting preference: ' + failure.message; }
       publish();
       return;
     }
@@ -620,7 +621,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       clearTimer(timer); actualInterval = refreshInterval();
       timer = setTimer(() => { void refresh(); }, actualInterval);
     }
-    if (['mergePostSummaries', 'mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
+    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
       .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
   });
   panel.onDidDispose(() => {

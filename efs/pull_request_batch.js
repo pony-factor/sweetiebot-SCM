@@ -180,7 +180,7 @@ async function pickPullRequests(vscode, pullRequests, engine = 'ChatGPT') {
   });
 }
 
-function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummaries = true, omitBulletsForEmojiTitles = false, localHandoff = false, postMergeSummaries = false }) {
+function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummaries = true, omitBulletsForEmojiTitles = false, localHandoff = false, postMergeSummaries = false, postStatusUpdates = false }) {
   if (!Array.isArray(pullRequests) || !pullRequests.length) {
     throw new Error('Select at least one pull request.');
   }
@@ -226,6 +226,7 @@ function batchMergePrompt({ repositoryUrl, pullRequests, filterSyncCommitSummari
     'NATIVE STACK METADATA SAFETY: GitHub-native atomic stack merges may not support custom per-layer squash titles, human Git authors, or commit messages. Check support BEFORE submitting the stack. If the chosen operation cannot preserve each layer\'s exact (#number) title and complete ordered human/bot/AI co-author trailers, STOP the affected stack; report this limitation rather than silently losing attribution or rewriting main after the merge.',
     'AFTER EACH COMPLETED MERGE: Fetch the resulting squash commit from its actual destination branch. Verify its first line exactly matches that PR\'s precomputed squash title, its Git author is the verified original HUMAN (never codex-pony[bot] or another bot), and its author plus Co-authored-by trailers cover the verified original human authors and other evidenced contributors in the requested priority order, and that its message includes the required Codex Web trailer in the Codex Web position. Also verify a \'- \' subject list, no \'*\' list markers, no embedded Co-authored-by lines among entries, and only one final trailer block after exactly ten underscores __________. Report any mismatch and its commit URL rather than claiming successful attribution. Queued merges are not complete until their commits can be inspected; never amend or force-push a protected base to repair a merged commit.',
     postMergeSummaries ? 'OPTIONAL GITHUB SUMMARY ENABLED: Write each handoff explanation as a concise standalone summary of the actual feature or fix, why it matters, and any verified validation or unresolved limitation. This is especially useful when the original PR description is sparse. Avoid executor instructions, SHA inventories and routine attribution bookkeeping. Include each link at most once. The local runner will publish this explanation as one deduplicated AI summary only after it independently verifies the merge. Do not post a summary yourself or claim checks you did not run. The actionable-findings-only policy still applies to other comments.' : '',
+    require('./merge_review_policy').statusUpdateInstructions(postStatusUpdates),
     require('./merge_blocker_actions').reportOptionsInstructions(),
     'Report which PRs actually landed on main versus another branch, which were only queued, and which were blocked. Never collapse multiple selected PRs into a single squash commit or claim an intermediate-branch merge reached main.'
   ].filter(Boolean).join('\n\n');
@@ -289,6 +290,7 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       }
       const prompt = batchMergePrompt({
         localHandoff: true,
+        postStatusUpdates: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
         postMergeSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
         repositoryUrl: selectedRepository.repositoryUrl,
         pullRequests: selected,

@@ -11,6 +11,11 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   const { batchMergePrompt } = require('../efs/pull_request_batch');
   const promptOptions = { repositoryUrl: 'https://github.com/owner/repo', pullRequests: selection.pullRequests, localHandoff: true };
   assert(!batchMergePrompt(promptOptions).includes('OPTIONAL GITHUB SUMMARY ENABLED'));
+  assert(batchMergePrompt(promptOptions).includes('OPTIONAL GITHUB STATUS UPDATES DISABLED'));
+  const statusPrompt = batchMergePrompt({ ...promptOptions, postStatusUpdates: true });
+  assert(statusPrompt.includes('OPTIONAL GITHUB STATUS UPDATES ENABLED'));
+  assert(!statusPrompt.includes('OPTIONAL GITHUB SUMMARY ENABLED'));
+  assert(batchMergePrompt({ ...promptOptions, postMergeSummaries: true }).includes('OPTIONAL GITHUB STATUS UPDATES DISABLED'));
   assert(batchMergePrompt({ ...promptOptions, postMergeSummaries: true }).includes('concise standalone summary'));
 
   await publishMergeSummaries({ ...options, enabled: false,
