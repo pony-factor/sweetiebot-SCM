@@ -17,10 +17,32 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
       return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
     } catch { return null; }
   }
-  function addLink(parent, label, value) {
+  // Only GitHub-hosted attachments are allowed to load automatically in this webview.
+  // Untrusted Markdown images stay clickable links instead of making remote requests.
+  function safeImageUrl(value) {
+    const href = safeUrl(value || '');
+    if (!href) return null;
+    const url = new URL(href);
+    if (url.hostname === 'github.com' && /^\/user-attachments\/assets\/[a-z0-9-]+\/?$/i.test(url.pathname)) return href;
+    if (url.hostname === 'user-images.githubusercontent.com' && /^\/\d+\//.test(url.pathname)) return href;
+    return null;
+  }
+  function addImage(parent, label, value) {
+    const src = safeImageUrl(value);
+    if (!src) return false;
+    const img = node(parent, 'img');
+    img.src = src;
+    img.alt = label || '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer';
+    return true;
+  }
+  function addLink(parent, label, value, renderChild) {
     const url = safeUrl(value);
     if (!url) return false;
-    const a = node(parent, 'a', label);
+    const a = node(parent, 'a', renderChild ? undefined : label);
+    if (renderChild) renderChild(a);
     a.href = typeof mapLink === 'function' ? safeUrl(mapLink(url)) || url : url;
     a.rel = 'noopener noreferrer';
     if (typeof openLink === 'function') {
@@ -50,6 +72,50 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
     if (url.startsWith('<') && url.endsWith('>')) url = url.slice(1, -1);
     return { label: source.slice(start + 1, close), url, end: i };
   }
+  function htmlAttributes(text) {
+    const values = {};
+    const pattern = /([a-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    let match;
+    while ((match = pattern.exec(text))) values[match[1].toLowerCase()] = match[2] ?? match[3];
+    return values;
+  }
+  // GitHub PR descriptions often contain centered linked image banners. Recognize
+  // only these image shapes, never parse or inject arbitrary source HTML.
+  function htmlImage(text) {
+    let offset = 0, centered = false, href = null;
+    const paragraph = /^<p\b([^<>]*)>\s*/i.exec(text);
+    if (paragraph) {
+      centered = htmlAttributes(paragraph[1]).align === 'center';
+      offset += paragraph[0].length;
+    }
+    const anchor = /^<a\b([^<>]*)>\s*/i.exec(text.slice(offset));
+    if (anchor) {
+      href = htmlAttributes(anchor[1]).href;
+      offset += anchor[0].length;
+    }
+    const image = /^<img\b([^<>]*?)\s*\/?>/i.exec(text.slice(offset));
+    if (!image) return null;
+    const attrs = htmlAttributes(image[1]);
+    if (!safeImageUrl(attrs.src)) return null;
+    offset += image[0].length;
+    if (anchor) {
+      const close = /^\s*<\/a\s*>/i.exec(text.slice(offset));
+      if (!close) return null;
+      offset += close[0].length;
+    }
+    if (paragraph) {
+      const close = /^\s*<\/p\s*>/i.exec(text.slice(offset));
+      if (!close) return null;
+      offset += close[0].length;
+    }
+    return { src: attrs.src, alt: attrs.alt || '', href, centered, end: offset };
+  }
+  function addHtmlImage(parent, image) {
+    const container = image.centered ? node(parent, 'span') : parent;
+    if (image.centered) container.className = 'markdown-image-center';
+    if (!image.href || !addLink(container, image.alt, image.href,
+      anchor => addImage(anchor, image.alt, image.src))) addImage(container, image.alt, image.src);
+  }
   function inline(parent, text, level = 0) {
     if (level > 10) { node(parent, 'span', text); return; }
     let pending = '', i = 0;
@@ -63,7 +129,8 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
         const match = markdownLink(text, linkStart);
         if (match && safeUrl(match.url)) {
           flush();
-          addLink(parent, (isImage ? 'Image: ' : '') + match.label, match.url);
+          if (isImage && safeImageUrl(match.url)) addImage(parent, match.label, match.url);
+          else addLink(parent, (isImage ? 'Image: ' : '') + match.label, match.url);
           i = match.end;
           continue;
         }
@@ -75,6 +142,13 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
         if (end >= 0) { flush(); node(parent, 'code', text.slice(i + len, end).replace(/\n/g, ' ')); i = end + len; continue; }
       }
       if (ch === '<') {
+        const image = htmlImage(text.slice(i));
+        if (image) {
+          flush();
+          addHtmlImage(parent, image);
+          i += image.end;
+          continue;
+        }
         const end = text.indexOf('>', i + 1);
         const value = end < 0 ? '' : text.slice(i + 1, end);
         if (/^https?:\/\//i.test(value.trim()) && safeUrl(value)) { flush(); addLink(parent, value, value); i = end + 1; continue; }
