@@ -541,7 +541,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       let target;
       try { target = new URL(message.url); } catch { return; }
       if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) return;
-      return require('./pr_workflows').openWorkflow(vscode, target.href, { openToSide: true });
+      return require('../github/pr_workflows').openWorkflow(vscode, target.href, { openToSide: true });
     }
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);
