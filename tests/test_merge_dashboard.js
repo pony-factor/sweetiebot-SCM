@@ -357,7 +357,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(historicalFailure.expandable, true);
   assert(historicalFailure.explanation.includes('No request details were captured'));
   assert(!panel.webview.html.includes('__ACTIVITY_RENDERER__'));
-  assert(panel.webview.html.includes('renderMergeActivitySummary(content, event.number, presentation)'));
+  assert(panel.webview.html.includes('renderMergeActivitySummary(content, event.number, presentation, commentOnlyLink)'));
   assert(!panel.webview.html.includes("show('summary', 'muted', 'Details'"));
   assert(panel.webview.html.includes('Saved activity · live GitHub state may have changed'));
   assert(panel.webview.html.includes("dispatch('open-link', undefined, event.url)"));
