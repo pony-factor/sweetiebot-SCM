@@ -1241,7 +1241,7 @@ def transform(js, css, remove=False, settings=None):
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
         + "\n"
-        + (WORKBENCH_ASSETS / "strip.js").read_text()
+        + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
         + "\n"
         + (WORKBENCH_ASSETS / "message_bar.js").read_text()
         + "\n"
