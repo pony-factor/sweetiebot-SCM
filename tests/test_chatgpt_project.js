@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { normalizeChatgptProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl } = require('../efs/chatgpt_project');
+const { normalizeChatgptProjectUrl, resolveChatgptReviewProjectUrl, chatgptPromptUrl, chatgptPullRequestUrl, chatgptMergeUrl } = require('../efs/chatgpt_project');
 
 const project = 'https://chatgpt.com/g/g-p-6ac73804b6b081918ef8d1f0c88d4ba0/project';
 const prompt = 'Merge #12 & #13\nVerify the diff.';
@@ -39,3 +39,18 @@ const pr = new URL(chatgptPullRequestUrl(large, project));
 assert.equal(pr.search, '');
 assert.equal(pr.origin + pr.pathname, project);
 assert.equal(new URLSearchParams(pr.hash.slice(1)).get('q'), large);
+
+const config = (review, shared) => ({get(key) {
+  if (key === 'chatgptReviewProjectUrl') return review;
+  if (key === 'chatgptProjectUrl') return shared;
+  throw new Error('Unexpected setting: ' + key);
+}});
+const separateProject = 'https://chatgpt.com/g/g-p-optional123/project';
+assert.equal(resolveChatgptReviewProjectUrl(config('', '')), '');
+assert.equal(resolveChatgptReviewProjectUrl(config('', project)), project,
+  'blank review destination inherits shared project');
+assert.equal(resolveChatgptReviewProjectUrl(config(separateProject + '/', project)), separateProject,
+  'dedicated review project overrides PR/merge destination');
+assert.equal(resolveChatgptReviewProjectUrl(config(separateProject, '')), separateProject);
+assert.throws(() => resolveChatgptReviewProjectUrl(config('https://evil.example/project', project)),
+  /ChatGPT project URL/, 'invalid review setting fails closed');
