@@ -11,9 +11,14 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   const original = validateSelection(rawSelection);
   const entries = new Map(original.pullRequests.map(pr => [pr.number, { ...pr, attempts: 0 }]));
   const merged = [], prepared = [], deferred = [], history = [], bridges = [];
-  let round = 0, emptyRounds = 0, disposed = false, rateLimit;
+  let round = 0, emptyRounds = 0, disposed = false, rateLimit, executing = false, reconciling = false;
+  let generation = 0;
+  const activities = {};
+  const activity = (number, phase, message) => {
+    activities[number] = { phase, message, round, at: new Date().toISOString() };
+  };
 
-  const state = () => ({ ...(rateLimit ? {rateLimit} : {}), repository: original.repository, pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], ...(branchOnly ? {prepared:[...prepared]} : {}), deferred: [...deferred], history: [...history] });
+  const state = () => ({ ...(rateLimit ? {rateLimit} : {}), repository: original.repository, activities: structuredClone(activities), pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], ...(branchOnly ? {prepared:[...prepared]} : {}), deferred: [...deferred], history: [...history] });
   const remaining = () => [...entries.values()].filter(pr => !merged.some(item => item.number === pr.number)
     && !deferred.some(item => item.number === pr.number) && !prepared.some(item => item.number === pr.number));
 
@@ -21,6 +26,8 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
     const pending = remaining();
     for (const [index, pr] of pending.entries()) {
       onProgress({ message: `Verifying PR #${pr.number} (${index + 1}/${pending.length})` });
+      activity(pr.number, 'verifying', 'Checking current PR head, base and merge eligibility');
+      await onState(state());
       const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
       // GitHub can retarget an open child when this batch merges and deletes
       // its parent branch. Accept only that verified parent's destination;
@@ -32,6 +39,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           fresh.head?.ref !== pr.head || fresh.base?.ref !== expectedBase || fresh.title !== pr.title ||
           fresh.head?.repo?.full_name !== original.repository) {
         deferred.push({ number: pr.number, reason: 'The selected PR changed outside this batch; review the new head or PR state.' });
+        activity(pr.number, 'blocked', 'PR snapshot changed; waiting for a verified repair or fresh selection');
         continue;
       }
       pr.base = expectedBase;
@@ -90,23 +98,52 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       return null;
     }
     round++;
+    const currentGeneration = ++generation;
     const snapshots = orderMergeCandidates(remaining()).map(({ attempts, ...pr }) => ({ ...pr }));
     const selection = validateSelection({ repository: original.repository, pullRequests: snapshots });
+    for (const pr of snapshots) activity(pr.number, 'reviewing', 'Review round ' + round + ' · waiting for GPT to return a current-base handoff');
     let submitted;
     const bridge = await createMergeHandoff(selection, {
-      validate: validateRound,
-      execute: async (input, selected) => { submitted = input; return execute(input, selected); },
+      validate: (input, selected) => {
+        if (disposed || reconciling || currentGeneration !== generation) throw Error('This handoff is stale; use the refreshed merge review.');
+        validateRound(input, selected);
+      },
+      execute: async (input, selected) => {
+        executing = true;
+        submitted = input;
+        try {
+          for (const item of input.results) activity(item.number, 'applying', 'Handoff received · waiting for local execution');
+          await onState(state());
+          return await execute(input, selected);
+        } catch (error) {
+          executing = false;
+          for (const item of input.results) activity(item.number, 'blocked', 'Local execution failed; inspect the handoff error');
+          try { await onState(state()); } catch { /* Preserve the execution error. */ }
+          throw error;
+        }
+      },
       onResult: async result => {
+        try {
         // Dashboard rendering must not prevent a verified Git result from
         // advancing the coordinator (for example, after its panel is closed).
         try { await onResult(result); } catch { /* State below remains authoritative. */ }
-        for (const decision of submitted.deferred || []) deferred.push({ ...decision });
+        for (const decision of submitted.deferred || []) {
+          deferred.push({ ...decision });
+          activity(decision.number, 'blocked', 'Review stopped · ' + decision.reason);
+        }
         if (result.results.length) emptyRounds = 0;
         else emptyRounds++;
         for (const item of result.results) {
           const pr = entries.get(item.number);
           const input = submitted.results.find(entry => entry.number === item.number);
           if (!pr || !input) throw Error('Local result does not match the submitted round.');
+          activity(item.number, item.status, item.merged ? 'GitHub merge confirmed' : ({
+            needs_resolution: 'Conflict found · preparing a fresh resolution review',
+            needs_refresh: 'Base advanced · regenerating the integration handoff',
+            checks_failed: 'Integrated-head checks failed · assessing repair',
+            waiting: 'Waiting for integrated-head checks', synced: 'PR branch synchronization finished',
+            blocked: 'Local execution stopped · attention required'
+          }[item.status] || 'Local execution finished'));
           if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt,configured:item.configured}; continue; }
           // A parallel lane can advance the base before any local work starts.
           // Regenerating that untouched patch is bounded by maxRounds, rather
@@ -139,6 +176,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         await onState(state());
         const next = await startRound();
         return { batch: state(), ...(next ? { continueUrl: next.url } : {}) };
+        } finally { executing = false; }
       }
     });
     bridges.push(bridge);
@@ -170,7 +208,52 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   }
 
   const first = await startRound();
-  return { ...first, state, dispose() { disposed = true; for (const bridge of bridges) bridge.dispose(); } };
+  async function reconcile(repairedNumbers = []) {
+    if (disposed || rateLimit || executing || reconciling) return null;
+    reconciling = true;
+    let changed = false;
+    const updates = [];
+    try {
+      for (const pr of entries.values()) {
+        if (merged.some(item => item.number === pr.number) || prepared.some(item => item.number === pr.number)) continue;
+        const blocked = deferred.find(item => item.number === pr.number);
+        // Only stale-snapshot deferrals can be cleared by a repaired head.
+        if (blocked && (blocked.kind || !/selected PR (?:head, base or title changed|changed outside this batch)/i.test(blocked.reason))) continue;
+        const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
+        if (fresh.title !== pr.title || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
+            fresh.head?.repo?.full_name !== original.repository) continue;
+        if (fresh.merged === true && SHA.test(fresh.merge_commit_sha || '')) {
+          updates.push({ pr, blocked, mergedSha: fresh.merge_commit_sha });
+          continue;
+        }
+        if (!repairedNumbers.includes(pr.number) || fresh.state !== 'open' || fresh.draft ||
+            fresh.mergeable !== true || !SHA.test(fresh.head?.sha || '') || fresh.head.sha === pr.headSha) continue;
+        const compared = await api('repos/' + original.repository + '/compare/' + pr.headSha + '...' + fresh.head.sha);
+        if (compared.status !== 'ahead' || compared.merge_base_commit?.sha !== pr.headSha) continue;
+        updates.push({ pr, blocked, headSha: fresh.head.sha });
+      }
+      for (const { pr, blocked, mergedSha, headSha } of updates) {
+        if (mergedSha) merged.push({ number: pr.number, title: pr.title, base: pr.base, status: 'merged', destinationSha: mergedSha });
+        else {
+          pr.headSha = headSha;
+          pr.attempts = 0;
+          pr.checkFailures = 0;
+          activity(pr.number, 'refreshing', 'Repair commit verified · retiring stale patches and requesting a fresh review');
+        }
+        const index = deferred.indexOf(blocked);
+        if (index >= 0) deferred.splice(index, 1);
+        changed = true;
+      }
+      if (!changed) return null;
+      // A patch from the previous generation must never reach the executor.
+      generation++;
+      emptyRounds = 0;
+      for (const bridge of bridges) bridge.dispose();
+      await onState(state());
+      return await startRound();
+    } finally { reconciling = false; }
+  }
+  return { ...first, state, reconcile, dispose() { disposed = true; for (const bridge of bridges) bridge.dispose(); } };
 }
 
 module.exports = { createMergeBatch };

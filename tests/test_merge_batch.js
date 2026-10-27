@@ -44,11 +44,15 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   } });
   try {
     assert(batch.instructions.includes('INTELLIGENT MERGE ORDER'));
+    assert.equal(batch.state().activities[1].phase, 'reviewing');
+    assert.match(batch.state().activities[1].message, /waiting for GPT/);
     const tooMany = await submit(batch.url, [item(1, c), item(2, c)]);
     assert.equal(tooMany.status, 400);
     assert.equal(calls, 0, 'Do not prepare stale multi-PR patches in one round');
     const first = await submit(batch.url, [item(1, c)]);
     assert.equal(first.value.batch.merged.length, 1);
+    assert.equal(first.value.batch.activities[1].phase, 'merged');
+    assert.equal(first.value.batch.activities[2].phase, 'reviewing');
     let prompt = new URLSearchParams(new URL(first.value.continueUrl).hash.slice(1)).get('q');
     assert(prompt.includes('Preserve the main calculation fix.'));
     assert(prompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
@@ -152,6 +156,54 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   } finally { own.dispose(); }
 
   // Unchanged branch-only results must stop rather than repeatedly retrying.
+  // Dashboard polling can recover a repaired head without executing an old
+  // patch, accepting rewritten history, or retrying a human decision.
+  for (const mode of ['repaired', 'rewritten', 'retitled', 'human', 'running']) {
+    let liveHead = a, applied = 0, title = 'Feature 1', release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const recovery = await createMergeBatch(one, {
+      destination: 'https://chatgpt.com/',
+      api: async endpoint => {
+        if (endpoint.includes('/compare/')) return { status: mode === 'rewritten' ? 'diverged' : 'ahead', merge_base_commit: { sha: a } };
+        if (endpoint.includes('/branches/')) return { commit: { sha: c } };
+        return { state: 'open', draft: false, title, mergeable: true,
+          head: { ref: 'feature-1', sha: liveHead, repo: { full_name: one.repository } }, base: { ref: 'main' } };
+      },
+      execute: async () => {
+        applied++;
+        if (mode === 'running') await gate;
+        return { repository: one.repository, results: [{ number: 1, status: applied === 1 ? 'blocked' : 'merged',
+          merged: applied > 1, sha: e, reason: 'Selected PR head, base or title changed; prepare a fresh handoff.' }] };
+      }
+    });
+    try {
+      let pending;
+      if (mode === 'human') await submit(recovery.url, [], [{ number: 1, headSha: a, kind: 'human_review', reason: 'Choose incompatible API behavior.' }]);
+      else if (mode === 'running') {
+        pending = submit(recovery.url, [item(1, c)]);
+        while (!applied) await new Promise(resolve => setImmediate(resolve));
+      } else await submit(recovery.url, [item(1, c)]);
+      liveHead = e;
+      if (mode === 'retitled') title = 'Different scope';
+      const next = await recovery.reconcile([1]);
+      if (mode === 'running') { assert.equal(next, null); release(); await pending; }
+      else if (mode !== 'repaired') {
+        assert.equal(next, null);
+        assert.equal(recovery.state().pullRequests[0].headSha, a);
+      } else {
+        assert(next.url, 'A repaired deferred PR receives a fresh review');
+        assert.equal(recovery.state().deferred.length, 0);
+        assert.equal(recovery.state().pullRequests[0].headSha, e);
+        assert.equal(await recovery.reconcile([1]), null, 'Polling the same repaired head cannot launch duplicate work');
+        const old = await fetch(new URLSearchParams(new URL(recovery.url).hash.slice(1)).get('return_to')).catch(() => null);
+        assert.equal(old, null, 'The stale patch endpoint is retired');
+        const done = await submit(next.url, [item(1, c, null, e)]);
+        assert.equal(done.value.batch.merged.length, 1);
+        assert.equal(applied, 2, 'Only the fresh reviewed handoff reaches execution');
+      }
+    } finally { release(); recovery.dispose(); }
+  }
+
   currentHead = a;
   const noOp = await createMergeBatch(one, { api: ownApi, destination: 'https://chatgpt.com/',
     execute: async () => ({ repository: 'owner/repo', results: [{

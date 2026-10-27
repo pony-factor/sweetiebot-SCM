@@ -55,13 +55,25 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/pr_sessio
     };
     await launchMergeSession(vscode, context, file(root), 'https://chatgpt.com/#sweetiebot_merge=1&q=Review', selection);
     vscode.workspace.workspaceFile = workspace;
+    const requestPath = path.join(path.dirname(workspace.fsPath), 'request.json');
+    const request = JSON.parse(await fs.readFile(requestPath, 'utf8'));
+    await fs.writeFile(requestPath, JSON.stringify({ ...request, resumeSelection: {
+      ...selection, repository: 'other/repo', pullRequests: selection.pullRequests.map(pr => ({ ...pr,
+        url: pr.url.replace('owner/repo', 'other/repo') }))
+    } }));
+    await assert.rejects(resumePRSession(vscode, context), /outside the original merge session/);
+    for (const pr of selection.pullRequests) pr.headSha = 'c'.repeat(40);
+    await fs.writeFile(requestPath, JSON.stringify({ ...request, resumeSelection: selection }));
     await resumePRSession(vscode, context);
+    const originalSelection = JSON.parse(await fs.readFile(path.join(path.dirname(workspace.fsPath), 'merge-selection.json'), 'utf8'));
+    assert(originalSelection.pullRequests.every(pr => pr.headSha === 'a'.repeat(40)), 'Recovery preserves original dashboard snapshots');
     const launches = calls.filter(([command]) => command === 'workbench.action.browser.open');
     assert.equal(launches.length, 3, 'Large independent queues open three GPT sessions');
     const assigned = launches.flatMap(([, options]) => {
       const prompt = new URLSearchParams(new URL(options.url).hash.slice(1)).get('q');
       assert(prompt.includes('PARALLEL REVIEW LANE'));
       const snapshot = prompt.match(/Refreshed selected snapshots: (\[[^\n]+\])/)[1];
+      assert(JSON.parse(snapshot).every(pr => pr.headSha === 'c'.repeat(40)), 'Explicit recovery reviews the current heads');
       return JSON.parse(snapshot).map(pr => pr.number);
     });
     assert.equal(assigned.length, 11); assert.equal(new Set(assigned).size, 11);

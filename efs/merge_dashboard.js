@@ -258,7 +258,7 @@ function postedReviewActivity(notes) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   const readFetch = createLindseyReadFetch(selection.repository, { fetchImpl });
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
@@ -349,6 +349,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       timestampMode: configuredTimelineMode(vscode),
       layoutPreferences: configuredLayout(vscode)
     });
+  }
+
+  function recordActivity(pr, phase, message, key) {
+    if (pr.activityKey === key) return;
+    pr.activityKey = key;
+    pr.activity = { phase, message, at: new Date().toISOString() };
+    addEvent(pr, 'progress', message);
   }
 
   function recordReviewActivity(item, notes) {
@@ -498,6 +505,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         }));
         if (rateLimitedUntil > Date.now()) break;
       }
+      if (!disposed && !error) {
+        try { await onRefresh(prs.filter(pr => pr.sawConflict && pr.conflictCleared && pr.mergeable === true && !pr.review).map(pr => pr.number)); }
+        catch (failure) {
+          error = 'Could not refresh the merge queue: ' + failure.message;
+          if (failure.rateLimited) rateLimitedUntil = failure.retryAt || Date.now() + 60000;
+        }
+      }
     } finally {
       working = false;
       publish();
@@ -640,6 +654,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       merging: 'Requesting GitHub merge · awaiting confirmation'
     };
     if (!Object.hasOwn(stages, event.stage)) return;
+    pr.activity = { phase: event.stage, message: stages[event.stage], at: new Date().toISOString() };
     const sha = SHA.test(event.sha || '') ? event.sha : '';
     const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
     if (event.stage === 'preparing') {
@@ -663,8 +678,18 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       event.stage, pr.lastPushedHead || '') || pr.localRecovery;
     publish();
     if (event.stage === 'pushed' || event.stage === 'checks-passed') void refresh();
-  }, recordBatchState(state) {
+  }, recordBatchState(state, { restored = false } = {}) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    for (const [number, item] of Object.entries(state.activities || {})) {
+      const pr = byNumber.get(Number(number));
+      if (!pr || typeof item?.phase !== 'string' || typeof item.message !== 'string') continue;
+      if (restored) {
+        pr.activity = { phase: 'paused', message: 'Runner not resumed · last saved activity: ' + item.message.slice(0, 240), at: item.at };
+        continue;
+      }
+      recordActivity(pr, item.phase.slice(0, 48), item.message.slice(0, 320),
+        JSON.stringify([item.round, item.phase, item.message, item.at]));
+    }
     workers = (Array.isArray(state.workers) ? state.workers : []).filter(worker => Number.isInteger(worker.id) && worker.id > 0 && worker.id <= 3)
       .map(worker => ({ id: worker.id, label: String(worker.label || '').slice(0, 80),
         phase: String(worker.phase || '').slice(0, 80), merged: Number(worker.merged) || 0,
@@ -697,13 +722,20 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         pr.localReview = require('./merge_blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
       }
     }
+    for (const pr of prs) {
+      if (!state.deferred.some(item => item.number === pr.number)) {
+        pr.localReview = null;
+        reportedDeferrals.delete(pr.number);
+      }
+    }
     for (const [number, report] of Object.entries(state.blockerReports || {})) {
       const pr = byNumber.get(Number(number));
-      if (pr) pr.localReview = report;
+      if (pr && state.deferred.some(item => item.number === pr.number)) pr.localReview = report;
     }
     for (const item of state.deferred) {
       const pr = byNumber.get(item.number);
       if (!pr || reportedDeferrals.has(item.number)) continue;
+      pr.activity = { phase: 'blocked', message: String(item.reason || 'Queue paused for attention.').slice(0, 320), at: new Date().toISOString() };
       reportedDeferrals.add(item.number);
       addEvent(pr, 'blocked', 'Deferred for this batch · other selected PRs can continue', String(item.reason || '').slice(0, 4000));
     }
@@ -732,6 +764,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : 'Local preparation stopped · merge not confirmed';
       const commitSha = item.status === 'merged' && item.merged === true && SHA.test(item.sha || '')
         ? item.sha : pushed;
+      pr.activity = { phase: item.status, message, at: new Date().toISOString() };
       addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked',
         message, String(item.reason || '').slice(0, 4000), '',
         commitSha ? { sha: commitSha, title: item.commitTitle } : null);

@@ -312,9 +312,11 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   };
   const actionLaunches = [];
   const workerFocus = [];
+  const refreshedQueues = [];
   panel.visible = false;
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
+    onRefresh: async numbers => { refreshedQueues.push(numbers); },
     onFocusWorker: async id => { workerFocus.push(id); },
     context: { globalStorageUri: { fsPath: reactionStorage }, workspaceState },
     launchAction: async (...args) => { actionLaunches.push(args); return true; },
@@ -445,6 +447,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nMechanically reconciled both changes.' }];
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'resolved');
+  assert.deepEqual(refreshedQueues.at(-1), [12], 'Verified cleared conflicts notify the active merge coordinator');
   assert(events.at(-1).prs[0].report.text.includes('Mechanically'));
   assert(fileRequests >= 2, 'Head changes refresh the file diff');
   messageHandler({ type: 'open-pr', number: 12 });
@@ -575,6 +578,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   await messageHandler({ type: 'post-summaries', enabled: false });
   assert.equal(events.at(-1).postSummaries, false);
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
+  assert.equal(events.at(-1).prs[0].activity.phase, 'prepared');
+  assert.match(events.at(-1).prs[0].activity.message, /squash prepared locally/);
   dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
     path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
   assert.equal(events.at(-1).events.at(-1).commitSha, sha);
@@ -584,6 +589,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
   dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha, title: '🔄 Sync branch to main' });
   assert.equal(events.at(-1).events.at(-1).commitTitle, '🔄 Sync branch to main');
+  assert.match(mergeActivityPresentation(events.at(-1).events.at(-1)).summary, /pushed to the PR branch/,
+    'Operational timeline entries lead with the runner action rather than hiding it behind a commit title');
   assert(!events.at(-1).events.at(-1).details);
   await dashboard.flushLocalState();
   assert.equal(createMergeDashboardPersistence(localContext, selection).restoredRecovery[12].stage, 'pushed');
@@ -615,6 +622,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
+  const runningState = { repository: selection.repository, deferred: [], activities: { 12: {
+    phase: 'reviewing', message: 'Review round 2 · waiting for GPT handoff', round: 2, at: '2026-10-27T15:00:00Z'
+  } } };
+  dashboard.recordBatchState(runningState);
+  const runningCount = events.at(-1).events.length;
+  assert.equal(events.at(-1).prs[0].activity.phase, 'reviewing');
+  assert.match(events.at(-1).events.at(-1).message, /waiting for GPT/);
+  dashboard.recordBatchState(runningState);
+  assert.equal(events.at(-1).events.length, runningCount, 'Repeated snapshots do not flood the activity log');
+  dashboard.recordBatchState(runningState, { restored: true });
+  assert.equal(events.at(-1).prs[0].activity.phase, 'paused');
+  assert.match(events.at(-1).prs[0].activity.message, /Runner not resumed/);
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
   await dashboard.refresh({ force: true });
   const failedFetch = events.at(-1).events.at(-1);

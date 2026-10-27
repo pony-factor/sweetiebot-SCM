@@ -81,6 +81,7 @@ async function createParallelMergeBatch(rawSelection, options = {}) {
     const pullRequests = new Map(all.flatMap(item => item.pullRequests).map(pr => [pr.number, pr]));
     rateLimit ||= all.find(item => item.rateLimit)?.rateLimit;
     return { repository: selection.repository,
+      activities: Object.assign({}, ...all.map(item => item.activities || {})),
       pullRequests: selection.pullRequests.map(pr => pullRequests.get(pr.number) || pr),
       round: all.reduce((sum, item) => sum + item.round, 0),
       merged: all.flatMap(item => item.merged), deferred: all.flatMap(item => item.deferred),
@@ -170,7 +171,14 @@ async function createParallelMergeBatch(rawSelection, options = {}) {
       batches.push(batch);
       if (batch.url) launches.push({ id: lane.id, label: lane.label, url: batch.url });
     }
-    return { launches, state, dispose() { disposed = true; for (const batch of batches) batch.dispose(); } };
+    return { launches, state, async reconcile(numbers) {
+      const refreshed = [];
+      for (const [index, batch] of batches.entries()) {
+        const next = await batch.reconcile(numbers);
+        if (next?.url) refreshed.push({ id: lanes[index].id, label: lanes[index].label, url: next.url });
+      }
+      return { launches: refreshed };
+    }, dispose() { disposed = true; for (const batch of batches) batch.dispose(); } };
   } catch (error) { disposed = true; for (const batch of batches) batch.dispose(); throw error; }
 }
 
