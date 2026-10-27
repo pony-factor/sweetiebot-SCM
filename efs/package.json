@@ -336,6 +336,13 @@
           "scope": "application",
           "description": "Remove bullet hyphens from PR squash summaries only when every included commit subject starts with an emoji. Mixed summaries keep bullets."
         },
+        "scmToolkit.squashTrailerSeparatorStyle": {
+          "type": "string",
+          "enum": ["underscores", "hyphens", "none"],
+          "default": "underscores",
+          "scope": "application",
+          "description": "Divider between squash summaries and co-author trailers: ten underscores, nine hyphens, or none."
+        },
         "scmToolkit.filterSyncCommitSummaries": {
           "type": "boolean",
           "default": true,
