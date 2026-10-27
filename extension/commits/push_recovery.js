@@ -63,7 +63,7 @@ function createPushErrorHandler(vscode) {
         await checkBranch();
         // Preserve existing commits, regardless of pull.rebase or pull.ff settings.
         step = 'merging';
-        await repository.merge(`rextension/remotes/${target}`);
+        await repository.merge(`refs/remotes/${target}`);
         await checkBranch();
         step = 'pushing to';
         await repository.push(remote.name, refspec);

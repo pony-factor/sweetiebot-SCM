@@ -27,9 +27,9 @@ async function run() {
   git(local, 'tag', 'local-tag');
   git(local, 'config', 'fetch.pruneTags', 'true');
   // Simulate deletion by another clone, leaving this clone's refs stale.
-  git(remote, 'update-ref', '-d', 'rextension/heads/deleted-remote');
-  git(remote, 'update-ref', '-d', 'rextension/heads/kept-local');
-  git(remote, 'update-ref', 'rextension/heads/new-remote', git(remote, 'rev-parse', 'main'));
+  git(remote, 'update-ref', '-d', 'refs/heads/deleted-remote');
+  git(remote, 'update-ref', '-d', 'refs/heads/kept-local');
+  git(remote, 'update-ref', 'refs/heads/new-remote', git(remote, 'rev-parse', 'main'));
   const repository = { rootUri: { fsPath: local } };
   const options = { defaultBranch: 'main' };
   // The local-first pass must not depend on origin or GitHub authentication.
@@ -48,7 +48,7 @@ async function run() {
   assert.equal(git(local, 'tag', '--list'), 'local-tag', 'Do not prune local tags');
 
   // Another deletion after the first popup refresh must disappear on the next one.
-  git(remote, 'update-ref', '-d', 'rextension/heads/new-remote');
+  git(remote, 'update-ref', '-d', 'refs/heads/new-remote');
   assert(!(await listBranchStrip(repository, options)).branches
     .some(branch => branch.name === 'new-remote'));
 

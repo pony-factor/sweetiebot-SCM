@@ -42,7 +42,7 @@ class BranchCleanupTests(unittest.TestCase):
         return subprocess.CompletedProcess(command, 0, json.dumps(data), '')
 
     def exists(self):
-        return subprocess.run(['git', 'show-ref', '--verify', '--quiet', 'rextension/heads/topic'], cwd=self.repo).returncode == 0
+        return subprocess.run(['git', 'show-ref', '--verify', '--quiet', 'refs/heads/topic'], cwd=self.repo).returncode == 0
 
     def test_verified_pr_evidence_is_written_only_to_managed_workspace(self):
         self.check_managed_workspace_evidence("pony/ABC123")
@@ -133,7 +133,7 @@ class BranchCleanupTests(unittest.TestCase):
         self.git('push', 'origin', 'main', 'topic')
         self.git('fetch', 'origin')
         self.assertIn('origin/topic', prune.origin_tracking_refs(self.repo))
-        subprocess.run(['git', '--git-dir', str(remote), 'update-ref', '-d', 'rextension/heads/topic'],
+        subprocess.run(['git', '--git-dir', str(remote), 'update-ref', '-d', 'refs/heads/topic'],
                        check=True, capture_output=True, text=True)
         self.assertEqual(prune.prune_origin_tracking(self.repo), ['origin/topic'])
         self.assertNotIn('origin/topic', prune.origin_tracking_refs(self.repo))
@@ -259,7 +259,7 @@ class BranchCleanupTests(unittest.TestCase):
             if command[1] == 'update-ref':
                 new = self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
                                'commit-tree', self.git('rev-parse', 'HEAD^{tree}'), '-p', self.oid, '-m', 'new work')
-                self.git('update-ref', 'rextension/heads/topic', new)
+                self.git('update-ref', 'refs/heads/topic', new)
             return previous(command, **kwargs)
         prune.run.side_effect = moving
         self.assertEqual(prune.prune_repo(self.repo), [])

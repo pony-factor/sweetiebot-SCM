@@ -104,7 +104,7 @@ def update(path):
     # Use the configured main upstream, including remotes other than origin.
     remote = git(path, "config", "--get", "branch.main.remote", check=False).stdout.strip()
     upstream = git(path, "config", "--get", "branch.main.merge", check=False).stdout.strip()
-    if not remote or remote == "." or upstream != "rextension/heads/main":
+    if not remote or remote == "." or upstream != "refs/heads/main":
         return "no-main-upstream"
     with ExitStack() as locks:
         for name in ("sweetiebot-background-commit.json.lock", "sweetiebot-async-commit.lock"):
@@ -121,9 +121,9 @@ def update(path):
             return "no-main-commit"
         local = head.stdout.strip()
         # FETCH_HEAD is deliberately not written: other Git operations may use it.
-        target = "rextension/remotes/" + remote + "/main"
+        target = "refs/remotes/" + remote + "/main"
         fetched = git(path, "fetch", "--no-tags", "--no-write-fetch-head", "--", remote,
-                      "+rextension/heads/main:" + target, check=False)
+                      "+refs/heads/main:" + target, check=False)
         if fetched.returncode:
             if "couldn't find remote ref" in fetched.stderr.lower():
                 return "no-remote-main"

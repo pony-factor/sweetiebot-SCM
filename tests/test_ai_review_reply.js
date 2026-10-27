@@ -31,7 +31,7 @@ async function run() {
     if (args[0] === 'symbolic-ref') return job.branch;
     if (args[0] === 'rev-parse') return sha;
     if (args[0] === 'rev-list') return '1';
-    if (args[0] === 'ls-remote') return sha + '\trextension/heads/' + job.branch;
+    if (args[0] === 'ls-remote') return sha + '\trefs/heads/' + job.branch;
     if (args[0] === 'diff' && args.includes('--name-only')) return job.path;
     return 'diff --git a/src/a.js b/src/a.js\n+if (!value) return;';
   };
@@ -41,7 +41,7 @@ async function run() {
   assert.equal(calls.at(-1)[0], 'diff');
   assert.match(replyBody(job, sha, 'Null input now returns early.'), /sweetiebot-ai-review:THREAD42/);
   const notPushed = await checkPublished(job, async (root, ...args) =>
-    args[0] === 'ls-remote' ? before + '\trextension/heads/fix/review' : fake(root, ...args));
+    args[0] === 'ls-remote' ? before + '\trefs/heads/fix/review' : fake(root, ...args));
   assert.equal(notPushed, null, 'do not respond before push');
   await assert.rejects(() => checkPublished(job, async (root, ...args) =>
     args[0] === 'rev-list' ? '2' : fake(root, ...args)), /More than one commit/);

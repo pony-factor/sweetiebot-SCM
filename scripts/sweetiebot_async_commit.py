@@ -127,8 +127,8 @@ def related_pending_jobs(real_git, global_args, refs=('HEAD',), background=True)
     for record in records:
         job = record['job']
         branch = job.get('branch', '')
-        if branch and not branch.startswith('rextension/'):
-            branch = 'rextension/heads/' + branch
+        if branch and not branch.startswith('refs/'):
+            branch = 'refs/heads/' + branch
         # An incomplete checkpoint cannot establish independence safely.
         if not branch:
             related.append(record)
@@ -155,7 +155,7 @@ def operation_refs(real_git, global_args, subcommand, args):
             positional = [arg for arg in args if not arg.startswith('-')]
             if len(positional) > 1:
                 remote, *branches = positional
-                return ['HEAD', *(f'rextension/remotes/{remote}/{branch.partition(":")[0]}' for branch in branches)]
+                return ['HEAD', *(f'refs/remotes/{remote}/{branch.partition(":")[0]}' for branch in branches)]
             return ['HEAD', '@{upstream}']
         # Option values that are not revisions are ignored by the resolver.
         return ['HEAD', *(ref.lstrip('^') for arg in args if not arg.startswith('-')
@@ -163,13 +163,13 @@ def operation_refs(real_git, global_args, subcommand, args):
 
     def all_heads():
         return git_text(real_git, global_args, 'for-each-ref', '--format=%(refname)',
-                        'rextension/heads', 'rextension/tags').splitlines()
+                        'refs/heads', 'refs/tags').splitlines()
 
     positional = []
     remote = None
     skip = False
     tags = '--tags' in args
-    tag_refs = git_text(real_git, global_args, 'for-each-ref', '--format=%(refname)', 'rextension/tags').splitlines() if tags else []
+    tag_refs = git_text(real_git, global_args, 'for-each-ref', '--format=%(refname)', 'refs/tags').splitlines() if tags else []
     for arg in args:
         if skip:
             skip = False
@@ -262,7 +262,7 @@ def reconcile(real_git, global_args, journal, job):
     if actual != job["sha"]:
         return False
     result = command(real_git, global_args, "update-ref",
-                     "rextension/heads/" + branch, replacement, job["sha"],
+                     "refs/heads/" + branch, replacement, job["sha"],
                      capture_output=True, text=True)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "Could not finalize local commit")

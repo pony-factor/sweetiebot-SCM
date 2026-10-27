@@ -33,7 +33,7 @@ async function run() {
     fs.writeFileSync(path.join(root, 'topic'), 'topic content\n');
     git('add', '.'); git('commit', '-m', 'Human topic commit');
     const before = git('rev-parse', 'HEAD');
-    git('update-ref', 'rextension/remotes/origin/main', target);
+    git('update-ref', 'refs/remotes/origin/main', target);
     git('merge', '--no-ff', '--no-edit', 'main');
     const sha = git('rev-parse', 'HEAD');
     const record = { branch: 'topic', defaultBranch: 'main', remote: 'origin',

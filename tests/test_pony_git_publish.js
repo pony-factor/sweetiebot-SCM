@@ -63,7 +63,7 @@ async function fixture(run) {
     assert.equal(git(root, 'show', '--format=', '--name-only', 'HEAD'), result.path);
     assert.match(git(root, 'log', '-1', '--format=%B'), /^🦄 Add pony profile: g4-mares\/berry-punch\n/);
     assert.match(git(root, 'log', '-1', '--format=%B'), /Co-authored-by: Codex Web <noreply@openai.com>/);
-    assert.equal(git(root, 'rev-parse', 'HEAD'), git(root, 'rev-parse', 'rextension/remotes/origin/main'));
+    assert.equal(git(root, 'rev-parse', 'HEAD'), git(root, 'rev-parse', 'refs/remotes/origin/main'));
     assert.equal(execFileSync('git', ['--git-dir', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim(), result.commit);
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'README.md'), 'M  README.md');
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'scratch.txt'), '?? scratch.txt');
@@ -95,7 +95,7 @@ async function fixture(run) {
     assert.equal(git(root, 'show', 'HEAD:new-upstream.txt'), 'latest from origin\n'.trim());
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'README.md'), 'M  README.md');
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'scratch.txt'), '?? scratch.txt');
-    assert.equal(git(root, 'rev-parse', 'rextension/remotes/origin/main'), result.commit);
+    assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/main'), result.commit);
   });
 
   await fixture(async (root, remote) => {
@@ -104,7 +104,7 @@ async function fixture(run) {
     const upstream = await advanceRemote(root, remote, 'ponies/g4-mares/berry-punch.json', '{"profile":"Upstream"}\n');
     await assert.rejects(publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'), /could not fast-forward/);
     assert.equal(git(root, 'rev-parse', 'HEAD'), before);
-    assert.equal(git(root, 'rev-parse', 'rextension/remotes/origin/main'), upstream);
+    assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/main'), upstream);
     assert.equal(await fs.readFile(path.join(root, 'ponies/g4-mares/berry-punch.json'), 'utf8'), '{"profile":"Sourced"}\n');
     assert.equal(git(root, 'status', '--porcelain=1', '--untracked-files=all', '--', 'ponies/g4-mares/berry-punch.json'), '?? ponies/g4-mares/berry-punch.json');
   });

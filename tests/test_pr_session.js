@@ -265,7 +265,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../ext
 
     // Exercise an actual independent clone and verify the task resumes only
     // in its selected branch, leaving the source checkout unchanged.
-    execFileSync('git', ['-C', root.fsPath, 'symbolic-ref', 'HEAD', 'rextension/heads/my-feature']);
+    execFileSync('git', ['-C', root.fsPath, 'symbolic-ref', 'HEAD', 'refs/heads/my-feature']);
     await fs.writeFile(path.join(root.fsPath, 'fixture.txt'), 'Local workspace fixture\n');
     execFileSync('git', ['-C', root.fsPath, 'add', 'fixture.txt']);
     execFileSync('git', ['-C', root.fsPath, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',

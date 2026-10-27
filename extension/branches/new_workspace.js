@@ -31,7 +31,7 @@ async function describeRepository(folder, git) {
     throw new Error('"' + (folder.name || location) + '" is not inside a local Git repository.');
   }
   try {
-    await git(['-C', root, 'show-ref', '--verify', '--quiet', 'rextension/heads/main']);
+    await git(['-C', root, 'show-ref', '--verify', '--quiet', 'refs/heads/main']);
   } catch {
     throw new Error('"' + root + '" has no local main branch. Create or fetch main before opening a new workspace.');
   }
@@ -46,7 +46,7 @@ async function copyRemotes(source, destination, git) {
     // Preserve local topic branches when no remote exists. Removing origin
     // otherwise removes the only refs cloned from the original repository.
     const refs = (await git(['-C', destination, 'for-each-ref',
-      '--format=%(refname:short)', 'rextension/remotes/origin'])).split(/\r?\n/).filter(Boolean);
+      '--format=%(refname:short)', 'refs/remotes/origin'])).split(/\r?\n/).filter(Boolean);
     for (const ref of refs) {
       if (ref.startsWith('origin/') && ref !== 'origin/main' && ref !== 'origin/HEAD') {
         await git(['-C', destination, 'branch', ref.slice('origin/'.length), ref]);

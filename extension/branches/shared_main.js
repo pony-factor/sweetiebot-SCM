@@ -27,7 +27,7 @@ async function originalRepository(root, {
 } = {}) {
   root = await fs.realpath(root);
   const worktrees = (await run(['-C', root, 'worktree', 'list', '--porcelain', '-z'])).split('\0\0');
-  const shared = worktrees.find(block => block.split('\0').includes('branch rextension/heads/main') &&
+  const shared = worktrees.find(block => block.split('\0').includes('branch refs/heads/main') &&
     block.split('\0').some(line => line.startsWith('worktree ') && inside(githubDirectory, line.slice(9))));
   if (shared) return shared.split('\0').find(line => line.startsWith('worktree ')).slice(9);
   // Linked topic worktrees already identify the original repository exactly.
@@ -55,7 +55,7 @@ function checkedOutMain(listing) {
   const blocks = listing.split('\0\0');
   for (const block of blocks) {
     const lines = block.split('\0');
-    if (!lines.includes('branch rextension/heads/main')) continue;
+    if (!lines.includes('branch refs/heads/main')) continue;
     const worktree = lines.find(line => line.startsWith('worktree '));
     if (worktree) return worktree.slice('worktree '.length);
   }
@@ -306,7 +306,7 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   await run(['-C', original, 'check-ref-format', '--branch', branch]);
   // Reopening an existing topic must use its existing files, including edits.
   const worktrees = (await run(['-C', original, 'worktree', 'list', '--porcelain'])).split('\n\n');
-  const existing = worktrees.find(block => block.split('\n').includes('branch rextension/heads/' + branch));
+  const existing = worktrees.find(block => block.split('\n').includes('branch refs/heads/' + branch));
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);

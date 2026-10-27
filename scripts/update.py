@@ -107,7 +107,7 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     if not repository.exists():
         repository.mkdir(parents=True)
         git(repository, "init", "--bare")
-    git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "rextension/heads/main")
+    git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "refs/heads/main")
     revision = git(repository, "rev-parse", "FETCH_HEAD").decode().strip()
     marker = cache / "installed-revision"
     candidate = cache / "candidate"

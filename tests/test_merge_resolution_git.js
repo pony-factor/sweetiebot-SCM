@@ -49,7 +49,7 @@ const run = promisify(execFile);
     let merged = false, pushed = false;
     let stalePushReads = 0;
     const pushes = [];
-    const branch = name => git('--git-dir=' + remote, 'rev-parse', 'rextension/heads/' + name);
+    const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
     const author = { name: 'John Wooten', email: 'human@example.test' };
     const api = async (endpoint, method) => {
       if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, default_branch: 'main' };
@@ -77,7 +77,7 @@ const run = promisify(execFile);
         const head = await branch('feature');
         assert.notEqual(head, headSha);
         assert.equal(await git('--git-dir=' + remote, 'rev-parse', head + '^'), baseSha);
-        await git('--git-dir=' + remote, 'update-ref', 'rextension/heads/main', head, baseSha);
+        await git('--git-dir=' + remote, 'update-ref', 'refs/heads/main', head, baseSha);
         merged = true;
         return { merged: true, sha: head };
       }
@@ -155,17 +155,17 @@ const run = promisify(execFile);
     // An ordinary fast-forward push must preserve a competing branch update.
     const competing = await git('--git-dir=' + remote, 'commit-tree', headSha + '^{tree}', '-p', headSha, '-m', 'Competing fixture update');
     await assert.rejects(attempt({ git: async (...args) => {
-      if (args.includes('push')) await git('--git-dir=' + remote, 'update-ref', 'rextension/heads/feature', competing, headSha);
+      if (args.includes('push')) await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', competing, headSha);
       return localGit(...args);
     } }), /stale info|rejected/);
     assert.equal(await branch('feature'), competing, 'A normal push preserves the competing head');
-    await git('--git-dir=' + remote, 'update-ref', 'rextension/heads/feature', headSha, competing);
+    await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
     pushed = false;
     // A child PR built from the parent must remain untouched while the parent
     // accepts a normal append-only synchronization commit.
     const childSha = await git('--git-dir=' + remote, 'commit-tree', headSha + '^{tree}',
       '-p', headSha, '-m', 'Dependent child fixture');
-    await git('--git-dir=' + remote, 'update-ref', 'rextension/heads/child', childSha);
+    await git('--git-dir=' + remote, 'update-ref', 'refs/heads/child', childSha);
     stalePushReads = 2;
     const incremental = await attempt({ api: dependentApi });
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
@@ -193,7 +193,7 @@ const run = promisify(execFile);
     const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null,
       decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
     assert.equal(wrongReason.status, 'blocked', 'Convenience does not qualify as rewrite necessity');
-    await git('--git-dir=' + remote, 'update-ref', 'rextension/heads/feature', headSha, incremental.sha);
+    await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, incremental.sha);
     pushed = false;
     const progress = [];
     stalePushReads = 2;
@@ -273,7 +273,7 @@ async function successiveMerges(checkState) {
    await repo('checkout', '--quiet', 'main');
    await repo('remote', 'add', 'origin', remote);
    await repo('push', '--quiet', 'origin', 'main', 'feature-1', 'feature-2', 'feature-3');
-   const branch = name => git('--git-dir=' + remote, 'rev-parse', 'rextension/heads/' + name);
+   const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
    const author = { name: 'John Wooten', email: 'human@example.test' };
    const merged = new Set();
    const staleCheckHead = heads[2];
@@ -315,7 +315,7 @@ async function successiveMerges(checkState) {
        const messageFile = path.join(root, 'native-squash-message');
        await fs.writeFile(messageFile, message);
        const squash = await git('--git-dir=' + remote, 'commit-tree', head + '^{tree}', '-p', base, '-F', messageFile);
-       await git('--git-dir=' + remote, 'update-ref', 'rextension/heads/main', squash, base);
+       await git('--git-dir=' + remote, 'update-ref', 'refs/heads/main', squash, base);
        merged.add(number);
        return { merged: true, sha: squash };
      }

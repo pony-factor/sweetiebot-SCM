@@ -460,7 +460,7 @@ test('failed Accept preserves concurrent staged edits, branch switches, and new 
     let staged = '', changed = false;
     const readDiff = async (_root, args) => args.includes('--cached') ? staged : patch;
     const readGit = async (root, args) => {
-      if (args[0] === 'symbolic-ref') return changed && change === 'branch' ? 'rextension/heads/other' : 'rextension/heads/topic';
+      if (args[0] === 'symbolic-ref') return changed && change === 'branch' ? 'refs/heads/other' : 'refs/heads/topic';
       if (args[0] === 'rev-parse') return changed && change === 'head' ? 'b'.repeat(40) : head;
       return f.git(root, args);
     };
@@ -493,7 +493,7 @@ test('Accept honors the Commit and push checkbox, while Revert never pushes', as
       f.repo.push = async () => { throw new Error('Must use the SCM push command'); };
       const readDiff = async (_root, args) => args.includes('--cached') ? '' : patch;
       const readGit = async (root, args) => args[0] === 'symbolic-ref'
-        ? 'rextension/heads/cherry-jubilee' : f.git(root, args);
+        ? 'refs/heads/cherry-jubilee' : f.git(root, args);
       await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, readDiff, readGit);
       const preview = takeSpellcheckPopup();
       const vscode = {
@@ -534,7 +534,7 @@ test('Failed push preserves the accepted commit and reports the failure without 
     const messages = [];
     f.repo.push = async () => { throw new Error('Must use the SCM push command'); };
     const readGit = async (root, args) => args[0] === 'symbolic-ref'
-      ? (committed && switchBranch ? 'rextension/heads/other' : 'rextension/heads/cherry-jubilee')
+      ? (committed && switchBranch ? 'refs/heads/other' : 'refs/heads/cherry-jubilee')
       : f.git(root, args);
     await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']},
       async (_root, args) => args.includes('--cached') ? '' : patch, readGit);
@@ -664,7 +664,7 @@ test('Accept queues reviewed corrections behind pending titles and survives a ti
   const tree = 'c'.repeat(40);
   let current = head;
   const readGit = async (root, args) => {
-    if (args[0] === 'symbolic-ref') return 'rextension/heads/topic';
+    if (args[0] === 'symbolic-ref') return 'refs/heads/topic';
     if (args[0] === 'rev-parse') return args[1].endsWith('^{tree}') ? tree : current;
     return f.git(root, args);
   };

@@ -37,7 +37,7 @@ async function createStackedBranch(vscode, repository, options, dependencies = {
   } catch {
     throw new Error('Install GitHub CLI and its gh-stack extension: gh extension install github/gh-stack');
   }
-  const refs = await repository.getRefs({ pattern: ['rextension/heads', `rextension/remotes/${remote}`] });
+  const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
   const used = new Set(refs.flatMap(ref => [
     ref.name, ref.name?.startsWith(`${remote}/`) ? ref.name.slice(remote.length + 1) : ref.name
   ]));

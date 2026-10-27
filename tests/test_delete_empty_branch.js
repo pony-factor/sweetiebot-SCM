@@ -308,7 +308,7 @@ async function run() {
     // A branch republished during confirmation must use the SHA-leased route.
     const f = orphanedTopic('unverified-republished');
     const vscode = { window: { async showWarningMessage() {
-      git(f.local, 'push', 'origin', 'rextension/heads/topic:rextension/heads/topic');
+      git(f.local, 'push', 'origin', 'refs/heads/topic:refs/heads/topic');
       return 'Delete Local Branch Anyway';
     } } };
     await assert.rejects(deleteBranch(f.repository, {

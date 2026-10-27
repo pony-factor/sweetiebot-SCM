@@ -32,17 +32,17 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
           : '';
         callback(null, value, '');
       } else if (args[0] === 'rev-list') {
-        assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...rextension/remotes/upstream/main']);
+        assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...refs/remotes/upstream/main']);
         callback(null, '0\t1\n', '');
       } else {
         if (options.cwd === '/topic') {
-          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'rextension/remotes/origin/kefania']);
+          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/origin/kefania']);
           topicMerges++;
           topic.state.HEAD.behind = 0;
           callback(null, '', '');
           return;
         }
-        assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'rextension/remotes/upstream/main']);
+        assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/upstream/main']);
         merges++;
         if (mergeError) callback(new Error('local changes would be overwritten by merge'), '', '');
         else { main.state.HEAD.behind = 0; callback(null, '', ''); }

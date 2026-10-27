@@ -164,5 +164,5 @@ class TestRepositorySync(unittest.TestCase):
         self.git("init", "-b", "main", "-q", str(empty))
         self.git("-C", str(empty), "remote", "add", "origin", str(self.remote))
         self.git("-C", str(empty), "config", "branch.main.remote", "origin")
-        self.git("-C", str(empty), "config", "branch.main.merge", "rextension/heads/main")
+        self.git("-C", str(empty), "config", "branch.main.merge", "refs/heads/main")
         self.assertEqual(mirror.update(empty), "no-main-commit")

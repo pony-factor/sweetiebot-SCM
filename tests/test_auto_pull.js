@@ -25,8 +25,8 @@ async function check(settings, { dirty = false, ancestor = 'local', upstream = t
   let visibilityListener;
   let disposable;
   let finishAutoPull;
-  const localRef = { id: 'rextension/heads/main', revision: 'local' };
-  const remoteRef = upstream ? { id: 'rextension/remotes/origin/main', revision: 'remote' } : undefined;
+  const localRef = { id: 'refs/heads/main', revision: 'local' };
+  const remoteRef = upstream ? { id: 'refs/remotes/origin/main', revision: 'remote' } : undefined;
   const provider = {
     groups: [{ resources: dirty ? [{}] : [] }],
     historyProvider: { get: () => ({

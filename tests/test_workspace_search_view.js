@@ -144,9 +144,9 @@ async function run() {
   assert.equal(commands.at(-1).command, 'revealInExplorer', 'Opening a folder result reveals it in Explorer');
   assert.equal(commands.at(-1).uri.path, '/tmp/repo/research');
 
-  provider.lastResults = [{uri: 'file:///tmp/repo/core%20rextension/file%20(1)%23.md', relative: 'core rextension/file (1)#.md', line: 0}];
+  provider.lastResults = [{uri: 'file:///tmp/repo/core%20refs/file%20(1)%23.md', relative: 'core refs/file (1)#.md', line: 0}];
   await provider.onMessage({type: 'copyPath', index: 0});
-  assert.equal(clipboard[4], '[core rextension/file (1)#.md:1](/core%20rextension/file%20%281%29%23.md#L1)',
+  assert.equal(clipboard[4], '[core refs/file (1)#.md:1](/core%20refs/file%20%281%29%23.md#L1)',
     'Spaces, parentheses, and literal hashes in filenames must be URL-encoded');
 
   provider.findGitRoot = async () => {throw new Error('not a git repository');};

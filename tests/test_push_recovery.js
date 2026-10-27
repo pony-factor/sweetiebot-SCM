@@ -28,7 +28,7 @@ async function run() {
     assert.equal(await invoke(rejected(reason)), true);
     assert.deepEqual(calls.splice(0), [
       ['fetch', { remote: 'origin', ref: 'main' }],
-      ['merge', 'rextension/remotes/origin/main'], ['push', 'origin', 'main:main']
+      ['merge', 'refs/remotes/origin/main'], ['push', 'origin', 'main:main']
     ]);
   }
   for (const error of [new Error('permission denied'), rejected('hook declined'),

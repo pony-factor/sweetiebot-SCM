@@ -305,9 +305,9 @@ async function main() {
   const cleanup = [];
   await deleteMergedRemoteBranch(result, async args => {
     cleanup.push(args);
-    return { stdout: JSON.stringify(args[0] === 'pr' ? [] : [{ ref: 'rextension/heads/topic', object: { sha: open.headRefOid } }]) };
+    return { stdout: JSON.stringify(args[0] === 'pr' ? [] : [{ ref: 'refs/heads/topic', object: { sha: open.headRefOid } }]) };
   });
-  assert.deepEqual(cleanup.at(-1), ['api', '--method', 'DELETE', 'repos/owner/repo/git/rextension/heads/topic']);
+  assert.deepEqual(cleanup.at(-1), ['api', '--method', 'DELETE', 'repos/owner/repo/git/refs/heads/topic']);
   for (const pr of [{ ...open, isCrossRepository: true }, { ...open, headRefName: 'main' }]) {
     await deleteMergedRemoteBranch({ ...result, pr }, () => { throw new Error('Must not delete protected/fork branch'); });
   }
@@ -316,8 +316,8 @@ async function main() {
     stderr: `gh: Reference does not exist (HTTP ${status})`
   }));
   missingRefs.push(new Error('gh: Reference does not exist (HTTP 422)'));
-  const topicRef = { ref: 'rextension/heads/topic', object: { sha: open.headRefOid } };
-  const prefixedRef = { ref: 'rextension/heads/topic-other', object: { sha: open.headRefOid } };
+  const topicRef = { ref: 'refs/heads/topic', object: { sha: open.headRefOid } };
+  const prefixedRef = { ref: 'refs/heads/topic-other', object: { sha: open.headRefOid } };
   for (const missingRef of missingRefs) {
     for (const remaining of [[], [prefixedRef]]) {
       let lookups = 0;
@@ -355,7 +355,7 @@ async function main() {
   }), error => error === validationFailure);
   assert.equal(validationLookups, 1, 'Other 422 errors must remain actionable');
   await assert.rejects(deleteMergedRemoteBranch(result, async () => ({ stdout: JSON.stringify([
-    { ref: 'rextension/heads/topic', object: { sha: 'b'.repeat(40) } }
+    { ref: 'refs/heads/topic', object: { sha: 'b'.repeat(40) } }
   ]) })), /new commits/);
   let handler;
   const registeredIds = [];

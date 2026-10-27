@@ -22,7 +22,7 @@ function fixture(onMain = false) {
     async getBranch(name) { return { name, upstream: { remote: 'origin', name: 'main' } }; },
     async getRefs(opts) {
       calls.push(['refs', opts]);
-      if (opts.pattern === 'rextension/heads') return [{ name: 'main' }, { name: 'topic' }];
+      if (opts.pattern === 'refs/heads') return [{ name: 'main' }, { name: 'topic' }];
       return [{ name: 'used' }, { name: 'origin/remote-used' }, { name: 'origin/main' }];
     },
     async createBranch(...args) { calls.push(['create', ...args]); },
@@ -197,7 +197,7 @@ async function run() {
   {
     const { repository, calls } = fixture(true);
     assert.equal(await createBranch(repository, options, () => 0), 'fresh');
-    assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'rextension/heads/main']);
+    assert.deepEqual(calls.at(-1), ['create', 'fresh', true, 'refs/heads/main']);
     assert(calls.findIndex(call => call[0] === 'merge') < calls.findIndex(call => call[0] === 'refs'));
     assert(!calls.some(call => call[0] === 'push'));
   }
@@ -259,8 +259,8 @@ async function run() {
       ...options, isolateBranch: async (...args) => { isolated = args; return true; }
     }, () => 0), 'fresh');
     assert.equal(isolated[0], 'fresh');
-    assert.equal(isolated[1], 'rextension/heads/main');
-    assert.equal(isolated[2].expectedHead, 'rextension/heads/topic');
+    assert.equal(isolated[1], 'refs/heads/main');
+    assert.equal(isolated[2].expectedHead, 'refs/heads/topic');
     assert.equal(repository.state.HEAD.name, 'topic');
     assert(!calls.some(call => ['checkout', 'create', 'fetch', 'merge', 'push'].includes(call[0])));
   }
@@ -336,7 +336,7 @@ async function run() {
     assert.deepEqual(calls[1], ['fetch', { remote: 'origin', prune: true }]);
     assert.deepEqual(calls.at(-1), ['delete', 'topic', false]);
     const advance = calls.findIndex(call => call[0] === 'fetch' && call[1].remote === '.');
-    assert.deepEqual(calls[advance], ['fetch', { remote: '.', ref: 'rextension/remotes/origin/main:rextension/heads/main' }]);
+    assert.deepEqual(calls[advance], ['fetch', { remote: '.', ref: 'refs/remotes/origin/main:refs/heads/main' }]);
     assert(advance < calls.findIndex(call => call[0] === 'checkout'));
     assert(!calls.some(call => ['merge', 'push'].includes(call[0])));
   }
@@ -360,7 +360,7 @@ async function run() {
     const { repository } = fixture();
     repository.deleteBranch = async () => { throw new Error('Failed to execute git'); };
     const getRefs = repository.getRefs;
-    repository.getRefs = async opts => opts.pattern === 'rextension/heads' ? [{ name: 'main' }] : getRefs(opts);
+    repository.getRefs = async opts => opts.pattern === 'refs/heads' ? [{ name: 'main' }] : getRefs(opts);
     assert.equal(await deleteBranch(repository, { ...options, branch: 'topic' }), 'topic');
     assert.equal(repository.state.HEAD.name, 'main');
   }
@@ -371,7 +371,7 @@ async function run() {
     };
     let cleaned = false;
     const getRefs = repository.getRefs;
-    repository.getRefs = async opts => cleaned && verified && opts.pattern === 'rextension/heads'
+    repository.getRefs = async opts => cleaned && verified && opts.pattern === 'refs/heads'
       ? [{ name: 'main' }] : getRefs(opts);
     const operation = deleteBranch(repository, { ...options, branch: 'topic' }, async (repo, branch) => {
       assert.equal(repo.state.HEAD.name, 'main');
@@ -409,7 +409,7 @@ async function run() {
     repository.fetch = async opts => {
       calls.push(['fetch', opts]);
       if (++attempts === 1) throw Object.assign(new Error('Failed to execute git'), {
-        stderr: "cannot lock ref 'rextension/remotes/origin/night-shade': is at 15597c451d054e3e58d3439ede69b067e3f1eb15 but expected aedc7d949f2f1576de1cd1ea1a42572ad2c18612"
+        stderr: "cannot lock ref 'refs/remotes/origin/night-shade': is at 15597c451d054e3e58d3439ede69b067e3f1eb15 but expected aedc7d949f2f1576de1cd1ea1a42572ad2c18612"
       });
     };
     assert.equal(await createBranch(repository, options, () => 0), 'fresh');
@@ -418,8 +418,8 @@ async function run() {
     assert.equal(calls.filter(call => call[0] === 'create').length, 1);
   }
   for (const failure of ['timeout', 'Authentication failed',
-    "cannot lock ref 'rextension/remotes/origin/main': Unable to create 'main.lock': File exists",
-    "cannot lock ref 'rextension/remotes/origin/main': is at abcdef but expected fedcba"]) {
+    "cannot lock ref 'refs/remotes/origin/main': Unable to create 'main.lock': File exists",
+    "cannot lock ref 'refs/remotes/origin/main': is at abcdef but expected fedcba"]) {
     const { repository, calls } = fixture(true);
     let attempts = 0;
     repository.fetch = async () => { attempts++; throw new Error(failure); };
@@ -545,15 +545,15 @@ async function run() {
       assert.equal(git('rev-parse', 'fresh').toString().trim(), git('rev-parse', 'main').toString().trim());
       assert.notEqual(git('rev-parse', 'fresh').toString().trim(), base);
       const forks = JSON.parse(fs.readFileSync(path.join(root, '.git', 'sweetiebot-background-forks.json'), 'utf8'));
-      assert.equal(forks['rextension/heads/fresh'], git('rev-parse', 'main').toString().trim());
+      assert.equal(forks['refs/heads/fresh'], git('rev-parse', 'main').toString().trim());
       assert(!calls.slice(callCount).some(call => ['merge', 'fetch', 'push'].includes(call[0])),
         'Do not sync or publish pending history while creating a branch');
       const busy = git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
         'commit-tree', git('rev-parse', `${base}^{tree}`).toString().trim(), '-p', base,
         '-m', 'placeholder_0123456789abcdef').toString().trim();
-      git('update-ref', 'rextension/heads/busy', busy);
+      git('update-ref', 'refs/heads/busy', busy);
       fs.writeFileSync(path.join(jobDirectory, 'job.json'), JSON.stringify({
-        branch: 'rextension/heads/busy', sha: busy, parent: base, provisional: true, phase: 'generating'
+        branch: 'refs/heads/busy', sha: busy, parent: base, provisional: true, phase: 'generating'
       }));
       repository.state.HEAD = { name: 'main' };
       assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
@@ -631,7 +631,7 @@ async function run() {
       fs.writeFileSync(path.join(root, 'topic.txt'), 'topic change\\n');
       git('add', '.');
       git('commit', '-m', 'Topic change');
-      git('update-ref', 'rextension/remotes/origin/main', git('rev-parse', 'main'));
+      git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
 
       const { repository } = fixture();
       repository.rootUri = { fsPath: root };
@@ -650,7 +650,7 @@ async function run() {
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
       assert.equal(git('rev-parse', 'HEAD'), squashHead);
       // An already-merged upstream ref is also a no-op.
-      git('update-ref', 'rextension/remotes/origin/main', squashHead);
+      git('update-ref', 'refs/remotes/origin/main', squashHead);
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
       assert.equal(git('rev-parse', 'HEAD'), squashHead);
 

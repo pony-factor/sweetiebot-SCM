@@ -93,7 +93,7 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   }
   await git('fetch', '--quiet', 'origin', 'main');
   const head = await git('rev-parse', 'HEAD');
-  const remote = await git('rev-parse', 'rextension/remotes/origin/main');
+  const remote = await git('rev-parse', 'refs/remotes/origin/main');
   // Recover a crash after committing but before recording its SHA, using the
   // saved parent and blob as evidence rather than trusting a commit title.
   if (!receipt.commit && receipt.parent && !status && head !== receipt.parent
@@ -116,7 +116,7 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
         || await git('diff-tree', '--no-commit-id', '--name-only', '-r', receipt.commit) !== relativePath) {
       throw new Error('Pending pony push is waiting for Kafania main to be synchronized; local work is preserved.');
     }
-    await git('push', 'origin', `${receipt.commit}:rextension/heads/main`);
+    await git('push', 'origin', `${receipt.commit}:refs/heads/main`);
     return finish({ pushed: true, commit: receipt.commit, path: relativePath });
   }
   // A manual batch may have published the entry while this job was waiting.
@@ -128,10 +128,10 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   // Fetch before committing. A behind-only local main may fast-forward,
   // but never publish earlier local commits or rewrite diverged history.
   const parent = await git('rev-parse', 'HEAD');
-  const upstream = await git('rev-parse', 'rextension/remotes/origin/main');
+  const upstream = await git('rev-parse', 'refs/remotes/origin/main');
   if (parent !== upstream) {
     let common;
-    try { common = await git('merge-base', 'HEAD', 'rextension/remotes/origin/main'); }
+    try { common = await git('merge-base', 'HEAD', 'refs/remotes/origin/main'); }
     catch { /* Unrelated histories must fail closed, like divergent commits. */ }
     if (common !== parent) {
       throw new Error('Kafania main is not synchronized with origin/main: local commits prevent a safe fast-forward.');
@@ -139,12 +139,12 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
     try {
       // Equivalent to the merge phase of git pull --ff-only, using the ref
       // we just fetched. Git refuses to overwrite staged or untracked work.
-      await git('merge', '--ff-only', '--quiet', 'rextension/remotes/origin/main');
+      await git('merge', '--ff-only', '--quiet', 'refs/remotes/origin/main');
     } catch {
       throw new Error('Kafania main could not fast-forward to origin/main without overwriting local work; resolve the checkout manually.');
     }
   }
-  if (await git('rev-parse', 'HEAD') !== await git('rev-parse', 'rextension/remotes/origin/main')) {
+  if (await git('rev-parse', 'HEAD') !== await git('rev-parse', 'refs/remotes/origin/main')) {
     throw new Error('Kafania main changed during synchronization; refusing automatic publishing.');
   }
   // Revalidate after the pull: a newly tracked pony path cannot be committed
@@ -174,7 +174,7 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   if (await git('rev-parse', 'HEAD') !== sha || await git('rev-parse', `${sha}^`) !== receipt.parent) {
     throw new Error('Kafania main changed while committing; refusing to push other local commits.');
   }
-  await git('push', 'origin', `${sha}:rextension/heads/main`);
+  await git('push', 'origin', `${sha}:refs/heads/main`);
   return finish({ pushed: true, commit: sha, path: relativePath });
 }
 

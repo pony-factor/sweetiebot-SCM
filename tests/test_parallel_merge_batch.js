@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const moduleRoot = require('node:path').resolve(__dirname, process.env.LINDSEY_MODULE_ROOT || '../efs');
+const moduleRoot = require('node:path').resolve(__dirname, process.env.LINDSEY_MODULE_ROOT || '../extension');
 const { planMergeLanes, createParallelMergeBatch } = require(moduleRoot + '/merge/parallel_merge_batch');
 const head = 'a'.repeat(40), initialBase = 'b'.repeat(40), nextBase = 'c'.repeat(40);
 const selection = { repository: 'owner/repo', pullRequests: Array.from({ length: 12 }, (_, index) => ({

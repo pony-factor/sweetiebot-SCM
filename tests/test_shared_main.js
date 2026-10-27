@@ -141,7 +141,7 @@ async function openedRoot(result) {
     const topicIndex = git('-C', moved, 'diff', '--cached');
     moving.commands.calls.length = 0;
     await routeBranch(moving, { rootUri: { fsPath: moved } },
-      { ...options, branch: 'from-topic', create: true, start: 'rextension/heads/main' });
+      { ...options, branch: 'from-topic', create: true, start: 'refs/heads/main' });
     const fromTopic = folderUpdate[2].uri.fsPath;
     assert.equal(git('-C', fromTopic, 'branch', '--show-current'), 'from-topic');
     assert.equal(git('-C', fromTopic, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
@@ -167,12 +167,12 @@ async function openedRoot(result) {
     ].join('\n'));
     await routeBranch(moving, { rootUri: { fsPath: moved } }, {
       ...options, branch: 'pending-from-topic', create: true, forkScript,
-      source: 'rextension/heads/main', expectedHead: 'rextension/heads/moving-task'
+      source: 'refs/heads/main', expectedHead: 'refs/heads/moving-task'
     });
     assert.equal(git('-C', folderUpdate[2].uri.fsPath, 'branch', '--show-current'), 'pending-from-topic');
     await assert.rejects(routeBranch(moving, { rootUri: { fsPath: moved } }, {
       ...options, branch: 'stale-from-topic', create: true, forkScript,
-      source: 'rextension/heads/main', expectedHead: 'rextension/heads/stale'
+      source: 'refs/heads/main', expectedHead: 'refs/heads/stale'
     }), /active branch changed/);
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
     moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
@@ -237,7 +237,7 @@ async function openedRoot(result) {
       linkedMain, 'Returning to main preserves the original topic checkout');
     const originalTopicEditor = editor(root);
     assert.equal(await routeBranch(originalTopicEditor, { rootUri: { fsPath: root } }, {
-      ...options, branch: 'new-from-original-topic', create: true, start: 'rextension/heads/main'
+      ...options, branch: 'new-from-original-topic', create: true, start: 'refs/heads/main'
     }), true, 'New Branch works when the original checkout is still on a topic');
     const newFromOriginal = await openedRoot({ target: originalTopicEditor.commands.calls.at(-1)[1].fsPath });
     assert.equal(git('-C', newFromOriginal, 'branch', '--show-current'), 'new-from-original-topic');

@@ -28,7 +28,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             stale.mkdir()
             current = {
                 "id": "abcdef123456", "root": "/private/example-repo",
-                "branch": "rextension/heads/feature/report", "gitdir": str(gitdir),
+                "branch": "refs/heads/feature/report", "gitdir": str(gitdir),
                 "phase": "generating", "message": "SECRET GENERATED TITLE",
                 "context": "SECRET CHAT", "diff": "SECRET DIFF",
             }

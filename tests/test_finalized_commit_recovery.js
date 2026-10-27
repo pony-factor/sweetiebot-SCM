@@ -25,20 +25,20 @@ async function run() {
     // Only test fixtures amend history to model the existing message worker.
     git('commit', '--amend', '-qm', '📖 Record captured story');
     const finalized = git('rev-parse', 'HEAD');
-    git('update-ref', 'rextension/remotes/origin/main', finalized);
+    git('update-ref', 'refs/remotes/origin/main', finalized);
     git('reset', '--hard', placeholder);
     fs.writeFileSync(path.join(root, 'local.txt'), 'preserve local work\n');
     git('add', '.'); git('commit', '-qm', 'Preserve local descendant');
     const descendant = git('rev-parse', 'HEAD');
     const tree = git('rev-parse', 'HEAD^{tree}');
-    assert.deepEqual(await recoveryPlan(root, 'main', 'rextension/remotes/origin/main'), {
+    assert.deepEqual(await recoveryPlan(root, 'main', 'refs/remotes/origin/main'), {
       branch: 'main', local: descendant, remote: finalized, tree
     });
     fs.writeFileSync(path.join(root, '.git', 'sweetiebot-background-commit.json'), '{}');
-    assert.equal(await recoveryPlan(root, 'main', 'rextension/remotes/origin/main'), null);
+    assert.equal(await recoveryPlan(root, 'main', 'refs/remotes/origin/main'), null);
     fs.unlinkSync(path.join(root, '.git', 'sweetiebot-background-commit.json'));
     fs.writeFileSync(path.join(root, 'dirty.txt'), 'keep\n');
-    assert.equal(await recoveryPlan(root, 'main', 'rextension/remotes/origin/main'), null);
+    assert.equal(await recoveryPlan(root, 'main', 'refs/remotes/origin/main'), null);
     fs.unlinkSync(path.join(root, 'dirty.txt'));
     const repository = {
       rootUri: { fsPath: root }, state: {},
@@ -57,14 +57,14 @@ async function run() {
     assert.equal(git('log', '-1', '--format=%P'), `${descendant} ${finalized}`);
     assert.equal(git('rev-parse', 'saved-placeholder'), placeholder);
     assert.equal(git('status', '--porcelain'), '');
-    assert.equal(await recoveryPlan(root, 'main', 'rextension/remotes/origin/main'), null);
+    assert.equal(await recoveryPlan(root, 'main', 'refs/remotes/origin/main'), null);
     // A genuinely different remote commit must not qualify.
     git('checkout', '-q', '-b', 'unrelated', finalized);
     fs.writeFileSync(path.join(root, 'remote.txt'), 'different remote work\n');
     git('add', '.'); git('commit', '-qm', 'Different remote work');
-    git('update-ref', 'rextension/remotes/origin/main', git('rev-parse', 'HEAD'));
+    git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
     git('checkout', '-q', 'main');
-    assert.equal(await recoveryPlan(root, 'main', 'rextension/remotes/origin/main'), null);
+    assert.equal(await recoveryPlan(root, 'main', 'refs/remotes/origin/main'), null);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

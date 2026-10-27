@@ -25,7 +25,7 @@ function setup() {
   git('switch', 'topic');
   fs.writeFileSync(path.join(root, 'topic.txt'), 'existing topic work\n');
   git('add', '.'); git('commit', '-m', 'Human topic work');
-  git('update-ref', 'rextension/remotes/origin/main', git('rev-parse', 'main'));
+  git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
   const repository = {
     rootUri: { fsPath: root },
     inputBox: { value: 'Human draft' },
@@ -73,7 +73,7 @@ async function run() {
     git('switch', 'main');
     fs.writeFileSync(path.join(root, 'shared.txt'), 'main change\n');
     git('add', '.'); git('commit', '-m', 'Conflicting main edit');
-    git('update-ref', 'rextension/remotes/origin/main', git('rev-parse', 'main'));
+    git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
     git('switch', 'topic');
     fs.writeFileSync(path.join(root, 'shared.txt'), 'topic change\n');
     git('add', '.'); git('commit', '-m', 'Conflicting topic edit');

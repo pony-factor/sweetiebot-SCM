@@ -115,7 +115,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertFalse(status.get('id'))
         self.assertEqual([self.job(d)['phase'] for d in (first, second)], ['done', 'done'])
         self.assertEqual(before, [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')])
-        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'rextension/heads/main').split()[0])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main').split()[0])
         worker.wait_for_background('/usr/bin/git', [])
 
     def test_stale_tracking_ref_cannot_release_unpublished_job(self):
@@ -125,12 +125,12 @@ class BackgroundCommitTests(unittest.TestCase):
         self.git('checkout', '--orphan', 'unrelated')
         self.git('commit', '-qm', 'Unrelated history')
         other = self.git('rev-parse', 'HEAD')
-        self.git('push', '-q', 'origin', 'HEAD:rextension/heads/unrelated')
+        self.git('push', '-q', 'origin', 'HEAD:refs/heads/unrelated')
         self.git('checkout', '-q', 'main')
-        self.git('--git-dir=' + str(self.root / 'remote'), 'update-ref', 'rextension/heads/main', other)
+        self.git('--git-dir=' + str(self.root / 'remote'), 'update-ref', 'refs/heads/main', other)
         worker.reconcile_published_jobs(self.repo / '.git')
         self.assertEqual(self.job(directory)['phase'], 'blocked')
-        self.assertEqual(self.git('rev-parse', 'rextension/remotes/origin/main'), self.git('rev-parse', 'HEAD'))
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main'), self.git('rev-parse', 'HEAD'))
         self.assertNotEqual(parent, other)
 
     def test_provisional_and_active_jobs_are_not_retired(self):
@@ -325,10 +325,10 @@ class BackgroundCommitTests(unittest.TestCase):
             worker.work(directory)
         original_tip = self.git('rev-parse', 'HEAD')
         with self.assertRaisesRegex(RuntimeError, 'advanced'):
-            worker.fork_branch('rextension/heads/main', 'stale-followup', 'rextension/heads/main',
+            worker.fork_branch('refs/heads/main', 'stale-followup', 'refs/heads/main',
                                expected_tip='f' * 40)
         self.assertEqual(self.git('branch', '--show-current'), 'main')
-        worker.fork_branch('rextension/heads/main', 'new-followup', 'rextension/heads/main',
+        worker.fork_branch('refs/heads/main', 'new-followup', 'refs/heads/main',
                            expected_tip=original_tip)
         self.assertEqual(self.git('branch', '--show-current'), 'new-followup')
         self.assertEqual(self.git('rev-parse', 'new-followup'), original_tip)
@@ -414,7 +414,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertIn('Signed-off-by: Test Author', self.git('log', '-1', '--format=%B'))
         self.assertEqual(self.git('show', ':story.txt'), 'Later staged change')
         self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change')
-        self.assertEqual(self.git(remote, 'rev-parse', 'rextension/heads/main'), self.git('rev-parse', 'HEAD'))
+        self.assertEqual(self.git(remote, 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
 
     def enable_test_gpg_signing(self):
         """Create an ephemeral local GPG identity without touching user keys."""
@@ -451,7 +451,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertNotEqual(self.git('rev-parse', 'HEAD'), provisional)
         self.assert_signed('HEAD')
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
-                                  'rev-parse', 'rextension/heads/main'), self.git('rev-parse', 'HEAD'))
+                                  'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
 
     def test_signed_descendants_are_resigned_when_earlier_title_changes(self):
         self.enable_test_gpg_signing()
@@ -540,8 +540,8 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), original_tree)
         self.assertEqual(self.git('show', ':story.txt'), 'Staged afterward')
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
-                                  'rev-parse', 'rextension/heads/main'), job['sha'])
-        self.assertEqual(self.git('rev-parse', 'rextension/sweetiebot/recovery/' + job['id'] + '/' + original_tip),
+                                  'rev-parse', 'refs/heads/main'), job['sha'])
+        self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/recovery/' + job['id'] + '/' + original_tip),
                          original_tip)
 
     def test_published_external_commit_blocks_placeholder_replacement(self):
@@ -572,7 +572,7 @@ class BackgroundCommitTests(unittest.TestCase):
     def test_reset_branch_blocks_placeholder_replacement(self):
         directory = self.queue(message='', push=True)
         alternate = self.git('commit-tree', 'HEAD^{tree}', input='Unrelated root\n')
-        self.git('update-ref', 'rextension/heads/main', alternate)
+        self.git('update-ref', 'refs/heads/main', alternate)
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Reset must block')):
             worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'blocked')
@@ -588,7 +588,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), tip)
         self.assertEqual(self.job(directory)['sha'], original)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
-                                  'rev-parse', 'rextension/heads/main'), original)
+                                  'rev-parse', 'refs/heads/main'), original)
 
     def test_signed_external_commit_replays_with_valid_signature(self):
         self.enable_test_gpg_signing()
@@ -623,7 +623,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), captured)
         self.assertEqual(self.git('show', ':story.txt'), 'Later staged change')
         self.assertEqual(self.git('diff', '--cached', '--name-only'), 'story.txt')
-        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'rextension/heads/main'), self.git('rev-parse', 'HEAD'))
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
 
     def test_remote_branch_namespace_collision_blocks_push_without_retry(self):
@@ -631,7 +631,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.git('checkout', '-q', '-b', 'fix')
         directory = self.queue(push=True)
         sha = self.git('rev-parse', 'HEAD')
-        nested = 'rextension/heads/fix/efs-repository-relative-copy-links-20261024'
+        nested = 'refs/heads/fix/efs-repository-relative-copy-links-20261024'
         self.git('push', '-q', 'origin', f'HEAD:{nested}')
         worker.work(directory)
         job = self.job(directory)
@@ -641,7 +641,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
                                   'rev-parse', nested), sha)
-        self.assertNotIn('rextension/heads/fix\n', self.git('--git-dir=' + str(self.root / 'remote'),
+        self.assertNotIn('refs/heads/fix\n', self.git('--git-dir=' + str(self.root / 'remote'),
                                                      'for-each-ref', '--format=%(refname)') + '\n')
         status = json.loads(subprocess.check_output(
             [sys.executable, worker.__file__, '--status'], text=True))
@@ -717,12 +717,12 @@ class BackgroundCommitTests(unittest.TestCase):
             self.assertEqual(self.git('status', '--porcelain'), '')
             self.assertEqual((self.repo / 'remote.txt').read_bytes(), b'remote\x00binary\n')
             self.assertEqual(self.git('rev-parse', 'HEAD:story.txt'), self.git('rev-parse', sha + ':story.txt'))
-            self.assertEqual(self.git('show', 'rextension/sweetiebot/recovery/' + directory.name + '/' + sha + ':story.txt'), 'local\x00binary')
+            self.assertEqual(self.git('show', 'refs/sweetiebot/recovery/' + directory.name + '/' + sha + ':story.txt'), 'local\x00binary')
             if second:
                 worker.work(second)
                 self.assertEqual(self.job(second)['phase'], 'done')
             remote = '--git-dir=' + str(self.root / 'remote')
-            self.assertEqual(self.git(remote, 'rev-parse', 'rextension/heads/main'), self.git('rev-parse', 'HEAD'))
+            self.assertEqual(self.git(remote, 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
             self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
             if signed:
                 self.assert_signed('HEAD')
@@ -735,7 +735,7 @@ class BackgroundCommitTests(unittest.TestCase):
             self.assertEqual(job['conflictPaths'], ['story.txt'])
             status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
             self.assertEqual(status['conflictPaths'], ['story.txt'])
-            self.assertEqual(status['branch'], 'rextension/heads/main')
+            self.assertEqual(status['branch'], 'refs/heads/main')
         self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
         self.assertEqual(self.git('write-tree'), index)
         if dirty:
@@ -800,7 +800,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual((self.repo / 'draft.txt').read_text(), 'Untracked other work\n')
         self.assertEqual(self.git('log', '-1', '--format=%s', 'main'), '🧪 Finish original branch')
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'), self.git('rev-parse', 'main'))
-        self.assertEqual(self.git('config', 'branch.main.merge'), 'rextension/heads/main')
+        self.assertEqual(self.git('config', 'branch.main.merge'), 'refs/heads/main')
         self.assertNotEqual(subprocess.run(['/usr/bin/git', 'config', 'branch.other.remote'], capture_output=True).returncode, 0)
 
     def test_each_branch_has_its_own_pending_chain_and_push(self):
@@ -955,7 +955,7 @@ worker.work(Path(sys.argv[2]))
         self.git('add', 'story.txt')
         second = self.queue(message='')
         provisional = self.git('rev-parse', 'main')
-        self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'rextension/heads/main'), base)
+        self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'refs/heads/main'), base)
         script = str(Path(worker.__file__).with_name('ai_commit.py'))
         for flag, name in (('-b', 'checkout-copy'), ('-c', 'switch-copy')):
             command = 'checkout' if flag == '-b' else 'switch'
@@ -980,7 +980,7 @@ worker.work(Path(sys.argv[2]))
         first = self.queue(message='')
         destination = self.root / 'isolated-topic'
         before = (self.repo / 'story.txt').read_text()
-        worker.fork_branch('main', 'isolated', 'rextension/heads/main', str(destination))
+        worker.fork_branch('main', 'isolated', 'refs/heads/main', str(destination))
         self.assertEqual(self.git('symbolic-ref', '--short', 'HEAD'), 'main')
         self.assertEqual((self.repo / 'story.txt').read_text(), before)
         (destination / 'story.txt').write_text('Independent topic edit\n')
@@ -993,7 +993,7 @@ worker.work(Path(sys.argv[2]))
 
     def test_fork_descendants_wait_for_inherited_title_and_keep_staging(self):
         first = self.queue(message='', push=True)
-        worker.fork_branch('main', 'fork', 'rextension/heads/main')
+        worker.fork_branch('main', 'fork', 'refs/heads/main')
         (self.repo / 'story.txt').write_text('Fork snapshot\n')
         self.git('add', 'story.txt')
         second = self.queue(message='', push=True)
@@ -1004,7 +1004,7 @@ worker.work(Path(sys.argv[2]))
             worker.work(second)
         self.assertEqual(self.job(second)['phase'], 'ready')
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
-        worker.fork_branch('fork', 'nested', 'rextension/heads/fork')
+        worker.fork_branch('fork', 'nested', 'refs/heads/fork')
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish base', '')):
             worker.work(first)
             worker.work(second)
@@ -1019,7 +1019,7 @@ worker.work(Path(sys.argv[2]))
 
     def test_fork_recovery_moves_all_refs_after_interruption(self):
         first = self.queue(message='')
-        worker.fork_branch('main', 'fork', 'rextension/heads/main')
+        worker.fork_branch('main', 'fork', 'refs/heads/main')
         recover = worker.recover_finalization
         def interrupted(meta):
             transaction = worker.read_journal(Path(meta) / worker.TRANSACTION)
@@ -1035,7 +1035,7 @@ worker.work(Path(sys.argv[2]))
 
     def test_fork_ref_rejects_changed_tip_without_overwriting_it(self):
         first = self.queue(message='')
-        worker.fork_branch('main', 'fork', 'rextension/heads/main')
+        worker.fork_branch('main', 'fork', 'refs/heads/main')
         self.git('checkout', 'main')
         recover = worker.recover_finalization
         # Use a valid alternate commit, then change the fork between preparation
@@ -1044,7 +1044,7 @@ worker.work(Path(sys.argv[2]))
         def changed(meta):
             transaction = worker.read_journal(Path(meta) / worker.TRANSACTION)
             if transaction:
-                self.git('update-ref', 'rextension/heads/fork', alternate)
+                self.git('update-ref', 'refs/heads/fork', alternate)
             return recover(meta)
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish base', '')), patch.object(worker, 'recover_finalization', side_effect=changed):
             worker.work(first)
@@ -1075,7 +1075,7 @@ worker.work(Path(sys.argv[2]))
     def test_no_completed_base_for_an_unfinished_initial_commit(self):
         self.queue(message='')
         with self.assertRaisesRegex(RuntimeError, 'no completed commit'):
-            worker.completed_branch_base('/usr/bin/git', [], 'rextension/heads/main')
+            worker.completed_branch_base('/usr/bin/git', [], 'refs/heads/main')
 
     def test_copied_placeholder_without_a_job_record_uses_completed_parent(self):
         self.git('commit', '-q', '-m', 'Base')
@@ -1094,7 +1094,7 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Send finalized commit', '')):
             worker.work(directory)
-        remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'rextension/heads/main')
+        remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote, self.git('rev-parse', 'HEAD'))
         self.assertNotEqual(remote, provisional)
         self.assertEqual(self.git('log', '-1', '--format=%s', remote), '🧪 Send finalized commit')
@@ -1112,7 +1112,7 @@ worker.work(Path(sys.argv[2]))
         self.git('push', '-q', 'origin', 'main')
         self.git('branch', 'other')
         completed = self.git('commit-tree', self.git('rev-parse', 'HEAD^{tree}'), '-p', base, '-m', 'Completed update')
-        self.git('update-ref', 'rextension/heads/completed', completed)
+        self.git('update-ref', 'refs/heads/completed', completed)
         (self.repo / 'story.txt').write_text('Pending main work\n')
         self.git('add', 'story.txt')
         directory = self.queue(message='')
@@ -1204,14 +1204,14 @@ worker.work(Path(sys.argv[2]))
                 patch.object(worker.shutil, 'which', return_value='test-node'), \
                 patch.object(worker.subprocess, 'run', side_effect=run):
             self.assertTrue(worker.sync_with_lindsey(job, base))
-        self.assertEqual(self.job(queued[0])['branch'], 'rextension/heads/other')
+        self.assertEqual(self.job(queued[0])['branch'], 'refs/heads/other')
         self.assertEqual(self.git('show', 'HEAD:other.txt'), 'Other work')
         self.assertEqual(self.git('rev-parse', 'main'), job['sha'])
         changed = self.git('commit-tree', job['tree'], '-p', job['sha'], '-m', 'Concurrent main update')
         def changed_run(args, **kwargs):
             if args[0] != 'test-node':
                 return real_run(args, **kwargs)
-            real_run(['/usr/bin/git', 'update-ref', 'rextension/heads/main', changed, job['sha']], check=True)
+            real_run(['/usr/bin/git', 'update-ref', 'refs/heads/main', changed, job['sha']], check=True)
             return subprocess.CompletedProcess(args, 0, json.dumps(dict(
                 version=1, status='ready', before=job['sha'], onto=base, after=job['sha'], commits=[])), '')
         with patch.dict(os.environ, LINDSEY_SYNC_REPO=str(lindsey)), \
@@ -1253,13 +1253,13 @@ worker.work(Path(sys.argv[2]))
             (linked / 'other.txt').write_text('Queued independent work\n')
             self.git('add', 'other.txt')
             second = self.queue(message='')
-            worker.wait_for_background('/usr/bin/git', [], refs=['rextension/heads/completed-missing'])
+            worker.wait_for_background('/usr/bin/git', [], refs=['refs/heads/completed-missing'])
             with self.assertRaisesRegex(RuntimeError, 'still running'):
-                worker.wait_for_background('/usr/bin/git', [], refs=['rextension/heads/main'])
+                worker.wait_for_background('/usr/bin/git', [], refs=['refs/heads/main'])
         finally:
             os.chdir(previous)
         with self.assertRaisesRegex(RuntimeError, 'still running'):
-            worker.wait_for_background('/usr/bin/git', [], refs=['rextension/heads/other'])
+            worker.wait_for_background('/usr/bin/git', [], refs=['refs/heads/other'])
         self.git('branch', 'inherited', pending)
         self.git('switch', '-q', 'inherited')
         with self.assertRaisesRegex(RuntimeError, 'still running'):
@@ -1281,7 +1281,7 @@ worker.work(Path(sys.argv[2]))
         worker.work(second)
         self.assertEqual(self.job(second)['phase'], 'done')
         self.assertEqual(self.git('log', '-1', '--format=%B'), message)
-        remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'rextension/heads/main')
+        remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote, self.git('rev-parse', 'HEAD'))
         self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote))
 
@@ -1303,7 +1303,7 @@ worker.work(Path(sys.argv[2]))
             with patch.object(worker.core, 'generate_message', return_value=(f'🧪 Final title {n}', '')):
                 worker.work(directory)
             self.assertEqual(self.job(directory)['phase'], 'done')
-            remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'rextension/heads/main')
+            remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
             self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote_tip))
             self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change 2')
             self.assertEqual(self.git('show', ':story.txt'), 'Later staged work')
@@ -1368,7 +1368,7 @@ worker.resume(parallel=False)
         from types import SimpleNamespace
         entries = [{'id': str(i), 'directory': str(self.root / str(i))} for i in range(7)]
         jobs = {entry['id']: dict(entry, phase='committed', provisional=True,
-                                branch='rextension/heads/main', sha=entry['id']) for entry in entries}
+                                branch='refs/heads/main', sha=entry['id']) for entry in entries}
         active, batches = [], []
         def launch(directory):
             child = SimpleNamespace(done=False)
@@ -1452,7 +1452,7 @@ worker.work(directory)
                 self.assertEqual(self.git('log', '--reverse', '--format=%s'), '🧪 First parallel title\n🧪 Second parallel title')
                 self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Second parallel snapshot')
                 self.assertEqual(self.git('show', ':story.txt'), 'Later staged work')
-                self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'rextension/heads/main'), self.git('rev-parse', 'HEAD'))
+                self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main'), self.git('rev-parse', 'HEAD'))
                 for directory in (first, second):
                     self.assertEqual((signals / (directory.name + '.calls')).read_text(), 'generate\n', 'reuse ready results rather than generating again')
             finally:
@@ -1515,7 +1515,7 @@ worker.work(directory)
         worker.work(first)
         self.assertEqual(self.job(first)['phase'], 'done')
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
-        remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'rextension/heads/main')
+        remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote_tip, self.git('rev-parse', 'HEAD'))
         self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote_tip))
 
@@ -1533,10 +1533,10 @@ worker.work(directory)
         self.assertEqual(status['phase'], 'recovering')
         self.assertIn(first.name, status['titleJobs'])
         # An unqueued branch move must still surface the real conflict.
-        self.git('update-ref', 'rextension/heads/main', job['sha'])
+        self.git('update-ref', 'refs/heads/main', job['sha'])
         status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
         self.assertFalse(status.get('recoverable', False))
-        self.git('update-ref', 'rextension/heads/main', self.job(second)['sha'])
+        self.git('update-ref', 'refs/heads/main', self.job(second)['sha'])
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Reuse completed generation')):
             worker.work(first)
         self.assertEqual(self.job(first)['phase'], 'done')
@@ -1567,7 +1567,7 @@ worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'cancelled')
         self.assertEqual(self.git('write-tree'), tree)
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
-        self.assertEqual(self.git('for-each-ref', 'rextension/sweetiebot/jobs'), '')
+        self.assertEqual(self.git('for-each-ref', 'refs/sweetiebot/jobs'), '')
 
     def test_restart_cleans_marker_after_completed_checkpoint(self):
         directory = self.queue()
@@ -1590,7 +1590,7 @@ worker.work(directory)
     def test_snapshot_is_protected_from_git_gc(self):
         directory = self.queue()
         tree = self.job(directory)['tree']
-        self.assertEqual(self.git('rev-parse', 'rextension/sweetiebot/jobs/' + directory.name), tree)
+        self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/jobs/' + directory.name), tree)
         (self.repo / 'story.txt').write_text('Newer staged version\n')
         self.git('add', 'story.txt')
         self.git('gc', '--prune=now')

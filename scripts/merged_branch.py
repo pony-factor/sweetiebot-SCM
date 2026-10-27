@@ -27,7 +27,7 @@ def value(*args):
 
 def merged_status(branch=None, remote='origin'):
     branch = branch or value('symbolic-ref', '--quiet', '--short', 'HEAD')
-    branch = branch.removeprefix('rextension/heads/')
+    branch = branch.removeprefix('refs/heads/')
     url = git('remote', 'get-url', remote, check=False)
     if url.returncode:
         return None
@@ -83,7 +83,7 @@ def guard_push_arguments(args, global_args=()):
     positional = [arg for arg in args if not arg.startswith('-')]
     remote = positional[0] if positional else 'origin'
     refspec = positional[1] if len(positional) > 1 else ''
-    if refspec.startswith('rextension/tags/') or ':rextension/tags/' in refspec:
+    if refspec.startswith('refs/tags/') or ':refs/tags/' in refspec:
         return
     branch = refspec.split(':')[-1].lstrip('+') if refspec else None
     if branch == 'HEAD':
@@ -112,11 +112,11 @@ def carry_to_new_branch(name, remote='origin'):
             if Path(value('rev-parse', '--git-path', marker)).exists():
                 raise RuntimeError('Finish the current Git operation before creating a branch.')
         git('check-ref-format', '--branch', name)
-        if not git('show-ref', '--verify', '--quiet', 'rextension/heads/' + name, check=False).returncode:
+        if not git('show-ref', '--verify', '--quiet', 'refs/heads/' + name, check=False).returncode:
             raise RuntimeError('The new branch name is already in use.')
-        git('fetch', '--no-tags', remote, '+rextension/heads/' + info['defaultBranch']
-            + ':rextension/remotes/' + remote + '/' + info['defaultBranch'])
-        base = value('rev-parse', 'rextension/remotes/' + remote + '/' + info['defaultBranch'])
+        git('fetch', '--no-tags', remote, '+refs/heads/' + info['defaultBranch']
+            + ':refs/remotes/' + remote + '/' + info['defaultBranch'])
+        base = value('rev-parse', 'refs/remotes/' + remote + '/' + info['defaultBranch'])
         merged = info.get('mergeCommit')
         if not merged or git('merge-base', '--is-ancestor', merged, base, check=False).returncode:
             raise RuntimeError('The merged PR is not present on the fetched base branch. Nothing was moved.')
@@ -140,7 +140,7 @@ def carry_to_new_branch(name, remote='origin'):
         for entry in bg.queue_entries(meta / bg.MARKER):
             file = Path(entry['directory']) / 'job.json'
             job = bg.read_journal(file)
-            if job.get('branch') == 'rextension/heads/' + old_branch:
+            if job.get('branch') == 'refs/heads/' + old_branch:
                 if job.get('phase') == 'pushing':
                     raise RuntimeError('A push is already running. Wait for it before changing branches.')
                 job['push'] = False
@@ -150,15 +150,15 @@ def carry_to_new_branch(name, remote='origin'):
         checkout_tree(working_tree, tree, meta)
         created = False
         try:
-            git('update-ref', 'rextension/heads/' + name, base, '')
+            git('update-ref', 'refs/heads/' + name, base, '')
             created = True
-            git('symbolic-ref', 'HEAD', 'rextension/heads/' + name)
+            git('symbolic-ref', 'HEAD', 'refs/heads/' + name)
             git('read-tree', base)
         except Exception:
-            git('symbolic-ref', 'HEAD', 'rextension/heads/' + old_branch)
+            git('symbolic-ref', 'HEAD', 'refs/heads/' + old_branch)
             checkout_tree(tree, working_tree, meta)
             if created:
-                git('update-ref', '-d', 'rextension/heads/' + name, base, check=False)
+                git('update-ref', '-d', 'refs/heads/' + name, base, check=False)
             raise
         return {'branch': name, 'base': base, 'previousBranch': old_branch}
 
