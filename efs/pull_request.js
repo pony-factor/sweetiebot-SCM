@@ -613,6 +613,12 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         const session = await require('./github_session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
       },
+      onMergeLocalSigned: async result => {
+        const session = await require('./github_session').githubSession(vscode);
+        return merge({ repository: input.repository, head: branch, base: options.base, result },
+          require('./github_user_api').githubUserAPI(session.accessToken),
+          { method: 'local-signed-squash', gitToken: session.accessToken });
+      },
       onMergeHelp: result => openKefaniaMergeHelp(vscode, context, repository.rootUri,
         input.repository, { ...result, head: branch, base: options.base }),
       onClose: async () => {

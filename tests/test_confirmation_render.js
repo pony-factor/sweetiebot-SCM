@@ -4,6 +4,20 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const html=fs.readFileSync(require.resolve('../efs/draft_confirmation.html'),'utf8')
   .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge_dashboard_markdown.js'),'utf8'));
+assert.match(html,/\.merge-buttons\{display:flex;align-items:center;gap:8px/,'Merge method buttons retain spacing beside the PR badge');
+assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
+// Themed borders—including the left warning accent—must use the current
+// workbench's line color instead of a hard-coded warning border color.
+const themedBorderRule=html.match(/[^{}]+\{border-color:var\(--line\)\}/g)
+  ?.find(rule=>rule.includes('[data-theme-colors] .merge-issue'));
+assert(themedBorderRule,'The merge warning must inherit the VS Code border color');
+for(const selector of ['.card','.mark','figure','.actions','.pr-number','.status.pack-tag',
+  '.merge-issue','.lightbox-footer','.lightbox-nav','button']){
+  assert(themedBorderRule.includes('[data-theme-colors] '+selector),
+    'Missing theme border override for '+selector);
+}
+assert.match(html,/\.merge-issue\{[^}]*border-left:5px solid var\(--kefania-error,#f28f79\)/,
+  'When theme colors are disabled, keep the existing semantic warning border');
 const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 class Element {
@@ -47,12 +61,14 @@ document.documentElement={
   style:{setProperty:(key,value)=>themeProperties.set(key,value),removeProperty:key=>themeProperties.delete(key)}
 };
 context.CSS={supports:(kind,value)=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)};
-context.applyAppearance({bg:'#101010',text:'#eeeeee',button:'#00aa55',controlText:'#55dd88'});
+context.applyAppearance({bg:'#101010',text:'#eeeeee',line:'#34495e',button:'#00aa55',controlText:'#55dd88'});
 assert.equal(document.documentElement['data-theme-colors'],true);
 assert.equal(themeProperties.get('--kefania-controlText'),'#55dd88');
+assert.equal(themeProperties.get('--kefania-line'),'#34495e','Themed borders use the supplied VS Code line color');
 context.applyAppearance({bg:'#ffffff',text:'#111111'});
 assert.equal(themeProperties.get('--kefania-bg'),'#ffffff','Changing themes updates the page');
 assert.equal(themeProperties.has('--kefania-button'),false,'Missing theme colors cannot retain stale values');
+assert.equal(themeProperties.has('--kefania-line'),false,'Missing line theme color resets the old border override');
 context.applyAppearance(null);
 assert.equal(document.documentElement['data-theme-colors'],false);
 assert.equal(themeProperties.size,0);
@@ -260,9 +276,9 @@ assert.equal(images.children.length,1);
 assert.equal(images.children[0].children[1].textContent,'New result');
 assert(html.includes('<div class="pr-heading"><h2 id="title">Preparing your draft</h2></div>'), 'Publication heading stays clear of the PR number');
 assert(html.includes('<div class="merge-action-row"><div id="merge-buttons" class="merge-buttons"><button id="merge" type="button">Squash and merge</button>'), 'Merge buttons have a dedicated action row');
-assert.match(html, /<button id="merge-history"[^>]*>Merge preserving commits<\/button><\/div><a id="pr-number"[^>]*hidden><\/a><\/div>/, 'Linked PR badge sits at the right end of the merge-button row');
-assert(html.includes('.merge-action-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}'), 'Row keeps the PR badge right aligned while allowing narrow windows to wrap');
-assert(html.includes('.merge-action-row .pr-number{margin-left:auto}'), 'PR badge is pushed to the right edge of the card');
+assert.match(html, /<button id="merge-local-signed"[^>]*>Squash with local Git signer<\/button><\/div><a id="pr-number"[^>]*hidden><\/a><\/div>/, 'PR badge follows every merge method including signed squash');
+assert(html.includes('.merge-action-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}'), 'Merge row wraps on narrow screens');
+assert(html.includes('.merge-action-row .pr-number{margin-left:auto}'), 'PR badge stays at the right side');
 assert.doesNotMatch(html, /<main><header>[^\n]*id="pr-number"/, "The page header has no PR number badge");
 assert.match(html, /\.merge-controls\{margin:12px 0 14px;padding:4px 8px\}\.merge-controls button\{padding:10px 15px;border-radius:10pt\}/, "Merge buttons have 10pt rounding and breathing room");
 assert.match(html, /\.close-confirmation\{[^}]*border-radius:10pt/, "Close control has 10pt rounding");
@@ -337,9 +353,9 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   layoutState={...layoutState,mergeResult:{merged:true}};
   await context.refresh();
   assert.equal(getElementById('merge-issue').hidden,true,'Verified merge removes the blocker banner');
-  assert.equal(getElementById('merge-controls').hidden,false,'Merged PR keeps the action row visible for its PR link');
-  assert.equal(getElementById('merge-buttons').hidden,true,'Merged PR hides merge actions but retains its PR link');
-  assert.equal(getElementById('pr-number').hidden,false,'PR number remains available after a merge');
+  assert.equal(getElementById('merge-controls').hidden,false,'Merged PR retains its PR link');
+  assert.equal(getElementById('merge-buttons').hidden,true,'Merged PR hides merge methods but keeps the PR badge');
+  assert.equal(getElementById('pr-number').hidden,false,'PR badge stays visible after merge');
   layoutState={errors:{},draft:{title:'🐞 Preserve branch windows',body:'The PR description.'},publishing:true};
   await context.refresh();
   assert.equal(getElementById('h1').textContent,'🐞 Preserve branch windows');
@@ -349,8 +365,8 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.equal(getElementById('title').textContent,'Successfully published');
   assert.equal(getElementById('pr-number').textContent,'#439');
-  assert.equal(getElementById('merge-controls').hidden,false,'Published PR shows the action row');
-  assert.equal(getElementById('merge-buttons').hidden,false,'Published PR shows the merge buttons');
+  assert.equal(getElementById('merge-controls').hidden,false,'Published PR shows the merge action row');
+  assert.equal(getElementById('merge-buttons').hidden,false,'Published PR shows merge methods');
   assert.equal(getElementById('pr-number').href,layoutState.result.url);
   assert.equal(getElementById('draft-status').hidden,true,'No duplicate publication status below the controls');
   layoutState={...layoutState,result:null,errors:{publish:'GitHub rejected publication: branch has no new commits.'}};
@@ -387,6 +403,26 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await getElementById('merge').onclick();
   assert.equal(prompts,2,'Turning the setting off restores confirmation');
   assert.equal(merges,2);
+  let signerPrompts=0,signerCalls=0;
+  state={result:{number:2},mergeChoice:'SQUASH_AUTHOR_CHOICE_REQUIRED',localSignedMergeAvailable:true,ludicrousMode:true};
+  context.confirm=()=>{signerPrompts++;return false;};
+  context.fetch=async (url,options)=>{
+    if(options?.method==='POST')signerCalls++;
+    return {ok:true,json:async()=>state};
+  };
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,1,'Even ludicrous mode needs explicit local rewrite approval');
+  assert.equal(signerCalls,0,'Cancelling cannot rewrite a branch');
+  state.mergeChoice=undefined;
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,1,'No signer action without attribution choice');
+  // Restore the normal successful merge mock for close-after-merge assertions.
+  state={result:{number:2},ludicrousMode:false};
+  context.confirm=()=>{prompts++;return true;};
+  context.fetch=async (url,options)=>{
+    if(options?.method==='POST'){merges++;return {ok:true,json:async()=>({merged:true})};}
+    return {ok:true,json:async()=>state};
+  };
   let closes=0;
   const originalClose=getElementById('close-confirmation').onclick;
   getElementById('close-confirmation').onclick=async()=>{closes++;};
