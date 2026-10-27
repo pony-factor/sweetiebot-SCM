@@ -1,11 +1,8 @@
 name: Probe real Codex New Chat dot
 on:
-  push:
-    branches: [funnel-web]
-    paths:
-      - scripts/codex_colors.py
-      - scripts/ci/probe_codex_new_chat.js
-      - .github/workflows/codex-new-chat-probe.yml
+  # A clean CI runner cannot authenticate to a user's Codex sidebar.
+  # Run this forensic probe explicitly; failed UI mounting must not block
+  # unrelated PR checks.
   workflow_dispatch:
 permissions:
   contents: read
