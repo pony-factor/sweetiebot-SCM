@@ -15,6 +15,11 @@ test('reads only valid, repo-relative Markdown notice data', () => {
   assert.deepEqual(parseNotice(JSON.stringify({version: 1, head, paths: ['a.md'], model: 'qwen:3b'})),
     {head, paths: ['a.md'], model: 'qwen:3b'});
   assert.equal(parseNotice(JSON.stringify({version: 1, head, paths: ['a.md'], model: 'bad\ntrailer'})), null);
+  assert.deepEqual(parseNotice(JSON.stringify({version: 1, head, paths: ['a.md'], requestedAtMs: 12345})),
+    {head, paths: ['a.md'], requestedAtMs: 12345});
+  for (const requestedAtMs of [0, -1, '12345', 1.5, Infinity]) {
+    assert.equal(parseNotice(JSON.stringify({version: 1, head, paths: ['a.md'], requestedAtMs})), null);
+  }
   assert.equal(parseNotice('not json'), null);
   assert.equal(parseNotice(JSON.stringify({ version: 1, head, paths: ['../outside.md'] })), null);
   assert.equal(parseNotice(JSON.stringify({ version: 1, head, paths: ['secret.txt'] })), null);
@@ -33,8 +38,8 @@ test('uses only a configured GitHub noreply bot identity for co-authorship', () 
     '🤖 Spellcheck Changes\n\nCo-authored-by: Spellchecker (Ollama qwen:3b) <326443430+codex-pony[bot]@users.noreply.github.com>');
 });
 
-function fixture({ currentHead = head, changed = true, draft = '' } = {}) {
-  const files = new Map([['/repo/.git/sweetiebot-spellcheck-ready.json', notice]]);
+function fixture({ currentHead = head, changed = true, draft = '', noticeContent = notice, mtimeMs = 0 } = {}) {
+  const files = new Map([['/repo/.git/sweetiebot-spellcheck-ready.json', noticeContent]]);
   const movements = [];
   const io = {
     async rename(source, destination) {
@@ -43,7 +48,7 @@ function fixture({ currentHead = head, changed = true, draft = '' } = {}) {
       files.delete(source);
       movements.push(destination);
     },
-    async lstat(file) { return { isFile: () => true, size: files.get(file).length }; },
+    async lstat(file) { return { isFile: () => true, size: files.get(file).length, mtimeMs }; },
     async readFile(file) { return files.get(file); },
     async unlink(file) { files.delete(file); }
   };
@@ -72,6 +77,29 @@ test('claims one-time notice only when matching commit and unstaged edits exist'
   assert.equal(await takeNotice(stale.repo, { fs: stale.io, git: stale.git }), null);
   const reverted = fixture({ changed: false });
   assert.equal(await takeNotice(reverted.repo, { fs: reverted.io, git: reverted.git }), null);
+});
+
+test('never reopens a prior-session spellcheck notice, including late background results', async () => {
+  const old = fixture({mtimeMs: 1000});
+  assert.equal(await takeNotice(old.repo, {fs: old.io, git: old.git, sessionStartedAt: 2000}), null);
+  assert.equal(old.files.size, 0, 'stale notices are consumed without deleting Markdown edits');
+
+  // The worker was started during the old session but only finished writing
+  // its notice after the new VS Code window launched.
+  const late = fixture({mtimeMs: 3000,
+    noticeContent: JSON.stringify({version: 1, head, paths: ['notes/report.md'], requestedAtMs: 1000})});
+  assert.equal(await takeNotice(late.repo, {fs: late.io, git: late.git, sessionStartedAt: 2000}), null);
+  assert.equal(late.files.size, 0);
+
+  const current = fixture({mtimeMs: 3000,
+    noticeContent: JSON.stringify({version: 1, head, paths: ['notes/report.md'], requestedAtMs: 2500})});
+  assert.deepEqual(await takeNotice(current.repo, {fs: current.io, git: current.git, sessionStartedAt: 2000}),
+    {head, paths: ['notes/report.md'], requestedAtMs: 2500, root: '/repo'});
+
+  const legacyCurrent = fixture({mtimeMs: 2500});
+  assert.deepEqual(await takeNotice(legacyCurrent.repo,
+    {fs: legacyCurrent.io, git: legacyCurrent.git, sessionStartedAt: 2000}),
+    {head, paths: ['notes/report.md'], root: '/repo'});
 });
 
 test('refuses to read a symlinked or oversized metadata notice', async () => {
