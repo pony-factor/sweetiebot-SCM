@@ -51,7 +51,7 @@ async function publishMergeSummaries({ enabled, selection, input, result, token,
         if (page >= 20) throw Error('Existing summary history is incomplete.');
       }
       const body = MARKER + '\n### AI merge summary\n\n' + prepared.explanation.trim().slice(0, 4000) +
-        '\n\nVerified merge into `' + selected.base + '` · commit `' + item.sha.slice(0, 12) + '`.';
+        '\n\nVerified merge into ' + selected.base + ' · commit ' + item.sha.slice(0, 12) + '.';
       if (existing?.body === body) continue;
       await api(prefix + (existing ? '/issues/comments/' + existing.id : '/issues/' + item.number + '/comments'),
         existing ? 'PATCH' : 'POST', { body });
