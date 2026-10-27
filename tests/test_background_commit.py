@@ -346,7 +346,7 @@ class BackgroundCommitTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'identifier'):
             worker.dismiss_merged_push('wrong-job')
         with self.assertRaisesRegex(RuntimeError, 'job changed'):
-            worker.dismiss_merged_push('f' * 16)
+            worker.dismiss_merged_push('z' * 11)
         self.assertEqual(self.git('rev-parse', 'HEAD'), local_sha)
         self.assertTrue(worker.dismiss_merged_push(paused['id']))
         retired = self.job(directory)
