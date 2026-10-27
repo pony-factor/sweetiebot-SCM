@@ -177,7 +177,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
 
 
     def test_standalone_activity_bar_icon_is_upright(self):
-        icon_path = workspace_search.HERE.parent / "assets/imgs/media/efs.svg"
+        icon_path = workspace_search.HERE.parent / "assets/imgs/efs.svg"
         icon = ET.fromstring(icon_path.read_text())
         self.assertFalse(
             any("rotate(" in element.attrib.get("transform", "") for element in icon.iter()),
@@ -186,14 +186,18 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         # The installer is generated; its assets must come from source files.
         import build_installer_app
 
-        media_root = workspace_search.HERE.parent / "assets/imgs/media"
-        for name in ("efs.svg", "merge-prs-light.svg", "merge-prs-dark.svg"):
-            source = media_root / name
+        image_root = workspace_search.HERE.parent / "assets/imgs"
+        for name, relative_path in workspace_search.IMAGE_SOURCES.items():
+            source = image_root / relative_path
+            self.assertTrue(source.is_file(), name)
             self.assertEqual(workspace_search.source_files()[Path("media") / name], source)
             self.assertEqual(
-                build_installer_app.source_files()[Path("assets/imgs/media") / name],
+                build_installer_app.source_files()[Path("assets/imgs") / relative_path],
                 source,
             )
+        notices = image_root / "README.md"
+        self.assertEqual(workspace_search.source_files()[Path("THIRD_PARTY_NOTICES.md")], notices)
+        self.assertEqual(build_installer_app.source_files()[Path("assets/imgs/README.md")], notices)
 
     def test_standalone_manifest_uses_custom_label(self):
         settings = dict(
@@ -254,9 +258,12 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             for name in ("efs.svg", "merge-prs-light.svg", "merge-prs-dark.svg"):
                 self.assertEqual(
                     (destination / "media" / name).read_bytes(),
-                    (workspace_search.HERE.parent / "assets/imgs/media" / name).read_bytes(),
+                    (workspace_search.HERE.parent / "assets/imgs" / workspace_search.IMAGE_SOURCES[name]).read_bytes(),
                 )
-            self.assertTrue((destination / "THIRD_PARTY_NOTICES.md").is_file())
+            self.assertEqual(
+                (destination / "THIRD_PARTY_NOTICES.md").read_bytes(),
+                (workspace_search.HERE.parent / "assets/imgs/README.md").read_bytes(),
+            )
             self.assertFalse(
                 workspace_search.sync_extension(
                     check=True,

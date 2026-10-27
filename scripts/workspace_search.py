@@ -13,6 +13,12 @@ from toolkit_settings import load_settings, VSCODE_SETTINGS
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent / "efs"
+# Map shared artwork into the stable icon paths required by VS Code.
+IMAGE_SOURCES = {
+    "efs.svg": Path("efs.svg"),
+    "merge-prs-light.svg": Path("kefania/merge-prs-light.svg"),
+    "merge-prs-dark.svg": Path("kefania/merge-prs-dark.svg"),
+}
 STANDALONE_CONTAINER_ID = "scmToolkit-workspaceSearchContainer"
 LEGACY_EXTENSION_PATTERNS = ("jfwooten4.scm-toolkit-workspace-search-*",)
 
@@ -133,10 +139,11 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
         if path.is_file()
     }
     # Keep VS Code icon paths stable while the shared artwork lives in assets.
-    media_root = here.parent / "assets/imgs/media"
-    for source in media_root.rglob("*"):
-        if source.is_file():
-            files[Path("media") / source.relative_to(media_root)] = source
+    image_root = here.parent / "assets/imgs"
+    for icon_name, asset_path in IMAGE_SOURCES.items():
+        files[Path("media") / icon_name] = image_root / asset_path
+    # Keep the moved attribution file alongside its installed third-party icons.
+    files[Path("THIRD_PARTY_NOTICES.md")] = image_root / "README.md"
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
     files[Path("github_apps.py")] = here / "github_apps.py"
