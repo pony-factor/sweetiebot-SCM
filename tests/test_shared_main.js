@@ -146,6 +146,12 @@ async function openedRoot(result) {
     assert.equal(git('-C', fromTopic, 'branch', '--show-current'), 'from-topic');
     assert.equal(git('-C', fromTopic, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
     assert.equal(git('-C', moved, 'branch', '--show-current'), 'moving-task');
+    // A topic window must route to another occupied topic worktree, not fall
+    // through to git checkout (which rejects branches held by a worktree).
+    const topicSwitcher = editor(topic);
+    assert.equal(await routeBranch(topicSwitcher, { rootUri: { fsPath: topic } },
+      { ...options, branch: 'moving-task' }), true);
+    assert.equal(await openedRoot({ target: topicSwitcher.commands.calls.at(-1)[1].fsPath }), moved);
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
     assert.equal(await fs.readFile(path.join(fromTopic, 'draft.txt'), 'utf8'), 'untracked task work\n');
     assert.equal(git('-C', moved, 'diff', '--cached'), topicIndex);
