@@ -111,6 +111,29 @@ const { squashMergePullRequest } = require('../efs/merge_pull_request');
   await assert.rejects(squashMergePullRequest(input, localRequest, {
     humanMerge:async()=>({merged:true,sha:'invalid'})
   }), /did not confirm/);
+  // Explicit local signing must request a signed commit and a leased head
+  // rewrite rather than silently falling back to GitHub's merge commit.
+  let signedOptions;
+  const signedBotTransport=async(endpoint,options)=>{
+    if(endpoint==='repos/owner/repo/pulls/12'&&!options)return {...botPR,mergeable:true};
+    return localTransport(endpoint,options);
+  };
+  const signedResult=await squashMergePullRequest(input,signedBotTransport,{
+    method:'local-signed-squash',humanMerge:async(repository,number,options)=>{
+      signedOptions=options;
+      assert.equal(repository,'owner/repo');assert.equal(number,12);
+      return {merged:true,sha:'b'.repeat(40)};
+    }
+  });
+  assert.equal(signedResult.merged,true);
+  assert.equal(signedOptions.allowHistoryRewrite,true);
+  assert.equal(signedOptions.rewriteReason,'preserve-human-author');
+  assert.equal(signedOptions.requireSignedCommit,true);
+  assert.equal(signedOptions.offerAuthorChoice,false);
+  await assert.rejects(squashMergePullRequest(input,async(endpoint,options)=>{
+    if(endpoint==='repos/owner/repo/pulls/12'&&!options)return {...pr,mergeable:true};
+    return api(endpoint,options);
+  },{method:'local-signed-squash',humanMerge:async()=>{throw Error('Should not sign a human-opened PR');}}),/matching human opener/);
   // A human opener differing from the original author uses the same local path.
   let differentAuthorPrepared = false;
   assert((await squashMergePullRequest(input, async (endpoint, options) => {
