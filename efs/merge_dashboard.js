@@ -373,16 +373,25 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     let decisionComments = inlineComments.get(item.number) || [];
     const info = await githubGet(readFetch, token, selection.repository,
       '/pulls/' + item.number);
-    // Never follow a moved PR base silently, and do not treat an unrelated PR as selected.
-    if (info.number !== item.number || info.base?.ref !== item.base ||
+    // Poll the selected PR even after retargeting. Execution still uses the
+    // immutable selection and independently rejects changed snapshots.
+    if (info.number !== item.number || !info.base?.ref ||
+        info.head?.ref !== item.head || info.head?.repo?.full_name !== selection.repository ||
         info.html_url !== item.url) {
       if (item.state !== 'blocked') {
         item.state = 'blocked';
-        addEvent(item, 'blocked', 'PR identity or base changed; manual verification required');
+        addEvent(item, 'blocked', 'PR identity changed; manual verification required');
       }
       publish();
       return;
     }
+    const baseChanged = info.base.ref !== (item.currentBase || item.base);
+    item.currentBase = info.base.ref;
+    item.baseLabel = branchDisplayLabel(item.currentBase, catalog);
+    if (baseChanged) {
+      addEvent(item, 'updated', 'PR base changed; refreshing live GitHub status');
+    }
+    item.snapshotChanged = Boolean(item.snapshotDeferred || item.currentBase !== item.base);
     const changed = info.head?.sha !== item.currentHead;
     const before = item.state;
     const previousMessage = item.statusMessage;
@@ -390,7 +399,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.currentHead = info.head?.sha || '';
       addEvent(item, 'updated', 'PR head changed; reviewing the new GitHub diff');
     }
-    if (cycle === 1 || changed || !item.files.length) {
+    if (cycle === 1 || changed || baseChanged || !item.files.length) {
       const files = await paged(readFetch, token, selection.repository,
         '/pulls/' + item.number + '/files');
       try {
@@ -402,7 +411,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
     }
-    if (cycle === 1 || cycle % 3 === 0 || changed || info.merged || item.review) {
+    if (cycle === 1 || cycle % 3 === 0 || changed || baseChanged || info.merged || item.review) {
       const notes = await readReports(readFetch, token, selection.repository, item.number, 2,
         { headSha: info.head?.sha, baseSha: info.base?.sha });
       decisionComments = notes.inlineComments;
@@ -454,7 +463,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     item.mergeCommit = info.merge_commit_sha || '';
     item.description = String(info.body || '').slice(0, 12000);
     publish();
-    if (!launchingActions.has(item.number)) {
+    if (!item.snapshotChanged && !launchingActions.has(item.number)) {
       await reactionChoices.inspect({ ...item, headSha: info.head?.sha, baseSha: info.base?.sha }, decisionComments);
     }
   }
@@ -693,6 +702,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of state.deferred) {
       const pr = byNumber.get(item.number);
       if (pr) {
+        // Recognize older persisted batches as well as typed new deferrals.
+        pr.snapshotDeferred = item.kind === 'snapshot_changed' ||
+          /The selected PR changed (?:outside this batch|while its parallel review)/.test(String(item.reason || ''));
+        pr.snapshotChanged = Boolean(pr.snapshotDeferred || (pr.currentBase && pr.currentBase !== pr.base));
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
         pr.localReview = require('./merge_blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
       }

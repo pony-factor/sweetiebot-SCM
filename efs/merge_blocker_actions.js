@@ -47,7 +47,7 @@ function parseReportOptions(text) {
 function stripReportOptions(text) { return String(text || '').replace(OPTIONS_MARKER, '').trim(); }
 
 function blockerOptions(pr) {
-  if (['merged', 'closed'].includes(pr.state)) return [];
+  if (pr.snapshotChanged || ['merged', 'closed'].includes(pr.state)) return [];
   if (!['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
   const suggestions = [...(pr.localReview?.options || []), ...(pr.review?.options || []), ...(pr.report?.options || [])].filter(option => !ROUTINE_ACTIONS.has(option.id.replace(/^report-/, ''))).slice(0, 6);
   const choices = [...suggestions.filter(option => option.recommended), ...suggestions];
@@ -63,7 +63,7 @@ function blockerOptions(pr) {
 }
 
 function manualBlockerActions(pr) {
-  if (['merged', 'closed'].includes(pr.state)) return [];
+  if (pr.snapshotChanged || ['merged', 'closed'].includes(pr.state)) return [];
   if (!['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
   return [
     { id: 'fix-checks', label: 'Fix failing checks', description: 'Find the actual failures and make the smallest appropriate repair.', prompt: 'Inspect the failing checks on this PR and repair the actual failure. Preserve unrelated work and verify the repair.' },
@@ -79,6 +79,11 @@ function manualBlockerActions(pr) {
 // analysis workflow. Genuine implementation decisions come only from a
 // current-head report or inline review; never fabricate alternatives.
 function dashboardActionPlan(pr) {
+  if (pr.snapshotChanged && !['merged', 'closed'].includes(pr.state)) {
+    return { kind: 'snapshot', title: 'Refresh the batch selection',
+      description: 'This PR changed after selection and was left unmerged by this batch. Review its current GitHub diff, then select it again in Bulk merge. Current GitHub status is shown separately.',
+      actions: [], workspaceAction: null };
+  }
   const manual = manualBlockerActions(pr);
   const byId = id => manual.find(action => action.id === id);
   const workspaceAction = byId('inspect-codex') || null;

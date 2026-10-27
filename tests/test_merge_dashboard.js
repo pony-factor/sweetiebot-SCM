@@ -83,6 +83,11 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.deepEqual(decisionPlan.actions.map(action => action.id), choices.map(option => option.id),
     'The current review choices are the implementation buttons');
   assert.equal(dashboardActionPlan({ state: 'updated' }).actions[0].id, 'sync-checks');
+  const snapshotPlan = dashboardActionPlan({ state: 'updated', snapshotChanged: true });
+  assert.equal(snapshotPlan.kind, 'snapshot');
+  assert.deepEqual(snapshotPlan.actions, [], 'A stale selection does not suggest unnecessary branch repairs');
+  assert.equal(snapshotPlan.workspaceAction, null);
+  assert.match(snapshotPlan.description, /select it again/);
   assert.equal(dashboardActionPlan({ state: 'blocked', mergeableState: 'blocked' }).actions[0].id, 'investigate-blocker');
   assert.deepEqual(dashboardActionPlan({ state: 'merged' }).actions, []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
@@ -277,7 +282,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     html_url: url + '#pullrequestreview-70', user: { login: 'reviewer' } }];
   let reactionVotes = [];
   const reactionWrites = [];
-  let fileRequests = 0, apiRequests = 0;
+  let fileRequests = 0, apiRequests = 0, commitFetches = 0;
   let requestFault;
   const fakeFetch = async (address, options) => {
     if (requestFault) throw requestFault;
@@ -299,7 +304,10 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
-    else if (pathname.endsWith('/commits')) result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
+    else if (pathname.endsWith('/commits')) {
+      commitFetches++;
+      result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
+    }
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
@@ -615,6 +623,27 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
+  // Retargeting a stacked PR must not freeze the live status, diff or commits.
+  // Keep the execution selection unchanged; never authorize a different base.
+  info = { ...info, base: { ...info.base, ref: 'new-base' },
+    mergeable: true, mergeable_state: 'clean' };
+  const commitsBeforeRetarget = commitFetches;
+  await dashboard.refresh({ force: true });
+  let retargeted = events.at(-1).prs[0];
+  assert.notEqual(retargeted.state, 'blocked');
+  assert.equal(retargeted.mergeableState, 'clean');
+  assert.equal(retargeted.currentBase, 'new-base');
+  assert.equal(retargeted.base, 'main', 'Read-only polling preserves the authorized execution base');
+  assert.equal(retargeted.actionPlan.kind, 'snapshot');
+  assert.deepEqual(retargeted.blockerOptions, [], 'Retargeted selections cannot dispatch stale choices');
+  assert.deepEqual(retargeted.manualActions, []);
+  assert(commitFetches > commitsBeforeRetarget, 'A base-only change refreshes commit history');
+  dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12,
+    reason: 'The selected PR changed outside this batch; review the new head or PR state.' }] });
+  assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'Old persisted snapshot deferrals have the same recovery guidance');
+  info = { ...info, base: { ...info.base, ref: 'main' } };
+  await dashboard.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].actionPlan.kind, 'snapshot', 'Returning to the original base does not resume a deferred batch');
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
   await dashboard.refresh({ force: true });
   const failedFetch = events.at(-1).events.at(-1);

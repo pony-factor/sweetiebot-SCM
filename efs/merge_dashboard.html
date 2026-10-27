@@ -335,7 +335,7 @@ __RATE_LIMIT_FORMATTER__
     if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
     const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base) +
       (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
-    branchLine.title = pr.head + ' → ' + pr.base;
+    branchLine.title = pr.head + ' → ' + (pr.currentBase || pr.base);
     const actions = show('div', 'actions', undefined, parent);
     for (const item of [['open-pr', 'View PR'], ['open-diff', 'GitHub file diff']]) {
       const button = show('button', 'secondary', item[1], actions);
@@ -355,7 +355,7 @@ __RATE_LIMIT_FORMATTER__
       '\nMerge eligibility is always rechecked against GitHub.', '');
     if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
     if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
-      pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
+      pr.snapshotChanged ? 'Batch selection changed' : pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
     if (pr.review && !pr.analysis?.length && pr.state !== 'merged' &&
         !(pr.inlineReviewComments || []).some(comment => String(comment.id) === String(pr.review.id))) showTextPanel(parent,
       'Human review requested · GitHub comment', pr.review.text, '', true);
@@ -409,6 +409,7 @@ __RATE_LIMIT_FORMATTER__
     if (!localInfo && !pr.report?.text && !pr.localReview?.text && !pr.review?.text && !pr.analysis?.length) showTextPanel(parent, 'AI explanation', '',
       'No explanation available yet.', true);
     const plan = pr.actionPlan;
+    if (plan?.kind === 'snapshot') showTextPanel(parent, plan.title, plan.description, '');
     if (plan?.actions?.length || plan?.workspaceAction) {
       const choices = show('section', 'panel action-panel', undefined, parent);
       const heading = show('div', 'action-heading', undefined, choices);
@@ -509,7 +510,7 @@ __RATE_LIMIT_FORMATTER__
       show('span', 'name', '#' + pr.number + ' ' + pr.title, row);
       show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
       const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
-      branchLine.title = pr.head + ' → ' + pr.base;
+      branchLine.title = pr.head + ' → ' + (pr.currentBase || pr.base);
       button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
     }
     list.scrollTop = listScroll;
