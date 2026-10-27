@@ -7,6 +7,7 @@ const { chromium } = require("playwright");
 const result = { selector: ':root[data-codex-window-type=extension] svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"]', frames: [] };
 const css = fs.readFileSync(process.env.CODEX_PROBE_CSS, "utf8");
 let browser;
+let openedCodex = false;
 const deadline = Date.now() + 90000;
 
 async function inspect(frame) {
@@ -45,6 +46,17 @@ async function inspect(frame) {
   while (Date.now() < deadline) {
     try {
       if (!browser) browser = await chromium.connectOverCDP("http://127.0.0.1:9222", { timeout: 5000 });
+      if (!openedCodex && browser.contexts().some(c => c.pages().length)) {
+        openedCodex = true;
+        result.paletteAttempted = true;
+        const page = browser.contexts().flatMap(c => c.pages())[0];
+        await page.bringToFront();
+        await page.keyboard.press("Control+Shift+P");
+        await page.keyboard.type("Codex: Open Codex Sidebar", { delay: 15 });
+        await page.waitForTimeout(1500);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(8000);
+      }
       result.pages = browser.contexts().map(c => c.pages().length);
       const frames = browser.contexts().flatMap(c => c.pages().flatMap(p => p.frames()));
       result.frames = [];
