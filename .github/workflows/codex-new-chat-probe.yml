@@ -90,6 +90,8 @@ jobs:
           node scripts/ci/probe_codex_new_chat.js || {
             echo "Codex live probe could not verify the dot. Sanitized diagnostics:"
             cat "$CODEX_PROBE_REPORT" || true
+            echo "Headless VS Code startup tail:"
+            tail -n 45 "$RUNNER_TEMP/vscode.log" || true
             exit 1
           }
       - name: Collect sanitized results

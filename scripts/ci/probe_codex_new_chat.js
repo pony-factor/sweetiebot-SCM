@@ -27,6 +27,10 @@ async function inspect(frame) {
     style.remove();
     return {
       windowType: document.documentElement.getAttribute("data-codex-window-type"),
+      documentTitle: document.title.slice(0, 90),
+      readyState: document.readyState,
+      svgCircles: document.querySelectorAll("svg circle").length,
+      hasBody: !!document.body,
       exactMatches: exact.length,
       circles: candidates.slice(0, 10).map((c, i) => ({
         className: c.getAttribute("class"), cx: c.getAttribute("cx"),
@@ -41,12 +45,13 @@ async function inspect(frame) {
   while (Date.now() < deadline) {
     try {
       if (!browser) browser = await chromium.connectOverCDP("http://127.0.0.1:9222", { timeout: 5000 });
+      result.pages = browser.contexts().map(c => c.pages().length);
       const frames = browser.contexts().flatMap(c => c.pages().flatMap(p => p.frames()));
       result.frames = [];
       for (const frame of frames) {
         try {
           const d = await inspect(frame);
-          if (d.circles.length || d.exactMatches || d.windowType) result.frames.push(d);
+          result.frames.push(d);
         } catch {}
       }
       if (result.frames.some(f => f.circles.length)) break;
