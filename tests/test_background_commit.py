@@ -118,6 +118,60 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main').split()[0])
         worker.wait_for_background('/usr/bin/git', [])
 
+    def deleted_branch_job(self, publish=False):
+        directory = self.queue(push=True)
+        job = self.job(directory)
+        if publish:
+            self.git('push', '-q', 'origin', 'main')
+        replacement = self.git('commit-tree', 'HEAD^{tree}', input='Independent branch\n')
+        self.git('checkout', '-qb', 'replacement', replacement)
+        self.git('branch', '-D', 'main')
+        job.update(phase='blocked', error='The branch advanced outside the queued commits; background work was paused.')
+        worker.write_journal(directory / 'job.json', job)
+        return directory
+
+    def test_deleted_local_and_remote_branch_retires_push_and_preserves_recovery_commit(self):
+        directory = self.deleted_branch_job()
+        queued = self.job(directory)['sha']
+        (self.repo / 'story.txt').write_text('Staged afterward\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'story.txt').write_text('Unstaged afterward\n')
+        before = [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')]
+        status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+        self.assertFalse(status.get('id'))
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'cancelled', 'A deleted branch is not falsely reported as published')
+        self.assertFalse(job['push'])
+        self.assertNotIn('error', job)
+        self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/recovery/' + job['id'] + '/deleted-branch'), queued)
+        self.assertEqual(before, [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')])
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+        self.assertNotIn('refs/heads/main', self.git('for-each-ref', '--format=%(refname)'))
+
+    def test_deleted_local_branch_with_verified_published_commit_finishes(self):
+        directory = self.deleted_branch_job(publish=True)
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'done')
+
+    def test_deleted_branch_is_not_retired_when_remote_check_fails(self):
+        directory = self.deleted_branch_job()
+        original = worker.git
+        def offline(*args, **kwargs):
+            if args[0] == 'ls-remote':
+                return subprocess.CompletedProcess(args, 128, stdout='', stderr='offline')
+            return original(*args, **kwargs)
+        with patch.object(worker, 'git', side_effect=offline):
+            worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
+    def test_deleted_branch_with_pending_message_is_not_retired(self):
+        directory = self.deleted_branch_job()
+        job = self.job(directory)
+        job['provisional'] = True
+        worker.write_journal(directory / 'job.json', job)
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
     def external_merge_after_queue(self):
         directory = self.queue(push=True)
         self.git('branch', 'side')

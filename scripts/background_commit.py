@@ -713,8 +713,8 @@ def sync_with_lindsey(job, remote_tip):
 
 
 def reconcile_published_jobs(meta):
-    """Retire finalized, blocked jobs proven published outside this queue."""
-    meta = Path(meta)
+    """Retire finalized blocked jobs already published or belonging to deleted branches."""
+    meta = Path(meta).resolve()
     marker = meta / MARKER
     published = {}
     for entry in queue_entries(marker):
@@ -739,8 +739,13 @@ def reconcile_published_jobs(meta):
                 if query('rev-parse', '--absolute-git-dir') != str(meta):
                     continue
                 if (query('show', '-s', '--format=%T', job['sha']) != job['tree']
-                        or query('show', '-s', '--format=%P', job['sha']) != job['parent']
-                        or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
+                        or query('show', '-s', '--format=%P', job['sha']) != job['parent']):
+                    continue
+                local = query('show-ref', '--verify', '--quiet', job['branch'], check=False)
+                if local.returncode not in (0, 1):
+                    continue
+                deleted = local.returncode == 1
+                if not deleted and query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode:
                     continue
                 remote, destination = job.get('remote'), job.get('destination')
                 if not remote or remote.startswith('-') or not destination or not destination.startswith('refs/heads/'):
@@ -756,17 +761,29 @@ def reconcile_published_jobs(meta):
                         if query('fetch', '--no-tags', '--no-write-fetch-head', remote, tip,
                                  check=False, timeout=3).returncode:
                             tip = ''
-                    published[key] = tip
-                tip = published[key]
-                if not tip or query('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode:
+                    published[key] = (tip, result.returncode == 0 and not rows)
+                tip, remote_deleted = published[key]
+                obsolete = deleted and remote_deleted
+                if not obsolete and (not tip or query('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode):
                     continue
                 with repository_lock(meta):
                     current = read_journal(file)
                     if (current != job or (meta / TRANSACTION).exists()
                             or not any(item['id'] == job['id'] for item in queue_entries(marker))
-                            or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
+                            or query('show-ref', '--verify', '--quiet', job['branch'], check=False).returncode != local.returncode
+                            or (not deleted and query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode)):
                         continue
-                    job.update(phase='done', context='')
+                    if obsolete:
+                        # Never recreate a deleted branch to finish an old push.
+                        # Retain the actual commit, rather than only its tree.
+                        recovery = 'refs/sweetiebot/recovery/' + job['id'] + '/deleted-branch'
+                        if query('update-ref', recovery, job['sha'], '', check=False).returncode:
+                            if query('rev-parse', '--verify', recovery) != job['sha']:
+                                continue
+                        job.update(phase='cancelled', push=False, context='',
+                                   retired_reason='Local and remote branches were deleted; queued commit retained for recovery.')
+                    else:
+                        job.update(phase='done', context='')
                     job.pop('error', None)
                     job.pop('conflictPaths', None)
                     write_journal(file, job)
@@ -1364,7 +1381,7 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
         label = name + (' (' + branch + ')' if branch else '')
         if job and job.get('phase') == 'blocked' and job.get('error'):
             reason = 'Push blocked by merge conflicts.' if 'merge conflict' in job['error'].lower() else 'Commit & Push paused.'
-            raise RuntimeError('Sweetiebot: ' + reason + ' ' + job['error'])
+            raise RuntimeError('Sweetiebot: ' + reason + ' ' + label + ': ' + job['error'])
         raise RuntimeError('Sweetiebot: Commit & Push is still running. Let it finish before modifying pending history or committing again.')
 
 
