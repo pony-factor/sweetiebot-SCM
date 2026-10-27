@@ -73,13 +73,17 @@ jobs:
             --extensionDevelopmentPath="$RUNNER_TEMP/probe-ext" \
             "$GITHUB_WORKSPACE" > "$RUNNER_TEMP/vscode.log" 2>&1 &
           export CODEX_PROBE_CSS="$RUNNER_TEMP/codex-dot.css"
-          export CODEX_PROBE_REPORT="$RUNNER_TEMP/codex-dot-report.json"
-          node scripts/ci/probe_codex_new_chat.js
+          mkdir -p "$GITHUB_WORKSPACE/.codex-probe-artifacts"
+          export CODEX_PROBE_REPORT="$GITHUB_WORKSPACE/.codex-probe-artifacts/codex-dot-report.json"
+          node scripts/ci/probe_codex_new_chat.js || {
+            echo "Codex live probe could not verify the dot. Sanitized diagnostics:"
+            cat "$CODEX_PROBE_REPORT" || true
+            exit 1
+          }
       - name: Collect sanitized results
         if: always()
         run: |
           mkdir -p .codex-probe-artifacts
-          cp "$RUNNER_TEMP/codex-dot-report.json" .codex-probe-artifacts/ 2>/dev/null || true
           cp "$RUNNER_TEMP/codex-commands.json" .codex-probe-artifacts/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
