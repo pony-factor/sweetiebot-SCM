@@ -118,6 +118,66 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main').split()[0])
         worker.wait_for_background('/usr/bin/git', [])
 
+    def external_merge_after_queue(self):
+        directory = self.queue(push=True)
+        self.git('branch', 'side')
+        self.git('commit', '--allow-empty', '-qm', 'External main follow-up')
+        self.git('checkout', '-q', 'side')
+        self.git('commit', '--allow-empty', '-qm', 'External side follow-up')
+        self.git('checkout', '-q', 'main')
+        self.git('merge', '--no-ff', '-qm', 'External reconciliation', 'side')
+        return directory
+
+    def test_finalized_job_pushes_after_external_merge_without_rewriting_or_staging(self):
+        directory = self.external_merge_after_queue()
+        queued = self.job(directory)['sha']
+        (self.repo / 'story.txt').write_text('Staged afterward\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'story.txt').write_text('Unstaged afterward\n')
+        before = [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')]
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.job(directory)['sha'], queued)
+        self.assertEqual(before, [self.git('rev-parse', 'HEAD'), self.git('write-tree'), self.git('diff')])
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], queued,
+                         'Publish only the requested queued commit, not unrelated external commits')
+
+    def test_finalized_branch_advance_reports_recovering_and_resumes_without_retry(self):
+        directory = self.external_merge_after_queue()
+        job = self.job(directory)
+        job.update(phase='blocked', error='The branch advanced outside the queued commits; background work was paused.')
+        worker.write_journal(directory / 'job.json', job)
+        status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+        self.assertEqual(status['phase'], 'recovering')
+        self.assertTrue(status['recoverable'])
+        self.assertTrue(status['pushPending'])
+        self.assertEqual(status['titleJobs'], [])
+        self.assertEqual(worker.request_push({'remote': 'origin'}, start=False), {'queued': True})
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertNotIn('error', self.job(directory))
+
+    def test_finalized_advance_with_untracked_placeholder_stays_blocked(self):
+        directory = self.queue(push=True)
+        self.git('commit', '--allow-empty', '-qm', 'placeholder_0123456789abcdef')
+        before = self.git('rev-parse', 'HEAD')
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertIn('unfinished commit messages', self.job(directory)['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
+    def test_finalized_job_cannot_recover_after_reset_removes_queued_commit(self):
+        directory = self.queue(push=True)
+        alternate = self.git('commit-tree', 'HEAD^{tree}', input='Unrelated root\n')
+        self.git('update-ref', 'refs/heads/main', alternate)
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
+        self.assertFalse(status.get('recoverable', False))
+        self.assertEqual(self.git('rev-parse', 'HEAD'), alternate)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
     def test_stale_tracking_ref_cannot_release_unpublished_job(self):
         directory = self.published_blocked_job()
         parent = self.job(directory)['sha']
