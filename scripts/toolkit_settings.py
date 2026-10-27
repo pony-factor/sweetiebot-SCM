@@ -46,6 +46,7 @@ DEFAULT_SETTINGS = {
     "autoPublishPullRequests": True,
     "filterSyncCommitSummaries": True,
     "squashOmitBulletsForEmojiTitles": False,
+    "squashTrailerSeparatorStyle": "underscores",
     "mergeAutoRefresh": True,
     "mergeRefreshIntervalSeconds": '120',
     "githubRateLimitCooldownSeconds": '900',
@@ -221,6 +222,8 @@ def load_settings():
         )
     elif new_position not in {"left", "middle", "right"}:
         settings["kefaniaCloseButtonPosition"] = "left"
+    if settings["squashTrailerSeparatorStyle"] not in {"underscores", "hyphens", "none"}:
+        settings["squashTrailerSeparatorStyle"] = "underscores"
     if settings["postCommitAction"] not in {"none", "push"}:
         settings["postCommitAction"] = "none"
     # Represent legacy disabled buttons in the layout so the editor reflects
@@ -296,6 +299,7 @@ SETTING_KEYS = {
     "autoPublishPullRequests": "scm-toolkit.auto-publish-pull-requests",
     "filterSyncCommitSummaries": "scm-toolkit.filter-sync-commit-summaries",
     "squashOmitBulletsForEmojiTitles": "scm-toolkit.squash-omit-bullets-for-emoji-titles",
+    "squashTrailerSeparatorStyle": "scm-toolkit.squash-trailer-separator-style",
     "mergeAutoRefresh": "scm-toolkit.merge-auto-refresh",
     "mergeRefreshIntervalSeconds": "scm-toolkit.merge-refresh-interval-seconds",
     "githubRateLimitCooldownSeconds": "scm-toolkit.github-rate-limit-cooldown-seconds",
@@ -455,6 +459,7 @@ VSCODE_SETTINGS = {
         "autoPublishPullRequests": "autoPublishPullRequests",
         "filterSyncCommitSummaries": "filterSyncCommitSummaries",
         "squashOmitBulletsForEmojiTitles": "squashOmitBulletsForEmojiTitles",
+        "squashTrailerSeparatorStyle": "squashTrailerSeparatorStyle",
         "mergeAutoRefresh": "mergeAutoRefresh",
         "mergeRefreshIntervalSeconds": "mergeRefreshIntervalSeconds",
         "githubRateLimitCooldownSeconds": "githubRateLimitCooldownSeconds",

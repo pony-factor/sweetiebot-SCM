@@ -138,6 +138,23 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="squashOmitBulletsForEmojiTitles" value="true" checked', page)
         self.assertIn("Omit hyphens when every commit title starts with an emoji", page)
 
+    def test_squash_separator_style_round_trip(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["squashTrailerSeparatorStyle"], "underscores")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["squashTrailerSeparatorStyle"],
+                         "scm-toolkit.squash-trailer-separator-style")
+        for style in ("underscores", "hyphens", "none"):
+            values = form_values()
+            values["squashTrailerSeparatorStyle"] = [style]
+            parsed = configurator.parse_submission(values)
+            self.assertEqual(parsed["squashTrailerSeparatorStyle"], style)
+            self.assertEqual(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashTrailerSeparatorStyle"], style)
+            page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+            self.assertIn('name="squashTrailerSeparatorStyle"', page)
+            self.assertIn(f'<option value="{style}" selected>', page)
+        values["squashTrailerSeparatorStyle"] = ["unknown"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],

@@ -349,6 +349,7 @@ SETTINGS = (
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
     Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Omit hyphens when every commit title starts with an emoji", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
+    Setting("squashTrailerSeparatorStyle", "scm-toolkit.squash-trailer-separator-style", "Squash co-author separator", "Divider between squash summaries and Co-authored-by trailers: Hyphens (---------), Underscores (__________), or None. Underscores remain the default.", "Pull requests", "select", ("underscores", "hyphens", "none")),
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
     Setting("prWarningHighlights", "scm-toolkit.pr-warning-highlights", "Highlight PR eligibility warnings", "Opt in to a colored PR button when its eligibility or setup check fails. Off keeps the icon muted gray while retaining validation and diagnostic tooltips.", "Pull requests"),
@@ -964,7 +965,7 @@ def render_form(
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
-            squash_formatting = {"squashOmitBulletsForEmojiTitles", "filterSyncCommitSummaries"}
+            squash_formatting = {"squashOmitBulletsForEmojiTitles", "filterSyncCommitSummaries", "squashTrailerSeparatorStyle"}
             controls = (
                 '<div class="settings-group"><h3>Squash formatting</h3>'
                 + "".join(_setting_control(setting, current.get(setting.name, ""))

@@ -9,7 +9,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { existsSync } = require('node:fs');
-const { SQUASH_SEPARATOR, squashMessage, readCommits } = require('./squash_attribution');
+const { splitSquashTrailers, squashMessage, readCommits } = require('./squash_attribution');
 const { patchPaths, safePatchPath } = require('./merge_patch');
 const { readMergeChecks, waitForMergeChecks } = require('./merge_checks');
 const { readPushedPR } = require('./pushed_pr');
@@ -125,7 +125,7 @@ async function humanSquashMerge(repository, number, {
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite
   // the same PR head again: doing so would restart checks on every click.
   const existing = commits.length === 1 ? commits[0].commit.message.replace(/\r\n/g, '\n').trimEnd() : '';
-  const sections = existing.split('\n\n' + SQUASH_SEPARATOR + '\n\n');
+  const sections = splitSquashTrailers(existing);
   const alreadyPrepared = sections.length === 2 &&
     existing.split('\n', 1)[0] === prepared.title &&
     sections[1].split('\n').every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line)) &&
