@@ -4,11 +4,11 @@ const vscode = require('vscode');
 const { spawn } = require('child_process');
 const os = require('node:os');
 const path = require('node:path');
-const { SearchIndex } = require('./search/search_index');
+const { SearchIndex } = require('./search/index');
 const { WorkspaceSearchViewProvider } = require('./search/view');
-const { registerBranchCommands } = require('./branches/branch_actions');
+const { registerBranchCommands } = require('./branches/actions');
 const { registerCodexCommitCommand } = require('./commits/codex_commit');
-const { registerCommitShortcut } = require('./commits/commit_shortcut');
+const { registerCommitShortcut } = require('./commits/shortcut');
 const { registerBackgroundCommit } = require('./commits/background_commit');
 const { registerAiReviewReply } = require('./codex/ai_review_reply');
 const { registerAutoCodexCommit } = require('./commits/auto_codex_commit');
@@ -20,18 +20,18 @@ const { registerPullRequestBatchCommand } = require('./github/pull_request_batch
 const { registerEditorActions } = require('./ui/editor_actions');
 const { registerNewWorkspaceCommand } = require('./branches/new_workspace');
 const { registerSharedMain } = require('./branches/shared_main');
-const { registerCodexWorkspaceHandoff } = require('./codex/codex_workspace_handoff');
+const { registerCodexWorkspaceHandoff } = require('./codex/workspace_handoff');
 const { registerTerminalActions } = require('./ui/terminal_actions');
-const { registerGitHubPullRequestActions } = require('./github/github_pr_actions');
-const { registerOpenFileOnGitHub } = require('./github/github_file');
-const { registerBranchMaintenance } = require('./branches/branch_maintenance');
+const { registerGitHubPullRequestActions } = require('./github/pr_actions');
+const { registerOpenFileOnGitHub } = require('./github/file');
+const { registerBranchMaintenance } = require('./branches/maintenance');
 const { registerCloudRepoSync } = require('./branches/cloud_repo_sync');
 const { registerWorkspaceCleanup } = require('./branches/workspace_prune');
 const { registerManagedWindowActivity, stopManagedWindowActivity } = require('./branches/workspace_activity');
 const { registerPushRecovery } = require('./commits/push_recovery');
-const { registerCodexRefresh } = require('./codex/codex_refresh');
-const { registerCodexDraftCommands } = require('./codex/codex_drafts');
-const { registerCommitLimitCommand } = require('./commits/commit_limits');
+const { registerCodexRefresh } = require('./codex/refresh');
+const { registerCodexDraftCommands } = require('./codex/drafts');
+const { registerCommitLimitCommand } = require('./commits/limits');
 const { registerSpellcheckPreviewCommand } = require('./commits/spellcheck_preview');
 const { registerNativeSpellcheckBridge } = require('./commits/native_spellcheck_bridge');
 const { registerChatgptCommitTitle } = require('./commits/chatgpt_commit_title');
@@ -304,7 +304,7 @@ async function openSettings(context) {
 }
 
 async function linkedGithubRepositories(query = '') {
-  const session = await require('./github/github_session').githubSession(vscode);
+  const session = await require('./github/session').githubSession(vscode);
   const needle = String(query || '').trim().toLowerCase();
   const repositories = [];
 
@@ -409,11 +409,11 @@ async function activate(context) {
   // Register PR merge commands before compatibility aliases and awaited startup
   // work so a stale legacy command cannot leave contributed actions without handlers.
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.githubRateLimited', message => {
-    const error = require('./github/github_rate_limit').rateLimitError({ status: 403, message });
-    if (error) return require('./github/github_rate_limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
+    const error = require('./github/rate_limit').rateLimitError({ status: 403, message });
+    if (error) return require('./github/rate_limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
   }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.repairMergeReview', () =>
-    require('./merge/merge_review_repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
+    require('./merge/review_repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);

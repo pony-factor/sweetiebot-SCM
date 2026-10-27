@@ -36,7 +36,7 @@
         "test_spellcheck_preview.js"
       ],
       "syntax": [
-        "extension/codex/codex_attribution.js",
+        "extension/codex/attribution.js",
         "extension/commits/codex_commit.js",
         "extension/commits/chatgpt_commit_title.js",
         "extension/search/ollama.js",
@@ -82,7 +82,7 @@
       ],
       "syntax": [
         "extension/merge/sync_review.js",
-        "extension/branches/branch_window.js"
+        "extension/branches/window.js"
       ]
     },
     "branch-names": {
@@ -93,7 +93,7 @@
         "test_pony_profile.js"
       ],
       "syntax": [
-        "extension/branches/branch_name_selection.js",
+        "extension/branches/name_selection.js",
         "scripts/branch_names.py"
       ]
     },
@@ -127,11 +127,11 @@
         "test_ai_review_reply.js"
       ],
       "syntax": [
-        "extension/github/github_pr_actions.js",
-        "extension/github/github_rate_limit.js",
-        "extension/github/github_user_api.js",
+        "extension/github/pr_actions.js",
+        "extension/github/rate_limit.js",
+        "extension/github/user_api.js",
         "extension/merge/human_squash_merge.js",
-        "extension/merge/merge_pull_request.js",
+        "extension/merge/pull_request.js",
         "extension/codex/ai_review_reply.js"
       ]
     },
@@ -201,8 +201,8 @@
         "test_kefania_runner.js"
       ],
       "syntax": [
-        "extension/github/github_app_identity.js",
-        "extension/github/github_app_settings.js",
+        "extension/github/app_identity.js",
+        "extension/github/app_settings.js",
         "extension/codex/kefania_merge_help.js",
         "extension/codex/kefania_runner.js"
       ]
@@ -241,31 +241,31 @@
         "extension/commits/git_failure.js",
         "extension/merge/parallel_merge_batch.js",
         "extension/merge/local_human_squash.js",
-        "extension/merge/merge_batch.js",
-        "extension/merge/merge_checks.js",
-        "extension/merge/merge_commit_tree.js",
-        "extension/merge/merge_dashboard.js",
-        "extension/merge/merge_summary.js",
-        "extension/merge/merge_commit_tree.js",
-        "extension/merge/merge_blocker_report.js",
-        "extension/merge/merge_dashboard_diff.js",
-        "extension/merge/merge_dashboard_markdown.js",
-        "extension/github/github_rate_limit.js",
-        "extension/github/github_session.js",
-        "extension/github/github_user_api.js",
-        "extension/github/github_read_api.js",
-        "extension/merge/merge_commit_proposal.js",
-        "extension/merge/merge_review_repair.js",
-        "extension/merge/merge_handoff.js",
-        "extension/merge/merge_patch.js",
-        "extension/merge/merge_reaction_choices.js",
-        "extension/merge/merge_resolution.js",
-        "extension/merge/merge_resolution_cli.js",
-        "extension/merge/merge_session_completion.js",
+        "extension/merge/batch.js",
+        "extension/merge/checks.js",
+        "extension/merge/commit_tree.js",
+        "extension/merge/dashboard.js",
+        "extension/merge/summary.js",
+        "extension/merge/commit_tree.js",
+        "extension/merge/blocker_report.js",
+        "extension/merge/dashboard_diff.js",
+        "extension/merge/dashboard_markdown.js",
+        "extension/github/rate_limit.js",
+        "extension/github/session.js",
+        "extension/github/user_api.js",
+        "extension/github/read_api.js",
+        "extension/merge/commit_proposal.js",
+        "extension/merge/review_repair.js",
+        "extension/merge/handoff.js",
+        "extension/merge/patch.js",
+        "extension/merge/reaction_choices.js",
+        "extension/merge/resolution.js",
+        "extension/merge/resolution_cli.js",
+        "extension/merge/session_completion.js",
         "extension/github/pull_request_batch.js",
         "extension/github/pushed_pr.js",
         "extension/merge/resolution_commits.js",
-        "extension/merge/merge_summary.js"
+        "extension/merge/summary.js"
       ]
     },
     "browser-ui": {
@@ -313,7 +313,7 @@
       "syntax": [
         "extension/search/core.js",
         "extension/search/extract.js",
-        "extension/search/search_index.js",
+        "extension/search/index.js",
         "extension/search/view.js",
         "scripts/workspace_search.py",
         "extension/commits/filename_spellcheck.js"

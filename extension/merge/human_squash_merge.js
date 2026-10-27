@@ -6,7 +6,7 @@
 // PR commit with the exact intended title and verified credits. Rebase-merging
 // that commit preserves its original Git author while leaving the PR head alone.
 const { execFile } = require('node:child_process');
-const { isCodex } = require('../codex/codex_attribution');
+const { isCodex } = require('../codex/attribution');
 const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
 const { splitSquashTrailers, squashMessage, readCommits } = require('./squash_attribution');
@@ -56,7 +56,7 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
-  api ||= require('../github/github_user_api').legacyAPI(require('./merge_pull_request').githubApi);
+  api ||= require('../github/user_api').legacyAPI(require('./pull_request').githubApi);
 
   const root = 'repos/' + repository;
   const prPath = root + '/pulls/' + number;

@@ -4,7 +4,7 @@
 const SQUASH_SEPARATOR = '__________';
 const SQUASH_SEPARATOR_STYLES = Object.freeze({ underscores: SQUASH_SEPARATOR, hyphens: '---------', none: '' });
 const { execFileSync } = require('node:child_process');
-const { isCodex, mergeNames } = require('../codex/codex_attribution');
+const { isCodex, mergeNames } = require('../codex/attribution');
 const SYNC_MAIN_SUBJECT = /^(?:🔄\s*)?Sync (?:brach|branch) to main(?:\s*\(#\d+\))?$/i;
 function filterSyncCommitSummariesEnabled() {
   try {

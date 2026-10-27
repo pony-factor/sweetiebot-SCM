@@ -10,8 +10,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { existsSync } = require('node:fs');
 const { splitSquashTrailers, squashMessage, readCommits } = require('./squash_attribution');
-const { patchPaths, safePatchPath } = require('./merge_patch');
-const { readMergeChecks, waitForMergeChecks } = require('./merge_checks');
+const { patchPaths, safePatchPath } = require('./patch');
+const { readMergeChecks, waitForMergeChecks } = require('./checks');
 const { readPushedPR } = require('../github/pushed_pr');
 
 const exec = promisify(execFile);
@@ -30,7 +30,7 @@ async function humanSquashMerge(repository, number, {
       !expected || !SHA.test(expected.headSha || '') || !SHA.test(expected.baseSha || '')) {
     throw Error('Invalid repository or PR number.');
   }
-  api ||= require('../github/github_user_api').legacyAPI(require('./merge_pull_request').githubApi);
+  api ||= require('../github/user_api').legacyAPI(require('./pull_request').githubApi);
   git ||= async (...args) => {
     try { return (await exec('git', ['-c', 'core.hooksPath=/dev/null',
     '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
@@ -119,7 +119,7 @@ async function humanSquashMerge(repository, number, {
   }
   decisions = require('./resolution_commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
-  const prepared = require('./merge_commit_proposal').validateCommitProposal(commitProposal, squashMessage(original.title, number, commits, { primaryAuthor: author }));
+  const prepared = require('./commit_proposal').validateCommitProposal(commitProposal, squashMessage(original.title, number, commits, { primaryAuthor: author }));
   progress('message-prepared', { title: prepared.title, description: prepared.message, proposed: prepared.proposed, adjusted: prepared.adjusted });
   const preparedMessage = prepared.title + '\n\n' + prepared.message;
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite

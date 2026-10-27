@@ -3,7 +3,7 @@
 const { execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
-const { pullRequestFromTreeNode } = require('./github_pr_refresh');
+const { pullRequestFromTreeNode } = require('./pr_refresh');
 const { squashMessage, readCommits } = require('../merge/squash_attribution');
 const { humanSquashMerge, verifiedHumanAuthor } = require('../merge/human_squash_merge');
 const { promisify } = require('node:util');
@@ -330,15 +330,15 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         );
         return choice === action;
       };
-      const session = await require('./github_session').githubSession(vscode);
+      const session = await require('./session').githubSession(vscode);
       const execute = async args => {
         try { return await run(gh, args, { timeout: 120000, env: { ...process.env, GH_TOKEN: session.accessToken, GH_PROMPT_DISABLED: '1' } }); }
-        catch (error) { throw require('./github_rate_limit').rateLimitError({ status: 403, message: error.stderr || error.message }) || error; }
+        catch (error) { throw require('./rate_limit').rateLimitError({ status: 403, message: error.stderr || error.message }) || error; }
       };
-      const userAPI = require('./github_user_api').githubUserAPI(session.accessToken);
+      const userAPI = require('./user_api').githubUserAPI(session.accessToken);
       const repo = new URL(url).pathname.slice(1).split('/').slice(0, 2).join('/');
-      const appRead = require('./github_user_api').githubUserAPI(session.accessToken,
-        require('./github_read_api').createLindseyReadFetch(repo));
+      const appRead = require('./user_api').githubUserAPI(session.accessToken,
+        require('./read_api').createLindseyReadFetch(repo));
       const humanAPI = (endpoint, method = 'GET', fields = []) => {
         const body = {};
         for (let i = 0; i < fields.length; i += 2) {
@@ -397,7 +397,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       const detail = error.code === 'SWEETIEBOT_MERGE_CONFLICT'
         ? error.message
         : error.stderr?.trim() || error.message;
-      if (!await require('./github_rate_limit').promptRateLimit(vscode, error)) vscode.window.showErrorMessage(detail);
+      if (!await require('./rate_limit').promptRateLimit(vscode, error)) vscode.window.showErrorMessage(detail);
       return { state: 'failed' };
     } finally {
       busy.delete(url);

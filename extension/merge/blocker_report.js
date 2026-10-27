@@ -1,7 +1,7 @@
 'use strict';
-const { githubApi } = require('./merge_pull_request');
-const { safePatchPath } = require('./merge_patch');
-const { parseReportOptions } = require('./merge_blocker_actions');
+const { githubApi } = require('./pull_request');
+const { safePatchPath } = require('./patch');
+const { parseReportOptions } = require('./blocker_actions');
 const MARKER = '<!-- sweetiebot-merge-analysis -->';
 const REVIEW_GROUP = '<!-- sweetiebot-merge-analysis-review -->';
 const LEGACY_MARKER = '<!-- sweetiebot-merge-review -->';

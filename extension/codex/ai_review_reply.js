@@ -5,7 +5,7 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { resolveCommitRepository } = require('../commits/codex_commit');
-const { githubSession } = require('../github/github_session');
+const { githubSession } = require('../github/session');
 const runFile = promisify(execFile);
 const STATE_KEY = 'sweetiebot.aiReviewReplyPending.v1';
 const SHA = /^[a-f0-9]{40}$/i;

@@ -3,10 +3,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./merge_blocker_actions');
-const { createReactionChoices } = require('./merge_reaction_choices');
-const { createMergeDashboardPersistence } = require('./merge_dashboard_persistence');
-const { createLindseyReadFetch } = require('../github/github_read_api');
+const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./blocker_actions');
+const { createReactionChoices } = require('./reaction_choices');
+const { createMergeDashboardPersistence } = require('./dashboard_persistence');
+const { createLindseyReadFetch } = require('../github/read_api');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -195,7 +195,7 @@ async function githubGet(fetchImpl, token, repository, endpoint) {
       404: 'The repository or PR was not found, or your account cannot access it.',
       502: 'GitHub is temporarily unavailable. Retry the refresh.',
       503: 'GitHub is temporarily unavailable. Retry the refresh.' };
-    throw await require('../github/github_rate_limit').githubResponseError(response,
+    throw await require('../github/rate_limit').githubResponseError(response,
       request + ' (HTTP ' + response.status + '). ' + (hints[response.status] || 'Retry the refresh; check GitHub status if this continues.'));
   }
   try { return await response.json(); }
@@ -265,15 +265,15 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     'Lindsey · Merge progress', viewColumn,
     { enableScripts: true, retainContextWhenHidden: true });
   const nonce = randomBytes(16).toString('hex');
-  panel.webview.html = fs.readFileSync(path.join(__dirname, 'merge_dashboard.html'), 'utf8')
+  panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
-    .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_markdown.js'), 'utf8'))
-    .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'merge_commit_tree.js'), 'utf8'))
-    .replace('__ACTIVITY_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_activity.js'), 'utf8'))
-    .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_diff.js'), 'utf8'))
-    .replace('__RATE_LIMIT_FORMATTER__', require('../github/github_rate_limit').rateLimitMessage.toString())
-    .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'merge_dashboard_timestamps.js'), 'utf8'));
+    .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_markdown.js'), 'utf8'))
+    .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'commit_tree.js'), 'utf8'))
+    .replace('__ACTIVITY_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_activity.js'), 'utf8'))
+    .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_diff.js'), 'utf8'))
+    .replace('__RATE_LIMIT_FORMATTER__', require('../github/rate_limit').rateLimitMessage.toString())
+    .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'dashboard_timestamps.js'), 'utf8'));
   const catalog = ponyCatalog();
   const persistence = createMergeDashboardPersistence(context, selection);
   const prs = selection.pullRequests.map(pr => ({
@@ -394,7 +394,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const files = await paged(readFetch, token, selection.repository,
         '/pulls/' + item.number + '/files');
       try {
-        item.commits = require('./merge_commit_tree').mergeCommitHistory(item.commits, await paged(readFetch, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
+        item.commits = require('./commit_tree').mergeCommitHistory(item.commits, await paged(readFetch, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
         await context?.workspaceState?.update('sweetiebot.prCommits.' + selection.repository + '.' + item.number, item.commits);
         item.commitError = '';
       }
@@ -472,8 +472,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       return queuedRefresh;
     }
     activeRefresh = (async () => {
-    if (working || disposed || Date.now() < rateLimitedUntil || (!require('../github/github_app_identity').separateAppsEnabled() &&
-          require('../github/github_rate_limit').activeRateLimit(vscode)) || (!force && !isActive())) return;
+    if (working || disposed || Date.now() < rateLimitedUntil || (!require('../github/app_identity').separateAppsEnabled() &&
+          require('../github/rate_limit').activeRateLimit(vscode)) || (!force && !isActive())) return;
     working = true;
     cycle++;
     error = '';
@@ -487,7 +487,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             error = failure.message;
             if (failure.rateLimited) {
               rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt || Date.now() + 60000);
-              void require('../github/github_rate_limit').promptRateLimit(vscode, failure, { context, retry: () => refresh({ force: true }) }).catch(() => {});
+              void require('../github/rate_limit').promptRateLimit(vscode, failure, { context, retry: () => refresh({ force: true }) }).catch(() => {});
               rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt);
             }
             if (pr.lastError !== failure.message) {
@@ -641,7 +641,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     };
     if (!Object.hasOwn(stages, event.stage)) return;
     const sha = SHA.test(event.sha || '') ? event.sha : '';
-    const file = typeof event.path === 'string' && require('./merge_patch').safePatchPath(event.path) ? event.path : '';
+    const file = typeof event.path === 'string' && require('./patch').safePatchPath(event.path) ? event.path : '';
     if (event.stage === 'preparing') {
       pr.lastPushedHead = '';
       if (typeof event.description === 'string' && event.description.trim()) {
@@ -671,7 +671,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         total: Number(worker.total) || 0, numbers: (Array.isArray(worker.numbers) ? worker.numbers : []).filter(number => byNumber.has(number)) }));
     if (state.rateLimit) {
       rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message;
-      if (rateLimitedUntil > Date.now()) void require('../github/github_rate_limit').promptRateLimit(vscode,
+      if (rateLimitedUntil > Date.now()) void require('../github/rate_limit').promptRateLimit(vscode,
         Object.assign(Error(error), { rateLimited: true, retryAt: rateLimitedUntil, configured: true }),
         { context, retryPriority: 1, retry: () => vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests') }).catch(() => {});
     }
@@ -684,7 +684,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       }
       if (typeof item.reason === 'string') pr.localResultReason = item.reason.slice(0, 4000);
       for (const decision of item.decisions || []) {
-        if (!require('./merge_patch').safePatchPath(decision?.path)) continue;
+        if (!require('./patch').safePatchPath(decision?.path)) continue;
         pr.localDecisions ||= {};
         pr.localDecisions[decision.path] = { path: decision.path,
           title: String(decision.title || '').slice(0, 160), description: String(decision.description || '').slice(0, 4000) };
@@ -694,7 +694,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const pr = byNumber.get(item.number);
       if (pr) {
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
-        pr.localReview = require('./merge_blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
+        pr.localReview = require('./blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
       }
     }
     for (const [number, report] of Object.entries(state.blockerReports || {})) {

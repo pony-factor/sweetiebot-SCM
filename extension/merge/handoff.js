@@ -4,14 +4,14 @@ const { createServer } = require('node:http');
 const { randomUUID } = require('node:crypto');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
-const { validateSelection } = require('./merge_dashboard');
-const { validateResolution, executeResolution } = require('./merge_resolution');
+const { validateSelection } = require('./dashboard');
+const { validateResolution, executeResolution } = require('./resolution');
 
 async function createMergeHandoff(rawSelection, { execute = executeResolution, validate = validateResolution,
   onResult = () => {}, ttlMs = 6 * 3600000 } = {}) {
   const selection = validateSelection(rawSelection);
   const route = '/lindsey-merge/' + randomUUID();
-  const page = readFileSync(path.join(__dirname, 'merge_handoff.html'), 'utf8');
+  const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8');
   let attempted = false, running = false, outcome, failure;
   const server = createServer({ maxHeaderSize: 16384 }, async (request, response) => {
     const origin = 'http://127.0.0.1:' + server.address().port;

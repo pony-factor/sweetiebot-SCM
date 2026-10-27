@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { safePatchPath } = require('./merge_patch');
+const { safePatchPath } = require('./patch');
 
 function validateDecisions(value = []) {
   if (!Array.isArray(value) || value.length > 50) throw Error('Invalid per-file resolution decisions.');

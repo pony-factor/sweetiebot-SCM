@@ -1,8 +1,8 @@
 'use strict';
 
 const fs = require('node:fs/promises');
-const { executeResolution } = require('./merge_resolution');
-const { validateSelection } = require('./merge_dashboard');
+const { executeResolution } = require('./resolution');
+const { validateSelection } = require('./dashboard');
 
 async function main() {
   const [option, file, ...extra] = process.argv.slice(2);

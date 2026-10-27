@@ -8,8 +8,8 @@ const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
-const { prepareCodexHandoff } = require('../codex/codex_workspace_handoff');
-const { focusExistingBranchWindow } = require('./branch_window');
+const { prepareCodexHandoff } = require('../codex/workspace_handoff');
+const { focusExistingBranchWindow } = require('./window');
 
 const exec = promisify(execFile);
 async function git(args) {

@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const { parseReportOptions } = require('./merge_blocker_actions');
+const { parseReportOptions } = require('./blocker_actions');
 
 function decisionOptions(comment, pr, actor) {
   if (!/^[a-f0-9]{40}$/i.test(pr.headSha || '') || !/^[a-f0-9]{40}$/i.test(pr.baseSha || '')) return null;
@@ -43,7 +43,7 @@ function createReactionChoices({ repository, token, fetchImpl, storageDirectory,
       'X-GitHub-Api-Version': '2022-11-28'
     } });
     if (!response.ok) {
-      throw await require('../github/github_rate_limit').githubResponseError(response, 'GitHub reaction lookup failed (HTTP ' + response.status + ').');
+      throw await require('../github/rate_limit').githubResponseError(response, 'GitHub reaction lookup failed (HTTP ' + response.status + ').');
     }
     return response.status === 204 ? null : response.json();
   }

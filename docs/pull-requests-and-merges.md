@@ -20,4 +20,4 @@ The optional external Lindsey runner is discovered by [`extension/lindsey_bulk_m
 
 In optional separate-App mode, Lindsey may read PRs/checks/diffs via a repository-scoped installation token; write operations, merges, pushes and reactions still require appropriately authorized accounts. Missing credentials **fail closed** without impersonation. See [App identity configuration](distinct-github-apps.md).
 
-Source: [PR flow](../extension/github/pull_request.js), [Kefania runner](../extension/codex/kefania_runner.js), [merge batch](../extension/merge/merge_batch.js), [dashboard](../extension/merge/merge_dashboard.js), [review reply](../extension/codex/ai_review_reply.js). See [troubleshooting](troubleshooting.md).
+Source: [PR flow](../extension/github/pull_request.js), [Kefania runner](../extension/codex/kefania_runner.js), [merge batch](../extension/merge/batch.js), [dashboard](../extension/merge/dashboard.js), [review reply](../extension/codex/ai_review_reply.js). See [troubleshooting](troubleshooting.md).

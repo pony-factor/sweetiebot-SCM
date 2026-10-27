@@ -3,7 +3,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { resolveKefaniaFile } = require('./kefania_paths');
 const { createPonyPublishQueue } = require('../commits/pony_publish_queue');
-const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../github/github_app_identity');
+const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../github/app_identity');
 
 // Independent pony research tabs may finish together; Git index and ref edits must be serialized.
 const ponyPublishQueue = createPonyPublishQueue();

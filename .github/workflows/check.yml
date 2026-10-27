@@ -119,7 +119,7 @@ jobs:
           node-version: "22"
       - name: Check separate App auth wiring and regressions
         run: |
-          node --check extension/github/github_app_identity.js
+          node --check extension/github/app_identity.js
           node --check extension/codex/kefania_runner.js
           node --check extension/github/local_pull_request.js
           node --check extension/merge/lindsey_bulk_merge.js

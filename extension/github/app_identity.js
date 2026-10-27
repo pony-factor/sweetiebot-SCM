@@ -4,7 +4,7 @@
 // whereas changing a Git author, co-author trailer or display name does not.
 const { createSign } = require('node:crypto');
 const { readFile } = require('node:fs/promises');
-const { savedEnvironment, readKeychainKey } = require('./github_app_settings');
+const { savedEnvironment, readKeychainKey } = require('./app_settings');
 
 const REPOSITORY = /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/;
 const SLUG = /^[a-z\d](?:[a-z\d-]{0,98}[a-z\d])?$/;

@@ -17,10 +17,10 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
   // Preserve /user and every merge write under gh's human authentication.
   if (method === 'GET' && spawnProcess === spawn &&
       /^repos\/[\w.-]+\/[\w.-]+(?:[/?]|$)/.test(endpoint) &&
-      require('../github/github_app_identity').separateAppsEnabled()) {
+      require('../github/app_identity').separateAppsEnabled()) {
     const repository = endpoint.split('/').slice(1, 3).join('/');
-    const readFetch = require('../github/github_read_api').createLindseyReadFetch(repository);
-    return require('../github/github_user_api').githubUserAPI('unused-user-token', readFetch)(endpoint);
+    const readFetch = require('../github/read_api').createLindseyReadFetch(repository);
+    return require('../github/user_api').githubUserAPI('unused-user-token', readFetch)(endpoint);
   }
   return new Promise((resolve, reject) => {
     const args = ['api', '--include', '--hostname', 'github.com', '--method', method, endpoint];
@@ -51,11 +51,11 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
     child.stdin.on('error', () => {});
     child.on('error', () => finish(new Error('GitHub CLI is unavailable. Install gh; Sweetiebot uses your VS Code GitHub sign-in.')));
     child.on('close', code => {
-      const response = require('../github/github_rate_limit').parseCLIResponse(output);
+      const response = require('../github/rate_limit').parseCLIResponse(output);
       if (code !== 0) {
         let message = stderr;
         try { message += ' ' + JSON.parse(response.body).message; } catch { /* gh can return only stderr. */ }
-        const limited = require('../github/github_rate_limit').rateLimitError({ status: response.status || Number(stderr.match(/HTTP (\d{3})/)?.[1]) || (/rate.?limit/i.test(message) ? 403 : 0), headers: response.headers, message });
+        const limited = require('../github/rate_limit').rateLimitError({ status: response.status || Number(stderr.match(/HTTP (\d{3})/)?.[1]) || (/rate.?limit/i.test(message) ? 403 : 0), headers: response.headers, message });
         return finish(limited || new Error('GitHub rejected the request (' + (response.status || stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
       }
       try { finish(null, JSON.parse(response.body || (method === 'DELETE' ? 'null' : ''))); }
@@ -104,7 +104,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     const human = verifiedHumanAuthor(commits);
     const prepared = squashMessage(pr.title, result.number, commits,
       { primaryAuthor: human.login.toLowerCase() === actor.login.toLowerCase() ? human : undefined });
-    const checks = await require('./merge_checks').readMergeChecks(path => request(path), repository, pr.head.sha);
+    const checks = await require('./checks').readMergeChecks(path => request(path), repository, pr.head.sha);
     if (checks.state !== 'passed') throw new Error('PR checks must pass before merging while preserving commits.');
     const fresh = await request(endpoint);
     if (fresh.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== pr.title ||

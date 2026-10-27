@@ -106,9 +106,9 @@ def check_connection(role, repository):
     if role not in ROLES or not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Enter the repository as owner/name.")
     here = Path(__file__).resolve().parent
-    module = here / "github_app_identity.js"
+    module = here / "app_identity.js"
     if not module.exists():
-        module = here.parent / "extension" / "github_app_identity.js"
+        module = here.parent / "extension" / "app_identity.js"
     # Only the success identity is returned. Tokens and subprocess errors never
     # reach the page. No PR, comment or merge is created by this check.
     program = """

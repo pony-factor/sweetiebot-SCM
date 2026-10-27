@@ -101,7 +101,7 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
 // Summary comments are optional. A stale extension install or GitHub failure
 // must never turn an independently completed local merge into a failed handoff.
 async function publishOptionalMergeSummaries({ enabled, selection, input, result, token },
-  loadPublisher = () => require('../merge/merge_summary').publishMergeSummaries) {
+  loadPublisher = () => require('../merge/summary').publishMergeSummaries) {
   if (enabled !== true) return [];
   const merged = Array.isArray(result?.results)
     ? result.results.filter(item => item.status === 'merged' && item.merged === true) : [];
@@ -136,8 +136,8 @@ async function resumeMergeDashboard(vscode, directory, context) {
   let savedState;
   try { savedState = JSON.parse(await fs.readFile(path.join(directory, 'merge-batch-state.json'), 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
-  const auth = await require('./github_session').githubSession(vscode);
-  const dashboard = require('../merge/merge_dashboard');
+  const auth = await require('./session').githubSession(vscode);
+  const dashboard = require('../merge/dashboard');
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
   // A dedicated merge workspace owns this layout; no edits to the source window.
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
@@ -161,7 +161,7 @@ async function resumeMergeDashboard(vscode, directory, context) {
   await vscode.commands.executeCommand('vscode.setEditorLayout', {
     orientation: 0, groups: hasEditors ? [{ size: 0.2 }, { size: 0.8 }] : [{}]
   });
-  await require('../merge/merge_runner_layout').arrangeRunnerPanes(vscode);
+  await require('../merge/runner_layout').arrangeRunnerPanes(vscode);
   mergeDashboardStarted = true;
   return mergeDashboardController;
 }
@@ -221,13 +221,13 @@ async function resumePRSession(vscode, context) {
     try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (selection) {
-      const auth = await require('./github_session').githubSession(vscode);
-      const { invokeResolutionCLI } = require('../merge/merge_resolution');
-      const { githubGet } = require('../merge/merge_dashboard');
-      const readFetch = require('./github_read_api').createLindseyReadFetch(selection.repository);
+      const auth = await require('./session').githubSession(vscode);
+      const { invokeResolutionCLI } = require('../merge/resolution');
+      const { githubGet } = require('../merge/dashboard');
+      const readFetch = require('./read_api').createLindseyReadFetch(selection.repository);
       const prefix = 'repos/' + selection.repository;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
-      const runLocal = (result, snapshot) => require('../merge/merge_progress').withMergeProgress(vscode,
+      const runLocal = (result, snapshot) => require('../merge/progress').withMergeProgress(vscode,
         { numbers: result.results.map(item => item.number), branchOnly: input.options?.syncOnly === true }, async report => {
         const controller = await resumeMergeDashboard(vscode, directory, context);
         const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
@@ -241,7 +241,7 @@ async function resumePRSession(vscode, context) {
       if (input.options?.syncOnly) {
         handoff = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
           title: 'Preparing Lindsey PR fix ' + selection.pullRequests.map(pr => '#' + pr.number).join(', '), cancellable: false
-        }, progress => require('../merge/merge_batch').createMergeBatch(selection, {
+        }, progress => require('../merge/batch').createMergeBatch(selection, {
           onProgress: update => progress.report(update),
           branchOnly: true,
           api: endpoint => {
@@ -258,12 +258,12 @@ async function resumePRSession(vscode, context) {
           onState: async state => {
             await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), {mode: 0o600});
             mergeDashboardController?.recordBatchState?.(state);
-            require('../merge/merge_session_completion').updateMergeSessionCompletion(vscode, selection, state);
+            require('../merge/session_completion').updateMergeSessionCompletion(vscode, selection, state);
           }
         }));
       } else {
       const blockerReports = {};
-      const keepAwake = require('../merge/merge_keep_awake').createMergeKeepAwake();
+      const keepAwake = require('../merge/keep_awake').createMergeKeepAwake();
       let awakeState;
       const updateAwake = () => {
         if (awakeState) keepAwake.update(awakeState, selection,
@@ -292,7 +292,7 @@ async function resumePRSession(vscode, context) {
           updateAwake();
           if (state.rateLimit) {
             const error = Object.assign(Error(state.rateLimit.message), {rateLimited:true,retryAt:state.rateLimit.retryAt,configured:state.rateLimit.configured});
-            void require('./github_rate_limit').promptRateLimit(vscode, error, {context,retryPriority:1,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
+            void require('./rate_limit').promptRateLimit(vscode, error, {context,retryPriority:1,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
           }
           for (const deferred of state.deferred) {
             if (blockerReports[deferred.number]) continue;
@@ -302,18 +302,18 @@ async function resumePRSession(vscode, context) {
             const decisions = [...new Map(history.flatMap(item => item.decisions || []).map(note => [note.path, note])).values()];
             if (!pr) continue;
             if (!paths.length) {
-              blockerReports[pr.number] = { ...require('../merge/merge_blocker_report').blockerReport(pr, deferred.reason, []),
+              blockerReports[pr.number] = { ...require('../merge/blocker_report').blockerReport(pr, deferred.reason, []),
                 posted: false, error: 'No conflict location was supplied, so an inline comment could not be anchored. The executor details remain available locally.' };
               continue;
             }
-            blockerReports[pr.number] = await require('../merge/merge_blocker_report').publishBlockerReport({
-              repository: selection.repository, pr, reason: deferred.reason, kind: deferred.kind, paths, decisions, api: require('./github_user_api').githubUserAPI(auth.accessToken)
+            blockerReports[pr.number] = await require('../merge/blocker_report').publishBlockerReport({
+              repository: selection.repository, pr, reason: deferred.reason, kind: deferred.kind, paths, decisions, api: require('./user_api').githubUserAPI(auth.accessToken)
             });
           }
           state.blockerReports = blockerReports;
           await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 });
           mergeDashboardController?.recordBatchState?.(state);
-          require('../merge/merge_session_completion').updateMergeSessionCompletion(vscode, selection, state);
+          require('../merge/session_completion').updateMergeSessionCompletion(vscode, selection, state);
         },
         onResult: async result => {
           const controller = await resumeMergeDashboard(vscode, directory, context);
@@ -335,7 +335,7 @@ async function resumePRSession(vscode, context) {
           for (const launch of handoff.launches) {
             const close = await require('./pr_workflows').openWorkflow(vscode, launch.url);
             if (close.tab) mergeWorkerTabs.set(launch.id, close.tab);
-            require('../merge/merge_runner_layout').registerMergeRunner(vscode,'batch:'+launch.id,close.tab);
+            require('../merge/runner_layout').registerMergeRunner(vscode,'batch:'+launch.id,close.tab);
           }
         } catch (error) { handoff.dispose(); throw error; }
         const controller = await resumeMergeDashboard(vscode, directory, context);
@@ -347,7 +347,7 @@ async function resumePRSession(vscode, context) {
     }
     try {
       const close = await require('./pr_workflows').openWorkflow(vscode, url.href);
-      if (selection) require('../merge/merge_runner_layout').registerMergeRunner(vscode,'batch',close.tab);
+      if (selection) require('../merge/runner_layout').registerMergeRunner(vscode,'batch',close.tab);
     }
     catch (error) { handoff?.dispose(); throw error; }
     await resumeMergeDashboard(vscode, directory, context);

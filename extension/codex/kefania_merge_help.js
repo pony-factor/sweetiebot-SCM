@@ -1,7 +1,7 @@
 'use strict';
 
-const { githubSession } = require('../github/github_session');
-const { githubGet, startMergeDashboard } = require('../merge/merge_dashboard');
+const { githubSession } = require('../github/session');
+const { githubGet, startMergeDashboard } = require('../merge/dashboard');
 
 const SHA = /^[a-f0-9]{40}$/i;
 

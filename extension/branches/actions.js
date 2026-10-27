@@ -10,8 +10,8 @@ const { promisify } = require('node:util');
 
 const { isConflictState, offerConflictRecoveryOptions } = require('../merge/lindsey_conflicts');
 const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = require('../merge/sync_review');
-const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
-const { listBranchStrip, checkoutBranchStrip } = require('./branch_strip');
+const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name_selection');
+const { listBranchStrip, checkoutBranchStrip } = require('./strip');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
 const { recoveryPlan } = require('../commits/finalized_commit_recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged_branch');

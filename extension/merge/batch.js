@@ -1,10 +1,10 @@
 'use strict';
 
-const { validateSelection } = require('./merge_dashboard');
-const { createMergeHandoff } = require('./merge_handoff');
-const { validateResolution, validateSyncResolution, resolutionInstructions } = require('./merge_resolution');
+const { validateSelection } = require('./dashboard');
+const { createMergeHandoff } = require('./handoff');
+const { validateResolution, validateSyncResolution, resolutionInstructions } = require('./resolution');
 const SHA = /^[a-f0-9]{40}$/i;
-const { orderMergeCandidates } = require('./merge_order');
+const { orderMergeCandidates } = require('./order');
 
 async function createMergeBatch(rawSelection, { api, execute, makePrompt, destination,
   onResult = async () => {}, onState = async () => {}, onProgress = () => {}, reviewOrder = 'Oldest first', branchOnly = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
@@ -158,7 +158,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         initiallyMergeable: pr.initialMergeable, baseAdvancedByEarlierWork: pr.baseAdvanced }))),
       'Reassess remaining PRs after every merge. Do not treat checks from the old PR head as checks on the integrated tree. Local preparation is allowed to incorporate the new base; merging still requires the resulting head’s checks to pass. On the first fresh check failure, inspect the actual failing job logs and attempt the smallest behavior-preserving repair through the existing complete current-base patch handoff with repairChecks:true (supporting regression test files are permitted only after the runner independently confirms checks failed on that exact head). Do not resubmit the same failing tree or merely rerun deterministic failures. Retain the PR feature and passing-check gate. Defer with the exact limitation if a repair exceeds the allowed PR file set, requires unavailable tools or authorization, or changes ambiguous behavior. A second failed repair is deferred; never loop indefinitely. Ambiguous behavior choices remain blockers. Update existing tagged reports rather than duplicating them.',
       'For a genuine non-routine blocker, include deferred:[{"number":123,"headSha":"exact selected head","kind":"human_review|capability|failed_checks","reason":"specific ambiguity or actual failure"}] in the versioned result JSON. Do not defer routine integration merely because it needs a new Git resolution. Continue unrelated remaining PRs. An unrelated external head/title/base-branch change is outside this batch’s snapshot and must not be overwritten.',
-      require('./merge_blocker_actions').reportOptionsInstructions(),
+      require('./blocker_actions').reportOptionsInstructions(),
       resolutionInstructions(selection, bridge.url)
     ].join('\n\n');
     const prompt = (makePrompt ? makePrompt(selection) + '\n\n' : '') + instructions;

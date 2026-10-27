@@ -10,7 +10,7 @@ const { runKefania, runKefaniaPonyCache } = require('../codex/kefania_runner');
 const { resolveKefaniaFile } = require('../codex/kefania_paths');
 const { createDraftHandoff } = require('../codex/draft_handoff');
 const { openKefaniaMergeHelp } = require('../codex/kefania_merge_help');
-const { squashMergePullRequest } = require('../merge/merge_pull_request');
+const { squashMergePullRequest } = require('../merge/pull_request');
 const { displayName } = require('../codex/pony_profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr_workflows');
 const { launchPRSession, closePRSession } = require('./pr_session');
@@ -18,7 +18,7 @@ const { pendingPRCommits } = require('./pr_commit_wait');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('../codex/chatgpt_project');
 const { kefaniaClosePosition } = require('../codex/kefania_close_position');
 const { linkPublishedStack } = require('../branches/stacked_branch');
-const { workflowBotLogin, separateAppsEnabled, roleSettings } = require('./github_app_identity');
+const { workflowBotLogin, separateAppsEnabled, roleSettings } = require('./app_identity');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -606,17 +606,17 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
       decorateDraft: draft => ({ ...draft, body: appendSourceDetails(draft.body, source) }),
       onMerge: async result => {
-        const session = await require('./github_session').githubSession(vscode);
-        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { gitToken: session.accessToken });
+        const session = await require('./session').githubSession(vscode);
+        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./user_api').githubUserAPI(session.accessToken), { gitToken: session.accessToken });
       },
       onMergePreservingCommits: async result => {
-        const session = await require('./github_session').githubSession(vscode);
-        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./github_user_api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
+        const session = await require('./session').githubSession(vscode);
+        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./user_api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
       },
       onMergeLocalSigned: async result => {
-        const session = await require('./github_session').githubSession(vscode);
+        const session = await require('./session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result },
-          require('./github_user_api').githubUserAPI(session.accessToken),
+          require('./user_api').githubUserAPI(session.accessToken),
           { method: 'local-signed-squash', gitToken: session.accessToken });
       },
       onMergeHelp: result => openKefaniaMergeHelp(vscode, context, repository.rootUri,

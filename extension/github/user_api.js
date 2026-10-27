@@ -1,5 +1,5 @@
 'use strict';
-const { githubResponseError } = require('./github_rate_limit');
+const { githubResponseError } = require('./rate_limit');
 function githubUserAPI(token, fetchImpl = globalThis.fetch) {
   return async (endpoint, { method = 'GET', body } = {}) => {
     if (!/^(?:repos\/[\w.-]+\/[\w.-]+(?:$|\/)|user$)/.test(endpoint)) throw Error('Invalid GitHub user API endpoint.');

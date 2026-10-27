@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { independentWorkspaceParent } = require('../branches/workspace_trust');
 const { createWorkspaceDirectory } = require('../branches/workspace_layout');
-const { reviewPublicationInstructions } = require('./merge_review_policy');
+const { reviewPublicationInstructions } = require('./review_policy');
 
 const OPTIONS_MARKER = /<!--\s*sweetiebot-merge-options\s*\n([\s\S]*?)\n\s*-->/g;
 const CHOICE_REACTIONS = ['+1', 'heart', 'rocket'];
@@ -172,7 +172,7 @@ async function launchBlockerAction(vscode, context, rootUri, repository, pr, opt
   if (project === undefined) return false;
   const url = chatgptMergeUrl(prompt, project);
   if (Buffer.byteLength(url) > 70000) throw Error('This implementation prompt is too large to open safely.');
-  return require('./merge_runner_layout').openRepairRunner(vscode,url,{repository,number:pr.number});
+  return require('./runner_layout').openRepairRunner(vscode,url,{repository,number:pr.number});
 }
 
 module.exports = { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt,

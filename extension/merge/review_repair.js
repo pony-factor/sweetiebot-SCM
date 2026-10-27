@@ -1,7 +1,7 @@
 'use strict';
-const { githubSession } = require('../github/github_session');
-const { githubResponseError, promptRateLimit } = require('../github/github_rate_limit');
-const { publishBlockerReport } = require('./merge_blocker_report');
+const { githubSession } = require('../github/session');
+const { githubResponseError, promptRateLimit } = require('../github/rate_limit');
+const { publishBlockerReport } = require('./blocker_report');
 
 // Repair previously published grouped analysis using the signed-in VS Code
 // account. Existing review/comment ownership and exact PR snapshots are checked

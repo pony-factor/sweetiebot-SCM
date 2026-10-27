@@ -1,8 +1,8 @@
 'use strict';
 
 const { humanSquashMerge } = require('./local_human_squash');
-const { reviewPublicationInstructions } = require('./merge_review_policy');
-const { reportOptionsInstructions } = require('./merge_blocker_actions');
+const { reviewPublicationInstructions } = require('./review_policy');
+const { reportOptionsInstructions } = require('./blocker_actions');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -85,7 +85,7 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
     const file = path.join(temporary, 'handoff.json');
     await fs.writeFile(file, JSON.stringify({ input, selection }), { mode: 0o600 });
     const running = runner(process.execPath,
-      [path.join(__dirname, 'merge_resolution_cli.js'), '--input', file], {
+      [path.join(__dirname, 'resolution_cli.js'), '--input', file], {
         timeout: 15 * 60 * 1000, maxBuffer: 1024 * 1024,
         env: { ...process.env, GH_TOKEN: token, GIT_TERMINAL_PROMPT: '0',
           GH_PROMPT_DISABLED: '1', ELECTRON_RUN_AS_NODE: '1',

@@ -1,7 +1,7 @@
 'use strict';
 
-const { createMergeBatch } = require('./merge_batch');
-const { validateSelection } = require('./merge_dashboard');
+const { createMergeBatch } = require('./batch');
+const { validateSelection } = require('./dashboard');
 
 // Keep stack dependencies and shared heads together. Shared files may be
 // reviewed independently: local writes are serialized and reject stale patches.

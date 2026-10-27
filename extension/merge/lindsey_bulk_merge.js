@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { lindseyScript } = require('./lindsey_conflicts');
-const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../github/github_app_identity');
+const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../github/app_identity');
 
 const exec = promisify(execFile);
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;

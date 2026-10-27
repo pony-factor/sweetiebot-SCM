@@ -2,7 +2,7 @@
 
 const { spawn, execFile } = require('child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('../ui/python_runtime');
-const { isCodex, withModel, collapse } = require('../codex/codex_attribution');
+const { isCodex, withModel, collapse } = require('../codex/attribution');
 
 function generateMessage(script, cwd, context) {
   return new Promise((resolve, reject) => {

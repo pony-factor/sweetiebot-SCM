@@ -2,7 +2,7 @@
 
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./branch_name_selection');
+const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name_selection');
 const { routeBranch } = require('./shared_main');
 
 const executeFile = promisify(execFile);

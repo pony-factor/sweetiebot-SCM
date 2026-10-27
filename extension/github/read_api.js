@@ -2,7 +2,7 @@
 
 // App reads are scoped to a single repository. Never reuse this credential
 // for merges, pushes, reactions, identity lookups or other writes.
-const { separateAppsEnabled, getRoleInstallationToken } = require('./github_app_identity');
+const { separateAppsEnabled, getRoleInstallationToken } = require('./app_identity');
 const REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/;
 // Share one token-acquisition pipeline for default callers in this extension host.
 const sharedReaders = new Map();
