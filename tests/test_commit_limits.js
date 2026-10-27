@@ -6,6 +6,8 @@ const {
   GITHUB_FILE_MAX_BYTES,
   SPLIT_PART_BYTES,
   evaluateCommitLimits,
+  createDiffMetricsScanner,
+  scanDiffMetrics,
   splitPartPaths,
   splitOversizedFile,
   confirmCommitLimits,
@@ -46,6 +48,63 @@ const {
   assert(status.warnings.some(value => value.includes('20,000')));
   assert(status.warnings.some(value => value.includes('300')));
 }
+
+{
+  // Chunk boundaries may split a Git header or a UTF-8 character. Count raw
+  // bytes, total lines, and per-file metrics without accumulating the diff.
+  const rawDiff = Buffer.from(
+    'diff --git a/one b/one\n+🤖\ndiff --git a/two b/two\n+no final newline'
+  );
+  const expected = scanDiffMetrics(rawDiff);
+  assert.equal(expected.sections.length, 2);
+  assert.equal(expected.totalBytes, rawDiff.length);
+  assert.deepEqual(expected.sections.map(section => section.lines), [2, 2]);
+  for (const chunkSize of [1, 2, 3, 7, 16, 1024]) {
+    const scanner = createDiffMetricsScanner();
+    for (let offset = 0; offset < rawDiff.length; offset += chunkSize) {
+      scanner.write(rawDiff.subarray(offset, offset + chunkSize));
+    }
+    assert.deepEqual(scanner.finish(), expected, `chunk size ${chunkSize}`);
+  }
+  const contentMarker = scanDiffMetrics(Buffer.from(
+    'diff --git a/one b/one\n+diff --git a/fake b/fake\n'
+  ));
+  assert.equal(contentMarker.sections.length, 1, 'added content is not a Git header');
+  assert.deepEqual(scanDiffMetrics(Buffer.alloc(0)), {
+    totalBytes: 0, totalLines: 0, sections: []
+  });
+}
+{
+  // Two individually acceptable sections can exceed the aggregate 1 MB limit
+  // without tripping either per-file limit.
+  const individual = 'diff --git a/a b/a\n' + '+x'.repeat(210_000) + '\n';
+  const rawDiff = Buffer.from(individual + individual + individual);
+  const metrics = scanDiffMetrics(rawDiff);
+  const status = evaluateCommitLimits({
+    files: ['a', 'b', 'c'],
+    blobs: [],
+    diffMetrics: metrics
+  });
+  assert(status.warnings.some(value => value.includes('1 MB')));
+  assert(!status.warnings.some(value => value.includes('500 KB')));
+  assert(!status.warnings.some(value => value.includes('per-file')));
+  assert.deepEqual(
+    evaluateCommitLimits({ files: ['a', 'b', 'c'], blobs: [], rawDiff }).warnings,
+    status.warnings,
+    'buffered callers and streaming callers should get identical warnings'
+  );
+}
+{
+  const rawDiff = Buffer.from('diff --git a/big b/big\n' + 'x'.repeat(500_001));
+  const status = evaluateCommitLimits({ files: ['big'], blobs: [], diffMetrics: scanDiffMetrics(rawDiff) });
+  assert(status.warnings.some(value => value.includes('500 KB per-file')));
+  const manyLines = Buffer.from('diff --git a/many b/many\n' + '+x\n'.repeat(20_001));
+  const lineStatus = evaluateCommitLimits({
+    files: ['many'], blobs: [], diffMetrics: scanDiffMetrics(manyLines)
+  });
+  assert(lineStatus.warnings.some(value => value.includes('20,000-line per-file')));
+}
+
 (async () => {
   const fs = require('node:fs');
   const os = require('node:os');

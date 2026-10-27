@@ -1,7 +1,8 @@
 'use strict';
 
-// One canonical separator for all generated PR squash-commit trailers.
+// Keep underscore separators for existing installations unless explicitly changed.
 const SQUASH_SEPARATOR = '__________';
+const SQUASH_SEPARATOR_STYLES = Object.freeze({ underscores: SQUASH_SEPARATOR, hyphens: '---------', none: '' });
 const { execFileSync } = require('node:child_process');
 const { isCodex, mergeNames } = require('../codex/codex_attribution');
 const SYNC_MAIN_SUBJECT = /^(?:🔄\s*)?Sync (?:brach|branch) to main(?:\s*\(#\d+\))?$/i;
@@ -22,6 +23,33 @@ function omitBulletsForEmojiTitlesEnabled() {
   } catch {
     return false;
   }
+}
+function squashTrailerSeparatorStyle() {
+  try {
+    const value = execFileSync('git', ['config', '--global', '--get',
+      'scm-toolkit.squash-trailer-separator-style'], { encoding: 'utf8', timeout: 3000 }).trim();
+    return Object.hasOwn(SQUASH_SEPARATOR_STYLES, value) ? value : 'underscores';
+  } catch {
+    return 'underscores';
+  }
+}
+function squashSeparatorForStyle(style = squashTrailerSeparatorStyle()) {
+  if (!Object.hasOwn(SQUASH_SEPARATOR_STYLES, style)) throw Error('Invalid squash trailer separator style');
+  return SQUASH_SEPARATOR_STYLES[style];
+}
+function splitSquashTrailers(message, style = squashTrailerSeparatorStyle()) {
+  const divider = squashSeparatorForStyle(style);
+  if (divider) return message.split('\n\n' + divider + '\n\n');
+  // Without a divider, a blank line still separates the summary and trailers.
+  const marker = '\n\nCo-authored-by: ';
+  const index = message.lastIndexOf(marker);
+  if (index < 0) return [message];
+  const body = message.slice(0, index);
+  // Do not silently accept another configured divider as "none".
+  if (Object.values(SQUASH_SEPARATOR_STYLES).some(value => value && body.endsWith('\n\n' + value))) {
+    return [message];
+  }
+  return [body, message.slice(index + 2)];
 }
 const COAUTHOR=/^Co-authored-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/gim;
 function who(name,email,original=false) {
@@ -59,7 +87,7 @@ function formatCommitBody(body, width = 88) {
    lines.push(current); return lines.join('\n');
  }).join('\n');
 }
-function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled()}={}){
+function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled(),trailerSeparatorStyle=squashTrailerSeparatorStyle()}={}){
  const finalTitle = exactSquashTitle(title, num);
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
@@ -94,7 +122,8 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    summaries.every(summary => EMOJI_PREFIX.test(summary.slice(2).split('\n', 1)[0]));
  const summaryText = summaries.map(summary => unbulleted ? summary.slice(2) : summary)
    .join(unbulleted ? '\n\n' : '\n');
- return {title:finalTitle,message:(summaries.length?summaryText+'\n\n'+SQUASH_SEPARATOR+'\n\n':'')+trailers.join('\n'),trailers};
+ const divider = squashSeparatorForStyle(trailerSeparatorStyle);
+ return {title:finalTitle,message:(summaries.length?summaryText+'\n\n'+(divider?divider+'\n\n':''):'')+trailers.join('\n'),trailers};
 }
 async function readCommits(api,repo,num){
  const all=[];
@@ -106,4 +135,4 @@ async function readCommits(api,repo,num){
  }
  throw Error('Cannot inspect complete PR history');
 }
-module.exports={formatCommitBody,SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits};
+module.exports={formatCommitBody,SQUASH_SEPARATOR,SQUASH_SEPARATOR_STYLES,squashTrailerSeparatorStyle,squashSeparatorForStyle,splitSquashTrailers,exactSquashTitle,squashMessage,readCommits};

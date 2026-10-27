@@ -54,6 +54,12 @@ assert.equal(remaining(usage(bucket(300, NaN), bucket(10080, 60))), null);
 assert.equal(remaining(usage(bucket(300, '12'), null)), null);
 assert.equal(remaining(undefined), null);
 
+const weeklyRemaining = context.scmToolkitWeeklyRemainingUsage;
+assert.equal(weeklyRemaining(usage(bucket(300, 90), bucket(10080, 25))), 75);
+assert.equal(weeklyRemaining(usage(bucket(10080, 25), bucket(300, 0))), 75);
+assert.equal(weeklyRemaining(usage(bucket(300, 0), null)), null);
+assert.equal(weeklyRemaining(undefined), null);
+
 const piePercent = context.scmToolkitUsagePiePercent;
 assert.equal(piePercent(100), 100);
 assert.equal(piePercent(42.4), 42);

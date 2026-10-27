@@ -9,7 +9,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { existsSync } = require('node:fs');
-const { SQUASH_SEPARATOR, squashMessage, readCommits } = require('./squash_attribution');
+const { splitSquashTrailers, squashMessage, readCommits } = require('./squash_attribution');
 const { patchPaths, safePatchPath } = require('./merge_patch');
 const { readMergeChecks, waitForMergeChecks } = require('./merge_checks');
 const { readPushedPR } = require('../github/pushed_pr');
@@ -23,7 +23,7 @@ const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
-  allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, commitProposal,
+  allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
@@ -125,7 +125,7 @@ async function humanSquashMerge(repository, number, {
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite
   // the same PR head again: doing so would restart checks on every click.
   const existing = commits.length === 1 ? commits[0].commit.message.replace(/\r\n/g, '\n').trimEnd() : '';
-  const sections = existing.split('\n\n' + SQUASH_SEPARATOR + '\n\n');
+  const sections = splitSquashTrailers(existing);
   const alreadyPrepared = sections.length === 2 &&
     existing.split('\n', 1)[0] === prepared.title &&
     sections[1].split('\n').every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line)) &&
@@ -175,7 +175,7 @@ async function humanSquashMerge(repository, number, {
   if (operation === 'merge' && resolutionPatch === null && original.mergeable === true && nativeSquash) {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && resolutionPatch === null) {
+  if (operation === 'merge' && alreadyPrepared && resolutionPatch === null && !requireSignedCommit) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
@@ -355,7 +355,10 @@ async function humanSquashMerge(repository, number, {
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
     await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+      'commit', ...(requireSignedCommit ? ['-S'] : []), '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+    if (requireSignedCommit && !/(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', 'HEAD'))) {
+      throw Error('The local Git signer did not attach a commit signature; no branch was pushed.');
+    }
     const preparedSha = await inRepo('rev-parse', 'HEAD');
     const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
     const newTree = await inRepo('rev-parse', 'HEAD^{tree}');

@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {SQUASH_SEPARATOR,exactSquashTitle,squashMessage,readCommits}=require('../efs/merge/squash_attribution');
+const {SQUASH_SEPARATOR,SQUASH_SEPARATOR_STYLES,squashSeparatorForStyle,splitSquashTrailers,exactSquashTitle,squashMessage,readCommits}=require('../efs/merge/squash_attribution');
 async function run(){
  const commits=[{commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},committer:{name:'GitHub',email:'noreply@github.com'},message:'Change\n\nCo-authored-by: Codex <noreply@openai.com>'}},{commit:{author:{name:'John Wooten',email:'60260750+JFWooten4@users.noreply.github.com'},message:'Sync\n\nCo-authored-by: Codex Web <noreply@openai.com>'}}];
  assert.equal(SQUASH_SEPARATOR, '__________');
@@ -29,6 +29,19 @@ async function run(){
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Codex (Web) <noreply@openai.com>'
  ].join('\n'));
+ const styles = { underscores:'__________', hyphens:'---------', none:'' };
+ assert.deepEqual(SQUASH_SEPARATOR_STYLES,styles);
+ for (const [style,divider] of Object.entries(styles)) {
+   assert.equal(squashSeparatorForStyle(style),divider);
+   const alternative=squashMessage('🐛 Repair retries',269,commits,{trailerSeparatorStyle:style});
+   const trailer=alternative.trailers.join('\n');
+   assert.equal(alternative.message,'- Change\n- Sync\n\n'+(divider?divider+'\n\n':'')+trailer);
+   const sections=splitSquashTrailers(alternative.title+'\n\n'+alternative.message,style);
+   assert.equal(sections.length,2);
+   assert.equal(sections[1],trailer);
+ }
+ assert.throws(()=>squashSeparatorForStyle('invalid'),/Invalid squash trailer/);
+ assert.throws(()=>squashMessage('🐛 Repair retries',269,commits,{trailerSeparatorStyle:'invalid'}),/Invalid squash trailer/);
  const detailed=[
   {commit:{author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🖍️ Reference Austin Campbell TAD clip\r\n\r\nAdd a root-level reference to the personal clips index.\r\n\r\nMore context.\r\n\r\nCo-authored-by: Codex Web <noreply@openai.com>'}},
   {commit:{author:{name:'John Wooten',email:'60260750+JFWooten4@users.noreply.github.com'},message:'➕ Add IBM Redbooks reference\n\nCo-authored-by: Codex <noreply@openai.com>'}}
@@ -88,6 +101,11 @@ async function run(){
  assert(unfiltered.message.includes('- 🔄 Sync brach to main'));
  assert(unfiltered.message.includes('- 🔄 Sync branch to main'));
  assert(unfiltered.message.includes('Keep the latest request timeout changes.'));
+ for (const style of ['underscores','hyphens','none']) {
+   const empty=squashMessage('🔧 Apply settings',394,[syncCommit],
+     {filterSyncCommitSummaries:true,trailerSeparatorStyle:style});
+   assert(empty.message.startsWith('Co-authored-by: '));
+ }
  const onlySync=squashMessage('🔧 Apply settings',394,[syncCommit],{filterSyncCommitSummaries:true});
  assert(!onlySync.message.includes('Sync brach to main'));
  assert(onlySync.message.startsWith('Co-authored-by: '),

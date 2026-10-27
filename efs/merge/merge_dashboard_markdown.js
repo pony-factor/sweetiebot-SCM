@@ -26,6 +26,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
     if (typeof openLink === 'function') {
       a.addEventListener('click', event => {
         event.preventDefault();
+        event.stopPropagation();
         openLink(a.href);
       });
     } else a.target = '_blank';
