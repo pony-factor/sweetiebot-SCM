@@ -65,7 +65,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
   const manual = manualBlockerActions({state:'conflict'});
-  assert.equal(manual.length, 6);
+  assert.equal(manual.length, 7);
   assert(manual.every(action => action.manual && !action.reaction));
   assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
   assert.deepEqual(manualBlockerActions({state:'merged'}), []);
@@ -75,17 +75,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(checksPlan.workspaceAction.id, 'inspect-codex');
   const conflictPlan = dashboardActionPlan({ state: 'conflict' });
   assert.equal(conflictPlan.kind, 'conflict');
-  assert.deepEqual(conflictPlan.actions.map(action => action.id), ['resolve-conflicts']);
+  assert.deepEqual(conflictPlan.actions.map(action => action.id), ['resolve-conflicts-local', 'resolve-conflicts']);
   assert(!conflictPlan.actions.some(action => action.id === 'suggest-options'),
     'There is no separate ask-for-options step');
   const decisionPlan = dashboardActionPlan({ state: 'conflict', report: actionable.report });
   assert.equal(decisionPlan.kind, 'choice');
   assert.deepEqual(decisionPlan.actions.map(action => action.id), choices.map(option => option.id),
     'The current review choices are the implementation buttons');
-  assert.equal(dashboardActionPlan({ state: 'updated' }).actions[0].id, 'sync-checks');
+  assert.deepEqual(dashboardActionPlan({ state: 'updated' }).actions.map(action => action.id), ['resolve-conflicts-local', 'sync-checks']);
   const snapshotPlan = dashboardActionPlan({ state: 'updated', snapshotChanged: true });
   assert.equal(snapshotPlan.kind, 'snapshot');
-  assert.deepEqual(snapshotPlan.actions, [], 'A stale selection does not suggest unnecessary branch repairs');
+  assert.deepEqual(snapshotPlan.actions.map(action => action.id), ['resolve-conflicts-local'],
+    'A stale batch permits an explicitly selected local repair, while suppressing stale implementation choices');
   assert.equal(snapshotPlan.workspaceAction, null);
   assert.match(snapshotPlan.description, /select it again/);
   assert.equal(dashboardActionPlan({ state: 'blocked', mergeableState: 'blocked' }).actions[0].id, 'investigate-blocker');
@@ -105,6 +106,16 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
   assert(conflictPrompt.includes('Never create a per-file inline comment'));
+  assert(conflictPrompt.includes('one explanatory commit per actual conflicted file'));
+  assert(conflictPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
+  assert(conflictPrompt.includes('Do not bury conflict decisions'));
+  assert(blockerPrompt('pony-factor/example', selection.pullRequests[0], manual[0], 'codex').includes('REPAIR COMMIT HISTORY'));
+  const localOption = manual.find(option => option.id === 'resolve-conflicts-local');
+  assert.equal(localOption.engine, 'kefania');
+  const localPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], localOption, 'kefania');
+  assert(localPrompt.includes('LOCAL KEFANIA REPAIR'));
+  assert(localPrompt.includes('Use operation:"sync" only'));
+  assert(!localPrompt.includes('DIRECT WEB REPAIR'));
   const alternativesPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'suggest-options'));
   assert(alternativesPrompt.includes('never invent choices for compatible integrations'));
@@ -638,7 +649,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
   // Retargeting a stacked PR must not freeze the live status, diff or commits.
   // Keep the execution selection unchanged; never authorize a different base.
-  info = { ...info, base: { ...info.base, ref: 'new-base' },
+  info = { ...info, title: selection.pullRequests[0].title, base: { ...info.base, ref: 'new-base' },
     mergeable: true, mergeable_state: 'clean' };
   const commitsBeforeRetarget = commitFetches;
   await dashboard.refresh({ force: true });
@@ -649,8 +660,21 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(retargeted.base, 'main', 'Read-only polling preserves the authorized execution base');
   assert.equal(retargeted.actionPlan.kind, 'snapshot');
   assert.deepEqual(retargeted.blockerOptions, [], 'Retargeted selections cannot dispatch stale choices');
-  assert.deepEqual(retargeted.manualActions, []);
+  assert.deepEqual(retargeted.manualActions.map(action => action.id), ['resolve-conflicts-local']);
   assert(commitFetches > commitsBeforeRetarget, 'A base-only change refreshes commit history');
+  const directRepair = retargeted.manualActions[0];
+  const directMessage = { type: 'blocker-action', number: 12, headSha: retargeted.currentHead,
+    baseRef: 'new-base', actionId: directRepair.id, optionKey: directRepair.key, engine: directRepair.engine };
+  const launchesBeforeRepair = actionLaunches.length;
+  await messageHandler(directMessage);
+  assert.equal(actionLaunches.length, launchesBeforeRepair + 1, 'Retargeted PRs retain a working direct repair button');
+  assert.equal(actionLaunches.at(-1)[6], 'kefania');
+  assert.equal(actionLaunches.at(-1)[4].base, 'new-base', 'Repair uses the displayed and reverified base');
+  assert.equal(actionLaunches.at(-1)[4].snapshotChanged, false, 'A new repair has its own verified selection');
+  info = { ...info, base: { ...info.base, ref: 'moved-again' } };
+  await messageHandler(directMessage);
+  assert.equal(actionLaunches.length, launchesBeforeRepair + 1, 'A base changed since display cannot start a repair');
+  info = { ...info, base: { ...info.base, ref: 'new-base' } };
   dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12,
     reason: 'The selected PR changed outside this batch; review the new head or PR state.' }] });
   assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'Old persisted snapshot deferrals have the same recovery guidance');

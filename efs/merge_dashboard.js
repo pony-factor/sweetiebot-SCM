@@ -557,15 +557,18 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const pr = byNumber.get(message.number);
     if (!pr) return;
     if (message.type === 'blocker-action') {
-      if (launchingActions.has(pr.number) || !['web', 'codex'].includes(message.engine || 'web')) return;
+      if (launchingActions.has(pr.number) || !['web', 'codex', 'kefania'].includes(message.engine || 'web')) return;
       launchingActions.add(pr.number);
       error = '';
       let reactionSelection;
       publish();
       try {
         const fresh = await githubGet(readFetch, token, selection.repository, '/pulls/' + pr.number);
+        const localRepair = message.actionId === 'resolve-conflicts-local';
+        const expectedBase = localRepair ? (pr.currentBase || pr.base) : pr.base;
         if (fresh.state !== 'open' || fresh.merged || fresh.merged_at ||
-            fresh.number !== pr.number || fresh.html_url !== pr.url || fresh.base?.ref !== pr.base ||
+            (localRepair && (fresh.title !== pr.title || message.baseRef !== fresh.base?.ref)) ||
+            fresh.number !== pr.number || fresh.html_url !== pr.url || fresh.base?.ref !== expectedBase ||
             fresh.head?.ref !== pr.head || fresh.head?.sha !== message.headSha ||
             fresh.head?.repo?.full_name !== selection.repository) {
           throw Error('The PR changed. Refresh its status and review the options before choosing again.');
@@ -573,8 +576,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const notes = await readReports(readFetch, token, selection.repository, pr.number, 3,
           { headSha: fresh.head?.sha, baseSha: fresh.base?.sha });
         const snapshot = { ...pr, ...notes, headSha: fresh.head.sha, currentHead: fresh.head.sha,
-          baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }) };
-        const option = [...blockerOptions(snapshot), ...manualBlockerActions(snapshot)].find(item => item.id === message.actionId && item.key === message.optionKey);
+          baseSha: fresh.base.sha, state: mergePhase(fresh, { ...pr, ...notes }),
+          ...(localRepair ? { base: fresh.base.ref, snapshotChanged: false, snapshotDeferred: false } : {}) };
+        const option = [...blockerOptions(snapshot), ...manualBlockerActions(localRepair ? { ...snapshot, snapshotChanged: true } : snapshot)].find(item => item.id === message.actionId && item.key === message.optionKey);
         if (!option) throw Error('That implementation option changed. Refresh the report and choose again.');
         const engine = option.engine || message.engine || 'web';
         if (option.reaction) {
@@ -585,7 +589,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           reactionSelection = { snapshot, comment, engine };
         } else {
           const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
-          if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'web' ? 'GPT web' : 'Codex branch workspace') + ': ' + option.label);
+          if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'kefania' ? 'Kefania conflict repair' : engine === 'web' ? 'GPT web' : 'Codex branch workspace') + ': ' + option.label);
         }
       } catch (failure) {
         error = 'Could not start the selected implementation: ' + failure.message;

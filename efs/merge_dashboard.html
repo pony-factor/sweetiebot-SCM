@@ -409,7 +409,7 @@ __RATE_LIMIT_FORMATTER__
     if (!localInfo && !pr.report?.text && !pr.localReview?.text && !pr.review?.text && !pr.analysis?.length) showTextPanel(parent, 'AI explanation', '',
       'No explanation available yet.', true);
     const plan = pr.actionPlan;
-    if (plan?.kind === 'snapshot') showTextPanel(parent, plan.title, plan.description, '');
+    if (plan?.kind === 'snapshot' && !plan.actions?.length) showTextPanel(parent, plan.title, plan.description, '');
     if (plan?.actions?.length || plan?.workspaceAction) {
       const choices = show('section', 'panel action-panel', undefined, parent);
       const heading = show('div', 'action-heading', undefined, choices);
@@ -442,7 +442,7 @@ __RATE_LIMIT_FORMATTER__
         const button = show('button', style, (emoji ? emoji + ' ' : '') + option.label, row);
         button.disabled = Boolean(pr.actionPending);
         button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
-          headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
+          headSha: pr.currentHead, baseRef: pr.currentBase || pr.base, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
         if (option.description) show('div', 'muted', option.description, row);
         if (option.recommended) show('div', 'action-recommended', 'Recommended · ' + (option.description || 'Based on the current review'), row);
         return row;

@@ -6,8 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
-  publishOptionalMergeSummaries, launchBlockerWebSession, launchBlockerCodexSession } = require('../efs/pr_session');
-const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs/merge_blocker_actions');
+  publishOptionalMergeSummaries, launchBlockerCodexSession } = require('../efs/pr_session');
+const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActions } = require('../efs/merge_blocker_actions');
 
 (async () => {
   // Disabled or irrelevant optional summaries must not even load their module.
@@ -234,15 +234,20 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     const directPrompt=new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).get('q');
     assert(directPrompt.includes('DIRECT WEB REPAIR'));
     assert(directPrompt.includes('Implement the selected repair directly'));
+    assert(directPrompt.includes('Do not bury conflict decisions'));
+    assert(directPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
     assert(!new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).has('return_to'),'Direct web repairs have no local apply callback');
-    // Previously launched local handoffs remain supported and branch-only.
-    await launchBlockerWebSession(source,context,root,embeddedUrl,pr.number,selection);
+    // The restored direct button launches the real branch-only executor route.
+    const localOption = manualBlockerActions({ ...pr, state: 'conflict' }).find(item => item.id === 'resolve-conflicts-local');
+    await launchBlockerAction(source, context, root, selection.repository, pr, localOption, localOption.engine);
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);
     assert.equal(path.basename(actionWorkspace.fsPath), 'Resolve #12 [repository].code-workspace');
     const actionRequest = JSON.parse(await fs.readFile(path.join(actionDirectory, 'request.json'), 'utf8'));
     const actionPrompt = new URLSearchParams(new URL(actionRequest.mergeUrl).hash.slice(1)).get('q');
-    assert(actionPrompt.includes('Preserve what is already on the current main branch'));
+    assert(actionPrompt.includes('LOCAL KEFANIA REPAIR'));
+    assert(actionPrompt.includes('one explanatory commit per actual conflicted file'));
+    assert(!actionPrompt.includes('DIRECT WEB REPAIR'));
     assert(actionPrompt.includes('does not authorize merging or closing'));
     assert.equal(actionRequest.options.syncOnly, true, 'Implementation follow-ups receive only branch synchronization authority');
     const branchSelection = JSON.parse(await fs.readFile(path.join(actionDirectory, 'merge-selection.json'), 'utf8'));
