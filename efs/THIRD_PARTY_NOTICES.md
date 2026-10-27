@@ -2,7 +2,7 @@
 
 ## EFS Activity Bar icon
 
-`media/efs.svg` is an Activity Bar adaptation of the Eyes Forward Sparkle / PipBuck imagery in a Fallout: Equestria Game Wave 3 (Public Pre-Alpha) screenshot credited to The Overmare Studios.
+`assets/imgs/media/efs.svg` (installed as `media/efs.svg`) is an Activity Bar adaptation of the Eyes Forward Sparkle / PipBuck imagery in a Fallout: Equestria Game Wave 3 (Public Pre-Alpha) screenshot credited to The Overmare Studios.
 
 Original source:
 http://theovermare.com/blog/2016/02/wave-3-demo-better-late-than-never-edition

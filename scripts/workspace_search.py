@@ -132,6 +132,11 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
         for path in source_root.rglob("*")
         if path.is_file()
     }
+    # Keep VS Code icon paths stable while the shared artwork lives in assets.
+    media_root = here.parent / "assets/imgs/media"
+    for source in media_root.rglob("*"):
+        if source.is_file():
+            files[Path("media") / source.relative_to(media_root)] = source
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
     files[Path("github_apps.py")] = here / "github_apps.py"
