@@ -31,16 +31,17 @@ function renderCommitTree(parent, commits, openCommit) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', width); svg.setAttribute('height', graph.nodes.length * 52); svg.setAttribute('aria-hidden', 'true');
   list.appendChild(svg);
+  const lines = [], circles = [], buttons = new Map();
   for (const edge of graph.edges) {
     const line = document.createElementNS(svg.namespaceURI, 'line');
     for (const [key, value] of Object.entries({ x1: 12 + edge.from.lane * 16, y1: edge.from.row * 52 + 17,
       x2: 12 + edge.to.lane * 16, y2: edge.to.row * 52 + 17 })) line.setAttribute(key, value);
-    svg.appendChild(line);
+    svg.appendChild(line); lines.push({ edge, line });
   }
   for (const node of graph.nodes) {
     const circle = document.createElementNS(svg.namespaceURI, 'circle');
-    circle.setAttribute('cx', 12 + node.lane * 16); circle.setAttribute('cy', node.row * 52 + 17); circle.setAttribute('r', 4); svg.appendChild(circle);
-    const button = document.createElement('button'); button.className = 'commit-tree-item'; button.style.marginLeft = width + 'px';
+    circle.setAttribute('cx', 12 + node.lane * 16); circle.setAttribute('cy', node.row * 52 + 17); circle.setAttribute('r', 4); svg.appendChild(circle); circles.push({ node, circle });
+    const button = document.createElement('button'); button.className = 'commit-tree-item'; button.style.marginLeft = width + 'px'; button.style.width = 'calc(100% - ' + width + 'px)';
     if (node.isNew) {
       const indicator = document.createElement('span'); indicator.textContent = 'New · ';
       button.appendChild(indicator);
@@ -49,8 +50,21 @@ function renderCommitTree(parent, commits, openCommit) {
     hash.textContent = node.sha.slice(0, 7); button.appendChild(hash);
     const title = document.createElement('span'); title.textContent = ' ' + node.title; button.appendChild(title);
     button.title = node.sha + '\n' + node.title;
-    button.addEventListener('click', () => openCommit(node.sha)); list.appendChild(button);
+    button.addEventListener('click', () => openCommit(node.sha)); list.appendChild(button); buttons.set(node.sha, button);
   }
+  function alignGraph() {
+    const y = node => (buttons.get(node.sha).offsetTop ?? node.row * 52) + 17;
+    svg.setAttribute('height', list.offsetHeight ?? graph.nodes.length * 52);
+    for (const { edge, line } of lines) {
+      line.setAttribute('y1', y(edge.from)); line.setAttribute('y2', y(edge.to));
+    }
+    for (const { node, circle } of circles) circle.setAttribute('cy', y(node));
+  }
+  alignGraph();
+  const Observer = document.defaultView?.ResizeObserver;
+  const observer = Observer ? new Observer(alignGraph) : null;
+  observer?.observe(list);
+  return () => observer?.disconnect();
 }
 function mergeCommitHistory(previous, current) {
   const known = new Map((previous || []).map(commit => [commit.sha, commit]));
