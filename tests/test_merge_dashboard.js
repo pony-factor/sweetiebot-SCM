@@ -90,7 +90,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert(selectedPrompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
   assert(selectedPrompt.includes('publish zero inline comments'));
-  assert(selectedPrompt.includes('overall GitHub review body'));
+  assert(selectedPrompt.includes('one comprehensive GitHub pull request review'));
+  assert(selectedPrompt.includes('one short review body summarizing the net changes'));
   assert(selectedPrompt.includes('Do not edit a human-authored comment'));
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'));
   const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
@@ -103,8 +104,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     'ChatGPT implementation responses must use the connected user account');
   assert(selectedPrompt.includes('reply_to_review_comment'),
     'Implementation results must create a new reply to the original inline review');
-  assert(selectedPrompt.includes('If an inline reply cannot be posted'),
-    'Non-inline fallback must still reference the original review');
+  assert(selectedPrompt.includes('report the exact limitation locally instead of posting a standalone PR Conversation comment'),
+    'Missing inline review support must not produce a standalone conversation comment');
   assert(selectedPrompt.includes('Never call update_review_comment or update_issue_comment'),
     'Prior review comments must be immutable');
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'),
@@ -264,7 +265,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     } },
     Uri: { parse: value => value },
     commands: { async executeCommand(command, options) { assert.equal(command, 'workbench.action.browser.open'); assert.equal(options.openToSide, true); openings.push(options.url); } },
-    env: { async openExternal(target) { openings.push(target); } }
+    env: { async openExternal() { assert.fail('Dashboard links must never open the external browser'); } }
   };
   let info = {
     number: 12, base: { ref: 'main', sha: 'c'.repeat(40) }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
@@ -451,13 +452,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   messageHandler({ type: 'open-pr', number: 100 });
   await new Promise(resolve => setTimeout(resolve, 1));
   assert.deepEqual(openings, [url, url + '/files']);
+  await messageHandler({ type: 'open-link', url: url + '#issuecomment-123' });
   await messageHandler({ type: 'open-link', url: 'https://example.org/reference' });
   await messageHandler({ type: 'open-link', url: 'javascript:alert(1)' });
   await messageHandler({ type: 'open-link', url: 'https://github.com@evil.example/path' });
   await messageHandler({ type: 'open-link', url: 'file:///private/secret' });
   await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
-  assert.deepEqual(openings, [url, url + '/files', 'https://example.org/reference'],
-    'Only validated web links open through the extension host');
+  assert.deepEqual(openings, [url, url + '/files', url + '#issuecomment-123', 'https://example.org/reference'],
+    'Validated comment links open once in the integrated browser with their comment fragment preserved');
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
   await dashboard.refresh();
@@ -709,7 +711,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!anchors.some(n => n.href.startsWith('javascript:')),
     'Unsafe link schemes remain plain text');
   const related = anchors.find(n => n.href.endsWith('/pull/5'));
-  related.handlers.click({ preventDefault() {} });
+  let linkPrevented = false, linkStopped = false;
+  related.handlers.click({ preventDefault() { linkPrevented = true; }, stopPropagation() { linkStopped = true; } });
+  assert(linkPrevented && linkStopped, 'Handled dashboard links suppress default navigation and bubbling');
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
   const emphasisRoot = document.createElement('div');
   renderMergeMarkdown(emphasisRoot, '**bold *italic* ending** and *italic **bold** ending* plus ***both***.');

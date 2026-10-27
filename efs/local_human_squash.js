@@ -23,7 +23,7 @@ const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
-  allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, commitProposal,
+  allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
@@ -175,7 +175,7 @@ async function humanSquashMerge(repository, number, {
   if (operation === 'merge' && resolutionPatch === null && original.mergeable === true && nativeSquash) {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && resolutionPatch === null) {
+  if (operation === 'merge' && alreadyPrepared && resolutionPatch === null && !requireSignedCommit) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
@@ -355,7 +355,10 @@ async function humanSquashMerge(repository, number, {
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
     await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      'commit', '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+      'commit', ...(requireSignedCommit ? ['-S'] : []), '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+    if (requireSignedCommit && !/(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', 'HEAD'))) {
+      throw Error('The local Git signer did not attach a commit signature; no branch was pushed.');
+    }
     const preparedSha = await inRepo('rev-parse', 'HEAD');
     const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
     const newTree = await inRepo('rev-parse', 'HEAD^{tree}');

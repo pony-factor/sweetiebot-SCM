@@ -113,9 +113,11 @@
       if (mergeLaunch && !latest) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
-        // Current conversation-role markers label the message header; the
+        // Support both current assistant Markdown and conversation-role markup.
+        // Conversation-role markers label the header, while the assistant
         // response body is its sibling inside the same message container.
         const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
           ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
             .map(node => node.parentElement).filter(Boolean)];
         const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
