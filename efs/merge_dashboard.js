@@ -135,7 +135,7 @@ function normalizeInlineReviewComments(comments) {
 }
 
 function mergePhase(pr, previous) {
-  if (pr.merged || pr.merged_at) return 'merged';
+  if (pr.merged || pr.merged_at || previous.state === 'merged') return 'merged';
   if (pr.state === 'closed') return 'closed';
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
@@ -370,6 +370,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   }
 
+  function confirmMerge(item, sha, mergedAt) {
+    item.state = 'merged';
+    item.statusMessage = 'GitHub confirms the pull request was merged';
+    if (SHA.test(sha || '')) item.mergeCommit = sha;
+    if (mergedAt) item.mergedAt = mergedAt;
+  }
+
   async function refreshOne(item) {
     let decisionComments = inlineComments.get(item.number) || [];
     const info = await githubGet(readFetch, token, selection.repository,
@@ -379,12 +386,21 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (info.number !== item.number || !info.base?.ref ||
         info.head?.ref !== item.head || info.head?.repo?.full_name !== selection.repository ||
         info.html_url !== item.url) {
-      if (item.state !== 'blocked') {
+      if (!['blocked', 'merged'].includes(item.state)) {
         item.state = 'blocked';
         addEvent(item, 'blocked', 'PR identity changed; manual verification required');
       }
       publish();
       return;
+    }
+    // Publish authoritative merge status before optional files/comments can fail.
+    // A late open response cannot undo a merge already verified by the executor.
+    if (item.state === 'merged' && !info.merged && !info.merged_at) return;
+    if (info.merged || info.merged_at) {
+      const wasMerged = item.state === 'merged';
+      confirmMerge(item, info.merge_commit_sha, info.merged_at);
+      if (!wasMerged) addEvent(item, 'merged', item.statusMessage);
+      publish();
     }
     const baseChanged = info.base.ref !== (item.currentBase || item.base);
     item.currentBase = info.base.ref;
@@ -441,6 +457,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.sawConflict = true;
       await context?.workspaceState?.update('sweetiebot.sawConflict.' + selection.repository + '.' + item.number + '.' + item.originalHead, true);
     }
+    if (item.state === 'merged' && next !== 'merged') return;
     const labels = {
       merged: 'GitHub confirms the pull request was merged',
       closed: 'PR was closed without merging',
@@ -460,8 +477,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     item.mergeable = info.mergeable;
     item.mergeableState = info.mergeable_state || '';
-    item.mergedAt = info.merged_at || null;
-    item.mergeCommit = info.merge_commit_sha || '';
+    item.mergedAt = info.merged_at || item.mergedAt || null;
+    if (info.merged || info.merged_at) item.mergeCommit = info.merge_commit_sha || item.mergeCommit || '';
     item.description = String(info.body || '').slice(0, 12000);
     publish();
     if (!item.snapshotChanged && !launchingActions.has(item.number)) {
@@ -489,7 +506,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     error = '';
     try {
       // Limit simultaneous GitHub calls so selections of 50 PRs remain polite.
-      const active = prs.filter(pr => force || pr.state !== 'merged');
+      const active = prs.filter(pr => force || pr.state !== 'merged' || !pr.mergedAt);
       for (let start = 0; start < active.length && !disposed; start += 3) {
         await Promise.all(active.slice(start, start + 3).map(async pr => {
           try { await refreshOne(pr); }
@@ -735,10 +752,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      const merged = item.status === 'merged' && item.merged === true && SHA.test(item.sha || '');
+      if (merged) confirmMerge(pr, item.sha);
       if (typeof item.reason === 'string') pr.localResultReason = item.reason.slice(0, 4000);
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
       const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
-      const message = item.status === 'merged' && item.merged === true ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)
+      const message = merged ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)
         : item.status === 'synced' ? item.sha === item.previousHeadSha
           ? 'PR branch already up to date · no commit or push needed'
           : 'PR branch synchronized with incremental commits · existing history retained'
@@ -748,16 +767,16 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : item.status === 'checks_failed' ? 'Integrated-head checks failed · PR remains unmerged'
         : pushed ? 'Stopped after pushing the prepared PR branch · merge not confirmed'
         : 'Local preparation stopped · merge not confirmed';
-      const commitSha = item.status === 'merged' && item.merged === true && SHA.test(item.sha || '')
+      const commitSha = merged
         ? item.sha : pushed;
-      addEvent(pr, item.status === 'merged' && item.merged === true ? 'merged' : continuing ? 'updated' : 'blocked',
+      addEvent(pr, merged ? 'merged' : continuing ? 'updated' : 'blocked',
         message, String(item.reason || '').slice(0, 4000), '',
         commitSha ? { sha: commitSha, title: item.commitTitle } : null);
       pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
         item.status, pushed || '') || pr.localRecovery;
     }
     publish();
-    void refresh();
+    void refresh({ force: true });
   } };
 }
 

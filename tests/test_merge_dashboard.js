@@ -299,12 +299,13 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   let reactionVotes = [];
   const reactionWrites = [];
   let fileRequests = 0, apiRequests = 0, commitFetches = 0;
-  let requestFault;
+  let requestFault, reportFault, pausePRRead;
   const fakeFetch = async (address, options) => {
     if (requestFault) throw requestFault;
     apiRequests++;
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
+    if (reportFault && pathname.endsWith('/comments')) throw reportFault;
     if (options.method === 'DELETE' && /\/reactions\/\d+$/.test(pathname)) {
       reactionWrites.push({method:options.method,pathname});
       reactionVotes=reactionVotes.filter(vote=>!pathname.endsWith('/'+vote.id));
@@ -332,6 +333,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     else if (pathname.endsWith('/pulls/12/reviews')) result = reviewsForPr;
     else if (pathname.endsWith('/issues/12/comments')) result = commentsForPr;
     else throw new Error('Unexpected URL ' + address);
+    if (pathname.endsWith('/pulls/12') && pausePRRead) await pausePRRead();
     return { ok: true, json: async () => result };
   };
   const actionLaunches = [];
@@ -693,10 +695,41 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
   assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
+  // A verified executor result updates the badge immediately, even in a hidden
+  // dashboard with an older open response already in flight and a failed poll.
+  info = { ...info, state: 'open', merged: false };
+  panel.visible = false;
+  let releaseRead, readStarted;
+  const started = new Promise(resolve => { readStarted = resolve; });
+  const readGate = new Promise(resolve => { releaseRead = resolve; });
+  pausePRRead = async () => { readStarted(); await readGate; };
+  const stalePoll = dashboard.refresh({ force: true });
+  await started;
+  pausePRRead = undefined;
+  dashboard.recordLocalResult({ repository: selection.repository,
+    results: [{ number: 12, status: 'merged', merged: true, sha: 'c'.repeat(40) }] });
+  assert.equal(events.at(-1).prs[0].state, 'merged', 'Verified merge results update the badge before polling');
+  assert.equal(events.at(-1).prs[0].statusMessage, 'GitHub confirms the pull request was merged');
+  assert.equal(events.at(-1).prs[0].mergeCommit, 'c'.repeat(40));
+  assert(!events.at(-1).prs[0].mergedAt, 'A result without a GitHub timestamp must not invent one');
+  requestFault = new TypeError('fetch failed');
+  releaseRead();
+  await stalePoll;
+  await dashboard.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].state, 'merged', 'An in-flight open response and failed follow-up cannot regress the badge');
+  requestFault = undefined;
+  await dashboard.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].state, 'merged', 'A stale GitHub open response cannot undo a verified merge');
+  panel.visible = true;
+  reportFault = new TypeError('comments unavailable');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',
     merge_commit_sha: 'c'.repeat(40) };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'merged');
+  assert.equal(events.at(-1).prs[0].mergedAt, info.merged_at, 'Core merge metadata updates even when comment fetching fails');
+  assert.match(events.at(-1).error, /issues\/12\/comments/);
+  reportFault = undefined;
+  await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].conflictCleared, true, 'Verified cleared conflicts remain counted after merge');
   assert(events.at(-1).events.some(event => event.state === 'merged'));
   const mergedRequestCount=apiRequests;
