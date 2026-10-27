@@ -265,13 +265,13 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_retention_prunes_only_settled_jobs_older_than_60_days(self):
         now = time.time()
-        expired_done = self.saved_retention_job('0000000000000001', 'done', 61, now)
-        expired_cancelled = self.saved_retention_job('0000000000000002', 'cancelled', 61, now)
-        recent = self.saved_retention_job('0000000000000003', 'done', 59, now)
-        boundary = self.saved_retention_job('0000000000000004', 'done', 59.9, now)
-        blocked = self.saved_retention_job('0000000000000005', 'blocked', 90, now)
-        generating = self.saved_retention_job('0000000000000006', 'generating', 90, now)
-        provisional = self.saved_retention_job('0000000000000007', 'done', 90, now, provisional=True)
+        expired_done = self.saved_retention_job('11111111112', 'done', 61, now)
+        expired_cancelled = self.saved_retention_job('11111111113', 'cancelled', 61, now)
+        recent = self.saved_retention_job('11111111114', 'done', 59, now)
+        boundary = self.saved_retention_job('11111111115', 'done', 59.9, now)
+        blocked = self.saved_retention_job('11111111116', 'blocked', 90, now)
+        generating = self.saved_retention_job('11111111117', 'generating', 90, now)
+        provisional = self.saved_retention_job('11111111118', 'done', 90, now, provisional=True)
         unknown = self.saved_retention_job('not-a-job-id', 'done', 90, now)
         worker.prune_completed_jobs(now=now)
         self.assertFalse(expired_done.exists())
@@ -281,8 +281,8 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_retention_protects_queued_jobs_transactions_and_active_workers(self):
         now = time.time()
-        queued = self.saved_retention_job('0000000000000008', 'done', 90, now)
-        busy = self.saved_retention_job('0000000000000009', 'done', 90, now)
+        queued = self.saved_retention_job('11111111119', 'done', 90, now)
+        busy = self.saved_retention_job('1111111111A', 'done', 90, now)
         meta = self.repo / '.git'
         worker.write_journal(meta / worker.MARKER, {'id': queued.name, 'directory': str(queued)})
         with (busy / 'worker.lock').open('a+b') as lock:
@@ -302,7 +302,7 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_resume_prunes_expired_completed_jobs(self):
         now = time.time()
-        expired = self.saved_retention_job('000000000000000a', 'done', 61, now)
+        expired = self.saved_retention_job('1111111111B', 'done', 61, now)
         with patch.object(worker.time, 'time', return_value=now):
             worker.resume()
         self.assertFalse(expired.exists())
@@ -395,7 +395,7 @@ class BackgroundCommitTests(unittest.TestCase):
         with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):
             directory = self.queue(message='', push=True, signoff=True)
         provisional = self.git('rev-parse', 'HEAD')
-        self.assertRegex(directory.name, r'^[0-9a-f]{16}$')
+        self.assertRegex(directory.name, r'^[1-9A-HJ-NP-Za-km-z]{11}$')
         self.assertEqual(self.git('log', '-1', '--format=%s'), 'placeholder_' + directory.name)
         identity = self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI')
         self.assertIn(worker.PLACEHOLDER, self.git('log', '-1', '--format=%s'))
@@ -1080,7 +1080,7 @@ worker.work(Path(sys.argv[2]))
     def test_copied_placeholder_without_a_job_record_uses_completed_parent(self):
         self.git('commit', '-q', '-m', 'Base')
         base = self.git('rev-parse', 'HEAD')
-        self.git('commit', '--allow-empty', '-q', '-m', 'placeholder_0123456789abcdef')
+        self.git('commit', '--allow-empty', '-q', '-m', 'placeholder_123456789AB')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
         self.git('commit', '--allow-empty', '-q', '-m', 'Later completed message')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)

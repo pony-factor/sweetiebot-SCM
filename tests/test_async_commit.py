@@ -68,6 +68,13 @@ class AsyncCommitTests(unittest.TestCase):
         path = self.root / "sweetiebot.log"
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
+    def test_new_job_id_uses_base58_alphabet(self):
+        with patch.object(asynchronous.secrets, "choice", return_value="z") as choose:
+            self.assertEqual(asynchronous.new_job_id(), "z" * 11)
+            self.assertEqual(choose.call_count, 11)
+            self.assertTrue(all(call.args == (asynchronous.BASE58_ALPHABET,)
+                                for call in choose.call_args_list))
+
     def test_commit_returns_with_placeholder_then_finalizes_without_restage(self):
         self.assertEqual(self.prepare(), 0)
         job = asynchronous.read_journal(self.pending())
@@ -76,7 +83,7 @@ class AsyncCommitTests(unittest.TestCase):
         identities = self.git("log", "-1", "--format=%an|%ae|%at|%cn|%ce|%ct").stdout.strip()
         tree = self.git("rev-parse", "HEAD^{tree}").stdout.strip()
         self.assertIn(asynchronous.PLACEHOLDER, self.title())
-        self.assertRegex(job['id'], r'^[0-9a-f]{16}$')
+        self.assertRegex(job['id'], r'^[1-9A-HJ-NP-Za-km-z]{11}$')
         self.assertEqual(self.title(), 'placeholder_' + job['id'])
 
         # Work continues while the model works. The worker must not include it.

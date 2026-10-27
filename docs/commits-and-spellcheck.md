@@ -11,7 +11,7 @@ Stage and review the exact diff. Sweetiebot retains VS Code's Git commit behavio
 | Legacy provisional title finalization | Distinct older mode | Do not conflate with durable mode |
 | Auto-commit with Codex | Every 30 seconds when opted in: stage changed files and commit locally with co-author; no automatic push | Opt-in, **off** |
 
-Background recovery is in [worker](../scripts/background_commit.py), [extension bridge](../efs/background_commit.js) and [push recovery](../efs/push_recovery.js). macOS session/login agent and an awake machine matter while VS Code is closed. **Never amend, reset, squash, or force-push a branch with an unresolved placeholder job**; inspect recorded status first. A "pending push" indicator is not proof of a successful remote write.
+Background recovery is in [worker](../scripts/background_commit.py), [extension bridge](../efs/background_commit.js) and [push recovery](../efs/push_recovery.js). macOS session/login agent and an awake machine matter while VS Code is closed. **Never amend, reset, squash, or force-push a branch with an unresolved placeholder job**; inspect recorded status first. A "pending push" indicator is not proof of a successful remote write. Placeholder titles use `placeholder_` plus an 11-character Base58 job ID, separate from the Git commit SHA.
 
 A co-author action adds `Co-authored-by` after a **blank line**, without replacing the Git author. Optional Codex draft/context features may read a local conversation snapshot for text generation but do not authorize unstaged changes.
 
