@@ -409,6 +409,15 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
   assert.equal(configuredTimelineMode(vscode), 'hidden');
   assert.equal(events.at(-1).timestampMode, 'hidden', 'Timestamps start hidden');
+  assert.equal(events.at(-1).showPrCommits, true, 'Commit history remains visible by default');
+  assert(panel.webview.html.includes("model.showPrCommits !== false"), 'PR commit tree is conditional');
+  assert(panel.webview.html.includes(".pr-detail-layout.no-commits{display:block}"), 'Hidden tree restores full-width diff');
+  layoutConfig.mergeShowPrCommits = false;
+  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
+  assert.equal(events.at(-1).showPrCommits, false, 'Setting hides commit history in an open dashboard');
+  layoutConfig.mergeShowPrCommits = true;
+  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
+  assert.equal(events.at(-1).showPrCommits, true, 'Setting restores commit history without reopening');
   assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 37, timeline: 34 });
   layoutConfig.mergeSidebarWidthPercent = 50;
   layoutConfig.mergeTimelineHeightPercent = 55;

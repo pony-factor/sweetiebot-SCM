@@ -23,6 +23,7 @@ async function run() {
           if (root === 'scmToolkit' && key === 'autoPublishNewBranches') return true;
           if (root === 'scmToolkit' && key === 'automaticWorkspaceCleanup') return true;
           if (root === 'scmToolkit' && key === 'messagePlaceholder') return 'Commit here';
+           if (root === 'scmToolkit' && key === 'mergeShowPrCommits') return false;
           if (root === 'scmToolkit' && key === 'commitButtonLabel') return 'Commit';
           if (root === 'scmToolkit' && key === 'commitAndSendButtonLabel') return 'Commit + Push';
           if (root === 'scmToolkit' && key === 'hideIncomingSyncArrow') return true;
@@ -73,6 +74,7 @@ async function run() {
         assert.equal(current.vscodeSettings.autoPublishNewBranches, true);
         assert.equal(current.vscodeSettings.automaticWorkspaceCleanup, true);
         assert.equal(current.vscodeSettings.messagePlaceholder, 'Commit here');
+        assert.equal(current.vscodeSettings.mergeShowPrCommits, false);
         assert.equal(current.vscodeSettings.commitButtonLabel, 'Commit');
         assert.equal(current.vscodeSettings.commitAndSendButtonLabel, 'Commit + Push');
         assert.equal(current.vscodeSettings.hideIncomingSyncArrow, true);
