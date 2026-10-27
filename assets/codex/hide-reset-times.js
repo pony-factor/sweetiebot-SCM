@@ -31,6 +31,10 @@ function scmToolkitIsStandaloneTime(value) {
 
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+    // Several lazy-loaded modules need the pure helpers above. Share their DOM
+    // watcher so loading another module does not rescan the whole chat again.
+    if (globalThis.scmToolkitResetTimeObserver) return;
+    globalThis.scmToolkitResetTimeObserver = true;
     let pending = false;
     function compactCards() {
         for (const heading of document.querySelectorAll('strong, h1, h2, h3, span, p')) {
