@@ -21,16 +21,16 @@ async function mergedBranchStatus(repository, remote = 'origin', branch = '') {
 }
 
 async function warnMergedBranch(vscode, repository, info) {
-  const action = `New branch from updated ${info.defaultBranch}`;
+  const action = `Continue on new branch from ${info.branch}`;
   const choice = await vscode.window.showWarningMessage(
-    `Branch "${info.branch}" was merged in PR #${info.number}. Pushing would recreate or update that merged branch.`,
-    { modal: true, detail: 'Your local commits are preserved. Start a fresh branch with only the follow-up changes.' },
+    `Branch "${info.branch}" was merged in PR #${info.number}. Publishing to it is blocked.`,
+    { modal: true, detail: `Your local commits are preserved. Continue from the current local tip of "${info.branch}", without fetching, merging, or rebasing onto ${info.defaultBranch || 'main'}.` },
     action
   );
-  if (choice === action) {
-    await vscode.commands.executeCommand('sweetiebot.createBranch', repository.rootUri, { remote: info.remote });
-  }
-  return false;
+  if (choice !== action) return false;
+  return vscode.commands.executeCommand('sweetiebot.createBranch', repository.rootUri, {
+    remote: info.remote, continueFromBranch: info.branch
+  });
 }
 
 module.exports = { mergedBranchAction, mergedBranchStatus, warnMergedBranch };

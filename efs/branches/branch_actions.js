@@ -550,11 +550,58 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
   }
 }
 
-async function createBranch(repository, { defaultBranch, remote, names, isolateBranch }, secureRandomInt) {
+async function createBranch(repository, { defaultBranch, remote, names, isolateBranch, continueFromBranch }, secureRandomInt) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
   if (repository.state.mergeChanges?.length) {
     throw new Error('Resolve the merge conflicts before creating a new branch.');
+  }
+  if (continueFromBranch) {
+    // Recovery is deliberately a branch at the current local tip, not a
+    // rebase/carry-over onto main. No network operation or push is permitted.
+    if (typeof continueFromBranch !== 'string' || !continueFromBranch.trim()
+        || repository.state.HEAD?.name !== continueFromBranch) {
+      throw new Error('The active branch changed. Switch back to the merged branch before continuing.');
+    }
+    const root = repository.rootUri?.fsPath;
+    const hasGitMetadata = Boolean(root && existsSync(path.join(root, '.git')));
+    let originalTip = repository.state.HEAD.commit;
+    if (!originalTip && hasGitMetadata) {
+      // Git may have refreshed the HEAD name before its commit SHA.
+      const { stdout } = await promisify(execFile)('git', ['rev-parse', 'HEAD'],
+        { cwd: root, timeout: 10000 });
+      originalTip = stdout.trim();
+    }
+    const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
+    const used = new Set(refs.flatMap(ref => [
+      ref.name, ref.name?.startsWith(`${remote}/`) ? ref.name.slice(remote.length + 1) : ref.name
+    ]));
+    const available = [...new Set(names)].filter(name => !used.has(name));
+    if (!available.length) throw new Error('All configured pony branch names are already in use.');
+    const history = await loadBranchNameHistory(repository);
+    const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
+    await repository.status();
+    if (repository.state.HEAD?.name !== continueFromBranch
+        || (originalTip && repository.state.HEAD.commit !== originalTip)) {
+      throw new Error('The original branch advanced or changed. Review it before creating a new branch.');
+    }
+    if (hasGitMetadata) {
+      // Use Sweetiebot's own lock-aware fork to avoid the Git wrapper's
+      // pending-job checkout gate. The original tip is pinned under that lock.
+      const localScript = path.join(__dirname, '../background_commit.py');
+      const script = existsSync(localScript) ? localScript
+        : path.join(__dirname, '../../scripts/background_commit.py');
+      await promisify(execFile)(resolvePythonExecutable(), [
+        script, '--fork-verified', `refs/heads/${continueFromBranch}`,
+        branch, `refs/heads/${continueFromBranch}`, originalTip
+      ], { cwd: root, timeout: 120000 });
+      await repository.status();
+    } else {
+      // API fixtures and virtual repositories retain the normal Git API path.
+      await repository.createBranch(branch, true, originalTip || `refs/heads/${continueFromBranch}`);
+    }
+    await saveBranchNameHistory(history.file, selected);
+    return branch;
   }
   const merged = await mergedBranchStatus(repository, remote);
   if (merged) {
@@ -1186,7 +1233,9 @@ function registerBranchCommands(vscode, context) {
         const repository = await resolveRepository(uri);
         const attempt = async () => {
           const remote = options?.remote || 'origin';
-          const defaultBranch = needsDefaultBranch.has(command) ? await resolveDefaultBranch(repository, remote) : undefined;
+          const defaultBranch = needsDefaultBranch.has(command)
+            && !(command === 'sweetiebot.createBranch' && options.continueFromBranch)
+            ? await resolveDefaultBranch(repository, remote) : undefined;
           const refs = [options?.branch || 'HEAD'];
           if (command === 'sweetiebot.syncBranch') refs.push(`refs/remotes/${remote}/${defaultBranch}`);
           // Switching to an unpublished branch can trigger automatic publishing.

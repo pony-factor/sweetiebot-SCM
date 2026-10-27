@@ -322,7 +322,7 @@ class ProposalTests(unittest.TestCase):
                 self.assertFalse(worker.wait_for_push_gate([], "test-token", "new", "topic"))
 
     def test_spellcheck_emits_notice_without_a_keep_or_discard_dialog(self):
-        job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
+        job = {"global_args": [], "paths": ["note.md"], "head": "expected", "requested_at_ms": 1234567890000}
         proposals = {"note.md": (b"original", b"corrected")}
         core = SimpleNamespace(git_config_bool=lambda *args: True, installed_local_model_names=lambda: {"model"}, selected_model=lambda installed: ("model", False))
         with patch.dict(worker.os.environ, {worker.SPELLCHECK_JOB_ENV: json.dumps(job)}), patch.object(
@@ -335,7 +335,8 @@ class ProposalTests(unittest.TestCase):
             worker, "write_spellcheck_notice"
         ) as notice, patch.object(worker, "spellcheck_title") as title, patch.object(worker, "git_run") as git:
             self.assertEqual(worker.run_post_commit_job(), 0)
-            notice.assert_called_once_with([], "expected", ["note.md"], "model")
+            notice.assert_called_once_with([], "expected", ["note.md"], "model",
+                                           requested_at_ms=1234567890000)
             title.assert_not_called()
             git.assert_called_once_with([], "rev-parse", "--show-toplevel")
 
@@ -376,6 +377,19 @@ class ProposalTests(unittest.TestCase):
                     "version": 1, "head": "a" * 40, "paths": ["readme.md"], "model": "qwen:3b", "title": "Spellcheck Instinet trading and citations",
                 })
                 self.assertFalse((root / worker.NOTICE_FILE_NAME).exists())
+                self.assertTrue(worker.write_spellcheck_notice([], "a" * 40, ["readme.md"], requested_at_ms=1234567890000))
+                self.assertEqual(json.loads(notice.read_text())["requestedAtMs"], 1234567890000)
+
+    def test_background_job_records_its_start_time(self):
+        with patch.object(worker, "repository_spellcheck_disabled", return_value=False), patch.object(
+            worker, "active_branch", return_value="topic"
+        ), patch.object(worker.subprocess, "Popen") as popen:
+            worker.spawn_post_commit([], ["note.md"], "expected", "/tmp/ai_commit.py")
+        job = json.loads(popen.call_args.kwargs["env"][worker.SPELLCHECK_JOB_ENV])
+        self.assertEqual(job["head"], "expected")
+        self.assertEqual(job["branch"], "topic")
+        self.assertIsInstance(job["requested_at_ms"], int)
+        self.assertGreater(job["requested_at_ms"], 0)
 
     def test_notice_write_handles_missing_metadata(self):
         result = subprocess.CompletedProcess([], 1, stdout="")

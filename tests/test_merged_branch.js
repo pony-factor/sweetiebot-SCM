@@ -11,16 +11,17 @@ const { warnMergedBranch } = require('../efs/branches/merged_branch');
     window: { async showWarningMessage(message, options, action) {
       assert.match(message, /old.*merged in PR #61/);
       assert.equal(options.modal, true);
-      assert.equal(action, 'New branch from updated main');
+      assert.equal(action, 'Continue on new branch from old');
       return choice;
     } },
     commands: { async executeCommand(...args) { calls.push(args); } }
   };
   await warnMergedBranch(vscode, { rootUri: uri }, info);
   assert.equal(calls.length, 0, 'dismissing the warning must not change branches');
-  choice = 'New branch from updated main';
+  choice = 'Continue on new branch from old';
   await warnMergedBranch(vscode, { rootUri: uri }, info);
-  assert.deepEqual(calls, [['sweetiebot.createBranch', uri, { remote: 'origin' }]],
-    'the warning must use the same command as the toolbar');
+  assert.deepEqual(calls, [['sweetiebot.createBranch', uri, {
+    remote: 'origin', continueFromBranch: 'old'
+  }]], 'the popup must use the old local branch tip instead of main');
   console.log('Merged-branch warning action checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

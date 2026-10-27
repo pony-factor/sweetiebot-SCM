@@ -2,7 +2,7 @@
 
 const { spawn, execFile } = require('node:child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('../ui/python_runtime');
-const { mergedBranchStatus, warnMergedBranch } = require('../branches/merged_branch');
+const { warnMergedBranch } = require('../branches/merged_branch');
 
 function enqueue(script, cwd, request, action = '--enqueue') {
   return new Promise((resolve, reject) => {
@@ -69,9 +69,10 @@ function registerBackgroundCommit(vscode, context) {
     child.unref();
   };
   resume();
-  const control = (root, action) => {
-    seen.delete(root);
-    const child = spawn(resolvePythonExecutable(), [script, '--' + action], {
+  const control = (root, action, jobId) => {
+    // Dismiss the specific blocked job without resetting notification identity.
+    if (action !== 'dismiss-merged') seen.delete(root);
+    const child = spawn(resolvePythonExecutable(), [script, '--' + action, ...(jobId ? [jobId] : [])], {
       cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe']
     });
     let stderr = '';
@@ -146,8 +147,11 @@ function registerBackgroundCommit(vscode, context) {
         } else if (status.phase === 'blocked'
             && (previous?.phase !== 'blocked' || previous?.recoverable || previous?.id !== status.id)) {
           if (status.mergedBranch) {
-            void warnMergedBranch(vscode, repository, status.mergedBranch).catch(error =>
-              vscode.window.showErrorMessage(error.message));
+            void warnMergedBranch(vscode, repository, status.mergedBranch).then(branch => {
+              // Dismiss this specific old-branch push only after a new local
+              // branch has been created. Preserve the old local commits.
+              if (branch) control(root, 'dismiss-merged', status.id);
+            }).catch(error => vscode.window.showErrorMessage(error.message));
             continue;
           }
           const notice = blockedNotification(root, status);
@@ -181,11 +185,7 @@ function registerBackgroundCommit(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.queuePush', async (uri, options = {}) => {
     const root = vscode.Uri.from(uri?.rootUri ?? uri);
     if (root.scheme !== 'file') return { queued: false };
-    const merged = await mergedBranchStatus({ rootUri: root }, options.remote, options.branch);
-    if (merged) {
-      await warnMergedBranch(vscode, { rootUri: root }, merged);
-      return { queued: false, cancelled: true };
-    }
+    // The durable worker validates the merged-PR guard immediately before push.
     const result = await enqueue(script, root.fsPath, options, '--request-push');
     if (result.queued) {
       generationRevision.set(root.fsPath, (generationRevision.get(root.fsPath) || 0) + 1);
@@ -208,19 +208,8 @@ function registerBackgroundCommit(vscode, context) {
     const git = await extension.activate();
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected repository is unavailable.');
-    const config = vscode.workspace.getConfiguration('git', root);
-    const pushing = options.push ?? config.get('postCommitCommand') === 'push';
-    const remote = vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin');
-    // Overlap independent local status refresh with the network-backed
-    // merged-branch safeguard instead of serializing both before the commit.
-    const [, merged] = await Promise.all([
-      repository.status(),
-      pushing ? mergedBranchStatus(repository, remote) : Promise.resolve(null)
-    ]);
-    if (merged) {
-      await warnMergedBranch(vscode, repository, merged);
-      return { cancelled: true };
-    }
+    // Commit preflight uses local state; the worker guards remote publication.
+    await repository.status();
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
     if (!repository.state.indexChanges.length || options.all) {
       // Preparation reuses the fresh status and refreshes once after staging.

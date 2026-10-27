@@ -15,8 +15,7 @@ async function run() {
   const titleContexts = [];
   const errorActions = [], details = [];
   let nextChoice;
-  let merged = null;
-  const mergedWarnings = [];
+  const mergedWarnings = [], dismissedJobs = [];
   const noticeTimers = [];
   let resumes = 0;
   const root = { scheme: 'file', fsPath: '/repo' };
@@ -42,12 +41,15 @@ async function run() {
     require(name) {
       if (name === '../ui/python_runtime') return { resolvePythonExecutable: () => 'python', pythonLaunchError: e => e };
       if (name === '../branches/merged_branch') return {
-        mergedBranchStatus: async () => merged,
-        warnMergedBranch: async (_vscode, _repository, info) => { mergedWarnings.push(info); return false; }
+        warnMergedBranch: async (_vscode, _repository, info) => {
+          mergedWarnings.push(info);
+          return 'follow-up';
+        }
       };
       assert.equal(name, 'node:child_process');
       return { execFile(_exe, _args, _options, callback) { callback(null, JSON.stringify(status)); }, spawn(_exe, args) {
         if (args.includes('--resume')) resumes++;
+        if (args.includes('--dismiss-merged')) dismissedJobs.push(args.at(-1));
         const child = new EventEmitter();
         child.unref = () => {};
         child.stdout = new PassThrough();
@@ -59,7 +61,7 @@ async function run() {
             child.emit('close', 0);
             return;
           }
-          assert(args.includes('--enqueue'));
+           assert(args.includes('--enqueue'));
           assert(repository.state.indexChanges.length, 'prepare before enqueueing');
           events.push('enqueue');
           if (staleEnqueueCount > 0) {
@@ -136,12 +138,9 @@ async function run() {
   assert.equal(notices.pop(), 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
   status = {};
   const commit = commands.get('sweetiebot.queueCommit');
-  merged = { branch: 'old', number: 61, defaultBranch: 'main', remote: 'origin' };
-  assert.equal((await push(root)).cancelled, true);
-  assert.equal((await commit(root, { push: true })).cancelled, true);
-  assert.equal(mergedWarnings.length, 2);
-  assert.deepEqual(events, [], 'merged-branch warning happens before staging or enqueueing');
-  merged = null;
+  assert.equal((await push(root)).queued, false);
+  assert.equal(mergedWarnings.length, 0, 'a direct push request does not consult GitHub on the UI thread');
+  assert.deepEqual(events, [], 'no remote check happens before staging');
   const notQueued = await commit(root, { message: 'Manual', onlyIfPending: true });
   assert.equal(notQueued.queued, false);
   assert.deepEqual(events, [], 'checking an empty queue never stages or commits');
@@ -245,6 +244,20 @@ async function run() {
   poll();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(titleContexts.at(-1), false, 'title context clears when resumed push finishes');
+  // A worker-reported merged PR prompts after the commit, once per job ID.
+  status = { id: '0123456789abcdef', phase: 'blocked', branch: 'refs/heads/old',
+    mergedBranch: { branch: 'old', number: 61, defaultBranch: 'main', remote: 'origin' },
+    error: 'Branch "old" was merged in PR #61.', pushPending: false };
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(mergedWarnings.length, 1);
+  assert.deepEqual(dismissedJobs, ['0123456789abcdef']);
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(mergedWarnings.length, 1, 'the same paused job prompts only once');
+  status = {};
+  poll();
+  await new Promise(resolve => setImmediate(resolve));
   const beforeRecovery = resumes;
   status = { id: 'old', phase: 'blocked', recoverable: true, titleJobs: ['old'],
     error: 'The branch advanced; message finalization was paused.' };

@@ -59,6 +59,7 @@
         "test_branch_strip.js",
         "test_branch_strip_filter.js",
         "test_branch_strip_refresh.js",
+        "test_branch_window.js",
         "test_stacked_branch.js",
         "test_cloud_repo_sync.py",
         "test_default_branch.js",
@@ -78,7 +79,8 @@
         "test_sync_review.js"
       ],
       "syntax": [
-        "efs/merge/sync_review.js"
+        "efs/merge/sync_review.js",
+        "efs/branch_window.js"
       ]
     },
     "branch-names": {

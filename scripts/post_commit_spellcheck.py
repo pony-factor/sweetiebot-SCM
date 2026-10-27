@@ -588,7 +588,7 @@ def spellcheck_title(core: ModuleType, model: str, proposals: dict[str, tuple[by
     return DEFAULT_TITLE
 
 
-def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str], model: str = "", title: str = "") -> bool:
+def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str], model: str = "", title: str = "", requested_at_ms: int | None = None) -> bool:
     """Hand off kept spellcheck edits to VS Code without touching tracked files."""
     result = git_run(global_args, "rev-parse", "--absolute-git-dir", text=True)
     if result.returncode != 0:
@@ -603,6 +603,7 @@ def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: l
         "paths": sorted(paths),
         **({"model": model} if model else {}),
         **({"title": title} if title else {}),
+        **({"requestedAtMs": requested_at_ms} if type(requested_at_ms) is int and requested_at_ms > 0 else {}),
     }
     tree = git_run(global_args, "rev-parse", expected_head + "^{tree}", text=True)
     branch = active_branch(global_args)
@@ -689,6 +690,7 @@ def run_post_commit_job() -> int:
         expected_head = str(job["head"])
         push_gate = str(job.get("push_gate", ""))
         expected_branch = str(job.get("branch", ""))
+        requested_at_ms = job.get("requested_at_ms")
     except (KeyError, TypeError, ValueError):
         return 0
 
@@ -726,7 +728,8 @@ def run_post_commit_job() -> int:
         # staged changes, rather than drafting a special low-effort title now.
         current = review_head(global_args, expected_head, expected_branch)
         if current and index_is_clean(global_args) and proposal_is_untouched(global_args, proposals):
-            write_spellcheck_notice(global_args, current, list(proposals), model)
+            write_spellcheck_notice(global_args, current, list(proposals), model,
+                                    requested_at_ms=requested_at_ms)
     return 0
 
 
@@ -736,7 +739,8 @@ def spawn_post_commit(global_args: list[str], paths: list[str], committed_head: 
     env = os.environ.copy()
     env["SCM_TOOLKIT_COMMIT_CORE"] = core_path
     gate = read_push_gate(global_args, previous_head) if wait_for_push else None
-    job = {"global_args": global_args, "paths": paths, "head": committed_head, "branch": active_branch(global_args)}
+    job = {"global_args": global_args, "paths": paths, "head": committed_head,
+           "branch": active_branch(global_args), "requested_at_ms": int(time.time() * 1000)}
     if gate:
         job.update({"push_gate": gate["token"], "branch": gate["branch"]})
     env[SPELLCHECK_JOB_ENV] = json.dumps(job, separators=(",", ":"))
