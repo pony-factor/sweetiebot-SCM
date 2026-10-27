@@ -54,6 +54,24 @@ class CodexColorTests(unittest.TestCase):
         })
         self.assertIn('button.bg-composer-primary { background-color: #43AF49', distinct)
 
+    def test_new_chat_dot_targets_other_codex_window_shapes_without_recoloring_all_badges(self):
+        patched = codex_colors.transform('base', {
+            'codexNewChatDotColor': '#12AB34',
+        })
+        dot_rule = next(line for line in patched.splitlines()
+                        if 'circle.fill-text-info[cx="15.75"]' in line)
+        # The original narrow rule still works in supported primary webviews.
+        self.assertIn(':root[data-codex-window-type=extension] svg circle.fill-text-info', dot_rule)
+        # A secondary window may not have that root attribute or circle class.
+        self.assertIn('svg circle[cx="15.75"][cy="4"][r="3.25"]', dot_rule)
+        # A re-rendered icon may instead have an accessible new-chat name.
+        self.assertIn('button[aria-label*="new chat" i] svg circle.fill-text-info', dot_rule)
+        self.assertIn('button[title*="new chat" i] svg circle.fill-text-info', dot_rule)
+        self.assertIn('[data-testid*="new-chat" i] svg circle.fill-text-info', dot_rule)
+        self.assertIn('fill: #12AB34 !important;', dot_rule)
+        self.assertNotIn(', svg circle,', dot_rule)
+        self.assertEqual(codex_colors.transform(patched, {}, remove=True), 'base')
+
     def test_new_chat_dot_rejects_invalid_hex(self):
         with self.assertRaisesRegex(ValueError, 'hexadecimal'):
             codex_colors.transform('base', {'codexNewChatDotColor': 'red'})

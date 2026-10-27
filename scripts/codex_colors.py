@@ -82,10 +82,19 @@ def transform(css, settings, remove=False):
         'var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
         'var(--color-text-info)))'
     )
-    rules = [
-        f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
-        f'{{ fill: {dot_color} !important; }}'
-    ]
+    # This stylesheet is already Codex-only. In secondary VS Code windows
+    # the webview root can lack the extension discriminator; Codex versions
+    # can also change the notification circle's class or dimensions. Match
+    # the distinctive original dot geometry, or the icon inside a semantically
+    # labeled New Chat control, rather than recoloring every SVG badge.
+    dot_selectors = (
+        f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"]',
+        'svg circle[cx="15.75"][cy="4"][r="3.25"]',
+        'button[aria-label*="new chat" i] svg circle.fill-text-info',
+        'button[title*="new chat" i] svg circle.fill-text-info',
+        '[data-testid*="new-chat" i] svg circle.fill-text-info',
+    )
+    rules = [f'{", ".join(dot_selectors)} {{ fill: {dot_color} !important; }}']
     if settings.get('codexHideAccessLabel', False):
         # Keep the current mode in the accessibility tree via aria-describedby.
         # The icon is a sibling of the value, so it stays visible and clickable.
