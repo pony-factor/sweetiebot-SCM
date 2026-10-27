@@ -332,6 +332,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
+  assert(panel.webview.html.includes('--merge-complete-color:#ac11ff'),
+    'Merged PRs use the requested purple');
+  assert(panel.webview.html.includes('.flag.merged{color:var(--merge-complete-color);'),
+    'Merged PR badges are purple');
+  assert(panel.webview.html.includes('.event.merged{border-color:var(--merge-complete-color)}'),
+    'Merged timeline events are purple');
+  assert(panel.webview.html.includes('.bar-fill{height:100%;background:var(--merge-complete-color);'),
+    'The merge completion bar is purple');
+  assert(panel.webview.html.includes('.flag.resolved{color:var(--vscode-testing-iconPassed,'),
+    'Cleared-conflict badges retain their green state');
+  assert(panel.webview.html.includes('.event.resolved{border-color:var(--vscode-testing-iconPassed,'),
+    'Cleared-conflict timeline events retain their green state');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('runner-switch'), 'Runner uses the theme-aware sliding pill');
   assert(panel.webview.html.includes("runner.dataset.engine = value"), 'Runner animation follows the selected destination');
