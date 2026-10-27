@@ -875,8 +875,8 @@ def codex_rate_limit_script(sticker_enabled=True):
             .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
 
 
-def codex_transcript_compact_edits(js):
-    """Only compact transcript usage-limit notices without a reset time."""
+def codex_transcript_compact_edits(js, hide_reset_times=False):
+    """Compact native warnings; hiding reset times also compacts timed warnings."""
     pattern = re.compile(
         r'id:`(?P<id>localConversation\.usageLimit\.[A-Za-z.]+)`,'
         r'defaultMessage:`(?P<message>[^`]*)`'
@@ -884,7 +884,7 @@ def codex_transcript_compact_edits(js):
     edits = []
     for match in pattern.finditer(js):
         key, message = match['id'], match['message']
-        if '{resetDate}' in message:
+        if '{resetDate}' in message and not hide_reset_times:
             continue
         if '.noReset' not in key and not re.search(
             r'\b(?:usage limit|try again later|rate limit)\b', message, re.I
@@ -892,6 +892,33 @@ def codex_transcript_compact_edits(js):
             continue
         edits.append((match.group(0),
             f'id:`{key}.scmShort`,defaultMessage:`Rate limited`'))
+    return edits
+
+
+def codex_hidden_limit_banner_edits(js):
+    """Remove the native composer's timed copy before React's first paint."""
+    if 'codex.rateLimitUpsellBanner.dismiss' not in js:
+        return []
+    ident = r'[A-Za-z_$][\w$]*'
+    pattern = re.compile(
+        rf'(?P<title>{ident})=(?P<date>{ident})==null\?'
+        rf'(?P<banner>{ident})\.title:(?P=banner)\.title\.replaceAll\(`\{{time\}}`,(?P=date)\),'
+        rf'(?P<description>{ident})=(?P=date)==null\?'
+        rf'(?P=banner)\.description:(?P=banner)\.description\.replaceAll\(`\{{time\}}`,(?P=date)\),')
+    edits = [(match[0], f'{match["title"]}="Rate limited",{match["description"]}="",')
+             for match in pattern.finditer(js)]
+    # Newer Codex builds resolve backend banner copy as one object.
+    resolved = list(re.finditer(rf'let\{{title:({ident}),description:({ident})\}}=({ident}),', js))
+    for match in resolved:
+        following = js[match.end():match.end() + 8000]
+        if 'id:`codex.rateLimitUpsellBanner.dismiss`' not in following:
+            continue
+        original = match[0]
+        edits.append((original, original.replace('}=' + match[3] + ',',
+                      '}=scmToolkitCompactHiddenLimitBanner(' + match[3] + '),')))
+        ctas = re.search(rf'let ({ident})=({ident})\.ctas\.filter\(({ident})\);', following)
+        if ctas:
+            edits.append((ctas[0], f'let {ctas[1]}=scmToolkitIsHiddenLimitBanner({match[3]})?[]:{ctas[2]}.ctas.filter({ctas[3]});'))
     return edits
 
 
@@ -1020,7 +1047,9 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         )
 
     if not remove and codex_bundle_matches(js):
-        edits = codex_transcript_compact_edits(js)
+        edits = codex_transcript_compact_edits(js, hide_reset_times=hide_reset_times)
+        if hide_reset_times:
+            edits.extend(codex_hidden_limit_banner_edits(js))
         for original, replacement in edits:
             if js.count(original) != 1:
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")

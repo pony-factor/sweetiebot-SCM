@@ -6,6 +6,14 @@ function scmToolkitRemainingUsage(usage) {
     return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
 }
 
+function scmToolkitWeeklyRemainingUsage(usage) {
+    const windows = usage?.rate_limit;
+    const bucket = [windows?.primary_window, windows?.secondary_window]
+        .find(bucket => bucket?.limit_window_seconds === 7 * 24 * 60 * 60
+            && Number.isFinite(bucket.used_percent));
+    return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
+}
+
 function scmToolkitUsagePiePercent(value) {
     if (value == null || value === '') return null;
     const percent = Number(value);
@@ -228,7 +236,7 @@ function scmToolkitKeepUsageFresh(refetch) {
     const tag = 'scm-toolkit-usage-meter';
     if (customElements.get(tag)) return;
     customElements.define(tag, class extends HTMLElement {
-        static get observedAttributes() { return ['percent']; }
+        static get observedAttributes() { return ['percent', 'weekly-percent']; }
         connectedCallback() {
             if (!this.pie) {
                 this.pie = document.createElement('scm-toolkit-usage-pie');
@@ -249,6 +257,9 @@ function scmToolkitKeepUsageFresh(refetch) {
         }
         disconnectedCallback() {
             const surface = this.bar?.parentElement;
+            this.addPie?.remove();
+            this.addButton?.classList.remove('scm-toolkit-usage-add-button');
+            this.closest('button')?.classList.remove('scm-toolkit-usage-replaced');
             this.bar?.remove();
             this.bar = null;
             if (surface && !surface.querySelector('.scm-toolkit-usage-bar')) {
@@ -259,18 +270,38 @@ function scmToolkitKeepUsageFresh(refetch) {
         update() {
             const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
             this.pie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
+            this.attachToAddButton();
+            this.addPie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
             if (!this.bar) return;
-            this.bar.hidden = percent == null;
-            if (percent == null) {
+            const weekly = this.hasAttribute('weekly-percent');
+            const barPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : percent;
+            this.bar.setAttribute('aria-label', weekly ? 'Weekly Codex usage remaining' : 'Five-hour Codex usage remaining');
+            this.bar.hidden = barPercent == null;
+            if (barPercent == null) {
                 this.bar.removeAttribute('aria-valuenow');
                 return;
             }
-            this.bar.setAttribute('aria-valuenow', percent);
-            this.bar.style.width = `${percent}%`;
+            this.bar.setAttribute('aria-valuenow', barPercent);
+            this.bar.style.width = `${barPercent}%`;
             // Resolve currentColor at the same control as the pie, rather than
             // inheriting a potentially different color from the outer surface.
-            this.bar.style.color = getComputedStyle(this).color;
-            this.bar.style.background = scmToolkitUsageColor(percent);
+            this.bar.style.color = getComputedStyle(this.addButton || this).color;
+            this.bar.style.background = scmToolkitUsageColor(barPercent);
+        }
+        attachToAddButton() {
+            const surface = this.closest('[data-composer-surface-variant]');
+            const button = surface?.querySelector('button[aria-label="Add files and more"], button[data-composer-navigation-target="attachments"]');
+            if (!button) return;
+            if (this.addButton !== button || !this.addPie?.isConnected) {
+                this.addPie?.remove();
+                this.addButton?.classList.remove('scm-toolkit-usage-add-button');
+                this.addButton = button;
+                this.addPie = document.createElement('scm-toolkit-usage-pie');
+                this.addPie.setAttribute('percent', this.getAttribute('percent') ?? 'unavailable');
+                button.append(this.addPie);
+                button.classList.add('scm-toolkit-usage-add-button');
+            }
+            this.closest('button')?.classList.add('scm-toolkit-usage-replaced');
         }
     });
 })();
@@ -340,6 +371,12 @@ function scmToolkitKeepUsageFresh(refetch) {
       [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
       }
+      button.scm-toolkit-usage-add-button { position:relative; }
+      button.scm-toolkit-usage-add-button > svg { visibility:hidden; }
+      button.scm-toolkit-usage-add-button > scm-toolkit-usage-pie {
+        position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); pointer-events:none;
+      }
+      button.scm-toolkit-usage-replaced { display:none !important; }
       scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; }
       .scm-toolkit-usage-surface { position:relative; }
       .scm-toolkit-usage-bar {
@@ -364,6 +401,7 @@ function scmToolkitKeepUsageFresh(refetch) {
                 button.setAttribute('aria-label', 'Five-hour Codex usage remaining');
             }
         }
+        for (const meter of document.querySelectorAll('scm-toolkit-usage-meter')) meter.attachToAddButton?.();
         scmToolkitApplyUsageDialogRelativeTimes(document);
         scmToolkitCorrectLastMinuteUsageLabels(document);
     };

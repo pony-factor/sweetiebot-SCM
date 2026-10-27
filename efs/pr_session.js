@@ -44,7 +44,8 @@ async function launchBlockerWebSession(vscode, context, root, url, number, selec
 
 async function launchBlockerCodexSession(vscode, context, root, task) {
   return launchSession(vscode, context, root,
-    { sessionTitle: `Codex #${task.number} [${task.head}]`, blockerTask: task });
+    { sessionTitle: `Codex #${task.number} [${task.head}]`,
+      windowTitle: `Codex #${task.number} [\${activeRepositoryBranchName}]`, blockerTask: task });
 }
 
 async function launchSession(vscode, context, root, options, mergeUrl, mergeSelection) {
@@ -79,7 +80,7 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
         'workbench.browser.dataStorage': 'workspace',
         'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
-        'window.title': title,
+        'window.title': options.windowTitle || title,
       },
     }), { mode: 0o600 });
     if (mergeUrl && mergeSelection) {
