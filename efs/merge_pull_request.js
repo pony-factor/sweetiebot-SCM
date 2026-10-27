@@ -67,7 +67,7 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
   { humanMerge = humanSquashMerge, method = 'squash', gitToken } = {}) {
-  if (!['squash', 'merge'].includes(method)) throw new Error('Unknown merge method.');
+  if (!['squash', 'merge', 'local-signed-squash'].includes(method)) throw new Error('Unknown merge method.');
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||
@@ -125,7 +125,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     return { merged: true, sha: merged.sha, url: result.url, number: result.number, base, method: 'merge', authorsPreserved: true };
   }
 
-  const mergeWithHumanAuthor = async () => {
+  const mergeWithHumanAuthor = async (signLocally = false) => {
     // Use the same authenticated transport as the button and bind preparation
     // to the selected PR, rather than the read-only, already-prepared helper.
     const api = (endpoint, method = 'GET', fields = []) => {
@@ -139,7 +139,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       }
       return request(endpoint, { method, body });
     };
-    const landed = await humanMerge(repository, result.number, { api, gitToken, offerAuthorChoice: true,
+    const landed = await humanMerge(repository, result.number, { api, gitToken, offerAuthorChoice: !signLocally,
+      allowHistoryRewrite: signLocally, rewriteReason: signLocally ? 'preserve-human-author' : '', requireSignedCommit: signLocally,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
@@ -148,6 +149,15 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     return { merged: true, sha: landed.sha, url: result.url,
       number: result.number, base, author: landed.author };
   };
+  if (method === 'local-signed-squash') {
+    if (pr.mergeable !== true) throw new Error('The PR must be confirmed mergeable before starting a signed local squash.');
+    const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
+    const human = verifiedHumanAuthor(originalCommits);
+    if (pr.user.type === 'User' && human.login.toLowerCase() === pr.user.login.toLowerCase()) {
+      throw new Error('This PR already has a matching human opener; use the normal squash option without rewriting the PR branch.');
+    }
+    return mergeWithHumanAuthor(true);
+  }
   if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
     return mergeWithHumanAuthor();
   }
