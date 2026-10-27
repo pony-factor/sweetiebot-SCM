@@ -92,6 +92,14 @@ console.log('Dashboard drag, keyboard, cancellation, saved layout and resize che
 // A locally deferred PR can still be clean on GitHub. The header must agree
 // with the actionable blocker list, including after a later merge or closure.
 const dashboardHtml = fs.readFileSync(require.resolve('../efs/merge_dashboard.html'), 'utf8');
+assert.match(dashboardHtml, /\[\['web', 'ChatGPT'\], \['codex', 'Codex'\]\]/,
+  'Lindsey labels the web runner ChatGPT without changing its engine value');
+assert.doesNotMatch(dashboardHtml, /GPT web/, 'Do not restore the old runner label');
+const dashboardController = fs.readFileSync(require.resolve('../efs/merge_dashboard.js'), 'utf8');
+assert.match(dashboardController, /engine === 'web' \? 'ChatGPT' : 'Codex'/,
+  'Reaction activity identifies the ChatGPT runner');
+assert.match(dashboardController, /engine === 'web' \? 'ChatGPT' : 'Codex branch workspace'/,
+  'Manual action activity identifies the ChatGPT runner');
 const progressScript = dashboardHtml.slice(dashboardHtml.indexOf('    const merged = model.prs.filter'),
   dashboardHtml.indexOf("    byId('bar-fill')"));
 const deferred = { state: 'waiting', localReview: { text: 'Local execution stopped.' } };
