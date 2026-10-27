@@ -10,13 +10,19 @@
     const CONTROL_SELECTOR = 'button[data-composer-navigation-target="permissions"], button[data-composer-navigation-target="run-location"]';
     const RUNNING_CONTROL = /\b(stop(?:\s+(?:response|generating|task))?|interrupt|cancel\s+run)\b/i;
     let scheduled = false;
+    let enabled = true;
     let busy = false;
     const NATIVE_CLIPBOARD_MODULE = null /* scm-toolkit-native-clipboard */;
 
     async function readClipboard(load = path => import(path), module = NATIVE_CLIPBOARD_MODULE) {
         if (module) {
-            const { appServices } = await load(module);
-            return appServices.clipboard.readText();
+            try {
+                const { appServices } = await load(module);
+                if (typeof appServices?.clipboard?.readText === 'function') {
+                    return await appServices.clipboard.readText();
+                }
+            } catch {}
+            // Use the browser's public clipboard API if the internal facade moved.
         }
         return navigator.clipboard.readText();
     }
@@ -91,15 +97,15 @@
             if (doc && typeof doc.textBetween === 'function') {
                 return doc.textBetween(0, doc.content.size, '\n');
             }
-            return composer.getPersistedText();
+            if (typeof composer.getPersistedText === 'function') return composer.getPersistedText();
         }
         return 'value' in editor ? editor.value : (editor.innerText ?? editor.textContent ?? '');
     }
 
     function setText(editor, text) {
         const composer = editor.__scmToolkitComposer;
-        if (composer) {
-            if (composer.view.isDestroyed) return false;
+        if (composer && typeof composer.setPromptText === 'function') {
+            if (!composer.view || composer.view.isDestroyed) return false;
             // Update ProseMirror through Codex's own plain-text import path.
             // Browser editing commands can fail or leave React's draft stale.
             composer.setPromptText(text, { format: 'plain' });
@@ -114,15 +120,9 @@
             editor.dispatchEvent(new Event('input', { bubbles: true }));
             return readText(editor) === text;
         }
-        editor.focus({ preventScroll: true });
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        const selection = window.getSelection();
-        if (!selection) return false;
-        selection.removeAllRanges();
-        selection.addRange(range);
-        if (!document.execCommand('insertText', false, text)) return false;
-        return readText(editor).replace(/\r\n/g, '\n').trim() === text.replace(/\r\n/g, '\n').trim();
+        // A contenteditable DOM write can diverge from Codex's native draft.
+        // If its editor API changed, preserve the draft and leave sending manual.
+        return false;
     }
 
     function message(button, description) {
@@ -142,13 +142,17 @@
         busy = true;
         button.disabled = true;
         try {
+            const origin = findSurface();
+            if (!origin) return;
+            const initialText = readText(origin.editor);
             const clipboard = await readClipboard();
             if (!clipboard.trim()) {
                 message(button, 'Clipboard is empty');
                 return;
             }
             const surface = findSurface();
-            if (!surface || !surface.editor.isConnected || hasRichContext(surface.editor)) {
+            if (!surface || surface.editor !== origin.editor || !surface.editor.isConnected
+                || readText(surface.editor) !== initialText || hasRichContext(surface.editor)) {
                 message(button, 'Could not send clipboard; existing rich draft was preserved');
                 return;
             }
@@ -204,7 +208,7 @@
             }
             message(button, 'Codex is not ready; clipboard text left in composer');
         } catch (error) {
-            message(button, 'Could not read clipboard; reload VS Code and try again');
+            message(button, 'Could not prepare clipboard prompt; review the draft and send manually');
         } finally {
             busy = false;
             button.disabled = false;
@@ -241,9 +245,15 @@
     }
 
     function schedule() {
-        if (scheduled) return;
+        if (scheduled || !enabled) return;
         scheduled = true;
-        requestAnimationFrame(mount);
+        requestAnimationFrame(() => {
+            try { mount(); } catch {
+                scheduled = false;
+                enabled = false;
+                document.getElementById(BUTTON_ID)?.remove();
+            }
+        });
     }
 
     // Pure helpers are exposed only to the local Node test harness.

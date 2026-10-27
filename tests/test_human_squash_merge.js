@@ -127,9 +127,23 @@ async function main() {
     })).merged, name + ' must be accepted as valid Codex web credit');
   }
 
+  for (const [style,divider] of [['hyphens','---------'],['none','']]) {
+    const differentMessage = originalMessage.replace('\n\n__________\n\n',
+      divider ? '\n\n'+divider+'\n\n' : '\n\n');
+    const selected = fixture({
+      commits:[{...oneHuman,commit:{...oneHuman.commit,message:differentMessage}}],
+      mergedMessage:differentMessage
+    });
+    assert((await humanSquashMerge('owner/repo',12,
+      {api:selected.api,trailerSeparatorStyle:style})).merged);
+    const mismatch = fixture();
+    await assert.rejects(humanSquashMerge('owner/repo',12,
+      {api:mismatch.api,trailerSeparatorStyle:style}),/configured co-author separator/);
+    assert(!mismatch.calls.some(c=>c.method!=='GET'));
+  }
   for (const change of [
     [{ ...oneHuman, commit: { ...oneHuman.commit,
-      message: originalMessage.replace('__________', '---------') } }, /ten-underscore separator/],
+      message: originalMessage.replace('__________', '---------') } }, /configured co-author separator/],
     [{ ...oneHuman, commit: { ...oneHuman.commit, message: 'Different title' } }, /exact PR title/],
     [{ ...oneHuman, commit: { ...oneHuman.commit, message: '🐛 Fix placement (#12)' } }, /required Codex Web credit/],
     [{ ...oneHuman, author: { login: 'codex-pony[bot]', type:'Bot' } }, /No verified original human/],

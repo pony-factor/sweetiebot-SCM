@@ -2,19 +2,20 @@
 
 const { validateSelection } = require('./merge_dashboard');
 const { createMergeHandoff } = require('./merge_handoff');
-const { validateResolution, resolutionInstructions } = require('./merge_resolution');
+const { validateResolution, validateSyncResolution, resolutionInstructions } = require('./merge_resolution');
 const SHA = /^[a-f0-9]{40}$/i;
+const { orderMergeCandidates } = require('./merge_order');
 
 async function createMergeBatch(rawSelection, { api, execute, makePrompt, destination,
-  onResult = async () => {}, onState = async () => {}, onProgress = () => {}, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
+  onResult = async () => {}, onState = async () => {}, onProgress = () => {}, reviewOrder = 'Oldest first', branchOnly = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
   const original = validateSelection(rawSelection);
   const entries = new Map(original.pullRequests.map(pr => [pr.number, { ...pr, attempts: 0 }]));
-  const merged = [], deferred = [], history = [], bridges = [];
+  const merged = [], prepared = [], deferred = [], history = [], bridges = [];
   let round = 0, emptyRounds = 0, disposed = false, rateLimit;
 
-  const state = () => ({ ...(rateLimit ? {rateLimit} : {}), repository: original.repository, pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], deferred: [...deferred], history: [...history] });
+  const state = () => ({ ...(rateLimit ? {rateLimit} : {}), repository: original.repository, pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], ...(branchOnly ? {prepared:[...prepared]} : {}), deferred: [...deferred], history: [...history] });
   const remaining = () => [...entries.values()].filter(pr => !merged.some(item => item.number === pr.number)
-    && !deferred.some(item => item.number === pr.number));
+    && !deferred.some(item => item.number === pr.number) && !prepared.some(item => item.number === pr.number));
 
   async function refreshRemaining() {
     const pending = remaining();
@@ -42,13 +43,23 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         pr.initialMergeable = fresh.mergeable;
       }
       pr.mergeable = fresh.mergeable;
+      pr.mergeableState = fresh.mergeable_state;
+      if (Number.isFinite(fresh.additions) && Number.isFinite(fresh.deletions)) {
+        pr.changeSize = fresh.additions + fresh.deletions;
+      }
+      pr.waitingFor = [...entries.values()].filter(parent => parent.number !== pr.number && parent.head === pr.base
+        && !merged.some(item => item.number === parent.number)).map(parent => parent.number);
       pr.baseAdvanced = pr.baseSha !== pr.initialBaseSha;
     }
   }
 
   function validateRound(input, selection) {
-    validateResolution(input, selection);
+    (branchOnly ? validateSyncResolution : validateResolution)(input, selection);
     if (input.results.length > 1) throw Error('Return one PR per round so the next resolution uses the actual merged base.');
+    for (const item of input.results) {
+      const pr = entries.get(item.number);
+      if (pr.waitingFor?.length) throw Error('Merge the selected ancestor before its dependent PR.');
+    }
     if (input.deferred !== undefined && (!Array.isArray(input.deferred) || input.deferred.length > selection.pullRequests.length)) {
       throw Error('Invalid deferred PR decisions.');
     }
@@ -79,7 +90,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       return null;
     }
     round++;
-    const snapshots = remaining().map(pr => ({ ...pr }));
+    const snapshots = orderMergeCandidates(remaining()).map(({ attempts, ...pr }) => ({ ...pr }));
     const selection = validateSelection({ repository: original.repository, pullRequests: snapshots });
     let submitted;
     const bridge = await createMergeHandoff(selection, {
@@ -111,14 +122,15 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             // Only our verified executor can refresh an authorized head.
             pr.headSha = item.sha;
           }
-          if (item.status === 'synced' && item.unchanged === true) deferred.push({ number: pr.number,
+          if (branchOnly && item.status === 'synced') prepared.push(detail);
+          if (!branchOnly && item.status === 'synced' && item.unchanged === true) deferred.push({ number: pr.number,
             reason: item.reason || 'Nothing needed synchronization; do not retry the unchanged branch.' });
           if (item.status === 'checks_failed') {
             pr.checkFailures = (pr.checkFailures || 0) + 1;
             // Give the next AI round the verified failing head before deferring.
             if (pr.checkFailures >= 2 || pr.attempts >= 3) deferred.push({ number: pr.number, reason: item.reason });
           }
-          else if (!item.merged && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number,
+          else if (!item.merged && !(branchOnly && item.status === 'synced') && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number,
             reason: item.reason || 'Repeated integration attempts require inspection.' });
         }
         // Empty results cannot silently abandon remaining routine integration.
@@ -134,13 +146,15 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       reason: item.reason?.slice(0, 600), conflictPaths: item.conflictPaths?.slice(0, 20) });
     const previous = history.slice(-3).map(compact);
     const instructions = [
+      ...(branchOnly ? ['BRANCH-ONLY EXECUTION: This is an automatic PR repair loop. Every result MUST use operation:"sync". Main is read-only; merging and closing the PR are not authorized. A needs_resolution result automatically starts the next GPT round with the named conflicted files and current-base snapshots. Inspect both intentions and return the complete resolution patch. A synced result completes this repair task without merging the PR. These restrictions override all merge-oriented instructions below.'] : []),
       'AUTOMATIC SEQUENTIAL BULK MERGE — ROUND ' + round + ': Work only on the remaining selected PRs below. Return at most ONE PR for local execution per round. Do not merge any PR directly through GitHub tools: the local runner preserves attribution, integrates the latest base, waits for checks, and verifies the destination commit. Its result automatically starts the next round.',
-      'QUEUE ORDER: Follow the supplied oldest-first selected order, preserving ancestor-before-descendant stack ordering. Return the oldest eligible remaining PR for local execution; skip genuine blockers and continue in order rather than choosing the newest PR.',
+      'INTELLIGENT MERGE ORDER: Follow the refreshed priority order below. Selected ancestors must merge before their descendants; never execute a PR with waitingFor ancestors. Prefer clean, ready PRs over unknown readiness, conflicts, and failing or blocked checks. Among equally ready PRs, avoid repeating a stuck attempt while other work can progress, prefer ancestors that unlock selected children, then smaller integrations. Lane direction (' + reviewOrder + ') breaks remaining ties only. This priority overrides any global oldest-first instruction. Reassess after each verified result; preserve merged intent and never bypass checks. If code inspection reveals a feature dependency beyond the branch stack, resolve that selected dependency first or defer the dependent PR with the exact reason.',
       'ROUTINE INTEGRATION POLICY: Earlier successful merges in THIS batch are authoritative base changes, not a reason to stop. Infer clear ordering from their verified changes and the remaining PR’s feature intent. Preserve what is now on main and add the remaining proposed features. Use common ancestor + current base + PR head when reconciling overlaps; never restore outdated code just because it appears in an old PR diff. Try the local three-way Git route first with patch:null; for needs_resolution, inspect the overlapping files and provide the complete current-base resolution patch. Do this autonomously when both intentions are clear. A Git textual conflict, base advancement, or old failing checks alone does not require human help.',
       'Verified completed merge intent: ' + JSON.stringify(merged.map(compact)),
       'Recent local integration results: ' + JSON.stringify(previous),
       'Refreshed selected snapshots: ' + JSON.stringify(snapshots.map(pr => ({ number: pr.number, title: pr.title,
         head: pr.head, headSha: pr.headSha, base: pr.base, baseSha: pr.baseSha,
+        mergeable: pr.mergeable, mergeableState: pr.mergeableState, waitingFor: pr.waitingFor, changeSize: pr.changeSize,
         initiallyMergeable: pr.initialMergeable, baseAdvancedByEarlierWork: pr.baseAdvanced }))),
       'Reassess remaining PRs after every merge. Do not treat checks from the old PR head as checks on the integrated tree. Local preparation is allowed to incorporate the new base; merging still requires the resulting head’s checks to pass. On the first fresh check failure, inspect the actual failing job logs and attempt the smallest behavior-preserving repair through the existing complete current-base patch handoff with repairChecks:true (supporting regression test files are permitted only after the runner independently confirms checks failed on that exact head). Do not resubmit the same failing tree or merely rerun deterministic failures. Retain the PR feature and passing-check gate. Defer with the exact limitation if a repair exceeds the allowed PR file set, requires unavailable tools or authorization, or changes ambiguous behavior. A second failed repair is deferred; never loop indefinitely. Ambiguous behavior choices remain blockers. Update existing tagged reports rather than duplicating them.',
       'For a genuine non-routine blocker, include deferred:[{"number":123,"headSha":"exact selected head","kind":"human_review|capability|failed_checks","reason":"specific ambiguity or actual failure"}] in the versioned result JSON. Do not defer routine integration merely because it needs a new Git resolution. Continue unrelated remaining PRs. An unrelated external head/title/base-branch change is outside this batch’s snapshot and must not be overwritten.',

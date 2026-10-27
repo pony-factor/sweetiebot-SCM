@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, launchBlockerAction } = require('./merge_blocker_actions');
+const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./merge_blocker_actions');
 const { createReactionChoices } = require('./merge_reaction_choices');
 const { createMergeDashboardPersistence } = require('./merge_dashboard_persistence');
 const { createLindseyReadFetch } = require('./github_read_api');
@@ -343,7 +343,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository, workers,
       rateLimitRetryAt: rateLimitedUntil,
-      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
@@ -541,7 +541,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       let target;
       try { target = new URL(message.url); } catch { return; }
       if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) return;
-      return vscode.env.openExternal(vscode.Uri.parse(target.href));
+      return require('./pr_workflows').openWorkflow(vscode, target.href, { openToSide: true });
     }
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove the retired Sweetiebot Codex composer patch from installed extensions."""
+"""Reversible Sweetiebot composer controls for Codex webview bundles."""
 
 from __future__ import annotations
 
@@ -15,11 +15,27 @@ LAYOUT_END = '\n/* scm-toolkit-codex-inline-location:end */\n'
 PASTE_START = '\n/* scm-toolkit-codex-clipboard:start */\n'
 PASTE_END = '\n/* scm-toolkit-codex-clipboard:end */\n'
 PASTE_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/clipboard-submit.js'
+WING_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/send-wing.js'
+WING_START = '\n/* scm-toolkit-codex-send-wing:start */\n'
+WING_END = '\n/* scm-toolkit-codex-send-wing:end */\n'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/composer-controls.js'
 PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
 PLACEHOLDER_END = '\nscm-toolkit-codex-placeholders:end */\n'
 PLACEHOLDER_DISPLAY_START = '\n/* scm-toolkit-codex-placeholder-display:start */\n'
 PLACEHOLDER_DISPLAY_END = '\n/* scm-toolkit-codex-placeholder-display:end */\n'
+
+
+def runtime_payload(name: str, payload: str) -> str:
+    """Defer optional DOM work so it cannot abort native module evaluation."""
+    label = json.dumps('Sweetiebot: optional ' + name + ' unavailable')
+    return (";(() => {\n"
+            "const report = () => { try { console.warn(" + label + "); } catch {} };\n"
+            "const start = () => { try {\n" + payload + "\n} catch { report(); } };\n"
+            "try { if (typeof document === 'undefined') return;\n"
+            "const defer = () => setTimeout(start, 0);\n"
+            "if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', defer, {once:true});\n"
+            "else defer(); } catch { report(); }\n"
+            "})();\n")
 
 
 def transform_placeholders(source: str, settings: dict) -> str:
@@ -48,7 +64,7 @@ def transform_placeholders(source: str, settings: dict) -> str:
         value = str(settings.get(name, "")).strip()
         if not value:
             continue
-        pattern = (r'[\w$]+\.formatMessage\(\{id:`' + re.escape(key)
+        pattern = (r'(?<![\w$])[\w$]+\.formatMessage\(\{id:`' + re.escape(key)
                    + r'`,defaultMessage:`(?:\\.|[^`])*`,description:`(?:\\.|[^`])*`\}\)')
         matches = list(re.finditer(pattern, source))
         if len(matches) != 1:
@@ -66,7 +82,7 @@ def transform_placeholders(source: str, settings: dict) -> str:
                 for name in ('codexNewChatPlaceholder', 'codexFollowUpPlaceholder')
                 if str(settings.get(name, '')).strip()
             ], ensure_ascii=True))
-        source += PLACEHOLDER_DISPLAY_START + ';\n' + payload + PLACEHOLDER_DISPLAY_END
+        source += PLACEHOLDER_DISPLAY_START + runtime_payload('placeholders', payload) + PLACEHOLDER_DISPLAY_END
     return source
 
 
@@ -91,17 +107,18 @@ def transform(source: str) -> str:
     return source
 
 
-def clipboard_module(bundle_path: Path) -> str:
+def clipboard_module(bundle_path: Path) -> str | None:
     """Resolve Codex's native app-service facade without depending on its build hash."""
-    matches = [path for path in bundle_path.parent.glob('index.extension-*.js')
+    matches = [path for path in bundle_path.parent.glob('*.js')
                if re.search(r'export\{[^}]*\bas appServices\b', path.read_text())]
     if len(matches) != 1:
-        raise ValueError('Codex native clipboard service could not be identified uniquely.')
+        # Browser clipboard remains available on an explicit user action.
+        return None
     return './' + matches[0].name
 
 
 def transform_layout(source: str, inline: bool = True, paste_button: bool = False,
-                     native_clipboard_module: str | None = None) -> str:
+                     native_clipboard_module: str | None = None, wing_button: bool = False) -> str:
     """Place the native computer/usage control beside access without changing React source."""
     source = transform(source)
     if source.count(LAYOUT_START) != source.count(LAYOUT_END) or source.count(LAYOUT_START) > 1:
@@ -117,32 +134,45 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
         payload, after = rest.split(PASTE_END, 1)
         source = before + after
         metadata = re.search(r'^/\* edits:(.*?) \*/$', payload, re.MULTILINE)
-        for original, replacement in reversed(json.loads(metadata[1]) if metadata else []):
+        if metadata is None:
+            raise ValueError('Codex clipboard patch is missing restoration metadata.')
+        for original, replacement in reversed(json.loads(metadata[1])):
             if source.count(replacement) != 1:
                 raise ValueError('Installed Codex clipboard editor hook changed.')
             source = source.replace(replacement, original, 1)
-    if 'composer.placeholder.localFollowUp.locally' in source:
-        if inline:
-            source += LAYOUT_START + ';\n' + ASSET.read_text() + LAYOUT_END
+    is_composer = 'composer.placeholder.localFollowUp.locally' in source
+    if source.count(WING_START) != source.count(WING_END) or source.count(WING_START) > 1:
+        raise ValueError('Incomplete Codex send wing patch.')
+    if WING_START in source:
+        before, rest = source.split(WING_START, 1)
+        _, after = rest.split(WING_END, 1)
+        source = before + after
+    editor_anchor = r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}'
+    if is_composer or re.search(editor_anchor, source):
+        if wing_button and is_composer:
+            source += WING_START + ';\n' + runtime_payload('send wing', WING_ASSET.read_text()) + WING_END
+        if inline and is_composer:
+            source += LAYOUT_START + ';\n' + runtime_payload('composer layout', ASSET.read_text()) + LAYOUT_END
         if paste_button:
             edits = []
-            if native_clipboard_module:
-                anchors = list(re.finditer(
-                    r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}', source))
-                if len(anchors) != 1:
-                    raise ValueError('Codex native clipboard editor could not be identified uniquely.')
+            anchors = list(re.finditer(editor_anchor, source))
+            if len(anchors) > 1:
+                raise ValueError('Codex native clipboard editor could not be identified uniquely.')
+            if anchors:
                 original = anchors[0][0]
-                replacement = original[:-1] + ',this.view.dom.__scmToolkitComposer=this}'
+                replacement = original[:-1] + ';try{this.view.dom.__scmToolkitComposer=this}catch{}}'
                 source = source.replace(original, replacement, 1)
                 edits.append([original, replacement])
             payload = PASTE_ASSET.read_text().replace(
                 'null /* scm-toolkit-native-clipboard */',
                 json.dumps(native_clipboard_module) + ' /* scm-toolkit-native-clipboard */')
-            source += PASTE_START + ';\n/* edits:' + json.dumps(edits) + ' */\n' + payload + PASTE_END
+            if not is_composer:
+                payload = ''
+            source += PASTE_START + ';\n/* edits:' + json.dumps(edits) + ' */\n' + (runtime_payload('clipboard control', payload) if payload else '') + PASTE_END
     return source
 
 
-def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False):
+def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False, wing_button: bool = False):
     """Yield only Codex webview bundles that still contain the retired patch."""
     candidates = (
         [Path(extension_path)]
@@ -150,14 +180,14 @@ def patch_files(extension_path: Path | None = None, inline: bool | None = None, 
         else sorted((Path.home() / ".vscode/extensions").glob("openai.chatgpt-*"), reverse=True)
     )
     for candidate in candidates:
-        for path in (candidate / "webview/assets").glob("app-initial-*.js"):
+        for path in (candidate / "webview/assets").glob("*.js"):
             original = path.read_text()
             if inline is None:
                 if START in original:
                     yield path, original, transform(original)
-            elif START in original or LAYOUT_START in original or PASTE_START in original or 'composer.placeholder.localFollowUp.locally' in original:
+            elif START in original or LAYOUT_START in original or PASTE_START in original or WING_START in original or 'id:`composer.placeholder.localFollowUp.locally`' in original or (paste_button and 'this.dictation=new ' in original and re.search(r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}', original)):
                 module = clipboard_module(path) if paste_button else None
-                yield path, original, transform_layout(original, inline, paste_button, module)
+                yield path, original, transform_layout(original, inline, paste_button, module, wing_button)
 
 
 def repair(extension_path: Path | None = None) -> list[Path]:

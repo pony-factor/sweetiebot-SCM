@@ -58,7 +58,8 @@ async function main() {
       handled = true;
       assert.equal(repo, 'owner/repo');
       assert.equal(number, 12);
-      assert.deepEqual(options, { allowHistoryRewrite: true });
+      assert.deepEqual(options, { allowHistoryRewrite: false },
+        'The one-click squash button must never approve a force push');
       return { merged: true, sha: 'c'.repeat(40), author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
     }
   });
@@ -66,6 +67,18 @@ async function main() {
   assert.equal(botResult.merged, true);
   assert.equal(botOpened.calls.some(args => args.includes('--method')), false,
     'A bot opener must not reach the bot-authored squash merge endpoint');
+  const blockedRewrite = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
+  } });
+  await assert.rejects(squashMergePullRequest(url, blockedRewrite.execute, undefined, {
+    ...quickPoll, humanMerge: async (_repo, _number, options) => {
+      assert.equal(options.allowHistoryRewrite, false);
+      return { merged: false, reason: 'No-force-push policy: use Merge preserving commits.' };
+    }
+  }), /No-force-push policy/);
+  assert.equal(blockedRewrite.calls.some(args => args.includes('--method')), false,
+    'Blocked attribution must not silently attempt a native squash or rewrite');
+
   const waitingBot = mockMerge({ stackMetadata: {
     stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
   } });
@@ -77,7 +90,9 @@ async function main() {
   } });
   let usedHumanHelper = false;
   const protectedAttribution = await squashMergePullRequest(url, anotherHumanOpener.execute, undefined, {
-    ...quickPoll, humanMerge: async () => {
+    ...quickPoll, humanMerge: async (repo, number, options) => {
+      assert.deepEqual(options, { allowHistoryRewrite: false },
+        'Different-actor PRs must not authorize history rewrites');
       usedHumanHelper = true;
       return { merged: true, sha: 'c'.repeat(40),
         author: { name: 'John Wooten', email: 'noreply@wooten.link' } };

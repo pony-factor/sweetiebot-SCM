@@ -11,6 +11,18 @@ reset=stamp==null?null:format(stamp),cache[0]=bucket.resetsAt;
 
 
 class CodexUsageTests(unittest.TestCase):
+    def test_usage_meter_and_native_local_mode_are_reversible(self):
+        original = FIXTURE + '''function mode(e){let t=cache(3),{composerMode:n,setComposerMode:r}=e,[open,setOpen]=(0,React.useState)(false);return n}'''
+        for cloud in (False, True):
+            patched = codex_usage.transform(original, pie_indicator=True, cloud_tasks=cloud)
+            self.assertIn('jsx)(`scm-toolkit-usage-meter`,{percent})', patched)
+            self.assertIn('e=scmToolkitLocalComposerProps(e,React.useEffect);', patched)
+            self.assertIn(f'const scmToolkitCloudTasks = {str(cloud).lower()}', patched)
+            self.assertEqual(codex_usage.transform(patched, pie_indicator=True, cloud_tasks=cloud), patched)
+            self.assertEqual(codex_usage.transform(patched, enabled=False), original)
+        with self.assertRaisesRegex(ValueError, 'native execution mode controls'):
+            codex_usage.transform(original.replace('React.useState', 'React.futureState'), pie_indicator=True)
+
     def test_reset_customizations_are_idempotent_and_reversible(self):
         for hide in (False, True):
             with self.subTest(hide=hide):

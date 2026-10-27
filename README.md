@@ -167,7 +167,7 @@ A **ChatGPT project for PR and pony research** is optional. When a branch name i
 
 ### Review, conflict resolution, and merge with Lindsey
 
-Sweetiebot's **Lindsey** integration provides individual and bulk PR review/merge surfaces, a progress dashboard, and an activity timeline. The GitHub Pull Requests view can show a quick squash-merge control; **Merge All** and selected bulk operations launch a dedicated ChatGPT workspace. Selecting PRs or submitting merge requests is not itself a completed merge.
+Sweetiebot's **Lindsey** integration provides individual and bulk PR review/merge surfaces, a progress dashboard, and an activity timeline. **Settings → Pull requests → Squash co-author separator** selects the default ten-underscore divider (`__________`), the conventional nine-hyphen divider (`---------`), or **None** (a standard blank line before Git trailers). The GitHub Pull Requests view can show a quick squash-merge control; **Merge All** and selected bulk operations launch a dedicated ChatGPT workspace. Selecting PRs or submitting merge requests is not itself a completed merge.
 
 A safe merge must recheck the **actual PR head SHA, intended base branch, checks, protection rules, attribution, and stack relationships**. Compatible conflicts can be resolved on the PR branch. If a design decision cannot be resolved without the maintainer, leave that PR open and continue only with independent eligible work. Never assume that every PR targets `main` or that a head/base chain is registered as a native stack. Check the dashboard and GitHub for a verified result before cleanup.
 
@@ -189,7 +189,7 @@ EFS is a **local file index**, not a complete historical archive of every ChatGP
 
 ## Codex, browser, and window controls
 
-Sweetiebot also has settings for supported Codex composer controls, usage-limit displays, promotion cards, dictation visibility, sidebar labels, and **Keep awake while Codex works**. Other controls affect Integrated Browser blank-tab URLs, browser tab handling, window labels, notifications, and title-bar buttons. Availability depends on the installed VS Code/Codex build and whether the corresponding patch anchors are supported.
+Sweetiebot also has settings for supported Codex composer controls, usage-limit displays, promotion cards, dictation visibility, sidebar labels, and **Keep awake while Codex works**. **Codex → Customization → Pegasus wing Send icon** replaces the Send arrow with a white-outline SVG wing by default. Its color follows the VS Code theme or the existing **Send button icon** override; Queue and Stop keep their native appearance. Disable it to restore the arrow. Other controls affect Integrated Browser blank-tab URLs, browser tab handling, window labels, notifications, and title-bar buttons. Availability depends on the installed VS Code/Codex build and whether the corresponding patch anchors are supported.
 
 Prefer the live settings page for the current option names and defaults rather than old release-specific instructions.
 

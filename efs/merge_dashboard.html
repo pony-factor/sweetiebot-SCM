@@ -74,7 +74,25 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
 .panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
-.blocker-choice{margin-top:12px;white-space:normal}.blocker-choice .muted{margin-top:4px}
+.blocker-choice{margin-top:10px;padding-top:10px;border-top:1px solid var(--vscode-widget-border,#555);white-space:normal}
+.blocker-choice .muted{margin-top:5px}
+.blocker-choice button{min-height:36px;max-width:100%;text-align:left}
+.action-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.action-heading h3{margin:0}
+.runner-control{display:flex;align-items:center;gap:9px;margin-left:auto}
+.runner-switch{position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:182px;padding:3px;border:1px solid var(--vscode-widget-border,#666);border-radius:999px;background:var(--vscode-input-background,var(--vscode-editorWidget-background))}
+.runner-switch::before{content:"";position:absolute;z-index:0;left:3px;top:3px;width:calc((100% - 6px)/2);height:calc(100% - 6px);border-radius:999px;background:var(--vscode-button-background,#0e639c);transition:transform 190ms ease}
+.runner-switch[data-engine="codex"]::before{transform:translateX(100%)}
+.runner-option{position:relative;z-index:1;border:0;border-radius:999px;background:transparent;padding:5px 8px;min-height:29px;color:var(--vscode-foreground);font-weight:500;text-align:center;white-space:nowrap}
+.runner-option[aria-pressed="true"]{color:var(--vscode-button-foreground,#fff);font-weight:650}
+.runner-option:focus-visible{outline-offset:2px}
+.action-intro{margin:10px 0 4px;white-space:normal}
+.action-primary{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background,#0e639c);color:var(--vscode-button-foreground,#fff);border-radius:7px;padding:10px 14px;font-weight:650;font-size:13px;width:100%}
+.action-primary:hover{background:var(--vscode-button-hoverBackground,var(--vscode-button-background,#1177bb))}
+.action-choice{display:block;width:100%;padding:8px 12px}
+.action-recommended{font-weight:650;color:var(--vscode-descriptionForeground)}
+.workspace-only[hidden]{display:none}
+@media(prefers-reduced-motion:reduce){.runner-switch::before{transition:none}}
 .panel h3{margin:0 0 8px}
 .markdown-panel{white-space:normal}
 .markdown-content{white-space:normal;overflow-wrap:anywhere;line-height:1.55}
@@ -365,6 +383,7 @@ __RATE_LIMIT_FORMATTER__
           link.href = comment.url;
           link.addEventListener('click', event => {
             event.preventDefault();
+            event.stopPropagation();
             dispatch('open-link', undefined, comment.url);
           });
         }
@@ -389,32 +408,48 @@ __RATE_LIMIT_FORMATTER__
     if (pr.report?.text) showTextPanel(parent, 'AI explanation · GitHub report', pr.report.text, '', true);
     if (!localInfo && !pr.report?.text && !pr.localReview?.text && !pr.review?.text && !pr.analysis?.length) showTextPanel(parent, 'AI explanation', '',
       'No explanation available yet.', true);
-    for (const [heading, actions] of [['Decision needed', pr.blockerOptions], ['Manual actions', pr.manualActions]]) {
-      if (!actions?.length) continue;
-      const choices = show('section', 'panel', undefined, parent);
-      show('h3', '', heading, choices);
-      const destination = show('label', 'actions', 'Run with ', choices);
-      const engine = show('select', '', undefined, destination);
-      engine.setAttribute('aria-label', 'Implementation destination');
-      for (const [value, label] of [['web', 'GPT web'], ['codex', 'Codex branch workspace']]) {
-        const option = show('option', '', label, engine);
-        option.value = value;
+    const plan = pr.actionPlan;
+    if (plan?.actions?.length || plan?.workspaceAction) {
+      const choices = show('section', 'panel action-panel', undefined, parent);
+      const heading = show('div', 'action-heading', undefined, choices);
+      show('h3', '', plan.title, heading);
+      const destination = show('div', 'runner-control', undefined, heading);
+      show('span', 'muted', 'Run with', destination);
+      const runner = show('div', 'runner-switch', undefined, destination);
+      runner.dataset.engine = actionEngine;
+      runner.setAttribute('role', 'group');
+      runner.setAttribute('aria-label', 'Run with');
+      const runnerButtons = [];
+      let workspaceRow;
+      for (const [value, label] of [['web', 'GPT web'], ['codex', 'Codex']]) {
+        const button = show('button', 'runner-option', label, runner);
+        button.type = 'button';
+        button.setAttribute('aria-pressed', String(actionEngine === value));
+        runnerButtons.push([value, button]);
+        button.addEventListener('click', () => {
+          actionEngine = value;
+          runner.dataset.engine = value;
+          for (const [engine, control] of runnerButtons) control.setAttribute('aria-pressed', String(engine === value));
+          if (workspaceRow) workspaceRow.hidden = value !== 'codex';
+        });
       }
-      engine.value = actionEngine;
-      engine.addEventListener('change', () => { actionEngine = engine.value; });
-      for (const option of actions) {
-        const row = show('div', 'blocker-choice', undefined, choices);
+      if (plan.description) show('p', 'muted action-intro', plan.description, choices);
+      const addAction = (option, extraClass = '') => {
+        const row = show('div', 'blocker-choice' + (extraClass ? ' ' + extraClass : ''), undefined, choices);
         const emoji = { '+1': '👍', heart: '❤️', rocket: '🚀' }[option.reaction];
-        const button = show('button', 'secondary', (emoji ? emoji + ' ' : '') + option.label, row);
+        const style = plan.kind === 'checks' && option.id === 'fix-checks' ? 'action-primary' : 'secondary action-choice';
+        const button = show('button', style, (emoji ? emoji + ' ' : '') + option.label, row);
         button.disabled = Boolean(pr.actionPending);
         button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
           headSha: pr.currentHead, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
         if (option.description) show('div', 'muted', option.description, row);
-        if (option.recommended) show('div', 'muted', 'Recommended · see the report for reasoning and tradeoffs', row);
-        else if (option.suggested) show('div', 'muted', 'Suggested in the blocker report', row);
-        const instructions = show('details', '', undefined, row);
-        show('summary', 'muted', 'View instructions', instructions);
-        show('p', '', option.prompt, instructions);
+        if (option.recommended) show('div', 'action-recommended', 'Recommended · ' + (option.description || 'Based on the current review'), row);
+        return row;
+      };
+      for (const option of plan.actions || []) addAction(option);
+      if (plan.workspaceAction) {
+        workspaceRow = addAction(plan.workspaceAction, 'workspace-only');
+        workspaceRow.hidden = actionEngine !== 'codex';
       }
       if (pr.actionPending) show('p', 'muted', 'Opening the requested task…', choices);
     }
@@ -515,6 +550,7 @@ __RATE_LIMIT_FORMATTER__
         content.href = event.url;
         content.addEventListener('click', click => {
           click.preventDefault();
+          click.stopPropagation();
           dispatch('open-link', undefined, event.url);
         });
       }

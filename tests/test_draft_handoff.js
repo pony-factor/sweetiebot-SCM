@@ -147,6 +147,24 @@ const {createDraftHandoff} = require('../efs/draft_handoff');
     assert.equal((await choicePost('/merge-history')).status, 200);
     await choicePost('/merge-history');
     assert.equal(preserved, 1, 'A replay cannot merge twice');
+    const signerId='99999999-2222-4333-8444-666666666666';
+    let signed=0;
+    handoff.register(signerId,{autoPublish:true,
+      onMerge:async()=>{throw Object.assign(Error('Original bot authorship needs a method choice.'),{code:'SQUASH_AUTHOR_CHOICE_REQUIRED'});},
+      onMergeLocalSigned:async()=>{signed++;return {merged:true,sha:'c'.repeat(40)};}
+    });
+    const signerUrl=handoff.origin+'/kefania-draft/'+signerId;
+    const signerPost=suffix=>fetch(signerUrl+suffix,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
+    await fetch(signerUrl+'/draft',{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body});
+    assert.equal((await signerPost('/merge-local-signed')).status,409,'No local signed rewrite before attribution choice');
+    assert.equal(signed,0);
+    assert.equal((await signerPost('/merge')).status,409);
+    assert.equal((await (await fetch(signerUrl+'/state')).json()).localSignedMergeAvailable,true);
+    assert.equal((await fetch(signerUrl+'/merge-local-signed')).status,405,'GET never triggers a signer');
+    assert.equal((await signerPost('/merge-local-signed')).status,200);
+    assert.equal(signed,1,'Signed local squash is invoked only on the explicit authorized request');
+    assert.equal((await signerPost('/merge-local-signed')).status,200);
+    assert.equal(signed,1,'A replay cannot sign and rewrite twice');
     const blockerId='77777777-2222-4333-8444-555555555555';
     let helped = 0;
     handoff.register(blockerId, { onMerge: async () => { throw Error('Resolve the overlapping edits against the current base, preserving both intentions.'); },

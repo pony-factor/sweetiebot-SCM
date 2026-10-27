@@ -1,0 +1,27 @@
+/* Follow semantic composer attributes across hashed CSS module updates. */
+:root[data-codex-window-type=extension] [data-composer-surface-variant]:not([data-composer-surface-variant=document]) {
+  --composer-border-radius: 8px !important;
+  --composer-surface-border-radius: 8px !important;
+  --composer-single-line-radius: 8px !important;
+  --composer-layout-surface-shadow: none !important;
+  --composer-layout-surface-backdrop-filter: none !important;
+  --composer-layout-surface-background: var(--vscode-input-background, var(--color-surface-primary)) !important;
+  --padding-composer-input: 0 12px !important;
+  --spacing-composer-input-footer: 4px !important;
+  --spacing-composer-footer-bottom: 6px !important;
+}
+:root[data-codex-window-type=extension] :is(
+  [data-composer-surface-variant]:not([data-composer-surface-variant=document]):not([data-composer-utility-bar-variant=home]),
+  [data-composer-surface-variant]:not([data-composer-surface-variant=document])[data-composer-utility-bar-variant=home] [data-composer-body]
+) {
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground, #888888) 22%, transparent) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  corner-shape: round !important;
+}
+:root[data-codex-window-type=extension] :is(
+  [data-composer-surface-variant]:not([data-composer-surface-variant=document]):not([data-composer-utility-bar-variant=home]),
+  [data-composer-surface-variant]:not([data-composer-surface-variant=document])[data-composer-utility-bar-variant=home] [data-composer-body]
+):focus-within {
+  border-color: var(--vscode-focusBorder, var(--color-text-info)) !important;
+}

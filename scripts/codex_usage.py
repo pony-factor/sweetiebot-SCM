@@ -11,8 +11,28 @@ HIDE_ASSET = ASSET.with_name('hide-reset-times.js')
 IDENTIFIER = r'[A-Za-z_$][\w$]*'
 
 
+def mode_edits(js):
+    """Use native controlled mode props and the component's React effect API."""
+    edits = []
+    modes = re.finditer(rf'function(?: {IDENTIFIER})?\(({IDENTIFIER})\)\{{'
+                        rf'let [^;]{{0,120}}\{{composerMode:[^{{}}]*setComposerMode:'
+                        rf'[^{{}}]*\}}=\1', js)
+    for mode in modes:
+        segment = js[mode.end():mode.start() + 2500]
+        boundary = re.search(rf'function(?: {IDENTIFIER})?\(', segment)
+        if boundary:
+            segment = segment[:boundary.start()]
+        react = re.search(rf'\(0,({IDENTIFIER})\.useState\)', segment)
+        if react:
+            replacement = mode[0].replace('{', '{' + f'{mode[1]}=scmToolkitLocalComposerProps({mode[1]},{react[1]}.useEffect);', 1)
+            edits.append((mode[0], replacement))
+    if 'composerMode:' in js and 'setComposerMode:' in js and not edits:
+        raise ValueError('Unsupported Codex build: native execution mode controls could not be identified.')
+    return edits
+
+
 def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, reset_countdown=True,
-              reset_time_pie=False):
+              reset_time_pie=False, cloud_tasks=False):
     # The explicit hide-time preference wins over time visualizations.
     reset_time_pie = bool(reset_time_pie and not hide_reset_times)
     if js.count(START) != js.count(END) or js.count(START) > 1:
@@ -33,9 +53,15 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
 
     # Hiding times alone must not replace the native usage percentage/label.
     if hide_reset_times and not reset_countdown and not pie_indicator:
+        edits = mode_edits(js)
+        for original, replacement in edits:
+            if js.count(original) != 1:
+                raise ValueError('Unsupported Codex build: execution mode anchor is ambiguous.')
+            js = js.replace(original, replacement, 1)
         asset = 'const scmToolkitHideUsageResetTimes = true;\n'
+        asset += f'const scmToolkitCloudTasks = {str(bool(cloud_tasks)).lower()};\n'
         asset += ASSET.read_text() + '\n' + HIDE_ASSET.read_text()
-        return js + START + '/* edits:[] */\n' + asset + END
+        return js + START + '/* edits:' + json.dumps(edits) + ' */\n' + asset + END
 
     functions = list(re.finditer(rf'function ({IDENTIFIER})\(', js))
     label = None
@@ -52,7 +78,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
     if jsx is None or query is None:
         raise ValueError('Unsupported Codex build: composer usage data anchor does not match.')
     usage_label = (
-        f'(0,{jsx[1]}.jsx)(`scm-toolkit-usage-pie`,{{percent}})'
+        f'(0,{jsx[1]}.jsx)(`scm-toolkit-usage-meter`,{{percent}})'
         if pie_indicator else '`${percent}%`'
     )
     replacement = (
@@ -61,7 +87,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
         'scmToolkitKeepUsageFresh(refetch);'
         f'return e.isRemoteHost?`Remote`:percent==null?`…`:{usage_label};}}'
     )
-    edits = [(label[1], replacement)]
+    edits = [(label[1], replacement)] + mode_edits(js)
     home = re.search(
         rf'className:`hidden in-data-\[composer-placement=home\]:inline`,'
         rf'children:\(0,({IDENTIFIER})\.jsx\)\(({IDENTIFIER}),\{{\.\.\.({IDENTIFIER})\.localShort\}}\)', js)
@@ -100,7 +126,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
         if js.count(original) != 1:
             raise ValueError('Unsupported Codex build: composer usage anchor is ambiguous.')
         js = js.replace(original, replacement, 1)
-    asset = ASSET.read_text()
+    asset = f'const scmToolkitCloudTasks = {str(bool(cloud_tasks)).lower()};\n' + ASSET.read_text()
     asset = f'const scmToolkitUsageResetCountdown = {str(bool(reset_countdown)).lower()};\n' + asset
     if hide_reset_times:
         asset = 'const scmToolkitHideUsageResetTimes = true;\n' + asset
@@ -109,7 +135,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
 
 
 def patch_files(extension_path=None, enabled=True, hide_reset_times=False, pie_indicator=False,
-                reset_countdown=True, reset_time_pie=False):
+                reset_countdown=True, reset_time_pie=False, cloud_tasks=False):
     candidates = ([Path(extension_path)] if extension_path else
                   sorted((Path.home() / '.vscode/extensions').glob('openai.chatgpt-*'), reverse=True))
     for candidate in candidates:
@@ -117,5 +143,5 @@ def patch_files(extension_path=None, enabled=True, hide_reset_times=False, pie_i
             original = path.read_text()
             if START in original or 'id:`composer.mode.local`' in original:
                 yield path, original, transform(
-                    original, enabled, hide_reset_times, pie_indicator, reset_countdown, reset_time_pie
+                    original, enabled, hide_reset_times, pie_indicator, reset_countdown, reset_time_pie, cloud_tasks
                 )

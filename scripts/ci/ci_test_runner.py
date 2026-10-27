@@ -55,11 +55,21 @@ def inventory(verbose=False):
     return data
 
 
+PLAYWRIGHT_JS_IMPORT = re.compile(
+    r"""(?:\brequire\s*\(\s*['"]playwright['"]\s*\)"""
+    r"""|\bimport\s*\(\s*['"]playwright['"]\s*\)"""
+    r"""|\bfrom\s+['"]playwright['"]"""
+    r"""|\bimport\s+['"]playwright['"])"""
+)
+
+
 def browser_needed(spec):
-    # Only Node-based suites run via the group runner use Playwright.
+    # Require a full browser for all supported Playwright import forms, not
+    # just CommonJS. A false positive only costs browser setup; a false negative
+    # silently makes genuine browser tests run without Chromium installed.
     return any(
-        re.search(r"""require\s*\(\s*['"]playwright['"]\s*\)""",
-                  (ROOT / "tests" / name).read_text(encoding="utf-8"))
+        PLAYWRIGHT_JS_IMPORT.search(
+            (ROOT / "tests" / name).read_text(encoding="utf-8"))
         for name in spec["tests"] if name.endswith(".js")
     )
 

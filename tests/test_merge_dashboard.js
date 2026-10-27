@@ -10,7 +10,7 @@ const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge_da
 const { renderMergeMarkdown } = require('../efs/merge_dashboard_markdown');
 const { mergeActivityPresentation, renderMergeActivitySummary } = require('../efs/merge_dashboard_activity');
 const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge_dashboard_diff');
-const { parseReportOptions, blockerOptions, manualBlockerActions, blockerPrompt, reportOptionsInstructions } = require('../efs/merge_blocker_actions');
+const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../efs/merge_blocker_actions');
 const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dashboard_persistence');
 
 (async () => {
@@ -65,16 +65,33 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
   const manual = manualBlockerActions({state:'conflict'});
-  assert.equal(manual.length, 5);
+  assert.equal(manual.length, 6);
   assert(manual.every(action => action.manual && !action.reaction));
   assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
   assert.deepEqual(manualBlockerActions({state:'merged'}), []);
+  const checksPlan = dashboardActionPlan({ state: 'blocked', mergeableState: 'unstable' });
+  assert.equal(checksPlan.kind, 'checks');
+  assert.deepEqual(checksPlan.actions.map(action => action.id), ['fix-checks']);
+  assert.equal(checksPlan.workspaceAction.id, 'inspect-codex');
+  const conflictPlan = dashboardActionPlan({ state: 'conflict' });
+  assert.equal(conflictPlan.kind, 'conflict');
+  assert.deepEqual(conflictPlan.actions.map(action => action.id), ['resolve-conflicts']);
+  assert(!conflictPlan.actions.some(action => action.id === 'suggest-options'),
+    'There is no separate ask-for-options step');
+  const decisionPlan = dashboardActionPlan({ state: 'conflict', report: actionable.report });
+  assert.equal(decisionPlan.kind, 'choice');
+  assert.deepEqual(decisionPlan.actions.map(action => action.id), choices.map(option => option.id),
+    'The current review choices are the implementation buttons');
+  assert.equal(dashboardActionPlan({ state: 'updated' }).actions[0].id, 'sync-checks');
+  assert.equal(dashboardActionPlan({ state: 'blocked', mergeableState: 'blocked' }).actions[0].id, 'investigate-blocker');
+  assert.deepEqual(dashboardActionPlan({ state: 'merged' }).actions, []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert(selectedPrompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
   assert(selectedPrompt.includes('publish zero inline comments'));
-  assert(selectedPrompt.includes('overall GitHub review body'));
+  assert(selectedPrompt.includes('one comprehensive GitHub pull request review'));
+  assert(selectedPrompt.includes('one short review body summarizing the net changes'));
   assert(selectedPrompt.includes('Do not edit a human-authored comment'));
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'));
   const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
@@ -87,8 +104,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     'ChatGPT implementation responses must use the connected user account');
   assert(selectedPrompt.includes('reply_to_review_comment'),
     'Implementation results must create a new reply to the original inline review');
-  assert(selectedPrompt.includes('If an inline reply cannot be posted'),
-    'Non-inline fallback must still reference the original review');
+  assert(selectedPrompt.includes('report the exact limitation locally instead of posting a standalone PR Conversation comment'),
+    'Missing inline review support must not produce a standalone conversation comment');
   assert(selectedPrompt.includes('Never call update_review_comment or update_issue_comment'),
     'Prior review comments must be immutable');
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'),
@@ -248,7 +265,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     } },
     Uri: { parse: value => value },
     commands: { async executeCommand(command, options) { assert.equal(command, 'workbench.action.browser.open'); assert.equal(options.openToSide, true); openings.push(options.url); } },
-    env: { async openExternal(target) { openings.push(target); } }
+    env: { async openExternal() { assert.fail('Dashboard links must never open the external browser'); } }
   };
   let info = {
     number: 12, base: { ref: 'main', sha: 'c'.repeat(40) }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
@@ -316,6 +333,13 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
+  assert(panel.webview.html.includes('runner-switch'), 'Runner uses the theme-aware sliding pill');
+  assert(panel.webview.html.includes("runner.dataset.engine = value"), 'Runner animation follows the selected destination');
+  assert(panel.webview.html.includes("workspaceRow.hidden = value !== 'codex'"),
+    'Codex branch workspace is visible only with the Codex runner');
+  assert(!panel.webview.html.includes("'View instructions'"), 'Implementation prompts are not shown in disclosure balloons');
+  assert(!panel.webview.html.includes("show('select', '', undefined, destination)"),
+    'Runner no longer uses a dropdown');
   assert(!panel.webview.html.includes('id="count"'), 'Hide the redundant status text next to selected PRs');
   assert(!panel.webview.html.includes('Live GitHub updates · roughly every'), 'Hide the polling cadence from the UI');
   assert(!Object.hasOwn(events.at(-1), 'nextRefreshSeconds'), 'Do not send discarded polling metadata to the webview');
@@ -428,13 +452,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   messageHandler({ type: 'open-pr', number: 100 });
   await new Promise(resolve => setTimeout(resolve, 1));
   assert.deepEqual(openings, [url, url + '/files']);
+  await messageHandler({ type: 'open-link', url: url + '#issuecomment-123' });
   await messageHandler({ type: 'open-link', url: 'https://example.org/reference' });
   await messageHandler({ type: 'open-link', url: 'javascript:alert(1)' });
   await messageHandler({ type: 'open-link', url: 'https://github.com@evil.example/path' });
   await messageHandler({ type: 'open-link', url: 'file:///private/secret' });
   await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
-  assert.deepEqual(openings, [url, url + '/files', 'https://example.org/reference'],
-    'Only validated web links open through the extension host');
+  assert.deepEqual(openings, [url, url + '/files', url + '#issuecomment-123', 'https://example.org/reference'],
+    'Validated comment links open once in the integrated browser with their comment fragment preserved');
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
   await dashboard.refresh();
@@ -686,7 +711,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(!anchors.some(n => n.href.startsWith('javascript:')),
     'Unsafe link schemes remain plain text');
   const related = anchors.find(n => n.href.endsWith('/pull/5'));
-  related.handlers.click({ preventDefault() {} });
+  let linkPrevented = false, linkStopped = false;
+  related.handlers.click({ preventDefault() { linkPrevented = true; }, stopPropagation() { linkStopped = true; } });
+  assert(linkPrevented && linkStopped, 'Handled dashboard links suppress default navigation and bubbling');
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
   const emphasisRoot = document.createElement('div');
   renderMergeMarkdown(emphasisRoot, '**bold *italic* ending** and *italic **bold** ending* plus ***both***.');
