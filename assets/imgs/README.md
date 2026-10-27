@@ -4,21 +4,11 @@ All third-party artwork described below is excluded from this repository's AGPL-
 
 ## EFS Activity Bar icon
 
-`assets/imgs/media/efs.svg` (installed as `media/efs.svg`) is an Activity Bar adaptation of the Eyes Forward Sparkle / PipBuck imagery in a Fallout: Equestria Game Wave 3 (Public Pre-Alpha) screenshot credited to The Overmare Studios.
-
-Original source:
-http://theovermare.com/blog/2016/02/wave-3-demo-better-late-than-never-edition
-
-Reference mirror:
-https://manebooru.art/images/1095883
+`media/efs.svg` is adapted from the amazing **The Overmare Studios**, in [Fallout: Equestria Game Wave 3 (Public Pre-Alpha)](http://theovermare.com/blog/2016/02/wave-3-demo-better-late-than-never-edition), with a [reference mirror on Manebooru](https://manebooru.art/images/1095883).
 
 ## Codex rate-limit Twilight sticker
 
-The optional small Codex notice links to the original Twilight Sparkle STOP illustration by **CaptainPudgeMuffin**, uploaded to Know Your Meme by **Twist** on November 5, 2016.
-
-Attribution and original image page: https://knowyourmeme.com/photos/1188081-jack-blacks-octagon
-
-The image is included in this repository as `assets/imgs/twi-stop.png` and embedded by the installer as a PNG data URI, rather than downloaded from an external image host at runtime. If Codex blocks the embedded image, the native rate-limit notice remains visible.
+`twi-stop.png` is from the amazing **CaptainPudgeMuffin**, in [Twilight Sparkle STOP](https://knowyourmeme.com/photos/1188081-jack-blacks-octagon), uploaded by **Twist**.
 
 ## Sweetiebot image
 
