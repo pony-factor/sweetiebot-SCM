@@ -9,7 +9,7 @@ import install
 import repair
 import toolkit_settings
 import workspace_search
-from test_install import workbench_fixture
+from tests.install import workbench_fixture
 
 
 class RepairTests(unittest.TestCase):
