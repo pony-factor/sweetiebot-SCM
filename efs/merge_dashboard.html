@@ -383,6 +383,7 @@ __RATE_LIMIT_FORMATTER__
           link.href = comment.url;
           link.addEventListener('click', event => {
             event.preventDefault();
+            event.stopPropagation();
             dispatch('open-link', undefined, comment.url);
           });
         }
@@ -549,6 +550,7 @@ __RATE_LIMIT_FORMATTER__
         content.href = event.url;
         content.addEventListener('click', click => {
           click.preventDefault();
+          click.stopPropagation();
           dispatch('open-link', undefined, event.url);
         });
       }
