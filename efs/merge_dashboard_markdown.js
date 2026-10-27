@@ -23,6 +23,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
     const href = safeUrl(value || '');
     if (!href) return null;
     const url = new URL(href);
+    if (url.protocol !== 'https:' || url.port) return null;
     if (url.hostname === 'github.com' && /^\/user-attachments\/assets\/[a-z0-9-]+\/?$/i.test(url.pathname)) return href;
     if (url.hostname === 'user-images.githubusercontent.com' && /^\/\d+\//.test(url.pathname)) return href;
     return null;
