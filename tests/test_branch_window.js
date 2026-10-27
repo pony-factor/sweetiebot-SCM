@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { findLiveBranchWindow, focusExistingBranchWindow, SESSION_MAX_AGE_MS } =
-  require('../extension/branches/branch_window');
+  require('../extension/branches/window');
 
 (async () => {
   const baseDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-window-'));

@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {openRepairRunner}=require('../extension/merge/merge_runner_layout');
+const {openRepairRunner}=require('../extension/merge/runner_layout');
 (async()=>{
   const batch={label:'Squash merge PRs'},dashboard={label:'Lindsey · Merge progress'},draft={label:'Original PR',draft:'unsent text'};
   const groups=[{viewColumn:1,tabs:[batch]},{viewColumn:2,tabs:[dashboard,draft]}];

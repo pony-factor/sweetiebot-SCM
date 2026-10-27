@@ -2,8 +2,8 @@
 
 const assert = require('node:assert/strict');
 const { registerLegacyCommandAliases } = require('../extension/ui/command_aliases');
-const { registerGitHubPullRequestActions } = require('../extension/github/github_pr_actions');
-const { installPullRequestRefresh } = require('../extension/github/github_pr_refresh');
+const { registerGitHubPullRequestActions } = require('../extension/github/pr_actions');
+const { installPullRequestRefresh } = require('../extension/github/pr_refresh');
 
 async function main() {
   for (const githubFirst of [true, false]) {

@@ -123,7 +123,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             extension,
         )
         view = (workspace_search.SOURCE / "search" / "view.js").read_text()
-        search_index = (workspace_search.SOURCE / "search" / "search_index.js").read_text()
+        search_index = (workspace_search.SOURCE / "search" / "index.js").read_text()
         ollama = (workspace_search.SOURCE / "search" / "ollama.js").read_text()
         self.assertNotIn("Reindex", view)
         self.assertNotIn("type:'reindex'", view)

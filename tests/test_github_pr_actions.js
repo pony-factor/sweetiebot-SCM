@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../extension/github/github_pr_actions');
+const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../extension/github/pr_actions');
 const { squashMessage } = require('../extension/merge/squash_attribution');
 const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',

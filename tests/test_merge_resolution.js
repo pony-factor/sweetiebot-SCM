@@ -3,11 +3,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
-const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions } = require('../extension/merge/merge_resolution');
-const { createMergeHandoff } = require('../extension/merge/merge_handoff');
-const { patchPaths, safePatchPath } = require('../extension/merge/merge_patch');
+const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions } = require('../extension/merge/resolution');
+const { createMergeHandoff } = require('../extension/merge/handoff');
+const { patchPaths, safePatchPath } = require('../extension/merge/patch');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
-const { reviewPublicationInstructions } = require('../extension/merge/merge_review_policy');
+const { reviewPublicationInstructions } = require('../extension/merge/review_policy');
 assert(reviewPublicationInstructions().includes('Never create a per-file inline comment'));
 assert(reviewPublicationInstructions().includes('Only tag truly actionable findings'));
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12,
@@ -131,7 +131,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   let inputFile;
   await invokeResolutionCLI(input, selection, 'session-token', async (binary, args, options) => {
     inputFile = args[2];
-    assert(args[0].endsWith('merge_resolution_cli.js'));
+    assert(args[0].endsWith('resolution_cli.js'));
     assert.equal(args[1], '--input');
     assert.equal(options.env.GH_TOKEN, 'session-token');
     assert(!args.includes('session-token'), 'Never pass credentials in process arguments');

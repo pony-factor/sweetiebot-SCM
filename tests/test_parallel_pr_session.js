@@ -10,9 +10,9 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr
 (async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'parallel-pr-session-'));
   const originalFetch = globalThis.fetch;
-  const dashboardPath = require.resolve(moduleRoot + '/merge/merge_dashboard');
+  const dashboardPath = require.resolve(moduleRoot + '/merge/dashboard');
   const dashboardModule = require.cache[dashboardPath];
-  const dashboardExports = require(moduleRoot + '/merge/merge_dashboard');
+  const dashboardExports = require(moduleRoot + '/merge/dashboard');
   const context = { globalStorageUri: { fsPath: temporary }, subscriptions: [] };
   try {
     const root = path.join(temporary, 'repo');

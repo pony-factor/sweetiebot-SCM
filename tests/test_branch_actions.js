@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean, beginRepositoryCommit, endRepositoryCommit, commitInProgress } = require('../extension/branches/branch_actions');
+const { resolveDefaultBranch, returnHome, createBranch, publishBranch, deleteBranch, syncBranch, registerBranchCommands, autoPullClean, beginRepositoryCommit, endRepositoryCommit, commitInProgress } = require('../extension/branches/actions');
 
 const options = { defaultBranch: 'main', remote: 'origin', names: ['used', 'remote-used', 'fresh'] };
 

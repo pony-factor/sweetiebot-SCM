@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { listBranchStrip } = require('../extension/branches/branch_strip');
+const { listBranchStrip } = require('../extension/branches/strip');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-branch-refresh-'));
 const git = (cwd, ...args) => execFileSync('git', args, {

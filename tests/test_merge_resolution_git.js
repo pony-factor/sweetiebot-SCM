@@ -241,8 +241,8 @@ const run = promisify(execFile);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
 async function successiveMerges(checkState) {
- const { createMergeBatch } = require('../extension/merge/merge_batch');
- const { executeResolution } = require('../extension/merge/merge_resolution');
+ const { createMergeBatch } = require('../extension/merge/batch');
+ const { executeResolution } = require('../extension/merge/resolution');
  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-successive-test-'));
  const working = path.join(root, 'working'), remote = path.join(root, 'remote.git');
  const git = async (...args) => (await run('git', ['-c', 'core.hooksPath=/dev/null',

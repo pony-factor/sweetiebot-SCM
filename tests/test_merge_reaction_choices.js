@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { reactionDecision, createReactionChoices } = require('../extension/merge/merge_reaction_choices');
-const { reportOptionsInstructions } = require('../extension/merge/merge_blocker_actions');
+const { reactionDecision, createReactionChoices } = require('../extension/merge/reaction_choices');
+const { reportOptionsInstructions } = require('../extension/merge/blocker_actions');
 
 (async () => {
   const pr = { number: 12, state: 'conflict', headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40) };

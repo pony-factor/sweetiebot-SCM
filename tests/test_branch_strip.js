@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { groupBranchRefs, parseGitHubRemote } = require('../extension/branches/branch_strip');
+const { groupBranchRefs, parseGitHubRemote } = require('../extension/branches/strip');
 
 assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');

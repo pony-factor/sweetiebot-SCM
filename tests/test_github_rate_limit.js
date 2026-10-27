@@ -1,11 +1,11 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {rateLimitError,githubResponseError,promptRateLimit,parseCLIResponse}=require('../extension/github/github_rate_limit');
-const {executeResolution}=require('../extension/merge/merge_resolution');
-const {createMergeBatch}=require('../extension/merge/merge_batch');
+const {rateLimitError,githubResponseError,promptRateLimit,parseCLIResponse}=require('../extension/github/rate_limit');
+const {executeResolution}=require('../extension/merge/resolution');
+const {createMergeBatch}=require('../extension/merge/batch');
 (async()=>{
  const now=Date.now();
- const {rateLimitMessage}=require('../extension/github/github_rate_limit');
+ const {rateLimitMessage}=require('../extension/github/rate_limit');
  assert.match(rateLimitMessage(now+121000,'relative',now), /3m/);
  assert.match(rateLimitMessage(now+45000,'relative',now), /45s/);
  assert.match(rateLimitMessage(now-1,'relative',now), /Ready to retry/);

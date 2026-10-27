@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { createLindseyReadFetch } = require('../extension/github/github_read_api');
+const { createLindseyReadFetch } = require('../extension/github/read_api');
 const repo = 'pony-factor/sweetiebot-SCM';
 const url = 'https://api.github.com/repos/' + repo + '/pulls/12/files';
 const env = { SWEETIEBOT_BOT_IDENTITY_MODE: 'separate-apps' };

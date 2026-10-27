@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {isCodex,mergeNames,modelQualifier,withModel,collapse} = require('../extension/codex/codex_attribution');
+const {isCodex,mergeNames,modelQualifier,withModel,collapse} = require('../extension/codex/attribution');
 const email = '<noreply@openai.com>';
 assert(isCodex('Codex Web','noreply@openai.com'));
 assert(!isCodex('Codex Web','other@example.org'));

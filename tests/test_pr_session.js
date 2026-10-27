@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
   publishOptionalMergeSummaries, launchBlockerWebSession, launchBlockerCodexSession } = require('../extension/github/pr_session');
-const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../extension/merge/merge_blocker_actions');
+const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../extension/merge/blocker_actions');
 
 (async () => {
   // Disabled or irrelevant optional summaries must not even load their module.
@@ -147,8 +147,8 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../ext
     assert.equal(mergeSettings.settings['scmToolkit.startCompactPRSession'], true,
       'Lindsey merge sessions also start in the 640px compact window');
     let launches = 0;
-    const dashboardModulePath = require.resolve('../extension/merge/merge_dashboard');
-    const dashboardExports = require('../extension/merge/merge_dashboard');
+    const dashboardModulePath = require.resolve('../extension/merge/dashboard');
+    const dashboardExports = require('../extension/merge/dashboard');
     const previousDashboard = require.cache[dashboardModulePath];
     require.cache[dashboardModulePath] = {
       id: dashboardModulePath, filename: dashboardModulePath, loaded: true,
@@ -223,7 +223,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../ext
     }
     const pr = { ...selection.pullRequests[0], state: 'blocked', headSha: selection.pullRequests[0].headSha };
     const option = blockerOptions({ ...pr, review: { options: [{id:'report-retain-api',suggested:true,label:'Retain the public API',description:'Keep callers compatible.',prompt:'Preserve what is already on the current main branch and adapt the new feature internally.'},{id:'report-replace-api',suggested:true,label:'Adopt the new interface',prompt:'Update callers to the new interface.'}] } })[0];
-    const runners=require('../extension/merge/merge_runner_layout');
+    const runners=require('../extension/merge/runner_layout');
     const previousRunner=runners.openRepairRunner;
     let embeddedUrl;
     runners.openRepairRunner=async(host,url,selected)=>{
@@ -311,7 +311,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../ext
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
-const {updateMergeSessionCompletion} = require('../extension/merge/merge_session_completion');
+const {updateMergeSessionCompletion} = require('../extension/merge/session_completion');
 (async () => {
   const local = {label:'Lindsey · Local merge'}, other = {label:'My unrelated ChatGPT conversation'};
   const closed = [], callbacks = [];

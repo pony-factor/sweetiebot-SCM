@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { githubSession } = require('../extension/github/github_session');
+const { githubSession } = require('../extension/github/session');
 (async () => {
   const calls = [], existing = { account: { id: 'signed-in-user', label: 'User' }, scopes: ['repo', 'read:user', 'user:email'], accessToken: 'test-session' };
   const vscode = { authentication: { getSession: async (...args) => { calls.push(args); return existing; } } };

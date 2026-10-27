@@ -74,7 +74,7 @@ def transform_refresh(source, remove=False):
     commands = list(REFRESH_COMMAND.finditer(source))
     if len(tree) != 1 or len(commands) != 1:
         raise ValueError('Unsupported GitHub PR tree build: expected one matching anchor.')
-    helper = (Path(__file__).resolve().parent.parent / 'extension/github/github_pr_refresh.js').read_text().split('\nmodule.exports')[0]
+    helper = (Path(__file__).resolve().parent.parent / 'extension/github/pr_refresh.js').read_text().split('\nmodule.exports')[0]
     original = tree[0].group()
     factory = f'(()=>{{{helper}\nreturn installPullRequestRefresh;}})()'
     edits = [(original, f'({factory})({tree[0].group(1)},{original},this)'),

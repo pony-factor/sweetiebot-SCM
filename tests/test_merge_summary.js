@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { publishMergeSummaries, MARKER } = require('../extension/merge/merge_summary');
+const { publishMergeSummaries, MARKER } = require('../extension/merge/summary');
 const sha = 'a'.repeat(40);
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12, title: '✨ Add optional tax', url: 'https://github.com/owner/repo/pull/12', base: 'main', head: 'feature' }] };
 const input = { results: [{ number: 12, explanation: 'Add an optional tax parameter while retaining the corrected multiplier.' }] };

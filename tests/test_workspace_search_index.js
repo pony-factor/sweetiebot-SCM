@@ -66,7 +66,7 @@ async function run() {
     }};
     return require(name);
   }};
-  vm.runInNewContext(fs.readFileSync(require.resolve('../extension/search/search_index.js'), 'utf8'), sandbox);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../extension/search/index.js'), 'utf8'), sandbox);
   const index = new sandbox.module.exports.SearchIndex({globalStorageUri: rootUri}, () => ({embeddingModel: model, resultLimit: 10, maxFiles: 2, mode: 'semantic'}));
   const githubFolder = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'efs-github-'));
   try {

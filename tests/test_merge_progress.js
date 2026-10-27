@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {withMergeProgress}=require('../extension/merge/merge_progress');
-const {updateMergeSessionCompletion}=require('../extension/merge/merge_session_completion');
+const {withMergeProgress}=require('../extension/merge/progress');
+const {updateMergeSessionCompletion}=require('../extension/merge/session_completion');
 (async()=>{
   const messages=[];let options,release,finished=false,cancelled=false,tick,clock=0;
   const gate=new Promise(resolve=>{release=resolve;});

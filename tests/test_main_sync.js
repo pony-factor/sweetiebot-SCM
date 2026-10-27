@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { execFileSync } = require('node:child_process');
-const { syncBranch } = require('../extension/branches/branch_actions');
+const { syncBranch } = require('../extension/branches/actions');
 
 async function run() {
   // Exercise the actual button handler, including its disabled state and feedback.

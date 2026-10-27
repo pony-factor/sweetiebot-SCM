@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const script = fs.readFileSync(require.resolve('../extension/merge/merge_handoff.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const script = fs.readFileSync(require.resolve('../extension/merge/handoff.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 async function page({raw, state, result, statusFailsDuringPost = false}) {
   const status = {}, results = {after(){}}, navigations = [], posts = [];
   let poll;

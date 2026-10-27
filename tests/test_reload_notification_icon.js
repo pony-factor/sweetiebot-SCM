@@ -76,7 +76,7 @@ for (const directory of roots) {
   assert(!classes.has('scm-toolkit-branch-squash-synced'), `Reused notification retained squash-sync icon in ${directory}`);
 }
 
-const refresh = fs.readFileSync(path.join(root, 'extension/codex/codex_refresh.js'), 'utf8');
+const refresh = fs.readFileSync(path.join(root, 'extension/codex/refresh.js'), 'utf8');
 assert(refresh.includes("output.appendLine('Reloading this window to apply Sweetiebot updates.')"),
   'Automatic repair should retain its reload diagnostic message');
 assert(!refresh.includes('🤖'), 'Robot belongs in the notification glyph, not its message');

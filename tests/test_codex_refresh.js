@@ -49,7 +49,7 @@ const sandbox = vm.createContext({
     } };
   }
 });
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/codex/codex_refresh.js'), 'utf8'), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/codex/refresh.js'), 'utf8'), sandbox);
 const context = { subscriptions: [], extensionUri: { fsPath: '/toolkit' }, workspaceState };
 const vscode = {
   env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },

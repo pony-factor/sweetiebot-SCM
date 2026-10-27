@@ -18,7 +18,7 @@ const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: {
   assert.equal(options.ref, 'kefania', 'Topic branches fetch their tracked branch');
   topicFetches++;
 } };
-const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../extension/branches/branch_actions')), process,
+const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../extension/branches/actions')), process,
   require(name) {
     if (name === 'node:util') return { promisify(fn) { return (...args) => new Promise((resolve, reject) =>
       fn(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr }))); } };
@@ -49,7 +49,7 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
       }
     } };
     if (name === '../merge/lindsey_conflicts') return require('../extension/merge/lindsey_conflicts');
-    if (name === './branch_name_selection') return require('../extension/branches/branch_name_selection');
+    if (name === './name_selection') return require('../extension/branches/name_selection');
     if (name.startsWith('.')) return require(path.resolve(__dirname, '../extension/branches', name));
     return require(name);
   },
@@ -57,7 +57,7 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
   setInterval(callback, delay) { assert.equal(delay, 1000); tick = callback; return { unref() {} }; },
   clearInterval() { cleared = true; }
 };
-vm.runInNewContext(fs.readFileSync(require.resolve('../extension/branches/branch_actions'), 'utf8'), sandbox);
+vm.runInNewContext(fs.readFileSync(require.resolve('../extension/branches/actions'), 'utf8'), sandbox);
 const context = { subscriptions: [] };
 const handlers = {};
 const vscode = {

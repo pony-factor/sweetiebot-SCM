@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerBranchCommands } = require('../extension/branches/branch_actions');
+const { registerBranchCommands } = require('../extension/branches/actions');
 
 (async () => {
   const commands = new Map();

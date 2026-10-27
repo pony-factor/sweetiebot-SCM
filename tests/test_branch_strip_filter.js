@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // Evaluate the workbench source without requiring a VS Code UI.
-const source = fs.readFileSync(path.join(__dirname, '../assets/workbench/branch_strip.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../assets/workbench/strip.js'), 'utf8');
 const context = vm.createContext({});
 vm.runInContext(source, context);
 const filter = context.scmToolkitFilterBranchStrip;
