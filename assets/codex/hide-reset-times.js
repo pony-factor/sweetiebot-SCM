@@ -1,3 +1,13 @@
+globalThis.scmToolkitHideRateLimitTimes = true;
+// Compact only native usage-limit banners, leaving unrelated backend notices alone.
+function scmToolkitIsHiddenLimitBanner(banner) {
+    return /^(?:you[’']re out of codex messages|you[’']ve hit your usage limit|rate(?:d)? limited)[.!]?$/i
+        .test(String(banner?.title || '').trim());
+}
+function scmToolkitCompactHiddenLimitBanner(banner) {
+    return scmToolkitIsHiddenLimitBanner(banner)
+        ? {...banner, title:'Rate limited', description:''} : banner;
+}
 // Suppress Codex usage-reset timing without concealing usage allowances.
 function scmToolkitStripUsageResetTime(value) {
     const text = String(value == null ? '' : value);
@@ -22,10 +32,39 @@ function scmToolkitIsStandaloneTime(value) {
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
     let pending = false;
+    function compactCards() {
+        for (const heading of document.querySelectorAll('strong, h1, h2, h3, span, p')) {
+            if (!/^(?:you[’']re out of codex messages|rate(?:d)? limited)$/i.test(String(heading.textContent || '').trim())) continue;
+            if (heading.closest?.('[data-message-author-role="user"], [data-conversation-role="user"], [data-scm-toolkit-queue-id], pre, code, [contenteditable]')) continue;
+            for (let card = heading.parentElement, depth = 0; card && depth < 8; card = card.parentElement, depth++) {
+                if (card.matches('main, [role="main"]') || card.querySelector('textarea, input, [contenteditable="true"]')) break;
+                const actions = [...card.querySelectorAll('button, a')];
+                if (!actions.some(action => /^(?:upgrade|add credits)$/i.test(String(action.textContent || '').trim()))) continue;
+                const marker = 'data-scm-toolkit-rate-limited';
+                for (const child of card.childNodes) {
+                    if (child.nodeType === 3 && child.textContent.trim()) child.textContent = '';
+                    else if (child.nodeType === 1 && !child.hasAttribute(marker)
+                        && !child.hasAttribute('data-scm-toolkit-reset-action')) {
+                        child.setAttribute('aria-hidden', 'true');
+                        child.style.setProperty('display', 'none', 'important');
+                    }
+                }
+                let status = card.querySelector(`[${marker}]`);
+                if (!status) {
+                    status = document.createElement('span'); status.setAttribute(marker, 'true');
+                    status.setAttribute('role', 'status'); card.append(status);
+                }
+                if (status.textContent !== 'Rate limited') status.textContent = 'Rate limited';
+                break;
+            }
+        }
+    }
     function scrub() {
         pending = false;
+        compactCards();
         for (const element of document.querySelectorAll('*')) {
             if (/^(?:SCRIPT|STYLE|TEXTAREA|INPUT|PRE|CODE)$/i.test(element.tagName || '')) continue;
+            if (element.closest?.('[data-message-author-role="user"], [data-conversation-role="user"], [data-scm-toolkit-queue-id], pre, code, [contenteditable]')) continue;
             for (const name of ['title', 'aria-label']) {
                 const original = element.getAttribute?.(name);
                 if (original == null) continue;
@@ -71,7 +110,7 @@ function scmToolkitIsStandaloneTime(value) {
     const observer = new MutationObserver(() => {
         if (pending) return;
         pending = true;
-        queueMicrotask(scrub);
+        scrub();
     });
     observer.observe(document, {
         subtree: true, childList: true, characterData: true, attributes: true,

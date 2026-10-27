@@ -136,7 +136,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashOmitBulletsForEmojiTitles"])
         page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
         self.assertIn('name="squashOmitBulletsForEmojiTitles" value="true" checked', page)
-        self.assertIn("Hide bullets for emoji-only squash summaries", page)
+        self.assertIn("Omit hyphens when every commit title starts with an emoji", page)
 
     def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])

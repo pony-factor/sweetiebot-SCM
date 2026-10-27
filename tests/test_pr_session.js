@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
-  publishOptionalMergeSummaries, launchBlockerWebSession } = require('../efs/pr_session');
+  publishOptionalMergeSummaries, launchBlockerWebSession, launchBlockerCodexSession } = require('../efs/pr_session');
 const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs/merge_blocker_actions');
 
 (async () => {
@@ -300,6 +300,10 @@ const { openCodexBranch, launchBlockerAction, blockerOptions } = require('../efs
     assert.equal(startedCodex[0][1].prompt, 'Keep main and add the proposed features.');
     await resumePRSession(codexHost, context);
     assert.equal(startedCodex.length, 1, 'Reload never resubmits the selected implementation');
+    await launchBlockerCodexSession(source, context, root, {number:249, head:'deleted-branch'});
+    const renamedCodexWorkspace = JSON.parse(await fs.readFile(calls.at(-1)[1].fsPath, 'utf8'));
+    assert.equal(renamedCodexWorkspace.settings['window.title'], 'Codex #249 [${activeRepositoryBranchName}]');
+    assert(!renamedCodexWorkspace.settings['window.title'].includes('deleted-branch'));
     console.log('Independent PR workspaces, selected web prompts and isolated Codex branch tasks passed.');
   } finally {
     os.homedir = originalHome;
