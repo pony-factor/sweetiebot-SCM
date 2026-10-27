@@ -148,7 +148,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 <body>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
-<div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div class="overview"><label class="muted" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><label class="muted" for="auto-fix-ci-method">Using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">GPT web</option><option value="codex">Codex</option></select><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="blocker-notice" class="blocker-notice" hidden></div>
@@ -427,6 +427,7 @@ __RATE_LIMIT_FORMATTER__
         runnerButtons.push([value, button]);
         button.addEventListener('click', () => {
           actionEngine = value;
+          vscode.postMessage({ type: 'auto-fix-ci-method', method: value });
           runner.dataset.engine = value;
           for (const [engine, control] of runnerButtons) control.setAttribute('aria-pressed', String(engine === value));
           if (workspaceRow) workspaceRow.hidden = value !== 'codex';
@@ -525,6 +526,8 @@ __RATE_LIMIT_FORMATTER__
       ? model.timestampMode : 'hidden';
     byId('timeline-time-mode').value = timestampMode;
     byId('post-summaries').checked = model.postSummaries === true;
+    byId('auto-fix-ci').checked = model.autoFixCi === true;
+    byId('auto-fix-ci-method').value = model.autoFixCiMethod === 'codex' ? 'codex' : 'web';
     const eventScroll = events.scrollTop;
     events.replaceChildren();
     for (const event of model.events.slice(-400).reverse()) {
@@ -580,6 +583,7 @@ __RATE_LIMIT_FORMATTER__
       saveLayout();
     }
     model = event.data;
+    actionEngine = model.autoFixCiMethod === 'codex' ? 'codex' : 'web';
     render();
   });
   function refreshRelativeEventTimes() {
@@ -601,6 +605,8 @@ __RATE_LIMIT_FORMATTER__
     render();
     vscode.postMessage({ type: 'timestamp-mode', mode });
   });
+  byId('auto-fix-ci').addEventListener('change', event => vscode.postMessage({ type: 'auto-fix-ci', enabled: event.target.checked }));
+  byId('auto-fix-ci-method').addEventListener('change', event => vscode.postMessage({ type: 'auto-fix-ci-method', method: event.target.value }));
   byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   setInterval(refreshRelativeEventTimes, 30000);

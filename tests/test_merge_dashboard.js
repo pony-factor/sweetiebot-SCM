@@ -233,13 +233,17 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   const openings = [];
   let savedTimelineMode = 'hidden';
   const savedModes = [];
-  const layoutConfig = { mergeSidebarWidthPercent: 37, mergeTimelineHeightPercent: 34 };
+  const layoutConfig = { mergeSidebarWidthPercent: 37, mergeTimelineHeightPercent: 34,
+    mergeAutoFixCi: false, mergeAutoFixCiMethod: 'web' };
   let configurationChanged;
   let configurationDisposed = false;
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
-      if (key === 'mergePostSummaries') { layoutConfig.mergePostSummaries = mode; return; }
+      if (['mergePostSummaries', 'mergeAutoFixCi', 'mergeAutoFixCiMethod'].includes(key)) {
+        assert.equal(target, 1);
+        layoutConfig[key] = mode; return;
+      }
       assert.equal(key, 'mergeTimelineTimestampMode');
       assert.equal(target, 1, 'Save globally across independent merge windows');
       savedModes.push(mode);
@@ -299,6 +303,10 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
     else if (pathname.endsWith('/commits')) result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
+    else if (/\/commits\/[a-f0-9]{40}\/check-runs$/.test(pathname)) result = { check_runs: [
+      { id: 1, name: 'CI', status: 'completed', conclusion: 'failure', app: { id: 1 } }] };
+    else if (/\/commits\/[a-f0-9]{40}\/check-suites$/.test(pathname)) result = { check_suites: [] };
+    else if (/\/commits\/[a-f0-9]{40}\/status$/.test(pathname)) result = { statuses: [] };
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
@@ -332,6 +340,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
+  assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
+  assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
   assert(panel.webview.html.includes('runner-switch'), 'Runner uses the theme-aware sliding pill');
   assert(panel.webview.html.includes("runner.dataset.engine = value"), 'Runner animation follows the selected destination');
   assert(panel.webview.html.includes("workspaceRow.hidden = value !== 'codex'"),
@@ -613,6 +623,32 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
+  assert.equal(events.at(-1).autoFixCi, false);
+  await messageHandler({ type: 'auto-fix-ci-method', method: 'invalid' });
+  assert.equal(layoutConfig.mergeAutoFixCiMethod, 'web');
+  await messageHandler({ type: 'auto-fix-ci-method', method: 'codex' });
+  await messageHandler({ type: 'auto-fix-ci', enabled: true });
+  assert.equal(events.at(-1).autoFixCiMethod, 'codex');
+  assert.equal(events.at(-1).autoFixCi, true);
+  info = { ...info, state: 'open', merged: false, head: { ...info.head, sha: nextSha },
+    mergeable_state: 'unstable', base: { ...info.base, sha: 'c'.repeat(40) } };
+  inlineCommentsForPr = [];
+  commentsForPr = [];
+  await dashboard.refresh();
+  const repairState = { repository: selection.repository,
+    pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'c'.repeat(40) }],
+    history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
+    deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
+  const autoStart = actionLaunches.length;
+  dashboard.recordBatchState(repairState);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when selected integrated-head CI fails');
+  assert.equal(actionLaunches.at(-1)[6], 'codex', 'Auto repair uses the configured method');
+  dashboard.recordBatchState(repairState);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(actionLaunches.length, autoStart + 1, 'Polling cannot duplicate an auto-repair');
+  await messageHandler({ type: 'auto-fix-ci', enabled: false });
+  assert.equal(events.at(-1).autoFixCi, false);
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
   await dashboard.refresh({ force: true });
   const failedFetch = events.at(-1).events.at(-1);
