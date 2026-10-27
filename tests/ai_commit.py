@@ -1813,7 +1813,7 @@ class ArtifactContextTests(unittest.TestCase):
         # requiring an extra extension, network service, or model.
         cases = [
             (
-                ["extension/github_session.py", "tests/test_github_session.py"],
+                ["extension/github_session.py", "tests/github_session.py"],
                 "",
                 "🔧 Update GitHub session code and tests",
             ),
@@ -1833,8 +1833,8 @@ class ArtifactContextTests(unittest.TestCase):
                 "🧰 Update dependencies",
             ),
             (
-                ["tests/test_commit.py", "tests/test_push.py"],
-                "Change totals: 2 added\n\nStatus:\nA\ttests/test_commit.py\nA\ttests/test_push.py",
+                ["tests/commit.py", "tests/push.py"],
+                "Change totals: 2 added\n\nStatus:\nA\ttests/commit.py\nA\ttests/push.py",
                 "🧪 Add tests",
             ),
             (
@@ -1889,8 +1889,8 @@ class ArtifactContextTests(unittest.TestCase):
         with patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
                 patch.object(ai_commit, "ollama_json") as ollama:
             title, description = ai_commit.generate_message(
-                "", "diff --git a/tests/test_api.py b/tests/test_api.py",
-                ["tests/test_api.py", "tests/test_ui.py"], include_description=True,
+                "", "diff --git a/tests/api.py b/tests/api.py",
+                ["tests/api.py", "tests/ui.py"], include_description=True,
                 file_context_override="Change totals: 2 modified",
             )
             self.assertEqual(title, "🧪 Update tests")

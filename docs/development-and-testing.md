@@ -8,7 +8,7 @@ From the repo root:
 
 ```sh
 python3 scripts/ci/ci_test_runner.py verify
-PYTHONPATH=scripts python3 -m unittest discover -s tests
+PYTHONPATH=scripts python3 -m unittest discover -s tests -t . -p '*.py'
 python3 scripts/ci/ci_test_runner.py run efs-search
 # macOS with compatible VS Code only:
 python3 scripts/install.py --check

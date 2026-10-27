@@ -228,7 +228,7 @@ Useful repository checks:
 
 ```sh
 python3 scripts/ci/ci_test_runner.py verify
-PYTHONPATH=scripts python3 -m unittest discover -s tests
+PYTHONPATH=scripts python3 -m unittest discover -s tests -t . -p '*.py'
 python3 scripts/install.py --check
 ```
 

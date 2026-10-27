@@ -14,4 +14,4 @@ Some controls are purely visual: a wing replaces the Send icon, without changing
 
 After VS Code/Codex updates, run `python3 scripts/install.py --check`, inspect **Output → Sweetie Bot app repair**, and manually test toggles before treating the UI as compatible. Availability depends on upstream DOM and workspace permissions.
 
-Source/test entry points: [installer](../scripts/install.py), [picker](../assets/workbench/picker.js), [Codex queued edits](../assets/codex/queued-edit.js), [Codex usage](../assets/codex/usage.js), [browser regressions](../tests/test_codex_webview_browser.py). See [installation](installation-and-repair.md).
+Source/test entry points: [installer](../scripts/install.py), [picker](../assets/workbench/picker.js), [Codex queued edits](../assets/codex/queued-edit.js), [Codex usage](../assets/codex/usage.js), [browser regressions](../tests/codex_webview_browser.py). See [installation](installation-and-repair.md).
