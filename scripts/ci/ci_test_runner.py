@@ -31,7 +31,7 @@ def inventory(verbose=False):
                 problems.append(f"{name} assigned to {owners[name]} and {group}")
             owners[name] = group
         for path in spec.get("syntax", []):
-            if not path.startswith(("assets/", "efs/", "scripts/")) or Path(path).is_absolute():
+            if not path.startswith(("assets/", "extension/", "scripts/")) or Path(path).is_absolute():
                 problems.append(f"Invalid syntax path: {path}")
             elif not (ROOT / path).is_file():
                 problems.append(f"Missing source for syntax check: {path}")

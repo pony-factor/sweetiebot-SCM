@@ -49,7 +49,7 @@ def _active_jobs():
         error = job.get("error")
         jobs.append({
             "id": job_id[:32], "repository": Path(job["root"]).name[:100],
-            "branch": job["branch"].removeprefix("refs/heads/")[:120],
+            "branch": job["branch"].removeprefix("rextension/heads/")[:120],
             "phase": str(job.get("phase", "unknown"))[:30],
             "error": error[:300] if isinstance(error, str) else "",
         })

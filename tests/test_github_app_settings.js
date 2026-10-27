@@ -17,8 +17,8 @@ try {
     if (name.startsWith('SWEETIEBOT_') || name.startsWith('GIT_CONFIG_KEY_') ||
         name.startsWith('GIT_CONFIG_VALUE_') || name === 'GIT_CONFIG_COUNT') delete env[name];
   }
-  const settings = require.resolve('../efs/github/github_app_settings');
-  const identity = require.resolve('../efs/github/github_app_identity');
+  const settings = require.resolve('../extension/github/github_app_settings');
+  const identity = require.resolve('../extension/github/github_app_identity');
   const program = `
     const assert = require('node:assert/strict');
     const {savedEnvironment} = require(process.argv[1]);

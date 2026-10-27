@@ -29,11 +29,11 @@ function groupBranchRefs(refText, mergedText, prNames, prKnown, base, remote = '
   for (const line of String(refText || '').split('\n')) {
     const [ref, stamp] = line.split('\t');
     let name, kind;
-    if (ref?.startsWith('refs/heads/')) {
-      name = ref.slice('refs/heads/'.length);
+    if (ref?.startsWith('rextension/heads/')) {
+      name = ref.slice('rextension/heads/'.length);
       kind = 'local';
-    } else if (ref?.startsWith(`refs/remotes/${remote}/`)) {
-      name = ref.slice(`refs/remotes/${remote}/`.length);
+    } else if (ref?.startsWith(`rextension/remotes/${remote}/`)) {
+      name = ref.slice(`rextension/remotes/${remote}/`.length);
       kind = 'origin';
     } else continue;
     if (!name || (kind === 'origin' && name === 'HEAD')) continue;
@@ -105,16 +105,16 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
   // Only advertise remote branches after confirming their current state.
   const remoteAvailable = !localOnly && await git(root, ['fetch', '--prune', '--no-tags',
     '--no-prune-tags', '--no-recurse-submodules', remote,
-    `+refs/heads/*:refs/remotes/${remote}/*`]).then(() => true, () => false);
-  const refPrefixes = ['refs/heads', ...(remoteAvailable ? [`refs/remotes/${remote}`] : [])];
+    `+rextension/heads/*:rextension/remotes/${remote}/*`]).then(() => true, () => false);
+  const refPrefixes = ['rextension/heads', ...(remoteAvailable ? [`rextension/remotes/${remote}`] : [])];
   const [refText, remoteUrl, repositoryId] = await Promise.all([
     git(root, ['for-each-ref', '--sort=-committerdate',
       '--format=%(refname)%09%(committerdate:unix)', ...refPrefixes]),
     localOnly ? Promise.resolve('') : git(root, ['remote', 'get-url', remote]).catch(() => ''),
     git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).catch(() => root)
   ]);
-  const baseRefs = [...(remoteAvailable ? [`refs/remotes/${remote}/${defaultBranch}`] : []),
-    `refs/heads/${defaultBranch}`];
+  const baseRefs = [...(remoteAvailable ? [`rextension/remotes/${remote}/${defaultBranch}`] : []),
+    `rextension/heads/${defaultBranch}`];
   let baseRef;
   for (const candidate of baseRefs) {
     if (await git(root, ['rev-parse', '--verify', '--quiet', candidate]).catch(() => '')) {
@@ -124,7 +124,7 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
   }
   const [mergedText, prNames] = await Promise.all([
     baseRef ? git(root, ['for-each-ref', `--merged=${baseRef}`,
-      '--format=%(refname)', 'refs/heads', `refs/remotes/${remote}`]).catch(() => '') : '',
+      '--format=%(refname)', 'rextension/heads', `rextension/remotes/${remote}`]).catch(() => '') : '',
     localOnly ? Promise.resolve(null) : pullRequestNames(root, remoteUrl)
   ]);
   const prKnown = !localOnly && Boolean(prNames && baseRef);
@@ -139,12 +139,12 @@ async function checkoutBranchStrip(repository, { branch, remote = 'origin' } = {
   const root = repository.rootUri.fsPath;
   await git(root, ['check-ref-format', '--branch', branch]);
   const local = await git(root, ['show-ref', '--verify', '--hash',
-    `refs/heads/${branch}`]).catch(() => '');
+    `rextension/heads/${branch}`]).catch(() => '');
   if (local) {
     await repository.checkout(branch);
   } else {
     const tracking = await git(root, ['show-ref', '--verify', '--hash',
-      `refs/remotes/${remote}/${branch}`]).catch(() => '');
+      `rextension/remotes/${remote}/${branch}`]).catch(() => '');
     if (!tracking) throw new Error(`Branch "${branch}" is no longer available. Refresh the branch bar.`);
     // Create a tracking branch; never checkout origin/name in detached HEAD.
     await git(root, ['switch', '--track', '-c', branch, `${remote}/${branch}`]);

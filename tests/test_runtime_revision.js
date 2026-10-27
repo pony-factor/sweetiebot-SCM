@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { runtimeRevision } = require('../efs/ui/runtime_revision');
+const { runtimeRevision } = require('../extension/ui/runtime_revision');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-runtime-'));
 try {

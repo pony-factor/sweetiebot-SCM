@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { pendingPRCommits } = require('../efs/github/pr_commit_wait');
+const { pendingPRCommits } = require('../extension/github/pr_commit_wait');
 
 (async () => {
   const progress = [];

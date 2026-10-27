@@ -4,12 +4,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { resolveKefaniaFile } = require('../efs/codex/kefania_paths');
-const { readKefaniaInstructions } = require('../efs/github/pull_request');
+const { resolveKefaniaFile } = require('../extension/codex/kefania_paths');
+const { readKefaniaInstructions } = require('../extension/github/pull_request');
 
 async function run() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-kefania-paths-'));
-  const options = { home: path.join(root, 'home'), moduleDirectory: path.join(root, 'extension', 'efs') };
+  const options = { home: path.join(root, 'home'), moduleDirectory: path.join(root, 'extension', 'extension') };
   const file = path.join('src', 'local-pr.js');
   async function checkout(directory) {
     await fs.mkdir(path.join(directory, 'src'), { recursive: true });

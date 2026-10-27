@@ -41,7 +41,7 @@ function fixture(saved = {}) {
     window: { innerWidth: 1000 },
     ResizeObserver: class { constructor(fn) { resize = fn; } observe() {} },
   };
-  const html = fs.readFileSync(require.resolve('../efs/merge/merge_dashboard.html'), 'utf8');
+  const html = fs.readFileSync(require.resolve('../extension/merge/merge_dashboard.html'), 'utf8');
   const script = html.slice(html.indexOf('  const vscode = acquireVsCodeApi();'), html.indexOf('  let model ='));
   vm.runInNewContext(script, context);
   const fire = (id, type, props) => nodes[id].handlers[type]({ preventDefault() {}, ...props });
@@ -91,7 +91,7 @@ console.log('Dashboard drag, keyboard, cancellation, saved layout and resize che
 
 // A locally deferred PR can still be clean on GitHub. The header must agree
 // with the actionable blocker list, including after a later merge or closure.
-const dashboardHtml = fs.readFileSync(require.resolve('../efs/merge/merge_dashboard.html'), 'utf8');
+const dashboardHtml = fs.readFileSync(require.resolve('../extension/merge/merge_dashboard.html'), 'utf8');
 const progressScript = dashboardHtml.slice(dashboardHtml.indexOf('    const merged = model.prs.filter'),
   dashboardHtml.indexOf("    byId('bar-fill')"));
 const deferred = { state: 'waiting', localReview: { text: 'Local execution stopped.' } };

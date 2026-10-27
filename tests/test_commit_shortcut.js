@@ -1,9 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerCommitShortcut } = require('../efs/commits/commit_shortcut');
-const { resolveCommitRepository } = require('../efs/commits/codex_commit');
-const manifest = require('../efs/package.json');
+const { registerCommitShortcut } = require('../extension/commits/commit_shortcut');
+const { resolveCommitRepository } = require('../extension/commits/codex_commit');
+const manifest = require('../extension/package.json');
 
 (async () => {
   const calls = [];

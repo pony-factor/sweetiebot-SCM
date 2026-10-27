@@ -4,8 +4,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
-const { openIndependentWorkspace } = require('../efs/branches/new_workspace');
-const { routeBranch, originalRepository, reconnectManagedMain } = require('../efs/branches/shared_main');
+const { openIndependentWorkspace } = require('../extension/branches/new_workspace');
+const { routeBranch, originalRepository, reconnectManagedMain } = require('../extension/branches/shared_main');
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const editor = root => ({
@@ -141,7 +141,7 @@ async function openedRoot(result) {
     const topicIndex = git('-C', moved, 'diff', '--cached');
     moving.commands.calls.length = 0;
     await routeBranch(moving, { rootUri: { fsPath: moved } },
-      { ...options, branch: 'from-topic', create: true, start: 'refs/heads/main' });
+      { ...options, branch: 'from-topic', create: true, start: 'rextension/heads/main' });
     const fromTopic = folderUpdate[2].uri.fsPath;
     assert.equal(git('-C', fromTopic, 'branch', '--show-current'), 'from-topic');
     assert.equal(git('-C', fromTopic, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
@@ -167,12 +167,12 @@ async function openedRoot(result) {
     ].join('\n'));
     await routeBranch(moving, { rootUri: { fsPath: moved } }, {
       ...options, branch: 'pending-from-topic', create: true, forkScript,
-      source: 'refs/heads/main', expectedHead: 'refs/heads/moving-task'
+      source: 'rextension/heads/main', expectedHead: 'rextension/heads/moving-task'
     });
     assert.equal(git('-C', folderUpdate[2].uri.fsPath, 'branch', '--show-current'), 'pending-from-topic');
     await assert.rejects(routeBranch(moving, { rootUri: { fsPath: moved } }, {
       ...options, branch: 'stale-from-topic', create: true, forkScript,
-      source: 'refs/heads/main', expectedHead: 'refs/heads/stale'
+      source: 'rextension/heads/main', expectedHead: 'rextension/heads/stale'
     }), /active branch changed/);
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
     moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
@@ -237,7 +237,7 @@ async function openedRoot(result) {
       linkedMain, 'Returning to main preserves the original topic checkout');
     const originalTopicEditor = editor(root);
     assert.equal(await routeBranch(originalTopicEditor, { rootUri: { fsPath: root } }, {
-      ...options, branch: 'new-from-original-topic', create: true, start: 'refs/heads/main'
+      ...options, branch: 'new-from-original-topic', create: true, start: 'rextension/heads/main'
     }), true, 'New Branch works when the original checkout is still on a topic');
     const newFromOriginal = await openedRoot({ target: originalTopicEditor.commands.calls.at(-1)[1].fsPath });
     assert.equal(git('-C', newFromOriginal, 'branch', '--show-current'), 'new-from-original-topic');

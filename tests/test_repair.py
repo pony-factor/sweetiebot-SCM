@@ -79,7 +79,7 @@ class RepairTests(unittest.TestCase):
         self.assertIn(Path('codex-customizations/scripts/repair.py'), sources)
         self.assertIn(Path('codex-customizations/scripts/update.py'), sources)
         for name in ('github/github_pr_refresh.js', 'github/github_pr_actions.js', 'package.json'):
-            self.assertIn(Path('codex-customizations/efs') / name, sources)
+            self.assertIn(Path('codex-customizations/extension') / name, sources)
 
     def test_remote_update_check_is_shared_between_windows(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \

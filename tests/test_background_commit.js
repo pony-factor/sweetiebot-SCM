@@ -85,7 +85,7 @@ async function run() {
       } };
     }
   });
-  vm.runInContext(fs.readFileSync(require.resolve('../efs/commits/background_commit'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(require.resolve('../extension/commits/background_commit'), 'utf8'), sandbox);
   const vscode = {
     Uri: { from: uri => uri, joinPath: (_uri, name) => ({ fsPath: '/extension/' + name }) },
     extensions: { getExtension: () => ({ async activate() { return { getAPI: () => ({ repositories: [repository], getRepository: () => repository }) }; } }) },
@@ -245,7 +245,7 @@ async function run() {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(titleContexts.at(-1), false, 'title context clears when resumed push finishes');
   // A worker-reported merged PR prompts after the commit, once per job ID.
-  status = { id: '0123456789abcdef', phase: 'blocked', branch: 'refs/heads/old',
+  status = { id: '0123456789abcdef', phase: 'blocked', branch: 'rextension/heads/old',
     mergedBranch: { branch: 'old', number: 61, defaultBranch: 'main', remote: 'origin' },
     error: 'Branch "old" was merged in PR #61.', pushPending: false };
   poll();
@@ -272,7 +272,7 @@ async function run() {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1, 'a genuine branch mismatch remains visible');
   assert.equal(titleContexts.at(-1), false, 'blocked jobs do not leave Pushing behind');
-  status = { id: 'rejected-push', phase: 'blocked', titleJobs: [], branch: 'refs/heads/hoofar',
+  status = { id: 'rejected-push', phase: 'blocked', titleJobs: [], branch: 'rextension/heads/hoofar',
     conflictPaths: ['Sources/RepoLauncher.swift', 'Repository Launcher.app/Contents/MacOS/RepositoryLauncher'],
     error: 'Push rejected: local and remote changes have merge conflicts.' };
   nextChoice = 'View conflicting files';

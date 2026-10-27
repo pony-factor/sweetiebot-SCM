@@ -60,7 +60,7 @@ async function run() {
     }
   };
   vm.runInNewContext(
-    fs.readFileSync(path.join(__dirname, '../efs/commits/auto_codex_commit.js'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '../extension/commits/auto_codex_commit.js'), 'utf8'),
     sandbox, { filename: 'auto_codex_commit.js' }
   );
   const { AUTO_COMMIT_INTERVAL_MS, hasPendingChanges, scanAutoCodexCommits, registerAutoCodexCommit } = sandbox.module.exports;
@@ -100,7 +100,7 @@ async function run() {
   await scanAutoCodexCommits(vscode, new Set(), errors);
   await scanAutoCodexCommits(vscode, new Set(), errors);
   assert.equal(warnings.length, 1, 'a persistent queue error is only reported once');
-  const manifest = require('../efs/package.json');
+  const manifest = require('../extension/package.json');
   const option = manifest.contributes.configuration.properties['scmToolkit.autoCommitWithCodex'];
   assert.equal(option.default, false);
   assert.equal(option.scope, 'window');

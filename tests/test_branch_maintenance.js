@@ -18,7 +18,7 @@ const sandbox = { module: {exports:{}}, process,
   setInterval(fn, interval) { assert.equal(interval,600000);tick=fn;return 1; },
   clearInterval(id) { assert.equal(id,1);cleared=true; }
 };
-vm.runInNewContext(fs.readFileSync(require.resolve('../efs/branches/branch_maintenance'), 'utf8'),sandbox);
+vm.runInNewContext(fs.readFileSync(require.resolve('../extension/branches/branch_maintenance'), 'utf8'),sandbox);
 const vscode={window:{createOutputChannel(){return {append(chunk){outputLines.push(chunk);},appendLine(line){outputLines.push(line);},dispose(){outputDisposed = true;}};}},workspace:{getConfiguration(){return {get(){return enabled;}}}},extensions:{getExtension(){return {async activate(){return {getAPI(){return {repositories:[
   {rootUri:{scheme:'file',fsPath:'/repo with spaces'},async status(){refreshed++;}},{rootUri:{scheme:'vscode-remote',fsPath:'/remote'}}
 ]}}}}}}},Uri:{joinPath(_,file){return {fsPath:'/extension/'+file}}}};

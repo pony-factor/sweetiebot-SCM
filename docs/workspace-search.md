@@ -20,4 +20,4 @@ Default maximums: **5,000 candidate files**, **10 MB per directly indexed file**
 
 Privacy: local indexing and Ollama embedding are separate from optional cloud ChatGPT/GitHub workflows. Deliberately exclude sensitive documents; a hidden filename is not an access control. For incomplete results try Exact mode, correct scope, limits, model, and text extraction.
 
-Source: [index and persistence](../efs/search/search_index.js), [extractor](../efs/search/extract.js), [view](../efs/search/view.js), [search tests](../tests/test_workspace_search_index.js). See [settings](settings-reference.md).
+Source: [index and persistence](../extension/search/search_index.js), [extractor](../extension/search/extract.js), [view](../extension/search/view.js), [search tests](../tests/test_workspace_search_index.js). See [settings](settings-reference.md).

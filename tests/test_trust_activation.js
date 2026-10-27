@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const manifest = require('../efs/package.json');
+const manifest = require('../extension/package.json');
 assert.equal(manifest.capabilities.untrustedWorkspaces.supported, 'limited');
 assert.equal(manifest.main, './trust_activation.js');
 
@@ -29,7 +29,7 @@ async function fixture(trusted) {
       };
     }
   };
-  vm.runInNewContext(fs.readFileSync(require.resolve('../efs/trust_activation'), 'utf8'), sandbox);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../extension/trust_activation'), 'utf8'), sandbox);
   const extension = sandbox.module.exports;
   await extension.activate({ subscriptions: [] });
   await new Promise(resolve => setImmediate(resolve));

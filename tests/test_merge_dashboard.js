@@ -5,13 +5,13 @@ const fs = require('node:fs');
 const {
   REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments, normalizeInlineReviewComments,
   mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard
-} = require('../efs/merge/merge_dashboard');
-const { formatTimelineTimestamp, formatMergeOutcome } = require('../efs/merge/merge_dashboard_timestamps');
-const { renderMergeMarkdown } = require('../efs/merge/merge_dashboard_markdown');
-const { mergeActivityPresentation, renderMergeActivitySummary } = require('../efs/merge/merge_dashboard_activity');
-const { classifyMergePatchLine, renderMergePatch } = require('../efs/merge/merge_dashboard_diff');
-const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../efs/merge/merge_blocker_actions');
-const { createMergeDashboardPersistence, stateKey } = require('../efs/merge/merge_dashboard_persistence');
+} = require('../extension/merge/merge_dashboard');
+const { formatTimelineTimestamp, formatMergeOutcome } = require('../extension/merge/merge_dashboard_timestamps');
+const { renderMergeMarkdown } = require('../extension/merge/merge_dashboard_markdown');
+const { mergeActivityPresentation, renderMergeActivitySummary } = require('../extension/merge/merge_dashboard_activity');
+const { classifyMergePatchLine, renderMergePatch } = require('../extension/merge/merge_dashboard_diff');
+const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../extension/merge/merge_blocker_actions');
+const { createMergeDashboardPersistence, stateKey } = require('../extension/merge/merge_dashboard_persistence');
 
 (async () => {
   const sha = 'a'.repeat(40);
@@ -667,7 +667,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge/merg
   await assert.rejects(githubGet(async () => ({ ok: true,
     json: async () => { throw new SyntaxError('Unexpected token'); } }), 'test-token',
   'pony-factor/example', '/pulls/12'), /response could not be read as JSON/);
-  assert(fs.readFileSync(require('node:path').join(__dirname, '../efs/merge/merge_dashboard.html'),
+  assert(fs.readFileSync(require('node:path').join(__dirname, '../extension/merge/merge_dashboard.html'),
     'utf8').includes('Changed files'));
   // A mock DOM tests Markdown semantics without trusting any source HTML.
   const document = { createElement(tag) {

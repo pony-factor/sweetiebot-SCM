@@ -8,7 +8,7 @@ const {
   TERMINAL_SELECT_ALL_COMMAND,
   TERMINAL_COPY_AND_CLEAR_SELECTION_COMMAND,
   registerTerminalActions
-} = require('../efs/ui/terminal_actions');
+} = require('../extension/ui/terminal_actions');
 
 async function run() {
   const calls = [];
@@ -55,12 +55,12 @@ async function run() {
   assert.deepEqual(calls, [TERMINAL_SELECT_ALL_COMMAND]);
   assert.match(notices.at(-1)[1], /Unable to copy terminal contents: terminal unavailable/);
 
-  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'efs', 'package.json'), 'utf8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'package.json'), 'utf8'));
   assert.ok(manifest.activationEvents.includes('onCommand:' + COPY_TERMINAL_CONTENTS_COMMAND));
   assert.equal(manifest.contributes.commands.find(item => item.command === COPY_TERMINAL_CONTENTS_COMMAND)?.title,
     'Copy Entire Terminal Contents');
   assert.ok(manifest.contributes.menus['terminal/context'].some(item => item.command === COPY_TERMINAL_CONTENTS_COMMAND));
-  assert.match(fs.readFileSync(path.join(__dirname, '..', 'efs', 'extension.js'), 'utf8'),
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'extension', 'extension.js'), 'utf8'),
     /registerTerminalActions\(vscode, context\)/);
 
   context.subscriptions[0].dispose();

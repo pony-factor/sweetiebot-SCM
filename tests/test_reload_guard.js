@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { reloadBlockReason, rememberAutomaticReload, RELOAD_HISTORY_KEY } = require('../efs/ui/reload_guard');
+const { reloadBlockReason, rememberAutomaticReload, RELOAD_HISTORY_KEY } = require('../extension/ui/reload_guard');
 
 async function run() {
   const records = new Map();

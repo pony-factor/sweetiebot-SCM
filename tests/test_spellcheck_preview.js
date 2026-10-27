@@ -52,7 +52,7 @@ async function run() {
     }
   });
   vm.runInContext(
-    fs.readFileSync(require.resolve('../efs/commits/spellcheck_preview.js'), 'utf8'),
+    fs.readFileSync(require.resolve('../extension/commits/spellcheck_preview.js'), 'utf8'),
     sandbox
   );
 

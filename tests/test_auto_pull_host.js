@@ -18,7 +18,7 @@ const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: {
   assert.equal(options.ref, 'kefania', 'Topic branches fetch their tracked branch');
   topicFetches++;
 } };
-const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../efs/branches/branch_actions')), process,
+const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../extension/branches/branch_actions')), process,
   require(name) {
     if (name === 'node:util') return { promisify(fn) { return (...args) => new Promise((resolve, reject) =>
       fn(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr }))); } };
@@ -32,32 +32,32 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
           : '';
         callback(null, value, '');
       } else if (args[0] === 'rev-list') {
-        assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...refs/remotes/upstream/main']);
+        assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...rextension/remotes/upstream/main']);
         callback(null, '0\t1\n', '');
       } else {
         if (options.cwd === '/topic') {
-          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/origin/kefania']);
+          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'rextension/remotes/origin/kefania']);
           topicMerges++;
           topic.state.HEAD.behind = 0;
           callback(null, '', '');
           return;
         }
-        assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/upstream/main']);
+        assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'rextension/remotes/upstream/main']);
         merges++;
         if (mergeError) callback(new Error('local changes would be overwritten by merge'), '', '');
         else { main.state.HEAD.behind = 0; callback(null, '', ''); }
       }
     } };
-    if (name === '../merge/lindsey_conflicts') return require('../efs/merge/lindsey_conflicts');
-    if (name === './branch_name_selection') return require('../efs/branches/branch_name_selection');
-    if (name.startsWith('.')) return require(path.resolve(__dirname, '../efs/branches', name));
+    if (name === '../merge/lindsey_conflicts') return require('../extension/merge/lindsey_conflicts');
+    if (name === './branch_name_selection') return require('../extension/branches/branch_name_selection');
+    if (name.startsWith('.')) return require(path.resolve(__dirname, '../extension/branches', name));
     return require(name);
   },
   Date: { now() { return clock; } },
   setInterval(callback, delay) { assert.equal(delay, 1000); tick = callback; return { unref() {} }; },
   clearInterval() { cleared = true; }
 };
-vm.runInNewContext(fs.readFileSync(require.resolve('../efs/branches/branch_actions'), 'utf8'), sandbox);
+vm.runInNewContext(fs.readFileSync(require.resolve('../extension/branches/branch_actions'), 'utf8'), sandbox);
 const context = { subscriptions: [] };
 const handlers = {};
 const vscode = {

@@ -312,7 +312,7 @@ async function stackedPullRequestBase(root, branch, fallback) {
   if (parent === branch) throw new Error('A stacked PR cannot target its own branch.');
   try {
     await promisify(execFile)('git',
-      ['merge-base', '--is-ancestor', `refs/heads/${parent}`, `refs/heads/${branch}`],
+      ['merge-base', '--is-ancestor', `rextension/heads/${parent}`, `rextension/heads/${branch}`],
       { cwd: root, timeout: 10000 });
   } catch {
     throw new Error(`Restack ${branch} on ${parent} before opening its pull request.`);

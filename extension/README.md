@@ -1,12 +1,12 @@
 # Sweetiebot companion extension
 
-This folder contains Sweetiebot's complete VS Code companion extension, not only Eyes Forward Search (EFS). The `efs/` path is retained for installer and extension compatibility.
+The `extension/` directory contains Sweetiebot's VS Code companion extension. It powers Source Control actions, Git worktrees, commit flows, GitHub integration, merge dashboards, Codex handoffs, and workspace search.
 
 ## Feature modules
 
 | Directory | Responsibility |
 | --- | --- |
-| `search/` | EFS indexing, extraction, search UI, and Ollama helpers |
+| `search/` | Workspace Search indexing, extraction, search UI, and Ollama helpers |
 | `branches/` | Branches, worktrees, workspace state, cleanup, and sync |
 | `commits/` | Commit flows, publishing, limits, and spellchecking |
 | `github/` | GitHub API, pull request discovery, drafting, and sessions |

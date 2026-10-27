@@ -94,7 +94,7 @@ async function checkPublished(job, run = git) {
   if (!files.split('\n').includes(job.path)) {
     throw new Error('The published commit does not change the file referenced by this review (' + job.path + ').');
   }
-  const remote = await run(job.root, 'ls-remote', '--heads', job.remote, 'refs/heads/' + job.branch);
+  const remote = await run(job.root, 'ls-remote', '--heads', job.remote, 'rextension/heads/' + job.branch);
   const published = remote.split(/\s/)[0];
   if (published !== head) return null; // Includes delayed async title rewrite and unfinished pushes.
   const patch = await run(job.root, 'diff', '--no-ext-diff', '--unified=3',

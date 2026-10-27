@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { autoPullClean } = require('../efs/branches/branch_actions');
+const { autoPullClean } = require('../extension/branches/branch_actions');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-auto-pull-'));
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],

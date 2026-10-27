@@ -151,7 +151,7 @@ async function openCodexBranch(vscode, context, root, repository, pr, prompt, {
   try {
     await git(root, ['clone', '--local', '--no-hardlinks', '--no-checkout', '--', root, destination]);
     await git(destination, ['remote', 'set-url', 'origin', 'https://github.com/' + repository + '.git']);
-    await git(destination, ['fetch', '--quiet', 'origin', 'refs/heads/' + pr.head]);
+    await git(destination, ['fetch', '--quiet', 'origin', 'rextension/heads/' + pr.head]);
     if (await git(destination, ['rev-parse', 'FETCH_HEAD']) !== pr.headSha) throw Error('PR head changed before opening Codex; refresh and choose again.');
     await git(destination, ['checkout', '--quiet', '-B', pr.head, pr.headSha]);
     return await require('../github/pr_session').launchBlockerCodexSession(vscode, context,

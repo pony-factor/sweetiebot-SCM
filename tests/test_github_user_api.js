@@ -1,7 +1,7 @@
 "use strict";
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {githubUserAPI, legacyAPI} = require('../efs/github/github_user_api');
+const {githubUserAPI, legacyAPI} = require('../extension/github/github_user_api');
 
 test('squash metadata and merge requests accept repository roots and preserve the user transport', async () => {
   const calls = [];

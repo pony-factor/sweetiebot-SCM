@@ -207,12 +207,12 @@ ${error.message || ''}`;
 async function deleteMergedRemoteBranch(result, execute = executeGh) {
   const { pr, repo } = result;
   if (!result.merged || pr.isCrossRepository || !pr.headRefName || pr.headRefName === 'main') return;
-  const ref = `repos/${repo}/git/refs/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`;
-  const readRefs = async () => JSON.parse((await execute(['api', `repos/${repo}/git/matching-refs/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`])).stdout);
+  const ref = `repos/${repo}/git/rextension/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`;
+  const readRefs = async () => JSON.parse((await execute(['api', `repos/${repo}/git/matching-rextension/heads/${pr.headRefName.split('/').map(encodeURIComponent).join('/')}`])).stdout);
   // The repository may already delete branches on merge. Check presence without
   // treating an already-deleted branch as a failure.
   const refs = await readRefs();
-  const current = refs.find(candidate => candidate.ref === `refs/heads/${pr.headRefName}`);
+  const current = refs.find(candidate => candidate.ref === `rextension/heads/${pr.headRefName}`);
   if (!current) return;
   if (current.object?.sha !== pr.headRefOid) throw new Error('Remote branch has new commits; it was preserved.');
   const open = JSON.parse((await execute(['pr', 'list', '--repo', repo, '--head', pr.headRefName,
@@ -228,7 +228,7 @@ async function deleteMergedRemoteBranch(result, execute = executeGh) {
     if (/\bHTTP 404\b/.test(detail) ||
         (/\bHTTP 422\b/.test(detail) && /\bReference does not exist\b/i.test(detail))) {
       const remaining = await readRefs();
-      if (!remaining.some(candidate => candidate.ref === `refs/heads/${pr.headRefName}`)) return;
+      if (!remaining.some(candidate => candidate.ref === `rextension/heads/${pr.headRefName}`)) return;
     }
     throw error;
   }

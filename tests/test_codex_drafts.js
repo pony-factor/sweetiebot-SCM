@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { codexDraftStorageKey, registerCodexDraftCommands } = require('../efs/codex/codex_drafts');
+const { codexDraftStorageKey, registerCodexDraftCommands } = require('../extension/codex/codex_drafts');
 
 function scope(root, saved = new Map()) {
   const commands = new Map();

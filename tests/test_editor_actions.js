@@ -7,7 +7,7 @@ const {
   CLOSE_ALL_EDITORS_COMMAND,
   VSCODE_CLOSE_ALL_EDITORS_COMMAND,
   registerEditorActions
-} = require('../efs/ui/editor_actions');
+} = require('../extension/ui/editor_actions');
 
 async function run() {
   const handlers = new Map();
@@ -36,7 +36,7 @@ async function run() {
   assert.deepEqual(executed, [VSCODE_CLOSE_ALL_EDITORS_COMMAND]);
 
   const manifest = JSON.parse(
-    fs.readFileSync(path.join(__dirname, '..', 'efs', 'package.json'), 'utf8')
+    fs.readFileSync(path.join(__dirname, '..', 'extension', 'package.json'), 'utf8')
   );
   assert.ok(manifest.activationEvents.includes(`onCommand:${CLOSE_ALL_EDITORS_COMMAND}`));
 

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { userExtensionCachePath, invalidateUserExtensionCache } = require('../efs/ui/extension_cache');
+const { userExtensionCachePath, invalidateUserExtensionCache } = require('../extension/ui/extension_cache');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-cache-'));
 try {

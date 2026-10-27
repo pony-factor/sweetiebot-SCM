@@ -42,7 +42,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             subprocess.run(['/usr/bin/git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
                             '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'initial'], cwd=root, check=True)
             result = subprocess.run([sys.executable, str(root / 'merged_branch.py'),
-                                     '--completed-base', 'refs/heads/main'], cwd=root, text=True, capture_output=True)
+                                     '--completed-base', 'rextension/heads/main'], cwd=root, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout), subprocess.check_output(
                 ['/usr/bin/git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip())
@@ -187,7 +187,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         import build_installer_app
 
         self.assertEqual(
-            build_installer_app.source_files()[Path("efs/media/efs.svg")],
+            build_installer_app.source_files()[Path("extension/media/efs.svg")],
             icon_path,
         )
 

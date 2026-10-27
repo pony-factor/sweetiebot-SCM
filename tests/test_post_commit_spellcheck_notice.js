@@ -4,8 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
-} = require('../efs/commits/post_commit_spellcheck_notice');
-const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange, spellcheckChangeSpans } = require('../efs/commits/spellcheck_diff');
+} = require('../extension/commits/post_commit_spellcheck_notice');
+const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange, spellcheckChangeSpans } = require('../extension/commits/spellcheck_diff');
 
 const head = 'a'.repeat(40);
 const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });
@@ -460,7 +460,7 @@ test('failed Accept preserves concurrent staged edits, branch switches, and new 
     let staged = '', changed = false;
     const readDiff = async (_root, args) => args.includes('--cached') ? staged : patch;
     const readGit = async (root, args) => {
-      if (args[0] === 'symbolic-ref') return changed && change === 'branch' ? 'refs/heads/other' : 'refs/heads/topic';
+      if (args[0] === 'symbolic-ref') return changed && change === 'branch' ? 'rextension/heads/other' : 'rextension/heads/topic';
       if (args[0] === 'rev-parse') return changed && change === 'head' ? 'b'.repeat(40) : head;
       return f.git(root, args);
     };
@@ -493,7 +493,7 @@ test('Accept honors the Commit and push checkbox, while Revert never pushes', as
       f.repo.push = async () => { throw new Error('Must use the SCM push command'); };
       const readDiff = async (_root, args) => args.includes('--cached') ? '' : patch;
       const readGit = async (root, args) => args[0] === 'symbolic-ref'
-        ? 'refs/heads/cherry-jubilee' : f.git(root, args);
+        ? 'rextension/heads/cherry-jubilee' : f.git(root, args);
       await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']}, readDiff, readGit);
       const preview = takeSpellcheckPopup();
       const vscode = {
@@ -534,7 +534,7 @@ test('Failed push preserves the accepted commit and reports the failure without 
     const messages = [];
     f.repo.push = async () => { throw new Error('Must use the SCM push command'); };
     const readGit = async (root, args) => args[0] === 'symbolic-ref'
-      ? (committed && switchBranch ? 'refs/heads/other' : 'refs/heads/cherry-jubilee')
+      ? (committed && switchBranch ? 'rextension/heads/other' : 'rextension/heads/cherry-jubilee')
       : f.git(root, args);
     await showNotice({}, f.repo, {head, root: '/repo', paths: ['notes/report.md']},
       async (_root, args) => args.includes('--cached') ? '' : patch, readGit);
@@ -664,7 +664,7 @@ test('Accept queues reviewed corrections behind pending titles and survives a ti
   const tree = 'c'.repeat(40);
   let current = head;
   const readGit = async (root, args) => {
-    if (args[0] === 'symbolic-ref') return 'refs/heads/topic';
+    if (args[0] === 'symbolic-ref') return 'rextension/heads/topic';
     if (args[0] === 'rev-parse') return args[1].endsWith('^{tree}') ? tree : current;
     return f.git(root, args);
   };

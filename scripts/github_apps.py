@@ -108,7 +108,7 @@ def check_connection(role, repository):
     here = Path(__file__).resolve().parent
     module = here / "github_app_identity.js"
     if not module.exists():
-        module = here.parent / "efs" / "github_app_identity.js"
+        module = here.parent / "extension" / "github_app_identity.js"
     # Only the success identity is returned. Tokens and subprocess errors never
     # reach the page. No PR, comment or merge is created by this check.
     program = """

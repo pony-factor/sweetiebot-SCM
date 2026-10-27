@@ -51,7 +51,7 @@ async function run() {
       if (name === 'vscode') return vscode;
       if (name === 'node:os') return { homedir: () => '/stable-home' };
       if (name === 'node:path') return require('node:path');
-      if (name === './codex/kefania_close_position') return require('../efs/codex/kefania_close_position');
+      if (name === './codex/kefania_close_position') return require('../extension/codex/kefania_close_position');
       if (name === './ui/extension_cache') return { invalidateUserExtensionCache() {} };
       if (name === './branches/workspace_activity') {
         return { stopManagedWindowActivity: async () => { managedActivityStops++; } };
@@ -112,7 +112,7 @@ async function run() {
       }
     }
   });
-  vm.runInContext(fs.readFileSync(require.resolve('../efs/extension.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(require.resolve('../extension/extension.js'), 'utf8'), sandbox);
   const open = () => vm.runInContext('openSettings(context)', sandbox);
   const tick = () => new Promise(resolve => setImmediate(resolve));
 

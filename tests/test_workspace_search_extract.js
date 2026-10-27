@@ -43,7 +43,7 @@ function loadExtractor(responses, platform = 'darwin') {
       return require(name);
     }
   };
-  vm.runInNewContext(fs.readFileSync(require.resolve('../efs/search/extract.js'), 'utf8'), sandbox);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../extension/search/extract.js'), 'utf8'), sandbox);
   return { extractor: sandbox.module.exports, calls, rawReads: () => rawReads };
 }
 

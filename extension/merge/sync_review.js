@@ -24,7 +24,7 @@ async function reviewSyncConflicts(vscode, repository, details) {
     await repository.status();
     if (repository.state.HEAD?.name !== branch
         || await git(root, ['rev-parse', 'HEAD']) !== head
-        || await git(root, ['rev-parse', 'refs/remotes/' + remote + '/' + defaultBranch]) !== target
+        || await git(root, ['rev-parse', 'rextension/remotes/' + remote + '/' + defaultBranch]) !== target
         || await git(root, ['status', '--porcelain'])) {
       throw Error('Sync revisions or working files changed during review. No merge was started.');
     }

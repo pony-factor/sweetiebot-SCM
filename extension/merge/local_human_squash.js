@@ -192,16 +192,16 @@ async function humanSquashMerge(repository, number, {
     const verifyPushedPR = preparedSha => readPushedPR({
       original, preparedSha, readPR: () => api(prPath),
       readHead: async () => {
-        const ref = 'refs/heads/' + head;
+        const ref = 'rextension/heads/' + head;
         const lines = (await inRepo('ls-remote', '--refs', 'origin', ref)).split('\n');
         const match = lines.find(line => line.split(/\s+/)[1] === ref);
         return match?.split(/\s+/)[0];
       }
     });
     // Fetch both exact branch tips. Never work inside the user's editor checkout.
-    await inRepo('fetch', '--quiet', 'origin', 'refs/heads/' + base, 'refs/heads/' + head);
-    const liveBase = await inRepo('rev-parse', 'refs/remotes/origin/' + base);
-    const liveHead = await inRepo('rev-parse', 'refs/remotes/origin/' + head);
+    await inRepo('fetch', '--quiet', 'origin', 'rextension/heads/' + base, 'rextension/heads/' + head);
+    const liveBase = await inRepo('rev-parse', 'rextension/remotes/origin/' + base);
+    const liveHead = await inRepo('rev-parse', 'rextension/remotes/origin/' + head);
     if (liveHead !== originalSha) {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
@@ -327,7 +327,7 @@ async function humanSquashMerge(repository, number, {
       await checkHeadWritable();
       // An exact-head lease plus the ancestry check above guarantees this is
       // an append-only update, including if someone rewinds the remote ref.
-      await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
+      await inRepo('push', 'origin', prepared.sha + ':rextension/heads/' + head);
       pushedSha = prepared.sha;
       progress('pushed', { sha: prepared.sha, title: operationCommitTitle });
       progress('verifying-push', { sha: prepared.sha, title: operationCommitTitle });
@@ -375,8 +375,8 @@ async function humanSquashMerge(repository, number, {
     if (await readBaseTip() !== baseSha) throw refreshBase();
     // Close the PR-dependency race immediately before the only destructive push.
     await checkHeadRewriteSafety();
-    await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
-      'origin', preparedSha + ':refs/heads/' + head);
+    await inRepo('push', '--force-with-lease=rextension/heads/' + head + ':' + originalSha,
+      'origin', preparedSha + ':rextension/heads/' + head);
     pushedSha = preparedSha;
     progress('pushed', { sha: preparedSha, title: operationCommitTitle });
     progress('verifying-push', { sha: preparedSha, title: operationCommitTitle });

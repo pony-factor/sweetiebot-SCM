@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { publishBlockerReport, firstDiffAnchor } = require('../efs/merge/merge_blocker_report');
-const { blockerOptions } = require('../efs/merge/merge_blocker_actions');
+const { publishBlockerReport, firstDiffAnchor } = require('../extension/merge/merge_blocker_report');
+const { blockerOptions } = require('../extension/merge/merge_blocker_actions');
 const pr = { number: 68, title: 'Feature', headSha: 'a'.repeat(40), head: 'feature', base: 'main' };
 assert.deepEqual(firstDiffAnchor('@@ -4 +4,2 @@\n context\n+new'), { line: 5, side: 'RIGHT' });
 assert.equal(firstDiffAnchor('not a patch'), null);

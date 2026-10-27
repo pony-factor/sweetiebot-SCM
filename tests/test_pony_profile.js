@@ -9,7 +9,7 @@ const {
   displayName,
   normalizeImageIndex,
   normalizePonyProfile,
-} = require('../efs/codex/pony_profile');
+} = require('../extension/codex/pony_profile');
 
 async function run() {
   assert.equal(displayName('berry-punch'), 'Berry Punch');

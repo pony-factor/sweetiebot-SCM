@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { createMergeBatch } = require('../efs/merge/merge_batch');
-const { readMergeChecks, waitForMergeChecks } = require('../efs/merge/merge_checks');
+const { createMergeBatch } = require('../extension/merge/merge_batch');
+const { readMergeChecks, waitForMergeChecks } = require('../extension/merge/merge_checks');
 const a = 'a'.repeat(40), b = 'b'.repeat(40), c = 'c'.repeat(40), d = 'd'.repeat(40), e = 'e'.repeat(40);
 const selection = { repository: 'owner/repo', pullRequests: [1, 2].map(number => ({ number,
   title: 'Feature ' + number, url: 'https://github.com/owner/repo/pull/' + number,
@@ -203,7 +203,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.deepEqual(third.value.batch.deferred, [], 'A successful last retry is not also a blocker');
   } finally { raced.dispose(); }
 
-  const page = require('node:fs').readFileSync(require.resolve('../efs/merge/merge_handoff.html'), 'utf8');
+  const page = require('node:fs').readFileSync(require.resolve('../extension/merge/merge_handoff.html'), 'utf8');
   const pageScript = page.match(/<script>([\s\S]*?)<\/script>/)[1];
   const next = 'https://chatgpt.com/#sweetiebot_merge=1&q=Refreshed%20round';
   for (const destination of [next, 'https://example.com/#sweetiebot_merge=1']) {

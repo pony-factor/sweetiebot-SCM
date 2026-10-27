@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { resolveChatgptActionProject } = require('../efs/codex/chatgpt_project');
+const { resolveChatgptActionProject } = require('../extension/codex/chatgpt_project');
 
 async function run() {
   const project = 'https://chatgpt.com/g/g-p-project123/project';

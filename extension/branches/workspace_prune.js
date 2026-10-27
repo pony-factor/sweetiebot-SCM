@@ -162,10 +162,10 @@ async function cleanClone(group, name, io, run) {
   if (!repoMatch || proofs.some(proof =>
     proof.repository !== repoMatch.slice(1).join('/'))) return false;
   if (await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd) !== 'main') return false;
-  if (await run('git', ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], cwd) !== 'main') return false;
+  if (await run('git', ['for-each-ref', '--format=%(refname:short)', 'rextension/heads'], cwd) !== 'main') return false;
   if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '') return false;
-  if (await run('git', ['rev-parse', '--verify', '--quiet', 'refs/stash'], cwd) !== null) return false;
-  if (await run('git', ['merge-base', '--is-ancestor', 'HEAD', 'refs/remotes/origin/main'], cwd) === null) return false;
+  if (await run('git', ['rev-parse', '--verify', '--quiet', 'rextension/stash'], cwd) !== null) return false;
+  if (await run('git', ['merge-base', '--is-ancestor', 'HEAD', 'rextension/remotes/origin/main'], cwd) === null) return false;
   if (await run('git', ['rev-list', '--count', '--branches', '--not', '--remotes'], cwd) !== '0') return false;
 
   // A deleted branch may leave merged commits in the HEAD reflog. Every such
@@ -176,7 +176,7 @@ async function cleanClone(group, name, io, run) {
   const commits = [...new Set(history.split('\n').filter(Boolean))];
   if (commits.length > 500) return false;
   for (const sha of commits) {
-    if (await run('git', ['merge-base', '--is-ancestor', sha, 'refs/remotes/origin/main'], cwd) !== null) continue;
+    if (await run('git', ['merge-base', '--is-ancestor', sha, 'rextension/remotes/origin/main'], cwd) !== null) continue;
     let recognized = false;
     for (const proof of proofs) {
       if (await run('git', ['merge-base', '--is-ancestor', sha, proof.oid], cwd) !== null) {
@@ -205,14 +205,14 @@ async function cleanWorktree(group, name, kind, io, run, dryRun) {
   const worktrees = await run('git', ['worktree', 'list', '--porcelain'], original);
   if (!worktrees || !worktrees.split('\n\n').some(block => {
     const lines = block.split('\n');
-    return lines.includes('worktree ' + cwd) && lines.includes('branch refs/heads/' + branch);
+    return lines.includes('worktree ' + cwd) && lines.includes('branch rextension/heads/' + branch);
   })) return false;
   if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '') return false;
   // Stashes live in the common Git database. Do not erase associated worktree
   // state while there is anything left to recover.
-  if (await run('git', ['rev-parse', '--verify', '--quiet', 'refs/stash'], cwd) !== null) return false;
+  if (await run('git', ['rev-parse', '--verify', '--quiet', 'rextension/stash'], cwd) !== null) return false;
   const head = await run('git', ['rev-parse', 'HEAD'], cwd);
-  if (!head || await run('git', ['rev-parse', 'refs/heads/' + branch], original) !== head) return false;
+  if (!head || await run('git', ['rev-parse', 'rextension/heads/' + branch], original) !== head) return false;
   const origin = await run('git', ['remote', 'get-url', 'origin'], original);
   const match = origin?.match(/^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
   if (!match || await run('git', ['fetch', '--prune', '--no-tags', 'origin'], original) === null) return false;
@@ -220,7 +220,7 @@ async function cleanWorktree(group, name, kind, io, run, dryRun) {
   if (kind === 'main-worktree') {
     // In particular, do not discard local main commits that were never pushed.
     if (await run('git', ['merge-base', '--is-ancestor', 'HEAD',
-      'refs/remotes/origin/main'], cwd) === null) return false;
+      'rextension/remotes/origin/main'], cwd) === null) return false;
   } else {
     const repository = match[1] + '/' + match[2];
     const open = await run('gh', ['pr', 'list', '--repo', repository, '--head',
@@ -262,7 +262,7 @@ async function cleanWorktree(group, name, kind, io, run, dryRun) {
   if (kind === 'topic-worktree') {
     // Squash merges require -D, since the original PR commits are not
     // ancestors of main. The branch tip was verified against the merged PR.
-    if (await run('git', ['rev-parse', 'refs/heads/' + branch], original) === head) {
+    if (await run('git', ['rev-parse', 'rextension/heads/' + branch], original) === head) {
       await run('git', ['branch', '-D', '--', branch], original);
     }
   }

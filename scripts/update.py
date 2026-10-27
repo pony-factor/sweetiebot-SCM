@@ -18,7 +18,7 @@ SHARED_PROFILE_SOURCE = Path('scripts/browser_pr.py')
 SHARED_PROFILE_MARKER = 'SHARED_BROWSER_PROFILE = 2'
 FORMATS = {
     "scripts": {".py", ".json"},
-    "efs": {".js", ".json", ".svg", ".md", ".html"},
+    "extension": {".js", ".json", ".svg", ".md", ".html"},
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
     "assets/imgs": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"},
@@ -51,7 +51,7 @@ def extract_sources(archive, destination):
 
 def installed_sources_match(candidate, extensions_dir):
     """Verify bundled sources and the files actually executed by VS Code/Git."""
-    package = json.loads((candidate / "efs/package.json").read_text())
+    package = json.loads((candidate / "extension/package.json").read_text())
     destination = extensions_dir / f'{package["publisher"]}.{package["name"]}-{package["version"]}'
     for relative, source in source_files(candidate).items():
         if not source.is_file():
@@ -107,7 +107,7 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     if not repository.exists():
         repository.mkdir(parents=True)
         git(repository, "init", "--bare")
-    git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "refs/heads/main")
+    git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "rextension/heads/main")
     revision = git(repository, "rev-parse", "FETCH_HEAD").decode().strip()
     marker = cache / "installed-revision"
     candidate = cache / "candidate"
@@ -122,10 +122,10 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     # Older releases load this HTML during extension activation but omit it
     # from update archives and bundled repair sources. Do not replace a working
     # bootstrap with one that will remove the asset on its next repair.
-    if (candidate / "efs/codex/draft_handoff.js").is_file():
+    if (candidate / "extension/codex/draft_handoff.js").is_file():
         packaging = (candidate / "scripts" / name for name in
                      ("update.py", "workspace_search.py"))
-        if (not (candidate / "efs/ui/draft_confirmation.html").is_file()
+        if (not (candidate / "extension/ui/draft_confirmation.html").is_file()
                 or any(not source.is_file() or '".html"' not in source.read_text()
                        for source in packaging)):
             print('Published release omits PR HTML from automatic repair; keeping the installed sources.', flush=True)

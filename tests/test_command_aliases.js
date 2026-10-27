@@ -1,8 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerLegacyCommandAliases } = require('../efs/ui/command_aliases');
-const manifest = require('../efs/package.json');
+const { registerLegacyCommandAliases } = require('../extension/ui/command_aliases');
+const manifest = require('../extension/package.json');
 const handlers = new Map();
 const calls = [];
 const context = { subscriptions: [] };

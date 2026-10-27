@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { syncBranch } = require('../efs/branches/branch_actions');
+const { syncBranch } = require('../extension/branches/branch_actions');
 
 const MESSAGE = '🔄 Sync brach to main\n\nCo-authored-by: Codex Web <noreply@openai.com>';
 
@@ -25,7 +25,7 @@ function setup() {
   git('switch', 'topic');
   fs.writeFileSync(path.join(root, 'topic.txt'), 'existing topic work\n');
   git('add', '.'); git('commit', '-m', 'Human topic work');
-  git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
+  git('update-ref', 'rextension/remotes/origin/main', git('rev-parse', 'main'));
   const repository = {
     rootUri: { fsPath: root },
     inputBox: { value: 'Human draft' },
@@ -73,7 +73,7 @@ async function run() {
     git('switch', 'main');
     fs.writeFileSync(path.join(root, 'shared.txt'), 'main change\n');
     git('add', '.'); git('commit', '-m', 'Conflicting main edit');
-    git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
+    git('update-ref', 'rextension/remotes/origin/main', git('rev-parse', 'main'));
     git('switch', 'topic');
     fs.writeFileSync(path.join(root, 'shared.txt'), 'topic change\n');
     git('add', '.'); git('commit', '-m', 'Conflicting topic edit');

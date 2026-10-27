@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { formatGitError, explainGitError, isBlockedByLocalChanges, offerBlockedChangesOptions } = require('../efs/branches/branch_actions');
+const { formatGitError, explainGitError, isBlockedByLocalChanges, offerBlockedChangesOptions } = require('../extension/branches/branch_actions');
 
 async function run() {
   const cases = [

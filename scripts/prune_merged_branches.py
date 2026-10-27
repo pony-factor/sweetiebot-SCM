@@ -65,7 +65,7 @@ def checked_out_branches(repo):
     result = run([GIT, "worktree", "list", "--porcelain"], cwd=repo, timeout=10)
     if result.returncode:
         raise RuntimeError("Cannot verify checked-out branches")
-    prefix = "branch refs/heads/"
+    prefix = "branch rextension/heads/"
     return {
         line[len(prefix):]
         for line in result.stdout.splitlines()
@@ -75,7 +75,7 @@ def checked_out_branches(repo):
 
 def local_branches(repo):
     result = run(
-        [GIT, "for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/heads"],
+        [GIT, "for-each-ref", "--format=%(refname:short)\t%(objectname)", "rextension/heads"],
         cwd=repo,
         timeout=10,
     )
@@ -141,7 +141,7 @@ def pull_requests(repo, repository, branch):
 
 
 def origin_tracking_refs(repo):
-    result = run([GIT, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"],
+    result = run([GIT, "for-each-ref", "--format=%(refname:short)", "rextension/remotes/origin"],
                  cwd=repo, timeout=10)
     if result.returncode:
         raise RuntimeError("Cannot inspect origin tracking refs")
@@ -247,7 +247,7 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
             pruned.append((name_with_owner, branch, number))
             continue
         result = run(
-            [GIT, "update-ref", "-d", f"refs/heads/{branch}", expected_oid],
+            [GIT, "update-ref", "-d", f"rextension/heads/{branch}", expected_oid],
             cwd=repo,
             timeout=10,
         )

@@ -5,7 +5,7 @@ const path = require('node:path');
 const {
   findManagedGroups, registerManagedWindowActivity,
   stopManagedWindowActivity, HEARTBEAT_MS
-} = require('../efs/branches/workspace_activity');
+} = require('../extension/branches/workspace_activity');
 
 (async () => {
   const base = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';

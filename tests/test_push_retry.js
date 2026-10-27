@@ -31,7 +31,7 @@ async function run() {
   };
   await retry(repository, push);
   assert.deepEqual(calls, [
-    ['push'], ['fetch', 'origin', 'shared'], ['merge', 'refs/remotes/origin/shared'], ['push']
+    ['push'], ['fetch', 'origin', 'shared'], ['merge', 'rextension/remotes/origin/shared'], ['push']
   ]);
   calls.length = 0;
   await retry(repository, async () => calls.push(['push']));

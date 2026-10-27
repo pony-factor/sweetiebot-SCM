@@ -35,7 +35,7 @@ Module._load = function(specifier, ...args) {
   return originalLoad.call(this, specifier, ...args);
 };
 try {
-  ({ registerLocalPullRequestCommand } = require('../efs/github/local_pull_request'));
+  ({ registerLocalPullRequestCommand } = require('../extension/github/local_pull_request'));
 } finally {
   Module._load = originalLoad;
 }

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { generateKeyPairSync } = require('node:crypto');
 const { separateAppsEnabled, roleSettings, workflowBotLogin, stripAppSecrets,
-  getRoleInstallationToken } = require('../efs/github/github_app_identity');
+  getRoleInstallationToken } = require('../extension/github/github_app_identity');
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048,
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },

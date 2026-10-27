@@ -7,7 +7,7 @@ const {
   TRUST_SETUP_COMMAND, TRUST_SETUP_SEEN_KEY, REQUEST_PARENT_TRUST_COMMAND,
   independentWorkspaceParent, showIndependentWorkspaceTrustSetup,
   promptForIndependentWorkspaceTrust, registerIndependentWorkspaceTrustCommand
-} = require('../efs/branches/workspace_trust');
+} = require('../extension/branches/workspace_trust');
 
 function fixture({ enabled = true, seen = false, selection = false } = {}) {
   const calls = { prompts: [], updates: [], commands: [], copies: [], mkdirs: [], registrations: [] };

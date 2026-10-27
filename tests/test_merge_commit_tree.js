@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { commitTreeLayout, renderCommitTree, mergeCommitHistory } = require('../efs/merge/merge_commit_tree');
+const { commitTreeLayout, renderCommitTree, mergeCommitHistory } = require('../extension/merge/merge_commit_tree');
 const sha = digit => digit.repeat(40);
 const node = (digit, parents) => ({ sha: sha(digit), parents: parents.map(digit => ({ sha: sha(digit) })), commit: { message: 'Commit ' + digit } });
 const graph = commitTreeLayout([node('a', []), node('b', ['a']), node('c', ['a']), node('d', ['b', 'c'])]);
@@ -46,6 +46,6 @@ assert.equal(button.textContent, 'New · aaaaaaa Commit a');
 assert.equal(button.title, sha('a') + '\nCommit a');
 button.listeners.click();
 assert.deepEqual(clicked, [sha('a')], 'Code-styled SHA rows still open their full commit');
-assert(require('node:fs').readFileSync(require('node:path').join(__dirname, '../efs/merge/merge_dashboard.html'), 'utf8')
+assert(require('node:fs').readFileSync(require('node:path').join(__dirname, '../extension/merge/merge_dashboard.html'), 'utf8')
   .includes('.commit-tree-sha{display:inline-block'), 'The SHA has dedicated code styling');
 console.log('Commit tree parent, fork, merge, missing-parent and code hash checks passed.');

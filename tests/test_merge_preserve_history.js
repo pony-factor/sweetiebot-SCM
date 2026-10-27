@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { squashMergePullRequest } = require('../efs/merge/merge_pull_request');
+const { squashMergePullRequest } = require('../extension/merge/merge_pull_request');
 const head = 'a'.repeat(40), base = 'b'.repeat(40), mergedSha = 'c'.repeat(40);
 const input = { repository: 'owner/repo', head: 'feature', base: 'main', result: { number: 4, url: 'https://github.com/owner/repo/pull/4' } };
 function fixture({ checksFail = false, baseMoves = false } = {}) {

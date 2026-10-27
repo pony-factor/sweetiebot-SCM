@@ -18,7 +18,7 @@ const {
   readSweetiebotPony,
   readLudicrousMode,
   registerPullRequestCommand,
-} = require('../efs/github/pull_request');
+} = require('../extension/github/pull_request');
 
 async function run() {
   assert.equal(await readLudicrousMode(async (_git, args) => {
@@ -659,7 +659,7 @@ async function run() {
   assert.equal(pausedState.errors.draft, 'Commit naming paused');
   commitWait = undefined;
 
-  const packageJson = require('../efs/package.json');
+  const packageJson = require('../extension/package.json');
   assert(packageJson.activationEvents.includes('onCommand:sweetiebot.openPullRequestChat'));
   assert(packageJson.activationEvents.includes('onUri'));
 

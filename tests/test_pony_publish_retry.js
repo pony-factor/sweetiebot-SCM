@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { publishPonyProfile, pendingPonyProfiles } = require('../efs/commits/pony_git_publish');
-const { createPonyPublishQueue } = require('../efs/commits/pony_publish_queue');
+const { publishPonyProfile, pendingPonyProfiles } = require('../extension/commits/pony_git_publish');
+const { createPonyPublishQueue } = require('../extension/commits/pony_publish_queue');
 
 const pony = { packId: 'g4-mares', slug: 'stardom' };
 const stored = 'g4-mares/stardom.json';
@@ -28,8 +28,8 @@ async function fixture(check) {
     else if (args[0] === 'status') stdout = state.status;
     else if (key === 'fetch --quiet origin main') { if (state.failFetch) throw new Error('Network unavailable'); stdout = ''; }
     else if (key === 'rev-parse HEAD') stdout = state.head;
-    else if (key === 'rev-parse refs/remotes/origin/main') stdout = state.remote;
-    else if (key === 'merge-base HEAD refs/remotes/origin/main') stdout = state.remote;
+    else if (key === 'rev-parse rextension/remotes/origin/main') stdout = state.remote;
+    else if (key === 'merge-base HEAD rextension/remotes/origin/main') stdout = state.remote;
     else if (args[0] === 'merge-base' && args[1] === '--is-ancestor') {
       if (!state.published) throw new Error('Not published'); stdout = '';
     }
@@ -42,7 +42,7 @@ async function fixture(check) {
     else if (args[0] === 'log') stdout = state.message;
     else if (args[0] === 'push') {
       state.pushes++;
-      assert.equal(args[2], `${committed}:refs/heads/main`, 'Push only the verified commit SHA');
+      assert.equal(args[2], `${committed}:rextension/heads/main`, 'Push only the verified commit SHA');
       if (state.failPush) throw new Error('Push connection lost');
       state.remote = committed; state.published = true; stdout = '';
     } else throw new Error('Unexpected Git command: ' + key);

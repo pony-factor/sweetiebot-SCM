@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const {spellcheckDiffFiles} = require('../efs/commits/spellcheck_diff');
+const {spellcheckDiffFiles} = require('../extension/commits/spellcheck_diff');
 
 for (const closingAction of ['dismiss', 'correction', 'line', 'edit']) {
 test('popup safely renders and restores focus after closing via ' + closingAction, async () => {

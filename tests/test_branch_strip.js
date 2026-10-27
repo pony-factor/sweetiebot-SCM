@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { groupBranchRefs, parseGitHubRemote } = require('../efs/branches/branch_strip');
+const { groupBranchRefs, parseGitHubRemote } = require('../extension/branches/branch_strip');
 
 assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');
@@ -10,17 +10,17 @@ assert.equal(parseGitHubRemote('https://github.com/pony-factor/sweetiebot-SCM.gi
 assert.equal(parseGitHubRemote('file:///tmp/repository'), null);
 
 const refs = [
-  'refs/heads/main\t3',
-  'refs/heads/working\t100',
-  'refs/remotes/origin/working\t80',
-  'refs/remotes/origin/remote-only\t90',
-  'refs/heads/has-pr\t140',
-  'refs/heads/merged\t60',
-  'refs/remotes/origin/HEAD\t200',
-  'refs/heads/older\t10',
-  'refs/remotes/origin/older\t5'
+  'rextension/heads/main\t3',
+  'rextension/heads/working\t100',
+  'rextension/remotes/origin/working\t80',
+  'rextension/remotes/origin/remote-only\t90',
+  'rextension/heads/has-pr\t140',
+  'rextension/heads/merged\t60',
+  'rextension/remotes/origin/HEAD\t200',
+  'rextension/heads/older\t10',
+  'rextension/remotes/origin/older\t5'
 ].join('\n');
-const merged = 'refs/heads/merged\nrefs/heads/main\nrefs/remotes/origin/older';
+const merged = 'rextension/heads/merged\nrextension/heads/main\nrextension/remotes/origin/older';
 const result = groupBranchRefs(refs, merged, new Set(['has-pr']), true, 'main');
 assert.equal(result.featuredCount, 3);
 assert.deepEqual(result.branches.slice(0, 3).map(item => item.name),

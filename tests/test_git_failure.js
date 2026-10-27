@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { safeGitFailure, gitFailure } = require('../efs/commits/git_failure');
+const { safeGitFailure, gitFailure } = require('../extension/commits/git_failure');
 for (const [stderr, expected] of [
   ['error: corrupt patch at line 9', 'resolution patch did not apply'],
   ['error: gpg failed to sign the data', 'Commit signing failed'],

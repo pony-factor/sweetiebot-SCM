@@ -736,7 +736,7 @@ async function scmToolkitPushWithPullRetry(repository, originalPush, expectedBra
         await repository.fetch({ remote: head.upstream.remote, ref: head.upstream.name });
         checkBranch();
         // Merge explicitly: plain pull can refuse divergent branches or use rebase/ff-only settings.
-        await repository.merge(`refs/remotes/${head.upstream.remote}/${head.upstream.name}`);
+        await repository.merge(`rextension/remotes/${head.upstream.remote}/${head.upstream.name}`);
         checkBranch();
         await originalPush.call(repository, repository.HEAD);
     }
@@ -2806,7 +2806,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 const historyProvider = provider.historyProvider.read(reader);
                 const historyItemRef = historyProvider?.historyItemRef.read(reader);
                 const previousBranch = currentBranch;
-                currentBranch = historyItemRef?.id?.startsWith('refs/heads/')
+                currentBranch = historyItemRef?.id?.startsWith('rextension/heads/')
                     ? historyItemRef.name
                     : undefined;
                 currentBranchRevision = historyItemRef?.revision;

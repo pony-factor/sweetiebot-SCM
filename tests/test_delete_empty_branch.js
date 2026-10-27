@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { deleteBranch, deleteEmptyBranch, remoteBranchTip, deletePublishedBranch,
-  deleteUnverifiedLocalBranch, confirmUnverifiedLocalDeletion, registerBranchCommands } = require('../efs/branches/branch_actions');
+  deleteUnverifiedLocalBranch, confirmUnverifiedLocalDeletion, registerBranchCommands } = require('../extension/branches/branch_actions');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-delete-empty-'));
 const git = (cwd, ...args) => execFileSync('git', args, {
@@ -308,7 +308,7 @@ async function run() {
     // A branch republished during confirmation must use the SHA-leased route.
     const f = orphanedTopic('unverified-republished');
     const vscode = { window: { async showWarningMessage() {
-      git(f.local, 'push', 'origin', 'refs/heads/topic:refs/heads/topic');
+      git(f.local, 'push', 'origin', 'rextension/heads/topic:rextension/heads/topic');
       return 'Delete Local Branch Anyway';
     } } };
     await assert.rejects(deleteBranch(f.repository, {

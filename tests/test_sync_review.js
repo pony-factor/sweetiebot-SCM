@@ -7,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 const {
   githubRepository, reviewSyncConflicts, reportBody,
   queueSyncReport, publishSyncReports
-} = require('../efs/merge/sync_review');
+} = require('../extension/merge/sync_review');
 
 async function run() {
   assert.equal(githubRepository('git@github.com:pony-factor/sweetiebot-SCM.git'),
@@ -33,7 +33,7 @@ async function run() {
     fs.writeFileSync(path.join(root, 'topic'), 'topic content\n');
     git('add', '.'); git('commit', '-m', 'Human topic commit');
     const before = git('rev-parse', 'HEAD');
-    git('update-ref', 'refs/remotes/origin/main', target);
+    git('update-ref', 'rextension/remotes/origin/main', target);
     git('merge', '--no-ff', '--no-edit', 'main');
     const sha = git('rev-parse', 'HEAD');
     const record = { branch: 'topic', defaultBranch: 'main', remote: 'origin',

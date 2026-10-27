@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
-const { pruneManagedWorkspaces } = require('../efs/branches/workspace_prune');
+const { pruneManagedWorkspaces } = require('../extension/branches/workspace_prune');
 
 const BASE = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';
 const GROUP = path.join(BASE, 'pony-ABC123');
@@ -105,7 +105,7 @@ function fixture({
       const candidate = args[2];
       const target = args[3];
       if (candidate === 'HEAD') return '';
-      if (candidate === BASE_OID && target === 'refs/remotes/origin/main') return '';
+      if (candidate === BASE_OID && target === 'rextension/remotes/origin/main') return '';
       if (candidate === OID && target === OID) return '';
       return null;
     }
@@ -219,7 +219,7 @@ function fixture({
         case 'symbolic-ref': return 'topic';
         case 'worktree':
           if (args[1] === 'list') return 'worktree ' + checkout +
-            '\nHEAD ' + sha + '\nbranch refs/heads/topic\n\n';
+            '\nHEAD ' + sha + '\nbranch rextension/heads/topic\n\n';
           if (args[1] === 'remove') {
             await fs.rm(checkout, { recursive: true });
             return '';
@@ -300,7 +300,7 @@ function fixture({
         case 'symbolic-ref': return 'main';
         case 'worktree':
           if (args[1] === 'list') return 'worktree ' + mainCheckout +
-            '\nHEAD ' + sha + '\nbranch refs/heads/main\n\n';
+            '\nHEAD ' + sha + '\nbranch rextension/heads/main\n\n';
           if (args[1] === 'remove') {
             await fs.rm(mainCheckout, { recursive: true });
             return '';

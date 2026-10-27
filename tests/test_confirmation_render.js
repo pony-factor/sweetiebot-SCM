@@ -2,8 +2,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const html=fs.readFileSync(require.resolve('../efs/ui/draft_confirmation.html'),'utf8')
-  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../efs/merge/merge_dashboard_markdown.js'),'utf8'));
+const html=fs.readFileSync(require.resolve('../extension/ui/draft_confirmation.html'),'utf8')
+  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../extension/merge/merge_dashboard_markdown.js'),'utf8'));
 assert.match(html,/\.merge-buttons\{display:flex;flex-wrap:wrap;gap:12px/,'Merge method buttons must have distinct spacing');
 assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
 // Themed borders—including the left warning accent—must use the current

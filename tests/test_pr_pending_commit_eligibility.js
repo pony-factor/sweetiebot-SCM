@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerPullRequestCommand } = require('../efs/github/pull_request');
+const { registerPullRequestCommand } = require('../extension/github/pull_request');
 
 async function run() {
   const root = { scheme: 'file', fsPath: '/tmp/sweetiebot-test-repository' };

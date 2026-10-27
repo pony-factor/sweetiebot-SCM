@@ -136,7 +136,7 @@ def recover_finalization(meta):
         job.pop('replacement_sha', None)
         write_journal(journal, job)
         if 'tree' in update['values']:
-            git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
+            git('update-ref', 'rextension/sweetiebot/jobs/' + job['id'], job['tree'])
     if 'forks' in transaction:
         write_journal(Path(meta) / FORKS, transaction['forks'])
     file.unlink()
@@ -154,7 +154,7 @@ def fork_branch(source, name, expected_head, destination=None, expected_tip=None
         if (meta / 'sweetiebot-async-commit.json').exists():
             raise RuntimeError('Wait for the existing commit message to finish before branching.')
         git('check-ref-format', '--branch', name)
-        branch = 'refs/heads/' + name
+        branch = 'rextension/heads/' + name
         if branch_tip(branch):
             raise RuntimeError('The new branch already exists.')
         base = git('rev-parse', '--verify', source + '^{commit}')
@@ -427,7 +427,7 @@ def enqueue(request, start=True):
                    include_description=core.should_add_default_branch_description(),
                    phase='preparing', enqueue_pid=os.getpid())
         write_journal(directory / 'job.json', job)
-        git('update-ref', 'refs/sweetiebot/jobs/' + job['id'], job['tree'])
+        git('update-ref', 'rextension/sweetiebot/jobs/' + job['id'], job['tree'])
         entries.append({'id': job['id'], 'directory': str(directory)})
         save_queue(marker, entries)
         # Finish Git's local commit before acknowledging the click. Only message
@@ -525,7 +525,7 @@ def finalize_message(directory, job):
             parent = rewritten
         if extension:
             # Preserve the old tip for recovery; the ref transaction uses CAS.
-            git('update-ref', 'refs/sweetiebot/recovery/' + current['id'] + '/' + before, before)
+            git('update-ref', 'rextension/sweetiebot/recovery/' + current['id'] + '/' + before, before)
         moves = [dict(branch=current['branch'], before=before, after=parent)]
         forks = read_journal(meta / FORKS) or {}
         remaining = dict(forks)
@@ -587,10 +587,10 @@ def permanent_push_error(job, result):
     """Stop retrying remote branch namespace collisions; never expose raw Git output."""
     output = '\n'.join((result.stderr or '', result.stdout or ''))
     if not re.search(
-            r"cannot lock ref 'refs/heads/[^']+': 'refs/heads/[^']+' exists; cannot create 'refs/heads/[^']+'",
+            r"cannot lock ref 'rextension/heads/[^']+': 'rextension/heads/[^']+' exists; cannot create 'rextension/heads/[^']+'",
             output, re.IGNORECASE):
         return None
-    destination = job['destination'].removeprefix('refs/heads/')
+    destination = job['destination'].removeprefix('rextension/heads/')
     return (f"Push blocked: {job['remote']}/{destination} conflicts with an existing remote branch name. "
             "Git cannot use both a branch and a nested branch with the same prefix. "
             "This rejection will not succeed on retry. Stop background push, then publish "
@@ -689,7 +689,7 @@ def sync_with_lindsey(job, remote_tip):
                     updates.append({'directory': entry['directory'], 'values': dict(
                         sha=replacement['after'], parent=replacement['parent'], tree=replacement['tree'])})
             # Retain the exact old history before adopting any replacement refs.
-            git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before, before)
+            git('update-ref', 'rextension/sweetiebot/recovery/' + job['id'] + '/' + before, before)
             if active == job['branch'] and git('status', '--porcelain', env=env):
                 raise RuntimeError('Lindsey sync is waiting for your uncommitted changes. Commit or stash them before retrying; your files are preserved.')
             write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
@@ -731,7 +731,7 @@ def reconcile_published_jobs(meta):
                         or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
                     continue
                 remote, destination = job.get('remote'), job.get('destination')
-                if not remote or remote.startswith('-') or not destination or not destination.startswith('refs/heads/'):
+                if not remote or remote.startswith('-') or not destination or not destination.startswith('rextension/heads/'):
                     continue
                 key = (job['root'], remote, destination)
                 if key not in published:
@@ -759,7 +759,7 @@ def reconcile_published_jobs(meta):
                     job.pop('conflictPaths', None)
                     write_journal(file, job)
                     save_queue(marker, queue_entries(marker))
-                    query('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
+                    query('update-ref', '-d', 'rextension/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
         except (OSError, RuntimeError, subprocess.TimeoutExpired):
             # Uncertain histories and offline checks retain their existing pause.
             continue
@@ -976,7 +976,7 @@ def work(directory, commit_only=False):
                             log_event('background_commit', 'push_pending', outcome='retry')
                             return
                 if not job.get('tracking'):
-                    short = job['branch'][len('refs/heads/'):]
+                    short = job['branch'][len('rextension/heads/'):]
                     with repository_lock(job['gitdir']):
                         git('config', 'branch.' + short + '.remote', job['remote'])
                         git('config', 'branch.' + short + '.merge', job['destination'])
@@ -988,7 +988,7 @@ def work(directory, commit_only=False):
                 job.update(phase='done', context='')
                 write_journal(file, job)
                 save_queue(marker, queue_entries(marker))
-            git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
+            git('update-ref', '-d', 'rextension/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
             log_event('background_commit', 'completed', outcome='success')
             # Optional post-commit spellcheck is scheduled once by start_spellcheck.
         except (OSError, subprocess.TimeoutExpired):
@@ -1074,7 +1074,7 @@ def control(action):
             write_journal(directory / 'job.json', job)
             with repository_lock(job['gitdir']):
                 save_queue(marker, queue_entries(marker))
-            git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
+            git('update-ref', '-d', 'rextension/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
         elif job['phase'] == 'blocked':
             job['phase'] = ('finalizing' if job.get('replacement_sha') else
                             'committed' if job.get('sha') else 'committing' if job['message'] else 'queued')
@@ -1220,8 +1220,8 @@ def request_push(request, start=True):
         requested_branch = request.get('branch')
         branch = (git('symbolic-ref', '--quiet', 'HEAD')
                   if not requested_branch or requested_branch == 'HEAD'
-                  else requested_branch if requested_branch.startswith('refs/heads/')
-                  else 'refs/heads/' + requested_branch)
+                  else requested_branch if requested_branch.startswith('rextension/heads/')
+                  else 'rextension/heads/' + requested_branch)
         if not any(read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch
                    for entry in queue_entries(marker)):
             return {'queued': False}
@@ -1348,7 +1348,7 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
     if dependencies:
         job = dependencies[0]['job']
         name = Path(job['root']).name if job and job.get('root') else marker.parent.parent.name
-        branch = job.get('branch', '').removeprefix('refs/heads/') if job else ''
+        branch = job.get('branch', '').removeprefix('rextension/heads/') if job else ''
         label = name + (' (' + branch + ')' if branch else '')
         if job and job.get('phase') == 'blocked' and job.get('error'):
             reason = 'Push blocked by merge conflicts.' if 'merge conflict' in job['error'].lower() else 'Commit & Push paused.'

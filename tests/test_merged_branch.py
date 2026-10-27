@@ -59,7 +59,7 @@ class MergedBranchTests(unittest.TestCase):
     def test_followup_uses_fetched_main_and_only_extra_changes_without_committing_or_staging(self):
         job_dir = self.root / 'job'
         job_dir.mkdir()
-        job = {'id': 'pending', 'branch': 'refs/heads/old-topic', 'push': True, 'phase': 'generating'}
+        job = {'id': 'pending', 'branch': 'rextension/heads/old-topic', 'push': True, 'phase': 'generating'}
         (job_dir / 'job.json').write_text(json.dumps(job))
         (self.repo / '.git/sweetiebot-background-commit.json').write_text(json.dumps({'directory': str(job_dir)}))
         with patch.object(feature, 'merged_status', return_value=self.info):

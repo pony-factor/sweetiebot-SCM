@@ -36,11 +36,11 @@
         "test_spellcheck_preview.js"
       ],
       "syntax": [
-        "efs/codex/codex_attribution.js",
-        "efs/commits/codex_commit.js",
-        "efs/commits/chatgpt_commit_title.js",
-        "efs/search/ollama.js",
-        "efs/commits/native_spellcheck_bridge.js",
+        "extension/codex/codex_attribution.js",
+        "extension/commits/codex_commit.js",
+        "extension/commits/chatgpt_commit_title.js",
+        "extension/search/ollama.js",
+        "extension/commits/native_spellcheck_bridge.js",
         "assets/browser/spellcheck_bridge.js",
         "scripts/ai_commit.py",
         "scripts/commit_diagnostics_dashboard.py",
@@ -81,8 +81,8 @@
         "test_sync_review.js"
       ],
       "syntax": [
-        "efs/merge/sync_review.js",
-        "efs/branches/branch_window.js"
+        "extension/merge/sync_review.js",
+        "extension/branches/branch_window.js"
       ]
     },
     "branch-names": {
@@ -93,7 +93,7 @@
         "test_pony_profile.js"
       ],
       "syntax": [
-        "efs/branches/branch_name_selection.js",
+        "extension/branches/branch_name_selection.js",
         "scripts/branch_names.py"
       ]
     },
@@ -127,12 +127,12 @@
         "test_ai_review_reply.js"
       ],
       "syntax": [
-        "efs/github/github_pr_actions.js",
-        "efs/github/github_rate_limit.js",
-        "efs/github/github_user_api.js",
-        "efs/merge/human_squash_merge.js",
-        "efs/merge/merge_pull_request.js",
-        "efs/codex/ai_review_reply.js"
+        "extension/github/github_pr_actions.js",
+        "extension/github/github_rate_limit.js",
+        "extension/github/github_user_api.js",
+        "extension/merge/human_squash_merge.js",
+        "extension/merge/merge_pull_request.js",
+        "extension/codex/ai_review_reply.js"
       ]
     },
     "codex": {
@@ -201,10 +201,10 @@
         "test_kefania_runner.js"
       ],
       "syntax": [
-        "efs/github/github_app_identity.js",
-        "efs/github/github_app_settings.js",
-        "efs/codex/kefania_merge_help.js",
-        "efs/codex/kefania_runner.js"
+        "extension/github/github_app_identity.js",
+        "extension/github/github_app_settings.js",
+        "extension/codex/kefania_merge_help.js",
+        "extension/codex/kefania_runner.js"
       ]
     },
     "lindsey": {
@@ -237,35 +237,35 @@
         "test_pushed_pr.js"
       ],
       "syntax": [
-        "efs/merge/lindsey_bulk_merge.js",
-        "efs/commits/git_failure.js",
-        "efs/merge/parallel_merge_batch.js",
-        "efs/merge/local_human_squash.js",
-        "efs/merge/merge_batch.js",
-        "efs/merge/merge_checks.js",
-        "efs/merge/merge_commit_tree.js",
-        "efs/merge/merge_dashboard.js",
-        "efs/merge/merge_summary.js",
-        "efs/merge/merge_commit_tree.js",
-        "efs/merge/merge_blocker_report.js",
-        "efs/merge/merge_dashboard_diff.js",
-        "efs/merge/merge_dashboard_markdown.js",
-        "efs/github/github_rate_limit.js",
-        "efs/github/github_session.js",
-        "efs/github/github_user_api.js",
-        "efs/github/github_read_api.js",
-        "efs/merge/merge_commit_proposal.js",
-        "efs/merge/merge_review_repair.js",
-        "efs/merge/merge_handoff.js",
-        "efs/merge/merge_patch.js",
-        "efs/merge/merge_reaction_choices.js",
-        "efs/merge/merge_resolution.js",
-        "efs/merge/merge_resolution_cli.js",
-        "efs/merge/merge_session_completion.js",
-        "efs/github/pull_request_batch.js",
-        "efs/github/pushed_pr.js",
-        "efs/merge/resolution_commits.js",
-        "efs/merge/merge_summary.js"
+        "extension/merge/lindsey_bulk_merge.js",
+        "extension/commits/git_failure.js",
+        "extension/merge/parallel_merge_batch.js",
+        "extension/merge/local_human_squash.js",
+        "extension/merge/merge_batch.js",
+        "extension/merge/merge_checks.js",
+        "extension/merge/merge_commit_tree.js",
+        "extension/merge/merge_dashboard.js",
+        "extension/merge/merge_summary.js",
+        "extension/merge/merge_commit_tree.js",
+        "extension/merge/merge_blocker_report.js",
+        "extension/merge/merge_dashboard_diff.js",
+        "extension/merge/merge_dashboard_markdown.js",
+        "extension/github/github_rate_limit.js",
+        "extension/github/github_session.js",
+        "extension/github/github_user_api.js",
+        "extension/github/github_read_api.js",
+        "extension/merge/merge_commit_proposal.js",
+        "extension/merge/merge_review_repair.js",
+        "extension/merge/merge_handoff.js",
+        "extension/merge/merge_patch.js",
+        "extension/merge/merge_reaction_choices.js",
+        "extension/merge/merge_resolution.js",
+        "extension/merge/merge_resolution_cli.js",
+        "extension/merge/merge_session_completion.js",
+        "extension/github/pull_request_batch.js",
+        "extension/github/pushed_pr.js",
+        "extension/merge/resolution_commits.js",
+        "extension/merge/merge_summary.js"
       ]
     },
     "browser-ui": {
@@ -311,12 +311,12 @@
         "test_workspace_search_view.js"
       ],
       "syntax": [
-        "efs/search/core.js",
-        "efs/search/extract.js",
-        "efs/search/search_index.js",
-        "efs/search/view.js",
+        "extension/search/core.js",
+        "extension/search/extract.js",
+        "extension/search/search_index.js",
+        "extension/search/view.js",
         "scripts/workspace_search.py",
-        "efs/commits/filename_spellcheck.js"
+        "extension/commits/filename_spellcheck.js"
       ]
     },
     "installation": {
@@ -336,7 +336,7 @@
         "test_update.py"
       ],
       "syntax": [
-        "efs/extension.js",
+        "extension/extension.js",
         "scripts/configurator.py",
         "scripts/github_apps.py",
         "scripts/github_apps_ui.py",

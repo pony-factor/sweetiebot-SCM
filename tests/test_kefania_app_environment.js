@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { kefaniaChildEnvironment } = require('../efs/codex/kefania_runner');
+const { kefaniaChildEnvironment } = require('../extension/codex/kefania_runner');
 
 async function run() {
   const legacy = await kefaniaChildEnvironment('pony-factor/example', {

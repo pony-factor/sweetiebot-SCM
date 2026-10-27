@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { createPushErrorHandler, registerPushRecovery } = require('../efs/commits/push_recovery');
+const { createPushErrorHandler, registerPushRecovery } = require('../extension/commits/push_recovery');
 
 const rejected = reason => Object.assign(new Error('Git error'), {
   gitErrorCode: 'PushRejected', stderr: ` ! [rejected] main -> main (${reason})`
@@ -28,7 +28,7 @@ async function run() {
     assert.equal(await invoke(rejected(reason)), true);
     assert.deepEqual(calls.splice(0), [
       ['fetch', { remote: 'origin', ref: 'main' }],
-      ['merge', 'refs/remotes/origin/main'], ['push', 'origin', 'main:main']
+      ['merge', 'rextension/remotes/origin/main'], ['push', 'origin', 'main:main']
     ]);
   }
   for (const error of [new Error('permission denied'), rejected('hook declined'),

@@ -76,8 +76,8 @@ class UpdateTests(unittest.TestCase):
     def test_draft_confirmation_survives_update_and_installer_packaging(self):
         import build_installer_app
         import subprocess
-        asset = Path('efs/ui/draft_confirmation.html')
-        module = Path('efs/codex/draft_handoff.js')
+        asset = Path('extension/ui/draft_confirmation.html')
+        module = Path('extension/codex/draft_handoff.js')
         repo = Path(update.__file__).resolve().parent.parent
         entries = {path.as_posix(): (repo / path).read_text() for path in (asset, module)}
         with tempfile.TemporaryDirectory() as directory:
@@ -145,17 +145,17 @@ class UpdateTests(unittest.TestCase):
                 (root / 'upstream.git').mkdir()
                 payload = {
                     'scripts/install.py': 'installer', 'scripts/repair.py': 'repair',
-                    'scripts/update.py': 'FORMATS = {"efs": {".js", ".html"}}',
-                    'scripts/workspace_search.py': 'FORMATS = {"efs": {".js", ".html"}}',
-                    'efs/codex/draft_handoff.js': 'handoff',
-                    'efs/ui/draft_confirmation.html': '<html>confirmation</html>',
+                    'scripts/update.py': 'FORMATS = {"extension": {".js", ".html"}}',
+                    'scripts/workspace_search.py': 'FORMATS = {"extension": {".js", ".html"}}',
+                    'extension/codex/draft_handoff.js': 'handoff',
+                    'extension/ui/draft_confirmation.html': '<html>confirmation</html>',
                     update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
                     update.THINKING_ASSET.as_posix(): 'thinking guard',
                 }
                 if broken == 'asset':
-                    del payload['efs/ui/draft_confirmation.html']
+                    del payload['extension/ui/draft_confirmation.html']
                 elif broken:
-                    payload['scripts/' + broken] = 'FORMATS = {"efs": {".js"}}'
+                    payload['scripts/' + broken] = 'FORMATS = {"extension": {".js"}}'
                 with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
                     result = update.prepare_update(root)
                 self.assertEqual(result is not None, broken is None)
@@ -198,8 +198,8 @@ class UpdateTests(unittest.TestCase):
                 'scripts/ai_commit.py': 'current Git wrapper',
                 'scripts/sweetiebot_async_commit.py': 'current async helper',
                 'scripts/post_commit_spellcheck.py': 'current spellcheck helper',
-                'efs/commits/post_commit_spellcheck_notice.js': 'current notice handler',
-                'efs/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
+                'extension/commits/post_commit_spellcheck_notice.js': 'current notice handler',
+                'extension/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
             destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'
             installed = destination / 'codex-customizations'

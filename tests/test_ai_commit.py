@@ -1813,7 +1813,7 @@ class ArtifactContextTests(unittest.TestCase):
         # requiring an extra extension, network service, or model.
         cases = [
             (
-                ["efs/github_session.py", "tests/test_github_session.py"],
+                ["extension/github_session.py", "tests/test_github_session.py"],
                 "",
                 "🔧 Update GitHub session code and tests",
             ),

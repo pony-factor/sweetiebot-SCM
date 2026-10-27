@@ -3,12 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {createDraftHandoff} = require('../efs/codex/draft_handoff');
+const {createDraftHandoff} = require('../extension/codex/draft_handoff');
 (async () => {
   const incompleteInstall = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-handoff-'));
   try {
     const modulePath = path.join(incompleteInstall, 'draft_handoff.js');
-    fs.copyFileSync(require.resolve('../efs/codex/draft_handoff'), modulePath);
+    fs.copyFileSync(require.resolve('../extension/codex/draft_handoff'), modulePath);
     let installed;
     assert.doesNotThrow(() => { installed = require(modulePath); },
       'A missing PR page must not prevent SCM extension modules from loading');

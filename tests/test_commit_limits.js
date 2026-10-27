@@ -12,7 +12,7 @@ const {
   splitOversizedFile,
   confirmCommitLimits,
   registerCommitLimitCommand
-} = require('../efs/commits/commit_limits');
+} = require('../extension/commits/commit_limits');
 
 {
   const status = evaluateCommitLimits({

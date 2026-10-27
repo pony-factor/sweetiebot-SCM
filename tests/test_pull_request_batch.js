@@ -12,10 +12,10 @@ const {
   squashCommitTitle,
   batchMergePrompt,
   registerPullRequestBatchCommand
-} = require('../efs/github/pull_request_batch');
+} = require('../extension/github/pull_request_batch');
 
 async function run() {
-  const extensionSource = readFileSync(path.join(__dirname, '../efs/extension.js'), 'utf8');
+  const extensionSource = readFileSync(path.join(__dirname, '../extension/extension.js'), 'utf8');
   const recoveryAwait = extensionSource.indexOf('await registerPushRecovery(vscode, context);');
   const aliases = extensionSource.indexOf('registerLegacyCommandAliases(vscode, context);');
   assert(recoveryAwait > -1);
@@ -201,7 +201,7 @@ async function run() {
   assert.match(prompt, /HUMAN GIT AUTHOR, INCLUDING BOT-OPENED PRs/);
   assert.doesNotMatch(prompt, /git commit --author/);
   assert.match(prompt, /NO FORCE PUSHES OR HISTORY REWRITES ARE AUTHORIZED/);
-  assert(prompt.includes('node efs/merge/human_squash_merge.js'));
+  assert(prompt.includes('node extension/merge/human_squash_merge.js'));
   assert.match(prompt, /NEVER push a squash commit directly to main/);
   assert.match(prompt, /This uses no git push and does not rewrite the PR branch/);
   assert(prompt.includes('NEVER use that route when the PR opener is codex-pony[bot]'));
@@ -508,7 +508,7 @@ async function run() {
   includeStack = false;
   pickerAction = 'first';
 
-  const pkg = require('../efs/package.json');
+  const pkg = require('../extension/package.json');
   assert(pkg.activationEvents.includes('onCommand:sweetiebot.openPullRequestBatchChat'));
   assert(pkg.contributes.commands.some(command => command.command === 'sweetiebot.openPullRequestBatchChat'));
   assert(pkg.contributes.menus['view/title'].some(item =>

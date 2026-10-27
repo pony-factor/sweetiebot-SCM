@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { warnMergedBranch } = require('../efs/branches/merged_branch');
+const { warnMergedBranch } = require('../extension/branches/merged_branch');
 
 (async () => {
   const uri = { fsPath: '/repo' };

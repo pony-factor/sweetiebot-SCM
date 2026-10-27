@@ -1,8 +1,8 @@
 'use strict';
 
 const assert = require('assert');
-const { keywordScore, bestMatchingLine, chunkText, normalizeVector, cosine } = require('../efs/search/core');
-const { normalizeBaseUrl } = require('../efs/search/ollama');
+const { keywordScore, bestMatchingLine, chunkText, normalizeVector, cosine } = require('../extension/search/core');
+const { normalizeBaseUrl } = require('../extension/search/ollama');
 
 assert(keywordScore('DTC federal reserve', 'DTC applied for Federal Reserve membership') > 0.7);
 assert.strictEqual(keywordScore('fedaral resreve', 'Federal Reserve membership'), 0);
