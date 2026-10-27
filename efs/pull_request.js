@@ -171,9 +171,9 @@ function sourceDetailsMarkdown(source) {
     '<details>',
     '<summary>Source details</summary>',
     '',
-    '- **Online:** ' + (links.online || 'Not shared'),
-    ...(links.local ? ['- **Local:** [' + links.local + '](' + links.local + ')'] : []),
-    ...(links.desktop ? ['- **Desktop:** [' + links.desktop + '](' + links.desktop + ')'] : []),
+    '- **Online:** ' + (links.online ? '[Online](' + links.online + ')' : 'Not shared'),
+    ...(links.local ? ['- **Local:** [Local](' + links.local + ')'] : []),
+    ...(links.desktop ? ['- **Desktop:** [Desktop](' + links.desktop + ')'] : []),
     '',
     '</details>',
   ].join('\n');
@@ -258,7 +258,7 @@ function pullRequestPrompt({
 
   if (source) {
     sections.push(
-      'Pass this exact conversation source metadata to Kafania as the pull request source. Preserve its kind, UUID, and URL. If the conversation context below supports it, add a brief one- or two-sentence intentSummary describing what the source conversation was trying to accomplish; that provenance summary may differ from the final diff:\n\n'
+      'Use this exact conversation source metadata to draft the Source details block in the PR description. Preserve its kind, UUID, and URL. Do not pass a source argument to the publishing tool or call a source-comment tool: the description owns these links, and a separate provenance comment must not be created. This overrides any source-comment instruction in the canonical rules. If the conversation context below supports it, add a brief one- or two-sentence intentSummary describing what the source conversation was trying to accomplish; that provenance summary may differ from the final diff:\n\n'
         + JSON.stringify(source, null, 2)
     );
     // A local Codex thread is not a ChatGPT web conversation. Only a
@@ -297,11 +297,13 @@ function pullRequestPrompt({
 }
 
 // Branch-specific Git metadata survives switching between linked worktrees.
-async function stackedPullRequestBase(root, branch, fallback) {
+async function stackedPullRequestBase(root, branch, fallback, run = promisify(execFile), seen = new Set()) {
+  if (seen.has(branch)) throw new Error('The saved stack contains a parent cycle.');
+  seen.add(branch);
   if (!root || !branch) return fallback;
   let parent;
   try {
-    parent = (await promisify(execFile)('git',
+    parent = (await run('git',
       ['config', '--local', '--get', `branch.${branch}.sweetiebot-stack-parent`],
       { cwd: root, timeout: 10000 })).stdout.trim();
   } catch (error) {
@@ -310,8 +312,18 @@ async function stackedPullRequestBase(root, branch, fallback) {
   }
   if (!parent) return fallback;
   if (parent === branch) throw new Error('A stacked PR cannot target its own branch.');
+  // Squash merging deletes the remote parent without making its commits
+  // ancestors of main. Consult the parent's actual PR before comparing refs.
+  const { stdout } = await run('gh', ['pr', 'view', parent,
+    '--json', 'state,headRefName,baseRefName'], { cwd: root, timeout: 20000 });
+  const previous = JSON.parse(stdout);
+  if (previous.headRefName !== parent) throw new Error('The stacked parent PR could not be verified.');
+  if (previous.state === 'MERGED') {
+    return stackedPullRequestBase(root, previous.baseRefName, previous.baseRefName, run, seen);
+  }
+  if (previous.state !== 'OPEN') throw new Error(`The parent PR for ${parent} is closed without merging.`);
   try {
-    await promisify(execFile)('git',
+    await run('git',
       ['merge-base', '--is-ancestor', `refs/heads/${parent}`, `refs/heads/${branch}`],
       { cwd: root, timeout: 10000 });
   } catch {
@@ -320,10 +332,19 @@ async function stackedPullRequestBase(root, branch, fallback) {
   return parent;
 }
 
+async function verifyPublishedBranch(root, branch, remote, run = promisify(execFile)) {
+  const { stdout } = await run('git', ['ls-remote', '--heads', remote, `refs/heads/${branch}`],
+    { cwd: root, timeout: 20000 });
+  if (!stdout.split('\n').some(line => line.split(/\s+/)[1] === `refs/heads/${branch}`)) {
+    throw new Error(`Branch ${branch} is not published on ${remote}. If it was merged, create a new branch; otherwise publish it before requesting a PR.`);
+  }
+}
+
 function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
   const run = dependencies.runKefania || runKefania;
+  const verifyPublished = dependencies.verifyPublishedBranch || verifyPublishedBranch;
   const merge = dependencies.mergePullRequest || squashMergePullRequest;
   const ludicrousMode = dependencies.readLudicrousMode || readLudicrousMode;
   let handoff;
@@ -340,7 +361,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const urls = { ...(context.globalState?.get(CODEX_SHARED_LINKS_KEY, {}) || {}) };
     const entered = await vscode.window.showInputBox({
       title: 'Shared Codex conversation link',
-      prompt: 'Paste a ChatGPT shared URL for this Codex thread. It will be published in future PR provenance comments. Clear the field to remove it.',
+      prompt: 'Paste a ChatGPT shared URL for this Codex thread. It will be included in future PR descriptions. Clear the field to remove it.',
       value: urls[uuid] || '', ignoreFocusOut: true,
       validateInput: value => value.trim() && !validSharedConversationUrl(value)
         ? 'Enter a ChatGPT shared conversation URL (https://chatgpt.com/s/cx_...).' : null,
@@ -392,6 +413,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // durable queue to finish before checking published-branch eligibility.
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
     if (waitForCommits) return { allowed: true, reason: 'pending-commits' };
+    await verifyPublished(repository.rootUri.fsPath, options.branch, options.remote);
     const evidence = await run(repository.rootUri.fsPath, {
       repository: repositoryUrl.slice('https://github.com/'.length),
       head: options.branch, base: options.base, contextOnly: true,
@@ -499,6 +521,17 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       conversationModel = codex?.model;
     }
     source = sourceWithSharedConversationUrl(context, source);
+    // Capture a fresh native Share snapshot in the originating window before
+    // opening the independent Kefania session. Do not share a different chat.
+    if (source?.kind === 'codex' && !options.source) {
+      const shared = await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,
+      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid));
+      if (!validSharedConversationUrl(shared?.sharedUrl) || shared.uuid !== source.uuid) {
+        throw new Error('Kefania could not verify publication of the active Codex chat.');
+      }
+      source = { ...source, sharedUrl: shared.sharedUrl };
+    }
 
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
     const launchSession = dependencies.launchPRSession || launchPRSession;
@@ -510,7 +543,10 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, root);
     let evidence, evidenceError;
     const loadEvidence = async () => {
-      try { evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true }); }
+      try {
+        await verifyPublished(repository.rootUri.fsPath, branch, options.remote);
+        evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
+      }
       catch (error) { evidenceError = error; }
       // Kefania identifies PRs by their head branch, even when they target another base.
       // Reuse the existing PR before initiating independent draft or pony workflows.
@@ -716,6 +752,8 @@ module.exports = {
   codexConversationUrl,
   conversationSourceLinks,
   sourceDetailsMarkdown,
+  stackedPullRequestBase,
+  verifyPublishedBranch,
   appendSourceDetails,
   githubRepository,
   kefaniaRulesPath,

@@ -2810,9 +2810,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                     ? historyItemRef.name
                     : undefined;
                 currentBranchRevision = historyItemRef?.revision;
-                if (previousBranch && currentBranch && previousBranch !== currentBranch) {
-                    void maybePublishBranch(currentBranch);
-                }
+                // Repository events in auto_publish.js own automatic publication,
+                // including a branch opened in a fresh workspace window.
 
                 const branch = command?.title?.replace(/\$\([^)]+\)/g, '').trim();
                 branchButton.hidden = !settings.branchPicker || !branch;

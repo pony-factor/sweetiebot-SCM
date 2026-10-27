@@ -642,7 +642,7 @@ async function publishBranch(repository, { branch, remote }) {
   if (head?.name !== branch) {
     throw new Error('The active branch changed before it could be published.');
   }
-  if (head.upstream) return false;
+  if (head.upstream?.remote === remote && head.upstream.name === branch) return false;
   await repository.push(remote, branch, true);
   return true;
 }

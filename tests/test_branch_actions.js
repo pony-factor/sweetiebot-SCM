@@ -286,6 +286,10 @@ async function run() {
   }
   {
     const { repository, calls } = fixture();
+    repository.state.HEAD.upstream = { remote: 'origin', name: 'main' };
+    assert.equal(await publishBranch(repository, { branch: 'topic', remote: 'origin' }), true,
+      'A manually created branch must replace an inherited upstream');
+    calls.length = 0;
     repository.state.HEAD.upstream = { remote: 'origin', name: 'topic' };
     assert.equal(await publishBranch(repository, { branch: 'topic', remote: 'origin' }), false);
     assert(!calls.some(call => call[0] === 'push'));
