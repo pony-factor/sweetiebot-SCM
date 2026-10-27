@@ -345,6 +345,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readPony = dependencies.readPony || readSweetiebotPony;
   const run = dependencies.runKefania || runKefania;
   const verifyPublished = dependencies.verifyPublishedBranch || verifyPublishedBranch;
+  const resolveStackBase = dependencies.stackedPullRequestBase || stackedPullRequestBase;
   const merge = dependencies.mergePullRequest || squashMergePullRequest;
   const ludicrousMode = dependencies.readLudicrousMode || readLudicrousMode;
   let handoff;
@@ -401,7 +402,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
-    options = { ...options, base: await stackedPullRequestBase(repository.rootUri.fsPath, options.branch, options.base) };
+    options = { ...options, base: await resolveStackBase(repository.rootUri.fsPath, options.branch, options.base) };
     if (repository.state.HEAD?.name !== options.branch || options.branch === options.base) {
       throw new Error('The selected branch changed during the PR eligibility check.');
     }
@@ -503,7 +504,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // the read-only GitHub preflight or independent browser drafting continues.
     // Never retarget publication to the current worktree HEAD.
     const branch = options?.branch;
-    options = { ...options, base: await stackedPullRequestBase(repository.rootUri.fsPath, branch, options?.base) };
+    options = { ...options, base: await resolveStackBase(repository.rootUri.fsPath, branch, options?.base) };
     if (typeof branch !== 'string' || !branch || branch === options.base) {
       throw new Error('Select a branch other than the pull-request base.');
     }
