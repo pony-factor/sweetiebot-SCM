@@ -36,12 +36,10 @@ async function run() {
   let pending = false;
   let checked = 0;
   let publishedChecks = 0;
-  let publishedChecks = 0;
   const context = { subscriptions: [] };
   registerPullRequestCommand(vscode, context, {
     pendingPRCommits: async () => pending ? async () => {} : undefined,
     stackedPullRequestBase: async (_root, _branch, base) => base,
-    verifyPublishedBranch: async () => { publishedChecks++; },
     verifyPublishedBranch: async (rootPath, branch, remote) => {
       assert.equal(rootPath, '/tmp/sweetiebot-test-repository');
       assert.equal(branch, 'feature');
@@ -61,14 +59,12 @@ async function run() {
     'No published commits without queued work must remain ineligible');
   assert.equal(checked, 1);
   assert.equal(publishedChecks, 1);
-  assert.equal(publishedChecks, 1);
 
   pending = true;
   assert.deepEqual(await eligibility(root, options),
     { allowed: true, reason: 'pending-commits' },
     'Queued commits permit the window to open before publication');
   assert.equal(checked, 1, 'Do not check a half-published branch');
-  assert.equal(publishedChecks, 1, 'Queued commits should not trigger publication checks');
   assert.equal(publishedChecks, 1, 'Queued work must skip remote publication preflight');
   await assert.rejects(eligibility(root, { ...options, branch: 'different' }),
     /selected branch changed/, 'Pending jobs do not bypass branch identity');
