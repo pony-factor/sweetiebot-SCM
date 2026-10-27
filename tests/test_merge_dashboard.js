@@ -715,6 +715,42 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
   related.handlers.click({ preventDefault() { linkPrevented = true; }, stopPropagation() { linkStopped = true; } });
   assert(linkPrevented && linkStopped, 'Handled dashboard links suppress default navigation and bubbling');
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
+  // A linked GitHub image in the original PR description should render like
+  // GitHub, without trusting raw HTML or requesting arbitrary remote images.
+  const imageRoot = document.createElement('div');
+  const attachment = 'https://github.com/user-attachments/assets/2d5481b8-54dc-48c6-87e5-b67927d630bd';
+  const imageClicks = [];
+  renderMergeMarkdown(imageRoot, [
+    '<p align="center"><a href="https://github.com/pony-factor/kefania"><img src="' +
+      attachment + '" alt="Write PR descriptions automatically."></a></p>',
+    '![Screenshot](https://user-images.githubusercontent.com/60260750/123/screenshot.png)',
+    '![Tracker](https://example.org/tracker.png)',
+    '<img src="' + attachment + '" alt="Safe image" onerror="alert(1)">',
+    '<img src="javascript:alert(1)" alt="Unsafe image">',
+    '<img src="https://github.com.evil.invalid/user-attachments/assets/fake" alt="Fake attachment">',
+    '<img src="http://github.com/user-attachments/assets/fake" alt="Insecure attachment">',
+    '<script>alert(1)</script>'
+  ].join('\\n'), { openLink: href => imageClicks.push(href) });
+  const imageElements = walk(imageRoot);
+  const images = imageElements.filter(item => item.tag === 'img');
+  assert.equal(images.length, 3, 'Only allow trusted HTTPS GitHub-hosted images');
+  assert.deepEqual(images.map(item => item.alt),
+    ['Write PR descriptions automatically.', 'Screenshot', 'Safe image']);
+  assert(images.every(item => item.loading === 'lazy' && item.referrerPolicy === 'no-referrer'));
+  assert(images.every(item => item.onerror === undefined && item.handlers.error === undefined),
+    'Untrusted event handlers must not be copied onto image elements');
+  assert(imageElements.some(item => item.className === 'markdown-image-center'),
+    'Center the HTML image banner');
+  const bannerLink = imageElements.find(item => item.tag === 'a' && item.href === 'https://github.com/pony-factor/kefania');
+  assert(bannerLink.children.some(item => item.tag === 'img'), 'Keep the banner image inside its link');
+  bannerLink.handlers.click({ preventDefault() {}, stopPropagation() {} });
+  assert.deepEqual(imageClicks, ['https://github.com/pony-factor/kefania']);
+  assert(imageElements.some(item => item.tag === 'a' && item.textContent === 'Image: Tracker'),
+    'Off-site Markdown images remain plain links');
+  assert(!imageElements.some(item => item.tag === 'script'), 'Raw HTML must never be executed');
+  assert(imageRoot.textContent.includes('javascript:alert(1)'),
+    'Invalid image schemes remain visible as text');
+
   const emphasisRoot = document.createElement('div');
   renderMergeMarkdown(emphasisRoot, '**bold *italic* ending** and *italic **bold** ending* plus ***both***.');
   assert.equal(emphasisRoot.textContent, 'bold italic ending and italic bold ending plus both.');
