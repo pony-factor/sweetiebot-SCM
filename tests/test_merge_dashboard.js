@@ -730,7 +730,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../efs/merge_dash
     '<img src="https://github.com.evil.invalid/user-attachments/assets/fake" alt="Fake attachment">',
     '<img src="http://github.com/user-attachments/assets/fake" alt="Insecure attachment">',
     '<script>alert(1)</script>'
-  ].join('\\n'), { openLink: href => imageClicks.push(href) });
+  ].join(String.fromCharCode(10)), { openLink: href => imageClicks.push(href) });
   const imageElements = walk(imageRoot);
   const images = imageElements.filter(item => item.tag === 'img');
   assert.equal(images.length, 3, 'Only allow trusted HTTPS GitHub-hosted images');
