@@ -606,7 +606,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, method);
         addEvent(pr, opened === false ? 'updated' : 'action',
           opened === false ? 'Automatic CI repair was not opened'
-            : 'Automatic CI repair opened with ' + (method === 'codex' ? 'Codex' : 'GPT web') +
+            : 'Automatic CI repair opened with ' + (method === 'codex' ? 'Codex' : 'ChatGPT') +
               ' · merge remains blocked until checks pass',
           checks.names.join(', ').slice(0, 1000));
       })().catch(failure => {
