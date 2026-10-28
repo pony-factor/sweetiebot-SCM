@@ -21,6 +21,7 @@ const stop = button('Stop response');
 const editor = {value: 'typed draft', isConnected: true, getClientRects: () => [1]};
 const root = {
     isConnected: true,
+    getClientRects: () => [1],
     parentElement: document.body,
     querySelectorAll: selector => selector === 'button' ? buttons : [editor],
 };
