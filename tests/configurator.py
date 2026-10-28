@@ -66,7 +66,7 @@ class SubmissionTests(unittest.TestCase):
             configurator.parse_submission(values)
 
     def test_lindsey_has_its_own_dashboard_settings_page(self):
-        names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent"}
+        names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeShowPrCommits"}
         controls = [setting for setting in configurator.SETTINGS if setting.name in names]
         self.assertEqual({setting.section for setting in controls}, {"Lindsey"})
         values = form_values()
@@ -97,6 +97,20 @@ class SubmissionTests(unittest.TestCase):
         for name, value in [("mergeRefreshIntervalSeconds", "29"), ("githubRateLimitCooldownSeconds", "59")]:
             with self.assertRaises(ValueError):
                 configurator.parse_submission(dict(values, **{name: [value]}))
+
+    def test_bulk_merge_commit_history_toggle_defaults_on_and_persists(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["mergeShowPrCommits"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["mergeShowPrCommits"], "scm-toolkit.merge-show-pr-commits")
+        values = form_values()
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["mergeShowPrCommits"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["mergeShowPrCommits"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="mergeShowPrCommits" value="true" checked', page)
+        values.pop("mergeShowPrCommits")
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled["mergeShowPrCommits"])
+        self.assertFalse(configurator.extension_settings_payload(disabled)["vscodeSettings"]["mergeShowPrCommits"])
 
     def test_merge_summaries_are_opt_in_and_persist(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["mergePostSummaries"])
@@ -435,6 +449,7 @@ class SubmissionTests(unittest.TestCase):
             "scmToolkit.postCommitSpellcheck",
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
+            "scmToolkit.mergePostStatusUpdates",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")

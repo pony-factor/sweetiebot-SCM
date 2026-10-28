@@ -65,7 +65,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(!recommendedChoices.some(option => option.engine === 'shell'), 'Recommendation metadata never grants execution privileges');
   assert.deepEqual(blockerOptions({ state: 'merged', report: actionable.report }), []);
   const manual = manualBlockerActions({state:'conflict'});
-  assert.equal(manual.length, 6);
+  assert.equal(manual.length, 7);
   assert(manual.every(action => action.manual && !action.reaction));
   assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
   assert.deepEqual(manualBlockerActions({state:'merged'}), []);
@@ -75,17 +75,26 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(checksPlan.workspaceAction.id, 'inspect-codex');
   const conflictPlan = dashboardActionPlan({ state: 'conflict' });
   assert.equal(conflictPlan.kind, 'conflict');
-  assert.deepEqual(conflictPlan.actions.map(action => action.id), ['resolve-conflicts']);
+  assert.deepEqual(conflictPlan.actions.map(action => action.id), ['resolve-conflicts-local', 'resolve-conflicts']);
   assert(!conflictPlan.actions.some(action => action.id === 'suggest-options'),
     'There is no separate ask-for-options step');
   const decisionPlan = dashboardActionPlan({ state: 'conflict', report: actionable.report });
   assert.equal(decisionPlan.kind, 'choice');
   assert.deepEqual(decisionPlan.actions.map(action => action.id), choices.map(option => option.id),
     'The current review choices are the implementation buttons');
-  assert.equal(dashboardActionPlan({ state: 'updated' }).actions[0].id, 'sync-checks');
+  assert.deepEqual(dashboardActionPlan({ state: 'updated' }).actions.map(action => action.id), ['resolve-conflicts-local', 'sync-checks']);
+  const snapshotPlan = dashboardActionPlan({ state: 'updated', snapshotChanged: true });
+  assert.equal(snapshotPlan.kind, 'snapshot');
+  assert.deepEqual(snapshotPlan.actions.map(action => action.id), ['resolve-conflicts-local'],
+    'A stale batch permits an explicitly selected local repair, while suppressing stale implementation choices');
+  assert.equal(snapshotPlan.workspaceAction, null);
+  assert.match(snapshotPlan.description, /select it again/);
   assert.equal(dashboardActionPlan({ state: 'blocked', mergeableState: 'blocked' }).actions[0].id, 'investigate-blocker');
   assert.deepEqual(dashboardActionPlan({ state: 'merged' }).actions, []);
   const selectedPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0]);
+  assert(selectedPrompt.includes('OPTIONAL GITHUB STATUS UPDATES DISABLED'));
+  assert(blockerPrompt('pony-factor/example', selection.pullRequests[0], choices[0], 'web',
+    { postStatusUpdates: true }).includes('OPTIONAL GITHUB STATUS UPDATES ENABLED'));
   assert(selectedPrompt.includes('Preserve the current API and add the proposed compatibility layer.'));
   assert(selectedPrompt.includes('does not authorize merging or closing'));
   assert(selectedPrompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
@@ -97,6 +106,16 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
   assert(conflictPrompt.includes('Never create a per-file inline comment'));
+  assert(conflictPrompt.includes('one explanatory commit per actual conflicted file'));
+  assert(conflictPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
+  assert(conflictPrompt.includes('Do not bury conflict decisions'));
+  assert(blockerPrompt('pony-factor/example', selection.pullRequests[0], manual[0], 'codex').includes('REPAIR COMMIT HISTORY'));
+  const localOption = manual.find(option => option.id === 'resolve-conflicts-local');
+  assert.equal(localOption.engine, 'kefania');
+  const localPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0], localOption, 'kefania');
+  assert(localPrompt.includes('LOCAL KEFANIA REPAIR'));
+  assert(localPrompt.includes('Use operation:"sync" only'));
+  assert(!localPrompt.includes('DIRECT WEB REPAIR'));
   const alternativesPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'suggest-options'));
   assert(alternativesPrompt.includes('never invent choices for compatible integrations'));
@@ -240,7 +259,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
-      if (key === 'mergePostSummaries') { layoutConfig.mergePostSummaries = mode; return; }
+      if (['mergePostSummaries', 'mergePostStatusUpdates'].includes(key)) {
+        assert.equal(target, 1); layoutConfig[key] = mode; return;
+      }
       assert.equal(key, 'mergeTimelineTimestampMode');
       assert.equal(target, 1, 'Save globally across independent merge windows');
       savedModes.push(mode);
@@ -277,13 +298,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     html_url: url + '#pullrequestreview-70', user: { login: 'reviewer' } }];
   let reactionVotes = [];
   const reactionWrites = [];
-  let fileRequests = 0, apiRequests = 0;
-  let requestFault;
+  let fileRequests = 0, apiRequests = 0, commitFetches = 0;
+  let requestFault, reportFault, pausePRRead;
   const fakeFetch = async (address, options) => {
     if (requestFault) throw requestFault;
     apiRequests++;
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const pathname = new URL(address).pathname;
+    if (reportFault && pathname.endsWith('/comments')) throw reportFault;
     if (options.method === 'DELETE' && /\/reactions\/\d+$/.test(pathname)) {
       reactionWrites.push({method:options.method,pathname});
       reactionVotes=reactionVotes.filter(vote=>!pathname.endsWith('/'+vote.id));
@@ -299,7 +321,10 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
-    else if (pathname.endsWith('/commits')) result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
+    else if (pathname.endsWith('/commits')) {
+      commitFetches++;
+      result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
+    }
     else if (pathname.endsWith('/files')) {
       fileRequests++;
       result = [{ filename: 'src/file.js', status: 'modified',
@@ -308,6 +333,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     else if (pathname.endsWith('/pulls/12/reviews')) result = reviewsForPr;
     else if (pathname.endsWith('/issues/12/comments')) result = commentsForPr;
     else throw new Error('Unexpected URL ' + address);
+    if (pathname.endsWith('/pulls/12') && pausePRRead) await pausePRRead();
     return { ok: true, json: async () => result };
   };
   const actionLaunches = [];
@@ -424,6 +450,16 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
   assert.equal(configuredTimelineMode(vscode), 'hidden');
   assert.equal(events.at(-1).timestampMode, 'hidden', 'Timestamps start hidden');
+  assert.equal(events.at(-1).showPrCommits, true, 'Commit history remains visible by default');
+  assert(panel.webview.html.includes("model.showPrCommits !== false"), "PR commit tree is conditional");
+  assert(panel.webview.html.includes(".pr-detail-layout.no-commits{display:block}"), "Hidden tree restores full-width diff");
+  layoutConfig.mergeShowPrCommits = false;
+  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
+  assert.equal(events.at(-1).showPrCommits, false, 'Setting hides commit history in an open dashboard');
+  layoutConfig.mergeShowPrCommits = true;
+  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
+  assert.equal(events.at(-1).showPrCommits, true, 'Setting restores commit history without reopening');
+
   assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 37, timeline: 34 });
   layoutConfig.mergeSidebarWidthPercent = 50;
   layoutConfig.mergeTimelineHeightPercent = 55;
@@ -589,6 +625,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(events.at(-1).postSummaries, true);
   await messageHandler({ type: 'post-summaries', enabled: false });
   assert.equal(events.at(-1).postSummaries, false);
+  assert.equal(events.at(-1).postStatusUpdates, false);
+  await messageHandler({ type: 'post-status-updates', enabled: true });
+  assert.equal(events.at(-1).postStatusUpdates, true);
+  assert.equal(events.at(-1).postSummaries, false, 'Status updates have an independent preference');
+  await messageHandler({ type: 'post-status-updates', enabled: 'false' });
+  assert.equal(events.at(-1).postStatusUpdates, true, 'Invalid messages cannot change the preference');
+  await messageHandler({ type: 'post-status-updates', enabled: false });
+  assert.equal(events.at(-1).postStatusUpdates, false);
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
   assert.equal(events.at(-1).prs[0].activity.phase, 'prepared');
   assert.match(events.at(-1).prs[0].activity.message, /squash prepared locally/);
@@ -646,6 +690,40 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   dashboard.recordBatchState(runningState, { restored: true });
   assert.equal(events.at(-1).prs[0].activity.phase, 'paused');
   assert.match(events.at(-1).prs[0].activity.message, /Runner not resumed/);
+  // Retargeting a stacked PR must not freeze the live status, diff or commits.
+  // Keep the execution selection unchanged; never authorize a different base.
+  info = { ...info, title: selection.pullRequests[0].title, base: { ...info.base, ref: 'new-base' },
+    mergeable: true, mergeable_state: 'clean' };
+  const commitsBeforeRetarget = commitFetches;
+  await dashboard.refresh({ force: true });
+  let retargeted = events.at(-1).prs[0];
+  assert.notEqual(retargeted.state, 'blocked');
+  assert.equal(retargeted.mergeableState, 'clean');
+  assert.equal(retargeted.currentBase, 'new-base');
+  assert.equal(retargeted.base, 'main', 'Read-only polling preserves the authorized execution base');
+  assert.equal(retargeted.actionPlan.kind, 'snapshot');
+  assert.deepEqual(retargeted.blockerOptions, [], 'Retargeted selections cannot dispatch stale choices');
+  assert.deepEqual(retargeted.manualActions.map(action => action.id), ['resolve-conflicts-local']);
+  assert(commitFetches > commitsBeforeRetarget, 'A base-only change refreshes commit history');
+  const directRepair = retargeted.manualActions[0];
+  const directMessage = { type: 'blocker-action', number: 12, headSha: retargeted.currentHead,
+    baseRef: 'new-base', actionId: directRepair.id, optionKey: directRepair.key, engine: directRepair.engine };
+  const launchesBeforeRepair = actionLaunches.length;
+  await messageHandler(directMessage);
+  assert.equal(actionLaunches.length, launchesBeforeRepair + 1, 'Retargeted PRs retain a working direct repair button');
+  assert.equal(actionLaunches.at(-1)[6], 'kefania');
+  assert.equal(actionLaunches.at(-1)[4].base, 'new-base', 'Repair uses the displayed and reverified base');
+  assert.equal(actionLaunches.at(-1)[4].snapshotChanged, false, 'A new repair has its own verified selection');
+  info = { ...info, base: { ...info.base, ref: 'moved-again' } };
+  await messageHandler(directMessage);
+  assert.equal(actionLaunches.length, launchesBeforeRepair + 1, 'A base changed since display cannot start a repair');
+  info = { ...info, base: { ...info.base, ref: 'new-base' } };
+  dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12,
+    reason: 'The selected PR changed outside this batch; review the new head or PR state.' }] });
+  assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'Old persisted snapshot deferrals have the same recovery guidance');
+  info = { ...info, base: { ...info.base, ref: 'main' } };
+  await dashboard.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].actionPlan.kind, 'snapshot', 'Returning to the original base does not resume a deferred batch');
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
   await dashboard.refresh({ force: true });
   const failedFetch = events.at(-1).events.at(-1);
@@ -658,10 +736,41 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
   assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
+  // A verified executor result updates the badge immediately, even in a hidden
+  // dashboard with an older open response already in flight and a failed poll.
+  info = { ...info, state: 'open', merged: false };
+  panel.visible = false;
+  let releaseRead, readStarted;
+  const started = new Promise(resolve => { readStarted = resolve; });
+  const readGate = new Promise(resolve => { releaseRead = resolve; });
+  pausePRRead = async () => { readStarted(); await readGate; };
+  const stalePoll = dashboard.refresh({ force: true });
+  await started;
+  pausePRRead = undefined;
+  dashboard.recordLocalResult({ repository: selection.repository,
+    results: [{ number: 12, status: 'merged', merged: true, sha: 'c'.repeat(40) }] });
+  assert.equal(events.at(-1).prs[0].state, 'merged', 'Verified merge results update the badge before polling');
+  assert.equal(events.at(-1).prs[0].statusMessage, 'GitHub confirms the pull request was merged');
+  assert.equal(events.at(-1).prs[0].mergeCommit, 'c'.repeat(40));
+  assert(!events.at(-1).prs[0].mergedAt, 'A result without a GitHub timestamp must not invent one');
+  requestFault = new TypeError('fetch failed');
+  releaseRead();
+  await stalePoll;
+  await dashboard.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].state, 'merged', 'An in-flight open response and failed follow-up cannot regress the badge');
+  requestFault = undefined;
+  await dashboard.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].state, 'merged', 'A stale GitHub open response cannot undo a verified merge');
+  panel.visible = true;
+  reportFault = new TypeError('comments unavailable');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',
     merge_commit_sha: 'c'.repeat(40) };
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'merged');
+  assert.equal(events.at(-1).prs[0].mergedAt, info.merged_at, 'Core merge metadata updates even when comment fetching fails');
+  assert.match(events.at(-1).error, /issues\/12\/comments/);
+  reportFault = undefined;
+  await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].conflictCleared, true, 'Verified cleared conflicts remain counted after merge');
   assert(events.at(-1).events.some(event => event.state === 'merged'));
   const mergedRequestCount=apiRequests;

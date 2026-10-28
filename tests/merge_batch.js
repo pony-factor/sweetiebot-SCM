@@ -133,6 +133,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       } else {
         assert.equal(first.value.continueUrl, undefined);
         assert.equal(first.value.batch.deferred[0].number, 2);
+        assert.equal(first.value.batch.deferred[0].kind, 'snapshot_changed');
       }
     } finally { stacked.dispose(); }
   }

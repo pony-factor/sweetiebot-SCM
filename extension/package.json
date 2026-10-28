@@ -356,11 +356,23 @@
           "scope": "application",
           "description": "Exclude routine Sync brach/branch to main commits from pull-request squash summaries while preserving contributor credits."
         },
+        "scmToolkit.mergePostStatusUpdates": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Allow concise GitHub PR status comments after verified conflict resolution or repairs. Applies to upcoming Lindsey tasks and handoffs, independently of post-merge AI summaries."
+        },
         "scmToolkit.mergePostSummaries": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Post an AI summary to each selected PR after its merge is independently verified. Local explanations are always shown."
+        },
+        "scmToolkit.mergeShowPrCommits": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Show the selected PR's commit-history graph in Lindsey's bulk-merge dashboard. Disable to give the diff the full width."
         },
         "scmToolkit.mergeSidebarWidthPercent": {
           "type": "integer",

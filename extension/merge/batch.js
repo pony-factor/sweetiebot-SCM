@@ -38,7 +38,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       if (fresh.state !== 'open' || fresh.merged || fresh.draft || fresh.head?.sha !== pr.headSha ||
           fresh.head?.ref !== pr.head || fresh.base?.ref !== expectedBase || fresh.title !== pr.title ||
           fresh.head?.repo?.full_name !== original.repository) {
-        deferred.push({ number: pr.number, reason: 'The selected PR changed outside this batch; review the new head or PR state.' });
+        deferred.push({ number: pr.number, kind: 'snapshot_changed', reason: 'The selected PR changed outside this batch; review the new head or PR state.' });
         activity(pr.number, 'blocked', 'PR snapshot changed; waiting for a verified repair or fresh selection');
         continue;
       }
@@ -167,7 +167,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             // Give the next AI round the verified failing head before deferring.
             if (pr.checkFailures >= 2 || pr.attempts >= 3) deferred.push({ number: pr.number, reason: item.reason });
           }
-          else if (!item.merged && !(branchOnly && item.status === 'synced') && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number,
+          else if (!item.merged && !(branchOnly && item.status === 'synced') && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number, ...(item.kind ? { kind: item.kind } : {}),
             reason: item.reason || 'Repeated integration attempts require inspection.' });
         }
         // Empty results cannot silently abandon remaining routine integration.

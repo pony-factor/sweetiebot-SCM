@@ -177,7 +177,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
 
 
     def test_standalone_activity_bar_icon_is_upright(self):
-        icon_path = workspace_search.SOURCE / "media" / "efs.svg"
+        icon_path = workspace_search.HERE.parent / "assets/imgs/efs.svg"
         icon = ET.fromstring(icon_path.read_text())
         self.assertFalse(
             any("rotate(" in element.attrib.get("transform", "") for element in icon.iter()),
@@ -186,9 +186,22 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         # The installer is generated; its assets must come from source files.
         import build_installer_app
 
+        image_root = workspace_search.HERE.parent / "assets/imgs"
+        for name, relative_path in workspace_search.IMAGE_SOURCES.items():
+            source = image_root / relative_path
+            self.assertTrue(source.is_file(), name)
+            self.assertEqual(workspace_search.source_files()[Path("media") / name], source)
+            self.assertEqual(
+                build_installer_app.source_files()[Path("assets/imgs") / relative_path],
+                source,
+            )
+            # Retain the checked-in extension media mirrors for development use.
+            self.assertEqual((workspace_search.SOURCE / "media" / name).read_bytes(), source.read_bytes())
+        notices = workspace_search.SOURCE / "THIRD_PARTY_NOTICES.md"
+        self.assertEqual(workspace_search.source_files()[Path("THIRD_PARTY_NOTICES.md")], notices)
         self.assertEqual(
-            build_installer_app.source_files()[Path("extension/media/efs.svg")],
-            icon_path,
+            build_installer_app.source_files()[Path("assets/imgs/README.md")],
+            image_root / "README.md",
         )
 
     def test_standalone_manifest_uses_custom_label(self):
@@ -247,8 +260,15 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             self.assertTrue((destination / "branch_name_packs.json").is_file())
             self.assertTrue((destination / "local_setup.py").is_file())
             self.assertFalse((destination / "chatgpt_integration.py").exists())
-            self.assertTrue((destination / "media" / "efs.svg").is_file())
-            self.assertTrue((destination / "THIRD_PARTY_NOTICES.md").is_file())
+            for name, relative_path in workspace_search.IMAGE_SOURCES.items():
+                self.assertEqual(
+                    (destination / "media" / name).read_bytes(),
+                    (workspace_search.HERE.parent / "assets/imgs" / relative_path).read_bytes(),
+                )
+            self.assertEqual(
+                (destination / "THIRD_PARTY_NOTICES.md").read_bytes(),
+                (workspace_search.SOURCE / "THIRD_PARTY_NOTICES.md").read_bytes(),
+            )
             self.assertFalse(
                 workspace_search.sync_extension(
                     check=True,

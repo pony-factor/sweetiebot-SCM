@@ -153,6 +153,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       mergeRefreshIntervalSeconds: scm.get('mergeRefreshIntervalSeconds', 120),
       githubRateLimitCooldownSeconds: scm.get('githubRateLimitCooldownSeconds', 900),
       mergeTimelineTimestampMode: scm.get('mergeTimelineTimestampMode', 'hidden'),
+      mergeShowPrCommits: scm.get('mergeShowPrCommits', true),
       mergeSidebarWidthPercent: scm.get('mergeSidebarWidthPercent', 37),
       mergeTimelineHeightPercent: scm.get('mergeTimelineHeightPercent', 34),
       kefaniaShowCloseButton: scm.get('kefaniaShowCloseButton', true),

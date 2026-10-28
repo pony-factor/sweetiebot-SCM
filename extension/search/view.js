@@ -316,7 +316,7 @@ ${actions}
 <div class="search-content">
   <div id="status" class="status"></div><div id="answer"></div><div id="results"></div><div id="summary" class="result-summary" aria-live="polite"></div>
   <div id="idle" class="idle-mark" aria-hidden="true">
-    <!-- Mirrors extension/media/efs.svg; source attribution remains in extension/THIRD_PARTY_NOTICES.md. -->
+    <!-- Mirrors assets/imgs/efs.svg, installed as media/efs.svg; attribution is in assets/imgs/README.md and extension/THIRD_PARTY_NOTICES.md. -->
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <g class="efs-stroke" transform="rotate(-7 12 12)">
         <path d="M3.4 5.1h15.7c1 0 1.8.8 1.8 1.8v10.2c0 1-.8 1.8-1.8 1.8H3.4c-.8 0-1.4-.6-1.4-1.4v-11c0-.8.6-1.4 1.4-1.4Z"/>

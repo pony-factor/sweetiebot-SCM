@@ -11,4 +11,14 @@ function reviewPublicationInstructions() {
   ].join('\n\n');
 }
 
-module.exports = { reviewPublicationInstructions };
+function statusUpdateInstructions(enabled = false) {
+  return enabled
+    ? 'OPTIONAL GITHUB STATUS UPDATES ENABLED: After verified substantive conflict resolution or repair, you may post one concise PR Conversation status update describing the completed work, actual verification and remaining checks or limitations. This is a status report, not an actionable code-review finding; do not tag it as a blocker or turn it into per-file inline notes. Deduplicate against existing comments. Never post for a no-op, every commit, an unverified outcome, or a merge already covered by the optional AI summary. This permission is independent of the AI-summary setting and does not replace required actionable review findings.'
+    : 'OPTIONAL GITHUB STATUS UPDATES DISABLED: Do not post PR Conversation progress reports, repair-completion comments or conflict-resolution status updates. Report those details locally in the chat and Lindsey dashboard. This setting is independent of optional post-merge AI summaries and does not suppress substantive code-review findings or genuine human-decision requests.';
+}
+
+function repairCommitInstructions() {
+  return 'REPAIR COMMIT HISTORY: Preserve the original PR commits. Before writing, identify the common ancestor, current PR head, current base, actual conflicted files and nonconflicting incoming changes. Append one explanatory commit per actual conflicted file, containing that file’s resolved behavior only, with a professional emoji imperative title and a body explaining both intentions, the chosen behavior and why. Keep additional substantive check or code fixes in separate focused commits with their relevant tests. When synchronization is actually needed, append a separate sync commit containing only the remaining nonconflicting incoming changes; its parents must retain the preceding repair tip and the verified incoming base so Git records the synchronization. Do not bury conflict decisions or substantive fixes inside a generic Sync branch to main merge commit. Recheck the exact remote head before each write, use fast-forward-only updates, and verify the final tree and per-commit contents. Never rewrite existing history or change main. Apply the required signing and attribution policy to every new commit. If available web tools cannot safely construct this incremental history or honor signing, stop and use the direct Fix conflicts in Kefania action instead of combining the fixes into a bulk sync. Report the actual limitation locally.';
+}
+
+module.exports = { reviewPublicationInstructions, statusUpdateInstructions, repairCommitInstructions };
