@@ -219,7 +219,7 @@
       [data-scm-toolkit-queue-id] button[aria-label="Queued message actions"] { display:none !important; }
       .scm-toolkit-queue-pause { display:var(--scm-toolkit-queue-pause-display,none); align-items:center; gap:6px; padding:4px 8px; }
       .scm-toolkit-queue-pause:has(button[aria-pressed="true"]) { display:flex; }
-      .scm-toolkit-queue-pause button { border:0; border-radius:4px; padding:3px 6px; background:transparent; color:var(--scm-toolkit-queue-accent,var(--vscode-focusBorder)); cursor:pointer; font:inherit; font-size:12px; }
+      .scm-toolkit-queue-pause button { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border:0; border-radius:4px; padding:3px; background:transparent; color:var(--scm-toolkit-queue-accent,var(--vscode-focusBorder)); cursor:pointer; font:inherit; font-size:12px; }
       .scm-toolkit-queue-pause button:hover { background:var(--vscode-toolbar-hoverBackground); }
       .scm-toolkit-queue-pause [role=status] { font-size:12px; color:var(--vscode-descriptionForeground); }
       .scm-toolkit-queue-editor { min-width:0; padding:8px; border:1px solid var(--vscode-focusBorder,#888); border-radius:8px; background:var(--vscode-input-background); margin:4px 0; }
@@ -329,17 +329,23 @@
                 const button = document.createElement('button'); button.type = 'button';
                 const message = document.createElement('span'); message.setAttribute('role', 'status');
                 bar.append(button, message);
-                const pause = new QueuePause(adapter, state => {
-                    const label = state.pending ? 'Pausing…' : state.lease ? 'Resume' : 'Pause queue';
-                    if (button.textContent !== label) button.textContent = label;
+                const renderButton = (state = {}) => {
+                    const label = state.pending ? 'Pausing queue…' : state.lease ? 'Resume queue' : 'Pause queue';
+                    const icon = state.lease ? 'play' : 'pause';
+                    if (button.dataset.icon !== icon) {
+                        button.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
+                            + (state.lease ? '<path d="M4 2v12l10-6z"/>' : '<path d="M3 2h4v12H3zM9 2h4v12H9z"/>') + '</svg>';
+                        button.dataset.icon = icon;
+                    }
+                    button.setAttribute('aria-label', label);
+                    button.title = state.lease ? 'Resume automatic queued sends' : 'Pause automatic queued sends; the current response continues';
                     button.disabled = Boolean(state.pending);
                     button.setAttribute('aria-pressed', String(Boolean(state.lease)));
                     const text = state.error || (state.lease ? 'Queued messages are paused' : '');
                     if (message.textContent !== text) message.textContent = text;
-                });
-                button.textContent = 'Pause queue';
-                button.title = 'Pause automatic queued sends; the current response continues';
-                button.setAttribute('aria-pressed', 'false');
+                };
+                const pause = new QueuePause(adapter, renderButton);
+                renderButton();
                 button.addEventListener('click', () => { void pause.toggle(); });
                 entry = {bar, pause}; pausedQueues.set(key, entry);
             }

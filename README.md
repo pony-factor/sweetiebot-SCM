@@ -7,6 +7,10 @@ Sweetiebot extends **Visual Studio Code on macOS** with Source Control controls,
 > [!IMPORTANT]
 > Sweetiebot patches installed VS Code workbench files and certain supported extensions. VS Code updates may replace patches, unsupported versions may be refused, and VS Code can show an installation-integrity warning. Review changes before installing, and only trust repositories and workspace roots you control.
 
+## Documentation
+
+Browse the [documentation index](docs/index.md) for installation, settings, commits, worktrees, PR workflows, Workspace Search, Codex/UI, troubleshooting, and development. The [functionality audit](docs/functionality-audit.md) links implemented behavior to source and tests and distinguishes code inspection from live macOS verification.
+
 ## Installation
 
 ### Requirements
@@ -14,7 +18,7 @@ Sweetiebot extends **Visual Studio Code on macOS** with Source Control controls,
 - macOS with a supported Visual Studio Code application bundle.
 - Python 3 and Git.
 - macOS permission to modify VS Code's application files.
-- Optional: [Ollama](https://ollama.com/) for local commit titles, spellchecking, and semantic EFS search. Exact search can work without embeddings.
+- Optional: [Ollama](https://ollama.com/) for local commit titles, spellchecking, and semantic workspace search. Exact search can work without embeddings.
 - Optional: authenticated GitHub CLI and local [Kefania](https://github.com/pony-factor/kefania) for bot-published PRs, [gh-stack](https://github.com/github/gh-stack) for native stacked PRs, and GnuPG for signing-key import.
 
 Clone this repository, then double-click **`scripts/install.command`**:
@@ -68,7 +72,7 @@ The settings server listens on a local authenticated loopback address; it does n
 | **Branch names** | Enable/disable built-in name packs, custom names, imported JSON packs |
 | **Ollama** | AI commits, model choice, generation budgets, direct or durable background commit behavior |
 | **Spellcheck Changes** | Draft-title corrections, Markdown spellcheck, spelling model, protected vocabulary, line breaks |
-| **Search** | Workspace Search/EFS appearance, modes, Ollama models, limits, exclusions |
+| **Search** | Workspace Search appearance, modes, Ollama models, limits, exclusions |
 | **Pull requests**, **Kefania**, **Lindsey**, **GitHub** | PR drafting, merge dashboard, review and refresh preferences |
 | **Codex**, **Browser**, **Window**, **Initialization** | Codex adjustments, Integrated Browser, title-bar controls, startup, updates |
 
@@ -115,7 +119,9 @@ Spellcheck features have independent controls:
 - **Draft commit-title correction** can suggest conservative spelling/grammar changes after an idle delay, with a preview or automatic handling.
 - **Sweetiebot: Spellcheck Filenames** previews name corrections from the Command Palette or a file context menu; it does not stage or commit a rename automatically.
 - **Post-commit Markdown spellcheck** is **off by default**. When enabled, it proposes changed Markdown prose as unstaged edits for review in **Spellchecks Performed**. Keep or discard reviewed changes before a follow-up commit.
-- **Spellcheck Only** is a separate manual action.
+- **Spellcheck Only** is a separate manual action. The native ChatGPT browser session follows `scmToolkit.chatgptReviewProjectUrl` if configured, otherwise it inherits `scmToolkit.chatgptProjectUrl` (or uses regular chats when neither is set). An inaccessible Project fails rather than silently submitting outside it.
+
+**Sweetiebot: Suggest Commit Title with ChatGPT Project** is an optional, explicitly initiated command. After your confirmation, it sends a bounded staged diff to the signed-in ChatGPT browser and previews a suggested title. It only fills the Source Control message box after your approval, without committing. It uses the dedicated optional `scmToolkit.chatgptReviewProjectUrl` if present, or the shared `scmToolkit.chatgptProjectUrl` otherwise. **Automatic** commit-title generation and the post-commit Markdown spellchecker continue using local Ollama, including unattended jobs; configuring a ChatGPT Project does not change their model provider.
 
 To keep post-commit Markdown spellcheck enabled globally while disabling it in one repository, add to that repository's `.vscode/settings.json`:
 
@@ -161,21 +167,21 @@ The layers action creates a stacked branch from the current topic branch, wherea
 
 Sweetiebot's New PR button starts a dedicated **Pull Request workspace** and a ChatGPT research/drafting session. Local **Kefania** supplies the published branch diff, verified head/base information, and the bot publication flow. Review the proposed title and body; the confirmation link hands them back to Kefania for publication as **codex-pony** after rechecking the head. Opening the chat alone does not publish a PR.
 
-The GitHub App, GitHub CLI, local Kefania service, VS Code, and ChatGPT account can have distinct permissions and sessions. A local service can be registered as `codex-drafter`; no public Kefania domain is required for that workflow. See [separate GitHub App identities](docs/DISTINCT_GITHUB_APPS.md) for setup and keep secrets in an appropriate credential store, never in repository files.
+The GitHub App, GitHub CLI, local Kefania service, VS Code, and ChatGPT account can have distinct permissions and sessions. A local service can be registered as `codex-drafter`; no public Kefania domain is required for that workflow. See [separate GitHub App identities](docs/distinct-github-apps.md) for setup and keep secrets in an appropriate credential store, never in repository files.
 
 A **ChatGPT project for PR and pony research** is optional. When a branch name identifies a pony, local pony info or independent research can open separately without inserting character notes into the PR description. Keep the dedicated PR workspace open until the session completes.
 
 ### Review, conflict resolution, and merge with Lindsey
 
-Sweetiebot's **Lindsey** integration provides individual and bulk PR review/merge surfaces, a progress dashboard, and an activity timeline. The GitHub Pull Requests view can show a quick squash-merge control; **Merge All** and selected bulk operations launch a dedicated ChatGPT workspace. Selecting PRs or submitting merge requests is not itself a completed merge.
+Sweetiebot's **Lindsey** integration provides individual and bulk PR review/merge surfaces, a progress dashboard, and an activity timeline. **Settings → Pull requests → Squash co-author separator** selects the default ten-underscore divider (`__________`), the conventional nine-hyphen divider (`---------`), or **None** (a standard blank line before Git trailers). The GitHub Pull Requests view can show a quick squash-merge control; **Merge All** and selected bulk operations launch a dedicated ChatGPT workspace. Selecting PRs or submitting merge requests is not itself a completed merge.
 
 A safe merge must recheck the **actual PR head SHA, intended base branch, checks, protection rules, attribution, and stack relationships**. Compatible conflicts can be resolved on the PR branch. If a design decision cannot be resolved without the maintainer, leave that PR open and continue only with independent eligible work. Never assume that every PR targets `main` or that a head/base chain is registered as a native stack. Check the dashboard and GitHub for a verified result before cleanup.
 
 Refresh intervals, rate-limit cooldowns, review summary behavior, and timeline display are configurable in **GitHub** and **Lindsey** settings.
 
-## Workspace Search (EFS)
+## Workspace Search
 
-The companion extension provides **Workspace Search**, commonly labeled **EFS**. It normally appears inside Source Control; **Search → Standalone Activity Bar** moves it to its own container. The search label, placeholder, ranking mode, indexed-file limits, exclusions, and local models are configurable.
+Sweetiebot also provides **Workspace Search**. It normally appears inside Source Control; **Search → Standalone Activity Bar** moves it to its own container. The search label, placeholder, ranking mode, indexed-file limits, exclusions, and local models are configurable.
 
 **Hybrid**, **Semantic**, and **Exact** are separate ranking modes. Semantic matching uses a locally available Ollama embedding model; exact term/path matching can work without it. Install the documented default embedding model if needed:
 
@@ -183,9 +189,9 @@ The companion extension provides **Workspace Search**, commonly labeled **EFS**.
 ollama pull qwen3-embedding:0.6b
 ```
 
-**Ask Ollama** is optional and uses a separate local chat model. EFS indexes eligible local text/code and supported document text, skips common generated and Git metadata paths, and incrementally refreshes changed content. The search scope can include other local repositories under `~/GitHub` as well as the active workspace. Search results can open matching passages and copy repository-relative Markdown links.
+**Ask Ollama** is optional and uses a separate local chat model. Workspace Search indexes eligible local text/code and supported document text, skips common generated and Git metadata paths, and incrementally refreshes changed content. The search scope can include other local repositories under `~/GitHub` as well as the active workspace. Search results can open matching passages and copy repository-relative Markdown links.
 
-EFS is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
+Workspace Search is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [Workspace Search details](docs/workspace-search.md) and [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
 
 ## Codex, browser, and window controls
 
@@ -202,7 +208,7 @@ Prefer the live settings page for the current option names and defaults rather t
 | Pending background commit or push | Read the queued job's status; avoid amending, resetting, or forcing a push while title finalization is pending |
 | New PR button cannot publish | Published branch and unchanged head SHA, local Kefania service, GitHub App/CLI access, active PR workspace |
 | Merge action is unavailable | Live head/base, merge conflicts, status checks, rulesets, attribution requirements, and stacked dependencies |
-| EFS search is incomplete | Selected search scope, indexing exclusions/limits, local embedding model, and Search settings |
+| Workspace Search is incomplete | Selected search scope, indexing exclusions/limits, local embedding model, and Search settings |
 
 Most model inference stays on local Ollama. Operational diagnostics are designed to avoid logging raw staged diffs, prompts, and model responses. If you need to remove the toolkit, use the supported installer/uninstall workflow for the version you installed; do not blindly delete linked worktrees or their Git metadata.
 
@@ -211,7 +217,7 @@ Most model inference stays on local Ollama. Operational diagnostics are designed
 | Path | Purpose |
 | --- | --- |
 | [`scripts/`](scripts/README.md) | Installer, configurator, branch names, local Git/AI helpers, CI tooling |
-| `efs/` | Companion VS Code extension and PR dashboards |
+| [`extension/`](extension/README.md) | Complete Sweetiebot VS Code extension, including commits, GitHub, branches, UI, and search |
 | `assets/workbench/` | Injected workbench JavaScript and CSS |
 | `assets/codex/` | Supported Codex patch components |
 | `assets/imgs/` | Bundled images and attribution |
@@ -222,7 +228,7 @@ Useful repository checks:
 
 ```sh
 python3 scripts/ci/ci_test_runner.py verify
-PYTHONPATH=scripts python3 -m unittest discover -s tests
+PYTHONPATH=scripts python3 -m unittest discover -s tests -t . -p '*.py'
 python3 scripts/install.py --check
 ```
 
