@@ -9,6 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  workbench-repair:
+    name: SCM and browser repair isolation (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify independent repairs with incompatible optional extensions
+        run: python -m unittest tests.install.WorkbenchRepairTests tests.install.IndependentRepairTests -v
+
   inventory:
     name: Test inventory
     runs-on: ubuntu-latest
@@ -98,11 +115,16 @@ jobs:
           python tests/codex_queued_edit_browser.py
           python tests/codex_webview_browser.py
           python tests/codex_webview_iframe.py
-      - name: Node.js timestamp and heading tests
+      - name: Node.js timestamp, heading and countdown tests
         run: |
           node tests/codex_hide_chat_timestamps.js
           node tests/codex_window_label.js
           node tests/codex_usage.js
+          node tests/codex_countdown.js
+      - name: Current Codex usage-banner compatibility
+        env:
+          PYTHONPATH: scripts
+        run: python -m unittest tests.install.ResolvedCountdownTests -v
       - name: Codex manifest label tests
         env:
           PYTHONPATH: scripts

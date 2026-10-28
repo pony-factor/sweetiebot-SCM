@@ -29,7 +29,8 @@ async function openedRoot(result) {
     git('-C', root, 'config', 'user.name', 'Test');
     git('-C', root, 'config', 'user.email', 'test@example.invalid');
     await fs.writeFile(path.join(root, 'file.txt'), 'committed main\n');
-    git('-C', root, 'add', 'file.txt');
+    await fs.writeFile(path.join(root, 'mixed.txt'), 'committed mixed\n');
+    git('-C', root, 'add', 'file.txt', 'mixed.txt');
     git('-C', root, 'commit', '-m', 'Fixture');
     git('-C', root, 'remote', 'add', 'origin', 'https://github.com/owner/repo.git');
 
@@ -43,6 +44,14 @@ async function openedRoot(result) {
     assert.equal(await openedRoot(second), root);
     await fs.writeFile(path.join(root, 'file.txt'), 'pending shared main\n');
     assert.equal(await fs.readFile(path.join(await openedRoot(second), 'file.txt'), 'utf8'), 'pending shared main\n');
+    await fs.writeFile(path.join(root, 'staged.txt'), 'staged addition\n');
+    await fs.writeFile(path.join(root, 'mixed.txt'), 'staged mixed\n');
+    git('-C', root, 'add', 'staged.txt', 'mixed.txt');
+    await fs.appendFile(path.join(root, 'mixed.txt'), 'unstaged mixed\n');
+    await fs.writeFile(path.join(root, 'untracked.txt'), 'untracked addition\n');
+    const initialStatus = git('-C', root, 'status', '--porcelain');
+    const initialIndex = git('-C', root, 'diff', '--cached', '--binary');
+    const initialWorktree = git('-C', root, 'diff', '--binary');
 
     const topicEditor = editor(root);
     assert.equal(await routeBranch(topicEditor, { rootUri: { fsPath: root } },
@@ -60,9 +69,17 @@ async function openedRoot(result) {
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main', 'Never switch the shared main folder');
     assert.equal(await originalRepository(topic, options), root);
-    assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'committed main\n');
+    assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'pending shared main\n');
+    assert.equal(git('-C', topic, 'status', '--porcelain'), initialStatus,
+      'New Branch transfers staged, unstaged, partially staged and untracked changes without Codex');
+    assert.equal(git('-C', topic, 'diff', '--cached', '--binary'), initialIndex);
+    assert.equal(git('-C', topic, 'diff', '--binary'), initialWorktree);
+    assert.equal(git('-C', root, 'status', '--porcelain'), '', 'Verified transfer cleans main');
+    const recovery = path.join(path.dirname(topic), '.sweetiebot-handoff-backup');
+    assert.equal((await fs.readFile(path.join(recovery, 'index.patch'), 'utf8')).trim(), initialIndex);
+    assert.equal(await fs.readFile(path.join(recovery, 'files/untracked.txt'), 'utf8'), 'untracked addition\n');
     await fs.writeFile(path.join(topic, 'file.txt'), 'private topic edit\n');
-    assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'pending shared main\n');
+    assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'committed main\n');
     const returning = editor(topic);
     assert.equal(await routeBranch(returning, { rootUri: { fsPath: topic } }, { ...options, branch: 'main' }), true);
     assert.equal(await openedRoot({ target: returning.commands.calls.at(-1)[1].fsPath }), root);
@@ -71,8 +88,34 @@ async function openedRoot(result) {
     await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
 
-    await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
+    // A failed destination apply must retain the source and a recovery copy.
+    await fs.writeFile(path.join(root, 'file.txt'), 'preserve on failed transfer\n');
     git('-C', root, 'add', 'file.txt');
+    const failedStatus = git('-C', root, 'status', '--porcelain');
+    const failedIndex = git('-C', root, 'diff', '--cached');
+    let failedDestination;
+    await assert.rejects(routeBranch(editor(root), { rootUri: { fsPath: root } }, {
+      ...options, branch: 'failed-transfer', create: true,
+      run: async args => {
+        const result = git(...args);
+        if (args.includes('worktree') && args.includes('add')) {
+          failedDestination = args[args.indexOf('--') + 1];
+          await fs.writeFile(path.join(failedDestination, 'file.txt'), 'conflicting destination\n');
+        }
+        return result;
+      }
+    }), /recovery copy is saved/);
+    assert.equal(git('-C', root, 'status', '--porcelain'), failedStatus);
+    assert.equal(git('-C', root, 'diff', '--cached'), failedIndex);
+    assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'preserve on failed transfer\n');
+    assert.equal((await fs.readFile(path.join(path.dirname(failedDestination),
+      '.sweetiebot-handoff-backup/index.patch'), 'utf8')).trim(), failedIndex);
+    git('-C', root, 'restore', '--source=HEAD', '--staged', '--worktree', 'file.txt');
+
+    await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
+    await fs.writeFile(path.join(root, 'file.txt'), 'pending shared main\n');
+    git('-C', root, 'add', 'file.txt');
+    const movingIndex = git('-C', root, 'diff', '--cached');
     const moving = editor(root);
     moving.extensions = { getExtension: () => ({ async activate() {} }) };
     moving.commands.getCommands = async () => ['sweetiebot.codex.prepareWorkspaceHandoff'];
@@ -85,7 +128,7 @@ async function openedRoot(result) {
     const moved = await openedRoot({ target: moving.commands.calls.at(-1)[1].fsPath });
     assert.equal(await fs.readFile(path.join(moved, 'file.txt'), 'utf8'), 'pending shared main\n');
     assert.equal(await fs.readFile(path.join(moved, 'draft.txt'), 'utf8'), 'untracked task work\n');
-    assert.equal(git('-C', moved, 'diff', '--cached'), '', 'Copied task work is never staged');
+    assert.equal(git('-C', moved, 'diff', '--cached'), movingIndex, 'Keep the user\'s existing staging');
     assert.equal(git('-C', root, 'status', '--porcelain'), '', 'Transferred changes leave main clean');
     assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'committed main\n');
     assert.equal(await fs.stat(path.join(root, 'draft.txt')).then(() => true, () => false), false);
@@ -154,7 +197,7 @@ async function openedRoot(result) {
     assert.equal(await openedRoot({ target: topicSwitcher.commands.calls.at(-1)[1].fsPath }), moved);
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
     assert.equal(await fs.readFile(path.join(fromTopic, 'draft.txt'), 'utf8'), 'untracked task work\n');
-    assert.equal(git('-C', moved, 'diff', '--cached'), topicIndex);
+    assert.equal(git('-C', fromTopic, 'diff', '--cached'), topicIndex);
     assert.equal(git('-C', moved, 'status', '--porcelain'), '', 'Topic-to-topic handoff also moves pending edits');
 
     assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'));
@@ -243,8 +286,10 @@ async function openedRoot(result) {
     assert.equal(git('-C', newFromOriginal, 'branch', '--show-current'), 'new-from-original-topic');
     assert.equal(git('-C', newFromOriginal, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
     assert.equal(git('-C', root, 'branch', '--show-current'), 'external-topic');
-    assert.equal(git('-C', root, 'status', '--porcelain'), originalStatus);
-    assert.equal(git('-C', root, 'diff', '--cached'), originalIndex);
+    assert.equal(git('-C', root, 'status', '--porcelain'), '');
+    assert.equal(git('-C', root, 'diff', '--cached'), '');
+    assert.equal(git('-C', newFromOriginal, 'status', '--porcelain'), originalStatus);
+    assert.equal(git('-C', newFromOriginal, 'diff', '--cached'), originalIndex);
     console.log('Shared main windows, isolated topics, reconnection and legacy preservation passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
