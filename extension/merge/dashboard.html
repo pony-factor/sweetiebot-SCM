@@ -544,11 +544,15 @@ __RATE_LIMIT_FORMATTER__
       }
       const summary = show(presentation.expandable ? 'summary' : 'div',
         'event-summary', undefined, line);
-      const content = event.url ? show('a', 'event-link', undefined, summary) : summary;
-      renderMergeActivitySummary(content, event.number, presentation);
+      const commentOnlyLink = Boolean(event.url) && event.state === 'review-comment' &&
+        presentation.summary === 'PR conversation comment posted';
+      const content = event.url && !commentOnlyLink
+        ? show('a', 'event-link', undefined, summary) : summary;
+      const commentLink = renderMergeActivitySummary(content, event.number, presentation, commentOnlyLink);
       if (event.url) {
-        content.href = event.url;
-        content.addEventListener('click', click => {
+        const target = commentLink || content;
+        target.href = event.url;
+        target.addEventListener('click', click => {
           click.preventDefault();
           click.stopPropagation();
           dispatch('open-link', undefined, event.url);

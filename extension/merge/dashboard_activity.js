@@ -24,7 +24,7 @@ function mergeActivityPresentation(event, prs = []) {
     expandable: Boolean(status || explanation) };
 }
 
-function renderMergeActivitySummary(parent, number, presentation) {
+function renderMergeActivitySummary(parent, number, presentation, linkConversationComment = false) {
   const document = parent.ownerDocument;
   const pr = document.createElement('span');
   pr.className = 'event-pr-number';
@@ -38,8 +38,24 @@ function renderMergeActivitySummary(parent, number, presentation) {
   }
   const title = document.createElement('span');
   title.className = 'event-summary-title';
+  if (linkConversationComment && !presentation.sha &&
+      presentation.summary === 'PR conversation comment posted') {
+    const prefix = document.createElement('span');
+    prefix.textContent = 'PR ';
+    title.appendChild(prefix);
+    const link = document.createElement('a');
+    link.className = 'event-link';
+    link.textContent = 'conversation comment';
+    title.appendChild(link);
+    const suffix = document.createElement('span');
+    suffix.textContent = ' posted';
+    title.appendChild(suffix);
+    parent.appendChild(title);
+    return link;
+  }
   title.textContent = (presentation.sha ? ' ' : '') + presentation.summary;
   parent.appendChild(title);
+  return null;
 }
 
 if (typeof module === 'object' && module.exports) {

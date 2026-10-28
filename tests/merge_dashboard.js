@@ -358,7 +358,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(historicalFailure.expandable, true);
   assert(historicalFailure.explanation.includes('No request details were captured'));
   assert(!panel.webview.html.includes('__ACTIVITY_RENDERER__'));
-  assert(panel.webview.html.includes('renderMergeActivitySummary(content, event.number, presentation)'));
+  assert(panel.webview.html.includes('renderMergeActivitySummary(content, event.number, presentation, commentOnlyLink)'));
   assert(!panel.webview.html.includes("show('summary', 'muted', 'Details'"));
   assert(panel.webview.html.includes('Saved activity · live GitHub state may have changed'));
   assert(panel.webview.html.includes("dispatch('open-link', undefined, event.url)"));
@@ -683,6 +683,24 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.deepEqual(summaryRoot.children.map(child => child.tag), ['span', 'code', 'span']);
   assert.equal(summaryRoot.children[1].className, 'event-commit-sha');
   assert.equal(summaryRoot.children[1].textContent, 'aaaaaaa');
+  const commentActivity = mergeActivityPresentation({ number: 513,
+    state: 'review-comment', message: 'PR conversation comment posted' });
+  const commentRoot = document.createElement('div');
+  const commentLink = renderMergeActivitySummary(commentRoot, 513, commentActivity, true);
+  assert.deepEqual(commentRoot.children.map(node => node.tag), ['span', 'span'],
+    'Conversation entry keeps its PR number outside any hyperlink');
+  assert.equal(commentRoot.children[0].textContent, '#513 ');
+  assert.deepEqual(commentRoot.children[1].children.map(node => node.tag), ['span', 'a', 'span'],
+    'Only the conversation comment phrase becomes an anchor');
+  assert.equal(commentRoot.children[1].children[0].textContent, 'PR ');
+  assert.equal(commentLink.textContent, 'conversation comment');
+  assert.equal(commentRoot.children[1].children[2].textContent, ' posted');
+  const plainCommentRoot = document.createElement('div');
+  assert.equal(renderMergeActivitySummary(plainCommentRoot, 513, commentActivity), null,
+    'A timeline event without a GitHub URL remains plain text');
+  assert.equal(plainCommentRoot.children[1].textContent, 'PR conversation comment posted');
+  assert(panel.webview.html.includes("const target = commentLink || content;"),
+    'Only the dedicated comment anchor receives the external navigation handler');
   const root = document.createElement('div');
   const clicked = [];
   const tick = String.fromCharCode(96);
