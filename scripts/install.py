@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import tempfile
 import workspace_search
 import codex_colors
@@ -784,6 +785,39 @@ def strip_codex_timestamps_payload(text):
     return before + after
 
 
+def codex_resolved_countdown_edits(js):
+    """Newer builds resolve banner templates in an imported copy helper."""
+    ident = r'[A-Za-z_$][\w$]*'
+    aliases = set()
+    for imported in re.finditer(r'import\{([^}]+)\}from["\']\./banner-copy-[^"\']+\.js["\'];', js):
+        for specifier in imported[1].split(','):
+            alias = re.fullmatch(rf'{ident}(?: as ({ident}))?', specifier.strip())
+            if alias:
+                aliases.add(alias[1] or specifier.strip())
+    edits = []
+    for binding in re.finditer(rf'let\{{title:({ident}),description:({ident})\}}=({ident}),', js):
+        following = js[binding.end():binding.end() + 8000]
+        if 'codex.rateLimitUpsellBanner.dismiss' not in following:
+            continue
+        before = js[max(0, binding.start() - 1000):binding.start()]
+        calls = [match for match in re.finditer(
+            rf'(?<![\w$]){re.escape(binding[3])}=({ident})\(({ident}),({ident})\),', before
+        ) if match[1] in aliases]
+        spans = list(re.finditer(
+            rf'\(0,({ident})\.jsx\)\(`span`,\{{[^}}]*children:{re.escape(binding[2])}\}}\)', following))
+        if not calls:
+            continue
+        if len(calls) != 1 or len(spans) != 1:
+            raise ValueError('Unsupported Codex extension build: resolved usage-banner anchor is ambiguous.')
+        call = calls[0]
+        if f'{call[2]}.banner_type' not in following or f'{call[2]}.ctas' not in following:
+            raise ValueError('Unsupported Codex extension build: resolved usage-banner input does not match.')
+        edits.append((call[0], f'{binding[3]}=scmToolkitUsageResetCopy({call[2]},{call[3]},{call[1]},{spans[0][1]}.jsx),'))
+    if len(edits) > 1:
+        raise ValueError('Unsupported Codex extension build: resolved usage-banner anchor is ambiguous.')
+    return edits
+
+
 def codex_countdown_edits(js):
     identifier = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
@@ -794,6 +828,9 @@ def codex_countdown_edits(js):
     )
     matches = list(pattern.finditer(js))
     if not matches:
+        resolved = codex_resolved_countdown_edits(js)
+        if resolved:
+            return resolved + codex_transcript_countdown_edits(js)
         return [codex_countdown_edit(js)]
     if len(matches) != 1:
         raise ValueError("Unsupported Codex extension build: usage-banner anchor is ambiguous.")
@@ -875,8 +912,8 @@ def codex_rate_limit_script(sticker_enabled=True):
             .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
 
 
-def codex_transcript_compact_edits(js):
-    """Only compact transcript usage-limit notices without a reset time."""
+def codex_transcript_compact_edits(js, hide_reset_times=False):
+    """Compact native warnings; hiding reset times also compacts timed warnings."""
     pattern = re.compile(
         r'id:`(?P<id>localConversation\.usageLimit\.[A-Za-z.]+)`,'
         r'defaultMessage:`(?P<message>[^`]*)`'
@@ -884,7 +921,7 @@ def codex_transcript_compact_edits(js):
     edits = []
     for match in pattern.finditer(js):
         key, message = match['id'], match['message']
-        if '{resetDate}' in message:
+        if '{resetDate}' in message and not hide_reset_times:
             continue
         if '.noReset' not in key and not re.search(
             r'\b(?:usage limit|try again later|rate limit)\b', message, re.I
@@ -892,6 +929,33 @@ def codex_transcript_compact_edits(js):
             continue
         edits.append((match.group(0),
             f'id:`{key}.scmShort`,defaultMessage:`Rate limited`'))
+    return edits
+
+
+def codex_hidden_limit_banner_edits(js):
+    """Remove the native composer's timed copy before React's first paint."""
+    if 'codex.rateLimitUpsellBanner.dismiss' not in js:
+        return []
+    ident = r'[A-Za-z_$][\w$]*'
+    pattern = re.compile(
+        rf'(?P<title>{ident})=(?P<date>{ident})==null\?'
+        rf'(?P<banner>{ident})\.title:(?P=banner)\.title\.replaceAll\(`\{{time\}}`,(?P=date)\),'
+        rf'(?P<description>{ident})=(?P=date)==null\?'
+        rf'(?P=banner)\.description:(?P=banner)\.description\.replaceAll\(`\{{time\}}`,(?P=date)\),')
+    edits = [(match[0], f'{match["title"]}="Rate limited",{match["description"]}="",')
+             for match in pattern.finditer(js)]
+    # Newer Codex builds resolve backend banner copy as one object.
+    resolved = list(re.finditer(rf'let\{{title:({ident}),description:({ident})\}}=({ident}),', js))
+    for match in resolved:
+        following = js[match.end():match.end() + 8000]
+        if 'id:`codex.rateLimitUpsellBanner.dismiss`' not in following:
+            continue
+        original = match[0]
+        edits.append((original, original.replace('}=' + match[3] + ',',
+                      '}=scmToolkitCompactHiddenLimitBanner(' + match[3] + '),')))
+        ctas = re.search(rf'let ({ident})=({ident})\.ctas\.filter\(({ident})\);', following)
+        if ctas:
+            edits.append((ctas[0], f'let {ctas[1]}=scmToolkitIsHiddenLimitBanner({match[3]})?[]:{ctas[2]}.ctas.filter({ctas[3]});'))
     return edits
 
 
@@ -1020,7 +1084,9 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         )
 
     if not remove and codex_bundle_matches(js):
-        edits = codex_transcript_compact_edits(js)
+        edits = codex_transcript_compact_edits(js, hide_reset_times=hide_reset_times)
+        if hide_reset_times:
+            edits.extend(codex_hidden_limit_banner_edits(js))
         for original, replacement in edits:
             if js.count(original) != 1:
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
@@ -1378,116 +1444,31 @@ def invalidate_extension_cache(app):
         print(f'Could not reset the VS Code extension manifest cache ({type(error).__name__}); another reload may be needed.')
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--app",
-        type=Path,
-        default=Path("/Applications/Visual Studio Code.app"),
-        help="Path to the Visual Studio Code application bundle",
-    )
-    parser.add_argument("--uninstall", action="store_true", help="Remove the toolkit patch")
-    parser.add_argument("--check", action="store_true", help="Validate without writing")
-    parser.add_argument(
-        "--configure",
-        action="store_true",
-        help="Configure in a local browser before installing",
-    )
-    parser.add_argument(
-        "--codex-only",
-        action="store_true",
-        help="Only install or remove optional Codex webview customizations",
-    )
-    parser.add_argument(
-        "--codex-extension",
-        type=Path,
-        help="Path to an OpenAI Codex VS Code extension directory",
-    )
-    parser.add_argument("--ui-only", action="store_true", help="Update Codex UI and EFS view labels/icons without host or workbench patches")
-    parser.add_argument("--repair", action="store_true", help="Repair app patches and refresh companion tools")
-    args = parser.parse_args()
-    if args.repair and (args.uninstall or args.configure or args.codex_only):
-        parser.error("--repair cannot be combined with --uninstall, --configure, or --codex-only")
-
-    if args.configure and (args.uninstall or args.check or args.codex_only):
-        parser.error("--configure cannot be combined with --uninstall, --check, or --codex-only")
-
-    if args.ui_only and (args.uninstall or args.configure or args.repair or args.codex_only):
-        parser.error("--ui-only cannot be combined with uninstall, configure, repair, or codex-only")
-    settings = load_settings()
-    if args.ui_only:
-        import ui_customizations
-        manifest = codex_label.manifest_path(args.codex_extension)
-        if manifest is None:
-            raise ValueError("The Codex extension is not installed.")
-        patches = ui_customizations.plan(manifest.parent, settings)
-        if not args.check:
-            ui_customizations.apply(patches)
-            invalidate_extension_cache(args.app)
-        print(f"UI customizations {'validated' if args.check else 'updated'}: {len(patches)} files. Reload only the intended test window to activate them.")
-        return
-    if args.configure:
-        from configurator import run_configurator
-
-        if not run_configurator(settings, action_label="Save and install"):
-            print("Installation cancelled; no toolkit settings were changed.")
-            return
-        settings = load_settings()
-    version, workbench_paths = application_paths(args.app)
-    legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
-    paths = [] if args.codex_only else workbench_paths
-    components_changed = (not args.codex_only
-                          and sync_live_components(workbench_paths[0].parent,
-                                                   remove=args.uninstall, check=True))
+def repair_workbench(app, settings, *, check=False):
+    """Restore SCM independently of optional extension patch compatibility."""
+    version, paths = application_paths(app)
     old = [path.read_text() for path in paths]
-    new = (
-        []
-        if args.codex_only
-        else list(transform(*old, remove=args.uninstall, settings=settings))
-    )
-    wrapper_path = ai_wrapper_path()
-    wrapper_changed = (
-        False
-        if args.codex_only
-        else sync_ai_wrapper(
-            remove=args.uninstall, check=True, destination=wrapper_path
-        )
-    )
-    model_picker_path = ai_model_picker_path()
-    model_picker_changed = (
-        False
-        if args.codex_only or args.repair
-        else sync_model_picker(
-            enabled=settings["aiModelPicker"],
-            remove=args.uninstall,
-            check=True,
-            destination=model_picker_path,
-        )
-    )
-    workspace_search_changed = (
-        False
-        if args.codex_only
-        else workspace_search.sync_extension(
-            remove=args.uninstall,
-            check=True,
-            settings=settings,
-        )
-    )
+    new = list(transform(*old, settings=settings))
+    components_changed = sync_live_components(paths[0].parent, check=True)
+    if check:
+        print(f"Validated SCM workbench repair for VS Code {version}; no files changed.")
+        return
+    if old != [path.read_text() for path in paths]:
+        raise RuntimeError("VS Code changed during validation; retry the command.")
+    if old != new:
+        backup = Path(tempfile.mkdtemp(prefix="sweetiebot-scm-repair-"))
+        for path in paths:
+            shutil.copy2(path, backup / path.name)
+        write_pair(paths, new, old)
+        print(f"Previous workbench files saved to {backup}")
+    if components_changed:
+        sync_live_components(paths[0].parent)
+    print(f"Restored SCM workbench for VS Code {version}. Reload the intended window to apply the change.")
 
-    if not args.codex_only:
-        git_extension = args.app / 'Contents/Resources/app/extensions/git/dist/main.js'
-        git_old = git_extension.read_text()
-        paths.append(git_extension)
-        old.append(git_old)
-        new.append(transform_git_background(git_old, remove=args.uninstall))
-        for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
-            paths.append(browser_path)
-            old.append(browser_old)
-            new.append(browser_new)
-        for github_path, github_old, github_new in github_pr.patch_files(remove=args.uninstall):
-            paths.append(github_path)
-            old.append(github_old)
-            new.append(github_new)
+
+def plan_codex_patches(args, settings):
+    """Plan optional Codex edits without changing the independent app plan."""
+    paths, old, new = [], [], []
 
     label_patch = codex_label.patch_file(
         args.codex_extension,
@@ -1696,6 +1677,143 @@ def main():
                 old.append(codex_old)
                 new.append(codex_new)
 
+    return paths, old, new
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--app",
+        type=Path,
+        default=Path("/Applications/Visual Studio Code.app"),
+        help="Path to the Visual Studio Code application bundle",
+    )
+    parser.add_argument("--uninstall", action="store_true", help="Remove the toolkit patch")
+    parser.add_argument("--check", action="store_true", help="Validate without writing")
+    parser.add_argument(
+        "--configure",
+        action="store_true",
+        help="Configure in a local browser before installing",
+    )
+    parser.add_argument(
+        "--codex-only",
+        action="store_true",
+        help="Only install or remove optional Codex webview customizations",
+    )
+    parser.add_argument(
+        "--codex-extension",
+        type=Path,
+        help="Path to an OpenAI Codex VS Code extension directory",
+    )
+    parser.add_argument("--ui-only", action="store_true", help="Update Codex UI and EFS view labels/icons without host or workbench patches")
+    parser.add_argument("--repair", action="store_true", help="Repair app patches and refresh companion tools")
+    parser.add_argument("--workbench-only", action="store_true", help="Restore only SCM workbench patches and live components, independently of Codex patches")
+    args = parser.parse_args()
+    if args.workbench_only and (args.uninstall or args.configure or args.codex_only or args.ui_only or args.codex_extension):
+        parser.error("--workbench-only cannot be combined with --uninstall, --configure, --codex-only, --ui-only, or --codex-extension")
+    if args.repair and (args.uninstall or args.configure or args.codex_only):
+        parser.error("--repair cannot be combined with --uninstall, --configure, or --codex-only")
+
+    if args.configure and (args.uninstall or args.check or args.codex_only):
+        parser.error("--configure cannot be combined with --uninstall, --check, or --codex-only")
+
+    if args.ui_only and (args.uninstall or args.configure or args.repair or args.codex_only):
+        parser.error("--ui-only cannot be combined with uninstall, configure, repair, or codex-only")
+    settings = load_settings()
+    if args.workbench_only:
+        repair_workbench(args.app, settings, check=args.check)
+        return
+    if args.ui_only:
+        import ui_customizations
+        manifest = codex_label.manifest_path(args.codex_extension)
+        if manifest is None:
+            raise ValueError("The Codex extension is not installed.")
+        patches = ui_customizations.plan(manifest.parent, settings)
+        if not args.check:
+            ui_customizations.apply(patches)
+            invalidate_extension_cache(args.app)
+        print(f"UI customizations {'validated' if args.check else 'updated'}: {len(patches)} files. Reload only the intended test window to activate them.")
+        return
+    if args.configure:
+        from configurator import run_configurator
+
+        if not run_configurator(settings, action_label="Save and install"):
+            print("Installation cancelled; no toolkit settings were changed.")
+            return
+        settings = load_settings()
+    version, workbench_paths = application_paths(args.app)
+    legacy_changed = not args.codex_only and workspace_search.remove_legacy_extensions(check=True)
+    paths = [] if args.codex_only else workbench_paths
+    components_changed = (not args.codex_only
+                          and sync_live_components(workbench_paths[0].parent,
+                                                   remove=args.uninstall, check=True))
+    old = [path.read_text() for path in paths]
+    new = (
+        []
+        if args.codex_only
+        else list(transform(*old, remove=args.uninstall, settings=settings))
+    )
+    wrapper_path = ai_wrapper_path()
+    wrapper_changed = (
+        False
+        if args.codex_only
+        else sync_ai_wrapper(
+            remove=args.uninstall, check=True, destination=wrapper_path
+        )
+    )
+    model_picker_path = ai_model_picker_path()
+    model_picker_changed = (
+        False
+        if args.codex_only or args.repair
+        else sync_model_picker(
+            enabled=settings["aiModelPicker"],
+            remove=args.uninstall,
+            check=True,
+            destination=model_picker_path,
+        )
+    )
+    workspace_search_changed = (
+        False
+        if args.codex_only
+        else workspace_search.sync_extension(
+            remove=args.uninstall,
+            check=True,
+            settings=settings,
+        )
+    )
+
+    if not args.codex_only:
+        git_extension = args.app / 'Contents/Resources/app/extensions/git/dist/main.js'
+        git_old = git_extension.read_text()
+        paths.append(git_extension)
+        old.append(git_old)
+        new.append(transform_git_background(git_old, remove=args.uninstall))
+        for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
+            paths.append(browser_path)
+            old.append(browser_old)
+            new.append(browser_new)
+        for github_path, github_old, github_new in github_pr.patch_files(remove=args.uninstall):
+            paths.append(github_path)
+            old.append(github_old)
+            new.append(github_new)
+
+    codex_skipped = False
+    try:
+        codex_paths, codex_old, codex_new = plan_codex_patches(args, settings)
+    except (ValueError, OSError) as error:
+        if args.codex_only or args.uninstall:
+            raise
+        codex_skipped = True
+        print(f"Warning: Codex customizations skipped: {error} Existing Codex files were preserved; independent SCM and browser repairs will continue.")
+    else:
+        paths.extend(codex_paths)
+        old.extend(codex_old)
+        new.extend(codex_new)
+    browser_restart_required = any(
+        path.name == 'mainImpl.js' and previous != updated
+        for path, previous, updated in zip(paths, old, new)
+    )
+
     if (
         old == list(new)
         and not wrapper_changed
@@ -1707,7 +1825,8 @@ def main():
         if not args.check and not args.repair:
             invalidate_extension_cache(args.app)
         action = "not installed" if args.uninstall else "already up to date"
-        print(f"SCM toolkit is {action} for VS Code {version}.")
+        target = "SCM and browser patches (Codex customizations skipped)" if codex_skipped else "SCM toolkit"
+        print(f"{target} is {action} for VS Code {version}.")
         return
 
     if not args.check:
@@ -1736,11 +1855,14 @@ def main():
     if not args.check and not args.uninstall and not args.codex_only:
         persist_message_bar_layout(settings)
     action = "Validated" if args.check else "Removed" if args.uninstall else "Installed"
-    target = "Codex customizations" if args.codex_only else "SCM toolkit"
+    target = ("SCM and browser patches (Codex customizations skipped)" if codex_skipped
+              else "Codex customizations" if args.codex_only else "SCM toolkit")
     if old == list(new) and not args.uninstall and components_changed:
         print(f"{action} live Sweetiebot workbench components for VS Code {version}; no window reload required.")
     else:
         print(f"{action} {target} for VS Code {version}. Reload VS Code to apply the change.")
+    if browser_restart_required:
+        print("Browser session changes require a full VS Code quit and restart after installation; Reload Window is not sufficient.")
     if not args.codex_only and not args.repair:
         if args.uninstall:
             print("Clear VS Code git.path if it still points to the removed SCM toolkit wrapper.")

@@ -34,6 +34,14 @@
             }
             if (!composer || composer === document.body || composer === document.documentElement) return;
             const access = composer.querySelector('button[data-composer-navigation-target="permissions"]');
+            if (location.classList.contains('scm-toolkit-usage-replaced')) {
+                const margin = margins.get(access);
+                if (margin) {
+                    set(access, 'marginInlineStart', margin.start);
+                    set(access, 'marginInlineEnd', margin.end);
+                }
+                return;
+            }
             // Absolute positioning preserves React's menu ownership, but its
             // width still needs a place in the native footer's layout.
             const footer = access.closest('[class*="ComposerLayoutFooter_"]');

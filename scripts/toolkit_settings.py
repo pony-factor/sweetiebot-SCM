@@ -46,10 +46,12 @@ DEFAULT_SETTINGS = {
     "autoPublishPullRequests": True,
     "filterSyncCommitSummaries": True,
     "squashOmitBulletsForEmojiTitles": False,
+    "squashTrailerSeparatorStyle": "underscores",
     "mergeAutoRefresh": True,
     "mergeRefreshIntervalSeconds": '120',
     "githubRateLimitCooldownSeconds": '900',
     "mergePostSummaries": False,
+    "mergeShowPrCommits": True,
     "mergeTimelineTimestampMode": "hidden",
     "mergeSidebarWidthPercent": "37",
     "mergeTimelineHeightPercent": "34",
@@ -59,6 +61,7 @@ DEFAULT_SETTINGS = {
     "kefaniaCloseButtonPosition": "left",
     "ludicrousMode": False,
     "chatgptProjectUrl": "",
+    "chatgptReviewProjectUrl": "",
     "workspaceSearchAutoReindex": True,
     "hideSCMProgress": True,
     "inlineSuggestions": True,
@@ -221,6 +224,8 @@ def load_settings():
         )
     elif new_position not in {"left", "middle", "right"}:
         settings["kefaniaCloseButtonPosition"] = "left"
+    if settings["squashTrailerSeparatorStyle"] not in {"underscores", "hyphens", "none"}:
+        settings["squashTrailerSeparatorStyle"] = "underscores"
     if settings["postCommitAction"] not in {"none", "push"}:
         settings["postCommitAction"] = "none"
     # Represent legacy disabled buttons in the layout so the editor reflects
@@ -296,10 +301,12 @@ SETTING_KEYS = {
     "autoPublishPullRequests": "scm-toolkit.auto-publish-pull-requests",
     "filterSyncCommitSummaries": "scm-toolkit.filter-sync-commit-summaries",
     "squashOmitBulletsForEmojiTitles": "scm-toolkit.squash-omit-bullets-for-emoji-titles",
+    "squashTrailerSeparatorStyle": "scm-toolkit.squash-trailer-separator-style",
     "mergeAutoRefresh": "scm-toolkit.merge-auto-refresh",
     "mergeRefreshIntervalSeconds": "scm-toolkit.merge-refresh-interval-seconds",
     "githubRateLimitCooldownSeconds": "scm-toolkit.github-rate-limit-cooldown-seconds",
     "mergePostSummaries": "scm-toolkit.merge-post-summaries",
+    "mergeShowPrCommits": "scm-toolkit.merge-show-pr-commits",
     "mergeTimelineTimestampMode": "scm-toolkit.merge-timeline-timestamp-mode",
     "mergeSidebarWidthPercent": "scm-toolkit.merge-sidebar-width-percent",
     "mergeTimelineHeightPercent": "scm-toolkit.merge-timeline-height-percent",
@@ -309,6 +316,7 @@ SETTING_KEYS = {
     "kefaniaCloseButtonPosition": "scm-toolkit.kefania-close-button-position",
     "ludicrousMode": "scm-toolkit.ludicrous-mode",
     "chatgptProjectUrl": "scm-toolkit.chatgpt-project-url",
+    "chatgptReviewProjectUrl": "scm-toolkit.chatgpt-review-project-url",
     "workspaceSearchAutoReindex": "scm-toolkit.workspace-search-auto-reindex",
     "hideSCMProgress": "scm-toolkit.hide-scm-progress",
     "inlineSuggestions": "scm-toolkit.inline-suggestions",
@@ -455,10 +463,12 @@ VSCODE_SETTINGS = {
         "autoPublishPullRequests": "autoPublishPullRequests",
         "filterSyncCommitSummaries": "filterSyncCommitSummaries",
         "squashOmitBulletsForEmojiTitles": "squashOmitBulletsForEmojiTitles",
+        "squashTrailerSeparatorStyle": "squashTrailerSeparatorStyle",
         "mergeAutoRefresh": "mergeAutoRefresh",
         "mergeRefreshIntervalSeconds": "mergeRefreshIntervalSeconds",
         "githubRateLimitCooldownSeconds": "githubRateLimitCooldownSeconds",
         "mergePostSummaries": "mergePostSummaries",
+        "mergeShowPrCommits": "mergeShowPrCommits",
         "mergeTimelineTimestampMode": "mergeTimelineTimestampMode",
         "mergeSidebarWidthPercent": "mergeSidebarWidthPercent",
         "mergeTimelineHeightPercent": "mergeTimelineHeightPercent",
@@ -467,6 +477,7 @@ VSCODE_SETTINGS = {
         "kefaniaCloseAfterMerge": "kefaniaCloseAfterMerge",
         "kefaniaCloseButtonPosition": "kefaniaCloseButtonPosition",
         "chatgptProjectUrl": "chatgptProjectUrl",
+        "chatgptReviewProjectUrl": "chatgptReviewProjectUrl",
         "codexKeepAwake": "codexKeepAwake",
         "codexHidePermissionsIcon": "codexHidePermissionsIcon",
         "durableBackgroundCommits": "durableBackgroundCommits",

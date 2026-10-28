@@ -1,0 +1,105 @@
+name: Probe real Codex New Chat dot
+on:
+  # A clean CI runner cannot authenticate to a user's Codex sidebar.
+  # Run this forensic probe explicitly; failed UI mounting must not block
+  # unrelated PR checks.
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official VS Code and openai.chatgpt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vscode" "$RUNNER_TEMP/extensions" "$RUNNER_TEMP/profile"
+          curl -fLsS --retry 3 https://update.code.visualstudio.com/latest/linux-x64/stable -o "$RUNNER_TEMP/vscode.tar.gz"
+          tar -xzf "$RUNNER_TEMP/vscode.tar.gz" -C "$RUNNER_TEMP/vscode"
+          "$RUNNER_TEMP/vscode/VSCode-linux-x64/bin/code" --no-sandbox \
+            --user-data-dir "$RUNNER_TEMP/profile" --extensions-dir "$RUNNER_TEMP/extensions" \
+            --install-extension openai.chatgpt --force
+          find "$RUNNER_TEMP/extensions" -maxdepth 1 -type d -name 'openai.chatgpt-*' -printf '%f\n'
+      - name: Prepare read-only probe extension and exact override
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/probe-ext"
+          cat > "$RUNNER_TEMP/probe-ext/package.json" <<'EOF'
+          {"name":"codex-dot-inspector","version":"0.0.1","main":"extension.js","engines":{"vscode":"*"},"activationEvents":["*"]}
+          EOF
+          cat > "$RUNNER_TEMP/probe-ext/extension.js" <<'EOF'
+          const vscode = require("vscode");
+          exports.activate = async () => {
+            await new Promise(resolve => setTimeout(resolve, 4500));
+            const commands = (await vscode.commands.getCommands(true)).filter(c => /codex|chatgpt/i.test(c));
+            require("fs").writeFileSync(process.env.RUNNER_TEMP + "/codex-commands.json", JSON.stringify(commands, null, 2));
+            for (const command of ["chatgpt.openSidebar","codex.openSidebar",
+              "workbench.view.extension.codex","workbench.view.extension.chatgpt"]) {
+              try { await vscode.commands.executeCommand(command); break; } catch {}
+            }
+          };
+          EOF
+          PYTHONPATH=scripts python - <<'PY'
+          import os
+          from pathlib import Path
+          import codex_colors
+          css = codex_colors.transform("/* probe */", {"codexNewChatDotColor": "#12AB34"})
+          Path(os.environ["RUNNER_TEMP"], "codex-dot.css").write_text(css)
+          PY
+          npm install --no-save --no-package-lock playwright@1.64.0
+      - name: Launch real extension in ephemeral headless VS Code
+        shell: bash
+        run: |
+          set -euo pipefail
+          Xvfb :99 -screen 0 1440x900x24 > "$RUNNER_TEMP/xvfb.log" 2>&1 &
+          export DISPLAY=:99
+          sleep 3
+          "$RUNNER_TEMP/vscode/VSCode-linux-x64/code" --no-sandbox \
+            --disable-gpu --disable-telemetry --remote-debugging-port=9222 --new-window \
+            --user-data-dir "$RUNNER_TEMP/profile" --extensions-dir "$RUNNER_TEMP/extensions" \
+            --extensionDevelopmentPath="$RUNNER_TEMP/probe-ext" \
+            "$GITHUB_WORKSPACE" > "$RUNNER_TEMP/vscode.log" 2>&1 &
+          echo "Starting real Electron executable; checking the remote-debugging endpoint:"
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if curl -fsS --max-time 3 http://127.0.0.1:9222/json/version > "$RUNNER_TEMP/cdp-version.json" 2>/dev/null; then
+              echo "Electron Chrome DevTools endpoint is reachable"
+              break
+            fi
+            sleep 2
+          done
+          if [ ! -s "$RUNNER_TEMP/cdp-version.json" ]; then
+            echo "VS Code did not expose DevTools; last startup log lines:"
+            tail -n 35 "$RUNNER_TEMP/vscode.log" || true
+          fi
+          export CODEX_PROBE_CSS="$RUNNER_TEMP/codex-dot.css"
+          mkdir -p "$GITHUB_WORKSPACE/codex-probe-artifacts"
+          export CODEX_PROBE_REPORT="$GITHUB_WORKSPACE/codex-probe-artifacts/codex-dot-report.json"
+          node scripts/ci/probe_codex_new_chat.js || {
+            echo "Codex live probe could not verify the dot. Sanitized diagnostics:"
+            cat "$CODEX_PROBE_REPORT" || true
+            echo "Headless VS Code startup tail:"
+            tail -n 45 "$RUNNER_TEMP/vscode.log" || true
+            exit 1
+          }
+      - name: Collect sanitized results
+        if: always()
+        run: |
+          mkdir -p codex-probe-artifacts
+          cp "$RUNNER_TEMP/codex-commands.json" codex-probe-artifacts/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codex-dot-live-inspection
+          path: codex-probe-artifacts/
+          if-no-files-found: warn
+          retention-days: 7

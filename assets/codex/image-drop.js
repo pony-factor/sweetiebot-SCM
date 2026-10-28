@@ -8,21 +8,39 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
         // Capture before history rows and their hover cards can intercept the drag.
         const surface = window;
         let active;
+        let nativeAccepted = false;
+        let lastNativeForward = 0;
         let interaction = 0;
         let dropSequence = 0;
-        const select = event => {
+        const select = (event, reuseActive = false) => {
+            // A dragover can fire dozens of times per second. Reuse the current
+            // pane rather than forcing layout through getClientRects every time.
+            // Still switch immediately when moving into another registered pane.
+            if (reuseActive && active && targets.has(active)
+                && (!active.root || active.root.isConnected !== false)) {
+                let switchedPane = false;
+                for (const entry of targets) {
+                    if (entry !== active && entry.root?.contains(event.target)) {
+                        switchedPane = true;
+                        break;
+                    }
+                }
+                if (!switchedPane) return active;
+            }
             const entries = [...targets].reverse().filter(entry => !entry.root
                 || (entry.root.isConnected !== false && entry.root.getClientRects().length));
-            return entries.find(entry => entry.root?.contains(event.target)
-                && entry.root.getClientRects().length)
+            return entries.find(entry => entry.root?.contains(event.target))
                 ?? entries.find(entry => entry.root)
                 ?? entries.find(entry => !entry.root);
         };
         const hasFiles = event => {
             const transfer = event.dataTransfer;
-            return transfer && (Array.from(transfer.types || []).includes('Files')
+            if (!transfer) return false;
+            const types = transfer.types;
+            return !!((typeof types?.contains === 'function'
+                ? types.contains('Files') : Array.prototype.includes.call(types || [], 'Files'))
                 || transfer.files?.length
-                || Array.from(transfer.items || []).some(item => item.kind === 'file'));
+                || Array.prototype.some.call(transfer.items || [], item => item.kind === 'file'));
         };
         const reportFailure = (message = 'The screenshot could not be attached. Save it first, then drag the saved image here.') => {
             let notice = document.getElementById('scm-toolkit-image-drop-status');
@@ -81,10 +99,21 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
         };
         const enterTarget = event => {
             if (!hasFiles(event)) return;
-            const entry = select(event);
+            const entry = select(event, true);
             if (active && active !== entry) active.leave(event);
             const firstEnter = active !== entry;
+            if (firstEnter) nativeAccepted = false;
             active = entry;
+            // React does not need every intermediate pointer update once its
+            // drop overlay has accepted this pane. Keep the browser's drop
+            // acceptance live, and periodically refresh the native handler.
+            const now = Date.now();
+            if (entry && !firstEnter && event.type === 'dragover'
+                && nativeAccepted && now - lastNativeForward < 50) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             // The native counter must count entry to the pane, not each child.
             const forwarded = new Proxy(event, {
                 get(target, property) {
@@ -97,6 +126,8 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 },
             });
             entry?.enter(forwarded);
+            nativeAccepted = !!event.defaultPrevented;
+            lastNativeForward = now;
             if (event.defaultPrevented) event.stopPropagation();
         };
         const handlers = {
@@ -118,6 +149,7 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                     && body.contains(document.elementFromPoint?.(event.clientX, event.clientY))) return;
                 active?.leave(event);
                 active = undefined;
+                nativeAccepted = false;
             },
             drop(event) {
                 if (!hasFiles(event)) return;
@@ -203,11 +235,13 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                     entry?.drop(event);
                 }
                 active = undefined;
+                nativeAccepted = false;
                 if (event.defaultPrevented) event.stopPropagation();
             },
             dragend(event) {
                 active?.leave(event);
                 active = undefined;
+                nativeAccepted = false;
             },
             // React can retain the same composer and replace its callbacks on chat
             // navigation. Cancel deferred drops after subsequent user interaction.
@@ -221,6 +255,7 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
             if (active === entry) {
                 entry.leave({ type: 'dragleave' });
                 active = undefined;
+                nativeAccepted = false;
             }
         } };
     }
