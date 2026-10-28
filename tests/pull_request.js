@@ -191,7 +191,8 @@ async function run() {
       '- Linked to ' + githubBulletUrl + '  '
     ].join('\n');
     assert.equal(appendSourceDetails(bulletInput, undefined), bulletExpected);
-    assert.equal(appendSourceDetails(bulletInput, codexSource).split('\n\n<details>')[0], bulletExpected);
+    assert.equal(appendSourceDetails(bulletInput, codexSource).split('\n\n<details>')[0], bulletExpected.trimEnd(),
+      'Source detail insertion trims trailing whitespace without restoring URL punctuation');
   }
   const withoutShare = pullRequestPrompt({
     branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
