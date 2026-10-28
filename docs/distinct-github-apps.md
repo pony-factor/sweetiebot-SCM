@@ -100,7 +100,7 @@ the human's existing VS Code or GH CLI login. Inactive-window polling stays
 paused; primary and secondary rate limits still apply.
 
 The optional external Lindsey `bulk-merge.js`, discovered by
-Sweetiebot's `efs/lindsey_bulk_merge.js`, receives Lindsey's own
+Sweetiebot's `extension/lindsey_bulk_merge.js`, receives Lindsey's own
 installation token. Its current safety restrictions (including linked/native
 stacks and ambiguous attribution) still apply; authentication does not relax
 merge policy.
