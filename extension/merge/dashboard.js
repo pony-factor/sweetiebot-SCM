@@ -348,6 +348,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
+      showPrCommits: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeShowPrCommits', true) !== false,
       layoutPreferences: configuredLayout(vscode)
     });
   }
@@ -642,7 +643,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       clearTimer(timer); actualInterval = refreshInterval();
       timer = setTimer(() => { void refresh(); }, actualInterval);
     }
-    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeTimelineTimestampMode', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
+    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeTimelineTimestampMode', 'mergeShowPrCommits', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
       .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
   });
   panel.onDidDispose(() => {

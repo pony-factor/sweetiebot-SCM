@@ -368,6 +368,12 @@
           "scope": "application",
           "description": "Post an AI summary to each selected PR after its merge is independently verified. Local explanations are always shown."
         },
+        "scmToolkit.mergeShowPrCommits": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Show the selected PR's commit-history graph in Lindsey's bulk-merge dashboard. Disable to give the diff the full width."
+        },
         "scmToolkit.mergeSidebarWidthPercent": {
           "type": "integer",
           "minimum": 15,
