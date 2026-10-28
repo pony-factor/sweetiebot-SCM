@@ -10,6 +10,8 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 **Open a Window on Shared Main** provides a managed main window. The ordinary new-branch action starts at the resolved default branch where possible; the **stacked branch** action starts at the current topic branch. Optional `gh-stack` manages native stacks. Creating a stacked branch is not publishing a PR; verify parent/base relationships before merging.
 
+**New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
+
 ## Sync and cleanup
 
 **Automatically pull clean branches** uses guarded fast-forward behavior and does not silently merge divergent histories. The distinct `scmToolkit.cloudRepositorySync=false` option schedules eligible clean-main checkouts every 15 minutes via macOS; it skips dirty/divergent work. `scmToolkit.autoPublishNewBranches=false` controls publishing newly created branches, not PR creation.
@@ -24,6 +26,6 @@ git branch -vv
 git worktree list --porcelain
 ```
 
-Never directly remove registered Git metadata. Use Git's worktree operations after establishing safety. Evidence: [branch actions](../efs/branch_actions.js), [shared main](../efs/shared_main.js), [stack logic](../efs/stacked_branch.js), [cleanup](../efs/workspace_prune.js), [sync](../scripts/cloud_repo_sync.py).
+Never directly remove registered Git metadata. Use Git's worktree operations after establishing safety. Evidence: [branch actions](../extension/branches/actions.js), [shared main](../extension/branches/shared_main.js), [stack logic](../extension/branches/stacked_branch.js), [cleanup](../extension/branches/workspace_prune.js), [sync](../scripts/cloud_repo_sync.py).
 
 See [PR workflow](pull-requests-and-merges.md) for stack merging and [troubleshooting](troubleshooting.md) for blocked branch changes.

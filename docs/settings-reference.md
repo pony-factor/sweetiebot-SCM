@@ -1,6 +1,6 @@
 # Settings reference
 
-Open **Source Control → gear at the right of the commit message** for **Sweetiebot Settings / Magic Settings**. Changes auto-save. `python3 scripts/configure.py` can open the configurator from a checkout. Git-backed preferences are under `scm-toolkit.*` in `~/.gitconfig`; VS Code settings use `scmToolkit.*`, sometimes with resource-level overrides. The [manifest](../efs/package.json), [configurator](../scripts/configurator.py), and [settings store](../scripts/toolkit_settings.py) define current options.
+Open **Source Control → gear at the right of the commit message** for **Sweetiebot Settings / Magic Settings**. Changes auto-save. `python3 scripts/configure.py` can open the configurator from a checkout. Git-backed preferences are under `scm-toolkit.*` in `~/.gitconfig`; VS Code settings use `scmToolkit.*`, sometimes with resource-level overrides. The [manifest](../extension/package.json), [configurator](../scripts/configurator.py), and [settings store](../scripts/toolkit_settings.py) define current options.
 
 | Section | What it changes |
 | --- | --- |

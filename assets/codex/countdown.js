@@ -1,4 +1,17 @@
 // Runs as part of the Codex webview bundle when the optional countdown is enabled.
+function scmToolkitUsageResetCopy(banner, intl, resolveCopy, jsx) {
+    const copy = resolveCopy(banner, intl);
+    if (banner.reset_at == null || !Number.isFinite(Number(banner.reset_at))) return copy;
+    const titleTimed = typeof banner.title === 'string' && banner.title.includes('{time}');
+    const descriptionTimed = typeof banner.description === 'string' && banner.description.includes('{time}');
+    if (!titleTimed && !descriptionTimed) return copy;
+    return {
+        ...copy,
+        title: titleTimed ? scmToolkitUsageResetMessage(banner.title, banner.reset_at, jsx) : copy.title,
+        description: descriptionTimed ? scmToolkitUsageResetMessage(banner.description, banner.reset_at, jsx) : copy.description,
+    };
+}
+
 function scmToolkitUsageResetMessage(message, resetAt, jsx) {
     if (resetAt == null || !Number.isFinite(Number(resetAt)) || !message.includes('{time}')) {
         return message;

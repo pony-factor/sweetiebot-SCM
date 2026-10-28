@@ -1,6 +1,6 @@
 # Development and verification
 
-The [scripts guide](../scripts/README.md) explains installed Python tools. The entry points are [extension activation](../efs/extension.js), [installer](../scripts/install.py), [configurator](../scripts/configurator.py), [workbench assets](../assets/workbench/), [Codex assets](../assets/codex/), and [browser assets](../assets/browser/).
+The [scripts guide](../scripts/README.md) explains installed Python tools. The entry points are [extension activation](../extension/extension.js), [installer](../scripts/install.py), [configurator](../scripts/configurator.py), [workbench assets](../assets/workbench/), [Codex assets](../assets/codex/), and [browser assets](../assets/browser/).
 
 The [CI workflow](../.github/workflows/check.yml) groups tests into **commit**, **branches**, **branch-names**, **github-pr**, **codex**, **kefania**, **lindsey**, **browser-ui**, **efs-search**, **installation** and **security**, with additional browser/App checks. [Test inventory](../scripts/ci/ci_test_groups.json) owns assignments; adding a test may require updating that inventory.
 
@@ -8,7 +8,7 @@ From the repo root:
 
 ```sh
 python3 scripts/ci/ci_test_runner.py verify
-PYTHONPATH=scripts python3 -m unittest discover -s tests
+PYTHONPATH=scripts python3 -m unittest discover -s tests -t . -p '*.py'
 python3 scripts/ci/ci_test_runner.py run efs-search
 # macOS with compatible VS Code only:
 python3 scripts/install.py --check

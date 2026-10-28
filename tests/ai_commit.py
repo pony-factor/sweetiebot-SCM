@@ -1,0 +1,1983 @@
+import importlib.util
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+from types import SimpleNamespace
+from contextlib import ExitStack, contextmanager
+import unittest
+from unittest.mock import patch
+
+
+spec = importlib.util.spec_from_file_location(
+    "scm_toolkit_ai_commit", Path(__file__).parents[1] / "scripts/ai_commit.py"
+)
+ai_commit = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ai_commit)
+
+
+class GitOutputTests(unittest.TestCase):
+    def test_replaces_non_utf8_output(self):
+        with patch.object(ai_commit, "REAL_GIT", sys.executable), patch.object(
+            ai_commit, "GIT_GLOBAL_ARGS", []
+        ):
+            output = ai_commit.git_output(
+                "-c",
+                "import sys; sys.stdout.buffer.write(b'prefix\\x93suffix')",
+            )
+
+        self.assertEqual(output, "prefix\ufffdsuffix")
+
+
+class GithubSplitTests(unittest.TestCase):
+    def test_packs_staged_payload_at_100_mib(self):
+        mib = 1024**2
+        groups = ai_commit._pack_large_commit_groups([
+            ("a.bin", 60 * mib), ("b.bin", 40 * mib), ("c.bin", 1 * mib)
+        ])
+        self.assertEqual(groups, [["a.bin", "b.bin"], ["c.bin"]])
+
+    def test_rejects_single_staged_blob_over_github_limit(self):
+        with patch.object(ai_commit, "staged_blob_sizes", return_value=[
+            ("huge.bin", ai_commit.GITHUB_FILE_MAX_BYTES + 1)
+        ]):
+            with self.assertRaisesRegex(RuntimeError, "larger than 100 MiB"):
+                ai_commit.github_split_groups(["huge.bin"])
+
+    def test_splits_aggregate_payload_over_target(self):
+        mib = 1024**2
+        with patch.object(ai_commit, "staged_blob_sizes", return_value=[
+            ("a.bin", 60 * mib), ("b.bin", 60 * mib)
+        ]):
+            self.assertEqual(ai_commit.github_split_groups(["a.bin", "b.bin"]), [["a.bin"], ["b.bin"]])
+
+    def test_split_commits_use_temporary_indexes_and_leave_stage_clean(self):
+        git = shutil.which("git")
+        if not git:
+            self.skipTest("git is unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            def run(*args):
+                return subprocess.run([git, "-C", tmp, *args], check=True, capture_output=True, text=True)
+            run("init", "--quiet")
+            run("config", "user.name", "Sweetiebot Test")
+            run("config", "user.email", "sweetiebot@example.test")
+            Path(tmp, "base.txt").write_text("base\n", encoding="utf-8")
+            run("add", "base.txt")
+            run("commit", "--quiet", "-m", "base")
+            Path(tmp, "a.txt").write_text("a\n", encoding="utf-8")
+            Path(tmp, "b.txt").write_text("b\n", encoding="utf-8")
+            run("add", "a.txt", "b.txt")
+            with patch.object(ai_commit, "REAL_GIT", git), patch.object(
+                ai_commit, "GIT_GLOBAL_ARGS", ["-C", tmp]
+            ), patch.object(
+                ai_commit, "generate_message", side_effect=[("🐞 Add a", ""), ("🐞 Add b", "")]
+            ), patch.object(ai_commit, "should_add_default_branch_description", return_value=False):
+                result = ai_commit.commit_split_groups(["-C", tmp, "commit", "--quiet"], [["a.txt"], ["b.txt"]])
+            self.assertEqual(result, 0)
+            self.assertEqual(run("log", "-2", "--pretty=%s").stdout.splitlines(), ["🐞 Add b", "🐞 Add a"])
+            self.assertEqual(run("status", "--porcelain").stdout, "")
+
+
+class RoutingTests(unittest.TestCase):
+    def test_finds_commit_after_global_option(self):
+        self.assertEqual(ai_commit.commit_index(["-C", "/tmp/repo", "commit"]), 2)
+    def test_finds_push_and_branch_changes_after_global_options(self):
+        self.assertEqual(ai_commit.git_command_index(["-C", "/tmp/repo", "push", "origin"]), (2, "push"))
+        self.assertEqual(ai_commit.git_command_index(["--no-pager", "switch", "topic"]), (1, "switch"))
+        self.assertIsNone(ai_commit.commit_index(["-C", "/tmp/repo", "push", "origin"]))
+
+
+    def test_preserves_explicit_message(self):
+        self.assertTrue(ai_commit.has_explicit_message_or_special_mode(["-m", "Manual"]))
+        self.assertTrue(
+            ai_commit.has_explicit_message_or_special_mode(["--message=Manual"])
+        )
+
+    def test_finds_manual_message_forms(self):
+        self.assertEqual(ai_commit.manual_message_location(["-m", "Manual"]), (1, "value"))
+        self.assertEqual(
+            ai_commit.manual_message_location(["--message=Manual"]), (0, "long")
+        )
+        self.assertEqual(ai_commit.manual_message_location(["-mManual"]), (0, "short"))
+
+    def test_special_commit_modes_skip_manual_spellcheck(self):
+        self.assertIsNone(
+            ai_commit.manual_message_location(["--amend", "-m", "Manual"])
+        )
+        self.assertIsNone(
+            ai_commit.manual_message_location(["--fixup=HEAD", "-m", "Manual"])
+        )
+
+    def test_recognizes_manual_staged_messages_without_rewriting_them(self):
+        for args in [
+            ["-m", "Manual subject"],
+            ["--message=Manual subject"],
+            ["-mManual subject"],
+            ["--quiet", "--message", "Manual subject"],
+            ["-m", "Manual subject", "-m", "Manual body"],
+            ["-m", "--amend"],
+        ]:
+            with self.subTest(args=args):
+                self.assertTrue(ai_commit.has_manual_staged_message(args))
+
+    def test_skips_manual_messages_in_special_and_non_index_modes(self):
+        for args in [
+            ["--amend", "-m", "Manual"],
+            ["--fixup=HEAD", "-m", "Manual"],
+            ["--all", "-m", "Manual"],
+            ["--only", "README.md", "-m", "Manual"],
+            ["README.md", "-m", "Manual"],
+            ["-F", "commit.txt"],
+            ["-m"],
+        ]:
+            with self.subTest(args=args):
+                self.assertFalse(ai_commit.has_manual_staged_message(args))
+
+    def test_rejects_path_and_all_modes(self):
+        self.assertFalse(ai_commit.uses_staged_index(["README.md"]))
+        self.assertFalse(ai_commit.uses_staged_index(["--all"]))
+
+    def test_accepts_plain_staged_commit(self):
+        self.assertTrue(ai_commit.uses_staged_index([]))
+        self.assertTrue(ai_commit.uses_staged_index(["--quiet"]))
+
+    def test_manual_message_is_never_silently_spellchecked(self):
+        with patch.object(sys, "argv", ["wrapper", "commit", "-m", "Fxi title"]), patch.object(
+            ai_commit, "feature_enabled", return_value=True
+        ), patch.object(
+            ai_commit, "spellcheck_manual_message_args"
+        ) as spellcheck, patch.object(
+            ai_commit.os, "execv", side_effect=RuntimeError("exec")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "exec"):
+                ai_commit.main()
+        spellcheck.assert_not_called()
+
+
+class NewlineRoutingTests(unittest.TestCase):
+    def test_failed_summary_stops_before_invoking_git_commit(self):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(sys, "argv", ["wrapper", "commit"]))
+            for name, value in [
+                ("feature_enabled", True), ("staged_whitespace_enabled", False),
+                ("staged_diff", ("1 file", "+Exhibit references", ["notes.md"])),
+                ("github_split_groups", [["notes.md"]]),
+                ("should_add_default_branch_description", False),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(ai_commit, "generate_message", side_effect=RuntimeError("No content-based summary")))
+            execute = stack.enter_context(patch.object(ai_commit.os, "execv"))
+            with self.assertRaises(SystemExit) as error:
+                ai_commit.main()
+            self.assertEqual(error.exception.code, 1)
+            execute.assert_not_called()
+
+    @patch.object(ai_commit, "git_config_bool")
+    def test_staged_whitespace_normalization_defaults_on(self, config):
+        config.return_value = True
+        self.assertTrue(ai_commit.staged_whitespace_enabled())
+        config.assert_called_once_with("scm-toolkit.normalize-staged-whitespace", True)
+
+    def test_toggle_off_skips_normalization_for_manual_and_generated_commits(self):
+        for args in [["commit", "-m", "Keep this message"], ["commit"]]:
+            with self.subTest(args=args), patch.object(
+                sys, "argv", ["wrapper", *args]
+            ), patch.object(ai_commit, "staged_whitespace_enabled", return_value=False), patch.object(
+                ai_commit, "feature_enabled", return_value=True
+            ), patch.object(ai_commit, "normalize_staged_final_newlines") as normalize, patch.object(
+                ai_commit, "staged_diff", return_value=("", "", [])
+            ), patch.object(ai_commit.os, "execv", side_effect=RuntimeError("exec")) as execv:
+                with self.assertRaisesRegex(RuntimeError, "exec"):
+                    ai_commit.main()
+                normalize.assert_not_called()
+                execv.assert_called_once_with(ai_commit.REAL_GIT, [ai_commit.REAL_GIT, *args])
+
+    def test_manual_staged_commit_normalizes_without_changing_the_message(self):
+        for argv in [
+            ["commit", "-m", "Manual subject"],
+            ["commit", "-m", "Manual subject", "-m", "Manual body"],
+            ["commit", "--message=Manual subject"],
+        ]:
+            with self.subTest(argv=argv), patch.object(
+                sys, "argv", ["wrapper", *argv]
+            ), patch.object(ai_commit, "feature_enabled") as ai_enabled, patch.object(
+                ai_commit, "staged_whitespace_enabled", return_value=True
+            ), patch.object(ai_commit, "normalize_staged_final_newlines"
+            ) as normalize, patch.object(ai_commit, "staged_diff") as diff, patch.object(
+                ai_commit.os, "execv", side_effect=RuntimeError("exec")
+            ) as execv:
+                with self.assertRaisesRegex(RuntimeError, "exec"):
+                    ai_commit.main()
+                normalize.assert_called_once_with()
+                ai_enabled.assert_not_called()
+                diff.assert_not_called()
+                execv.assert_called_once_with(ai_commit.REAL_GIT, [ai_commit.REAL_GIT, *argv])
+
+    def test_disabled_and_non_index_commits_skip_normalization(self):
+        for args, enabled in [(["commit", "--amend", "-m", "Manual"], True), (["commit", "--all", "-m", "Manual"], True), (["commit"], False), (["commit", "--all"], True), (["status"], True)]:
+            with self.subTest(args=args, enabled=enabled), patch.object(
+                sys, "argv", ["wrapper", *args]
+            ), patch.object(ai_commit, "manual_spellcheck_enabled", return_value=False), patch.object(
+                ai_commit, "feature_enabled", return_value=enabled
+            ), patch.object(ai_commit, "normalize_staged_final_newlines") as normalize, patch.object(
+                ai_commit.os, "execv", side_effect=RuntimeError("exec")
+            ):
+                with self.assertRaisesRegex(RuntimeError, "exec"):
+                    ai_commit.main()
+                normalize.assert_not_called()
+
+    def test_normalizes_before_reading_the_automatic_commit_diff(self):
+        calls = []
+        with patch.object(sys, "argv", ["wrapper", "commit"]), patch.object(
+            ai_commit, "manual_spellcheck_enabled", return_value=False
+        ), patch.object(ai_commit, "feature_enabled", return_value=True), patch.object(
+            ai_commit, "staged_whitespace_enabled", return_value=True
+        ), patch.object(ai_commit, "normalize_staged_final_newlines", side_effect=lambda: calls.append("normalize")
+        ), patch.object(ai_commit, "staged_diff", side_effect=lambda: (calls.append("diff") or ("", "", []))), patch.object(
+            ai_commit.os, "execv", side_effect=RuntimeError("exec")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "exec"):
+                ai_commit.main()
+        self.assertEqual(calls, ["normalize", "diff"])
+
+
+class PostCommitRoutingTests(unittest.TestCase):
+    def test_job_only_follows_a_successful_new_automatic_commit(self):
+        for returncode, dirty, new_head in [(0, False, "new"), (1, False, "old"), (0, True, "new"), (0, False, "old")]:
+            with self.subTest(returncode=returncode, dirty=dirty, new_head=new_head), ExitStack() as stack:
+                worker = SimpleNamespace(
+                    has_unstaged_changes=lambda args: dirty,
+                    staged_markdown_paths=lambda args: ["note.md"],
+                    head_sha=lambda args: "old",
+                )
+                worker.head_sha = stack.enter_context(patch.object(worker, "head_sha", create=True, side_effect=["old", new_head]))
+                spawn = stack.enter_context(patch.object(worker, "spawn_post_commit", create=True))
+                stack.enter_context(patch.object(sys, "argv", ["wrapper", "commit"]))
+                for name, value in [
+                    ("manual_spellcheck_enabled", False), ("feature_enabled", True),
+                    ("normalize_staged_final_newlines", []), ("staged_diff", ("1 file", "diff", ["note.md"])),
+                    ("github_split_groups", [["note.md"]]),
+                    ("generate_message", ("Title", "")), ("should_add_default_branch_description", False),
+                    ("git_config_bool", True), ("load_post_commit_spellcheck", worker),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                stack.enter_context(patch("background_commit.wait_for_background"))
+                stack.enter_context(patch.object(ai_commit.subprocess, "run", return_value=SimpleNamespace(returncode=returncode)))
+                with self.assertRaises(SystemExit) as exit_result:
+                    ai_commit.main()
+                self.assertEqual(exit_result.exception.code, returncode)
+                self.assertEqual(spawn.called, returncode == 0 and not dirty and new_head != "old")
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_emoji_priority_enforcement_defaults_on(self):
+        with patch.object(ai_commit, "git_config_bool", return_value=True) as config:
+            self.assertTrue(ai_commit.emoji_priority_enabled())
+            config.assert_called_once_with("scm-toolkit.ai-emoji-priority-rules", True)
+
+    @patch.object(ai_commit, "git_config_bool", return_value=False)
+    def test_ai_commit_can_be_disabled_globally(self, _config):
+        self.assertFalse(ai_commit.feature_enabled())
+
+    @patch.object(ai_commit, "git_config_bool", return_value=False)
+    def test_default_branch_description_can_be_disabled(self, _config):
+        self.assertFalse(ai_commit.default_branch_description_enabled())
+
+    def test_manual_spellcheck_defaults_off(self):
+        with patch.object(
+            ai_commit, "git_config_bool", side_effect=lambda _key, default: default
+        ) as config:
+            self.assertFalse(ai_commit.manual_spellcheck_enabled())
+        config.assert_called_once_with("scm-toolkit.spellcheck-preview", False)
+
+    def test_description_is_limited_to_the_configured_default_branch(self):
+        with patch.object(
+            ai_commit, "default_branch_description_enabled", return_value=True
+        ), patch.object(
+            ai_commit, "configured_default_branch", return_value="main"
+        ), patch.object(
+            ai_commit, "current_branch", return_value="main"
+        ):
+            self.assertTrue(ai_commit.should_add_default_branch_description())
+
+        with patch.object(
+            ai_commit, "default_branch_description_enabled", return_value=True
+        ), patch.object(
+            ai_commit, "configured_default_branch", return_value="main"
+        ), patch.object(
+            ai_commit, "current_branch", return_value="feature/test"
+        ):
+            self.assertFalse(ai_commit.should_add_default_branch_description())
+
+    def test_spellcheck_model_has_independent_git_config(self):
+        with patch.object(
+            ai_commit, "git_config_string", return_value="spell:test"
+        ) as config:
+            self.assertEqual(ai_commit.configured_spellcheck_model(), "spell:test")
+        config.assert_called_once_with(
+            "scm-toolkit.spellcheck-model", ai_commit.DEFAULT_SPELLCHECK_MODEL
+        )
+
+    def test_models_can_be_selected_from_git_config(self):
+        values = {
+            "scm-toolkit.ai-commit-model": "primary:test",
+            "scm-toolkit.ai-commit-low-memory-model": "fallback:test",
+        }
+        with patch.object(
+            ai_commit,
+            "git_config_string",
+            side_effect=lambda key, default: values.get(key, default),
+        ), patch.dict(
+            ai_commit.os.environ,
+            {"SCM_TOOLKIT_AI_MODEL": "", "SCM_TOOLKIT_AI_LOW_MEMORY_MODEL": ""},
+        ):
+            self.assertEqual(
+                ai_commit.configured_models(),
+                ("primary:test", "fallback:test"),
+            )
+
+    def test_primary_model_is_used_with_memory_headroom(self):
+        with patch.object(
+            ai_commit, "configured_models", return_value=("primary:test", "fallback:test")
+        ), patch.object(
+            ai_commit, "available_memory_bytes", return_value=8 * 1024**3
+        ), patch.object(
+            ai_commit, "low_memory_threshold_gib", return_value=4
+        ):
+            self.assertEqual(
+                ai_commit.selected_model({"primary:test", "fallback:test"}),
+                ("primary:test", False),
+            )
+
+    def test_low_memory_model_is_used_below_threshold(self):
+        with patch.object(
+            ai_commit, "configured_models", return_value=("primary:test", "fallback:test")
+        ), patch.object(
+            ai_commit, "available_memory_bytes", return_value=2 * 1024**3
+        ), patch.object(
+            ai_commit, "low_memory_threshold_gib", return_value=4
+        ):
+            self.assertEqual(
+                ai_commit.selected_model({"primary:test", "fallback:test"}),
+                ("fallback:test", True),
+            )
+
+    def test_low_memory_mode_does_not_escalate_to_primary(self):
+        with patch.object(
+            ai_commit, "configured_models", return_value=("primary:test", "fallback:test")
+        ), patch.object(
+            ai_commit, "available_memory_bytes", return_value=2 * 1024**3
+        ), patch.object(
+            ai_commit, "low_memory_threshold_gib", return_value=4
+        ):
+            self.assertEqual(
+                ai_commit.selected_model({"primary:test"}),
+                (None, True),
+            )
+
+    @patch.object(
+        ai_commit,
+        "ollama_json",
+        return_value={"models": [{"name": "primary:test"}]},
+    )
+    def test_local_model_inventory_does_not_require_staged_files(self, _request):
+        self.assertEqual(ai_commit.installed_local_model_names(), {"primary:test"})
+
+
+class TitleGenerationAdmissionTests(unittest.TestCase):
+    def test_memory_pressure_adapts_global_parallelism(self):
+        gib = 1024**3
+        expected = {
+            None: 2, 0: 1, 3 * gib: 1, 7 * gib: 1,
+            8 * gib: 2, 15 * gib: 2, 16 * gib: 3,
+            23 * gib: 3, 24 * gib: 4, 31 * gib: 4,
+            32 * gib: 5, 39 * gib: 5, 40 * gib: 6,
+            48 * gib: 6, 96 * gib: 6,
+        }
+        for available, slots in expected.items():
+            with self.subTest(available=available):
+                self.assertEqual(ai_commit.title_generation_parallelism(available), slots)
+
+    def test_title_slots_are_shared_and_released_under_pressure(self):
+        gib = 1024**3
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=7 * gib):
+            with ai_commit.title_generation_slot() as first:
+                self.assertEqual(first, 0)
+                with patch.object(ai_commit.time, "sleep", side_effect=RuntimeError("slot busy")):
+                    with self.assertRaisesRegex(RuntimeError, "slot busy"):
+                        with ai_commit.title_generation_slot():
+                            self.fail("A second worker entered the only safe slot")
+            with ai_commit.title_generation_slot() as reopened:
+                self.assertEqual(reopened, 0, "The slot must be reusable after finishing")
+
+    def test_available_headroom_allows_independent_concurrent_slots(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=16 * 1024**3):
+            with ai_commit.title_generation_slot() as first:
+                with ai_commit.title_generation_slot() as second:
+                    self.assertEqual((first, second), (0, 1))
+
+    def test_title_slot_is_released_after_generation_error(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            ai_commit.os.environ, {"SWEETIEBOT_COMMIT_JOBS": tmp}
+        ), patch.object(ai_commit, "available_memory_bytes", return_value=0):
+            failing = ai_commit.generation_budget(lambda: (_ for _ in ()).throw(
+                RuntimeError("generation failed")))
+            with self.assertRaisesRegex(RuntimeError, "generation failed"):
+                failing()
+            with ai_commit.title_generation_slot() as available_again:
+                self.assertEqual(available_again, 0)
+
+
+class ManualSpellcheckTests(unittest.TestCase):
+    def test_safe_grammar_correction_requires_high_similarity_and_preserves_tokens(self):
+        original = "🐞 Fix button are brokn"
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(
+                original, '{"subject":"🐞 Fix the buttons are broken"}', style="grammar"),
+            "🐞 Fix the buttons are broken",
+        )
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(
+                original, '{"subject":"🐞 Fix the buttons are broken"}'),
+            original,
+        )
+        for before, after in [
+            ("Fix API 2", "Fix API 3"),
+            ("Fix Instinet name", "Fix Instinett name"),
+            ("Fix `--debug` in path", "Fix `--release` in path"),
+            ("Fix typo 🐞", "Fix typo 🐛"),
+        ]:
+            self.assertEqual(
+                ai_commit.safe_spellcheck_correction(
+                    before, json.dumps({"subject": after}), style="grammar", vocabulary=["Instinet"]),
+                before,
+            )
+
+    def test_draft_spellchecking_includes_custom_preferences_and_preserves_terms(self):
+        def config(key, default=""):
+            return {
+                "scm-toolkit.draft-spellcheck-style": "grammar",
+                "scm-toolkit.draft-spellcheck-vocabulary": "Instinet\nSoroban",
+                "scm-toolkit.draft-spellcheck-guidance": "Prefer consistent capitalization.",
+            }.get(key, default)
+        with patch.object(ai_commit, "git_config_string", side_effect=config), patch.object(
+            ai_commit, "manual_spellcheck_enabled", return_value=True
+        ), patch.object(
+            ai_commit, "installed_local_model_names", return_value={"spell:test"}
+        ), patch.object(
+            ai_commit, "configured_spellcheck_model", return_value="spell:test"
+        ), patch.object(
+            ai_commit, "ollama_json",
+            return_value={"response": '{"subject":"Fix Instinett phrasing"}'},
+        ) as request:
+            self.assertEqual(ai_commit.spellcheck_subject("Fix Instinet phrasing"), "Fix Instinet phrasing")
+            prompt = request.call_args.args[1]["prompt"]
+            self.assertIn("Prefer consistent capitalization.", prompt)
+            self.assertIn("Instinet\nSoroban", prompt)
+            self.assertIn("grammatical", prompt)
+
+    def test_spellcheck_thinking_detects_named_boolean_and_unsupported_levels(self):
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+        def fake_show(_path, payload, timeout=None):
+            if payload["model"] == "named:test":
+                return {"thinking": {"values": ["low", "medium", "high"], "default": "medium"}}
+            if payload["model"] == "boolean:test":
+                return {"thinking": {"values": [False, True], "default": False}}
+            return {"thinking": {"values": [False]}}
+        with patch.object(ai_commit, "git_config_string",
+                          return_value="high"), patch.object(
+            ai_commit, "ollama_json", side_effect=fake_show
+        ) as show:
+            self.assertEqual(ai_commit.spellcheck_thinking_options("named:test"), {"think": "high"})
+            self.assertEqual(ai_commit.spellcheck_thinking_options("boolean:test"), {"think": True})
+            self.assertEqual(ai_commit.spellcheck_thinking_options("unsupported:test"), {})
+            self.assertEqual(show.call_count, 3)
+            self.assertEqual(ai_commit.spellcheck_thinking_options("named:test"), {"think": "high"})
+            self.assertEqual(show.call_count, 3)
+        with patch.object(ai_commit, "git_config_string", return_value="default"), patch.object(
+            ai_commit, "ollama_json"
+        ) as request:
+            self.assertEqual(ai_commit.spellcheck_thinking_options("new:test"), {})
+            request.assert_not_called()
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+
+    def test_draft_high_thinking_increases_budget_without_bypassing_safety(self):
+        requests = []
+        def generate(endpoint, payload, timeout=None):
+            requests.append((endpoint, payload, timeout))
+            if endpoint == "/api/show":
+                return {"thinking": {"values": ["low", "medium", "high"]}}
+            return {"response": '{"subject":"Fix spelling"}'}
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+        with patch.object(ai_commit, "git_config_string", side_effect=lambda key, default="": (
+            "high" if key == "scm-toolkit.spellcheck-thinking-effort" else default
+        )), patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True), patch.object(
+            ai_commit, "installed_local_model_names", return_value={"thinking:test"}
+        ), patch.object(ai_commit, "configured_spellcheck_model", return_value="thinking:test"), patch.object(
+            ai_commit, "ollama_json", side_effect=generate
+        ):
+            self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
+        self.assertEqual(requests[0][0], "/api/show")
+        self.assertEqual(requests[1][1]["think"], "high")
+        self.assertGreaterEqual(requests[1][1]["options"]["num_predict"], 2048)
+        self.assertEqual(requests[1][2], 120)
+        ai_commit.spellcheck_thinking_capabilities.cache_clear()
+
+    def test_reviewed_spellcheck_title_uses_the_normal_commit_generation_pipeline(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        def staged(*args):
+            if "--stat" in args:
+                return "notes/report.md | 2 + -"
+            if "--unified=2" in args:
+                return "--- a/notes/report.md\n+++ b/notes/report.md\n-old\n+new"
+            return ""
+        with patch.object(sys, "argv", argv), patch.object(
+            sys, "stdout", io.StringIO()
+        ) as output, patch.object(
+            ai_commit, "git_output", side_effect=staged
+        ) as read, patch.object(
+            ai_commit, "staged_file_context", return_value="context"
+        ), patch.object(
+            ai_commit, "should_add_default_branch_description", return_value=True
+        ), patch.object(
+            ai_commit, "generate_message", autospec=True, return_value=("🖊️ Fix trading citations", "Correct typos in the citations.")
+        ) as generate:
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {
+            "title": "🖊️ Fix trading citations", "description": "Correct typos in the citations."
+        })
+        generate.assert_called_once_with(
+            "notes/report.md | 2 + -",
+            "--- a/notes/report.md\n+++ b/notes/report.md\n-old\n+new",
+            ["notes/report.md"], include_description=True, file_context_override="context")
+        self.assertTrue(all("notes/report.md" in call.args for call in read.call_args_list))
+
+    def test_reviewed_spellcheck_emoji_toggle_formats_only_after_normal_generation(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        for enabled, expected in (
+            (True, "🖊️ Fix Markdown typos"),
+            (False, "Fix Markdown typos"),
+        ):
+            with self.subTest(enabled=enabled), patch.object(
+                sys, "argv", argv
+            ), patch.object(
+                sys, "stdout", io.StringIO()
+            ) as output, patch.object(
+                ai_commit, "git_output", side_effect=["report.md | 2 +-", "-typo\n+fixed"]
+            ), patch.object(
+                ai_commit, "staged_file_context", return_value=""
+            ), patch.object(
+                ai_commit, "should_add_default_branch_description", return_value=False
+            ), patch.object(
+                ai_commit, "git_config_bool", return_value=enabled
+            ) as setting, patch.object(
+                ai_commit, "generate_message",
+                return_value=("🖊️ Fix Markdown typos", "Full normal-generation description.")
+            ) as generator:
+                ai_commit.main()
+            self.assertEqual(json.loads(output.getvalue()), {
+                "title": expected,
+                "description": "Full normal-generation description.",
+            })
+            generator.assert_called_once()
+            setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
+
+    def test_reviewed_spellcheck_emoji_removal_only_changes_leading_emoji(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        cases = (
+            ("🧪 Add test coverage", "Add test coverage"),
+            ("🐞 🧪 Fix typo", "Fix typo"),
+            ("Fix 🐞 icon", "Fix 🐞 icon"),
+            ("Fix title", "Fix title"),
+        )
+        for generated, expected in cases:
+            with self.subTest(generated=generated), patch.object(
+                sys, "argv", argv
+            ), patch.object(
+                sys, "stdout", io.StringIO()
+            ) as output, patch.object(
+                ai_commit, "git_output", side_effect=["report.md | 2 +-", "-typo\n+fixed"]
+            ), patch.object(
+                ai_commit, "staged_file_context", return_value=""
+            ), patch.object(
+                ai_commit, "should_add_default_branch_description", return_value=False
+            ), patch.object(
+                ai_commit, "git_config_bool", return_value=False
+            ) as setting, patch.object(
+                ai_commit, "generate_message", return_value=(generated, "Normal description.")
+            ) as generator:
+                ai_commit.main()
+            self.assertEqual(json.loads(output.getvalue()), {
+                "title": expected, "description": "Normal description.",
+            })
+            generator.assert_called_once()
+            setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
+
+    def test_reviewed_spellcheck_emoji_removal_rejects_empty_title(self):
+        import io
+        argv = ["ai_commit.py", "--spellcheck-generate-message",
+                json.dumps({"paths": ["notes/report.md"]})]
+        with patch.object(
+            sys, "argv", argv
+        ), patch.object(
+            sys, "stderr", io.StringIO()
+        ) as errors, patch.object(
+            ai_commit, "git_output", side_effect=["report.md | 2 +-", "-typo\n+fixed"]
+        ), patch.object(
+            ai_commit, "staged_file_context", return_value=""
+        ), patch.object(
+            ai_commit, "should_add_default_branch_description", return_value=False
+        ), patch.object(
+            ai_commit, "git_config_bool", return_value=False
+        ), patch.object(
+            ai_commit, "generate_message", return_value=("🐞 🧪", "Normal description.")
+        ):
+            with self.assertRaises(SystemExit):
+                ai_commit.main()
+        self.assertIn("Generated title contains no words after its emoji", errors.getvalue())
+
+    def test_reviewed_spellcheck_title_rejects_unsafe_paths_before_git(self):
+        import io
+        for path in ["../outside.md", "/absolute.md", "other.bin", "bad\x00.md"]:
+            with self.subTest(path=path), patch.object(
+                sys, "argv", ["ai_commit.py", "--spellcheck-generate-message",
+                              json.dumps({"paths": [path]})]
+            ), patch.object(
+                sys, "stderr", io.StringIO()
+            ), patch.object(ai_commit, "git_output") as git:
+                with self.assertRaises(SystemExit):
+                    ai_commit.main()
+                git.assert_not_called()
+
+    def test_professional_emoji_adds_one_suitable_prefix(self):
+        with patch.object(ai_commit, "choose_bug_emoji", return_value="🐛"):
+            self.assertEqual(ai_commit.add_professional_emoji("Fix commit title"), "🐛 Fix commit title")
+        self.assertEqual(ai_commit.add_professional_emoji("Update button layout"), "🖌️ Update button layout")
+        self.assertEqual(ai_commit.add_professional_emoji("Add tests"), "🧪 Add tests")
+        self.assertEqual(ai_commit.add_professional_emoji(""), "")
+
+    def test_professional_emoji_preserves_existing_user_choice_and_whitespace(self):
+        self.assertEqual(ai_commit.add_professional_emoji("🐞 Fix spelling"), "🐞 Fix spelling")
+        self.assertEqual(ai_commit.add_professional_emoji("Fix ✅ checkmarks"), "Fix ✅ checkmarks")
+        with patch.object(ai_commit, "choose_bug_emoji", return_value="🐛"):
+            self.assertEqual(ai_commit.add_professional_emoji("  Fix spelling"), "🐛   Fix spelling")
+
+    def test_cli_emoji_only_never_invokes_spellcheck_or_git(self):
+        import io
+        with patch.object(sys, "argv", ["ai_commit.py", "--professional-emoji"]), patch.object(
+            sys, "stdin", io.StringIO("Fix typo")
+        ), patch.object(sys, "stdout", io.StringIO()) as output, patch.object(
+            ai_commit, "spellcheck_subject"
+        ) as spellcheck, patch.object(ai_commit.os, "execv") as git, patch.object(
+            ai_commit, "choose_bug_emoji", return_value="🐛"
+        ):
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {"subject": "🐛 Fix typo"})
+        spellcheck.assert_not_called()
+        git.assert_not_called()
+
+    def test_cli_spellcheck_and_emoji_share_one_correction(self):
+        import io
+        with patch.object(sys, "argv", ["ai_commit.py", "--spellcheck-subject", "--professional-emoji"]), patch.object(
+            sys, "stdin", io.StringIO("Fxi typo")
+        ), patch.object(sys, "stdout", io.StringIO()) as output, patch.object(
+            ai_commit, "spellcheck_subject", return_value="Fix typo"
+        ) as spellcheck, patch.object(
+            ai_commit, "choose_bug_emoji", return_value="🐛"
+        ):
+            ai_commit.main()
+        self.assertEqual(json.loads(output.getvalue()), {"subject": "🐛 Fix typo"})
+        spellcheck.assert_called_once_with("Fxi typo")
+
+    @patch.object(ai_commit, "spellcheck_subject", return_value="Fix spelling")
+    def test_only_subject_line_is_rewritten(self, _spellcheck):
+        message = "Fxi spelling\n\nKeep this body exactly."
+        self.assertEqual(
+            ai_commit.spellcheck_manual_message(message),
+            "Fix spelling\n\nKeep this body exactly.",
+        )
+
+    @patch.object(ai_commit, "spellcheck_subject", return_value="Fix spelling")
+    def test_message_argument_is_rewritten_in_place(self, _spellcheck):
+        args, found = ai_commit.spellcheck_manual_message_args(
+            ["--quiet", "--message=Fxi spelling"]
+        )
+        self.assertTrue(found)
+        self.assertEqual(args, ["--quiet", "--message=Fix spelling"])
+
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=False)
+    @patch.object(ai_commit, "installed_local_model_names")
+    def test_disabled_preview_never_queries_models(self, models, _enabled):
+        self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fxi spelling")
+        models.assert_not_called()
+
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True)
+    @patch.object(ai_commit, "installed_local_model_names", return_value=set())
+    @patch.object(ai_commit, "configured_spellcheck_model", return_value="spell:test")
+    def test_missing_model_preserves_manual_subject(
+        self, _configured, _models, _enabled
+    ):
+        self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fxi spelling")
+
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True)
+    @patch.object(ai_commit, "installed_local_model_names", return_value={"spell:test"})
+    @patch.object(ai_commit, "configured_spellcheck_model", return_value="spell:test")
+    @patch.object(
+        ai_commit,
+        "ollama_json",
+        return_value={"response": '{"subject":"Fix spelling"}'},
+    )
+    def test_dedicated_spellcheck_model_correction_is_used(
+        self, request, _configured, _models, _enabled
+    ):
+        self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
+        self.assertEqual(request.call_args.args[1]["model"], "spell:test")
+
+    def test_rejects_malformed_or_unrelated_spellcheck_output(self):
+        subject = "🐜 Fxi commit titel"
+        for response in [
+            "json",
+            '{"subject":"🐜 Change random words"}',
+            '{"subject":"🐜 Fix commit title","extra":true}',
+            '["🐜 Fix commit title"]',
+            '{"subject":"🐜 Fix commit title\nmore"}',
+        ]:
+            with self.subTest(response=response):
+                self.assertEqual(
+                    ai_commit.safe_spellcheck_correction(subject, response),
+                    subject,
+                )
+
+    def test_accepts_close_structured_spelling_correction(self):
+        self.assertEqual(
+            ai_commit.safe_spellcheck_correction(
+                "🐜 Fxi commit titel",
+                '{"subject":"🐜 Fix commit title"}',
+            ),
+            "🐜 Fix commit title",
+        )
+
+    def test_spellcheck_request_uses_json_schema(self):
+        response = {"response": '{"subject":"Fix spelling"}'}
+        with patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True), patch.object(
+            ai_commit, "installed_local_model_names", return_value={"spell:test"}
+        ), patch.object(
+            ai_commit, "configured_spellcheck_model", return_value="spell:test"
+        ), patch.object(ai_commit, "ollama_json", return_value=response) as request:
+            self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fix spelling")
+        payload = request.call_args.args[1]
+        self.assertEqual(payload["model"], "spell:test")
+        self.assertEqual(payload["format"]["required"], ["subject"])
+        self.assertFalse(payload["format"]["additionalProperties"])
+
+
+class TitleTests(unittest.TestCase):
+    def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
+        sleeper = patch.object(ai_commit.time, "sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
+
+    def test_budget_setting_is_validated_and_read_for_each_generation(self):
+        for value in ('', '0', '-1', '901', '2.5', 'nan', 'invalid'):
+            with self.subTest(value=value), patch.object(ai_commit, 'git_config_string', return_value=value):
+                self.assertEqual(ai_commit.generation_budget_seconds(), 135)
+        bounded = ai_commit.generation_budget(lambda: ai_commit.GENERATION_DEADLINE.get())
+        with patch.object(ai_commit, 'git_config_string', side_effect=['1', '2', '900', '10']), \
+                patch.object(ai_commit.time, 'monotonic', return_value=10):
+            self.assertEqual(bounded(), 12)
+            self.assertEqual(bounded(), 9010)
+        self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
+        self.assertIsNone(ai_commit.GENERATION_OPTIONS.get())
+
+    def test_transient_failures_retry_then_accept_success(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", "Change totals: 1 modified"),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
+                ai_commit.urllib.error.URLError(ConnectionRefusedError()),
+                TimeoutError(),
+                {"response": '{"subject":"📝 Record DTC exhibit references","description":""}'},
+            ]))
+            self.assertEqual(ai_commit.generate_message("", "+DTC exhibit references", ["notes.md"]),
+                             ("📝 Record DTC exhibit references", ""))
+            self.assertEqual(generate.call_count, 3)
+            self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
+
+    def test_http_failure_retries_three_times_then_falls_back(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            error = ai_commit.urllib.error.HTTPError("http://127.0.0.1:11434/api/generate", 400, "bad request", {}, None)
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
+            self.assertEqual(
+                ai_commit.generate_message("", "+Exhibit references", ["notes.md"]),
+                ("📝 Update notes.md", ""),
+            )
+            self.assertEqual(generate.call_count, 3)
+            self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
+
+    def test_configured_attempt_count_limits_title_generation(self):
+        with ExitStack() as stack:
+            for name, value in [('installed_local_model_names', {'local'}),
+                                ('selected_model', ('local', False)),
+                                ('configured_models', ('local', 'small')),
+                                ('staged_file_context', ''), ('recent_subjects', ''),
+                                ('commit_fallback_enabled', True)]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(ai_commit, 'git_config_string',
+                                             side_effect=lambda key, default: '2' if key.endswith('attempts') else default))
+            request = stack.enter_context(patch.object(ai_commit, 'ollama_json', return_value={'response': '{}'}))
+            self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']), ('🔧 Update app.py', ''))
+            self.assertEqual(request.call_count, 2)
+
+    def test_configured_request_timeout_can_exceed_old_transport_default(self):
+        bounded = ai_commit.generation_budget(lambda: ai_commit.ollama_json('/api/generate', {'model': 'local'}))
+        with patch.object(ai_commit, 'git_config_string', side_effect=lambda key, default:
+                          '900' if key.endswith('timeout-seconds') else '2' if key.endswith('attempts') else default), \
+                patch.object(ai_commit.OLLAMA_OPENER, 'open') as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{}'
+            bounded()
+            self.assertEqual(request.call_args.kwargs['timeout'], 900)
+
+    def test_required_model_reports_timeout_connection_and_http_failures(self):
+        failures = [
+            (TimeoutError("timed out"), "request timed out"),
+            (ai_commit.urllib.error.URLError(TimeoutError("timed out")), "request timed out"),
+            (ai_commit.urllib.error.URLError(ConnectionRefusedError()), "Check that Ollama is running"),
+            (ai_commit.urllib.error.HTTPError("http://127.0.0.1:11434/api/generate", 503, "busy", {}, None), "HTTP 503 for model local"),
+        ]
+        for error, expected in failures:
+            with self.subTest(error=error), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("recent_subjects", ""), ("staged_file_context", ""),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    ai_commit.generate_message("", "", ["a.py"], require_model=True)
+                self.assertEqual(generate.call_count, 3)
+
+    def test_ollama_request_allows_time_queued_behind_ocr(self):
+        with patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{"response":"ok"}'
+            self.assertEqual(ai_commit.ollama_json("/api/generate", {"model": "local"}), {"response": "ok"})
+            self.assertEqual(request.call_args.kwargs["timeout"], 300)
+
+    def test_expired_budget_falls_back_before_retrying(self):
+        clock = [0.0]
+        def timeout(*args, **kwargs):
+            clock[0] = 135.0
+            raise TimeoutError()
+        with ExitStack() as stack:
+            for name, value in [('installed_local_model_names', {'local'}),
+                                ('selected_model', ('local', False)),
+                                ('configured_models', ('local', 'small')),
+                                ('staged_file_context', ''), ('recent_subjects', ''),
+                                ('commit_fallback_enabled', True)]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(ai_commit.time, 'monotonic', side_effect=lambda: clock[0]))
+            request = stack.enter_context(patch.object(ai_commit, 'ollama_json', side_effect=timeout))
+            logs = stack.enter_context(patch.object(ai_commit, 'log_event'))
+            self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
+                             ('🔧 Update app.py', ''))
+            request.assert_called_once()
+            self.sleep.assert_not_called()
+            self.assertEqual(logs.call_args_list[-1].kwargs['reason'], 'deadline_exceeded')
+            self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
+
+    def test_commit_endpoint_routes_locally_and_rejects_remote_addresses(self):
+        with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": "http://127.0.0.1:11435"}), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{}'
+            ai_commit.ollama_json("/api/tags")
+            self.assertEqual(request.call_args.args[0].full_url, "http://127.0.0.1:11435/api/tags")
+        for url in ["https://example.com", "http://example.com", "http://user:password@localhost:11435", "http://localhost:11435/path"]:
+            with self.subTest(url=url), patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": url}), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+                with self.assertRaisesRegex(ValueError, "local HTTP"):
+                    ai_commit.ollama_json("/api/tags")
+                request.assert_not_called()
+
+    def test_commit_endpoint_uses_git_setting_without_environment_override(self):
+        with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": ""}), patch.object(ai_commit, "git_config_string", return_value="http://127.0.0.1:11435"), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
+            request.return_value.__enter__.return_value.read.return_value = b'{}'
+            ai_commit.ollama_json("/api/tags")
+            self.assertEqual(request.call_args.args[0].full_url, "http://127.0.0.1:11435/api/tags")
+
+    @patch.object(ai_commit, "recent_subjects", return_value="Fix parser\nAdd tests")
+    def test_prompt_is_repository_scoped(self, _subjects):
+        prompt = ai_commit.prompt_for_diff("1 file changed", "diff --git a/a b/a")
+        self.assertIn("Recent repository subjects:", prompt)
+        self.assertIn("Output rules:", prompt)
+        self.assertIn("Staged diff:", prompt)
+        self.assertIn("one professional emoji", prompt)
+        self.assertIn("dedicated Sync button", prompt)
+        self.assertIn("file count, diff size, and file moves", prompt)
+
+    @patch.object(ai_commit, "commit_custom_instructions", return_value="")
+    def test_entire_large_prompt_is_bounded_and_keeps_rules_and_totals(self, _instructions):
+        with patch.object(ai_commit, "recent_subjects", return_value="Update notes\n" * 500):
+            prompt = ai_commit.prompt_for_diff(
+                "file | 1000 +++\n" * 1000,
+                "\n".join(f"diff --git a/{i}.eml b/{i}.eml\n-Subject: Message {i}\n" + "-QUJD" * 500 for i in range(100)),
+                "Change totals: 100 deleted\n" + "D\tarchive/email.eml\n" * 1000,
+                include_description=True, conversation_context="Background " * 3000,
+            )
+        self.assertLessEqual(len(prompt), (ai_commit.NUM_CTX - 768) * 2)
+        self.assertIn("100 deleted", prompt)
+        self.assertIn("99.eml", prompt)
+        self.assertTrue(prompt.endswith("complete sentences."))
+
+    def test_encoded_attachment_does_not_dominate_patch(self):
+        diff = "diff --git a/mail.eml b/mail.eml\n-Subject: Archive notice\n" + ("-QUJD" + "QUJD" * 200 + "\n") * 500 + "+Subject: Updated archive notice"
+        sampled = ai_commit.sample_diff_for_prompt(diff)
+        self.assertIn("Archive notice", sampled)
+        self.assertIn("Updated archive notice", sampled)
+        self.assertLess(len(sampled), 250)
+
+    def test_long_style_instructions_leave_room_for_actual_changes(self):
+        instructions = "Emoji preference.\n" * 1000
+        with patch.object(ai_commit, "commit_custom_instructions", return_value=instructions), patch.object(ai_commit, "recent_subjects", return_value=""):
+            prompt = ai_commit.prompt_for_diff(
+                "1 file changed", "+Exhibit 3 redaction\n+Exhibit 5 fee references", "Change totals: 1 modified"
+            )
+        self.assertLessEqual(len(prompt), (ai_commit.NUM_CTX - 768) * 2 + len(instructions))
+        self.assertIn(instructions, prompt)
+        self.assertIn("+Exhibit 3 redaction\n+Exhibit 5 fee references", prompt)
+
+    def test_json_response_has_plain_text_and_complete_sentences(self):
+        title, body = ai_commit.sanitize_generated_message(
+            '{"subject":"📧 **Remove redundant emails**","description":"Remove `duplicate.eml` from the **archive**. Preserve [metadata](https://example.test)."}',
+            include_description=True,
+        )
+        self.assertEqual(title, "📧 Remove redundant emails")
+        self.assertEqual(body, "Remove duplicate.eml from the archive. Preserve metadata.")
+        self.assertEqual(ai_commit.sanitize_description("Remove duplicates while preserving"), "")
+        self.assertEqual(ai_commit.sanitize_description("Remove duplicates. " + "Continue " * 60 + "."), "Remove duplicates.")
+
+    def test_bad_model_response_retries_then_uses_operation_summary(self):
+        for bad in [
+            {"response": "The provided text appears to be a Git diff.\n\nHere is a breakdown."},
+            {"response": '{"subject":"📧 Remove redundant emails","description":"This appears to remove duplicates."}'},
+            {"response": '{"subject":"📧 Remove redundant emails","description":"Remove duplicate email files while"}'},
+            {"response": '{"subject":"📧 Remove redundant emails","description":"Remove duplicates."}', "done_reason": "length"},
+        ]:
+            with self.subTest(bad=bad), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                    ("staged_file_context", "Change totals: 2 deleted"),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=bad))
+                self.assertEqual(ai_commit.generate_message("", "", ["a.eml", "b.eml"], include_description=True),
+                                 ("📧 Remove 2 archived emails", "Remove 2 email files from the repository."))
+                self.assertEqual(generate.call_count, 3)
+
+    def test_removal_claims_require_evidence_from_this_change(self):
+        self.assertTrue(ai_commit.has_unsupported_removal_claim("Remove redundant emails.", "deleted file mode 100644"))
+        self.assertTrue(ai_commit.has_unsupported_removal_claim("These files are no longer needed.", "800 deleted"))
+        self.assertFalse(ai_commit.has_unsupported_removal_claim("Remove duplicate emails.", "archive/duplicate.eml"))
+        with patch.object(ai_commit, "recent_subjects", return_value="📦 Preserve archive metadata\n🧹 Remove redundant MBOX chunks"):
+            prompt = ai_commit.prompt_for_diff("", "")
+        history = prompt.split("Recent repository subjects:\n")[1].split("Staged diff stat:")[0]
+        self.assertNotIn("redundant", history)
+        self.assertNotIn("metadata", history)
+
+    def test_retry_accepts_valid_structured_message(self):
+        with ExitStack() as stack:
+            output = stack.enter_context(patch("sys.stderr"))
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""), ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
+                {"response": "It appears to be a diff"},
+                {"response": '{"subject":"📧 Remove duplicate archived emails","description":"Remove redundant email copies from the archive."}'},
+            ]))
+            self.assertEqual(ai_commit.generate_message("", "-Subject: duplicate copy", ["a.eml"], include_description=True),
+                             ("📧 Remove duplicate archived emails", "Remove redundant email copies from the archive."))
+            self.assertEqual(generate.call_count, 2)
+            self.assertEqual(generate.call_args.args[1]["format"]["type"], "object")
+            output.write.assert_not_called()
+
+    def test_refine_heading_summary_is_accepted_without_retry(self):
+        title = "🔧 Refine heading detection in tag-ocr-pdf.py"
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value={
+                "response": json.dumps({"subject": title, "description": ""}), "done_reason": "stop",
+            }))
+            self.assertEqual(ai_commit.generate_message(
+                "1 file changed", "+Promote only paragraphs matching recognized headings.",
+                ["tag-ocr-pdf.py"], require_model=True,
+            ), (title, ""))
+            self.assertEqual(generate.call_count, 1)
+
+    def test_invalid_summary_retry_names_accepted_imperative_verbs(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            prompts = []
+            responses = iter(["Strengthen heading detection", "Improve heading detection"])
+            def respond(_endpoint, payload):
+                prompts.append(payload["prompt"])
+                return {"response": json.dumps({"subject": next(responses), "description": ""})}
+            stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=respond))
+            self.assertEqual(ai_commit.generate_message(
+                "1 file changed", "+Match recognized headings exactly.", ["tag-ocr-pdf.py"],
+            ), ("🔧 Improve heading detection", ""))
+            self.assertIn("Begin the subject wording with Add, Fix, Update", prompts[1])
+
+    def test_title_preference_references_standalone_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instructions = Path(tmp) / "commit-instructions.md"
+            instructions.write_text(
+                "Never stage changes.\nCommit titles should use my current title style.\n",
+                encoding="utf-8",
+            )
+            with patch.object(
+                ai_commit, "commit_instructions_path", return_value=instructions
+            ):
+                self.assertEqual(
+                    ai_commit.commit_title_preference(),
+                    "Commit titles should use my current title style.",
+                )
+
+    @patch.object(ai_commit, "git_output", return_value="🔄 Sync branch to main\nSync branch with main\n📝 Reorganize research notes\nFix parser\n")
+    def test_history_excludes_sync_titles(self, _git):
+        self.assertEqual(ai_commit.recent_subjects(), "📝 Reorganize research notes\nFix parser")
+
+    def test_generated_titles_require_at_least_two_words(self):
+        for title in ["🐛 Fix", "📝 Update", "🔧 Refactor"]:
+            with self.subTest(title=title):
+                self.assertFalse(ai_commit.valid_generated_message(title, "", False))
+        self.assertTrue(
+            ai_commit.valid_generated_message("🐛 Fix parser", "", False)
+        )
+
+    def test_one_word_model_title_retries_then_falls_back(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+                ("ollama_json", {"response": '{"subject":"Fix","description":""}'}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = ai_commit.ollama_json
+            self.assertEqual(
+                ai_commit.generate_message("", "", ["parser.py"]),
+                ("🔧 Update parser.py", ""),
+            )
+            self.assertEqual(generate.call_count, 3)
+
+    def test_generated_sync_titles_are_rejected_for_normal_and_context_commits(self):
+        for title in ["🔄 Sync branch to main", "Sync branch with main", "Synchronize repository changes"]:
+            for context in ["", "Moved the research notes into an archive"]:
+                with self.subTest(title=title, context=context), ExitStack() as stack:
+                    for name, value in [
+                        ("installed_local_model_names", {"local"}),
+                        ("selected_model", ("local", False)),
+                        ("configured_models", ("local", "small")),
+                        ("staged_file_context", "renamed research notes"),
+                        ("recent_subjects", ""),
+                        ("ollama_json", {"response": title + "\n\nSync the branch to main."}),
+                    ]:
+                        stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                    if context:
+                        with self.assertRaisesRegex(RuntimeError, "after 3 attempts"):
+                            ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True, conversation_context=context, require_model=True)
+                    else:
+                        self.assertEqual(
+                            ai_commit.generate_message("18 files changed", "rename diff", ["a.md", "b.md"], include_description=True),
+                            ("📝 Update documentation", "Update 2 files in the repository."),
+                        )
+
+    def test_filename_only_title_retries_with_content_instructions(self):
+        path = "comments/transfer-agent-rules/DTCC-DA-ICSD/2026-30.md"
+        diff = "@@ -14,0 +15,2 @@\n+Exhibit 3 is redacted.\n+Exhibit 5 lists items and fines."
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", "Change totals: 1 modified"),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            prompts = []
+            responses = iter([
+                {"response": '{"subject":"📝 Add DTCC-DA-ICSD 2026-30.md","description":""}'},
+                {"response": '{"subject":"📝 Record DTC exhibit redaction and fee references","description":""}'},
+            ])
+            def respond(_endpoint, payload):
+                prompts.append(payload["prompt"])
+                self.assertGreaterEqual(payload["options"]["num_ctx"], (len(payload["prompt"]) + 1) // 2 + 768)
+                return next(responses)
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=respond))
+            self.assertEqual(ai_commit.generate_message("1 file changed", diff, [path]),
+                             ("📝 Record DTC exhibit redaction and fee references", ""))
+            self.assertEqual(generate.call_count, 2)
+            self.assertIn("not just a filename or file count", prompts[1])
+            self.assertIn("+Exhibit 5 lists items and fines.", prompts[1])
+
+    def test_text_changes_use_simple_fallback_after_failed_generation(self):
+        for response in [None, {"response": '{"subject":"📝 Add notes.md","description":""}'},
+                         {"response": "invalid"}]:
+            with self.subTest(response=response), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"} if response else set()),
+                    ("selected_model", ("local", False) if response else (None, False)),
+                    ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                    ("staged_file_context", "Change totals: 1 modified"),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=response))
+                self.assertEqual(
+                    ai_commit.generate_message("1 file changed", "+Document DTC exhibit references.", ["notes.md"]),
+                    ("📝 Update notes.md", ""),
+                )
+                self.assertEqual(generate.call_count, 3 if response else 0)
+
+    def test_disabling_fallback_blocks_invalid_generated_titles(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}), ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")), ("recent_subjects", ""),
+                ("staged_file_context", ""),
+                ("commit_fallback_enabled", False),
+                ("ollama_json", {"response": '{"subject":"Fix","description":""}'}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            fallback = stack.enter_context(patch.object(ai_commit, "fallback_message"))
+            with self.assertRaisesRegex(RuntimeError, "after 3 attempts"):
+                ai_commit.generate_message("", "+Document facts.", ["notes.md"])
+            fallback.assert_not_called()
+
+    def test_filename_guard_preserves_specific_summaries_and_opaque_changes(self):
+        self.assertTrue(ai_commit.is_filename_only_title(
+            "📝 Add DTCC-DA-ICSD 2026-30 transfer agent rules",
+            ["comments/transfer-agent-rules/DTCC-DA-ICSD/2026-30.md"],
+        ))
+        for title in ["📝 Add notes.md", "📝 Update notes", "📝 Add explanation for notes", "📝 Add 1 staged file"]:
+            self.assertTrue(ai_commit.is_filename_only_title(title, ["notes.md"]))
+        self.assertFalse(ai_commit.is_filename_only_title("📝 Add exhibit references to notes.md", ["notes.md"]))
+        for diff in ["diff --git a/a b/a\n--- a/a\n+++ b/a\n+\n-  ", "Binary files a/a and b/a differ", "rename from a\nrename to b"]:
+            self.assertFalse(ai_commit.has_text_changes(diff))
+
+    def test_unrelated_model_emojis_are_replaced_by_change_type(self):
+        cases = [
+            ("🏆 Refine badge colors", "🎨 Refine badge colors"),
+            ("🗳️ Fix reset handling", "🐛 Fix reset handling"),
+            ("📱 Add patch validation coverage", "🧪 Add patch validation coverage"),
+            ("🏆 Refactor helper blocks", "🏗️ Refactor helper blocks"),
+            ("📱 Update handler logic", "🔧 Update handler logic"),
+        ]
+        for subject, expected in cases:
+            with self.subTest(subject=subject), ExitStack() as stack:
+                stack.enter_context(patch.object(ai_commit, "choose_bug_emoji", return_value="🐛"))
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("staged_file_context", ""),
+                    ("recent_subjects", ""),
+                    ("ollama_json", {"response": json.dumps({"subject": subject, "description": ""})}),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                self.assertEqual(
+                    ai_commit.generate_message("", "+Update handler behavior", ["src/handler.py"]),
+                    (expected, ""),
+                )
+
+    def test_extra_model_emojis_cannot_appear_in_subject_or_body(self):
+        self.assertEqual(ai_commit.apply_priority_emoji("🏆 Fix 🗳️ handler", "🐛"), "🐛 Fix handler")
+        self.assertEqual(
+            ai_commit.sanitize_description("Body: 🏆 Improve the implementation. 🗳️ Preserve the behavior."),
+            "Improve the implementation. Preserve the behavior.",
+        )
+
+    def test_generated_title_without_emoji_gets_one_and_preserves_description(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+                ("ollama_json", {"response": "Reorganize research notes\n\nGroup unfinished drafts together."}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            self.assertEqual(ai_commit.generate_message("18 files changed", "rename diff", ["notes.md"], include_description=True), ("📝 Reorganize research notes", "Group unfinished drafts together."))
+
+    @patch.object(ai_commit, "recent_subjects", return_value="Update parser")
+    def test_default_branch_prompt_requests_one_or_two_sentences(self, _subjects):
+        prompt = ai_commit.prompt_for_diff(
+            "1 file changed",
+            "diff --git a/a b/a",
+            include_description=True,
+        )
+        self.assertIn("one or two complete sentences", prompt)
+        self.assertIn("leave one blank line after the subject", prompt)
+
+    def test_description_sanitizer_keeps_at_most_two_sentences(self):
+        description = ai_commit.sanitize_description(
+            "Body: First substantive sentence. Second useful sentence. Third extra sentence."
+        )
+        self.assertEqual(
+            description,
+            "First substantive sentence. Second useful sentence.",
+        )
+
+    def test_generated_message_separates_subject_and_description(self):
+        title, description = ai_commit.sanitize_generated_message(
+            "Add useful behavior\n\nExplain what changed. Explain why it matters.",
+            include_description=True,
+        )
+        self.assertEqual(title, "Add useful behavior")
+        self.assertEqual(
+            description,
+            "Explain what changed. Explain why it matters.",
+        )
+
+    def test_conventional_label_preserves_imperative_wording(self):
+        for subject, expected in [
+            ("Fix: Improve footnote handling in markdown-copy.js", "Improve footnote handling in markdown-copy.js"),
+            ("🐛 fix(selection): Preserve italic footnotes", "🐛 Preserve italic footnotes"),
+        ]:
+            with self.subTest(subject=subject):
+                title, body = ai_commit.sanitize_generated_message(json.dumps({
+                    "subject": subject, "description": "",
+                }))
+                self.assertEqual(title, expected)
+                self.assertTrue(ai_commit.valid_generated_message(
+                    title if title.startswith("🐛") else "🔧 " + title, body, False,
+                ))
+
+    def test_conventional_label_does_not_bypass_wording_validation(self):
+        title, body = ai_commit.sanitize_generated_message(
+            '{"subject":"fix: footnotes","description":""}'
+        )
+        self.assertFalse(ai_commit.valid_generated_message("🔧 " + title, body, False))
+
+    def test_sanitize_title_limits_output(self):
+        title = ai_commit.sanitize_title(
+            "\""
+            "This is a deliberately long generated commit title that should be shortened "
+            "without leaving a trailing punctuation mark.\""
+        )
+        self.assertLessEqual(len(title), 72)
+        self.assertFalse(title.endswith("."))
+
+    def test_fallback_uses_staged_paths_only(self):
+        self.assertEqual(ai_commit.fallback_title(["src/widget.js"]), "🔧 Update widget.js")
+        self.assertEqual(
+            ai_commit.fallback_title(["src/a.js", "src/b.js"]),
+            "🔧 Update code",
+        )
+
+    @patch.object(ai_commit, "installed_local_model_names", return_value=set())
+    def test_missing_model_uses_local_fallback(self, _models):
+        self.assertEqual(
+            ai_commit.generate_title("1 file", "diff", ["README.md"]),
+            "📝 Update README.md",
+        )
+
+    def test_fallback_setting_is_enabled_by_default_and_can_be_disabled(self):
+        with patch.object(ai_commit, "git_config_bool", side_effect=lambda _key, default: default) as setting:
+            self.assertTrue(ai_commit.commit_fallback_enabled())
+        setting.assert_called_once_with("scm-toolkit.ai-commit-fallback", True)
+        with patch.object(ai_commit, "git_config_bool", return_value=False):
+            self.assertFalse(ai_commit.commit_fallback_enabled())
+
+
+
+class CommitDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
+
+    def test_opt_in_title_explanation_uses_same_ollama_request(self):
+        response = json.dumps({
+            "subject": "🔧 Improve parser validation",
+            "description": "",
+            "explanation": "Validation changes motivated the parser wording.",
+        })
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("staged_file_context", ""),
+                    ("recent_subjects", ""),
+                    ("emoji_priority_enabled", False),
+                    ("emoji_for_change", "🔧"),
+                    ("title_explanations_enabled", enabled),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                generate = stack.enter_context(patch.object(
+                    ai_commit, "ollama_json", return_value={"response": response}
+                ))
+                events = stack.enter_context(patch.object(ai_commit, "log_event"))
+                self.assertEqual(
+                    ai_commit.generate_message("1 file changed", "+Validate parser inputs.", ["parser.py"]),
+                    ("🔧 Improve parser validation", ""),
+                )
+                self.assertEqual(generate.call_count, 1)
+                payload = generate.call_args.args[1]
+                self.assertEqual("explanation" in payload["format"]["properties"], enabled)
+                self.assertEqual("explanation field" in payload["prompt"], enabled)
+                self.assertEqual(payload["format"]["required"], ["subject", "description"])
+                complete = [call.kwargs for call in events.call_args_list
+                            if call.args[1] == "generation_completed"]
+                self.assertEqual(len(complete), 1)
+                self.assertEqual(complete[0]["title"], "🔧 Improve parser validation")
+                self.assertEqual("explanation" in complete[0], enabled)
+                self.assertEqual("rule" in complete[0], enabled)
+                if enabled:
+                    self.assertEqual(complete[0]["explanation"],
+                                     "Validation changes motivated the parser wording.")
+                    self.assertEqual(complete[0]["rule"], "change_type")
+
+    def test_invalid_explanations_never_reject_valid_titles(self):
+        for explanation in (None, "Too short", "x" * 300, "A line.\nAnother line."):
+            with self.subTest(explanation=explanation), ExitStack() as stack:
+                for name, value in [
+                    ("installed_local_model_names", {"local"}),
+                    ("selected_model", ("local", False)),
+                    ("configured_models", ("local", "small")),
+                    ("staged_file_context", ""),
+                    ("recent_subjects", ""),
+                    ("emoji_priority_enabled", False),
+                    ("emoji_for_change", "🔧"),
+                    ("title_explanations_enabled", True),
+                ]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                payload = {"subject": "🔧 Improve parser validation", "description": ""}
+                if explanation is not None:
+                    payload["explanation"] = explanation
+                generate = stack.enter_context(patch.object(
+                    ai_commit, "ollama_json", return_value={"response": json.dumps(payload)}
+                ))
+                events = stack.enter_context(patch.object(ai_commit, "log_event"))
+                self.assertEqual(
+                    ai_commit.generate_message("1 file changed", "+Validate inputs.", ["parser.py"]),
+                    ("🔧 Improve parser validation", ""),
+                )
+                generate.assert_called_once()
+                completed = next(call.kwargs for call in events.call_args_list
+                                 if call.args[1] == "generation_completed")
+                self.assertNotIn("explanation", completed)
+                self.assertEqual(completed["rule"], "change_type")
+
+    def test_missing_model_is_logged_without_diff(self):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(ai_commit, "installed_local_model_names", return_value=set()))
+            stack.enter_context(patch.object(ai_commit, "selected_model", return_value=(None, False)))
+            stack.enter_context(patch.object(ai_commit, "configured_models", return_value=("primary", "small")))
+            events = stack.enter_context(patch.object(ai_commit, "log_event"))
+            self.assertEqual(
+                ai_commit.generate_message("private stat", "+private text", ["notes.md"]),
+                ("📝 Update notes.md", ""),
+            )
+            self.assertEqual(
+                [call.args[1] for call in events.call_args_list],
+                ["model_unavailable", "fallback_used"],
+            )
+            self.assertEqual(events.call_args_list[0].kwargs["outcome"], "fallback")
+            self.assertEqual(events.call_args_list[1].kwargs["reason"], "model_not_installed")
+            self.assertNotIn("private text", str(events.call_args_list))
+
+    def test_rejected_output_is_logged_without_model_response(self):
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+                ("ollama_json", {"response": '{"subject":"Fix","description":""}'}),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            events = stack.enter_context(patch.object(ai_commit, "log_event"))
+            ai_commit.generate_message("", "", ["parser.py"])
+            self.assertEqual(
+                [call.args[1] for call in events.call_args_list],
+                ["output_rejected", "output_rejected", "output_rejected", "fallback_used"],
+            )
+            self.assertEqual(events.call_args_list[0].kwargs["reason"], "invalid_message")
+            self.assertNotIn("response", str(events.call_args_list))
+
+    def test_request_errors_are_logged_with_retry_status(self):
+        from urllib.error import HTTPError
+        with ExitStack() as stack:
+            for name, value in [
+                ("installed_local_model_names", {"local"}),
+                ("selected_model", ("local", False)),
+                ("configured_models", ("local", "small")),
+                ("staged_file_context", ""),
+                ("recent_subjects", ""),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            stack.enter_context(patch.object(
+                ai_commit, "ollama_json", side_effect=HTTPError("http://localhost", 503, "busy", None, None)
+            ))
+            stack.enter_context(patch.object(ai_commit.time, "sleep"))
+            events = stack.enter_context(patch.object(ai_commit, "log_event"))
+            self.assertEqual(
+                ai_commit.generate_message("one file", "+secret text", ["notes.md"]),
+                ("📝 Update notes.md", ""),
+            )
+            attempts = [call.kwargs for call in events.call_args_list if call.args[1] == "request_failed"]
+            self.assertEqual([event["outcome"] for event in attempts], ["retry", "retry", "stopped"])
+            self.assertEqual([event["http_status"] for event in attempts], [503, 503, 503])
+            self.assertEqual(events.call_args_list[-1].args[1], "fallback_used")
+            self.assertNotIn("secret text", str(events.call_args_list))
+
+
+class EmojiPriorityTests(unittest.TestCase):
+    instructions = """When selecting the emoji, follow this priority list:
+- If fixing a bug in code, use 🐛 🐞. Pick one at random. On a branch use the same one.
+- For technical code:
+  - If connecting functions, use 🔩
+  - If tuning parameters, use 🔧
+- If none of these scenarios fit with high confidence, choose 📦 ➕
+
+Describe the staged change.
+"""
+
+    def setUp(self):
+        enabled = patch.object(ai_commit, "emoji_priority_enabled", return_value=True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
+        self.rules = ai_commit.emoji_priority_rules(self.instructions)
+
+    def test_disabled_enforcement_preserves_normal_generation_with_priority_instructions(self):
+        with patch.object(ai_commit, "emoji_priority_enabled", return_value=False), \
+                patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
+                patch.object(ai_commit, "emoji_priority_rules") as parse, \
+                patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
+                patch.object(ai_commit, "select_priority_emoji") as classify:
+            self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
+                             ("🖼️ Update icon.png", ""))
+            parse.assert_not_called()
+            classify.assert_not_called()
+
+    def test_enabled_without_priority_list_preserves_normal_generation(self):
+        with patch.object(ai_commit, "commit_custom_instructions", return_value="Use concise titles."), \
+                patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
+                patch.object(ai_commit, "select_priority_emoji") as classify:
+            self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
+                             ("🖼️ Update icon.png", ""))
+            classify.assert_not_called()
+
+    def test_nested_conditions_and_fallback_remain_ordered(self):
+        self.assertEqual([rule[1] for rule in self.rules], [["🐛", "🐞"], ["🔩"], ["🔧"], ["📦", "➕"]])
+        self.assertIn("For technical code:", self.rules[1][0])
+        self.assertEqual([rule[2] for rule in self.rules], [False, False, False, True])
+
+    def test_explicit_ban_overrides_fallback_choices(self):
+        rules = ai_commit.emoji_priority_rules("Never use ➕ as a commit emoji.\n\n" + self.instructions)
+        self.assertEqual(rules[-1][1], ["📦"])
+
+    def test_priority_rules_allow_missing_model_fallback_unless_strict(self):
+        with patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
+                patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "selected_model", return_value=(None, False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")):
+            self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
+                             ("🖼️ Update icon.png", ""))
+            with patch.object(ai_commit, "commit_fallback_enabled", return_value=False):
+                with self.assertRaisesRegex(RuntimeError, "Install.*model"):
+                    ai_commit.generate_message("", "Binary files differ", ["icon.png"])
+
+    def test_priority_classifier_failure_uses_simple_message(self):
+        with patch.object(ai_commit, "commit_custom_instructions", return_value=self.instructions), \
+                patch.object(ai_commit, "installed_local_model_names", return_value={"local"}), \
+                patch.object(ai_commit, "selected_model", return_value=("local", False)), \
+                patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
+                patch.object(ai_commit, "staged_file_context", return_value=""), \
+                patch.object(ai_commit, "select_priority_emoji", side_effect=RuntimeError("Cannot classify")), \
+                patch.object(ai_commit, "log_event") as logs:
+            self.assertEqual(ai_commit.generate_message("", "+Update handler", ["app.py"]),
+                             ("🔧 Update app.py", ""))
+            self.assertEqual(logs.call_args_list[-1].kwargs["reason"], "priority_validation_failed")
+
+    def test_priority_requests_share_budget_and_preserve_strict_mode(self):
+        for strict in (False, True):
+            with self.subTest(strict=strict), ExitStack() as stack:
+                clock, timeouts = [0.0], []
+                @contextmanager
+                def response(_request, timeout):
+                    timeouts.append(timeout)
+                    clock[0] += timeout
+                    if timeout < 45:
+                        raise TimeoutError()
+                    data = json.dumps({'response': '{"result":"NO_MATCH"}'}).encode()
+                    yield SimpleNamespace(read=lambda: data)
+                for name, value in [('commit_custom_instructions', self.instructions),
+                                    ('installed_local_model_names', {'local'}),
+                                    ('selected_model', ('local', False)),
+                                    ('configured_models', ('local', 'small')),
+                                    ('staged_file_context', ''), ('commit_fallback_enabled', True),
+                                    ('git_config_string', 'http://127.0.0.1:11435')]:
+                    stack.enter_context(patch.object(ai_commit, name, return_value=value))
+                stack.enter_context(patch.object(ai_commit.time, 'monotonic', side_effect=lambda: clock[0]))
+                stack.enter_context(patch.object(ai_commit.OLLAMA_OPENER, 'open', side_effect=response))
+                if strict:
+                    with self.assertRaisesRegex(RuntimeError, 'configured time budget'):
+                        ai_commit.generate_message('', '+Fix handler', ['app.py'], require_model=True)
+                else:
+                    self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
+                                     ('🔧 Update app.py', ''))
+                self.assertEqual(timeouts, [45, 45, 45])
+                self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
+
+    def test_first_match_stops_evaluation_before_later_rules(self):
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}) as generate, \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            self.assertIn(ai_commit.select_priority_emoji("local", self.rules, "", "", "", ""), ["🐛", "🐞"])
+            self.assertEqual(generate.call_count, 1)
+            self.assertNotIn("Pick one at random", generate.call_args.args[1]["prompt"])
+
+    def test_contextual_choices_follow_the_matching_rule_instead_of_randomizing(self):
+        rules = ai_commit.emoji_priority_rules("Follow this priority list:\n- When writing about freedom, use 🕊️ for policy and 🦅 for code")
+        with patch.object(ai_commit, "ollama_json", side_effect=[
+                {"response": '{"result":"MATCH"}'}, {"response": '{"emoji":"🦅"}'}]), \
+                patch.object(ai_commit, "current_branch", return_value="main"):
+            self.assertEqual(ai_commit.select_priority_emoji("local", rules, "", "+freedom()", "", ""), "🦅")
+
+    def test_classifier_keeps_file_operations_without_raw_codes_or_counts(self):
+        rules = ai_commit.emoji_priority_rules("Follow this priority list:\n- When deleting entire files, use 🗑️")
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}) as generate, \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            ai_commit.select_priority_emoji("local", rules, "1 file changed", "+handler()",
+                                            "Change totals: 1 modified\nM\tapp.py", "")
+            prompt = generate.call_args.args[1]["prompt"]
+            self.assertIn("Modified existing file: app.py", prompt)
+            self.assertNotIn("Change totals", prompt)
+            self.assertNotIn("M\tapp.py", prompt)
+
+    def select(self, matches):
+        responses = [{"response": json.dumps({"result": "MATCH" if matches[str(index)] else "NO_MATCH"})}
+                     for index in range(3)]
+        with patch.object(ai_commit, "ollama_json", side_effect=responses), \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"):
+            return ai_commit.select_priority_emoji("local", self.rules, "", "+wire handler", "", "")
+
+    def test_first_matching_rule_wins_even_when_later_rules_match(self):
+        self.assertIn(self.select({"0": True, "1": True, "2": True}), ["🐛", "🐞"])
+        self.assertEqual(self.select({"0": False, "1": True, "2": True}), "🔩")
+
+    def test_fallback_only_when_every_condition_is_false(self):
+        self.assertEqual(self.select({"0": False, "1": False, "2": False}), "📦")
+
+    def test_main_bug_emoji_is_chosen_afresh_for_each_commit(self):
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
+                patch.object(ai_commit, "current_branch", return_value="main"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                patch.object(ai_commit.secrets, "choice", side_effect=["🐞", "🐛"]) as pick, \
+                patch.object(ai_commit, "git_output", side_effect=[
+                    "🐛 Fix an earlier defect\\n".replace("\\n", "\n"),
+                    "🐞 Fix a different defect\\n".replace("\\n", "\n"),
+                ]) as git:
+            selections = [
+                ai_commit.select_priority_emoji("local", self.rules, "", "+fix a bug", "", "")
+                for _ in range(2)
+            ]
+        self.assertEqual(selections, ["🐞", "🐛"])
+        self.assertEqual(pick.call_args_list[0].args[0], ["🐞"])
+        self.assertEqual(pick.call_args_list[1].args[0], ["🐛"])
+        self.assertEqual(git.call_count, 2)
+
+    def test_missing_string_and_truncated_classifications_block_instead_of_falling_back(self):
+        for response in [{"response": '{}'},
+                         {"response": '{"result":false}'},
+                         {"response": '{"result":"NO_MATCH"}', "done_reason": "length"}]:
+            with self.subTest(response=response), patch.object(ai_commit, "ollama_json", return_value=response) as generate:
+                with self.assertRaisesRegex(RuntimeError, "verify.*priority"):
+                    ai_commit.select_priority_emoji("local", self.rules, "", "", "", "")
+                self.assertEqual(generate.call_count, 3)
+
+    def test_branch_bug_emoji_reused_from_branch_only(self):
+        def branch_git(*args):
+            if args[:4] == ("config", "--local", "--get", "branch.repair.sweetiebot-stack-parent"):
+                return ""
+            if args == ("log", "main..HEAD", "--format=%s"):
+                return "🐞 Fix first handler\\n🐛 Fix later handler\\n".replace("\\n", "\n")
+            raise AssertionError(args)
+        with patch.object(ai_commit, "ollama_json", return_value={"response": '{"result":"MATCH"}'}), \
+                patch.object(ai_commit, "current_branch", return_value="repair"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                patch.object(ai_commit, "git_output", side_effect=branch_git) as history, \
+                patch.object(ai_commit.secrets, "choice") as pick:
+            self.assertEqual(ai_commit.select_priority_emoji("local", self.rules, "", "", "", ""), "🐛")
+            pick.assert_not_called()
+            self.assertEqual(history.call_count, 2)
+
+    def test_new_branch_keeps_its_first_random_bug_choice_across_generators(self):
+        selected = {}
+        with tempfile.TemporaryDirectory() as gitdir:
+            def branch_git(*args):
+                if args[0] == "config" and args[3].endswith("sweetiebot-stack-parent"):
+                    return ""
+                if args[0] == "log":
+                    return ""
+                if args == ("rev-parse", "--git-common-dir"):
+                    return gitdir
+                if args[0] == "config" and args[3].endswith("sweetiebot-bug-emoji"):
+                    return selected.get(args[3], "")
+                raise AssertionError(args)
+            def save_config(args, **kwargs):
+                selected[args[-2]] = args[-1]
+                return SimpleNamespace(returncode=0)
+            with patch.object(ai_commit, "current_branch", return_value="feature/fix"), \
+                    patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                    patch.object(ai_commit, "git_output", side_effect=branch_git), \
+                    patch.object(ai_commit.subprocess, "run", side_effect=save_config) as save, \
+                    patch.object(ai_commit.secrets, "choice", side_effect=["🐝", "🐜"]) as pick:
+                self.assertEqual(ai_commit.choose_bug_emoji(["🐛", "🐜", "🐝"]), "🐝")
+                self.assertEqual(ai_commit.choose_bug_emoji(["🐛", "🐜", "🐝"]), "🐝")
+                save.assert_called_once()
+                pick.assert_called_once()
+
+    def test_stacked_branch_ignores_its_parent_bug_history(self):
+        def branch_git(*args):
+            if args[0] == "config" and args[3].endswith("stack-parent"):
+                return "parent-pr"
+            if args[0] == "log":
+                self.assertEqual(args[1], "parent-pr..HEAD")
+                return "🐞 Fix this stack layer\n"
+            raise AssertionError(args)
+        with patch.object(ai_commit, "current_branch", return_value="stack-child"), \
+                patch.object(ai_commit, "configured_default_branch", return_value="main"), \
+                patch.object(ai_commit, "git_output", side_effect=branch_git):
+            self.assertEqual(ai_commit.choose_bug_emoji(["🐛", "🐞"]), "🐞")
+
+    def test_generation_replaces_plus_with_first_matching_rule(self):
+        with ExitStack() as stack:
+            for name, value in [("commit_custom_instructions", self.instructions),
+                                ("installed_local_model_names", {"local"}),
+                                ("selected_model", ("local", False)),
+                                ("configured_models", ("local", "small")),
+                                ("staged_file_context", "Change totals: 1 modified"),
+                                ("recent_subjects", "➕ Add a handler")]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=[
+                {"response": '{"result":"NO_MATCH"}'},
+                {"response": '{"result":"MATCH"}'},
+                {"response": '{"subject":"➕ Add handler wiring","description":""}'},
+            ]))
+            self.assertEqual(ai_commit.generate_message("", "+connect(handler)", ["app.py"]),
+                             ("🔩 Add handler wiring", ""))
+            classification_prompt = generate.call_args_list[0].args[1]["prompt"]
+            self.assertNotIn("➕", classification_prompt)
+            self.assertNotIn("Recent repository subjects", classification_prompt)
+
+
+class InstructionFileTests(unittest.TestCase):
+    def test_standalone_commit_instructions_are_read_directly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instructions = Path(tmp) / "commit-instructions.md"
+            instructions.write_text(
+                "Prefer compact wording.\n"
+                "Commit titles should use one emoji and an imperative verb.\n"
+                "Use plain language.\n",
+                encoding="utf-8",
+            )
+            with patch.object(
+                ai_commit, "commit_instructions_path", return_value=instructions
+            ):
+                self.assertEqual(
+                    ai_commit.commit_title_preference(),
+                    "Commit titles should use one emoji and an imperative verb.",
+                )
+                custom = ai_commit.commit_custom_instructions()
+
+        self.assertIn("Prefer compact wording.", custom)
+        self.assertIn("Use plain language.", custom)
+        self.assertNotIn("Commit titles should", custom)
+
+    def test_long_standalone_instructions_are_not_truncated(self):
+        long_rule = "Keep this entire preference. " * 120
+        self.assertGreater(len(long_rule), 1800)
+        with patch.object(
+            ai_commit,
+            "commit_custom_instructions",
+            return_value=long_rule,
+        ):
+            prompt = ai_commit.prompt_for_diff(
+                "1 file changed",
+                "diff --git a/README.md b/README.md\n+text",
+            )
+
+        self.assertIn(long_rule, prompt)
+        self.assertNotIn("[custom instructions truncated]", prompt)
+
+    def test_missing_standalone_file_uses_default_title_rule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.md"
+            with patch.object(
+                ai_commit, "commit_instructions_path", return_value=missing
+            ):
+                self.assertEqual(ai_commit.commit_custom_instructions(), "")
+                self.assertEqual(
+                    ai_commit.commit_title_preference(),
+                    ai_commit.DEFAULT_COMMIT_TITLE_PREFERENCE,
+                )
+
+    @patch.object(ai_commit, "recent_subjects", return_value="🖌️ Refine controls")
+    def test_prompt_includes_standalone_custom_instructions(self, _subjects):
+        with patch.object(
+            ai_commit,
+            "commit_custom_instructions",
+            return_value="Prefer compact wording and sentence case.",
+        ):
+            prompt = ai_commit.prompt_for_diff(
+                "1 file changed",
+                "diff --git a/README.md b/README.md\n+text",
+            )
+
+        self.assertIn("Sweetiebot commit-writing instructions:", prompt)
+        self.assertIn("Prefer compact wording and sentence case.", prompt)
+        self.assertNotIn("User commit-writing preferences from the global Codex instructions:", prompt)
+        self.assertIn("Do not add trailers or metadata", prompt)
+
+
+class ArtifactContextTests(unittest.TestCase):
+    def setUp(self):
+        instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
+        instructions.start()
+        self.addCleanup(instructions.stop)
+
+    def test_artifact_fallbacks(self):
+        self.assertEqual(ai_commit.fallback_title(["assets/DASH.PNG"]), "🖼️ Update DASH.PNG")
+        self.assertEqual(ai_commit.fallback_title(["docs/report.pdf"]), "🖋️ Update report.pdf")
+        self.assertEqual(
+            ai_commit.fallback_title(["assets/a.png", "assets/b.svg"]),
+            "🖼️ Update 2 image assets",
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["assets/a.png", "src/app.js"]),
+            "🔧 Update image assets and code",
+        )
+        self.assertEqual(ai_commit.fallback_title([]), "🔧 Update repository files")
+
+
+    def test_offline_path_and_status_based_fallbacks(self):
+        # Borrow action and path classification from auto-commit-msg without
+        # requiring an extra extension, network service, or model.
+        cases = [
+            (
+                ["extension/github_session.py", "tests/github_session.py"],
+                "",
+                "🔧 Update GitHub session code and tests",
+            ),
+            (
+                [".github/workflows/test.yml", ".github/workflows/release.yml"],
+                "",
+                "⚙️ Update CI workflows",
+            ),
+            (
+                ["docs/howto.md", "docs/overview.md"],
+                "",
+                "📝 Update documentation",
+            ),
+            (
+                ["requirements.txt", "poetry.lock"],
+                "",
+                "🧰 Update dependencies",
+            ),
+            (
+                ["tests/commit.py", "tests/push.py"],
+                "Change totals: 2 added\n\nStatus:\nA\ttests/commit.py\nA\ttests/push.py",
+                "🧪 Add tests",
+            ),
+            (
+                ["assets/logo.svg", "src/sidebar.ts"],
+                "",
+                "🔧 Update image assets and code",
+            ),
+        ]
+        for files, context, expected in cases:
+            with self.subTest(files=files):
+                self.assertEqual(ai_commit.fallback_title(files, context), expected)
+                self.assertNotIn("staged", expected.lower())
+
+    def test_offline_fallback_uses_captured_diff_for_added_files(self):
+        diff = (
+            "diff --git a/src/session.ts b/src/session.ts\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/src/session.ts\n"
+            "+export function session() {}\n"
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["src/session.ts"], diff=diff),
+            "🔧 Add session.ts",
+        )
+        self.assertEqual(
+            ai_commit.fallback_message(["src/session.ts"], False, diff=diff),
+            ("🔧 Add session.ts", ""),
+        )
+
+    def test_offline_fallback_describes_deletions_without_staged_claims(self):
+        context = (
+            "Change totals: 2 deleted\n\nStatus:\n"
+            "D\tdocs/old.md\nD\tdocs/unused.md"
+        )
+        self.assertEqual(
+            ai_commit.fallback_message(["docs/old.md", "docs/unused.md"], True, context),
+            ("📝 Remove documentation", "Remove 2 files."),
+        )
+
+    def test_offline_fallback_preserves_non_english_and_spaces_in_paths(self):
+        self.assertEqual(
+            ai_commit.fallback_title(["docs/rapport final.md"]),
+            "📝 Update rapport final.md",
+        )
+        self.assertEqual(
+            ai_commit.fallback_title(["src/überarbeitet.py", "src/ändern.py"]),
+            "🔧 Update code",
+        )
+
+    def test_missing_model_uses_smart_fallback_without_querying_ollama(self):
+        with patch.object(ai_commit, "installed_local_model_names", return_value=set()), \
+                patch.object(ai_commit, "ollama_json") as ollama:
+            title, description = ai_commit.generate_message(
+                "", "diff --git a/tests/api.py b/tests/api.py",
+                ["tests/api.py", "tests/ui.py"], include_description=True,
+                file_context_override="Change totals: 2 modified",
+            )
+            self.assertEqual(title, "🧪 Update tests")
+            self.assertEqual(description, "Update 2 files.")
+            ollama.assert_not_called()
+
+    def test_single_file_status_tracks_rename(self):
+        context = "Change totals: 1 renamed\n\nStatus:\nR100\told.py\tnew.py"
+        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename old.py to new.py")
+        diff = (
+            "diff --git a/old.py b/new.py\n"
+            "similarity index 98%\n"
+            "rename from old.py\n"
+            "rename to new.py\n"
+        )
+        self.assertEqual(ai_commit.fallback_title(["new.py"], diff=diff),
+                         "🔧 Rename old.py to new.py")
+
+    @patch.object(ai_commit, "installed_local_model_names", return_value=set())
+    def test_missing_model_uses_image_fallback(self, _models):
+        self.assertEqual(
+            ai_commit.generate_title("1 binary file", "Binary files differ", ["assets/logo.png"]),
+            "🖼️ Update logo.png",
+        )
+
+    def test_large_single_file_diff_keeps_beginning_and_tail(self):
+        diff = (
+            "diff --git a/docs/report.md b/docs/report.md\n"
+            "HEAD_SIGNAL\n"
+            + ("x" * 900)
+            + "\nTAIL_SIGNAL"
+        )
+        with patch.object(ai_commit, "MAX_DIFF_CHARS", 400):
+            sampled = ai_commit.sample_diff_for_prompt(diff)
+
+        self.assertIn("HEAD_SIGNAL", sampled)
+        self.assertIn("TAIL_SIGNAL", sampled)
+        self.assertLessEqual(len(sampled), 400)
+        self.assertIn("diff sampled", sampled)
+
+    def test_large_multifile_diff_samples_across_files(self):
+        sections = []
+        for name in ("first.md", "middle.md", "last.md"):
+            sections.append(
+                f"diff --git a/{name} b/{name}\n{name}\n" + ("z" * 700)
+            )
+
+        with patch.object(ai_commit, "MAX_DIFF_CHARS", 900), patch.object(
+            ai_commit, "MAX_DIFF_SECTIONS", 3
+        ):
+            sampled = ai_commit.sample_diff_for_prompt("\n".join(sections))
+
+        for name in ("first.md", "middle.md", "last.md"):
+            self.assertIn(name, sampled)
+        self.assertLessEqual(len(sampled), 900)
+
+    def test_file_context_marks_binary_images_and_documents(self):
+        def fake_git_output(*args):
+            if "--name-status" in args:
+                return "A\tassets/logo.png\nM\tdocs/report.pdf\nM\tREADME.md\n"
+            if "--numstat" in args:
+                return (
+                    "-\t-\tassets/logo.png\n"
+                    "-\t-\tdocs/report.pdf\n"
+                    "4\t1\tREADME.md\n"
+                )
+            self.fail(f"unexpected git call: {args}")
+
+        with patch.object(ai_commit, "git_output", side_effect=fake_git_output):
+            context = ai_commit.staged_file_context(
+                ["assets/logo.png", "docs/report.pdf", "README.md"]
+            )
+
+        self.assertIn("image: assets/logo.png (binary)", context)
+        self.assertIn("document: docs/report.pdf (binary)", context)
+        self.assertIn("README.md", context)
+
+    @patch.object(ai_commit, "recent_subjects", return_value="Update parser")
+    def test_prompt_includes_context_without_claiming_opaque_contents(self, _subjects):
+        prompt = ai_commit.prompt_for_diff(
+            "2 files changed",
+            "diff --git a/README.md b/README.md\n+text",
+            "- image: assets/logo.png (binary)",
+        )
+        self.assertIn("Staged file context:", prompt)
+        self.assertIn("do not invent contents", prompt)
+
+
+if __name__ == "__main__":
+    unittest.main()

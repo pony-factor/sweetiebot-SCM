@@ -12,8 +12,8 @@ from pathlib import Path
 from toolkit_settings import load_settings, VSCODE_SETTINGS
 
 HERE = Path(__file__).resolve().parent
-SOURCE = HERE.parent / "efs"
-# Map shared artwork into the stable icon paths required by VS Code.
+SOURCE = HERE.parent / "extension"
+# Shared artwork stays in assets while VS Code receives stable installed icon paths.
 IMAGE_SOURCES = {
     "efs.svg": Path("efs.svg"),
     "merge-prs-light.svg": Path("kefania/merge-prs-light.svg"),
@@ -132,18 +132,16 @@ def transform_view_manifest(source, settings):
 
 def source_files(root: Path | None = None) -> dict[Path, Path]:
     here = root / "scripts" if root is not None else HERE
-    source_root = root / "efs" if root is not None else SOURCE
+    source_root = root / "extension" if root is not None else SOURCE
     files = {
         path.relative_to(source_root): path
         for path in source_root.rglob("*")
         if path.is_file()
     }
-    # Keep VS Code icon paths stable while the shared artwork lives in assets.
     image_root = here.parent / "assets/imgs"
     for icon_name, asset_path in IMAGE_SOURCES.items():
         files[Path("media") / icon_name] = image_root / asset_path
-    # Keep the moved attribution file alongside its installed third-party icons.
-    files[Path("THIRD_PARTY_NOTICES.md")] = image_root / "README.md"
+    # Preserve extension/THIRD_PARTY_NOTICES.md and its existing creator credits.
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
     files[Path("github_apps.py")] = here / "github_apps.py"
@@ -167,7 +165,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("branch_name_packs.json")] = here / "branch_name_packs.json"
     files[Path("local_setup.py")] = here / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
-    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md", ".html"})):
+    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("extension", {".js", ".json", ".svg", ".md", ".html"})):
         for source in (here.parent / directory).rglob("*"):
             if source.is_file() and source.suffix.lower() in suffixes:
                 files[Path("codex-customizations") / source.relative_to(here.parent)] = source
