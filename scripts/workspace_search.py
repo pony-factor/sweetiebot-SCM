@@ -155,6 +155,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("window_title_configurator.py")] = here / "window_title_configurator.py"
     files[Path("codex_colors.py")] = here / "codex_colors.py"
     files[Path("ai_commit.py")] = here / "ai_commit.py"
+    files[Path("coreml_backend.py")] = here / "coreml_backend.py"
     files[Path("background_commit.py")] = here / "background_commit.py"
     files[Path("merged_branch.py")] = here / "merged_branch.py"
     files[Path("post_commit_spellcheck.py")] = here / "post_commit_spellcheck.py"

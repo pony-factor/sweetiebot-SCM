@@ -68,6 +68,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary = Path(destination) if destination is not None else ai_wrapper_path()
     primary_files = [
         (HERE / "ai_commit.py", primary),
+        (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "background_commit.py", primary.with_name("background_commit.py")),
         (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),

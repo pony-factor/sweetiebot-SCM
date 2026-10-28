@@ -2,6 +2,8 @@ import json
 import contextlib
 import io
 import subprocess
+import os
+import sys
 from pathlib import Path
 import tempfile
 import types
@@ -994,6 +996,16 @@ class AiWrapperTests(unittest.TestCase):
 
             self.assertTrue(install.sync_ai_wrapper(destination=destination))
             self.assertEqual(destination.read_bytes(), (install.HERE / "ai_commit.py").read_bytes())
+            backend = destination.with_name("coreml_backend.py")
+            self.assertEqual(backend.read_bytes(), (install.HERE / "coreml_backend.py").read_bytes())
+            # Exercise the installed wrapper without source-tree imports.
+            result = subprocess.run(
+                [sys.executable, str(destination), "--version"],
+                cwd=tmp, env={**os.environ, "PYTHONPATH": ""},
+                text=True, capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("git version", result.stdout)
             diagnostics = destination.with_name("sweetiebot_diagnostics.py")
             self.assertEqual(diagnostics.read_bytes(), (install.HERE / "sweetiebot_diagnostics.py").read_bytes())
             async_worker = destination.with_name("sweetiebot_async_commit.py")

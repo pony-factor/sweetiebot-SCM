@@ -2,7 +2,7 @@
 
 Sweetiebot's default Ollama backend is unchanged. This native, opt-in bridge
 lets the **commit-message generator** use the MIT-licensed
-[CoreML-LLM](https://github.com/john-rocky/CoreML-LLM) Swift package instead.
+CoreML-LLM Swift package instead: https://github.com/john-rocky/CoreML-LLM.
 Workspace Search embeddings and Ask Ollama remain on Ollama. Draft/manual
 spellcheck uses Ollama model names and is not switched by this commit setting.
 
@@ -23,7 +23,7 @@ Review the model license separately. The bridge is an ordinary process running
 on your Mac; no remote inference server or remote code invocation is needed.
 
 Explicitly prepare a model once (the first invocation **downloads model
-weights** if not already cached):
+weights and its tokenizer**, then compiles Core ML chunks if not already cached):
 
     "$HOME/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane" --prepare qwen3.5-2b
     "$HOME/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane" --prepare qwen3.5-0.8b
@@ -40,13 +40,24 @@ The configured bridge executable defaults to
 with scm-toolkit.ai-coreml-command. On failure, the existing strict/fallback
 behavior applies. Change ai-backend to ollama to revert instantly.
 
+Inference only loads prepared models. Run preparations one at a time; the
+bridge locks preparation to protect the upstream shared download session.
+
 The Swift service speaks newline-delimited JSON over private stdin/stdout and
 keeps a model loaded across multiple calls in the same Git generation process.
 It uses Core ML's cpuAndNeuralEngine compute units by default. Core ML decides
 which operations actually execute on the ANE. These models are smaller than
 Ollama's large GPU models and may generate worse commit messages; they are not
-interchangeable GGUF model files. The bridge does **not** natively enforce JSON
-Schema or sampling temperature; Sweetiebot requests JSON in the prompt and
+interchangeable GGUF model files.
+
+The Qwen3.5 models use the package's dedicated MLKV generator, their chat
+template with thinking disabled, and greedy decoding. Their context holds
+2,048 tokens including the prompt and response; oversized prompts return an
+error rather than silently dropping staged changes. Other registered models
+use the generic loader and its sampling defaults.
+
+The bridge does **not** natively enforce JSON
+Schema; Sweetiebot requests JSON in the prompt and
 continues to validate every title and emoji using its existing checks.
 
 This optional integration has unit tests with a fake bridge, but native

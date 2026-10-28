@@ -16,11 +16,17 @@ let package = Package(
     name: "SweetiebotANE",
     platforms: [.macOS(.v15)],
     products: [.executable(name: "sweetiebot-ane", targets: ["SweetiebotANE"])],
-    dependencies: [dependency],
+    dependencies: [
+        dependency,
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.5"),
+    ],
     targets: [
         .executableTarget(
             name: "SweetiebotANE",
-            dependencies: [.product(name: "CoreMLLLM", package: "CoreML-LLM")],
+            dependencies: [
+                .product(name: "CoreMLLLM", package: "CoreML-LLM"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
