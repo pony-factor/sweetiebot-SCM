@@ -20,7 +20,7 @@ FORMATS = (
     ("assets/codex", {".js", ".css"}),
     ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"}),
     ("assets/browser", {".js"}),
-    ("efs", {".js", ".json", ".svg", ".md", ".html"}),
+    ("extension", {".js", ".json", ".svg", ".md", ".html"}),
 )
 
 
