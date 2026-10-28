@@ -412,7 +412,7 @@ function scmToolkitSyncRateLimitPony(root) {
     card.dataset.scmToolkitRateLimitPonyPending = 'true';
     const image = root.createElement('img');
     image.alt = 'Twilight Sparkle holding a STOP sign — rate limited';
-    image.title = 'Rate limited · Twilight Sparkle art by CaptainPudgeMuffin';
+    image.title = 'Rate limited · Twilight Sparkle STOP illustration';
     image.width = 96;
     image.style.width = '96px';
     image.style.maxWidth = '100%';
