@@ -339,6 +339,7 @@ async function run() {
     update: async (key, value) => { sharedState.set(key, value); },
   } };
   registerPullRequestCommand(vscode, context, {
+    findOpenPullRequest: async () => existingPullRequest,
     verifyPublishedBranch: async () => {},
     pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
@@ -504,6 +505,8 @@ async function run() {
 
   // Repeated clicks must reuse an open PR for the head even if its base differs.
   existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', head: 'draft', base: 'release' };
+  launchInSeparateWorkspace = true;
+  const launchesBeforeExisting = sessionLaunches.length;
   calls.length = 0;
   const existingResult = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.equal(existingResult.existing, true);
@@ -511,6 +514,9 @@ async function run() {
   assert.deepEqual(calls.map(call => call.id), ['vscode.open']);
   assert.equal(calls[0].args[0].value, existingPullRequest.url);
   assert.match(informationMessages.at(-1), /already exists/);
+  assert.equal(sessionLaunches.length, launchesBeforeExisting,
+    'An existing PR must block the independent workspace before any drafting starts');
+  launchInSeparateWorkspace = false;
   browserAvailable = false;
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
