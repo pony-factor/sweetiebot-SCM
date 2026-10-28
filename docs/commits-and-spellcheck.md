@@ -13,6 +13,8 @@ Stage and review the exact diff. Sweetiebot retains VS Code's Git commit behavio
 
 Background recovery is in [worker](../scripts/background_commit.py), [extension bridge](../extension/commits/background_commit.js) and [push recovery](../extension/commits/push_recovery.js). macOS session/login agent and an awake machine matter while VS Code is closed. **Never amend, reset, squash, or force-push a branch with an unresolved placeholder job**; inspect recorded status first. A "pending push" indicator is not proof of a successful remote write. Placeholder titles use `placeholder_` plus an 11-character Base58 job ID, separate from the Git commit SHA.
 
+When durable background mode is enabled, a queued job retains the staged tree captured at submission; changes staged afterward belong to a later operation. The worker resumes interrupted title generation and optional publication using the completed commit rather than staging current workspace files again. An offline remote can delay the push without requiring a new commit. Branch movement, authentication failures, and rejected pushes require guarded recovery; the worker does not force-push or merge remote history automatically. The login agent can retry only while the Mac is awake and the user session permits it.
+
 A co-author action adds `Co-authored-by` after a **blank line**, without replacing the Git author. Optional Codex draft/context features may read a local conversation snapshot for text generation but do not authorize unstaged changes.
 
 ## Four separate spellcheck paths
