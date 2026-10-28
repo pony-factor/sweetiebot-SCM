@@ -28,7 +28,7 @@ weights and its tokenizer**, then compiles Core ML chunks if not already cached)
     "$HOME/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane" --prepare qwen3.5-2b
     "$HOME/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane" --prepare qwen3.5-0.8b
 
-Then open Sweetiebot Settings → Ollama → Commit inference backend → coreml,
+Then open Sweetiebot Settings → Commits → Commit inference backend → coreml,
 or configure globally:
 
     git config --global scm-toolkit.ai-backend coreml

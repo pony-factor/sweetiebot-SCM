@@ -759,7 +759,7 @@ class SubmissionTests(unittest.TestCase):
 
     def test_ai_commit_fallback_toggle_defaults_on_and_supports_strict_debugging(self):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
-        self.assertEqual(setting.section, "Ollama")
+        self.assertEqual(setting.section, "Commits")
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
         values = form_values()
@@ -774,7 +774,7 @@ class SubmissionTests(unittest.TestCase):
                 ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
                 ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
             setting = next(s for s in configurator.SETTINGS if s.name == name)
-            self.assertEqual(setting.section, 'Ollama')
+            self.assertEqual(setting.section, 'Commits')
             self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
             self.assertEqual(toolkit_settings.SETTING_KEYS[name], key)
             values = form_values()

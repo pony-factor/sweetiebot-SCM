@@ -1976,7 +1976,7 @@ def generate_message(
     started_at = time.monotonic()
     attempts = generation_attempts()
     # Simple messages are the default fallback even for text and custom emoji rules.
-    # Disable the fallback in Ollama settings to expose model failures for debugging.
+    # Disable the fallback in Commits settings to expose model failures for debugging.
     text_changes = has_text_changes(diff)
     include_explanation = title_explanations_enabled()
     priority_rules = emoji_priority_rules(commit_custom_instructions()) if emoji_priority_enabled() else []
