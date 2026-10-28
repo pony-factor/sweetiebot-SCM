@@ -18,7 +18,7 @@ Browse the [documentation index](docs/index.md) for installation, settings, comm
 - macOS with a supported Visual Studio Code application bundle.
 - Python 3 and Git.
 - macOS permission to modify VS Code's application files.
-- Optional: [Ollama](https://ollama.com/) for local commit titles, spellchecking, and semantic EFS search. Exact search can work without embeddings.
+- Optional: [Ollama](https://ollama.com/) for local commit titles, spellchecking, and semantic workspace search. Exact search can work without embeddings.
 - Optional: authenticated GitHub CLI and local [Kefania](https://github.com/pony-factor/kefania) for bot-published PRs, [gh-stack](https://github.com/github/gh-stack) for native stacked PRs, and GnuPG for signing-key import.
 
 Clone this repository, then double-click **`scripts/install.command`**:
@@ -72,7 +72,7 @@ The settings server listens on a local authenticated loopback address; it does n
 | **Branch names** | Enable/disable built-in name packs, custom names, imported JSON packs |
 | **Ollama** | AI commits, model choice, generation budgets, direct or durable background commit behavior |
 | **Spellcheck Changes** | Draft-title corrections, Markdown spellcheck, spelling model, protected vocabulary, line breaks |
-| **Search** | Workspace Search/EFS appearance, modes, Ollama models, limits, exclusions |
+| **Search** | Workspace Search appearance, modes, Ollama models, limits, exclusions |
 | **Pull requests**, **Kefania**, **Lindsey**, **GitHub** | PR drafting, merge dashboard, review and refresh preferences |
 | **Codex**, **Browser**, **Window**, **Initialization** | Codex adjustments, Integrated Browser, title-bar controls, startup, updates |
 
@@ -179,9 +179,9 @@ A safe merge must recheck the **actual PR head SHA, intended base branch, checks
 
 Refresh intervals, rate-limit cooldowns, review summary behavior, and timeline display are configurable in **GitHub** and **Lindsey** settings.
 
-## Workspace Search (EFS)
+## Workspace Search
 
-The companion extension provides **Workspace Search**, commonly labeled **EFS**. It normally appears inside Source Control; **Search → Standalone Activity Bar** moves it to its own container. The search label, placeholder, ranking mode, indexed-file limits, exclusions, and local models are configurable.
+Sweetiebot also provides **Workspace Search**. It normally appears inside Source Control; **Search → Standalone Activity Bar** moves it to its own container. The search label, placeholder, ranking mode, indexed-file limits, exclusions, and local models are configurable.
 
 **Hybrid**, **Semantic**, and **Exact** are separate ranking modes. Semantic matching uses a locally available Ollama embedding model; exact term/path matching can work without it. Install the documented default embedding model if needed:
 
@@ -189,9 +189,9 @@ The companion extension provides **Workspace Search**, commonly labeled **EFS**.
 ollama pull qwen3-embedding:0.6b
 ```
 
-**Ask Ollama** is optional and uses a separate local chat model. EFS indexes eligible local text/code and supported document text, skips common generated and Git metadata paths, and incrementally refreshes changed content. The search scope can include other local repositories under `~/GitHub` as well as the active workspace. Search results can open matching passages and copy repository-relative Markdown links.
+**Ask Ollama** is optional and uses a separate local chat model. Workspace Search indexes eligible local text/code and supported document text, skips common generated and Git metadata paths, and incrementally refreshes changed content. The search scope can include other local repositories under `~/GitHub` as well as the active workspace. Search results can open matching passages and copy repository-relative Markdown links.
 
-EFS is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [EFS details](docs/workspace-search.md) and [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
+Workspace Search is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [Workspace Search details](docs/workspace-search.md) and [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
 
 ## Codex, browser, and window controls
 
@@ -208,7 +208,7 @@ Prefer the live settings page for the current option names and defaults rather t
 | Pending background commit or push | Read the queued job's status; avoid amending, resetting, or forcing a push while title finalization is pending |
 | New PR button cannot publish | Published branch and unchanged head SHA, local Kefania service, GitHub App/CLI access, active PR workspace |
 | Merge action is unavailable | Live head/base, merge conflicts, status checks, rulesets, attribution requirements, and stacked dependencies |
-| EFS search is incomplete | Selected search scope, indexing exclusions/limits, local embedding model, and Search settings |
+| Workspace Search is incomplete | Selected search scope, indexing exclusions/limits, local embedding model, and Search settings |
 
 Most model inference stays on local Ollama. Operational diagnostics are designed to avoid logging raw staged diffs, prompts, and model responses. If you need to remove the toolkit, use the supported installer/uninstall workflow for the version you installed; do not blindly delete linked worktrees or their Git metadata.
 
@@ -217,7 +217,7 @@ Most model inference stays on local Ollama. Operational diagnostics are designed
 | Path | Purpose |
 | --- | --- |
 | [`scripts/`](scripts/README.md) | Installer, configurator, branch names, local Git/AI helpers, CI tooling |
-| `efs/` | Companion VS Code extension and PR dashboards |
+| [`extension/`](extension/README.md) | Complete Sweetiebot VS Code extension, including commits, GitHub, branches, UI, and search |
 | `assets/workbench/` | Injected workbench JavaScript and CSS |
 | `assets/codex/` | Supported Codex patch components |
 | `assets/imgs/` | Bundled images and attribution |
@@ -228,7 +228,7 @@ Useful repository checks:
 
 ```sh
 python3 scripts/ci/ci_test_runner.py verify
-PYTHONPATH=scripts python3 -m unittest discover -s tests
+PYTHONPATH=scripts python3 -m unittest discover -s tests -t . -p '*.py'
 python3 scripts/install.py --check
 ```
 

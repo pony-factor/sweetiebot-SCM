@@ -95,18 +95,18 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser-backed Codex webview simulation
         run: |
-          python tests/test_codex_queued_edit_browser.py
-          python tests/test_codex_webview_browser.py
-          python tests/test_codex_webview_iframe.py
+          python tests/codex_queued_edit_browser.py
+          python tests/codex_webview_browser.py
+          python tests/codex_webview_iframe.py
       - name: Node.js timestamp and heading tests
         run: |
-          node tests/test_codex_hide_chat_timestamps.js
-          node tests/test_codex_window_label.js
-          node tests/test_codex_usage.js
+          node tests/codex_hide_chat_timestamps.js
+          node tests/codex_window_label.js
+          node tests/codex_usage.js
       - name: Codex manifest label tests
         env:
           PYTHONPATH: scripts
-        run: python -m unittest discover -s tests -p test_codex_label.py -v
+        run: python -m unittest tests.codex_label -v
 
   bot-app-identities:
     name: Separate GitHub App identity regressions
@@ -119,12 +119,12 @@ jobs:
           node-version: "22"
       - name: Check separate App auth wiring and regressions
         run: |
-          node --check efs/github_app_identity.js
-          node --check efs/kefania_runner.js
-          node --check efs/local_pull_request.js
-          node --check efs/lindsey_bulk_merge.js
-          node --check efs/pull_request.js
-          node tests/test_github_app_identity.js
-          node tests/test_github_app_settings.js
-          node tests/test_kefania_app_environment.js
-          node tests/test_lindsey_bulk_merge.js
+          node --check extension/github/app_identity.js
+          node --check extension/codex/kefania_runner.js
+          node --check extension/github/local_pull_request.js
+          node --check extension/merge/lindsey_bulk_merge.js
+          node --check extension/github/pull_request.js
+          node tests/github_app_identity.js
+          node tests/github_app_settings.js
+          node tests/kefania_app_environment.js
+          node tests/lindsey_bulk_merge.js
