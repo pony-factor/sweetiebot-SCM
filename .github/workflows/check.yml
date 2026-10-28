@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   workbench-repair:
-    name: SCM repair isolation (Python ${{ matrix.python }})
+    name: SCM and browser repair isolation (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -23,8 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Verify SCM repair with incompatible optional extensions
-        run: python -m unittest tests.install.WorkbenchRepairTests -v
+      - name: Verify independent repairs with incompatible optional extensions
+        run: python -m unittest tests.install.WorkbenchRepairTests tests.install.IndependentRepairTests -v
 
   inventory:
     name: Test inventory

@@ -1508,7 +1508,7 @@ class InstallerScriptsLayoutTests(unittest.TestCase):
         self.assertEqual(workflow.count("scripts/ci/ci_test_runner.py"), 3)
 
 
-class WorkbenchRepairTests(unittest.TestCase):
+class WorkbenchFixture(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -1534,6 +1534,8 @@ class WorkbenchRepairTests(unittest.TestCase):
     def contents(self):
         return [path.read_text() for path in self.paths]
 
+
+class WorkbenchRepairTests(WorkbenchFixture):
     def test_cli_repairs_scm_without_touching_optional_extensions(self):
         with patch("sys.argv", ["install.py", "--app", str(self.app), "--workbench-only", "--repair"]), \
                 patch.object(install, "load_settings", return_value=SETTINGS), \
@@ -1606,6 +1608,136 @@ class WorkbenchRepairTests(unittest.TestCase):
                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 install.main()
             settings.assert_not_called()
+
+
+class IndependentRepairTests(WorkbenchFixture):
+    def setUp(self):
+        super().setUp()
+        self.settings = dict(toolkit_settings.DEFAULT_SETTINGS, **SETTINGS)
+        resources = self.app / 'Contents/Resources/app'
+        self.git_extension = resources / 'extensions/git/dist/main.js'
+        self.git_extension.parent.mkdir(parents=True)
+        self.git_extension.write_text(
+            'class Repository{async commit(e,t=Object.create(null)){'
+            'let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
+            'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}}')
+        self.preload = resources / 'out/vs/platform/browserView/electron-browser/preload-browserView.js'
+        self.preload.parent.mkdir(parents=True)
+        self.preload.write_text('"vscode:browserView:preloadReady";')
+        self.native_main = resources / 'out/mainImpl.js'
+        self.native_main.write_text(
+            'static getOrCreateWorkspace(n,e,t){let r=join(t,e,"browserStorage"),'
+            'o=electron.fromPath(r.fsPath);return Sessions._bySession.get(o)}'
+            'return Sessions.getOrCreate(this.instantiationService,e,r,'
+            'this.environmentMainService.workspaceStorageHome,o.openedWorkspace?.id,t)'
+            + install.browser_pr.BACKGROUND_ANCHOR + '1000}')
+        self.codex = self.root / 'codex/index.js'
+        self.codex.parent.mkdir()
+        self.codex.write_text(install.CODEX_START + 'installed unsupported countdown' + install.CODEX_END)
+        self.manifest = self.codex.with_name('package.json')
+        self.manifest.write_text('original manifest')
+        self.styles = self.root / 'codex/webview/assets/main.css'
+        self.styles.parent.mkdir(parents=True)
+        self.styles.write_text('original CSS')
+        self.files = self.paths + [self.git_extension, self.preload, self.native_main,
+                                  self.codex, self.manifest, self.styles]
+        for target, name, value in (
+                (install, 'load_settings', self.settings),
+                (install, 'ai_wrapper_path', self.root / 'bin/git-wrapper'),
+                (install, 'sync_ai_wrapper', False),
+                (install, 'sync_model_picker', False),
+                (install, 'persist_message_bar_layout', None),
+                (install, 'invalidate_extension_cache', None),
+                (install.workspace_search, 'sync_extension', False),
+                (install.workspace_search, 'remove_legacy_extensions', False),
+                (install.github_pr, 'patch_files', []),
+                (install.codex_label, 'patch_file', (self.manifest, 'original manifest', 'planned manifest')),
+                (install.codex_colors, 'stylesheet_path', self.styles),
+                (install.codex_colors, 'transform', 'planned CSS'),
+                (install, 'codex_bundle_paths', [self.codex])):
+            mock = patch.object(target, name, return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
+        for module in (install.codex_context, install.codex_drafts, install.codex_usage,
+                       install.codex_composer, install.codex_queued_edit):
+            mock = patch.object(module, 'patch_files', return_value=[])
+            mock.start()
+            self.addCleanup(mock.stop)
+        for module in (install.codex_keep_awake, install.codex_startup):
+            mock = patch.object(module, 'patch_file', return_value=None)
+            mock.start()
+            self.addCleanup(mock.stop)
+        mock = patch.object(install, 'transform_codex', side_effect=ValueError(
+            'Unsupported Codex extension build: reset-time anchor does not match.'))
+        self.codex_transform = mock.start()
+        self.addCleanup(mock.stop)
+
+    def run_installer(self, *flags):
+        with patch('sys.argv', ['install.py', '--app', str(self.app), *flags]):
+            install.main()
+
+    def test_full_repair_restores_browser_and_scm_after_late_codex_failure(self):
+        self.run_installer('--repair')
+        self.codex_transform.assert_called_once()
+        self.assertIn(install.START, self.paths[0].read_text())
+        self.assertIn(install.browser_pr.STORAGE_START, self.native_main.read_text())
+        self.assertIn(install.browser_pr.START, self.preload.read_text())
+        self.assertEqual(self.manifest.read_text(), 'original manifest')
+        self.assertEqual(self.styles.read_text(), 'original CSS')
+        self.assertIn('installed unsupported countdown', self.codex.read_text())
+        self.assertIn('Codex customizations skipped', self.output.getvalue())
+        self.assertIn('full VS Code quit and restart', self.output.getvalue())
+
+    def test_check_validates_independent_repairs_without_writes(self):
+        before = [p.read_bytes() for p in self.files]
+        self.run_installer('--check')
+        self.assertEqual([p.read_bytes() for p in self.files], before)
+        self.assertFalse((self.paths[0].parent / 'sweetiebot').exists())
+        self.assertIn('Codex customizations skipped', self.output.getvalue())
+        self.assertIn('Validated SCM and browser patches', self.output.getvalue())
+
+    def test_missing_optional_asset_does_not_block_native_repairs(self):
+        with patch.object(install.codex_colors, 'stylesheet_path', side_effect=FileNotFoundError('missing optional CSS')):
+            self.run_installer('--repair')
+        self.assertIn(install.browser_pr.STORAGE_START, self.native_main.read_text())
+        self.assertEqual(self.manifest.read_text(), 'original manifest')
+        self.assertIn('missing optional CSS', self.output.getvalue())
+
+    def test_repeated_repair_reports_skipped_codex_when_native_files_are_current(self):
+        self.run_installer('--repair')
+        before = [p.read_bytes() for p in self.files]
+        self.output.seek(0)
+        self.output.truncate()
+        with patch.object(install, 'write_pair') as write:
+            self.run_installer('--repair')
+        write.assert_not_called()
+        self.assertEqual([p.read_bytes() for p in self.files], before)
+        self.assertIn('SCM and browser patches (Codex customizations skipped) is already up to date', self.output.getvalue())
+
+    def test_explicit_codex_and_uninstall_modes_fail_without_writes(self):
+        before = [p.read_bytes() for p in self.files]
+        for flag in ('--codex-only', '--uninstall'):
+            with self.subTest(flag=flag), self.assertRaisesRegex(ValueError, 'reset-time anchor'):
+                self.run_installer(flag)
+            self.assertEqual([p.read_bytes() for p in self.files], before)
+
+    def test_unsupported_native_workbench_still_fails_closed(self):
+        self.paths[0].write_text('unsupported native workbench')
+        before = [p.read_bytes() for p in self.files]
+        with self.assertRaisesRegex(ValueError, 'Unsupported VS Code build'):
+            self.run_installer('--repair')
+        self.codex_transform.assert_not_called()
+        self.assertEqual([p.read_bytes() for p in self.files], before)
+
+    def test_supported_codex_plan_is_installed_with_native_repairs(self):
+        self.codex_transform.side_effect = None
+        self.codex_transform.return_value = 'supported Codex patch'
+        self.run_installer('--repair')
+        self.assertEqual(self.codex.read_text(), 'supported Codex patch')
+        self.assertEqual(self.styles.read_text(), 'planned CSS')
+        self.assertEqual(self.manifest.read_text(), 'planned manifest')
+        self.assertIn(install.browser_pr.STORAGE_START, self.native_main.read_text())
+        self.assertNotIn('Codex customizations skipped', self.output.getvalue())
 
 
 if __name__ == "__main__":
