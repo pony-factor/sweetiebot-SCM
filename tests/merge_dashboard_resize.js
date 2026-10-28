@@ -96,6 +96,8 @@ assert.match(dashboardHtml, /\[\['web', 'ChatGPT'\], \['codex', 'Codex'\]\]/,
   'Lindsey labels the web runner ChatGPT without changing its engine value');
 assert.doesNotMatch(dashboardHtml, /GPT web/, 'Do not restore the old runner label');
 const dashboardController = fs.readFileSync(require.resolve('../extension/merge/dashboard.js'), 'utf8');
+assert.doesNotMatch(dashboardController, /'GPT web'/,
+  'Automatic CI repair activity uses the current ChatGPT runner label');
 assert.match(dashboardController, /engine === 'web' \? 'ChatGPT' : 'Codex'/,
   'Reaction activity identifies the ChatGPT runner');
 assert.match(dashboardController, /engine === 'web' \? 'ChatGPT' : 'Codex branch workspace'/,
