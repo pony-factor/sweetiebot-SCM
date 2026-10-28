@@ -42,7 +42,7 @@ async function runKefania(repositoryPath, input, { botOnly = false } = {}) {
       if (code !== 0) return reject(new Error(error.trim() || 'Kefania was interrupted. Check GitHub for an existing PR before retrying.'));
       try { resolve(JSON.parse(output)); } catch { reject(new Error('Kefania returned an invalid PR result.')); }
     });
-    child.stdin.end(JSON.stringify(input));
+    child.stdin.end(JSON.stringify(input?.preparedDraft ? { ...input, source: undefined } : input));
   });
 }
 

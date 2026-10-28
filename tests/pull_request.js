@@ -165,8 +165,8 @@ async function run() {
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
   assert.match(decorated, /<summary>Source details<\/summary>/);
-  assert.match(decorated, /- \*\*Local:\*\* \[vscode:\/\//);
-  assert.match(decorated, /- \*\*Desktop:\*\* \[codex:\/\/threads\//);
+  assert.match(decorated, /- \*\*Local:\*\* \[Local\]\(vscode:\/\//);
+  assert.match(decorated, /- \*\*Desktop:\*\* \[Desktop\]\(codex:\/\/threads\//);
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
@@ -299,7 +299,7 @@ async function run() {
       async withProgress(_options, task) { return task(); },
       async showInformationMessage(message) { informationMessages.push(message); },
        async showInputBox(options) {
-         assert.match(options.prompt, /published in future PR provenance/);
+         assert.match(options.prompt, /included in future PR descriptions/);
          return sharedInput;
        },
       async showWarningMessage() {},
@@ -329,6 +329,7 @@ async function run() {
       },
       async executeCommand(id, ...args) {
         if (id === 'sweetiebot.readCodexConversation') return codexSnapshot;
+        if (id === 'sweetiebot.shareCodexConversation') return { ...codexSnapshot.source, sharedUrl: share };
         calls.push({ id, args });
       }
     }
@@ -338,6 +339,7 @@ async function run() {
     update: async (key, value) => { sharedState.set(key, value); },
   } };
   registerPullRequestCommand(vscode, context, {
+    verifyPublishedBranch: async () => {},
     pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
     async launchPRSession(_vscode, _context, root, options) {

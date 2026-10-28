@@ -10,15 +10,16 @@ const originalSpawn = childProcess.spawn;
 const originalResolve = paths.resolveKefaniaFile;
 const originalQueue = queueModule.createPonyPublishQueue;
 const calls = [], resumes = [];
-let result, publication;
+let result, publication, childInput;
 childProcess.spawn = () => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
   child.stdin = new EventEmitter();
-  child.stdin.end = () => queueMicrotask(() => {
+  child.stdin.end = input => { childInput = JSON.parse(input); queueMicrotask(() => {
     child.stdout.emit('data', JSON.stringify(result));
     child.emit('close', 0);
-  });
+  }); };
   child.kill = () => {};
   return child;
 };
@@ -29,7 +30,7 @@ queueModule.createPonyPublishQueue = () => ({
 });
 
 (async () => {
-  const { runKefaniaPonyCache } = require('../extension/codex/kefania_runner');
+  const { runKefaniaPonyCache, runKefania } = require('../extension/codex/kefania_runner');
   const pony = { packId: 'g4-mares', slug: 'stardom' };
   result = { hit: true, profile: 'Existing research' };
   // Deliberately leave publication unresolved: cache hits must still return.
@@ -57,6 +58,19 @@ queueModule.createPonyPublishQueue = () => ({
   await runKefaniaPonyCache('/project', { action: 'get', pony });
   assert.equal(calls.length, 0, 'Cache misses must not publish');
   assert.equal(resumes.length, 5, 'Every cache operation gives pending jobs a chance to resume');
+  const identityMode = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+  try {
+    process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'legacy';
+    const input = { repository: 'owner/repo', source: { kind: 'codex', uuid: 'thread' },
+      preparedDraft: { title: 'Title', body: 'Verified description with Source details' } };
+    await runKefania('/project', input);
+    assert.equal(childInput.source, undefined, 'Description publication must not request a separate source comment');
+    assert.deepEqual(childInput.preparedDraft, input.preparedDraft);
+    assert(input.source, 'The captured source metadata remains intact in the parent process');
+  } finally {
+    if (identityMode === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+    else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = identityMode;
+  }
   console.log('Kefania runner retry integration and immediate cache rendering checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
   childProcess.spawn = originalSpawn;

@@ -90,6 +90,29 @@ async function run() {
   changed(); frames.shift()();
   assert.equal(mounted, undefined, 'Hide the button when there is no identifiable chat');
 
+  let shareRequest, stage = 0;
+  const sharedResponses = [];
+  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click });
+  const menuButton = control('Chat actions', () => { stage = 1; });
+  const shareButton = control('Share', () => { stage = 2; });
+  const copyButton = control('Copy link', () => { copyButton.isConnected = false; stage = 3; });
+  copyButton.isConnected = true;
+  copyButton.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
+  const sharingUI = vm.createContext({
+    setTimeout,
+    window: { location: { hash: `#/local/${conversationId}` }, addEventListener: (_, callback) => { shareRequest = callback; } },
+    document: { querySelectorAll: selector => selector === 'button' ? [menuButton]
+      : selector === '[role="menuitem"]' && stage === 1 ? [shareButton]
+      : selector === '[role="dialog"] button' && stage === 2 ? [copyButton] : [] }
+  });
+  load('context-webview.js', sharingUI);
+  sharingUI.scmToolkitRegisterCodexSnapshot({postMessage: message => sharedResponses.push(message)});
+  await shareRequest({data:{type:'scm-toolkit-context-request',id:'share',shareOnly:conversationId}});
+  assert.equal(stage,3,'Native Chat actions, Share and Copy link must run in order');
+  assert.equal(sharedResponses[0].conversationId,conversationId);
+  await shareRequest({data:{type:'scm-toolkit-context-request',id:'wrong-chat',shareOnly:nextChat}});
+  assert.match(sharedResponses[1].error,/originating chat/);
+
   const registered = new Map();
   let listener;
   const messages = [];
@@ -105,14 +128,17 @@ async function run() {
   };
   const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
   load('context-host.js', host);
-  const disposable = host.scmToolkitRegisterCodexSnapshotProvider(provider, {
+  const hostVscode = {
+    env: { clipboard: { readText: async () => clipboard, writeText: async value => { clipboard = value; } } },
     commands: {
       registerCommand(id, callback) {
         registered.set(id, callback);
         return { dispose() {} };
       }
     }
-  });
+  };
+  let clipboard = 'previous clipboard';
+  const disposable = host.scmToolkitRegisterCodexSnapshotProvider(provider, hostVscode);
   assert(registered.has('sweetiebot.readCodexContext'));
   assert(registered.has('sweetiebot.readCodexConversation'));
 
@@ -177,6 +203,21 @@ async function run() {
     model:{name:'GPT-6.1 Codex',effort:'Medium'}});
   assert.deepEqual(JSON.parse(JSON.stringify(await modelPending)),
     {name:'GPT-6.1 Codex',effort:'Medium'});
+
+  const sharedUrl = 'https://chatgpt.com/s/cx_1234567890abcdefghijklmnop';
+  const sharing = registered.get('sweetiebot.shareCodexConversation')(conversationId);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(messages.at(-1).shareOnly, conversationId);
+  clipboard = sharedUrl;
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId });
+  const shared = await sharing;
+  assert.equal(shared.uuid, conversationId);
+  assert.equal(shared.sharedUrl, sharedUrl);
+  assert.equal(clipboard, 'previous clipboard', 'Native copy must preserve the previous clipboard');
+  const changedChat = registered.get('sweetiebot.shareCodexConversation')(conversationId);
+  await new Promise(resolve => setImmediate(resolve));
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId: nextChat });
+  await assert.rejects(changedChat, /active chat changed/);
 
   provider.sidebarViews.clear();
   assert.throws(

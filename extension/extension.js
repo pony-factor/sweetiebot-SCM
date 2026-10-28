@@ -11,6 +11,7 @@ const { registerCodexCommitCommand } = require('./commits/codex_commit');
 const { registerCommitShortcut } = require('./commits/shortcut');
 const { registerBackgroundCommit } = require('./commits/background_commit');
 const { registerAiReviewReply } = require('./codex/ai_review_reply');
+const { registerAutoPublish } = require('./branches/auto_publish');
 const { registerAutoCodexCommit } = require('./commits/auto_codex_commit');
 const { registerPullRequestCommand } = require('./github/pull_request');
 const { resumePRSession } = require('./github/pr_session');
@@ -431,6 +432,7 @@ async function activate(context) {
     await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
   }
   registerBranchCommands(vscode, context);
+  void registerAutoPublish(vscode, context).catch(error => console.warn('Automatic branch publishing:', error.message));
   registerCodexCommitCommand(vscode, context);
   registerCommitShortcut(vscode, context);
   registerBackgroundCommit(vscode, context);

@@ -35,9 +35,17 @@ async function run() {
   };
   let pending = false;
   let checked = 0;
+  let publishedChecks = 0;
   const context = { subscriptions: [] };
   registerPullRequestCommand(vscode, context, {
     pendingPRCommits: async () => pending ? async () => {} : undefined,
+    stackedPullRequestBase: async (_root, _branch, base) => base,
+    verifyPublishedBranch: async (rootPath, branch, remote) => {
+      assert.equal(rootPath, '/tmp/sweetiebot-test-repository');
+      assert.equal(branch, 'feature');
+      assert.equal(remote, 'origin');
+      publishedChecks++;
+    },
     runKefania: async () => {
       checked++;
       return { newPullRequest: { allowed: false, reason: 'no-commits' } };
@@ -50,12 +58,14 @@ async function run() {
     { allowed: false, reason: 'no-commits' },
     'No published commits without queued work must remain ineligible');
   assert.equal(checked, 1);
+  assert.equal(publishedChecks, 1);
 
   pending = true;
   assert.deepEqual(await eligibility(root, options),
     { allowed: true, reason: 'pending-commits' },
     'Queued commits permit the window to open before publication');
   assert.equal(checked, 1, 'Do not check a half-published branch');
+  assert.equal(publishedChecks, 1, 'Queued work must skip remote publication preflight');
   await assert.rejects(eligibility(root, { ...options, branch: 'different' }),
     /selected branch changed/, 'Pending jobs do not bypass branch identity');
 
@@ -63,6 +73,8 @@ async function run() {
   assert.deepEqual(await eligibility(root, options),
     { allowed: false, reason: 'no-commits' });
   assert.equal(checked, 2, 'Restore authoritative eligibility once the queue drains');
+  assert.equal(publishedChecks, 2);
+  assert.equal(publishedChecks, 2, 'Recheck remote publication once the queue drains');
   console.log('Queued commit PR preflight checks passed.');
 }
 

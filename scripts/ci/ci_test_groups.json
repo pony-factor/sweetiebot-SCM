@@ -7,6 +7,7 @@
         "async_commit.py",
         "auto_codex_commit.js",
         "auto_publish.js",
+        "auto_publish_watcher.js",
         "background_commit.js",
         "background_commit.py",
         "chatgpt_commit_title.js",
@@ -63,6 +64,7 @@
         "branch_strip_refresh.js",
         "branch_window.js",
         "stacked_branch.js",
+        "stack_pr_base.js",
         "cloud_repo_sync.py",
         "default_branch.js",
         "default_branch_recovery.js",
@@ -82,7 +84,8 @@
       ],
       "syntax": [
         "extension/merge/sync_review.js",
-        "extension/branches/window.js"
+        "extension/branches/window.js",
+        "extension/branches/auto_publish.js"
       ]
     },
     "branch-names": {
