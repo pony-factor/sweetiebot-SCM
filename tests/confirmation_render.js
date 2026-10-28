@@ -1,0 +1,457 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const html=fs.readFileSync(require.resolve('../extension/ui/draft_confirmation.html'),'utf8')
+  .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../extension/merge/dashboard_markdown.js'),'utf8'));
+assert.match(html,/\.merge-buttons\{display:flex;align-items:center;gap:8px/,'Merge method buttons retain spacing beside the PR badge');
+assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
+// Themed borders—including the left warning accent—must use the current
+// workbench's line color instead of a hard-coded warning border color.
+const themedBorderRule=html.match(/[^{}]+\{border-color:var\(--line\)\}/g)
+  ?.find(rule=>rule.includes('[data-theme-colors] .merge-issue'));
+assert(themedBorderRule,'The merge warning must inherit the VS Code border color');
+for(const selector of ['.card','.mark','figure','.actions','.pr-number','.status.pack-tag',
+  '.merge-issue','.lightbox-footer','.lightbox-nav','button']){
+  assert(themedBorderRule.includes('[data-theme-colors] '+selector),
+    'Missing theme border override for '+selector);
+}
+assert.match(html,/\.merge-issue\{[^}]*border-left:5px solid var\(--kefania-error,#f28f79\)/,
+  'When theme colors are disabled, keep the existing semantic warning border');
+const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+new vm.Script(script);
+class Element {
+  constructor(tag){this.tag=tag;this.children=[];this._text='';this.listeners={};this.open=false;this.hidden=false;this.style={};this.classList={add(){},toggle(){}};}
+  get textContent(){return this._text+this.children.map(node=>String(node.textContent??'')).join('');}
+  set textContent(value){this._text=String(value);this.children=[];}
+  append(...nodes){this.children.push(...nodes);}
+  appendChild(node){this.children.push(node);return node;}
+  get ownerDocument(){return document;}
+  replaceChildren(...nodes){this._text='';this.children=nodes;}
+  setAttribute(name,value){this[name]=value;}
+  addEventListener(name,listener){(this.listeners[name]??=[]).push(listener);}
+  fire(name,other={}){const event={target:this,type:name,preventDefault(){this.defaultPrevented=true;},...other};for(const listener of this.listeners[name]||[])listener(event);return event;}
+  showModal(){this.open=true;}
+  close(){this.open=false;this.fire('close');}
+  focus(){this.focused=true;}
+  getBoundingClientRect(){return {left:100,top:100,right:900,bottom:700};}
+}
+const elements=new Map(),focused=new Element('button');
+const getElementById=id=>{if(!elements.has(id))elements.set(id,new Element(id==='image-lightbox'?'dialog':'div'));return elements.get(id);};
+const pendingImages=[];
+const document={getElementById,createElement:tag=>{const item=new Element(tag);if(tag==='img')pendingImages.push(item);return item;},createTextNode:text=>({textContent:text}),activeElement:focused,querySelector:selector=>getElementById(selector==='main'?'main':selector==='h1'?'h1':'subtitle')};
+const images=getElementById('images');
+const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
+const context=vm.createContext({URL,URLSearchParams,AbortSignal,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
+vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
+// The clip follows the fitted image edges rather than the letterboxed element.
+const artwork={clientWidth:1000,clientHeight:600,naturalWidth:400,naturalHeight:600,style:{}};
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 300px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:1000,naturalWidth:600,naturalHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(300px 0px round 64pt)');
+Object.assign(artwork,{clientWidth:600,clientHeight:400});
+context.roundArtwork(artwork);
+assert.equal(artwork.style.clipPath,'inset(0px 0px round 64pt)');
+// Theme colors update in place, and disabling the option removes stale tokens.
+const themeProperties=new Map();
+document.documentElement={
+  toggleAttribute(name,value){this[name]=value;},
+  style:{setProperty:(key,value)=>themeProperties.set(key,value),removeProperty:key=>themeProperties.delete(key)}
+};
+context.CSS={supports:(kind,value)=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)};
+context.applyAppearance({bg:'#101010',text:'#eeeeee',line:'#34495e',button:'#00aa55',controlText:'#55dd88'});
+assert.equal(document.documentElement['data-theme-colors'],true);
+assert.equal(themeProperties.get('--kefania-controlText'),'#55dd88');
+assert.equal(themeProperties.get('--kefania-line'),'#34495e','Themed borders use the supplied VS Code line color');
+context.applyAppearance({bg:'#ffffff',text:'#111111'});
+assert.equal(themeProperties.get('--kefania-bg'),'#ffffff','Changing themes updates the page');
+assert.equal(themeProperties.has('--kefania-button'),false,'Missing theme colors cannot retain stale values');
+assert.equal(themeProperties.has('--kefania-line'),false,'Missing line theme color resets the old border override');
+context.applyAppearance(null);
+assert.equal(document.documentElement['data-theme-colors'],false);
+assert.equal(themeProperties.size,0);
+assert.equal(context.safeLink('javascript:alert(1)'),null);
+assert.equal(context.safeLink('https://user:password@example.com'),null);
+assert.equal(context.cleanProfileReferences('Roma citeturn985362search0 [source](https://example.com/roma) :contentReference[oaicite:2]{index=2}'), 'Roma  [source](https://example.com/roma) ');
+const output=new Element('div');
+context.renderMarkdown(output,'## Profile\n\nA **recognizable** pony with <script>alert(1)</script>.\n\n- [Source](https://example.com/pony)');
+assert.equal(output.children[0].tag,'h2');
+assert(output.children[1].children.some(node=>node.tag==='strong'));
+assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains inert text');
+assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
+const sourceId='019c56c3-06fc-7db3-a928-9c3607e17129';
+const sourceShared='https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
+const localLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+const desktopLink='codex://threads/'+sourceId;
+const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
+  +'- **Online:** '+sourceShared+'\n'
+  +'- **Local:** ['+localLink+']('+localLink+')\n'
+  +'- **Desktop:** ['+desktopLink+']('+desktopLink+')\n\n</details>';
+context.renderMarkdown(output,sourceBlock);
+assert.equal(output.children.at(-1).tag,'details','Verified source footer is a collapsed native disclosure');
+assert.equal(output.children.at(-1).children[0].tag,'summary');
+assert.equal(output.children.at(-1).children[0].textContent,'Source details');
+const sourceRows=output.children.at(-1).children[1].children;
+assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
+assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),[sourceShared,localLink,desktopLink]);
+assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
+context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
+assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
+  'Untrusted source links are not activated');
+context.renderMarkdown(output,'Source: <https://example.com/pony>.');
+assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
+context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
+const inlineNodes=output.children[0].children;
+assert.deepEqual(inlineNodes.filter(node=>node.tag==='em').map(node=>node.textContent),['Friendship Is Magic','Rock Solid Friendship']);
+assert.equal(inlineNodes.find(node=>node.tag==='strong').textContent,'adult mare');
+assert.equal(inlineNodes.find(node=>node.tag==='code').textContent,'*literal*');
+context.renderMarkdown(output,'ordinary_name_part and https://example.com/rock_solid_friendship');
+assert(!output.children[0].children.some(node=>node.tag==='em'),'Underscores in words and URLs remain literal');
+// Image credits commonly use italics and sometimes include a space before a link URL.
+context.renderMarkdown(output,'*Image: Friendship Is Magic episode still (Hasbro/Studio B), preserved by [Twibooru] (https://www.twibooru.org/3559729); not independently created fan art.*');
+const credit=output.children[0].children.find(node=>node.tag==='em');
+assert(credit,'The attribution stays italic');
+const creditLink=credit.children.find(node=>node.tag==='a');
+assert(creditLink,'The source link inside italics is clickable');
+assert.equal(creditLink.textContent,'Twibooru');
+assert.equal(creditLink.href,'https://www.twibooru.org/3559729');
+assert.equal(creditLink.target,'_blank');
+assert.equal(creditLink.rel,'noopener noreferrer');
+context.renderMarkdown(output,'*Source: [Twibooru](https://www.twibooru.org/3559729)* and **[More](https://example.com/more)**');
+const highlighted=output.children[0].children;
+assert(highlighted.find(node=>node.tag==='em').children.some(node=>node.tag==='a'),'Standard links work inside italics');
+assert(highlighted.find(node=>node.tag==='strong').children.some(node=>node.tag==='a'),'Links work inside bold text');
+context.renderMarkdown(output,'*Unsafe [script](javascript:alert(1)) remains plain text; `[literal](https://example.com)` is code.*');
+const unsafe=output.children[0].children.find(node=>node.tag==='em').children;
+assert(!unsafe.some(node=>node.tag==='a'),'Unsafe links are not activated');
+assert.equal(unsafe.find(node=>node.tag==='code').textContent,'[literal](https://example.com)');
+// Nested Markdown emphasis must not consume single stars from strong delimiters.
+context.renderMarkdown(output,'**bold *italic* ending** and *italic **bold** ending* plus ***both***.');
+const nested=output.children[0].children;
+const outerBold=nested.find(node=>node.tag==='strong');
+assert.equal(outerBold.textContent,'bold italic ending');
+assert.equal(outerBold.children.find(node=>node.tag==='em').textContent,'italic');
+const outerItalic=nested.find(node=>node.tag==='em');
+assert.equal(outerItalic.textContent,'italic bold ending');
+assert.equal(outerItalic.children.find(node=>node.tag==='strong').textContent,'bold');
+const triple=nested.filter(node=>node.tag==='strong').at(-1);
+assert.equal(triple.children[0].tag,'em');
+assert.equal(triple.textContent,'both');
+assert.equal(output.textContent,'bold italic ending and italic bold ending plus both.');
+context.renderMarkdown(output,'**Who she is:** A recurring *G4 Friendship is Magic background unicorn mare*, seen in Ponyville.');
+assert.equal(output.textContent,'Who she is: A recurring G4 Friendship is Magic background unicorn mare, seen in Ponyville.');
+assert.equal(output.children[0].children.find(node=>node.tag==='em').textContent,'G4 Friendship is Magic background unicorn mare');
+context.renderMarkdown(output,'**[Source](https://example.com/source) with *credit***');
+const linkedBold=output.children[0].children.find(node=>node.tag==='strong');
+assert.equal(linkedBold.children.find(node=>node.tag==='a').href,'https://example.com/source');
+assert.equal(linkedBold.children.find(node=>node.tag==='em').textContent,'credit');
+context.renderMarkdown(output,'\\*literal\\* and **unfinished');
+assert.equal(output.textContent,'*literal* and **unfinished');
+context.renderMarkdown(output,'\x60**literal**\x60');
+assert.equal(output.children[0].children.find(node=>node.tag==='code').textContent,'**literal**');
+const remainder=context.imageIndex('Profile\n![Pony credit](https://example.com/image.png)\n![Duplicate](https://example.com/image.png)');
+assert(!remainder.includes('!['));
+assert.equal(images.children.length,0,'Image cards are not shown before loading');
+const img=pendingImages.at(-1);
+img.naturalWidth=300;
+img.naturalHeight=250;
+img.onload();
+assert.equal(images.children.length,1,'A successfully loaded thumbnail becomes visible');
+const figure=images.children[0],trigger=figure.children[0],stage=trigger.children[0];
+assert.equal(stage.children[0],img);
+assert.equal(trigger.tag,'button');
+assert.equal(trigger.type,'button');
+assert.equal(img.referrerPolicy,'no-referrer');
+assert.equal(img.src,'https://example.com/image.png');
+assert.equal(figure.children[1].textContent,'Pony credit');
+trigger.fire('click');
+const lightbox=getElementById('image-lightbox');
+assert.equal(lightbox.open,true,'Thumbnails open a modal instead of a new tab');
+assert(Number.parseInt(lightbox.style.height,10)<mockWindow.innerHeight*0.7,'An image does not inherit a nearly full-viewport column of empty space');
+assert.equal(getElementById('lightbox-image').src,'https://example.com/image.png');
+assert.equal(getElementById('lightbox-source').href,'https://example.com/image.png');
+assert.equal(getElementById('lightbox-caption').textContent,'Pony credit · 1 of 1');
+assert.equal(getElementById('lightbox-prev').hidden,true);
+assert.equal(getElementById('lightbox-next').hidden,true);
+getElementById('lightbox-image').fire('error');
+assert.equal(getElementById('lightbox-error').hidden,false,'Failed full images offer a source fallback');
+lightbox.fire('click',{target:getElementById('lightbox-error')});
+assert.equal(lightbox.open,false,'Clicking outside artwork dismisses the modal');
+assert.equal(focused.focused,true,'Focus returns to thumbnail');
+img.onerror();
+assert.equal(images.children.length,0,'Failed thumbnails disappear entirely, including their attribution-only cards');
+const artStart=pendingImages.length;
+context.imageIndex('[![Art credit](https://example.com/art.png)](https://example.com/posts/42)');
+assert.equal(images.children.length,0);
+const artImage=pendingImages[artStart];
+artImage.naturalWidth=250;
+artImage.onload();
+images.children[0].children[0].fire('click');
+assert.equal(getElementById('lightbox-image').src,'https://example.com/art.png','The image still uses its direct asset');
+assert.equal(getElementById('lightbox-source').href,'https://example.com/posts/42','The source opens the contextual artwork page');
+lightbox.close();
+assert.equal(context.imageSourcePage('https://derpicdn.net/img/download/2022/9/26/2954957__safe.png'),'https://derpibooru.org/images/2954957');
+assert.equal(context.imageSourcePage('https://static.manebooru.art/img/2021/12/25/4017785/large.png'),'https://manebooru.art/images/4017785');
+assert.equal(context.imageSourcePage('https://example.com/img/2021/12/25/4017785/large.png'),'https://example.com/img/2021/12/25/4017785/large.png','Unknown hosts are not guessed');
+const orderingStart=pendingImages.length;
+context.imageIndex('![First](https://example.com/first.png)\n![Second](https://example.com/second.png)\n![Duplicate](https://example.com/first.png)');
+assert.equal(images.children.length,0,'Unverified image URLs never reserve empty card slots');
+const firstImage=pendingImages[orderingStart],secondImage=pendingImages[orderingStart+1];
+secondImage.naturalWidth=320;
+secondImage.naturalHeight=160;
+secondImage.onload();
+assert.equal(images.children.length,1);
+assert.equal(images.children[0].children[1].textContent,'Second','Only loaded artwork participates in the gallery');
+images.children[0].children[0].fire('click');
+assert.equal(getElementById('lightbox-next').hidden,true,'Navigation excludes unloaded artwork');
+firstImage.naturalWidth=320;
+firstImage.naturalHeight=640;
+firstImage.onload();
+assert.equal(images.children.length,2,'Late images appear in source order');
+assert.equal(images.children[0].children[1].textContent,'First');
+assert.equal(images.children[1].children[1].textContent,'Second');
+assert.equal(getElementById('lightbox-caption').textContent,'Second · 2 of 2','Loading a preceding image preserves the displayed artwork');
+assert.equal(getElementById('lightbox-prev').hidden,false);
+const galleryHeight=lightbox.style.height;
+const galleryWidth=lightbox.style.width;
+getElementById('lightbox-next').fire('click');
+assert.equal(lightbox.style.height,galleryHeight,'The viewer never changes height on previous/next navigation');
+assert.equal(lightbox.style.width,galleryWidth,'The widest fitted image fixes both arrow positions across navigation');
+const envelope=vm.runInContext(`(()=>{
+  const saved=imageSources;
+  try{
+    imageSources=[{width:400,height:1600}];
+    fitLightboxToGallery();
+    const portraitWidth=parseFloat(lightbox.style.width);
+    imageSources.push({width:1600,height:400});
+    fitLightboxToGallery();
+    return {portraitWidth,width:parseFloat(lightbox.style.width),height:parseFloat(lightbox.style.height)};
+  }finally{imageSources=saved;fitLightboxToGallery()}
+})()`,context);
+const arrowGutters=2*(48+12);
+const fittedPortraitWidth=(1920*.95-48-16)/4;
+assert.equal(envelope.portraitWidth,Math.ceil(fittedPortraitWidth+arrowGutters),'Portrait-only galleries collapse to their fitted artwork plus external arrow gutters');
+assert.equal(envelope.width,960*.72,'A wide image sets the common outer boundary within the viewport budget');
+assert.equal(envelope.height,1920*.95,'The tallest fitted image sets a stable common height');
+mockWindow.innerHeight=1100;
+mockWindow.listeners.resize();
+assert(Number.parseInt(lightbox.style.height,10)<=mockWindow.innerHeight*0.95,'Resizing keeps the viewer within the viewport');
+assert.equal(getElementById('lightbox-image').src,'https://example.com/first.png');
+lightbox.fire('keydown',{key:'ArrowRight'});
+assert.equal(getElementById('lightbox-image').src,'https://example.com/second.png','Next wraps');
+lightbox.fire('keydown',{key:'ArrowLeft'});
+assert.equal(getElementById('lightbox-image').src,'https://example.com/first.png','Previous wraps');
+for(const id of ['lightbox-image','lightbox-prev','lightbox-next']){
+  lightbox.fire('click',{target:getElementById(id)});
+  assert.equal(lightbox.open,true,'Artwork and arrow clicks do not dismiss');
+}
+lightbox.fire('click',{target:new Element('div'),clientX:400,clientY:400});
+assert.equal(lightbox.open,false,'Empty space inside the viewer dismisses');
+trigger.fire('click');
+lightbox.fire('click',{target:getElementById('lightbox-caption')});
+assert.equal(lightbox.open,false,'The credits strip also dismisses');
+trigger.fire('click');
+lightbox.fire('click',{clientX:40,clientY:40});
+assert.equal(lightbox.open,false,'Backdrop click closes');
+const blockedStart=pendingImages.length;
+context.imageIndex('[![Blocked Smolder](https://buffy.mlpforums.com/unavailable.png)](https://mlpforums.com/topic/203315-vectors-of-smolder-and-yona/)\n![Working](https://example.com/working.png)');
+pendingImages[blockedStart].onerror();
+assert.equal(images.children.length,0,'An inaccessible image does not produce a source-only card');
+pendingImages[blockedStart+1].naturalWidth=420;
+pendingImages[blockedStart+1].onload();
+assert.equal(images.children.length,1);
+assert.equal(images.children[0].children[1].textContent,'Working');
+const staleStart=pendingImages.length;
+context.imageIndex('![Old result](https://example.com/old.png)');
+const stale=pendingImages[staleStart];
+context.imageIndex('![New result](https://example.com/new.png)');
+stale.naturalWidth=400;
+stale.onload();
+assert.equal(images.children.length,0,'Late events from previous research cannot populate new galleries');
+pendingImages[staleStart+1].naturalWidth=400;
+pendingImages[staleStart+1].onload();
+assert.equal(images.children.length,1);
+assert.equal(images.children[0].children[1].textContent,'New result');
+assert(html.includes('<div class="pr-heading"><h2 id="title">Preparing your draft</h2></div>'), 'Publication heading stays clear of the PR number');
+assert(html.includes('<div class="merge-action-row"><div id="merge-buttons" class="merge-buttons"><button id="merge" type="button">Squash and merge</button>'), 'Merge buttons have a dedicated action row');
+assert.match(html, /<button id="merge-local-signed"[^>]*>Squash with local Git signer<\/button><\/div><a id="pr-number"[^>]*hidden><\/a><\/div>/, 'PR badge follows every merge method including signed squash');
+assert(html.includes('.merge-action-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}'), 'Merge row wraps on narrow screens');
+assert(html.includes('.merge-action-row .pr-number{margin-left:auto}'), 'PR badge stays at the right side');
+assert.doesNotMatch(html, /<main><header>[^\n]*id="pr-number"/, "The page header has no PR number badge");
+assert.match(html, /\.merge-controls\{margin:12px 0 14px;padding:4px 8px\}\.merge-controls button\{padding:10px 15px;border-radius:10pt\}/, "Merge buttons have 10pt rounding and breathing room");
+assert.match(html, /\.close-confirmation\{[^}]*border-radius:10pt/, "Close control has 10pt rounding");
+assert.match(html, /id="close-confirmation"[^>]*title="Close window">×<\/button>/, 'Close action appears in the initial page HTML');
+assert.doesNotMatch(html, /id="close-confirmation"[^>]*\shidden(?:\s|>)/, 'Close must not wait for draft publication');
+assert.match(html, /const closeVisible=state\.showKefaniaCloseButton!==false/, 'Close visibility follows the existing preference at every generation stage');
+assert.match(html, /root\+'\/close'/, 'Close action uses local handoff');
+assert.match(html, /grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/, 'Pony takes 60% on the left of the wide confirmation layout');
+assert.match(html, /\.layout:has\(#pony-section\[hidden\]\)\{grid-template-columns:minmax\(0,1fr\)\}/, 'PR-only confirmation uses the full grid width');
+assert.match(html, /\.layout:has\(#pony-section\[hidden\]\) \.pony-column\{display:none\}/, 'An absent pony does not leave an empty grid item');
+assert.match(html, /<section id="pony-section" class="card" hidden>/, 'Pony layout starts hidden until matching research exists');
+assert.match(html, /el\('pony-section'\)\.hidden=!state\.pony;/, 'Pony visibility follows live state');
+assert.match(html, /\.close-confirmation\{[^}]*position:fixed;top:20px;left:20px;right:auto[^}]*width:36px;height:36px[^}]*color:#fff/, 'Close action defaults to a left-aligned white X');
+assert.match(html, /\.close-confirmation\.on-right\{left:auto;right:20px\}/, 'Window-right option remains fixed');
+assert.match(html, /\.pony-column\{display:flex;flex-direction:column;min-width:0\}/, 'Pony content owns the left-hand column');
+assert(html.indexOf('<div class="pony-column">') < html.indexOf('<section class="card"><div class="card-head"><p class="eyebrow">Pull request'), 'The pony column appears before the PR preview in desktop and stacked layouts');
+assert.match(html, /<main><header>[^\n]*<button id="close-confirmation"[^>]+>×<\/button><\/header>/, 'Middle X belongs in the page title header');
+assert.match(html, /<div class="pony-column"><section id="pony-section"/, 'Pony card starts at the top of its column without a preceding X');
+assert.doesNotMatch(html, /<div class="pony-column"><button id="close-confirmation"/, 'Close button must not consume pony-column height');
+assert.match(html, /\.close-button-middle header\{position:relative;padding-right:60px\}/, 'Header reserves space for the middle X');
+assert.match(html, /\.close-button-middle \.close-confirmation\{position:absolute;top:50%;left:auto;right:8px;transform:translateY\(-50%\);margin:0\}/, 'Middle X is right-aligned in the title row and does not shift either card');
+assert.match(html, /for\(const position of \['left','middle','right'\]\)document\.querySelector\('main'\)\.classList\.toggle/, 'All three placements update on the live state poll');
+assert.match(html, /\.close-button-left header\{padding-left:44px\}/, 'Only visible left X reserves header space');
+assert.match(html, /\.lightbox\[open\]\{display:grid;grid-template-rows:minmax\(0,1fr\) auto\}/, 'Lightbox has only image and footer rows');
+assert.doesNotMatch(html, /class="lightbox-toolbar"/, 'No empty top banner');
+assert.doesNotMatch(html, /lightbox-close/, 'The image viewer has no X button');
+assert.match(html, /\.lightbox-nav\{[^}]*position:absolute;top:50%[^}]*height:min\(75%,560px\)/, 'Arrows resize with the compact image stage instead of spanning empty space');
+assert.match(html, /function fitLightboxToGallery\(\)/, 'Artwork dimensions determine a common height across the carousel');
+assert.match(html, /source\.height=img\.naturalHeight/, 'Natural image dimensions are retained for fitting');
+assert.match(html, /\.lightbox-stage img\{[^}]*width:0;height:100%[^}]*object-fit:contain/, 'All images use one contained stage size');
+assert.match(html, /padding:8px calc\(var\(--arrow-width\) \+ var\(--arrow-gap\)\)/, 'Image padding reserves the full arrow width plus a gap on each side');
+assert.match(html, /\.lightbox-nav\{[^}]*width:var\(--arrow-width\)/, 'Arrow widths match the reserved gutters');
+assert.doesNotMatch(html, /PR drafting and pony research finish independently\./, 'Redundant footer is removed');
+assert.match(html, /state\.pony\?' and supporting character research':''/, 'Pony research is named only when there is a matching pony');
+assert.match(html, /const confirmationToken =/, 'Unique tab token lets VS Code close the moved confirmation safely');
+console.log('Confirmation Markdown, lightbox, image fallback, and close action checks passed.');
+
+(async()=>{
+  // Exercise the real refresh() transitions so PR-only, pony, and published states
+  // cannot accidentally leave a narrow column or a stale research subtitle.
+  let layoutState={errors:{}};
+  context.fetch=async()=>({ok:true,json:async()=>layoutState});
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,false,'The close X is visible while the PR is still being drafted');
+  layoutState={errors:{},showKefaniaCloseButton:false};
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,true,'The existing hide-X preference applies during generation');
+  layoutState={errors:{},showKefaniaCloseButton:true};
+  await context.refresh();
+  assert.equal(getElementById('close-confirmation').hidden,false,'Enabling the preference restores the X before publication');
+  assert.equal(getElementById('pony-section').hidden,true,'An ordinary branch hides the pony section');
+  assert.equal(getElementById('subtitle').textContent,'Review the pull request draft.');
+  layoutState={errors:{},pony:{name:'Kefania',slug:'kefania'},result:{number:23,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/23'}};
+  await context.refresh();
+  assert.equal(getElementById('pony-section').hidden,false,'A pony match restores the split layout');
+  assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details and supporting character research.');
+  layoutState={...layoutState,pony:null};
+  await context.refresh();
+  assert.equal(getElementById('pony-section').hidden,true,'Switching back to PR-only removes the pony column');
+  assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details.');
+  layoutState={errors:{merge:'Resolve the overlapping edits.'},result:{number:479,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/479'},mergeIssue:{kind:'conflict',message:'Resolve the overlapping edits.'},mergeHelpAvailable:true};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Merge conflicts need resolution');
+  assert.equal(getElementById('merge-issue').hidden,false,'Conflict notice is prominent rather than a tiny published-PR footnote');
+  assert.equal(getElementById('merge-issue-title').textContent,'Merge conflicts need resolution');
+  assert.equal(getElementById('merge-help').hidden,false,'The shared Lindsey recovery entry is available');
+  assert.match(getElementById('subtitle').textContent,/published, but not merged/);
+  layoutState={...layoutState,mergeIssue:{kind:'method',message:'Select merge method'}};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Merge method required');
+  assert.equal(getElementById('merge-help').hidden,true,'Authorship choice uses the existing method controls');
+  layoutState={...layoutState,mergeResult:{merged:true}};
+  await context.refresh();
+  assert.equal(getElementById('merge-issue').hidden,true,'Verified merge removes the blocker banner');
+  assert.equal(getElementById('merge-controls').hidden,false,'Merged PR retains its PR link');
+  assert.equal(getElementById('merge-buttons').hidden,true,'Merged PR hides merge methods but keeps the PR badge');
+  assert.equal(getElementById('pr-number').hidden,false,'PR badge stays visible after merge');
+  layoutState={errors:{},draft:{title:'🐞 Preserve branch windows',body:'The PR description.'},publishing:true};
+  await context.refresh();
+  assert.equal(getElementById('h1').textContent,'🐞 Preserve branch windows');
+  assert.equal(getElementById('title').textContent,'Publishing…');
+  assert.equal(getElementById('pr-number').hidden,true);
+  layoutState={...layoutState,publishing:false,result:{number:439,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/439'}};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Successfully published');
+  assert.equal(getElementById('pr-number').textContent,'#439');
+  assert.equal(getElementById('merge-controls').hidden,false,'Published PR shows the merge action row');
+  assert.equal(getElementById('merge-buttons').hidden,false,'Published PR shows merge methods');
+  assert.equal(getElementById('pr-number').href,layoutState.result.url);
+  assert.equal(getElementById('draft-status').hidden,true,'No duplicate publication status below the controls');
+  layoutState={...layoutState,result:null,errors:{publish:'GitHub rejected publication: branch has no new commits.'}};
+  await context.refresh();
+  assert.equal(getElementById('title').textContent,'Publication failed');
+  assert.equal(getElementById('draft-status').textContent,layoutState.errors.publish,'Show the specific error');
+  assert.equal(getElementById('draft-status').hidden,false);
+  assert.equal(getElementById('pr-number').hidden,true,'An unsuccessful publication has no PR badge');
+  console.log('Kefania title, number badge and publication status checks passed.');
+
+  let merges=0, prompts=0;
+  let state={result:{number:2,base:'main'}};
+  context.fetch=async (url, options)=>{
+    if(options?.method==='POST'){merges++;return {ok:true,json:async()=>({merged:true})};}
+    return {ok:true,json:async()=>state};
+  };
+  context.refresh=async()=>{};
+  context.confirm=()=>{prompts++;return false;};
+  await getElementById('merge').onclick();
+  assert.equal(prompts,1,'Default mode asks before merging');
+  assert.equal(merges,0,'Cancelling confirmation cannot merge');
+  state.ludicrousMode=true;
+  context.confirm=()=>{throw new Error('Ludicrous mode must skip confirmation');};
+  await getElementById('merge').onclick();
+  assert.equal(merges,1,'Ludicrous mode merges on the explicit button click');
+  state.merging=true;
+  await getElementById('merge').onclick();
+  assert.equal(merges,1,'A merge already in progress stays guarded');
+  state={ludicrousMode:true};
+  await getElementById('merge').onclick();
+  assert.equal(merges,1,'Ludicrous mode cannot merge an unpublished PR');
+  state={result:{number:2},ludicrousMode:false};
+  context.confirm=()=>{prompts++;return true;};
+  await getElementById('merge').onclick();
+  assert.equal(prompts,2,'Turning the setting off restores confirmation');
+  assert.equal(merges,2);
+  let signerPrompts=0,signerCalls=0;
+  state={result:{number:2},mergeChoice:'SQUASH_AUTHOR_CHOICE_REQUIRED',localSignedMergeAvailable:true,ludicrousMode:true};
+  context.confirm=()=>{signerPrompts++;return false;};
+  context.fetch=async (url,options)=>{
+    if(options?.method==='POST')signerCalls++;
+    return {ok:true,json:async()=>state};
+  };
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,1,'Even ludicrous mode needs explicit local rewrite approval');
+  assert.equal(signerCalls,0,'Cancelling cannot rewrite a branch');
+  state.mergeChoice=undefined;
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,1,'No signer action without attribution choice');
+  // Restore the normal successful merge mock for close-after-merge assertions.
+  state={result:{number:2},ludicrousMode:false};
+  context.confirm=()=>{prompts++;return true;};
+  context.fetch=async (url,options)=>{
+    if(options?.method==='POST'){merges++;return {ok:true,json:async()=>({merged:true})};}
+    return {ok:true,json:async()=>state};
+  };
+  let closes=0;
+  const originalClose=getElementById('close-confirmation').onclick;
+  getElementById('close-confirmation').onclick=async()=>{closes++;};
+  await getElementById('merge').onclick();
+  assert.equal(closes,0,'Disabled close-after-merge keeps the window open');
+  state.closeAfterMerge=true;
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Confirmed merge closes the window when enabled');
+  context.fetch=async (_url,options)=>options?.method==='POST'
+    ? {ok:false,json:async()=>({error:'Merge conflict'})}
+    : {ok:true,json:async()=>state};
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Failed merge leaves the window open');
+  context.fetch=async (_url,options)=>options?.method==='POST'
+    ? {ok:true,json:async()=>({merged:false})}
+    : {ok:true,json:async()=>state};
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Unconfirmed merge leaves the window open');
+  getElementById('close-confirmation').onclick=originalClose;
+  let nativeCloses=0;
+  mockWindow.close=()=>{nativeCloses++;};
+  context.fetch=async()=>{throw new TypeError('Failed to fetch');};
+  await originalClose();
+  assert.equal(nativeCloses,1,'A missing local server closes only this browser tab');
+  context.fetch=async()=>({ok:false,status:410});
+  await originalClose();
+  assert.equal(nativeCloses,2,'An expired handoff still permits the browser close fallback');
+  context.fetch=async(_url,options)=>{assert.equal(options.signal.aborted,false);return {ok:true};};
+  await originalClose();
+  assert.equal(nativeCloses,2,'Successful host closure does not also close another tab');
+  console.log('Ludicrous mode and offline close fallback checks passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

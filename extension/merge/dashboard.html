@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src __CSP_SOURCE__ https:; style-src __CSP_SOURCE__ 'unsafe-inline'; script-src 'nonce-__NONCE__';">
+<title>Lindsey merge progress</title>
+<style>
+:root{color-scheme:light dark;--merge-complete-color:#ac11ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground);font:13px/1.5 var(--vscode-font-family,system-ui)}
+button{font:inherit;cursor:pointer;color:inherit}
+button:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+header{padding:16px 20px;border-bottom:1px solid var(--vscode-panel-border,#555);display:flex;align-items:center;gap:16px;justify-content:space-between;flex-wrap:wrap}
+h1{margin:0;font-size:20px;font-weight:700}
+h2{font-size:16px;margin:0 0 12px}
+h3{margin:16px 0 8px;font-size:13px}
+.owner-logo{display:block;width:28px;height:28px;object-fit:contain;border-radius:4px;margin-top:6px}
+.subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
+.overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
+.refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
+.refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
+.refresh-icon svg{width:16px;height:16px}
+.bar{height:6px;background:var(--vscode-progressBar-background,#444);margin:0;border-radius:0;opacity:.3}
+.bar-fill{height:100%;background:var(--merge-complete-color);width:0%;transition:width .2s}
+body{height:100vh;display:flex;flex-direction:column}
+header,.bar,.notice{flex-shrink:0}
+.layout{display:grid;grid-template-columns:minmax(0,var(--sidebar-width,37%)) 6px minmax(0,1fr);flex:1;min-height:0}
+aside{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.section-heading{flex-shrink:0}
+.splitter{position:relative;background:transparent;touch-action:none;flex-shrink:0;outline-offset:-2px}
+.splitter::before{content:"";position:absolute;background:var(--vscode-panel-border,#555);opacity:.6;pointer-events:none}
+.splitter:hover,.splitter:focus-visible,.splitter.dragging{outline:none}
+.splitter:hover::before,.splitter:focus-visible::before,.splitter.dragging::before{background:var(--vscode-focusBorder,#468cdb);opacity:1}
+.splitter.vertical{cursor:col-resize}
+.splitter.vertical::before{top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%)}
+.splitter.horizontal{height:6px;cursor:row-resize}
+.splitter.horizontal::before{left:0;right:0;top:50%;height:2px;transform:translateY(-50%)}
+body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cursor)!important}
+.section-heading{padding:14px 16px 6px}
+.prs{overflow-y:auto;min-height:100px;flex:1;padding:4px 10px}
+.pr{display:block;text-align:left;width:100%;padding:11px;margin-bottom:8px;background:transparent;border:1px solid var(--vscode-widget-border,#555);border-radius:8px}
+.pr[aria-current="true"]{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground);border-color:var(--vscode-focusBorder)}
+.row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.name{display:block;font-weight:650;overflow-wrap:anywhere}
+.flag{font-size:11px;font-weight:700;border-radius:16px;padding:2px 9px;background:var(--vscode-input-background);border:1px solid var(--vscode-widget-border,#555);white-space:nowrap}
+.flag.merged{color:var(--merge-complete-color);border-color:currentColor}
+.flag.resolved{color:var(--vscode-testing-iconPassed,#3cbb78);border-color:currentColor}
+.flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
+.flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
+.events{flex:0 0 var(--timeline-height,34%);min-height:0;overflow:auto;padding:10px 16px}
+.timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.timeline-heading h2{margin:0}
+.timeline-time-picker{display:flex;align-items:center;gap:5px;color:var(--vscode-descriptionForeground);font-size:11px}
+.timeline-time-picker select{font:inherit;color:var(--vscode-dropdown-foreground,var(--vscode-foreground));background:var(--vscode-dropdown-background,var(--vscode-input-background));border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,#555));border-radius:4px;padding:2px 4px;max-width:100%}
+.timeline-time-picker select:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:1px}
+.event{border-left:2px solid var(--vscode-widget-border,#666);padding:0 0 12px 10px;margin:0 0 2px 3px}
+.event.merged{border-color:var(--merge-complete-color)}
+.event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
+.event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
+.event.review-comment{border-color:var(--vscode-charts-blue,#468cdb)}
+.event-link{font-weight:600;color:var(--vscode-textLink-foreground,#4ca5ff)}
+.event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
+.event-details{font-size:12px;color:var(--vscode-descriptionForeground);white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.event-disclosure>summary{cursor:pointer;overflow-wrap:anywhere}
+.event-disclosure>summary:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+.event-summary{font-weight:650;overflow-wrap:anywhere}
+.event-commit-sha{display:inline-block;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-weight:400;color:inherit;background:var(--vscode-textCodeBlock-background,var(--vscode-editorWidget-background,#333));padding:1px 4px;border-radius:3px;white-space:nowrap}
+.event-expanded{margin:5px 0 4px 12px;overflow-wrap:anywhere}
+.event-status{font-weight:600;font-size:12px}
+.event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
+main{padding:18px 22px 32px;overflow:auto;min-width:0}
+.detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.detail-top h2{flex:1;margin:0}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.secondary{border:1px solid var(--vscode-button-border,var(--vscode-widget-border,#666));background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);padding:6px 10px;border-radius:6px}
+.panel{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;padding:14px;margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.blocker-choice{margin-top:10px;padding-top:10px;border-top:1px solid var(--vscode-widget-border,#555);white-space:normal}
+.blocker-choice .muted{margin-top:5px}
+.blocker-choice button{min-height:36px;max-width:100%;text-align:left}
+.action-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.action-heading h3{margin:0}
+.runner-control{display:flex;align-items:center;gap:9px;margin-left:auto}
+.runner-switch{position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:182px;padding:3px;border:1px solid var(--vscode-widget-border,#666);border-radius:999px;background:var(--vscode-input-background,var(--vscode-editorWidget-background))}
+.runner-switch::before{content:"";position:absolute;z-index:0;left:3px;top:3px;width:calc((100% - 6px)/2);height:calc(100% - 6px);border-radius:999px;background:var(--vscode-button-background,#0e639c);transition:transform 190ms ease}
+.runner-switch[data-engine="codex"]::before{transform:translateX(100%)}
+.runner-option{position:relative;z-index:1;border:0;border-radius:999px;background:transparent;padding:5px 8px;min-height:29px;color:var(--vscode-foreground);font-weight:500;text-align:center;white-space:nowrap}
+.runner-option[aria-pressed="true"]{color:var(--vscode-button-foreground,#fff);font-weight:650}
+.runner-option:focus-visible{outline-offset:2px}
+.action-intro{margin:10px 0 4px;white-space:normal}
+.action-primary{border:1px solid var(--vscode-button-border,transparent);background:var(--vscode-button-background,#0e639c);color:var(--vscode-button-foreground,#fff);border-radius:7px;padding:10px 14px;font-weight:650;font-size:13px;width:100%}
+.action-primary:hover{background:var(--vscode-button-hoverBackground,var(--vscode-button-background,#1177bb))}
+.action-choice{display:block;width:100%;padding:8px 12px}
+.action-recommended{font-weight:650;color:var(--vscode-descriptionForeground)}
+.workspace-only[hidden]{display:none}
+@media(prefers-reduced-motion:reduce){.runner-switch::before{transition:none}}
+.panel h3{margin:0 0 8px}
+.markdown-panel{white-space:normal}
+.markdown-content{white-space:normal;overflow-wrap:anywhere;line-height:1.55}
+.markdown-content :first-child{margin-top:0}
+.markdown-content :last-child{margin-bottom:0}
+.markdown-content p{margin:8px 0;white-space:pre-wrap}
+.markdown-content h1,.markdown-content h2,.markdown-content h3,.markdown-content h4,.markdown-content h5,.markdown-content h6{margin:14px 0 6px;line-height:1.35}
+.markdown-content h1{font-size:18px}.markdown-content h2{font-size:16px}.markdown-content h3{font-size:14px}
+.markdown-content ul,.markdown-content ol{padding-left:22px;margin:8px 0}
+.markdown-content li{padding:2px 0}
+.markdown-content li input{margin:0 6px 0 0;vertical-align:middle}
+.markdown-content a{color:var(--vscode-textLink-foreground,#3794ff);text-decoration:underline;text-underline-offset:2px}
+.markdown-content a:hover{color:var(--vscode-textLink-activeForeground,#4daafc)}
+.markdown-content code{font-family:var(--vscode-editor-font-family,monospace);background:var(--vscode-textCodeBlock-background,#333);border-radius:3px;padding:1px 4px;white-space:pre-wrap}
+.markdown-content pre{white-space:pre;overflow:auto;margin:8px 0}
+.markdown-content pre code{padding:0;background:transparent;white-space:pre}
+.markdown-content blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,#777);margin:8px 0;padding:1px 0 1px 12px;color:var(--vscode-descriptionForeground)}
+.markdown-content table{display:block;max-width:100%;overflow:auto;border-collapse:collapse;margin:8px 0}
+.markdown-content th,.markdown-content td{padding:5px 8px;border:1px solid var(--vscode-widget-border,#555);text-align:left}
+.markdown-content hr{border:0;border-top:1px solid var(--vscode-widget-border,#555);margin:12px 0}
+.empty{color:var(--vscode-descriptionForeground);font-style:italic}
+.review-comment{border:1px solid var(--vscode-widget-border,#555);border-radius:6px;margin:8px 0;overflow:hidden;white-space:normal}
+.review-comment>summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
+.review-comment>summary:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:-2px}
+.review-comment-title{font-weight:600}
+.review-comment-location{display:block;color:var(--vscode-descriptionForeground);font:11px/1.5 var(--vscode-editor-font-family,monospace);padding-left:18px;overflow-wrap:anywhere}
+.review-comment-body{padding:0 12px 12px;border-top:1px solid var(--vscode-widget-border,#555)}
+.review-comment-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0;font-size:11px;color:var(--vscode-descriptionForeground)}
+.file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
+.file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
+.file summary span{float:right}
+pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
+/* Resolved VS Code theme tokens already include workbench.colorCustomizations in settings.json. */
+pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-background,var(--vscode-textCodeBlock-background));color:var(--vscode-editor-foreground,var(--vscode-foreground))}
+.diff-line{display:block;box-sizing:border-box;width:max-content;min-width:100%;min-height:1.55em;padding:0 12px;border-inline-start:3px solid transparent;white-space:pre;line-height:1.55}
+.diff-line--added{background:var(--vscode-diffEditor-insertedLineBackground,rgba(46,160,67,.17));border-inline-start-color:var(--vscode-diffEditorGutter-insertedLineBackground,var(--vscode-gitDecoration-addedResourceForeground,#3fb950))}
+.diff-line--removed{background:var(--vscode-diffEditor-removedLineBackground,rgba(248,81,73,.17));border-inline-start-color:var(--vscode-diffEditorGutter-removedLineBackground,var(--vscode-gitDecoration-deletedResourceForeground,#f85149))}
+.diff-line--added .diff-line-text{background:var(--vscode-diffEditor-insertedTextBackground,transparent)}
+.diff-line--removed .diff-line-text{background:var(--vscode-diffEditor-removedTextBackground,transparent)}
+.diff-line-prefix{font-weight:700}
+.diff-line--added .diff-line-prefix{color:var(--vscode-gitDecoration-addedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--removed .diff-line-prefix{color:var(--vscode-gitDecoration-deletedResourceForeground,var(--vscode-editor-foreground))}
+.diff-line--hunk,.diff-line--meta{background:var(--vscode-diffEditor-unchangedRegionBackground,var(--vscode-editorWidget-background,transparent));color:var(--vscode-diffEditor-unchangedRegionForeground,var(--vscode-descriptionForeground))}
+.diff-line--note{color:var(--vscode-descriptionForeground)}
+.notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
+.pr-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px}.pr-commit-tree{position:sticky;top:0;align-self:start;max-height:70vh;overflow:auto;border-left:1px solid var(--vscode-panel-border,#555);padding-left:12px}.commit-tree-list{position:relative}.commit-tree-list svg{position:absolute;left:0;top:0;stroke:var(--vscode-charts-green,#62b879);fill:var(--vscode-charts-green,#62b879)}.commit-tree-item{display:block;box-sizing:border-box;min-height:52px;height:auto;overflow:visible;text-align:left;border:0;background:transparent;font-size:11px;line-height:16px;padding:8px 4px;max-width:none;white-space:normal;overflow-wrap:anywhere}.commit-tree-sha{display:inline-block;font:inherit;font-family:var(--vscode-editor-font-family,monospace);background:var(--vscode-textCodeBlock-background,var(--vscode-editorWidget-background,#333));color:inherit;border-radius:3px;padding:1px 4px;white-space:nowrap}.local-runner-details{white-space:pre-wrap;overflow-wrap:anywhere}.blocker-notice{padding:8px 20px}.blocker-notice button{margin-left:8px}@media(max-width:850px){.pr-detail-layout{display:block}.pr-commit-tree{position:static;max-height:240px;border-left:0;border-top:1px solid var(--vscode-panel-border,#555);margin-top:14px}}
+.footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
+@media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
+/* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
+@media(max-width:650px){body{height:auto;min-height:100vh}.layout{display:block;flex:none}aside{height:370px;border-bottom:1px solid var(--vscode-panel-border,#555)}.splitter.vertical{display:none}main{overflow:visible}}
+</style>
+</head>
+<body>
+<header>
+<div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
+<div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="muted" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+</header>
+<div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+<div id="blocker-notice" class="blocker-notice" hidden></div>
+<div id="notice" class="notice" hidden></div>
+<div class="layout">
+<aside aria-label="Merge timeline">
+  <nav id="merge-workers" aria-label="GPT review sessions" hidden></nav>
+  <div class="section-heading"><h2>Selected pull requests</h2></div>
+  <div id="prs" class="prs"></div>
+  <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
+  <div id="timeline" class="events">
+    <div class="timeline-heading">
+      <h2>Activity timeline</h2>
+      <label class="timeline-time-picker" for="timeline-time-mode">Time
+        <select id="timeline-time-mode" aria-label="Activity timeline timestamps">
+          <option value="hidden">Hidden</option>
+          <option value="relative">Relative</option>
+          <option value="clock">Clock</option>
+        </select>
+      </label>
+    </div>
+    <div id="events"></div>
+  </div>
+</aside>
+<div id="details-splitter" class="splitter vertical" role="separator" tabindex="0" aria-label="Resize pull request list and details" aria-orientation="vertical" aria-controls="prs details"></div>
+<main id="details" aria-live="polite"><p class="empty">Waiting for live GitHub data…</p></main>
+</div>
+<script nonce="__NONCE__">
+__MARKDOWN_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__DIFF_RENDERER__
+__COMMIT_TREE__
+__ACTIVITY_RENDERER__
+</script>
+<script nonce="__NONCE__">
+__TIMESTAMP_FORMATTER__
+__RATE_LIMIT_FORMATTER__
+</script>
+<script nonce="__NONCE__">
+(() => {
+  const vscode = acquireVsCodeApi();
+  const byId = id => document.getElementById(id);
+  const layout = document.querySelector('.layout');
+  const sidebar = document.querySelector('aside');
+  const savedLayout = vscode.getState() || {};
+  const validRatio = value => Number.isFinite(value) && value > 0 && value < 1;
+  let sidebarRatio = validRatio(savedLayout.sidebarRatio) ? savedLayout.sidebarRatio : null;
+  let timelineRatio = validRatio(savedLayout.timelineRatio) ? savedLayout.timelineRatio : 0.34;
+  let layoutPreferences = savedLayout.layoutPreferences || null;
+  const expandedReviewComments = new Set();
+  const openActivities = new Set();
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  function saveLayout() {
+    vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
+  }
+  function bounds(kind) {
+    if (kind === 'sidebar') {
+      const total = layout.clientWidth - byId('details-splitter').offsetWidth;
+      return { total, min: Math.min(160, total / 2), max: total - Math.min(200, total / 2) };
+    }
+    const total = sidebar.clientHeight - sidebar.querySelector('.section-heading').offsetHeight - byId('timeline-splitter').offsetHeight;
+    return { total, min: Math.min(80, total / 2), max: total - Math.min(100, total / 2) };
+  }
+  function applySize(kind, requested) {
+    const { total, min, max } = bounds(kind);
+    if (total <= 0) return;
+    const size = clamp(requested, min, max);
+    if (kind === 'sidebar') layout.style.setProperty('--sidebar-width', size + 'px');
+    else sidebar.style.setProperty('--timeline-height', size + 'px');
+    const handle = byId(kind === 'sidebar' ? 'details-splitter' : 'timeline-splitter');
+    handle.setAttribute('aria-valuemin', Math.round(min / total * 100));
+    handle.setAttribute('aria-valuemax', Math.round(max / total * 100));
+    handle.setAttribute('aria-valuenow', Math.round(size / total * 100));
+    return size / total;
+  }
+  function restoreSizes() {
+    // Keep the saved wide-layout ratio while the details are stacked on narrow windows.
+    if (window.innerWidth > 650) {
+      applySize('sidebar', bounds('sidebar').total * (sidebarRatio ?? (window.innerWidth <= 900 ? 0.4 : 0.37)));
+    }
+    applySize('timeline', bounds('timeline').total * timelineRatio);
+  }
+  function rememberSize(kind, size) {
+    const ratio = applySize(kind, size);
+    if (ratio === undefined) return;
+    if (kind === 'sidebar') sidebarRatio = ratio;
+    else timelineRatio = ratio;
+  }
+  function setupSplitter(id, kind) {
+    const handle = byId(id);
+    let drag = null;
+    const position = event => kind === 'sidebar' ? event.clientX : event.clientY;
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || drag) return;
+      event.preventDefault();
+      handle.focus();
+      drag = { id: event.pointerId, start: position(event), size: kind === 'sidebar' ? sidebar.clientWidth : byId('timeline').offsetHeight };
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add('dragging');
+      document.body.classList.add('resizing');
+      document.body.style.setProperty('--resize-cursor', kind === 'sidebar' ? 'col-resize' : 'row-resize');
+    });
+    handle.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      rememberSize(kind, drag.size + (position(event) - drag.start) * (kind === 'sidebar' ? 1 : -1));
+    });
+    const finish = event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      drag = null;
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      saveLayout();
+    };
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) handle.addEventListener(type, finish);
+    handle.addEventListener('keydown', event => {
+      const keys = kind === 'sidebar' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowDown', 'ArrowUp'];
+      if (![...keys, 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const { min, max } = bounds(kind);
+      const current = kind === 'sidebar' ? sidebar.clientWidth : byId('timeline').offsetHeight;
+      rememberSize(kind, event.key === 'Home' ? min : event.key === 'End' ? max : current + (event.key === keys[0] ? -1 : 1) * (event.shiftKey ? 40 : 10));
+      saveLayout();
+    });
+  }
+  setupSplitter('details-splitter', 'sidebar');
+  setupSplitter('timeline-splitter', 'timeline');
+  const layoutObserver = new ResizeObserver(restoreSizes);
+  layoutObserver.observe(layout);
+  layoutObserver.observe(sidebar);
+  restoreSizes();
+  let model = { prs: [], events: [] };
+  let selected = null;
+  let disposeCommitTree;
+  let actionEngine = 'web';
+  const labels = {
+    waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Conflicts cleared',
+    conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
+    queued: 'Queued', updated: 'Updated', closed: 'Closed'
+  };
+  function el(tag, className, value) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (value !== undefined) node.textContent = String(value);
+    return node;
+  }
+  function show(tag, cls, text, parent) {
+    const node = el(tag, cls, text);
+    parent.appendChild(node);
+    return node;
+  }
+  function pullRequestPriority(pr) {
+    if (pr.state === 'merged') return 3;
+    if (pr.state === 'closed') return 2;
+    if (pr.localReview || ['review', 'conflict', 'blocked', 'updated'].includes(pr.state)) return 0;
+    return 1;
+  }
+  function dispatch(type, number, url) { vscode.postMessage({ type, number, url }); }
+  function showTextPanel(parent, heading, content, missing, markdown = false) {
+    const panel = el('section', markdown ? 'panel markdown-panel' : 'panel');
+    show('h3', '', heading, panel);
+    const body = el('div', content ? (markdown ? 'markdown-content' : '') : 'empty');
+    if (content && markdown) {
+      renderMergeMarkdown(body, content, {
+        baseUrl: 'https://github.com/' + model.repository + '/',
+        openLink: url => dispatch('open-link', undefined, url)
+      });
+    } else body.textContent = content || missing;
+    panel.appendChild(body);
+    parent.appendChild(panel);
+    return body;
+  }
+  function renderDetail() {
+    disposeCommitTree?.();
+    disposeCommitTree = undefined;
+    const outer = byId('details');
+    const scroll = outer.scrollTop;
+    outer.replaceChildren();
+    const layout = show('div', 'pr-detail-layout', undefined, outer);
+    const parent = show('div', '', undefined, layout);
+    const pr = model.prs.find(p => p.number === selected);
+    if (!pr) return;
+    const top = show('div', 'detail-top', undefined, parent);
+    show('h2', '', '#' + pr.number + ' ' + pr.title, top);
+    show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
+    if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
+    const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base) +
+      (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
+    branchLine.title = pr.head + ' → ' + (pr.currentBase || pr.base);
+    const actions = show('div', 'actions', undefined, parent);
+    for (const item of [['open-pr', 'View PR'], ['open-diff', 'GitHub file diff']]) {
+      const button = show('button', 'secondary', item[1], actions);
+      button.addEventListener('click', () => dispatch(item[0], pr.number));
+    }
+    if (pr.mergedAt) {
+      const outcome = showTextPanel(parent, '✓ Verified outcome',
+        formatMergeOutcome(pr.mergedAt, pr.mergeCommit, model.timestampMode), '');
+      outcome.dataset.mergeOutcome = 'true';
+    } else if (pr.state === 'resolved') {
+      showTextPanel(parent, '✓ Conflict resolution', 'GitHub now reports a mergeable PR after a head change. This is not a completed merge.', '');
+    }
+    if (pr.localRecovery?.stage) showTextPanel(parent,
+      'Saved local recovery · not GitHub status',
+      'Last local operation: ' + pr.localRecovery.stage +
+      (pr.localRecovery.lastPushedHead ? '\nLast prepared commit: ' + pr.localRecovery.lastPushedHead.slice(0, 12) : '') +
+      '\nMerge eligibility is always rechecked against GitHub.', '');
+    if (pr.analysis?.length) for (const note of pr.analysis) showTextPanel(parent, note.path, note.text, '', true);
+    if (pr.localReview?.text && pr.state !== 'merged') showTextPanel(parent,
+      pr.snapshotChanged ? 'Batch selection changed' : pr.localReview.notes?.length ? 'Integration notes' : 'Why this PR needs attention', pr.localReview.text, '', true);
+    if (pr.review && !pr.analysis?.length && pr.state !== 'merged' &&
+        !(pr.inlineReviewComments || []).some(comment => String(comment.id) === String(pr.review.id))) showTextPanel(parent,
+      'Human review requested · GitHub comment', pr.review.text, '', true);
+    const inlineReview = pr.inlineReviewComments || [];
+    if (inlineReview.length) {
+      const section = show('section', 'panel markdown-panel', undefined, parent);
+      show('h3', '', 'Code review comments (' + inlineReview.length + ')', section);
+      for (const comment of inlineReview) {
+        const key = pr.number + ':' + comment.id;
+        const details = show('details', 'review-comment', undefined, section);
+        details.open = expandedReviewComments.has(key);
+        details.addEventListener('toggle', () => {
+          if (details.open) expandedReviewComments.add(key);
+          else expandedReviewComments.delete(key);
+        });
+        const summary = show('summary', '', undefined, details);
+        show('span', 'review-comment-title', comment.title, summary);
+        show('span', 'review-comment-location',
+          comment.path + ' · ' + comment.location + (comment.outdated ? ' · outdated' : ''), summary);
+        const body = show('div', 'review-comment-body markdown-content', undefined, details);
+        const meta = show('div', 'review-comment-meta', undefined, body);
+        if (comment.author) show('span', '', '@' + comment.author, meta);
+        if (comment.url.startsWith('https://github.com/')) {
+          const link = show('a', '', 'View on GitHub', meta);
+          link.href = comment.url;
+          link.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            dispatch('open-link', undefined, comment.url);
+          });
+        }
+        renderMergeMarkdown(body, comment.text || 'No comment text.', {
+          baseUrl: 'https://github.com/' + model.repository + '/',
+          openLink: url => dispatch('open-link', undefined, url)
+        });
+      }
+    }
+    const localInfo = [pr.localExplanation,
+      ...Object.values(pr.localDecisions || {}).map(item =>
+        [item.title, item.path, item.description].filter(Boolean).join('\n')),
+      pr.localResultReason].filter(Boolean).join('\n\n');
+    if (localInfo) {
+      const concise = String(pr.localExplanation || pr.localResultReason || '').split(/(?<=[.!?])\s+/)
+        .filter(sentence => !/^(Verified|Reverified|Current main|Original|The original|Oldest|Use |Require |The local|PR #|Selected|Inspected|Codex |Preserve the exact)/i.test(sentence)).join(' ');
+      showTextPanel(parent, 'AI explanation · Local session', (concise || pr.localResultReason || 'Prepared an integration preserving the current base and this PR’s changes.').slice(0, 600), '', true);
+      const runner = show('details', '', undefined, parent);
+      show('summary', 'muted', 'Runner details', runner);
+      show('div', 'local-runner-details', localInfo, runner);
+    }
+    if (pr.report?.text) showTextPanel(parent, 'AI explanation · GitHub report', pr.report.text, '', true);
+    if (!localInfo && !pr.report?.text && !pr.localReview?.text && !pr.review?.text && !pr.analysis?.length) showTextPanel(parent, 'AI explanation', '',
+      'No explanation available yet.', true);
+    const plan = pr.actionPlan;
+    if (plan?.kind === 'snapshot' && !plan.actions?.length) showTextPanel(parent, plan.title, plan.description, '');
+    if (plan?.actions?.length || plan?.workspaceAction) {
+      const choices = show('section', 'panel action-panel', undefined, parent);
+      const heading = show('div', 'action-heading', undefined, choices);
+      show('h3', '', plan.title, heading);
+      const destination = show('div', 'runner-control', undefined, heading);
+      show('span', 'muted', 'Run with', destination);
+      const runner = show('div', 'runner-switch', undefined, destination);
+      runner.dataset.engine = actionEngine;
+      runner.setAttribute('role', 'group');
+      runner.setAttribute('aria-label', 'Run with');
+      const runnerButtons = [];
+      let workspaceRow;
+      for (const [value, label] of [['web', 'ChatGPT'], ['codex', 'Codex']]) {
+        const button = show('button', 'runner-option', label, runner);
+        button.type = 'button';
+        button.setAttribute('aria-pressed', String(actionEngine === value));
+        runnerButtons.push([value, button]);
+        button.addEventListener('click', () => {
+          actionEngine = value;
+          runner.dataset.engine = value;
+          for (const [engine, control] of runnerButtons) control.setAttribute('aria-pressed', String(engine === value));
+          if (workspaceRow) workspaceRow.hidden = value !== 'codex';
+        });
+      }
+      if (plan.description) show('p', 'muted action-intro', plan.description, choices);
+      const addAction = (option, extraClass = '') => {
+        const row = show('div', 'blocker-choice' + (extraClass ? ' ' + extraClass : ''), undefined, choices);
+        const emoji = { '+1': '👍', heart: '❤️', rocket: '🚀' }[option.reaction];
+        const style = plan.kind === 'checks' && option.id === 'fix-checks' ? 'action-primary' : 'secondary action-choice';
+        const button = show('button', style, (emoji ? emoji + ' ' : '') + option.label, row);
+        button.disabled = Boolean(pr.actionPending);
+        button.addEventListener('click', () => vscode.postMessage({ type: 'blocker-action', number: pr.number,
+          headSha: pr.currentHead, baseRef: pr.currentBase || pr.base, actionId: option.id, optionKey: option.key, engine: option.engine || actionEngine }));
+        if (option.description) show('div', 'muted', option.description, row);
+        if (option.recommended) show('div', 'action-recommended', 'Recommended · ' + (option.description || 'Based on the current review'), row);
+        return row;
+      };
+      for (const option of plan.actions || []) addAction(option);
+      if (plan.workspaceAction) {
+        workspaceRow = addAction(plan.workspaceAction, 'workspace-only');
+        workspaceRow.hidden = actionEngine !== 'codex';
+      }
+      if (pr.actionPending) show('p', 'muted', 'Opening the requested task…', choices);
+    }
+    showTextPanel(parent, 'Original PR description', pr.description,
+      'No PR description supplied.', true);
+    show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
+    if (!pr.files.length) show('p', 'empty', 'No file diff loaded yet.', parent);
+    for (const file of pr.files) {
+      const wrap = show('details', 'file', undefined, parent);
+      const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
+      show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
+      if (file.patch) renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch);
+      else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
+    }
+    show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
+    const tree = show('section', 'pr-commit-tree', undefined, layout);
+    disposeCommitTree = renderCommitTree(tree, pr.commits, sha => dispatch('open-commit', pr.number, sha));
+    if (pr.commitError) show('p', 'muted', 'Commit history unavailable: ' + pr.commitError, tree);
+    outer.scrollTop = scroll;
+  }
+  function render() {
+    const ownerLogo = byId('repository');
+    const owner = String(model.repository || '').split('/')[0];
+    ownerLogo.hidden = !owner;
+    ownerLogo.alt = owner + ' logo';
+    ownerLogo.title = model.repository || '';
+    const ownerLogoUrl = 'https://github.com/' + encodeURIComponent(owner) + '.png?size=64';
+    if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
+    const merged = model.prs.filter(p => p.state === 'merged').length;
+    const resolved = model.prs.filter(p => p.conflictCleared).length;
+    const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
+    const problems = blockers.length;
+    byId('progress').textContent = merged + '/' + model.prs.length +
+      ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
+    byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
+    byId('notice').hidden = !model.error;
+    byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
+    const workerList = byId('merge-workers');
+    workerList.replaceChildren();
+    workerList.hidden = !model.workers?.length;
+    for (const worker of model.workers || []) {
+      const button = show('button', 'pr', worker.label + ' · ' + worker.phase + ' · ' + worker.merged + '/' + worker.total + ' merged', workerList);
+      button.title = 'GPT session ' + worker.id + ' · ' + worker.numbers.map(number => '#' + number).join(', ');
+      button.addEventListener('click', () => dispatch('focus-worker', worker.id));
+    }
+    const list = byId('prs');
+    const listScroll = list.scrollTop;
+    list.replaceChildren();
+    // Sort a copy so live presentation never changes the merge selection order.
+    const visiblePrs = model.prs.slice().sort((a, b) => pullRequestPriority(a) - pullRequestPriority(b));
+    if (selected === null && visiblePrs.length) selected = visiblePrs.some(pr => pr.number === model.selectedNumber)
+      ? model.selectedNumber : visiblePrs[0].number;
+    for (const pr of visiblePrs) {
+      const button = show('button', 'pr', undefined, list);
+      button.setAttribute('aria-current', String(pr.number === selected));
+      const row = show('div', 'row', undefined, button);
+      show('span', 'name', '#' + pr.number + ' ' + pr.title, row);
+      show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', row);
+      const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base), button);
+      branchLine.title = pr.head + ' → ' + (pr.currentBase || pr.base);
+      button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
+    }
+    list.scrollTop = listScroll;
+    const blockerNotice = byId('blocker-notice'); blockerNotice.replaceChildren(); blockerNotice.hidden = !blockers.length;
+    if (blockers.length) {
+      show('span', '', 'Needs attention', blockerNotice);
+      for (const pr of blockers) {
+        const button = show('button', 'secondary', (pr.blockerOptions?.length ? 'Review #' + pr.number + ' options' : 'View #' + pr.number + ' integration'), blockerNotice);
+        button.addEventListener('click', () => { selected = pr.number; dispatch('select-pr', pr.number); render(); });
+      }
+    }
+    const events = byId('events');
+    const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
+      ? model.timestampMode : 'hidden';
+    byId('timeline-time-mode').value = timestampMode;
+    byId('post-status-updates').checked = model.postStatusUpdates === true;
+    byId('post-summaries').checked = model.postSummaries === true;
+    const eventScroll = events.scrollTop;
+    events.replaceChildren();
+    for (const event of model.events.slice(-400).reverse()) {
+      const node = show('div', 'event ' + event.state, undefined, events);
+      const presentation = mergeActivityPresentation(event, model.prs);
+      const key = event.id ?? (event.at + ':' + event.number + ':' + event.message);
+      const line = presentation.expandable
+        ? show('details', 'event-disclosure', undefined, node) : node;
+      if (presentation.expandable) {
+        line.open = openActivities.has(key);
+        line.addEventListener('toggle', () => {
+          if (!line.isConnected) return;
+          if (line.open) openActivities.add(key);
+          else openActivities.delete(key);
+        });
+      }
+      const summary = show(presentation.expandable ? 'summary' : 'div',
+        'event-summary', undefined, line);
+      const commentOnlyLink = Boolean(event.url) && event.state === 'review-comment' &&
+        presentation.summary === 'PR conversation comment posted';
+      const content = event.url && !commentOnlyLink
+        ? show('a', 'event-link', undefined, summary) : summary;
+      const commentLink = renderMergeActivitySummary(content, event.number, presentation, commentOnlyLink);
+      if (event.url) {
+        const target = commentLink || content;
+        target.href = event.url;
+        target.addEventListener('click', click => {
+          click.preventDefault();
+          click.stopPropagation();
+          dispatch('open-link', undefined, event.url);
+        });
+      }
+      if (presentation.expandable) {
+        const body = show('div', 'event-expanded', undefined, line);
+        if (presentation.status) show('div', 'event-status', presentation.status, body);
+        if (presentation.explanation) show('div', 'event-details', presentation.explanation, body);
+      }
+      if (event.historical) show('div', 'muted', 'Saved activity · live GitHub state may have changed', node);
+      const label = formatTimelineTimestamp(event.at, timestampMode);
+      if (label) {
+        const stamp = show('div', 'event-time', label, node);
+        stamp.dataset.eventAt = event.at;
+        stamp.title = new Date(event.at).toLocaleString();
+      }
+    }
+    events.scrollTop = eventScroll;
+    renderDetail();
+  }
+  window.addEventListener('message', event => {
+    if (event.data?.type !== 'state') return;
+    const preferences = event.data.layoutPreferences;
+    if (preferences && Number.isInteger(preferences.sidebar) && preferences.sidebar >= 15 && preferences.sidebar <= 75 &&
+        Number.isInteger(preferences.timeline) && preferences.timeline >= 15 && preferences.timeline <= 80) {
+      if (preferences.sidebar !== layoutPreferences?.sidebar) sidebarRatio = preferences.sidebar / 100;
+      if (preferences.timeline !== layoutPreferences?.timeline) timelineRatio = preferences.timeline / 100;
+      layoutPreferences = preferences;
+      restoreSizes();
+      saveLayout();
+    }
+    model = event.data;
+    render();
+  });
+  function refreshRelativeEventTimes() {
+    if (model.timestampMode !== 'relative') return;
+    if (model.rateLimitRetryAt && model.error) byId('notice').textContent = rateLimitMessage(model.rateLimitRetryAt, 'relative');
+    for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
+      stamp.textContent = formatTimelineTimestamp(stamp.dataset.eventAt, 'relative');
+    }
+    const pr = model.prs.find(item => item.number === selected);
+    const outcome = byId('details').querySelector('[data-merge-outcome]');
+    if (pr?.mergedAt && outcome) {
+      outcome.textContent = formatMergeOutcome(pr.mergedAt, pr.mergeCommit, 'relative');
+    }
+  }
+  byId('timeline-time-mode').addEventListener('change', event => {
+    const mode = event.target.value;
+    if (!['hidden', 'relative', 'clock'].includes(mode)) return;
+    model.timestampMode = mode;
+    render();
+    vscode.postMessage({ type: 'timestamp-mode', mode });
+  });
+  byId('post-status-updates').addEventListener('change', event => vscode.postMessage({ type: 'post-status-updates', enabled: event.target.checked }));
+  byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
+  byId('refresh').addEventListener('click', () => dispatch('refresh'));
+  setInterval(refreshRelativeEventTimes, 30000);
+  dispatch('ready');
+})();
+</script>
+</body>
+</html>
