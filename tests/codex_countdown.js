@@ -37,6 +37,26 @@ for (const [message, expected] of [
     assert.equal(parts[2], '.');
 }
 assert.equal(vm.runInContext('scmToolkitUsageResetMessage("No reset available", null, jsx)', context), 'No reset available');
+let nativeCalls = 0;
+const nativeCopy = { title: 'Native title', description: 'Native description', extra: 'preserved' };
+context.resolveCopy = (banner, intl) => {
+    nativeCalls++;
+    assert.equal(intl, 'intl');
+    return nativeCopy;
+};
+context.banner = { reset_at: context.resetAt, title: 'Try again at {time}.', description: 'Plain description' };
+const copy = vm.runInContext('scmToolkitUsageResetCopy(banner, "intl", resolveCopy, jsx)', context);
+assert.equal(nativeCalls, 1);
+assert.equal(copy.title[0], 'Try again in ');
+assert.equal(copy.title[1].props['reset-at'], context.resetAt);
+assert.equal(copy.description, nativeCopy.description);
+assert.equal(copy.extra, nativeCopy.extra);
+for (const reset of [null, undefined, 'invalid']) {
+    context.banner = { reset_at: reset, title: 'At {time}', description: 'At {time}' };
+    assert.equal(vm.runInContext('scmToolkitUsageResetCopy(banner, "intl", resolveCopy, jsx)', context), nativeCopy);
+}
+context.banner = { reset_at: context.resetAt, title: 'Untimed title', description: 'Untimed description' };
+assert.equal(vm.runInContext('scmToolkitUsageResetCopy(banner, "intl", resolveCopy, jsx)', context), nativeCopy);
 const element = new Countdown();
 element.resetAt = context.resetAt;
 element.connectedCallback();

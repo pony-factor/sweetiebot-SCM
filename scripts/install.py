@@ -785,6 +785,39 @@ def strip_codex_timestamps_payload(text):
     return before + after
 
 
+def codex_resolved_countdown_edits(js):
+    """Newer builds resolve banner templates in an imported copy helper."""
+    ident = r'[A-Za-z_$][\w$]*'
+    aliases = set()
+    for imported in re.finditer(r'import\{([^}]+)\}from["\']\./banner-copy-[^"\']+\.js["\'];', js):
+        for specifier in imported[1].split(','):
+            alias = re.fullmatch(rf'{ident}(?: as ({ident}))?', specifier.strip())
+            if alias:
+                aliases.add(alias[1] or specifier.strip())
+    edits = []
+    for binding in re.finditer(rf'let\{{title:({ident}),description:({ident})\}}=({ident}),', js):
+        following = js[binding.end():binding.end() + 8000]
+        if 'codex.rateLimitUpsellBanner.dismiss' not in following:
+            continue
+        before = js[max(0, binding.start() - 1000):binding.start()]
+        calls = [match for match in re.finditer(
+            rf'(?<![\w$]){re.escape(binding[3])}=({ident})\(({ident}),({ident})\),', before
+        ) if match[1] in aliases]
+        spans = list(re.finditer(
+            rf'\(0,({ident})\.jsx\)\(`span`,\{{[^}}]*children:{re.escape(binding[2])}\}}\)', following))
+        if not calls:
+            continue
+        if len(calls) != 1 or len(spans) != 1:
+            raise ValueError('Unsupported Codex extension build: resolved usage-banner anchor is ambiguous.')
+        call = calls[0]
+        if f'{call[2]}.banner_type' not in following or f'{call[2]}.ctas' not in following:
+            raise ValueError('Unsupported Codex extension build: resolved usage-banner input does not match.')
+        edits.append((call[0], f'{binding[3]}=scmToolkitUsageResetCopy({call[2]},{call[3]},{call[1]},{spans[0][1]}.jsx),'))
+    if len(edits) > 1:
+        raise ValueError('Unsupported Codex extension build: resolved usage-banner anchor is ambiguous.')
+    return edits
+
+
 def codex_countdown_edits(js):
     identifier = r"[A-Za-z_$][\w$]*"
     pattern = re.compile(
@@ -795,6 +828,9 @@ def codex_countdown_edits(js):
     )
     matches = list(pattern.finditer(js))
     if not matches:
+        resolved = codex_resolved_countdown_edits(js)
+        if resolved:
+            return resolved + codex_transcript_countdown_edits(js)
         return [codex_countdown_edit(js)]
     if len(matches) != 1:
         raise ValueError("Unsupported Codex extension build: usage-banner anchor is ambiguous.")

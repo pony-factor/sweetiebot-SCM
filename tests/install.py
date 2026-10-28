@@ -1508,6 +1508,70 @@ class InstallerScriptsLayoutTests(unittest.TestCase):
         self.assertEqual(workflow.count("scripts/ci/ci_test_runner.py"), 3)
 
 
+class ResolvedCountdownTests(unittest.TestCase):
+    def fixture(self):
+        return (
+            'import{n as initCopy,t as resolveCopy}from"./banner-copy-fixture.js";'
+            'function render(props){let cache=[],{banner:b}=props,intl={};'
+            'let copy;cache[0]!==b?(copy=resolveCopy(b,intl),cache[0]=b,cache[1]=copy):copy=cache[1];'
+            'let{title:title,description:description}=copy,actions;'
+            'actions=b.banner_type?b.ctas:[];'
+            'return(0,React.jsx)(`span`,{children:description})}'
+            'const dismiss=`codex.rateLimitUpsellBanner.dismiss`;'
+        )
+
+    def test_resolved_copy_is_reversible_and_idempotent(self):
+        original = self.fixture()
+        patched = install.transform_codex(original, enabled=True, sticker_enabled=False)
+        self.assertIn('copy=scmToolkitUsageResetCopy(b,intl,resolveCopy,React.jsx),', patched)
+        self.assertEqual(install.transform_codex(patched, enabled=True, sticker_enabled=False), patched)
+        self.assertEqual(install.transform_codex(patched, remove=True), original)
+        disabled = install.transform_codex(patched, enabled=False, sticker_enabled=False)
+        self.assertNotIn(install.CODEX_START, disabled)
+        self.assertEqual(install.transform_codex(disabled, remove=True), original)
+
+    def test_rejects_ambiguous_or_changed_resolved_banner(self):
+        original = self.fixture()
+        for source in (original + original,
+                       original.replace('children:description', 'children:other'),
+                       original.replace('b.ctas', 'other.ctas')):
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, 'resolved usage-banner'):
+                install.codex_countdown_edits(source)
+
+    def test_unrelated_helper_is_not_treated_as_a_countdown_target(self):
+        with self.assertRaisesRegex(ValueError, 'reset-time anchor'):
+            install.codex_countdown_edits(self.fixture().replace('banner-copy-', 'unrelated-copy-'))
+
+    def test_minified_dollar_aliases_are_supported(self):
+        original = self.fixture().replace('resolveCopy', '$resolve').replace('React', '$jsx')
+        original = original.replace('copy', '$copy').replace('banner-$copy-', 'banner-copy-')
+        edits = install.codex_countdown_edits(original)
+        self.assertEqual(len(edits), 1)
+        self.assertIn('scmToolkitUsageResetCopy(b,intl,$resolve,$jsx.jsx)', edits[0][1])
+
+    def test_patched_component_renders_a_countdown_and_preserves_native_resolver(self):
+        original = self.fixture()
+        for before, after in install.codex_countdown_edits(original):
+            original = original.replace(before, after)
+        executable = original.split(';', 1)[1] + (install.CODEX_ASSETS / 'countdown.js').read_text()
+        script = '''
+const assert = require('node:assert/strict');
+const React = {jsx: (tag, props) => ({tag, props})};
+const HTMLElement = class {};
+const customElements = {get() {return true}};
+let nativeCalls = 0;
+function resolveCopy(banner, intl) {nativeCalls++;return {title:'Native title',description:'Native date'}}
+SOURCE
+const banner = {banner_type:'limit',ctas:[],reset_at:1800003600,title:'Title',description:'Try again at {time}.'};
+const rendered = render({banner});
+assert.equal(nativeCalls, 1);
+assert.equal(rendered.props.children[0], 'Try again in ');
+assert.equal(rendered.props.children[1].tag, 'scm-toolkit-usage-reset-countdown');
+assert.equal(rendered.props.children[1].props['reset-at'], 1800003600);
+'''.replace('SOURCE', executable)
+        subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+
 class WorkbenchFixture(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
