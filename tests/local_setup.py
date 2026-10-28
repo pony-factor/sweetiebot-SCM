@@ -30,6 +30,17 @@ class InstructionFileTests(unittest.TestCase):
 
 
 class SigningKeyTests(unittest.TestCase):
+    def test_finds_homebrew_gpg_with_gui_path(self):
+        with patch.object(local_setup.shutil, "which", return_value=None), \
+             patch.object(local_setup.sys, "platform", "darwin"), \
+             patch.object(local_setup.Path, "is_file", return_value=True), \
+             patch.object(local_setup.os, "access", return_value=True):
+            self.assertEqual(local_setup._gpg_executable(), "/opt/homebrew/bin/gpg")
+
+    def test_path_gpg_takes_precedence(self):
+        with patch.object(local_setup.shutil, "which", return_value="/custom/bin/gpg"):
+            self.assertEqual(local_setup._gpg_executable(), "/custom/bin/gpg")
+
     def test_gpg_prefers_path(self):
         with patch.object(local_setup.shutil, "which", return_value="/custom/bin/gpg"):
             self.assertEqual(local_setup._gpg_executable(), "/custom/bin/gpg")

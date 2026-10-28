@@ -135,6 +135,8 @@ def signing_status() -> dict[str, object]:
     return {
         "gpgAvailable": bool(_gpg_executable()),
         "configured": configured_signing_key(),
+        "enabled": _git_value("commit.gpgsign").lower() in ("true", "yes", "on", "1"),
+        "format": _git_value("gpg.format").lower() or "openpgp",
         "keys": keys,
         "instructionsPath": str(commit_instructions_path()),
     }
