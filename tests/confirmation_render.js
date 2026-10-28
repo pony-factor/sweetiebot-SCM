@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const html=fs.readFileSync(require.resolve('../extension/ui/draft_confirmation.html'),'utf8')
   .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../extension/merge/dashboard_markdown.js'),'utf8'));
-assert.match(html,/\.merge-buttons\{display:flex;flex-wrap:wrap;gap:12px/,'Merge method buttons must have distinct spacing');
+assert.match(html,/\.merge-buttons\{display:flex;align-items:center;gap:8px/,'Merge method buttons retain spacing beside the PR badge');
 assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
 // Themed borders—including the left warning accent—must use the current
 // workbench's line color instead of a hard-coded warning border color.
@@ -274,8 +274,11 @@ pendingImages[staleStart+1].naturalWidth=400;
 pendingImages[staleStart+1].onload();
 assert.equal(images.children.length,1);
 assert.equal(images.children[0].children[1].textContent,'New result');
-assert.match(html, /\.pr-heading\{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap\}/, "PR card aligns the linked number with its publication heading");
-assert.match(html, /<div class="pr-heading"><h2 id="title">Preparing your draft<\/h2><a id="pr-number"[^>]*hidden><\/a><\/div>/, "PR badge lives in the PR card, not the top header");
+assert(html.includes('<div class="pr-heading"><h2 id="title">Preparing your draft</h2></div>'), 'Publication heading stays clear of the PR number');
+assert(html.includes('<div class="merge-action-row"><div id="merge-buttons" class="merge-buttons"><button id="merge" type="button">Squash and merge</button>'), 'Merge buttons have a dedicated action row');
+assert.match(html, /<button id="merge-local-signed"[^>]*>Squash with local Git signer<\/button><\/div><a id="pr-number"[^>]*hidden><\/a><\/div>/, 'PR badge follows every merge method including signed squash');
+assert(html.includes('.merge-action-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}'), 'Merge row wraps on narrow screens');
+assert(html.includes('.merge-action-row .pr-number{margin-left:auto}'), 'PR badge stays at the right side');
 assert.doesNotMatch(html, /<main><header>[^\n]*id="pr-number"/, "The page header has no PR number badge");
 assert.match(html, /\.merge-controls\{margin:12px 0 14px;padding:4px 8px\}\.merge-controls button\{padding:10px 15px;border-radius:10pt\}/, "Merge buttons have 10pt rounding and breathing room");
 assert.match(html, /\.close-confirmation\{[^}]*border-radius:10pt/, "Close control has 10pt rounding");
@@ -350,6 +353,9 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   layoutState={...layoutState,mergeResult:{merged:true}};
   await context.refresh();
   assert.equal(getElementById('merge-issue').hidden,true,'Verified merge removes the blocker banner');
+  assert.equal(getElementById('merge-controls').hidden,false,'Merged PR retains its PR link');
+  assert.equal(getElementById('merge-buttons').hidden,true,'Merged PR hides merge methods but keeps the PR badge');
+  assert.equal(getElementById('pr-number').hidden,false,'PR badge stays visible after merge');
   layoutState={errors:{},draft:{title:'🐞 Preserve branch windows',body:'The PR description.'},publishing:true};
   await context.refresh();
   assert.equal(getElementById('h1').textContent,'🐞 Preserve branch windows');
@@ -359,6 +365,8 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.equal(getElementById('title').textContent,'Successfully published');
   assert.equal(getElementById('pr-number').textContent,'#439');
+  assert.equal(getElementById('merge-controls').hidden,false,'Published PR shows the merge action row');
+  assert.equal(getElementById('merge-buttons').hidden,false,'Published PR shows merge methods');
   assert.equal(getElementById('pr-number').href,layoutState.result.url);
   assert.equal(getElementById('draft-status').hidden,true,'No duplicate publication status below the controls');
   layoutState={...layoutState,result:null,errors:{publish:'GitHub rejected publication: branch has no new commits.'}};
