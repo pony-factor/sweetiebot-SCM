@@ -171,6 +171,8 @@ The GitHub App, GitHub CLI, local Kefania service, VS Code, and ChatGPT account 
 
 A **ChatGPT project for PR and pony research** is optional. When a branch name identifies a pony, local pony info or independent research can open separately without inserting character notes into the PR description. Keep the dedicated PR workspace open until the session completes.
 
+Newly researched Kafania pony profiles are published as isolated, one-file commits on its tracked `main` branch. The shared detached Sweetiebot worker journals pending publication and retries after failures, including after VS Code restarts while the Mac user session is active. Existing profiles are not rewritten; unrelated staged files and unpushed commits remain untouched. Rejected pushes and divergent histories require manual recovery, never a force-push.
+
 ### Review, conflict resolution, and merge with Lindsey
 
 Sweetiebot's **Lindsey** integration provides individual and bulk PR review/merge surfaces, a progress dashboard, and an activity timeline. **Settings → Pull requests → Squash co-author separator** selects the default ten-underscore divider (`__________`), the conventional nine-hyphen divider (`---------`), or **None** (a standard blank line before Git trailers). The GitHub Pull Requests view can show a quick squash-merge control; **Merge All** and selected bulk operations launch a dedicated ChatGPT workspace. Selecting PRs or submitting merge requests is not itself a completed merge.
