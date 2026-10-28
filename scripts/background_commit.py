@@ -235,7 +235,7 @@ def require_unpublished_extension(job, extension):
                            'was paused to avoid rewriting shared history.')
 
 
-def captured_chain(marker, branch, *, allow_extension=False):
+def captured_chain(marker, branch, *, allow_extension=False, allow_finalized_advance=False):
     entries = [entry for entry in queue_entries(marker)
                if read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch]
     jobs = [read_journal(Path(entry['directory']) / 'job.json') for entry in entries]
@@ -252,7 +252,19 @@ def captured_chain(marker, branch, *, allow_extension=False):
     if actual != previous:
         if not allow_extension:
             raise RuntimeError('The branch advanced outside the queued commits; background work was paused.')
-        linear_branch_extension(previous, actual)
+        if (allow_finalized_advance and all(not job.get('provisional')
+                and not job.get('replacement_sha') for job in jobs)):
+            # Publication does not rename or reparent commits. A completed queued
+            # chain may be followed by ordinary external commits or merges.
+            if (not actual or git('merge-base', '--is-ancestor', previous, actual,
+                                  check=False).returncode):
+                raise RuntimeError('The branch advanced outside the queued commits; background work was paused.')
+            subjects = git('log', '--format=%s', previous + '..' + actual).splitlines()
+            if any(re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject)
+                   for subject in subjects):
+                raise RuntimeError('The branch contains unfinished commit messages; background work was paused.')
+        else:
+            linear_branch_extension(previous, actual)
     return entries, jobs
 
 
@@ -580,7 +592,7 @@ def captured_diff(job):
 def branch_recovery_candidate(job):
     error = job.get('error', '').lower()
     return bool(job.get('sha') and ('branch changed' in error
-                or (job.get('provisional') and 'branch advanced' in error)))
+                or 'branch advanced' in error))
 
 
 def permanent_push_error(job, result):
@@ -701,8 +713,8 @@ def sync_with_lindsey(job, remote_tip):
 
 
 def reconcile_published_jobs(meta):
-    """Retire finalized, blocked jobs proven published outside this queue."""
-    meta = Path(meta)
+    """Retire finalized blocked jobs already published or belonging to deleted branches."""
+    meta = Path(meta).resolve()
     marker = meta / MARKER
     published = {}
     for entry in queue_entries(marker):
@@ -727,8 +739,13 @@ def reconcile_published_jobs(meta):
                 if query('rev-parse', '--absolute-git-dir') != str(meta):
                     continue
                 if (query('show', '-s', '--format=%T', job['sha']) != job['tree']
-                        or query('show', '-s', '--format=%P', job['sha']) != job['parent']
-                        or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
+                        or query('show', '-s', '--format=%P', job['sha']) != job['parent']):
+                    continue
+                local = query('show-ref', '--verify', '--quiet', job['branch'], check=False)
+                if local.returncode not in (0, 1):
+                    continue
+                deleted = local.returncode == 1
+                if not deleted and query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode:
                     continue
                 remote, destination = job.get('remote'), job.get('destination')
                 if not remote or remote.startswith('-') or not destination or not destination.startswith('refs/heads/'):
@@ -744,17 +761,29 @@ def reconcile_published_jobs(meta):
                         if query('fetch', '--no-tags', '--no-write-fetch-head', remote, tip,
                                  check=False, timeout=3).returncode:
                             tip = ''
-                    published[key] = tip
-                tip = published[key]
-                if not tip or query('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode:
+                    published[key] = (tip, result.returncode == 0 and not rows)
+                tip, remote_deleted = published[key]
+                obsolete = deleted and remote_deleted
+                if not obsolete and (not tip or query('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode):
                     continue
                 with repository_lock(meta):
                     current = read_journal(file)
                     if (current != job or (meta / TRANSACTION).exists()
                             or not any(item['id'] == job['id'] for item in queue_entries(marker))
-                            or query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode):
+                            or query('show-ref', '--verify', '--quiet', job['branch'], check=False).returncode != local.returncode
+                            or (not deleted and query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode)):
                         continue
-                    job.update(phase='done', context='')
+                    if obsolete:
+                        # Never recreate a deleted branch to finish an old push.
+                        # Retain the actual commit, rather than only its tree.
+                        recovery = 'refs/sweetiebot/recovery/' + job['id'] + '/deleted-branch'
+                        if query('update-ref', recovery, job['sha'], '', check=False).returncode:
+                            if query('rev-parse', '--verify', recovery) != job['sha']:
+                                continue
+                        job.update(phase='cancelled', push=False, context='',
+                                   retired_reason='Local and remote branches were deleted; queued commit retained for recovery.')
+                    else:
+                        job.update(phase='done', context='')
                     job.pop('error', None)
                     job.pop('conflictPaths', None)
                     write_journal(file, job)
@@ -834,10 +863,10 @@ def work(directory, commit_only=False):
                 if not branch_recovery_candidate(job):
                     return
                 with repository_lock(job['gitdir']):
-                    captured_chain(marker, job['branch'], allow_extension=True)
+                    captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                     job = read_journal(file)
                     generated = not job['message'].startswith((PLACEHOLDER, '💭 Generate local commit message ['))
-                    job['phase'] = 'finalizing' if generated else 'committed'
+                    job['phase'] = 'finalizing' if job.get('provisional') and generated else 'committed'
                     job.pop('error', None)
                     write_journal(file, job)
             if job['phase'] == 'preparing':
@@ -890,7 +919,7 @@ def work(directory, commit_only=False):
                 return
             with repository_lock(job['gitdir']):
                 recover_finalization(job['gitdir'])
-                _, pending = captured_chain(marker, job['branch'], allow_extension=True)
+                _, pending = captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                 job = read_journal(file)
             if job.get('provisional'):
                 if not job.get('replacement_sha') and job['phase'] not in ('ready', 'finalizing'):
@@ -916,7 +945,7 @@ def work(directory, commit_only=False):
                         write_journal(file, job)
             with repository_lock(job['gitdir']):
                 recover_finalization(job['gitdir'])
-                _, pending = captured_chain(marker, job['branch'], allow_extension=True)
+                _, pending = captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                 job = read_journal(file)
                 position = next(i for i, item in enumerate(pending) if item['id'] == job['id'])
                 if any(item.get('provisional') for item in pending[:position]):
@@ -934,7 +963,7 @@ def work(directory, commit_only=False):
                 write_journal(file, job)
                 finalize_message(directory, job)
             with repository_lock(job['gitdir']):
-                captured_chain(marker, job['branch'], allow_extension=True)
+                captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                 job = read_journal(file)
             pushed = job['push']
             if pushed:
@@ -1225,7 +1254,7 @@ def request_push(request, start=True):
         if not any(read_journal(Path(entry['directory']) / 'job.json')['branch'] == branch
                    for entry in queue_entries(marker)):
             return {'queued': False}
-        entries, jobs = captured_chain(marker, branch)
+        entries, jobs = captured_chain(marker, branch, allow_extension=True, allow_finalized_advance=True)
         remote = request.get('remote')
         if remote and any(job['remote'] != remote for job in jobs):
             raise RuntimeError('Pending commit messages use a different push remote.')
@@ -1352,7 +1381,7 @@ def wait_for_background(real_git, global_args, branch_base=None, refs=('HEAD',))
         label = name + (' (' + branch + ')' if branch else '')
         if job and job.get('phase') == 'blocked' and job.get('error'):
             reason = 'Push blocked by merge conflicts.' if 'merge conflict' in job['error'].lower() else 'Commit & Push paused.'
-            raise RuntimeError('Sweetiebot: ' + reason + ' ' + job['error'])
+            raise RuntimeError('Sweetiebot: ' + reason + ' ' + label + ': ' + job['error'])
         raise RuntimeError('Sweetiebot: Commit & Push is still running. Let it finish before modifying pending history or committing again.')
 
 
@@ -1394,7 +1423,7 @@ if __name__ == '__main__':
             if job and job['phase'] == 'blocked' and branch_recovery_candidate(job):
                 try:
                     with repository_lock(marker.parent):
-                        captured_chain(marker, job['branch'], allow_extension=True)
+                        captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                     recoverable = True
                 except RuntimeError:
                     pass

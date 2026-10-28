@@ -114,7 +114,7 @@ async function createParallelMergeBatch(rawSelection, options = {}) {
         if (fresh.state !== 'open' || fresh.merged || fresh.draft || fresh.title !== pr.title ||
             fresh.head?.sha !== pr.headSha || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
             fresh.head?.repo?.full_name !== selection.repository) {
-          results.push({ number: pr.number, status: 'blocked', merged: false,
+          results.push({ number: pr.number, status: 'blocked', merged: false, kind: 'snapshot_changed',
             reason: 'The selected PR changed while its parallel review was running; select its current snapshot again.' });
           continue;
         }
