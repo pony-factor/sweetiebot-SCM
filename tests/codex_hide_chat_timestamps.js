@@ -119,13 +119,16 @@ assert(observerSettings.attributes && observerSettings.attributeFilter.includes(
 assert.deepEqual(timestamp.style.values.get('display'), { value: 'none', priority: 'important' });
 assert.equal(ordinary.attributes.has('aria-hidden'), false, 'non-timestamp weekday text remains visible');
 
-assert.equal(activityText.textContent, 'Activity', 'elapsed work time is replaced');
+assert.equal(activityText.textContent, 'Worked for 1m 48s', 'duration survives for later scans');
+assert.equal(activity.getAttribute('data-scm-toolkit-activity-dots'), '•');
+assert.equal(thought.getAttribute('data-scm-toolkit-activity-dots'), '', 'partial minutes add no dot');
+assert.equal(split.getAttribute('data-scm-toolkit-activity-dots'), '• • • •');
 assert.equal(activity.getAttribute('aria-label'), 'Activity', 'accessible labels omit elapsed time');
 assert.equal(activity.attributes.has('aria-hidden'), false, 'activity toggle stays accessible');
 assert.equal(activity.style.values.has('display'), false, 'activity toggle stays visible');
-assert.equal(thoughtText.textContent, 'Activity', 'thought durations are recognized');
-assert.equal(splitLabel.textContent, 'Activity', 'split duration labels are handled');
-assert.equal(splitTime.textContent, '', 'split time text is removed');
+assert.equal(thoughtText.textContent, 'Thought for 58s', 'thought duration is preserved');
+assert.equal(splitLabel.textContent, 'Worked for ', 'split labels are preserved');
+assert.equal(splitTime.textContent, '4m 33s', 'split duration is preserved');
 assert.equal(ordinaryActivityText.textContent, 'Worked for 1m 48s', 'message text stays intact');
 assert.equal(otherButtonText.textContent, 'Worked for all of Monday', 'unrelated buttons stay intact');
 
@@ -139,6 +142,13 @@ nativeActivity.attributes.delete('data-scm-toolkit-activity-cannon');
 observer.callback([{ type: 'attributes', target: nativeActivity }]);
 assert.equal(nativeActivity.getAttribute('data-scm-toolkit-activity-cannon'), 'true',
     'React recycling cannot remove the cannon treatment');
+
+activity.textContent = activityText.textContent = 'Worked for 2m 1s';
+observer.callback([{ type: 'characterData', target: activityText }]);
+assert.equal(activity.getAttribute('data-scm-toolkit-activity-dots'), '• •', 'live duration updates dots');
+activity.textContent = activityText.textContent = 'Worked for 1h 2m 59s';
+observer.callback([{ type: 'characterData', target: activityText }]);
+assert.equal(activity.getAttribute('data-scm-toolkit-activity-dots').split(' ').length, 62, 'hours count as minutes');
 
 // A render that drops the hidden marker must be corrected without a reload.
 splitTimestamp.attributes.delete('data-scm-toolkit-hidden-chat-timestamp');

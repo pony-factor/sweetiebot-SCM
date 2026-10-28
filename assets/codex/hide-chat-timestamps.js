@@ -16,14 +16,24 @@
         style.id = styleId;
         // A persistent stylesheet wins over React resetting the inline style.
         style.textContent = `[${hiddenAttribute}] { display: none !important; }
-            [${activityAttribute}] { font-size: 0 !important; gap: 0 !important; }
+            [${activityAttribute}] {
+                display: inline-flex !important; align-items: center;
+                font-size: 0 !important; gap: 6px !important;
+            }
             [${activityAttribute}] * { display: none !important; }
             [${activityAttribute}]::before {
                 content: ''; display: inline-block; flex: none;
                 width: 19px; height: 19px;
                 background: url("${activityArtwork}") center / contain no-repeat;
                 pointer-events: none;
-            }`;
+            }
+            [${activityAttribute}]::after {
+                content: attr(data-scm-toolkit-activity-dots);
+                order: -1; font-size: 24px; line-height: 19px;
+                white-space: normal; pointer-events: none;
+            }
+            [${activityAttribute}]:not([data-scm-toolkit-activity-dots])::after,
+            [${activityAttribute}][data-scm-toolkit-activity-dots=""]::after { display: none; }`;
         root.appendChild(style);
     }
 
@@ -66,20 +76,17 @@
         if (control.getAttribute('aria-label') !== 'Activity') {
             control.setAttribute('aria-label', 'Activity');
         }
-        // Keep React's native disclosure, focus, keyboard and click handling.
-        // Plain Activity labels are also emitted by newer Codex builds.
-        if (label === 'Activity') return;
-
-        const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
-        const nodes = [];
-        while (walker.nextNode()) nodes.push(walker.currentNode);
-        const first = nodes.find((part) => activityLeadPattern.test(normalize(part.textContent)));
-        if (!first) return;
-
-        for (const part of nodes) part.textContent = part === first ? 'Activity' : '';
-        for (const name of ['title', 'aria-label']) {
-            const value = control.getAttribute?.(name);
-            if (value != null && looksLikeActivityDuration(value)) control.setAttribute(name, 'Activity');
+        // Keep the original duration text in React's DOM so live updates and
+        // later scans can always recover the elapsed time. Only CSS hides it.
+        if (!looksLikeActivityDuration(label)) return;
+        let seconds = 0;
+        for (const [, count, unit] of label.matchAll(/(\d+)\s*(days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|d|h|m|s)/gi)) {
+            const scale = /^d/i.test(unit) ? 86400 : /^h/i.test(unit) ? 3600 : /^m/i.test(unit) ? 60 : 1;
+            seconds += Number(count) * scale;
+        }
+        const dots = Array(Math.floor(seconds / 60)).fill('•').join(' ');
+        if (control.getAttribute('data-scm-toolkit-activity-dots') !== dots) {
+            control.setAttribute('data-scm-toolkit-activity-dots', dots);
         }
     }
 
