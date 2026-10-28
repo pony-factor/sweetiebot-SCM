@@ -55,6 +55,54 @@ async function run() {
   assert.equal(responses[2].model.effort, 'Extra High');
   assert.equal('text' in responses[2], false, 'No transcript for model-only requests');
 
+  // The webview saves only a UUID, retaining the existing VS Code webview state.
+  let reloadReceive;
+  let reloadState = { existingCodexState: 'preserved' };
+  const reloadReplies = [];
+  const reloadWindow = { location: { hash: `#/local/${conversationId}`, pathname: '/', search: '' },
+    addEventListener(type, listener) { assert.equal(type, 'message'); reloadReceive = listener; } };
+  const reloadView = vm.createContext({
+    window: reloadWindow,
+    document: { querySelectorAll() { return []; } }
+  });
+  load('context-webview.js', reloadView);
+  const reloadApi = {
+    getState: () => reloadState,
+    setState: state => { reloadState = state; },
+    postMessage: message => reloadReplies.push(message)
+  };
+  reloadView.scmToolkitRegisterCodexSnapshot(reloadApi);
+  reloadReceive({ data: { type: 'scm-toolkit-context-request', id: 'save', reloadState: true } });
+  assert.equal(reloadState.sweetiebotReloadConversation, conversationId);
+  assert.equal(reloadState.existingCodexState, 'preserved');
+  assert.deepEqual(Object.keys(reloadReplies[0]).sort(), ['conversationId', 'id', 'type'],
+    'Reload snapshots never expose transcripts or model metadata');
+  reloadReceive({ data: { type: 'unrelated' } });
+  assert.equal(reloadReplies.length, 1, 'Unrelated events cannot trigger restoration');
+  reloadReceive({ data: { type: 'persisted-atom-sync' } });
+  assert.equal(reloadReplies[1].type, 'scm-toolkit-restore-conversation');
+  assert.equal(reloadReplies[1].conversationId, conversationId);
+  assert.equal(reloadState.sweetiebotReloadConversation, undefined, 'Consume restore state once');
+  assert.equal(reloadState.existingCodexState, 'preserved');
+  reloadReceive({ data: { type: 'persisted-atom-sync' } });
+  assert.equal(reloadReplies.length, 2, 'Repeated renderer readiness does not reopen a chat');
+
+  // Landing on Codex home must clear a stale restore ID instead of reopening it.
+  reloadWindow.location.hash = '/';
+  reloadState = { existingCodexState: 'preserved', sweetiebotReloadConversation: conversationId };
+  reloadReceive({ data: { type: 'scm-toolkit-context-request', id: 'home', reloadState: true } });
+  assert.equal(reloadReplies[2].conversationId, undefined);
+  assert.equal(reloadState.sweetiebotReloadConversation, undefined);
+  assert.equal(reloadState.existingCodexState, 'preserved');
+
+  // Invalid persisted payloads are removed and never converted into navigation.
+  reloadState = { existingCodexState: 'preserved', sweetiebotReloadConversation: '../../settings' };
+  reloadView.scmToolkitRegisterCodexSnapshot(reloadApi);
+  reloadReceive({ data: { type: 'persisted-atom-sync' } });
+  assert.equal(reloadReplies.length, 3);
+  assert.equal(reloadState.sweetiebotReloadConversation, undefined);
+  assert.equal(reloadState.existingCodexState, 'preserved');
+
   let mounted, changed;
   const frames = [], clicks = [];
   const anchor = {
@@ -123,6 +171,10 @@ async function run() {
   const provider = {
     editorPanels: new Map(),
     sidebarViews: new Set([{ visible: true, webview }]),
+    postMessageToWebview(target, message) {
+      assert.equal(target, webview, 'Restoration targets the original Codex webview');
+      messages.push(message);
+    },
     initializeWebview() {},
     handleMessage() { throw new Error('Custom snapshot replies must not reach Codex job handling'); }
   };
@@ -187,6 +239,25 @@ async function run() {
     conversationId
   });
   assert.equal(await hiddenPending, 'Retained conversation', 'Source Control can hide Codex without losing context');
+
+  assert(registered.has('sweetiebot.preserveCodexConversation'));
+  assert.equal(await registered.get('sweetiebot.preserveCodexConversation')(), false,
+    'Hidden sidebar cannot be restored by automatic app repair');
+  sidebar.visible = true;
+  const reloadPending = registered.get('sweetiebot.preserveCodexConversation')();
+  assert.equal(messages.at(-1).reloadState, true);
+  assert.equal(messages.at(-1).identityOnly, false);
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId });
+  assert.equal(await reloadPending, true);
+  provider.handleMessage(webview, { type: 'scm-toolkit-restore-conversation', conversationId });
+  assert.equal(messages.at(-1).type, 'navigate-to-route');
+  assert.equal(messages.at(-1).path, `/local/${conversationId}`);
+  const beforeInvalid = messages.length;
+  for (const invalid of ['../../settings', 'https://example.com', 'a'.repeat(41), null]) {
+    provider.handleMessage(webview, { type: 'scm-toolkit-restore-conversation', conversationId: invalid });
+  }
+  assert.equal(messages.length, beforeInvalid, 'Only canonical local UUIDs can be restored');
+  sidebar.visible = false;
 
   const identityPending = registered.get('sweetiebot.readCodexIdentity')();
   assert.equal(messages.at(-1).identityOnly, true);
