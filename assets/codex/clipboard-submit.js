@@ -58,7 +58,7 @@
     function hasPendingQueue(root) {
         // The native queue bridge tags rows with stable IDs.
         return Boolean(root.querySelector('[data-scm-toolkit-queue-id]')
-            || document.querySelector('[data-scm-toolkit-queue-id]'));
+            || document.querySelector?.('[data-scm-toolkit-queue-id]'));
     }
 
     // Mounting must not depend on an enabled Send button: after a chat starts,
