@@ -99,7 +99,7 @@ def plan(extension, settings, companion=None):
     companion = Path(companion) if companion is not None else workspace_search.extension_destination()
     if (companion / 'package.json').is_file():
         add(companion / 'package.json', lambda old: workspace_search.transform_view_manifest(old, settings))
-        add(companion / 'media/efs.svg', lambda _: (workspace_search.SOURCE / 'media/efs.svg').read_text())
+        add(companion / 'media/efs.svg', lambda _: workspace_search.source_files()[Path('media/efs.svg')].read_text())
     return [(path, old, new) for path, (old, new) in patches.items() if old != new]
 
 

@@ -1,0 +1,165 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+let tick, enabled = true, fetches = 0, merges = 0, cleared = false, clock = 0, mergeError = false;
+let topicFetches = 0, topicMerges = 0;
+const fetchCalls = [];
+const main = { rootUri: { scheme: 'file', fsPath: '/repo' }, state: {
+  HEAD: { name: 'main', commit: 'base', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 0 },
+  indexChanges: [{}], workingTreeChanges: [{}], mergeChanges: []
+}, async status() {}, async fetch(options) { fetches++; fetchCalls.push(options); } };
+const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: {
+  HEAD: { name: 'kefania', commit: 'topic-base', upstream: { remote: 'origin', name: 'kefania' }, ahead: 0, behind: 2 },
+  mergeChanges: []
+}, async status() {}, async fetch(options) {
+  assert.equal(options.remote, 'origin', 'Topic branches use their tracked remote');
+  assert.equal(options.ref, 'kefania', 'Topic branches fetch their tracked branch');
+  topicFetches++;
+} };
+const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../extension/branches/actions')), process,
+  require(name) {
+    if (name === 'node:util') return { promisify(fn) { return (...args) => new Promise((resolve, reject) =>
+      fn(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr }))); } };
+    if (name === 'node:child_process') return { execFile(command, args, options, callback) {
+      assert.equal(command, 'git');
+      if (args[0] === 'config') {
+        const key = args.at(-1);
+        const value = key === 'scm-toolkit.auto-pull-clean' ? (enabled ? 'true\n' : 'false\n')
+          : key === 'scm-toolkit.default-branch' ? 'main\n'
+          : key === 'scm-toolkit.remote' ? 'upstream\n'
+          : '';
+        callback(null, value, '');
+      } else if (args[0] === 'rev-list') {
+        assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...refs/remotes/upstream/main']);
+        callback(null, '0\t1\n', '');
+      } else {
+        if (options.cwd === '/topic') {
+          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/origin/kefania']);
+          topicMerges++;
+          topic.state.HEAD.behind = 0;
+          callback(null, '', '');
+          return;
+        }
+        assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/upstream/main']);
+        merges++;
+        if (mergeError) callback(new Error('local changes would be overwritten by merge'), '', '');
+        else { main.state.HEAD.behind = 0; callback(null, '', ''); }
+      }
+    } };
+    if (name === '../merge/lindsey_conflicts') return require('../extension/merge/lindsey_conflicts');
+    if (name === './name_selection') return require('../extension/branches/name_selection');
+    if (name.startsWith('.')) return require(path.resolve(__dirname, '../extension/branches', name));
+    return require(name);
+  },
+  Date: { now() { return clock; } },
+  setInterval(callback, delay) { assert.equal(delay, 1000); tick = callback; return { unref() {} }; },
+  clearInterval() { cleared = true; }
+};
+vm.runInNewContext(fs.readFileSync(require.resolve('../extension/branches/actions'), 'utf8'), sandbox);
+const context = { subscriptions: [] };
+const handlers = {};
+const vscode = {
+  Uri: { from(value) { return value; } },
+  commands: {
+    registerCommand(name, callback) {
+      handlers[name] = callback;
+      return { dispose() { delete handlers[name]; } };
+    }
+  },
+  extensions: {
+    getExtension() {
+      return {
+        async activate() {
+          return {
+            getAPI() {
+              return {
+                repositories: [main, topic],
+                getRepository(uri) {
+                  return uri?.fsPath === main.rootUri.fsPath ? main
+                    : uri?.fsPath === topic.rootUri.fsPath ? topic
+                    : undefined;
+                }
+              };
+            }
+          };
+        }
+      };
+    }
+  }
+};
+(async () => {
+  sandbox.module.exports.registerBranchCommands(vscode, context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 1, 'Main fetches without any renderer or commit input widget');
+  assert.equal(fetchCalls[0]?.remote, 'upstream',
+    'Default-branch auto-pull uses the configured remote instead of the tracked origin');
+  assert.equal(fetchCalls[0]?.ref, 'main');
+  assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
+  assert.equal(topicFetches, 1, 'Tracked non-default branches are fetched without a renderer');
+  assert.equal(topicMerges, 1, 'Incoming commits on kefania fast-forward automatically');
+
+  topic.state.HEAD.behind = 1;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicFetches, 1, 'Known topic updates do not require another fetch');
+  assert.equal(topicMerges, 2, 'Known topic updates pull on the next scan');
+
+  topic.state.HEAD.ahead = 1;
+  topic.state.HEAD.behind = 1;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicMerges, 2, 'Diverged topic branches are not merged automatically');
+  topic.state.HEAD.ahead = 0;
+  topic.state.mergeChanges = [{}];
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicMerges, 2, 'Topic branches with conflicts are left alone');
+  topic.state.mergeChanges = [];
+  delete topic.state.HEAD.upstream;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(topicMerges, 2, 'Untracked topic branches are left alone');
+  topic.state.HEAD.behind = 0;
+
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 1, 'A caught-up repository does not fetch every second');
+  assert.equal(merges, 1);
+
+  main.state.HEAD.behind = 1;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 1, 'Known incoming commits do not wait for another network fetch');
+  assert.equal(merges, 2, 'Incoming commits are pulled on the next one-second check');
+
+  main.state.HEAD.behind = 1;
+  await handlers['sweetiebot.beginCommit'](main.rootUri);
+  tick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 1, 'Auto-pull does not fetch while a commit is active');
+  assert.equal(merges, 2, 'Auto-pull cannot move HEAD while a commit is active');
+  await handlers['sweetiebot.endCommit'](main.rootUri);
+
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 1, 'Releasing a commit lease does not trigger a redundant fetch');
+  assert.equal(merges, 3, 'The pending fast-forward can run after the commit finishes');
+
+  clock = 60000;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetches, 2, 'Network fetches continue once per minute');
+  assert.equal(merges, 4);
+
+  mergeError = true;
+  main.state.HEAD.behind = 1;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(merges, 5);
+  clock += 1000;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(merges, 5, 'An overlapping local edit does not cause a retry every second');
+  clock += 4000;
+  mergeError = false;
+  tick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(merges, 6, 'A blocked fast-forward is retried after the backoff');
+  enabled = false; clock = 120000;
+  tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
+  assert.equal(merges, 6, 'Disabling automatic pull also prevents pending fast-forwards');
+  context.subscriptions.at(-1).dispose(); assert(cleared);
+  enabled = true; tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
+  console.log('Default and tracked topic branches auto-pull without a rendered input and respect safeguards.');
+})().catch(error => { console.error(error); process.exitCode = 1; });
