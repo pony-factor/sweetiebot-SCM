@@ -418,6 +418,8 @@ class SubmissionTests(unittest.TestCase):
             "scmToolkit.postCommitSpellcheck",
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
+            "scmToolkit.mergeAutoFixCi",
+            "scmToolkit.mergeAutoFixCiMethod",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
