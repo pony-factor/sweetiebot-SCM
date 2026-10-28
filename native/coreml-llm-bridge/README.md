@@ -28,17 +28,22 @@ weights and its tokenizer**, then compiles Core ML chunks if not already cached)
     "$HOME/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane" --prepare qwen3.5-2b
     "$HOME/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane" --prepare qwen3.5-0.8b
 
-Then open Sweetiebot Settings → Commits → Commit inference backend → coreml,
-or configure globally:
+Then open Sweetiebot Settings → Commits → Backend preference order and choose
+Core ML only, or Core ML → Ollama to try Ollama when Core ML fails.
+Ollama → Core ML reverses that order. The default remains Ollama only.
+For example, configure the Core ML → Ollama order globally:
 
-    git config --global scm-toolkit.ai-backend coreml
+    git config --global scm-toolkit.ai-backend coreml,ollama
     git config --global scm-toolkit.ai-coreml-model qwen3.5-2b
     git config --global scm-toolkit.ai-coreml-low-memory-model qwen3.5-0.8b
 
 The configured bridge executable defaults to
 ~/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane and can be changed
-with scm-toolkit.ai-coreml-command. On failure, the existing strict/fallback
-behavior applies. Change ai-backend to ollama to revert instantly.
+with scm-toolkit.ai-coreml-command. Each backend uses its own configured models
+and generation budget. Missing models, inference errors, timeouts, or invalid
+messages advance to the next backend. Only after all selected backends fail
+does the existing strict/simple-message fallback apply. Change ai-backend to
+ollama to revert instantly.
 
 Inference only loads prepared models. Run preparations one at a time; the
 bridge locks preparation to protect the upstream shared download session.

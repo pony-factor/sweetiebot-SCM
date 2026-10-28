@@ -34,6 +34,19 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_backend_preference_order_renders_and_round_trips(self):
+        for value, label in [("ollama", "Ollama only"), ("coreml", "Core ML only"),
+                             ("coreml,ollama", "Core ML → Ollama"),
+                             ("ollama,coreml", "Ollama → Core ML")]:
+            with self.subTest(value=value):
+                values = form_values()
+                values["aiBackend"] = [value]
+                parsed = configurator.parse_submission(values)
+                self.assertEqual(parsed["aiBackend"], value)
+                page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+                self.assertIn("Backend preference order", page)
+                self.assertIn(f'<option value="{value}" selected>{label}</option>', page)
+
     def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
         values = form_values()
         for name in ('windowHeading', 'windowName'):

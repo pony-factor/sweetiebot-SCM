@@ -71,7 +71,7 @@ The settings server listens on a local authenticated loopback address; it does n
 | **Message bar** | Branch selector, message-bar layout, commit and co-author hotkeys, labels, publish and push controls |
 | **Source control** | Button style, sync counts and arrows, branch cleanup, auto-pull, working-file opening, whitespace normalization |
 | **Branch names** | Enable/disable built-in name packs, custom names, imported JSON packs |
-| **Commits** | AI commits, model choice, generation budgets, direct or durable background commit behavior |
+| **Commits** | Backend preference order, AI commits, model choice, generation budgets, direct or durable background commit behavior |
 | **Spellcheck Changes** | Draft-title corrections, Markdown spellcheck, spelling model, protected vocabulary, line breaks |
 | **Search** | Workspace Search appearance, modes, Ollama models, limits, exclusions |
 | **Pull requests**, **Kefania**, **Lindsey**, **GitHub** | PR drafting, merge dashboard, review and refresh preferences |

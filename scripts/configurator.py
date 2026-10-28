@@ -335,7 +335,7 @@ SETTINGS = (
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages with the selected local AI backend.", "Commits"),
-    Setting("aiBackend", "scm-toolkit.ai-backend", "Commit inference backend", "Ollama (default), or opt-in Core ML on Apple Neural Engine. Core ML requires the separate Swift bridge; Workspace Search still uses Ollama.", "Commits", "select", ("ollama", "coreml")),
+    Setting("aiBackend", "scm-toolkit.ai-backend", "Backend preference order", "Choose one backend or the order to try them. If a backend fails or produces no valid message, try the next before using a simple fallback. Core ML requires its bridge and prepared models; Workspace Search still uses Ollama.", "Commits", "select", ("ollama", "coreml", "coreml,ollama", "ollama,coreml")),
     Setting("aiCoremlModel", "scm-toolkit.ai-coreml-model", "Core ML model", "Registered CoreML-LLM model ID. Default qwen3.5-2b; run sweetiebot-ane --prepare MODEL to download and compile it before use.", "Commits", "text"),
     Setting("aiCoremlLowMemoryModel", "scm-toolkit.ai-coreml-low-memory-model", "Core ML low-memory model", "Registered smaller CoreML-LLM model ID, used when available RAM falls below your threshold.", "Commits", "text"),
     Setting("aiCoremlCommand", "scm-toolkit.ai-coreml-command", "Core ML bridge executable", "Absolute path to your locally built sweetiebot-ane bridge. Install instructions in native/coreml-llm-bridge/README.md.", "Commits", "text"),
@@ -766,10 +766,12 @@ def _setting_control(setting: Setting, current: object) -> str:
 
     value = html.escape(str(current), quote=True)
     if setting.kind == "select":
+        backend_labels = {"ollama": "Ollama only", "coreml": "Core ML only",
+                          "coreml,ollama": "Core ML → Ollama", "ollama,coreml": "Ollama → Core ML"}
         options = "".join(
             f'<option value="{html.escape(choice, quote=True)}"'
             + (' selected' if choice == str(current) else '')
-            + f'>{html.escape(choice.capitalize() if choice else "None")}</option>'
+            + f'>{html.escape(backend_labels[choice] if setting.name == "aiBackend" else choice.capitalize() if choice else "None")}</option>'
             for choice in setting.choices
         )
         return (

@@ -40,6 +40,7 @@ MAX_GENERATION_ATTEMPTS = 3
 GENERATION_REQUEST_SECONDS = 45
 GENERATION_DEADLINE = ContextVar('commit_generation_deadline', default=None)
 GENERATION_OPTIONS = ContextVar('commit_generation_options', default=None)
+COMMIT_BACKEND = ContextVar('commit_inference_backend', default=None)
 # Ollama can multiply its KV cache for each parallel request. Limit simultaneous
 # title requests across all Sweetiebot worktrees/repositories, not per queue.
 MAX_TITLE_GENERATORS = 6
@@ -1440,13 +1441,16 @@ def emoji_for_change(title: str, files: list[str]) -> str:
     return fallback_emoji(files)
 
 
-def coreml_backend_enabled() -> bool:
-    backend = os.environ.get("SWEETIEBOT_AI_BACKEND") or git_config_string(
+def configured_backends() -> tuple[str, ...]:
+    preference = os.environ.get("SWEETIEBOT_AI_BACKEND") or git_config_string(
         "scm-toolkit.ai-backend", "ollama")
-    # Unknown legacy settings retain the existing Ollama behavior. In
-    # particular, querying this optional preference must not break callers
-    # that override only unrelated Git configuration values.
-    return backend == "coreml"
+    backends = tuple(dict.fromkeys(part.strip() for part in preference.split(",")))
+    # Preserve the Ollama default for unknown legacy settings.
+    return backends if backends and all(item in {"coreml", "ollama"} for item in backends) else ("ollama",)
+
+
+def coreml_backend_enabled() -> bool:
+    return (COMMIT_BACKEND.get() or configured_backends()[0]) == "coreml"
 
 
 def coreml_command() -> str:
@@ -1962,6 +1966,46 @@ def is_filename_only_title(title: str, files: list[str]) -> bool:
     return False
 
 
+def backend_preference(function):
+    @wraps(function)
+    def ordered(stat, diff, files, include_description=False,
+                conversation_context="", require_model=False, file_context_override=None):
+        backends = configured_backends()
+        arguments = dict(include_description=include_description,
+                         conversation_context=conversation_context,
+                         require_model=require_model, file_context_override=file_context_override)
+        if len(backends) == 1:
+            return function(stat, diff, files, **arguments)
+
+        strict = require_model or not commit_fallback_enabled()
+        last_error = None
+        for index, backend in enumerate(backends):
+            token = COMMIT_BACKEND.set(backend)
+            try:
+                # A simple factual fallback must not hide a failed backend
+                # before the remaining preferred AI backends get a chance.
+                result = function(stat, diff, files, **{**arguments, "require_model": True})
+                log_event("commit_title", "backend_selected", backend=backend,
+                          preference=index + 1, outcome="success")
+                return result
+            except RuntimeError as error:
+                last_error = error
+                log_event("commit_title", "backend_failed", backend=backend,
+                          error_type=type(error).__name__,
+                          outcome="retry" if index + 1 < len(backends) else "stopped")
+                if index + 1 < len(backends):
+                    print(f"Sweetiebot: {backend} failed; trying {backends[index + 1]}", file=sys.stderr)
+            finally:
+                COMMIT_BACKEND.reset(token)
+        if strict:
+            raise RuntimeError("No preferred commit backend generated a valid message. " + str(last_error)) from last_error
+        log_event("commit_title", "fallback_used", reason="preferred_backends_failed", outcome="fallback")
+        context = staged_file_context(files) if file_context_override is None else file_context_override
+        return fallback_message(files, include_description, context, diff)
+    return ordered
+
+
+@backend_preference
 @generation_budget
 def generate_message(
     stat: str,
