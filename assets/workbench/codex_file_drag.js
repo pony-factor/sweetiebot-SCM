@@ -4,12 +4,17 @@ globalThis.__sweetiebotWorkbenchComponents?.register('codex-file-drag', ({ docum
     style.textContent = 'iframe[src*="extensionId=openai.chatgpt&"]{pointer-events:auto!important}';
     style.disabled = true;
     doc.head.appendChild(style);
-    const reset = () => { style.disabled = true; };
+    // Avoid recalculating iframe hit testing and CSS on every dragover/mousemove.
+    const reset = () => { if (!style.disabled) style.disabled = true; };
     const update = event => {
         const transfer = event.dataTransfer;
-        style.disabled = !(transfer && (Array.from(transfer.types || []).includes('Files')
+        const types = transfer?.types;
+        const fileDrag = !!transfer && !!(
+            (typeof types?.contains === 'function'
+                ? types.contains('Files') : Array.prototype.includes.call(types || [], 'Files'))
             || transfer.files?.length
-            || Array.from(transfer.items || []).some(item => item.kind === 'file')));
+            || Array.prototype.some.call(transfer.items || [], item => item.kind === 'file'));
+        if (style.disabled === fileDrag) style.disabled = !fileDrag;
     };
     const leave = event => {
         if (!event.relatedTarget && (event.clientX <= 0 || event.clientY <= 0

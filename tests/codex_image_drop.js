@@ -73,10 +73,12 @@ listeners.get('drop')(event('drop'));
 assert.equal(hiddenUploads, 0, 'a hidden composer cannot take the drop');
 disposeHidden(); dispose();
 assert.equal(listeners.size, 0, 'unmount removes capture listeners');
-const composer = { isConnected: true, contains: () => false, getClientRects: () => [{}] };
+let visibilityChecks = 0, promptEnters = 0;
+const composer = { isConnected: true, contains: () => false,
+    getClientRects() { visibilityChecks++; return [{}]; } };
 let promptUploads = 0, overlaySurface;
 const disposePrompt = context.scmToolkitRegisterImageDropTarget(composer,
-    e => { overlaySurface = e.currentTarget; e.preventDefault(); },
+    e => { promptEnters++; overlaySurface = e.currentTarget; e.preventDefault(); },
     () => { overlaySurface = null; },
     e => { promptUploads++; e.preventDefault(); });
 const historyHover = event('dragover');
@@ -84,12 +86,47 @@ historyHover.target = { inside: true, historyRow: true };
 listeners.get('dragover')(historyHover);
 assert.equal(overlaySurface, body, 'hovering a past chat activates the full-view overlay');
 assert.equal(historyHover.stopped, true, 'window capture handles files before history hover listeners');
+const initialVisibilityChecks = visibilityChecks;
+for (let index = 0; index < 100; index++) {
+    const repeated = event('dragover');
+    listeners.get('dragover')(repeated);
+    assert.equal(repeated.defaultPrevented, true, 'throttled drags still accept the drop');
+}
+assert.equal(visibilityChecks, initialVisibilityChecks,
+    'dragover hot path must not repeatedly force composer layout');
+assert.ok(promptEnters <= 3, 'accepted native dragovers are coalesced into bounded updates');
 listeners.get('drop')(event('drop'));
 assert.equal(promptUploads, 1, 'a drop outside the composer attaches to the visible new-chat prompt');
 listeners.get('dragover')(event('dragover'));
 listeners.get('dragend')(event('dragend'));
 assert.equal(overlaySurface, null, 'canceling a drag clears the overlay');
 disposePrompt();
+assert.equal(listeners.size, 0);
+
+// Changing panes must bypass the cached drag target, and a hidden pane cannot
+// receive a drop even if it was active during the previous dragover.
+let visibleA = true, visibleB = true, entersA = 0, entersB = 0;
+let leavesA = 0, dropsA = 0, dropsB = 0;
+const rootA = { isConnected: true, contains: node => node?.pane === 'A',
+    getClientRects: () => visibleA ? [{}] : [] };
+const rootB = { isConnected: true, contains: node => node?.pane === 'B',
+    getClientRects: () => visibleB ? [{}] : [] };
+const disposeA = context.scmToolkitRegisterImageDropTarget(rootA,
+    e => { entersA++; e.preventDefault(); }, () => leavesA++, () => dropsA++);
+const disposeB = context.scmToolkitRegisterImageDropTarget(rootB,
+    e => { entersB++; e.preventDefault(); }, () => {}, () => dropsB++);
+const inA = event('dragover'); inA.target = { pane: 'A' };
+listeners.get('dragover')(inA);
+assert.equal(entersA, 1);
+const inB = event('dragover'); inB.target = { pane: 'B' };
+listeners.get('dragover')(inB);
+assert.equal(entersB, 1, 'crossing into another composer selects it immediately');
+assert.equal(leavesA, 1, 'switching panes clears the old overlay');
+visibleB = false;
+listeners.get('drop')(inB);
+assert.equal(dropsB, 0, 'drop revalidates visibility rather than trusting cached target');
+assert.equal(dropsA, 1, 'drop falls back to the remaining visible composer');
+disposeB(); disposeA();
 assert.equal(listeners.size, 0);
 console.log('Codex image-drop capture checks passed.');
 
