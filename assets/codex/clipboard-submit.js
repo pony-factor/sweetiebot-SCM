@@ -47,10 +47,18 @@
         return '';
     }
 
-    function chooseAction(buttons, active) {
+    function chooseAction(buttons, active, pendingQueue = false) {
         const eligible = buttons.filter(button => classify(button));
-        return (active && eligible.find(button => classify(button) === 'queue'))
-            || eligible.find(button => classify(button) === 'send') || null;
+        const queue = eligible.find(button => classify(button) === 'queue');
+        // Do not submit ahead of existing native queued messages.
+        if (pendingQueue) return queue || (active ? eligible.find(button => classify(button) === 'send') : null) || null;
+        return (active && queue) || eligible.find(button => classify(button) === 'send') || null;
+    }
+
+    function hasPendingQueue(root) {
+        // The native queue bridge tags rows with stable IDs.
+        return Boolean(root.querySelector('[data-scm-toolkit-queue-id]')
+            || document.querySelector('[data-scm-toolkit-queue-id]'));
     }
 
     // Mounting must not depend on an enabled Send button: after a chat starts,
@@ -198,15 +206,18 @@
                     return;
                 }
                 const active = isRunning(current.root);
-                const action = chooseAction([...current.root.querySelectorAll('button')], active);
+                const pendingQueue = hasPendingQueue(current.root);
+                const action = chooseAction([...current.root.querySelectorAll('button')], active, pendingQueue);
                 if (!action) continue;
                 // Only click the native Send / Queue action; never click Stop
                 // or synthesize Enter, which could change the draft instead.
                 action.click();
-                message(button, active ? 'Queue clipboard prompt' : 'Send clipboard prompt');
+                message(button, active || pendingQueue ? 'Queue clipboard prompt' : 'Send clipboard prompt');
                 return;
             }
-            message(button, 'Codex is not ready; clipboard text left in composer');
+            message(button, hasPendingQueue(editor.parentElement || document.body)
+                ? 'Waiting messages are queued; native Queue is unavailable. Clipboard text left in composer'
+                : 'Codex is not ready; clipboard text left in composer');
         } catch (error) {
             message(button, 'Could not prepare clipboard prompt; review the draft and send manually');
         } finally {
@@ -260,6 +271,7 @@
     if (globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__) {
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.classify = classify;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseAction = chooseAction;
+        globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.hasPendingQueue = hasPendingQueue;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseMountTarget = chooseMountTarget;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.findSurface = findSurface;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.sendClipboard = sendClipboard;

@@ -18,6 +18,9 @@ PASTE_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/clipboard-s
 WING_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/send-wing.js'
 WING_START = '\n/* scm-toolkit-codex-send-wing:start */\n'
 WING_END = '\n/* scm-toolkit-codex-send-wing:end */\n'
+INTERRUPT_START = '\n/* scm-toolkit-codex-send-interrupt:start */\n'
+INTERRUPT_END = '\n/* scm-toolkit-codex-send-interrupt:end */\n'
+INTERRUPT_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/send-interrupt.js'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/composer-controls.js'
 PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
 PLACEHOLDER_END = '\nscm-toolkit-codex-placeholders:end */\n'
@@ -118,7 +121,8 @@ def clipboard_module(bundle_path: Path) -> str | None:
 
 
 def transform_layout(source: str, inline: bool = True, paste_button: bool = False,
-                     native_clipboard_module: str | None = None, wing_button: bool = False) -> str:
+                     native_clipboard_module: str | None = None, wing_button: bool = False,
+                     interrupt_send: bool = False) -> str:
     """Place the native computer/usage control beside access without changing React source."""
     source = transform(source)
     if source.count(LAYOUT_START) != source.count(LAYOUT_END) or source.count(LAYOUT_START) > 1:
@@ -147,10 +151,18 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
         before, rest = source.split(WING_START, 1)
         _, after = rest.split(WING_END, 1)
         source = before + after
+    if source.count(INTERRUPT_START) != source.count(INTERRUPT_END) or source.count(INTERRUPT_START) > 1:
+        raise ValueError('Incomplete Codex Send interrupt patch.')
+    if INTERRUPT_START in source:
+        before, rest = source.split(INTERRUPT_START, 1)
+        _, after = rest.split(INTERRUPT_END, 1)
+        source = before + after
     editor_anchor = r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}'
     if is_composer or re.search(editor_anchor, source):
         if wing_button and is_composer:
             source += WING_START + ';\n' + runtime_payload('send wing', WING_ASSET.read_text()) + WING_END
+        if interrupt_send and is_composer:
+            source += INTERRUPT_START + ';\n' + runtime_payload('send interrupt', INTERRUPT_ASSET.read_text()) + INTERRUPT_END
         if inline and is_composer:
             source += LAYOUT_START + ';\n' + runtime_payload('composer layout', ASSET.read_text()) + LAYOUT_END
         if paste_button:
@@ -172,7 +184,7 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
     return source
 
 
-def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False, wing_button: bool = False):
+def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False, wing_button: bool = False, interrupt_send: bool = False):
     """Yield only Codex webview bundles that still contain the retired patch."""
     candidates = (
         [Path(extension_path)]
@@ -185,9 +197,9 @@ def patch_files(extension_path: Path | None = None, inline: bool | None = None, 
             if inline is None:
                 if START in original:
                     yield path, original, transform(original)
-            elif START in original or LAYOUT_START in original or PASTE_START in original or WING_START in original or 'id:`composer.placeholder.localFollowUp.locally`' in original or (paste_button and 'this.dictation=new ' in original and re.search(r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}', original)):
+            elif START in original or LAYOUT_START in original or PASTE_START in original or WING_START in original or INTERRUPT_START in original or 'id:`composer.placeholder.localFollowUp.locally`' in original or (paste_button and 'this.dictation=new ' in original and re.search(r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}', original)):
                 module = clipboard_module(path) if paste_button else None
-                yield path, original, transform_layout(original, inline, paste_button, module, wing_button)
+                yield path, original, transform_layout(original, inline, paste_button, module, wing_button, interrupt_send)
 
 
 def repair(extension_path: Path | None = None) -> list[Path]:
