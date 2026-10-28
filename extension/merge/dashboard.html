@@ -22,8 +22,12 @@ h3{margin:16px 0 8px;font-size:13px}
 .refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
 .refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
 .refresh-icon svg{width:16px;height:16px}
-.bar{height:6px;background:var(--vscode-progressBar-background,#444);margin:0;border-radius:0;opacity:.3}
+.bar{position:relative;height:6px;overflow:hidden;background:var(--vscode-input-background,#333);margin:0;border-radius:0}
 .bar-fill{height:100%;background:var(--merge-complete-color);width:0%;transition:width .2s}
+.bar[data-active="true"]{background:var(--vscode-progressBar-background,#468cdb)}
+.bar[data-active="true"]::after{content:"";position:absolute;inset:0;background-image:repeating-linear-gradient(135deg,transparent 0 8px,rgba(255,255,255,.3) 8px 16px);background-size:24px 24px;animation:merge-stripes 1s linear infinite}
+@keyframes merge-stripes{to{background-position:24px 0}}
+@media(prefers-reduced-motion:reduce){.bar[data-active="true"]::after{animation:none}.bar-fill{transition:none}}
 body{height:100vh;display:flex;flex-direction:column}
 header,.bar,.notice{flex-shrink:0}
 .layout{display:grid;grid-template-columns:minmax(0,var(--sidebar-width,37%)) 6px minmax(0,1fr);flex:1;min-height:0}
@@ -51,6 +55,7 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
 .events{flex:0 0 var(--timeline-height,34%);min-height:0;overflow:auto;padding:10px 16px}
 .timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.current-activity{border-left:3px solid var(--vscode-progressBar-background,#468cdb);padding:6px 9px;margin-bottom:12px;background:var(--vscode-editorWidget-background);font-size:12px}.current-activity strong{display:block;margin-bottom:4px}.current-activity div{overflow-wrap:anywhere}
 .timeline-heading h2{margin:0}
 .timeline-time-picker{display:flex;align-items:center;gap:5px;color:var(--vscode-descriptionForeground);font-size:11px}
 .timeline-time-picker select{font:inherit;color:var(--vscode-dropdown-foreground,var(--vscode-foreground));background:var(--vscode-dropdown-background,var(--vscode-input-background));border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border,#555));border-radius:4px;padding:2px 4px;max-width:100%}
@@ -151,11 +156,11 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 </style>
 </head>
 <body>
+<div id="merge-progress" class="bar" role="progressbar" aria-label="Bulk merge progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar-fill" class="bar-fill"></div></div>
 <header>
 <div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
 <div class="overview"><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="muted" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
-<div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="blocker-notice" class="blocker-notice" hidden></div>
 <div id="notice" class="notice" hidden></div>
 <div class="layout">
@@ -175,6 +180,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
         </select>
       </label>
     </div>
+    <div id="current-activity" class="current-activity" aria-label="Current runner activity" role="status" hidden></div>
     <div id="events"></div>
   </div>
 </aside>
@@ -496,6 +502,18 @@ __RATE_LIMIT_FORMATTER__
     byId('progress').textContent = merged + '/' + model.prs.length +
       ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
+    const pending = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed');
+    const runningPhases = ['verifying', 'reviewing', 'applying', 'refreshing', 'preparing', 'message-prepared',
+      'integrating', 'applying-resolution', 'rewrite-approved', 'prepared', 'decision-commit', 'sync-prepared',
+      'pushed', 'verifying-push', 'waiting-checks', 'checks-passed', 'merging', 'needs_resolution', 'needs_refresh'];
+    const active = pending.length > 0 && !model.error && !(model.rateLimitRetryAt > Date.now()) &&
+      (model.workers?.length ? model.workers.some(worker => !['Finished', 'Rate limited'].includes(worker.phase))
+        : pending.some(pr => pr.activity ? runningPhases.includes(pr.activity.phase) : !blockers.includes(pr)));
+    const progressBar = byId('merge-progress');
+    progressBar.dataset.active = String(active);
+    progressBar.setAttribute('aria-valuenow', String(model.prs.length ? Math.round(100 * merged / model.prs.length) : 0));
+    progressBar.setAttribute('aria-valuetext', merged + ' of ' + model.prs.length + ' pull requests merged' +
+      (active ? '; merge queue active' : pending.length ? '; waiting for attention' : '; queue finished'));
     byId('notice').hidden = !model.error;
     byId('notice').textContent = model.rateLimitRetryAt && model.error ? rateLimitMessage(model.rateLimitRetryAt, model.timestampMode) : model.error || '';
     const workerList = byId('merge-workers');
@@ -533,6 +551,14 @@ __RATE_LIMIT_FORMATTER__
       }
     }
     const events = byId('events');
+    const currentActivity = byId('current-activity');
+    currentActivity.replaceChildren();
+    const operations = model.prs.filter(pr => pr.activity && pr.state !== 'merged' && pr.state !== 'closed');
+    currentActivity.hidden = !operations.length;
+    if (operations.length) {
+      show('strong', '', 'Current activity', currentActivity);
+      for (const pr of operations) show('div', '', '#' + pr.number + ' · ' + pr.activity.message, currentActivity);
+    }
     const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
       ? model.timestampMode : 'hidden';
     byId('timeline-time-mode').value = timestampMode;
