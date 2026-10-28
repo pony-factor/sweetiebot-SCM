@@ -11,6 +11,11 @@ async function run() {
   let status = {};
   let limitsAllowed = true, declineEnqueue = false;
   let staleEnqueueCount = 0, validatedTree = 'a'.repeat(40);
+  const snapshotFor = tree => ({
+    version: 1, tree, parent: '', files: [{ path: 'changed.txt', size: 12 }],
+    diff: { totalBytes: 30, totalLines: 2, sections: [{ bytes: 30, lines: 2 }] },
+    approvedWarnings: []
+  });
   const notices = [], progress = [], completed = [], errors = [];
   const titleContexts = [];
   const errorActions = [], details = [];
@@ -47,7 +52,15 @@ async function run() {
         }
       };
       assert.equal(name, 'node:child_process');
-      return { execFile(_exe, _args, _options, callback) { callback(null, JSON.stringify(status)); }, spawn(_exe, args) {
+      return { execFile(_exe, args, _options, callback) {
+        if (args.includes('--prepare-stage')) {
+          events.push('normalize');
+          callback(null, JSON.stringify({ stagedTree: validatedTree }));
+        } else {
+          assert(args.includes('--status'));
+          callback(null, JSON.stringify(status));
+        }
+      }, spawn(_exe, args) {
         if (args.includes('--resume')) resumes++;
         if (args.includes('--dismiss-merged')) dismissedJobs.push(args.at(-1));
         const child = new EventEmitter();
@@ -123,7 +136,10 @@ async function run() {
           assert.equal(options.captureTree, true,
             'durable commits inspect and pin their exact final staged tree');
           events.push('limits');
-          return { approved: limitsAllowed, stagedTree: validatedTree };
+          return {
+            approved: limitsAllowed, stagedTree: validatedTree,
+            validatedSnapshot: snapshotFor(validatedTree)
+          };
         }
       }
     }
@@ -151,20 +167,25 @@ async function run() {
   repository.state.indexChanges = ['staged'];
   const denied = await commit(root, { message: 'Oversize' });
   assert.equal(denied.cancelled, true);
-  assert.deepEqual(events, ['limits']);
+  assert.deepEqual(events, ['normalize', 'limits']);
   assert.equal(jobs.length, 0, 'a rejected size preflight cannot enter the worker');
   limitsAllowed = true;
   repository.state.indexChanges = [];
 
   const initialStatusCalls = statusCalls;
   await commit(root, { message: 'Test' });
-  assert.deepEqual(events, ['limits', 'stage', 'limits', 'enqueue']);
+  assert.deepEqual(events, ['normalize', 'limits', 'stage', 'normalize', 'limits', 'enqueue'],
+    'normalize before measuring the staged tree');
   assert.equal(statusCalls - initialStatusCalls, 2,
     'queue refreshes once before preflight and once after the local commit');
   assert.equal(preparations[0].statusFresh, true,
     'preparation reuses the verified Git state');
   assert.equal(jobs[0].expectedTree, 'a'.repeat(40),
     'the approved staged tree must reach the Python commit worker');
+  assert.deepEqual(jobs[0].validatedSnapshot, snapshotFor('a'.repeat(40)),
+    'the durable worker must reuse inspected blob sizes, diff counts, and approved warnings');
+  assert.equal(jobs[0].normalizedTree, 'a'.repeat(40),
+    'the Python worker receives the normalized and inspected tree');
   await commit(root, { message: 'Staged selection' });
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
@@ -188,12 +209,17 @@ async function run() {
   const beforeJobs = jobs.length;
   staleEnqueueCount = 1;
   await commit(root, { message: 'Retry after concurrent staging' });
-  assert.deepEqual(events.slice(beforeRetry), ['limits', 'enqueue', 'limits', 'enqueue'],
+  assert.deepEqual(events.slice(beforeRetry),
+    ['normalize', 'limits', 'enqueue', 'normalize', 'limits', 'enqueue'],
     'reinspect the changed staged tree before queueing the final local commit');
   assert.equal(jobs.length, beforeJobs + 1,
     'a changed selection must create exactly one local background job');
   assert.equal(jobs.at(-1).expectedTree, 'b'.repeat(40),
     'the retried job must use the newly approved tree, not the stale hash');
+  assert.equal(jobs.at(-1).validatedSnapshot.tree, 'b'.repeat(40),
+    'a retried job must refresh its approved metadata along with the staged tree');
+  assert.equal(jobs.at(-1).normalizedTree, 'b'.repeat(40),
+    'retries normalize the new stage before inspecting it');
 
   status = { id: 'older', phase: 'generating', titleJobs: ['older'] };
   const manualMessage = '🧪 Manual subject\n\nCo-authored-by: Codex <noreply@openai.com>';

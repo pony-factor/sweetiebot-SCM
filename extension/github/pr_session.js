@@ -126,6 +126,7 @@ async function publishOptionalMergeSummaries({ enabled, selection, input, result
 
 let mergeDashboardStarted = false;
 let mergeDashboardController;
+let activeMergeBatch;
 const mergeWorkerTabs = new Map();
 
 async function resumeMergeDashboard(vscode, directory, context) {
@@ -141,6 +142,14 @@ async function resumeMergeDashboard(vscode, directory, context) {
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
   // A dedicated merge workspace owns this layout; no edits to the source window.
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
+    onRefresh: async repairedNumbers => {
+      const next = await activeMergeBatch?.reconcile?.(repairedNumbers);
+      for (const launch of next?.launches || (next?.url ? [{ url: next.url }] : [])) {
+        const opened = await require('./pr_workflows').openWorkflow(vscode, launch.url);
+        require('../merge/runner_layout').registerMergeRunner(vscode, 'batch:' + (launch.id || 'refreshed'), opened.tab);
+        if (launch.id && opened.tab) mergeWorkerTabs.set(launch.id, opened.tab);
+      }
+    },
     onFocusWorker: async id => {
       const tab = mergeWorkerTabs.get(id);
       const groups = vscode.window.tabGroups?.all || [];
@@ -157,7 +166,7 @@ async function resumeMergeDashboard(vscode, directory, context) {
     viewColumn: hasEditors ? (vscode.ViewColumn?.Two || 2) : (vscode.ViewColumn?.One || 1),
     context, rootUri: vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri
   });
-  if (savedState) mergeDashboardController.recordBatchState(savedState);
+  if (savedState) mergeDashboardController.recordBatchState(savedState, { restored: !activeMergeBatch });
   await vscode.commands.executeCommand('vscode.setEditorLayout', {
     orientation: 0, groups: hasEditors ? [{ size: 0.2 }, { size: 0.8 }] : [{}]
   });
@@ -220,6 +229,17 @@ async function resumePRSession(vscode, context) {
     let selection;
     try { selection = JSON.parse(await fs.readFile(path.join(directory, 'merge-selection.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+    // An explicit recovery request may reselect current heads without replacing
+    // the dashboard's original session snapshots or replaying saved patches.
+    if (selection && input.resumeSelection) {
+      const resumed = require('../merge/dashboard').validateSelection(input.resumeSelection);
+      if (resumed.repository !== selection.repository || resumed.pullRequests.some(pr =>
+        !selection.pullRequests.some(original => original.number === pr.number && original.title === pr.title &&
+          original.head === pr.head && original.base === pr.base && original.url === pr.url))) {
+        throw Error('The recovery selection is outside the original merge session.');
+      }
+      selection = resumed;
+    }
     if (selection) {
       const auth = await require('./session').githubSession(vscode);
       const { invokeResolutionCLI } = require('../merge/resolution');
@@ -292,6 +312,9 @@ async function resumePRSession(vscode, context) {
         onState: async state => {
           awakeState = state;
           updateAwake();
+          for (const number of Object.keys(blockerReports)) {
+            if (!state.deferred.some(item => item.number === Number(number))) delete blockerReports[number];
+          }
           if (state.rateLimit) {
             const error = Object.assign(Error(state.rateLimit.message), {rateLimited:true,retryAt:state.rateLimit.retryAt,configured:state.rateLimit.configured});
             void require('./rate_limit').promptRateLimit(vscode, error, {context,retryPriority:1,retry:()=>vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests')}).catch(()=>{});
@@ -332,6 +355,7 @@ async function resumePRSession(vscode, context) {
       handoff.dispose = () => { keepAwake.dispose(); disposeBatch(); };
       }
       context.subscriptions?.push(handoff);
+      activeMergeBatch = handoff;
       if (handoff.launches?.length) {
         try {
           for (const launch of handoff.launches) {

@@ -53,6 +53,23 @@ class BackgroundCommitTests(unittest.TestCase):
     def job(self, directory):
         return json.loads((directory / 'job.json').read_text())
 
+    def approved_snapshot(self):
+        """Model the validated metrics emitted by the VS Code preflight."""
+        raw = subprocess.check_output(['/usr/bin/git', 'diff', '--cached', '--no-ext-diff', '--no-color'])
+        names = [name for name in self.git('diff', '--cached', '--name-only', '-z').split('\x00') if name]
+        files = [{'path': name, 'size': int(self.git('cat-file', '-s', ':' + name))}
+                 for name in names]
+        parent = subprocess.run(['/usr/bin/git', 'rev-parse', '--verify', 'HEAD'],
+                                capture_output=True, text=True).stdout.strip()
+        lines = raw.count(b'\n') + int(bool(raw) and not raw.endswith(b'\n'))
+        return {
+            'version': 1, 'tree': self.git('write-tree'), 'parent': parent,
+            'files': files,
+            'diff': {'totalBytes': len(raw), 'totalLines': lines,
+                     'sections': [{'bytes': len(raw), 'lines': lines}] if raw else []},
+            'approvedWarnings': [],
+        }
+
     def published_blocked_job(self):
         directory = self.queue(push=True)
         self.git('commit', '--allow-empty', '-qm', 'External follow-up')
@@ -61,6 +78,89 @@ class BackgroundCommitTests(unittest.TestCase):
         job.update(phase='blocked', error='The branch advanced outside the queued commits; background work was paused.')
         worker.write_journal(directory / 'job.json', job)
         return directory
+
+    def test_inspection_snapshot_reuses_blob_sizes_without_second_cat_file(self):
+        snapshot = self.approved_snapshot()
+        with patch.object(worker.core, 'staged_blob_sizes', side_effect=AssertionError(
+                'blob metadata must come from the approved snapshot')):
+            directory = self.queue(expectedTree=snapshot['tree'], validatedSnapshot=snapshot,
+                                   message='')
+        self.assertEqual(self.job(directory)['tree'], snapshot['tree'])
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), snapshot['tree'])
+
+    def test_inspection_snapshot_requires_matching_content_and_parent(self):
+        snapshot = self.approved_snapshot()
+        for corrupted in (
+            {**snapshot, 'tree': 'f' * 40},
+            {**snapshot, 'parent': 'f' * 40},
+            {**snapshot, 'files': []},
+            {**snapshot, 'files': [{'path': 'story.txt', 'size': -1}]},
+            {**snapshot, 'diff': {**snapshot['diff'], 'totalBytes': -1}},
+        ):
+            with self.subTest(corrupted=corrupted):
+                with self.assertRaises((RuntimeError, ValueError)):
+                    worker.enqueue({
+                        'message': '🧪 Reject stale snapshot', 'expectedTree': snapshot['tree'],
+                        'validatedSnapshot': corrupted,
+                    }, start=False)
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_preflight_normalizes_before_approval_without_repeating_work(self):
+        (self.repo / 'story.txt').write_text('Needs normalized newline')
+        self.git('add', 'story.txt')
+        original = self.git('write-tree')
+        prepared = worker.prepare_staged_preflight()['stagedTree']
+        self.assertNotEqual(original, prepared)
+        self.assertEqual(self.git('write-tree'), prepared)
+        snapshot = self.approved_snapshot()
+        self.assertEqual(snapshot['tree'], prepared)
+        with patch.object(worker.core, 'normalize_staged_final_newlines',
+                          side_effect=AssertionError('Normalization must not repeat')):
+            directory = self.queue(expectedTree=prepared, normalizedTree=prepared,
+                                   validatedSnapshot=snapshot)
+        self.assertEqual(self.job(directory)['tree'], prepared)
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), prepared)
+
+    def test_normalized_stage_approval_rejects_concurrent_changes(self):
+        prepared = worker.prepare_staged_preflight()['stagedTree']
+        snapshot = self.approved_snapshot()
+        (self.repo / 'late.txt').write_text('Later staged change\n')
+        self.git('add', 'late.txt')
+        with self.assertRaisesRegex(RuntimeError, 'Staged changes changed'):
+            worker.enqueue({
+                'message': '🧪 Reject changed selection',
+                'expectedTree': prepared,
+                'normalizedTree': prepared,
+                'validatedSnapshot': snapshot,
+            }, start=False)
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_unverified_normalization_cannot_bypass_the_normalizer(self):
+        snapshot = self.approved_snapshot()
+        for bad_request in (
+            {'normalizedTree': snapshot['tree']},
+            {'expectedTree': snapshot['tree'], 'normalizedTree': 'f' * 40,
+             'validatedSnapshot': snapshot},
+        ):
+            with self.assertRaises(ValueError):
+                worker.enqueue({'message': '🧪 Require verified normalization',
+                                **bad_request}, start=False)
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_normalization_invalidates_old_inspection_and_requires_reapproval(self):
+        (self.repo / 'story.txt').write_text('Missing final newline')
+        self.git('add', 'story.txt')
+        snapshot = self.approved_snapshot()
+        with self.assertRaisesRegex(RuntimeError, 'Staged changes changed'):
+            worker.enqueue({
+                'message': '🧪 Normalize staged file', 'expectedTree': snapshot['tree'],
+                'validatedSnapshot': snapshot
+            }, start=False)
+        self.assertNotEqual(self.git('write-tree'), snapshot['tree'])
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+        refreshed = self.approved_snapshot()
+        directory = self.queue(expectedTree=refreshed['tree'], validatedSnapshot=refreshed)
+        self.assertEqual(self.job(directory)['tree'], refreshed['tree'])
 
     def test_durable_commit_rejects_changed_stage_after_approved_preflight(self):
         """A cheap tree comparison guards the one staged-size inspection."""

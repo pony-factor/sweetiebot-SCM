@@ -335,6 +335,66 @@ def install_agent(script):
                        check=True, capture_output=True)
 
 
+def prepare_staged_preflight():
+    """Normalize the staged index under the queue lock before size inspection."""
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    with repository_lock(meta):
+        if core.staged_whitespace_enabled():
+            core.normalize_staged_final_newlines()
+        return {'stagedTree': git('write-tree')}
+
+
+def validated_preflight_files(snapshot, tree, parent):
+    """Consume an approved VS Code snapshot only for its exact tree and HEAD.
+
+    A verified source snapshot avoids another Git blob-size walk during
+    oversized-commit splitting. Its shape is checked before any local commit.
+    """
+    if not isinstance(snapshot, dict) or snapshot.get('version') != 1:
+        raise ValueError('Invalid staged-inspection snapshot.')
+    if snapshot.get('tree') != tree or snapshot.get('parent') != parent:
+        raise RuntimeError('Staged changes changed after the commit-size check. Review and retry.')
+    entries = snapshot.get('files')
+    diff = snapshot.get('diff')
+    warnings = snapshot.get('approvedWarnings')
+    if (not isinstance(entries, list) or len(entries) > 100_000
+            or not isinstance(diff, dict) or not isinstance(warnings, list)
+            or len(warnings) > 20 or any(not isinstance(w, str) or len(w) > 500 for w in warnings)):
+        raise ValueError('Invalid staged-inspection snapshot.')
+    if (any(not isinstance(diff.get(key), int) or isinstance(diff[key], bool) or diff[key] < 0
+            for key in ('totalBytes', 'totalLines'))
+            or not isinstance(diff.get('sections'), list)
+            or len(diff['sections']) > 100_000
+            or any(not isinstance(section, dict)
+                   or any(not isinstance(section.get(key), int)
+                          or isinstance(section[key], bool) or section[key] < 0
+                          for key in ('bytes', 'lines'))
+                   for section in diff['sections'])):
+        raise ValueError('Invalid staged-inspection diff metrics.')
+    files = []
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {'path', 'size'}:
+            raise ValueError('Invalid staged-inspection file metadata.')
+        path, size = entry['path'], entry['size']
+        if (not isinstance(path, str) or not path or '\x00' in path
+                or not isinstance(size, int) or isinstance(size, bool) or size < 0
+                or path in seen):
+            raise ValueError('Invalid staged-inspection file metadata.')
+        seen.add(path)
+        files.append((path, size))
+    # Names are inexpensive to verify and prevent a malformed snapshot from
+    # omitting a file, while the expensive blob-size query is never repeated.
+    current = [name for name in git('diff', '--cached', '--name-only', '-z').split('\x00') if name]
+    if current != [path for path, _ in files]:
+        raise RuntimeError('Staged changes changed after the commit-size check. Review and retry.')
+    if diff['totalLines'] > diff['totalBytes'] + 1:
+        raise ValueError('Invalid staged-inspection diff metrics.')
+    if sum(part['bytes'] for part in diff['sections']) > diff['totalBytes']:
+        raise ValueError('Invalid staged-inspection diff metrics.')
+    return files
+
+
 def enqueue(request, start=True):
     root = git('rev-parse', '--show-toplevel')
     meta = Path(git('rev-parse', '--absolute-git-dir'))
@@ -374,12 +434,8 @@ def enqueue(request, start=True):
             raise ValueError('Invalid background commit request.')
         if trailer and ('\n' in trailer or not trailer.startswith('Co-authored-by: ')):
             raise ValueError('Invalid co-author trailer.')
-        if not message.strip():
-            if not core.feature_enabled():
-                raise RuntimeError('Enter a commit message; automatic commit titles are disabled.')
-            files = [name for name in core.git_output('diff', '--cached', '--name-only', '-z').split('\x00') if name]
-            if not trailer and len(core.github_split_groups(files)) > 1:
-                return {'queued': False}  # Preserve the existing oversized-commit splitter.
+        if not message.strip() and not core.feature_enabled():
+            raise RuntimeError('Enter a commit message; automatic commit titles are disabled.')
         # The VS Code command inspected the exact staged tree once. Reject
         # later staged edits without rescanning its diff or blob sizes; this
         # also protects the time spent capturing optional Codex context.
@@ -393,9 +449,38 @@ def enqueue(request, start=True):
                     'Staged changes changed after the commit-size check. '
                     'Review the staged selection and retry the commit.'
                 )
-        if core.staged_whitespace_enabled():
+        normalized_tree = request.get('normalizedTree')
+        if normalized_tree is not None:
+            # Only the exact approved index can skip a second normalization.
+            # Legacy and direct callers continue normalizing inside enqueue.
+            if (not isinstance(normalized_tree, str)
+                    or normalized_tree != expected_tree
+                    or request.get('validatedSnapshot') is None):
+                raise ValueError('Invalid pre-normalized staged-tree identifier.')
+        elif core.staged_whitespace_enabled():
             core.normalize_staged_final_newlines()
         tree = git('write-tree')
+        # Legacy normalization can modify the tree; never reuse its old
+        # approval without another staged-tree verification.
+        if expected_tree is not None and tree != expected_tree:
+            raise RuntimeError(
+                'Staged changes changed after the commit-size check. '
+                'Review the staged selection and retry the commit.'
+            )
+        snapshot = request.get('validatedSnapshot')
+        blob_sizes = None
+        if snapshot is not None:
+            if expected_tree is None:
+                raise ValueError('A staged-inspection snapshot requires an approved tree.')
+            blob_sizes = validated_preflight_files(snapshot, tree, parent)
+        if not message.strip():
+            if blob_sizes is None:
+                files = [name for name in core.git_output(
+                    'diff', '--cached', '--name-only', '-z').split('\x00') if name]
+            else:
+                files = [name for name, _ in blob_sizes]
+            if not trailer and len(core.github_split_groups(files, blob_sizes)) > 1:
+                return {'queued': False}  # Preserve the existing oversized-commit splitter.
         selected = request.get('paths')
         if selected is not None:
             if (not isinstance(selected, list) or not selected or len(selected) > 100
@@ -1395,6 +1480,8 @@ if __name__ == '__main__':
             print(fork_branch(*sys.argv[2:5], expected_tip=sys.argv[5]))
         elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
             print(fork_branch(*sys.argv[2:]))
+        elif sys.argv[1:] == ['--prepare-stage']:
+            print(json.dumps(prepare_staged_preflight()))
         elif sys.argv[1:] == ['--enqueue']:
             print(json.dumps(enqueue(json.load(sys.stdin))))
         elif sys.argv[1:] == ['--request-push']:

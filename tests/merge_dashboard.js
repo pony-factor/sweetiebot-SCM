@@ -343,9 +343,11 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   };
   const actionLaunches = [];
   const workerFocus = [];
+  const refreshedQueues = [];
   panel.visible = false;
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
+    onRefresh: async numbers => { refreshedQueues.push(numbers); },
     onFocusWorker: async id => { workerFocus.push(id); },
     context: { globalStorageUri: { fsPath: reactionStorage }, workspaceState },
     launchAction: async (...args) => { actionLaunches.push(args); return true; },
@@ -500,6 +502,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nMechanically reconciled both changes.' }];
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'resolved');
+  assert.deepEqual(refreshedQueues.at(-1), [12], 'Verified cleared conflicts notify the active merge coordinator');
   assert(events.at(-1).prs[0].report.text.includes('Mechanically'));
   assert(fileRequests >= 2, 'Head changes refresh the file diff');
   messageHandler({ type: 'open-pr', number: 12 });
@@ -638,6 +641,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   await messageHandler({ type: 'post-status-updates', enabled: false });
   assert.equal(events.at(-1).postStatusUpdates, false);
   dashboard.recordLocalProgress({ number: 12, stage: 'prepared', sha });
+  assert.equal(events.at(-1).prs[0].activity.phase, 'prepared');
+  assert.match(events.at(-1).prs[0].activity.message, /squash prepared locally/);
   dashboard.recordLocalProgress({ number: 12, stage: 'decision-commit', sha,
     path: 'src/file.js', title: '🛠️ Keep both APIs', description: 'Preserve existing callers with an adapter.' });
   assert.equal(events.at(-1).events.at(-1).commitSha, sha);
@@ -647,6 +652,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
   dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha, title: '🔄 Sync branch to main' });
   assert.equal(events.at(-1).events.at(-1).commitTitle, '🔄 Sync branch to main');
+  assert.match(mergeActivityPresentation(events.at(-1).events.at(-1)).summary, /pushed to the PR branch/,
+    'Operational timeline entries lead with the runner action rather than hiding it behind a commit title');
   assert(!events.at(-1).events.at(-1).details);
   await dashboard.flushLocalState();
   assert.equal(createMergeDashboardPersistence(localContext, selection).restoredRecovery[12].stage, 'pushed');
@@ -678,32 +685,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.match(events.at(-1).events.at(-1).details, /Refresh the selected head/);
   dashboard.recordBatchState(batchState);
   assert.equal(events.at(-1).events.length, eventCount + 1, 'Repeating batch state does not duplicate deferral events');
-  assert.equal(events.at(-1).autoFixCi, false);
-  await messageHandler({ type: 'auto-fix-ci-method', method: 'invalid' });
-  assert.equal(layoutConfig.mergeAutoFixCiMethod, 'web');
-  await messageHandler({ type: 'auto-fix-ci-method', method: 'codex' });
-  await messageHandler({ type: 'auto-fix-ci', enabled: true });
-  assert.equal(events.at(-1).autoFixCiMethod, 'codex');
-  assert.equal(events.at(-1).autoFixCi, true);
-  info = { ...info, state: 'open', merged: false, head: { ...info.head, sha: nextSha },
-    mergeable_state: 'unstable', base: { ...info.base, sha: 'c'.repeat(40) } };
-  inlineCommentsForPr = [];
-  commentsForPr = [];
-  await dashboard.refresh();
-  const repairState = { repository: selection.repository,
-    pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'c'.repeat(40) }],
-    history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
-    deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
-  const autoStart = actionLaunches.length;
-  dashboard.recordBatchState(repairState);
-  await new Promise(resolve => setTimeout(resolve, 25));
-  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when selected integrated-head CI fails');
-  assert.equal(actionLaunches.at(-1)[6], 'codex', 'Auto repair uses the configured method');
-  dashboard.recordBatchState(repairState);
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(actionLaunches.length, autoStart + 1, 'Polling cannot duplicate an auto-repair');
-  await messageHandler({ type: 'auto-fix-ci', enabled: false });
-  assert.equal(events.at(-1).autoFixCi, false);
+  const runningState = { repository: selection.repository, deferred: [], activities: { 12: {
+    phase: 'reviewing', message: 'Review round 2 · waiting for GPT handoff', round: 2, at: '2026-10-27T15:00:00Z'
+  } } };
+  dashboard.recordBatchState(runningState);
+  const runningCount = events.at(-1).events.length;
+  assert.equal(events.at(-1).prs[0].activity.phase, 'reviewing');
+  assert.match(events.at(-1).events.at(-1).message, /waiting for GPT/);
+  dashboard.recordBatchState(runningState);
+  assert.equal(events.at(-1).events.length, runningCount, 'Repeated snapshots do not flood the activity log');
+  dashboard.recordBatchState(runningState, { restored: true });
+  assert.equal(events.at(-1).prs[0].activity.phase, 'paused');
+  assert.match(events.at(-1).prs[0].activity.message, /Runner not resumed/);
   // Retargeting a stacked PR must not freeze the live status, diff or commits.
   // Keep the execution selection unchanged; never authorize a different base.
   info = { ...info, title: selection.pullRequests[0].title, base: { ...info.base, ref: 'new-base' },
@@ -738,6 +731,32 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   info = { ...info, base: { ...info.base, ref: 'main' } };
   await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].actionPlan.kind, 'snapshot', 'Returning to the original base does not resume a deferred batch');
+  assert.equal(events.at(-1).autoFixCi, false);
+  await messageHandler({ type: 'auto-fix-ci-method', method: 'invalid' });
+  assert.equal(layoutConfig.mergeAutoFixCiMethod, 'web');
+  await messageHandler({ type: 'auto-fix-ci-method', method: 'codex' });
+  await messageHandler({ type: 'auto-fix-ci', enabled: true });
+  assert.equal(events.at(-1).autoFixCiMethod, 'codex');
+  assert.equal(events.at(-1).autoFixCi, true);
+  info = { ...info, state: 'open', merged: false, head: { ...info.head, sha: nextSha },
+    mergeable_state: 'unstable', base: { ...info.base, sha: 'c'.repeat(40) } };
+  inlineCommentsForPr = [];
+  commentsForPr = [];
+  await dashboard.refresh();
+  const repairState = { repository: selection.repository,
+    pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'c'.repeat(40) }],
+    history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
+    deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
+  const autoStart = actionLaunches.length;
+  dashboard.recordBatchState(repairState);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when selected integrated-head CI fails');
+  assert.equal(actionLaunches.at(-1)[6], 'codex', 'Auto repair uses the configured method');
+  dashboard.recordBatchState(repairState);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(actionLaunches.length, autoStart + 1, 'Polling cannot duplicate an auto-repair');
+  await messageHandler({ type: 'auto-fix-ci', enabled: false });
+  assert.equal(events.at(-1).autoFixCi, false);
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
   await dashboard.refresh({ force: true });
   const failedFetch = events.at(-1).events.at(-1);
@@ -887,6 +906,42 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   related.handlers.click({ preventDefault() { linkPrevented = true; }, stopPropagation() { linkStopped = true; } });
   assert(linkPrevented && linkStopped, 'Handled dashboard links suppress default navigation and bubbling');
   assert.deepEqual(clicked, ['https://github.com/pony-factor/example/pull/5']);
+  // A linked GitHub image in the original PR description should render like
+  // GitHub, without trusting raw HTML or requesting arbitrary remote images.
+  const imageRoot = document.createElement('div');
+  const attachment = 'https://github.com/user-attachments/assets/2d5481b8-54dc-48c6-87e5-b67927d630bd';
+  const imageClicks = [];
+  renderMergeMarkdown(imageRoot, [
+    '<p align="center"><a href="https://github.com/pony-factor/kefania"><img src="' +
+      attachment + '" alt="Write PR descriptions automatically."></a></p>',
+    '![Screenshot](https://user-images.githubusercontent.com/60260750/123/screenshot.png)',
+    '![Tracker](https://example.org/tracker.png)',
+    '<img src="' + attachment + '" alt="Safe image" onerror="alert(1)">',
+    '<img src="javascript:alert(1)" alt="Unsafe image">',
+    '<img src="https://github.com.evil.invalid/user-attachments/assets/fake" alt="Fake attachment">',
+    '<img src="http://github.com/user-attachments/assets/fake" alt="Insecure attachment">',
+    '<script>alert(1)</script>'
+  ].join(String.fromCharCode(10)), { openLink: href => imageClicks.push(href) });
+  const imageElements = walk(imageRoot);
+  const images = imageElements.filter(item => item.tag === 'img');
+  assert.equal(images.length, 3, 'Only allow trusted HTTPS GitHub-hosted images');
+  assert.deepEqual(images.map(item => item.alt),
+    ['Write PR descriptions automatically.', 'Screenshot', 'Safe image']);
+  assert(images.every(item => item.loading === 'lazy' && item.referrerPolicy === 'no-referrer'));
+  assert(images.every(item => item.onerror === undefined && item.handlers.error === undefined),
+    'Untrusted event handlers must not be copied onto image elements');
+  assert(imageElements.some(item => item.className === 'markdown-image-center'),
+    'Center the HTML image banner');
+  const bannerLink = imageElements.find(item => item.tag === 'a' && item.href === 'https://github.com/pony-factor/kefania');
+  assert(bannerLink.children.some(item => item.tag === 'img'), 'Keep the banner image inside its link');
+  bannerLink.handlers.click({ preventDefault() {}, stopPropagation() {} });
+  assert.deepEqual(imageClicks, ['https://github.com/pony-factor/kefania']);
+  assert(imageElements.some(item => item.tag === 'a' && item.textContent === 'Image: Tracker'),
+    'Off-site Markdown images remain plain links');
+  assert(!imageElements.some(item => item.tag === 'script'), 'Raw HTML must never be executed');
+  assert(imageRoot.textContent.includes('javascript:alert(1)'),
+    'Invalid image schemes remain visible as text');
+
   const emphasisRoot = document.createElement('div');
   renderMergeMarkdown(emphasisRoot, '**bold *italic* ending** and *italic **bold** ending* plus ***both***.');
   assert.equal(emphasisRoot.textContent, 'bold italic ending and italic bold ending plus both.');

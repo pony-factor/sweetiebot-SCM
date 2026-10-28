@@ -18,8 +18,9 @@ function mergeActivityPresentation(event, prs = []) {
   ).filter(Boolean).join('\n') || (fetchFailure ? /^fetch failed\.?$/i.test(message)
     ? 'No request details were captured for this earlier error. Use Refresh GitHub status to retry with diagnostics.'
     : message : '');
-  const summary = title || (fetchFailure ? 'Fetch failed' : message) || (sha ? 'Commit' : 'Activity');
-  const status = sha && title && message !== title ? message : '';
+  const operational = event?.state === 'progress';
+  const summary = (operational ? message : title) || (fetchFailure ? 'Fetch failed' : message) || (sha ? 'Commit' : 'Activity');
+  const status = sha && title && message !== title ? operational ? title : message : '';
   return { sha, shortSha: sha.slice(0, 7), summary, status, explanation,
     expandable: Boolean(status || explanation) };
 }
