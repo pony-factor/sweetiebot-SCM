@@ -11,6 +11,7 @@ from pathlib import Path
 
 SERVICE = b"com.sweetiebot.github-apps"
 ROLES = {"kefania", "lindsey"}
+APP_IDS = {"kefania-pony": "5436431", "lindsey-pony": "5436447"}
 
 
 def run_node(program, *args, **kwargs):
@@ -39,12 +40,15 @@ def git_setting(name, value=None):
 
 def app_status():
     # Never retrieve a password to render this page.
+    apps = {}
+    for role in sorted(ROLES):
+        slug = git_setting(role + "-app-slug") or role + "-pony"
+        apps[role] = {"id": git_setting(role + "-app-id") or APP_IDS.get(slug, ""),
+                      "slug": slug,
+                      "keyStored": git_setting(role + "-app-keychain") == "true"}
     return {"mode": git_setting("github-app-identity-mode") or "legacy",
             "keychainAvailable": sys.platform == "darwin",
-            "apps": {role: {"id": git_setting(role + "-app-id"),
-                            "slug": git_setting(role + "-app-slug") or role + "-pony",
-                            "keyStored": git_setting(role + "-app-keychain") == "true"}
-                     for role in sorted(ROLES)}}
+            "apps": apps}
 
 
 def store_key(role, key):

@@ -60,7 +60,17 @@ class AppSettingsTests(unittest.TestCase):
         native.assert_not_called()
         self.assertEqual(status['mode'], 'legacy')
         self.assertEqual(status['apps']['kefania']['slug'], 'kefania-pony')
+        self.assertEqual(status['apps']['kefania']['id'], '5436431')
+        self.assertEqual(status['apps']['lindsey']['id'], '5436447')
         self.assertNotIn('key', status['apps']['kefania'])
+
+    def test_default_ids_preserve_saved_ids_and_custom_apps(self):
+        settings = {'kefania-app-id': '1234', 'lindsey-app-slug': 'custom-lindsey'}
+        with patch.object(github_apps, 'git_setting', side_effect=lambda name: settings.get(name, '')):
+            status = github_apps.app_status()
+        self.assertEqual(status['apps']['kefania']['id'], '1234')
+        self.assertEqual(status['apps']['lindsey']['slug'], 'custom-lindsey')
+        self.assertEqual(status['apps']['lindsey']['id'], '')
 
     def test_private_key_never_saved_in_git_configuration(self):
         settings = {}
