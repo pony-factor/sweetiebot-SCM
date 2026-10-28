@@ -1112,7 +1112,10 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
     if not remove and hide_timestamps:
         js += (
             CODEX_TIMESTAMPS_START
-            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text()
+            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text().replace(
+                '__SCM_TOOLKIT_ACTIVITY_CANNON__',
+                'data:image/png;base64,' + base64.b64encode(
+                    (HERE.parent / 'assets/imgs/activity-cannon.png').read_bytes()).decode('ascii'))
             + CODEX_TIMESTAMPS_END
         )
 

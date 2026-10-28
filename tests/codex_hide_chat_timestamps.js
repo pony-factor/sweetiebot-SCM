@@ -57,7 +57,10 @@ const ordinaryActivityText = { nodeType: 3, textContent: ordinaryActivity.textCo
 const otherButton = new FakeElement('Worked for all of Monday', 'BUTTON');
 const otherButtonText = { nodeType: 3, textContent: otherButton.textContent, parentElement: otherButton };
 otherButton.childTextNodes = [otherButtonText];
-const nodes = [timestampText, splitStart, splitEnd, ordinaryText, activityText, thoughtText, splitLabel, splitTime, ordinaryActivityText, otherButtonText];
+const nativeActivity = new FakeElement('Activity', 'BUTTON');
+const nativeActivityText = { nodeType: 3, textContent: 'Activity', parentElement: nativeActivity };
+nativeActivity.childTextNodes = [nativeActivityText];
+const nodes = [nativeActivityText, timestampText, splitStart, splitEnd, ordinaryText, activityText, thoughtText, splitLabel, splitTime, ordinaryActivityText, otherButtonText];
 const installedStyles = [];
 let observer;
 let observerCount = 0;
@@ -125,6 +128,16 @@ assert.equal(splitLabel.textContent, 'Activity', 'split duration labels are hand
 assert.equal(splitTime.textContent, '', 'split time text is removed');
 assert.equal(ordinaryActivityText.textContent, 'Worked for 1m 48s', 'message text stays intact');
 assert.equal(otherButtonText.textContent, 'Worked for all of Monday', 'unrelated buttons stay intact');
+
+for (const control of [activity, thought, split, nativeActivity]) {
+    assert.equal(control.getAttribute('data-scm-toolkit-activity-cannon'), 'true');
+}
+assert.match(installedStyles[0].textContent, /pointer-events: none/,
+    'Artwork leaves native disclosure click handling in place');
+nativeActivity.attributes.delete('data-scm-toolkit-activity-cannon');
+observer.callback([{ type: 'attributes', target: nativeActivity }]);
+assert.equal(nativeActivity.getAttribute('data-scm-toolkit-activity-cannon'), 'true',
+    'React recycling cannot remove the cannon treatment');
 
 // A render that drops the hidden marker must be corrected without a reload.
 splitTimestamp.attributes.delete('data-scm-toolkit-hidden-chat-timestamp');
