@@ -68,6 +68,12 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     await assert.rejects(openCheckout(threadId), /different chat/);
     assert.equal(opened.length, 1);
     wrongThread = false;
+    const beforeUnrelated = requests.length;
+    assert.equal(await prepare({ from: destination }), null,
+      'A historical chat attached elsewhere must not block branch switching or creation');
+    assert.deepEqual(requests.slice(beforeUnrelated).map(request => request.method), ['thread/read'],
+      'Leave the unrelated worker running in its original checkout');
+    assert.equal(active, true);
     const plan = await prepare({ from });
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));

@@ -101,7 +101,10 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         const root = await canonical(from);
         const relative = path.relative(root, oldCwd);
         if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
-            throw new Error('This Codex chat is attached to another checkout. Its worker was not moved.');
+            // A chat opened from history can belong to a different checkout.
+            // Leave that worker bound to its own files and let Git navigation
+            // proceed without handing off this unrelated thread.
+            return null;
         }
         const wasActive = thread.status?.type === 'active';
         if (wasActive) {
