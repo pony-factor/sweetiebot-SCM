@@ -8,8 +8,9 @@ Stage and review the exact diff. Sweetiebot retains VS Code's Git commit behavio
 | --- | --- | --- |
 | Direct commit | Native commit flow, optional generated blank title | Baseline |
 | Durable background Commit & Push | Commit staged tree with temporary title, finalize in order, then optionally push | Opt-in, **off** |
-| Legacy provisional title finalization | Distinct older mode | Do not conflate with durable mode |
 | Auto-commit with Codex | Every 30 seconds when opted in: stage changed files and commit locally with co-author; no automatic push | Opt-in, **off** |
+
+Legacy provisional commit creation is retired. The saved `scm-toolkit.ai-commit-async` Git setting is ignored for new commits; unfinished legacy jobs retain their recovery and push barriers. Use **Durable background Commit and Push** for commit-first title generation, including when using **Commit** without pushing.
 
 Background recovery is in [worker](../scripts/background_commit.py), [extension bridge](../extension/commits/background_commit.js) and [push recovery](../extension/commits/push_recovery.js). macOS session/login agent and an awake machine matter while VS Code is closed. **Never amend, reset, squash, or force-push a branch with an unresolved placeholder job**; inspect recorded status first. A "pending push" indicator is not proof of a successful remote write. Placeholder titles use `placeholder_` plus an 11-character Base58 job ID, separate from the Git commit SHA.
 
