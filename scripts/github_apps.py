@@ -2,13 +2,30 @@
 
 import ctypes
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 SERVICE = b"com.sweetiebot.github-apps"
 ROLES = {"kefania", "lindsey"}
+
+
+def run_node(program, *args, **kwargs):
+    # Finder-launched VS Code often lacks Homebrew in its inherited PATH.
+    node = shutil.which("node") or next((str(path) for path in (
+        Path("/opt/homebrew/bin/node"), Path("/usr/local/bin/node"))
+        if path.is_file() and os.access(path, os.X_OK)), None)
+    if not node:
+        raise RuntimeError("Node.js was not found. Install Node.js, then retry App setup.")
+    try:
+        return subprocess.run([node, "-e", program, *args], **kwargs)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("App setup timed out. Check Keychain prompts and retry.") from None
+    except OSError:
+        raise RuntimeError("Node.js could not start. Check your Node.js installation and retry.") from None
 
 
 def git_setting(name, value=None):
@@ -38,12 +55,12 @@ def store_key(role, key):
     if len(data) > 32768 or not re.fullmatch(
             r"-----BEGIN (RSA )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]+-----END (RSA )?PRIVATE KEY-----\s*", key):
         raise ValueError("Choose an unencrypted GitHub App PEM private key.")
-    validation = subprocess.run(["node", "-e", """
+    validation = run_node("""
 try {
   const key = require('node:crypto').createPrivateKey(require('node:fs').readFileSync(0));
   if (key.asymmetricKeyType !== 'rsa' || key.asymmetricKeyDetails.modulusLength < 2048) process.exit(1);
 } catch { process.exit(1); }
-"""], input=data, capture_output=True, timeout=10)
+""", input=data, capture_output=True, timeout=10)
     if validation.returncode:
         raise ValueError("Choose a valid RSA GitHub App private key (2048 bits or larger).")
     security = ctypes.CDLL("/System/Library/Frameworks/Security.framework/Security")
@@ -106,9 +123,14 @@ def check_connection(role, repository):
     if role not in ROLES or not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Enter the repository as owner/name.")
     here = Path(__file__).resolve().parent
-    module = here / "app_identity.js"
-    if not module.exists():
-        module = here.parent / "extension" / "app_identity.js"
+    # Current directory layout, older installed payloads, and source checkout.
+    module = next((path for path in (
+        here / "github" / "app_identity.js",
+        here / "github_app_identity.js",
+        here.parent / "extension" / "github" / "app_identity.js",
+    ) if path.is_file()), None)
+    if module is None:
+        raise RuntimeError("App connection checker is missing. Repair Sweetiebot and retry.")
     # Only the success identity is returned. Tokens and subprocess errors never
     # reach the page. No PR, comment or merge is created by this check.
     program = """
@@ -118,7 +140,7 @@ getRoleInstallationToken(process.argv[2], process.argv[3]).then(
   result => console.log(JSON.stringify({login: result.login})),
   error => { console.log(JSON.stringify({error: error.message})); process.exitCode = 1; });
 """
-    result = subprocess.run(["node", "-e", program, str(module), role, repository],
+    result = run_node(program, str(module), role, repository,
                             capture_output=True, text=True, timeout=95)
     try:
         payload = json.loads(result.stdout)

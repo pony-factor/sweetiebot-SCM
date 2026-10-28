@@ -1,4 +1,7 @@
 import json
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch, Mock
 
@@ -7,6 +10,49 @@ import github_apps_ui
 
 
 class AppSettingsTests(unittest.TestCase):
+    def test_gui_path_uses_homebrew_node_for_pem_validation(self):
+        with patch.object(github_apps.shutil, 'which', return_value=None), \
+                patch.object(Path, 'is_file', return_value=True), \
+                patch.object(github_apps.os, 'access', return_value=True), \
+                patch.object(github_apps.subprocess, 'run', return_value=Mock(returncode=1)) as run, \
+                patch.object(github_apps.ctypes, 'CDLL') as native:
+            with self.assertRaisesRegex(ValueError, 'valid RSA'):
+                github_apps.store_key('kefania', '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----')
+        self.assertEqual(run.call_args.args[0][0], '/opt/homebrew/bin/node')
+        self.assertNotIn('AAAA', ' '.join(run.call_args.args[0]))
+        native.assert_not_called()
+
+    def test_node_failures_are_actionable_and_do_not_expose_input(self):
+        with patch.object(github_apps.shutil, 'which', return_value=None), \
+                patch.object(Path, 'is_file', return_value=False), \
+                patch.object(github_apps.subprocess, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'Node.js was not found'):
+                github_apps.run_node('test')
+        run.assert_not_called()
+        for failure in (OSError('private-test-material'),
+                        subprocess.TimeoutExpired('node', 10, output='private-test-material')):
+            with self.subTest(failure=type(failure).__name__), \
+                    patch.object(github_apps.shutil, 'which', return_value='/node'), \
+                    patch.object(github_apps.subprocess, 'run', side_effect=failure):
+                with self.assertRaises(RuntimeError) as caught:
+                    github_apps.run_node('test')
+                self.assertNotIn('private-test-material', str(caught.exception))
+
+    def test_connection_uses_source_and_installed_module_layouts(self):
+        for layout in ('extension/github/app_identity.js', 'scripts/github/app_identity.js',
+                       'scripts/github_app_identity.js'):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                module = root / layout
+                module.parent.mkdir(parents=True)
+                module.touch()
+                with patch.object(github_apps, '__file__', str(root / 'scripts/github_apps.py')), \
+                        patch.object(github_apps, 'run_node', return_value=Mock(
+                            returncode=0, stdout='{"login":"kefania-pony[bot]"}')) as run:
+                    result = github_apps.check_connection('kefania', 'owner/repo')
+                self.assertEqual(run.call_args.args[1], str(module.resolve()))
+                self.assertIn('Connected as kefania-pony[bot]', result['message'])
+
     def test_public_status_never_accesses_keychain(self):
         with patch.object(github_apps, 'git_setting', return_value=''), \
                 patch.object(github_apps.ctypes, 'CDLL') as native:
