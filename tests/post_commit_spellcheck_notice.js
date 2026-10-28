@@ -189,7 +189,7 @@ test('reload discards an open spellcheck popup and late results from the previou
     assert.equal(openPopup(), undefined, 'Old worker results cannot reopen Spellcheck Changes');
     assert.equal(diffReads, 1, 'Stale results never even reach diff rendering');
     assert.equal(f.files.size, 0, 'The stale notice is consumed, not replayed');
-    assert.equal(f.repo.state.workingTreeChanges.length, 1, 'The user's unstaged correction survives reload');
+    assert.equal(f.repo.state.workingTreeChanges.length, 1, "The user's unstaged correction survives reload");
 
     // A genuinely new spellcheck in the reloaded session still works.
     f.files.set(noticePath, requestedAt(2100));
