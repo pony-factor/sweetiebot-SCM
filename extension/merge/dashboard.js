@@ -315,7 +315,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
         addEvent(byNumber.get(pr.number), 'action', opened === false
           ? 'Reaction task was not opened; add a fresh reaction to retry.'
-          : 'Your emoji selected: ' + option.label + ' · opened ' + (engine === 'web' ? 'GPT web' : 'Codex'));
+          : 'Your emoji selected: ' + option.label + ' · opened ' + (engine === 'web' ? 'ChatGPT' : 'Codex'));
       } finally {
         launchingActions.delete(pr.number);
         publish();
@@ -575,7 +575,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           reactionSelection = { snapshot, comment, engine };
         } else {
           const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, engine);
-          if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'web' ? 'GPT web' : 'Codex branch workspace') + ': ' + option.label);
+          if (opened !== false) addEvent(pr, 'action', 'Opened ' + (engine === 'web' ? 'ChatGPT' : 'Codex branch workspace') + ': ' + option.label);
         }
       } catch (failure) {
         error = 'Could not start the selected implementation: ' + failure.message;

@@ -423,7 +423,7 @@ __RATE_LIMIT_FORMATTER__
       runner.setAttribute('aria-label', 'Run with');
       const runnerButtons = [];
       let workspaceRow;
-      for (const [value, label] of [['web', 'GPT web'], ['codex', 'Codex']]) {
+      for (const [value, label] of [['web', 'ChatGPT'], ['codex', 'Codex']]) {
         const button = show('button', 'runner-option', label, runner);
         button.type = 'button';
         button.setAttribute('aria-pressed', String(actionEngine === value));
