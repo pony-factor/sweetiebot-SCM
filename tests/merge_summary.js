@@ -40,6 +40,13 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   assert.equal(writes[0].method, 'POST');
   assert(writes[0].body.startsWith(MARKER));
   assert(writes[0].body.includes(input.results[0].explanation));
+  assert(writes[0].body.includes('Verified merge into main · commit ' + sha.slice(0, 12) + '.'));
+  assert(!writes[0].body.includes('`' + sha.slice(0, 12) + '`'), 'Main commit SHA must not use code formatting');
+  assert(!writes[0].body.includes('/commit/' + sha), 'Main commit SHA must not be an explicit link');
+  const references = require('../extension/merge/review_policy').reviewPublicationInstructions();
+  assert(references.includes('https://github.com/OWNER/REPO/pull/NUMBER/changes/FULL40SHA'));
+  assert(references.includes('For a commit verified to be on main'));
+  assert(batchMergePrompt(promptOptions).includes('COMMIT REFERENCES IN KEFANIA/LINDSEY MERGE COMMENTS'));
   assert.deepEqual(await run(), []);
   assert.equal(writes.length, 1, 'A replay must not create another comment');
   input.results[0].explanation = 'Clarified summary of the optional tax parameter.';

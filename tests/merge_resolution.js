@@ -25,6 +25,9 @@ assert(handoffPolicy.includes('ACTIONABLE BLOCKER OPTIONS'));
 assert(handoffPolicy.includes('Proactively analyze conflicts'));
 assert(handoffPolicy.includes('sweetiebot-merge-options'), 'Genuine choices are published during the initial Lindsey conflict review');
 assert(handoffPolicy.includes('NO-OP SYNCHRONIZATION'));
+assert(handoffPolicy.includes('https://github.com/OWNER/REPO/pull/NUMBER/changes/FULL40SHA'));
+assert(handoffPolicy.includes('without Markdown backticks'));
+
 assert(handoffPolicy.includes('Do not create or request a synchronization commit'));
 (async () => {
   // Exercise signing selection without accessing the user's private key store.
