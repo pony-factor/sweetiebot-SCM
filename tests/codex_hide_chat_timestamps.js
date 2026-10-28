@@ -131,6 +131,7 @@ assert.equal(otherButtonText.textContent, 'Worked for all of Monday', 'unrelated
 
 for (const control of [activity, thought, split, nativeActivity]) {
     assert.equal(control.getAttribute('data-scm-toolkit-activity-cannon'), 'true');
+    assert.equal(control.getAttribute('aria-label'), 'Activity', 'icon-only control retains an accessible name');
 }
 assert.match(installedStyles[0].textContent, /pointer-events: none/,
     'Artwork leaves native disclosure click handling in place');

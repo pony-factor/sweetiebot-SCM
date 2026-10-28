@@ -63,6 +63,9 @@
         if (control.getAttribute(activityAttribute) !== 'true') {
             control.setAttribute(activityAttribute, 'true');
         }
+        if (control.getAttribute('aria-label') !== 'Activity') {
+            control.setAttribute('aria-label', 'Activity');
+        }
         // Keep React's native disclosure, focus, keyboard and click handling.
         // Plain Activity labels are also emitted by newer Codex builds.
         if (label === 'Activity') return;

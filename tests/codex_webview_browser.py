@@ -100,6 +100,7 @@ def run():
         assert state("#activity")["text"] == "Activity"
         for selector in ['#activity', '#native-activity']:
             assert page.locator(selector).get_attribute('data-scm-toolkit-activity-cannon') == 'true'
+            assert page.locator(selector).get_attribute('aria-label') == 'Activity'
             assert page.eval_on_selector(selector + ' svg', 'el => getComputedStyle(el).display') == 'none'
             assert page.eval_on_selector(selector, 'el => getComputedStyle(el, "::before").width') == '19px'
             assert 'data:image/png;base64,' in page.eval_on_selector(selector, 'el => getComputedStyle(el, "::before").backgroundImage')
