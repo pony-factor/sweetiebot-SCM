@@ -11,14 +11,14 @@ import re
 import subprocess
 import sys
 import tempfile
-import secrets
 import shutil
 import time
 from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
 from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER, alive,
-                                    related_pending_jobs)
+                                    related_pending_jobs, new_job_id, BASE58_ID_PATTERN,
+                                    PLACEHOLDER_SUBJECT_PATTERN)
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
@@ -164,7 +164,7 @@ def fork_branch(source, name, expected_head, destination=None, expected_tip=None
         pending = {job['sha'] for job in jobs if job and job.get('provisional')}
         for line in git('log', '--format=%H%x00%s', base).splitlines():
             sha, _, subject = line.partition('\x00')
-            if re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject) and sha not in pending:
+            if re.fullmatch(PLACEHOLDER_SUBJECT_PATTERN, subject) and sha not in pending:
                 raise RuntimeError('The branch base contains an unfinished commit without a background job.')
         forks = read_journal(meta / FORKS) or {}
         forks[branch] = base
@@ -194,7 +194,7 @@ def linear_branch_extension(previous, actual):
     for sha in extension:
         subject = git('show', '-s', '--format=%s', sha)
         if (git('show', '-s', '--format=%P', sha) != parent
-                or re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject)):
+                or re.fullmatch(PLACEHOLDER_SUBJECT_PATTERN, subject)):
             raise RuntimeError(error)
         parent = sha
     if parent != actual:
@@ -416,7 +416,7 @@ def enqueue(request, start=True):
         script = runtime()
         if start:
             install_agent(script)
-        directory = jobs_home() / secrets.token_hex(8)
+        directory = jobs_home() / new_job_id()
         directory.mkdir(mode=0o700)
         job = dict(id=directory.name, root=root, gitdir=str(meta), branch=branch, parent=parent,
                    tree=tree, message=message, context=context[-6000:], trailer=trailer, description=description[:6000],
@@ -1018,7 +1018,7 @@ def work(directory, commit_only=False):
 
 def dismiss_merged_push(job_id):
     """Release a confirmed blocked old-branch push without losing local commits."""
-    if not re.fullmatch(r'[0-9a-f]{16}', job_id):
+    if not re.fullmatch(BASE58_ID_PATTERN, job_id):
         raise ValueError('Invalid merged push job identifier.')
     meta = Path(git('rev-parse', '--absolute-git-dir'))
     marker = meta / MARKER
@@ -1171,7 +1171,7 @@ def prune_completed_jobs(now=None):
     for journal in jobs_home().glob('*/job.json'):
         directory = journal.parent
         # Only enqueue-created directories fall under this policy.
-        if (not re.fullmatch(r'[0-9a-f]{16}', directory.name)
+        if (not re.fullmatch(BASE58_ID_PATTERN, directory.name)
                 or directory.is_symlink() or journal.is_symlink()
                 or (directory / 'worker.lock').is_symlink()):
             continue
@@ -1295,7 +1295,7 @@ def completed_branch_base(real_git, global_args, ref):
         for line in history.splitlines():
             sha, _, subject = line.partition('\x00')
             if sha in pending or re.fullmatch(
-                    r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject):
+                    PLACEHOLDER_SUBJECT_PATTERN, subject):
                 unfinished.add(sha)
                 ordered.append(sha)
         for sha in ordered:
