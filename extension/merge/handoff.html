@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lindsey · Local merge</title>
+<style>:root{color-scheme:light dark}body{max-width:780px;margin:40px auto;padding:0 20px;font:14px/1.6 system-ui}h1{font-size:22px}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
+<h1>Lindsey · Local merge</h1><p id="status" role="status">Receiving the prepared resolution…</p><pre id="results"></pre>
+<script>
+(async () => {
+  const status = document.getElementById('status');
+  const results = document.getElementById('results');
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  const raw = fragment.get('result');
+  history.replaceState(null, '', location.pathname);
+  let finished = false, timer, postPending = false;
+  const stop = () => { finished = true; clearInterval(timer); };
+  function display(result) {
+    if (finished) return;
+    if (!Array.isArray(result.results)) throw Error('Invalid local execution response.');
+    stop();
+    status.textContent = result.results.length ? 'Local execution finished. GitHub results:'
+      : 'No pull requests were delegated. Review the merge report in Lindsey for any blockers.';
+    results.textContent = result.results.map(pr => '#' + pr.number + ' · ' + pr.status + '\n' + (pr.url || pr.reason || '')).join('\n\n');
+    if (result.batch) results.textContent += '\n\nBatch: ' + result.batch.merged.length + ' merged · ' + result.batch.deferred.length + ' need attention';
+    if (result.continueUrl) {
+      const next = new URL(result.continueUrl);
+      if (next.origin !== 'https://chatgpt.com' || next.username || next.password ||
+          new URLSearchParams(next.hash.slice(1)).get('sweetiebot_merge') !== '1') throw Error('Invalid batch continuation destination.');
+      status.textContent = 'Continuing the batch against the refreshed base…';
+      const link = document.createElement('a');
+      link.textContent = 'Continue in GPT web'; link.href = next.href;
+      results.after(link);
+      location.assign(next.href);
+    } else if (result.continuationError) status.textContent = 'Local result verified; automatic continuation stopped: ' + result.continuationError;
+  }
+  async function recover() {
+    const response = await fetch(location.pathname + '/status');
+    if (!response.ok) {
+      if (postPending) {
+        clearInterval(timer);
+        status.textContent = 'Live progress is unavailable from this handoff. Waiting for the original local execution result; no retry was submitted.';
+        return 'legacy';
+      }
+      throw Error('This handoff is unavailable or expired. Return to Lindsey and start a fresh task; no automatic retry was submitted.');
+    }
+    const state = await response.json();
+    if (state.phase === 'finished') display(state.result);
+    else if (state.phase === 'failed') { stop(); status.textContent = state.error; }
+    else if (state.phase === 'running') status.textContent = 'Local Git execution is still running. Progress is shown in the Lindsey dashboard; reloading this page will not run it twice.';
+    else if (state.phase === 'continuing') status.textContent = 'Local execution finished; preparing the next review against the current base…';
+    return state.phase;
+  }
+  const watch = () => {
+    timer = setInterval(() => { if (!finished) void recover().catch(error => {
+      if (postPending) {
+        clearInterval(timer);
+        status.textContent = 'Live progress is unavailable. Waiting for the original local execution result; no retry was submitted.';
+        return;
+      }
+      stop(); status.textContent = 'Cannot contact the local handoff: ' + error.message;
+    }); }, 2000);
+  };
+  try {
+    if (!raw) {
+      const phase = await recover();
+      if (phase === 'ready') throw Error('No prepared resolution. Return to the merge chat for its complete Apply with Lindsey link.');
+      if (!finished) watch();
+      return;
+    }
+    let input;
+    try { input = JSON.parse(raw); }
+    catch { throw Error('The prepared result is incomplete or malformed. No Git operation was started. Return to GPT web and use the complete final Apply with Lindsey link.'); }
+    status.textContent = 'Applying the prepared handoff through the local Git CLI…';
+    postPending = true;
+    watch();
+    const response = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    const result = await response.json();
+    postPending = false;
+    if (response.status === 409 && /in progress/.test(result.error || '')) { await recover(); return; }
+    if (!response.ok || result.error) throw Error(result.error || 'Local merge failed.');
+    display(result);
+  } catch (error) { stop(); status.textContent = error.message; }
+})();
+</script></html>

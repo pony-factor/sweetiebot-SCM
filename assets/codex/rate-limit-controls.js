@@ -83,16 +83,27 @@ const scmToolkitRateLimitStickerEnabled = "__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENAB
 // after the installer has compacted its defaultMessage. Reapply the compact
 // presentation as soon as the message's text changes, before the next paint.
 function scmToolkitIsUntimedRateLimitWarning(value) {
-    return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i
-        .test(String(value || '').replace(/\s+/g, ' ').trim());
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (globalThis.scmToolkitHideRateLimitTimes === true
+        && /^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|later)\b[^<>]*$/i.test(text)) return true;
+    return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i.test(text);
+}
+
+// Queued prompts live beside the composer, outside the transcript. Their
+// accessible preview labels contain user text and are never status evidence.
+const scmToolkitQueuedPromptSelector = '[aria-label^="Preview queued message"], [data-testid="queued-message"], [data-testid="queued-message-list"]';
+function scmToolkitIsQueuedPrompt(node) {
+    return Boolean(node?.closest?.(scmToolkitQueuedPromptSelector)
+        || node?.querySelector?.(scmToolkitQueuedPromptSelector)
+        || node?.querySelector?.('[aria-label="Queued message actions"], [aria-label="Delete queued message"]'));
 }
 
 function scmToolkitCompactUntimedRateLimitNode(node) {
-    if (!scmToolkitIsUntimedRateLimitWarning(node?.textContent)) return false;
+    if (scmToolkitIsQueuedPrompt(node) || !scmToolkitIsUntimedRateLimitWarning(node?.textContent)) return false;
     // Never rewrite user input, dialogs, clickable upgrade cards, or any
     // notice with a meaningful reset time. The exact message match also
     // prevents changing timed/otherwise informative rate-limit notices.
-    if (node.closest?.('[contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], [data-scm-toolkit-reset-action]')) return false;
+    if (node.closest?.('[data-message-author-role="user"], [data-conversation-role="user"], [contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], [data-scm-toolkit-reset-action]')) return false;
     if (node.querySelector?.('a, button, input, textarea, select, [role="button"]')) return false;
     for (const descendant of node.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || []) {
         if (scmToolkitIsUntimedRateLimitWarning(descendant.textContent)) return false;
@@ -158,7 +169,7 @@ const scmToolkitCodexEditorSelector = 'textarea, [role="textbox"], [contentedita
 function scmToolkitPlainRateLimitNodes(root) {
     const found = new Set();
     for (const label of root.querySelectorAll('span, p, button, [role="status"], [role="alert"]')) {
-        if (!scmToolkitIsShortRateLimit(label.innerText || label.textContent)) continue;
+        if (scmToolkitIsQueuedPrompt(label) || !scmToolkitIsShortRateLimit(label.innerText || label.textContent)) continue;
         // Correct the visible typo even when this particular layout is too
         // different to qualify for sticker replacement.
         scmToolkitNormalizeRateLimitTypo(label);
@@ -216,7 +227,7 @@ function scmToolkitIsDetailedRateLimitNotice(value) {
 function scmToolkitDetailedRateLimitNodes(root) {
     const found = new Set();
     for (const label of root.querySelectorAll('span, p, h1, h2, h3, strong, [role="status"], [role="alert"]')) {
-        if ((!scmToolkitIsDetailedRateLimitNotice(label.textContent)
+        if (scmToolkitIsQueuedPrompt(label) || (!scmToolkitIsDetailedRateLimitNotice(label.textContent)
             && !scmToolkitIsShortRateLimit(label.textContent))
             || label.closest?.(scmToolkitRateLimitTranscriptSelector)) continue;
         let candidate = null;
@@ -244,7 +255,7 @@ function scmToolkitDetailedRateLimitNodes(root) {
 // wrapper. This deliberately does not assume CSS classes, screen coordinates,
 // English text alone, or a fixed parent depth.
 function scmToolkitRateLimitEvidence(node) {
-    if (!node || node.closest?.(scmToolkitRateLimitTranscriptSelector)
+    if (!node || scmToolkitIsQueuedPrompt(node) || node.closest?.(scmToolkitRateLimitTranscriptSelector)
         || node.closest?.('[contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [hidden], [aria-hidden="true"], [inert]')) {
         return {matched: false, anchored: false};
     }
@@ -384,6 +395,11 @@ function scmToolkitStyleRateLimitStickerCard(node) {
     node.style.alignSelf = 'flex-start';
 }
 function scmToolkitSyncRateLimitPony(root) {
+    // Remove misplaced companions from older injections without touching the
+    // queued prompt or its real attachments.
+    for (const sticker of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony-companion]')) {
+        if (scmToolkitIsQueuedPrompt(sticker.parentElement)) sticker.remove();
+    }
     const {card, notices, rich} = scmToolkitFooterRateLimitNotice(root);
     if (!card) return;
     scmToolkitNormalizeRateLimitTypo(card);

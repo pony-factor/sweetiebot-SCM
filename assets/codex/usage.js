@@ -6,10 +6,49 @@ function scmToolkitRemainingUsage(usage) {
     return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
 }
 
+function scmToolkitWeeklyRemainingUsage(usage) {
+    const windows = usage?.rate_limit;
+    const bucket = [windows?.primary_window, windows?.secondary_window]
+        .find(bucket => bucket?.limit_window_seconds === 7 * 24 * 60 * 60
+            && Number.isFinite(bucket.used_percent));
+    return bucket ? Math.round(Math.max(0, Math.min(100, 100 - bucket.used_percent))) : null;
+}
+
 function scmToolkitUsagePiePercent(value) {
+    if (value == null || value === '') return null;
     const percent = Number(value);
     if (!Number.isFinite(percent)) return null;
     return Math.round(Math.max(0, Math.min(100, percent)));
+}
+
+function scmToolkitUsageColor(percent) {
+    return percent <= 10
+        ? 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'
+        : 'currentColor';
+}
+
+function scmToolkitLocalComposerProps(props, useEffect) {
+    const allowCloud = typeof scmToolkitCloudTasks !== 'undefined' && scmToolkitCloudTasks;
+    useEffect(() => {
+        if (!allowCloud && props.composerMode === 'cloud') props.setComposerMode('local');
+    }, [allowCloud, props.composerMode, props.setComposerMode]);
+    if (allowCloud) return props;
+    return {...props,
+        composerMode:props.composerMode === 'cloud' ? 'local' : props.composerMode,
+        setComposerMode:mode => props.setComposerMode(mode === 'cloud' ? 'local' : mode),
+    };
+}
+
+// Time progress is independent of usage allowance: 100% means a full reset
+// interval remains; 0% means the next reset is due.
+function scmToolkitResetTimePercent(resetAt, windowMinutes, now = Date.now()) {
+    const reset = Number(resetAt);
+    const minutes = Number(windowMinutes);
+    const current = Number(now);
+    if (resetAt == null || !Number.isFinite(reset) || !Number.isFinite(minutes)
+        || minutes <= 0 || !Number.isFinite(current)) return null;
+    return Math.round(Math.max(0, Math.min(100,
+        ((reset * 1000 - current) / (minutes * 60000)) * 100)));
 }
 
 function scmToolkitRelativeUsageReset(resetAt, windowMinutes, now = Date.now()) {
@@ -157,7 +196,7 @@ function scmToolkitKeepUsageFresh(refetch) {
     const tag = 'scm-toolkit-usage-pie';
     if (customElements.get(tag)) return;
     customElements.define(tag, class extends HTMLElement {
-        static get observedAttributes() { return ['percent']; }
+        static get observedAttributes() { return ['percent', 'kind']; }
         connectedCallback() {
             this.style.display = 'inline-block';
             this.style.width = '12px';
@@ -180,15 +219,89 @@ function scmToolkitKeepUsageFresh(refetch) {
             const degrees = (100 - percent) * 3.6;
             // An embedded Codex webview may not expose the VS Code theme token.
             // Use the configured hover accent rather than the focus-outline color.
-            const foreground = percent <= 10
-                ? 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'
-                : 'currentColor';
+            const foreground = scmToolkitUsageColor(percent);
             this.style.background =
                 `conic-gradient(from 0deg, color-mix(in srgb, currentColor 20%, transparent) 0 ${degrees}deg, ${foreground} ${degrees}deg 360deg)`;
-            const label = `${percent}% Codex usage remaining`;
+            const label = this.getAttribute('kind') === 'reset'
+                ? `${percent}% of Codex reset interval remaining`
+                : `${percent}% Codex usage remaining`;
             this.setAttribute('role', 'img');
             this.setAttribute('aria-label', label);
             this.setAttribute('title', label);
+        }
+    });
+})();
+
+(() => {
+    const tag = 'scm-toolkit-usage-meter';
+    if (customElements.get(tag)) return;
+    customElements.define(tag, class extends HTMLElement {
+        static get observedAttributes() { return ['percent', 'weekly-percent']; }
+        connectedCallback() {
+            if (!this.pie) {
+                this.pie = document.createElement('scm-toolkit-usage-pie');
+                this.append(this.pie);
+            }
+            const surface = this.closest('[data-composer-surface-variant]');
+            if (surface && !this.bar) {
+                this.bar = document.createElement('div');
+                this.bar.className = 'scm-toolkit-usage-bar';
+                this.bar.setAttribute('role', 'progressbar');
+                this.bar.setAttribute('aria-label', 'Five-hour Codex usage remaining');
+                this.bar.setAttribute('aria-valuemin', '0');
+                this.bar.setAttribute('aria-valuemax', '100');
+                surface.classList.add('scm-toolkit-usage-surface');
+                surface.append(this.bar);
+            }
+            this.update();
+        }
+        disconnectedCallback() {
+            const surface = this.bar?.parentElement;
+            this.addPie?.remove();
+            this.addButton?.classList.remove('scm-toolkit-usage-add-button');
+            this.closest('button')?.classList.remove('scm-toolkit-usage-replaced');
+            this.bar?.remove();
+            this.bar = null;
+            if (surface && !surface.querySelector('.scm-toolkit-usage-bar')) {
+                surface.classList.remove('scm-toolkit-usage-surface');
+            }
+        }
+        attributeChangedCallback() { this.update(); }
+        update() {
+            const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
+            this.pie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
+            this.attachToAddButton();
+            this.addPie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
+            if (!this.bar) return;
+            const weekly = this.hasAttribute('weekly-percent');
+            const barPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : percent;
+            this.bar.setAttribute('aria-label', weekly ? 'Weekly Codex usage remaining' : 'Five-hour Codex usage remaining');
+            this.bar.hidden = barPercent == null;
+            if (barPercent == null) {
+                this.bar.removeAttribute('aria-valuenow');
+                return;
+            }
+            this.bar.setAttribute('aria-valuenow', barPercent);
+            this.bar.style.width = `${barPercent}%`;
+            // Resolve currentColor at the same control as the pie, rather than
+            // inheriting a potentially different color from the outer surface.
+            this.bar.style.color = getComputedStyle(this.addButton || this).color;
+            this.bar.style.background = scmToolkitUsageColor(barPercent);
+        }
+        attachToAddButton() {
+            const surface = this.closest('[data-composer-surface-variant]');
+            const button = surface?.querySelector('button[aria-label="Add files and more"], button[data-composer-navigation-target="attachments"]');
+            if (!button) return;
+            if (this.addButton !== button || !this.addPie?.isConnected) {
+                this.addPie?.remove();
+                this.addButton?.classList.remove('scm-toolkit-usage-add-button');
+                this.addButton = button;
+                this.addPie = document.createElement('scm-toolkit-usage-pie');
+                this.addPie.setAttribute('percent', this.getAttribute('percent') ?? 'unavailable');
+                button.append(this.addPie);
+                button.classList.add('scm-toolkit-usage-add-button');
+            }
+            this.closest('button')?.classList.add('scm-toolkit-usage-replaced');
         }
     });
 })();
@@ -216,7 +329,32 @@ function scmToolkitKeepUsageFresh(refetch) {
             }
             const windowMinutes = Number(this.getAttribute('window-minutes'));
             const relative = scmToolkitRelativeUsageReset(reset, windowMinutes);
-            this.textContent = windowMinutes >= 10080 && relative ? `${relative} left` : relative;
+            const label = windowMinutes >= 10080 && relative ? `${relative} left` : relative;
+            const percent = this.hasAttribute('show-pie')
+                ? scmToolkitResetTimePercent(reset, windowMinutes)
+                : null;
+            if (percent == null || !relative) {
+                this.textContent = label;
+                this._scmToolkitResetPie = null;
+                this._scmToolkitResetLabel = null;
+                return;
+            }
+            if (!this._scmToolkitResetPie || this._scmToolkitResetPie.parentElement !== this) {
+                this.textContent = '';
+                const pie = document.createElement('scm-toolkit-usage-pie');
+                pie.setAttribute('kind', 'reset');
+                pie.style.marginRight = '4px';
+                const text = document.createElement('span');
+                this.append(pie, text);
+                this._scmToolkitResetPie = pie;
+                this._scmToolkitResetLabel = text;
+            }
+            if (this._scmToolkitResetPie.getAttribute('percent') !== String(percent)) {
+                this._scmToolkitResetPie.setAttribute('percent', percent);
+            }
+            if (this._scmToolkitResetLabel.textContent !== label) {
+                this._scmToolkitResetLabel.textContent = label;
+            }
         }
     });
 })();
@@ -227,15 +365,43 @@ function scmToolkitKeepUsageFresh(refetch) {
     // Native narrow-footer rules hide the entire value, including our 12px pie.
     // Keep only pie-bearing location values visible; other labels still collapse.
     const style = document.createElement('style');
+    const localOnly = typeof scmToolkitCloudTasks === 'undefined' || !scmToolkitCloudTasks;
     style.textContent = `
       button[data-composer-navigation-target="run-location"]
-      [data-composer-footer-collapse]:has(scm-toolkit-usage-pie) {
+      [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
       }
-    `;
+      button.scm-toolkit-usage-add-button { position:relative; }
+      button.scm-toolkit-usage-add-button > svg { visibility:hidden; }
+      button.scm-toolkit-usage-add-button > scm-toolkit-usage-pie {
+        position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); pointer-events:none;
+      }
+      button.scm-toolkit-usage-replaced { display:none !important; }
+      scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; }
+      .scm-toolkit-usage-surface { position:relative; }
+      .scm-toolkit-usage-bar {
+        position:absolute; left:0; bottom:0; height:2px; pointer-events:none;
+        border-radius:0 1px 1px 0; z-index:1;
+      }
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) svg {
+        display:none;
+      }
+    ` + (localOnly ? `
+      button[data-composer-navigation-target="run-location"]:not(:has(:is(scm-toolkit-usage-meter, scm-toolkit-usage-pie))) { display:none !important; }
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) {
+        cursor:default; opacity:1 !important; color:inherit !important; order:-1;
+      }
+    ` : '');
     document.head.append(style);
 
     const refresh = () => {
+        if (localOnly) for (const button of document.querySelectorAll('button[data-composer-navigation-target="run-location"]')) {
+            if (!button.disabled) button.disabled = true;
+            if (button.getAttribute('aria-label') !== 'Five-hour Codex usage remaining') {
+                button.setAttribute('aria-label', 'Five-hour Codex usage remaining');
+            }
+        }
+        for (const meter of document.querySelectorAll('scm-toolkit-usage-meter')) meter.attachToAddButton?.();
         scmToolkitApplyUsageDialogRelativeTimes(document);
         scmToolkitCorrectLastMinuteUsageLabels(document);
     };

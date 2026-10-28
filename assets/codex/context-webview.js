@@ -49,13 +49,74 @@ function scmToolkitRegisterCodexSnapshot(api) {
         return identities.size === 1 ? [...identities][0] : undefined;
     };
 
-    window.addEventListener('message', event => {
+    window.addEventListener('message', async event => {
         const request = event.data;
         if (request?.type !== 'scm-toolkit-context-request' || typeof request.id !== 'string') return;
+        if (request.shareOnly) {
+            const visible = element => element.getClientRects().length;
+            const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
+            const waitFor = async find => {
+                const until = Date.now() + 35000;
+                while (Date.now() < until) {
+                    if (conversationId() !== request.shareOnly) throw new Error('The active chat changed; sharing stopped.');
+                    const found = find();
+                    if (found) return found;
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                throw new Error('Codex Share did not finish. Check the Share dialog and retry New PR.');
+            };
+            try {
+                if (conversationId() !== request.shareOnly) throw new Error('Open the originating chat in this workspace before sharing.');
+                const menu = await waitFor(() => [...document.querySelectorAll('button')].find(element =>
+                    visible(element) && label(element) === 'Chat actions'));
+                menu.click();
+                const share = await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')]
+                    .find(element => visible(element) && /^Share(?: chat)?(?:…|\.\.\.)?$/.test(label(element))));
+                share.click();
+                const copy = await waitFor(() => [...document.querySelectorAll('[role="dialog"] button')]
+                    .find(element => visible(element) && !element.disabled && label(element) === 'Copy link'));
+                // The native dialog owns publication, permissions and clipboard copying.
+                // Require its public-audience notice; never widen a workspace audience.
+                const dialog = copy.closest('[role="dialog"]');
+                if (!/Anyone with the link/.test(dialog?.textContent || '')) {
+                    throw new Error('Choose Anyone with the link in Codex Share before retrying New PR.');
+                }
+                copy.click();
+                await waitFor(() => !copy.isConnected);
+                api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: request.shareOnly });
+            } catch (error) {
+                api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, error: error.message });
+            }
+            return;
+        }
         if (request.identityOnly) {
             const hasConversation = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')]
                 .some(element => request.allowHidden || element.getClientRects().length);
             api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation });
+            return;
+        }
+        // Capture only visible composer labels at handoff time. Codex does not
+        // provide a stable public API for a thread's historical model choices.
+        const composerLabel = kind => {
+            const button = [...document.querySelectorAll(
+                'button[data-composer-navigation-target="' + kind + '"]'
+            )].find(item => item.getClientRects().length);
+            const visible = String(button?.innerText || button?.textContent || '').replace(/\s+/g, ' ').trim();
+            const attrs = [button?.getAttribute('title'), button?.getAttribute('aria-label')]
+                .filter(value => typeof value === 'string');
+            // A descriptive accessible label is more complete than Sweetiebot's
+            // intentionally abbreviated visible text (e.g. "6.1" or "Uber").
+            const descriptive = attrs.find(value => /\bGPT[- ]?\d|\b(?:o[1-9]|Codex)[- ]\d/i.test(value));
+            const label = descriptive || visible || attrs[0] || '';
+            const normalized = kind === 'model' && /^\d+(?:\.\d+)*(?:\s|$)/.test(label)
+                ? 'GPT-' + label : kind === 'reasoning' && /^Uber$/i.test(label)
+                    ? 'Extra High' : kind === 'reasoning' && /^Med$/i.test(label)
+                        ? 'Medium' : label;
+            return normalized.trim().slice(0, 100);
+        };
+        const model = { name: composerLabel('model'), effort: composerLabel('reasoning') };
+        if (request.modelOnly) {
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, model });
             return;
         }
         const transcripts = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')];
@@ -66,6 +127,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
             id: request.id,
             text,
             conversationId: conversationId(),
+            model,
         });
     });
 

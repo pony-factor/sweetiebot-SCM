@@ -4,12 +4,15 @@ function scmToolkitRegisterCodexKeepAwake(connection, vscode, defaultEnabled) {
     const { spawn } = require('child_process');
     const active = new Map();
     let child;
+    let renewal;
     let disposed = false;
     const enabled = () => {
         const setting = vscode.workspace.getConfiguration('scmToolkit').inspect('codexKeepAwake');
         return setting?.workspaceFolderValue ?? setting?.workspaceValue ?? setting?.globalValue ?? defaultEnabled;
     };
     const stop = () => {
+        clearTimeout(renewal);
+        renewal = undefined;
         const previous = child;
         child = undefined;
         previous?.kill();
@@ -17,10 +20,17 @@ function scmToolkitRegisterCodexKeepAwake(connection, vscode, defaultEnabled) {
     const refresh = () => {
         if (disposed || !enabled() || !active.size) { stop(); return; }
         if (child) return;
+        clearTimeout(renewal);
         try {
-            // Watching the host PID also releases the assertion after a host crash.
-            const spawned = spawn('/usr/bin/caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
+            // User activity also postpones the screensaver. Renew before its
+            // bounded assertion expires; -w releases it after a host crash.
+            const spawned = spawn('/usr/bin/caffeinate', ['-d', '-i', '-u', '-t', '30', '-w', String(process.pid)], { stdio: 'ignore' });
             child = spawned;
+            renewal = setTimeout(() => {
+                stop();
+                refresh();
+            }, 20000);
+            renewal.unref?.();
             spawned.on('error', () => {
                 if (child === spawned) child = undefined;
                 void vscode.window.showWarningMessage('Unable to keep this Mac awake while Codex works.');
@@ -41,7 +51,10 @@ function scmToolkitRegisterCodexKeepAwake(connection, vscode, defaultEnabled) {
             if (active.get(thread) === params.turn?.id || active.get(thread) === null) active.delete(thread);
         } else if (method === 'thread/status/changed') {
             if (params.status?.type === 'active') {
-                if (!active.has(thread)) active.set(thread, null);
+                const waiting = (params.status.activeFlags || []).some(flag =>
+                    /waiting.*(?:approval|input)/i.test(String(flag)));
+                if (waiting) active.delete(thread);
+                else if (!active.has(thread)) active.set(thread, null);
             } else if (['idle', 'notLoaded', 'systemError'].includes(params.status?.type)) active.delete(thread);
         } else if (['thread/closed', 'thread/archived', 'thread/deleted'].includes(method)) {
             active.delete(thread);

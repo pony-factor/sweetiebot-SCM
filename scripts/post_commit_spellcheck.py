@@ -71,6 +71,37 @@ def git_run(global_args: list[str], *args: str, text: bool = False) -> subproces
     )
 
 
+# VS Code settings.json allows comments and trailing commas. Preserve quoted
+# strings so comments or commas inside a setting value are never changed.
+_JSONC_COMMENTS = re.compile(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/')
+_JSONC_TRAILING_COMMAS = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
+
+
+def repository_spellcheck_disabled(global_args: list[str]) -> bool:
+    """Honor the opt-out in the current Git root, not a parent workspace."""
+    result = git_run(global_args, "rev-parse", "--show-toplevel")
+    if result.returncode != 0:
+        return False
+    root = Path(os.fsdecode(result.stdout).rstrip("\r\n"))
+    if not root.is_absolute():
+        return False
+    config = root / ".vscode" / "settings.json"
+    try:
+        if config.stat().st_size > 512 * 1024:
+            return False
+        source = config.read_text(encoding="utf-8-sig")
+        without_comments = _JSONC_COMMENTS.sub(
+            lambda match: match.group() if match.group().startswith('"') else ' ', source
+        )
+        normalized = _JSONC_TRAILING_COMMAS.sub(
+            lambda match: match.group() if match.group().startswith('"') else '', without_comments
+        )
+        settings = json.loads(normalized)
+        return isinstance(settings, dict) and settings.get("scmToolkit.postCommitSpellcheck") is False
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return False
+
+
 def has_unstaged_changes(global_args: list[str]) -> bool:
     tracked = git_run(global_args, "diff", "--quiet", "--no-ext-diff", "--")
     if tracked.returncode != 0:
@@ -98,6 +129,21 @@ def staged_markdown_paths(global_args: list[str]) -> list[str]:
 def head_sha(global_args: list[str]) -> str:
     result = git_run(global_args, "rev-parse", "HEAD", text=True)
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def review_head(global_args: list[str], expected_head: str, expected_branch: str = "") -> str:
+    current = head_sha(global_args)
+    if expected_branch and active_branch(global_args) != expected_branch:
+        return ""
+    if current == expected_head:
+        return current
+    if not expected_branch or not current:
+        return ""
+    # Background title generation can replace a commit without changing its
+    # files. Only the same branch and identical committed tree may continue.
+    before = git_run(global_args, "rev-parse", expected_head + "^{tree}", text=True)
+    after = git_run(global_args, "rev-parse", current + "^{tree}", text=True)
+    return current if before.returncode == after.returncode == 0 and before.stdout.strip() == after.stdout.strip() else ""
 
 
 def changed_line_ranges(global_args: list[str], path: str) -> list[tuple[int, int]]:
@@ -473,7 +519,9 @@ def index_is_clean(global_args: list[str]) -> bool:
     return git_run(global_args, "diff", "--cached", "--quiet", "--no-ext-diff", "--").returncode == 0
 
 
-def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str], expected_head: str, model: str | None = None) -> dict[str, tuple[bytes, bytes]]:
+def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str], expected_head: str, model: str | None = None, expected_branch: str = "") -> dict[str, tuple[bytes, bytes]]:
+    if repository_spellcheck_disabled(global_args):
+        return {}
     if model is None:
         model, _ = core.selected_model(core.installed_local_model_names())
     if model is None:
@@ -485,10 +533,11 @@ def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str],
             proposals[path] = proposal
     if (
         not proposals
-        or head_sha(global_args) != expected_head
+        or not review_head(global_args, expected_head, expected_branch)
         or has_unstaged_changes(global_args)
         or not index_is_clean(global_args)
         or not core.git_config_bool("scm-toolkit.post-commit-spellcheck", False)
+        or repository_spellcheck_disabled(global_args)
     ):
         return {}
     root_result = git_run(global_args, "rev-parse", "--show-toplevel")
@@ -539,7 +588,7 @@ def spellcheck_title(core: ModuleType, model: str, proposals: dict[str, tuple[by
     return DEFAULT_TITLE
 
 
-def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str], model: str = "", title: str = "") -> bool:
+def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: list[str], model: str = "", title: str = "", requested_at_ms: int | None = None) -> bool:
     """Hand off kept spellcheck edits to VS Code without touching tracked files."""
     result = git_run(global_args, "rev-parse", "--absolute-git-dir", text=True)
     if result.returncode != 0:
@@ -554,7 +603,12 @@ def write_spellcheck_notice(global_args: list[str], expected_head: str, paths: l
         "paths": sorted(paths),
         **({"model": model} if model else {}),
         **({"title": title} if title else {}),
+        **({"requestedAtMs": requested_at_ms} if type(requested_at_ms) is int and requested_at_ms > 0 else {}),
     }
+    tree = git_run(global_args, "rev-parse", expected_head + "^{tree}", text=True)
+    branch = active_branch(global_args)
+    if tree.returncode == 0 and re.fullmatch(r"[a-f0-9]{40,64}", tree.stdout.strip()) and branch:
+        payload.update(tree=tree.stdout.strip(), branch=branch)
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -636,13 +690,17 @@ def run_post_commit_job() -> int:
         expected_head = str(job["head"])
         push_gate = str(job.get("push_gate", ""))
         expected_branch = str(job.get("branch", ""))
+        requested_at_ms = job.get("requested_at_ms")
     except (KeyError, TypeError, ValueError):
+        return 0
+
+    if repository_spellcheck_disabled(global_args):
         return 0
 
     if push_gate and not wait_for_push_gate(global_args, push_gate, expected_head, expected_branch):
         return 0
 
-    if not paths or head_sha(global_args) != expected_head or has_unstaged_changes(global_args) or not index_is_clean(global_args):
+    if not paths or not review_head(global_args, expected_head, expected_branch) or has_unstaged_changes(global_args) or not index_is_clean(global_args):
         return 0
 
     try:
@@ -653,7 +711,7 @@ def run_post_commit_job() -> int:
         model, _ = core.selected_model(core.installed_local_model_names())
         if model is None:
             return 0
-        proposals = apply_spellcheck(core, global_args, paths, expected_head, model=model)
+        proposals = apply_spellcheck(core, global_args, paths, expected_head, model=model, expected_branch=expected_branch)
     except Exception:
         return 0
     if not proposals:
@@ -662,24 +720,27 @@ def run_post_commit_job() -> int:
     # Keep corrected text unstaged for the native Source Control review.
     # Never accept or discard edits in an external dialog.
     if (
-        head_sha(global_args) == expected_head
+        review_head(global_args, expected_head, expected_branch)
         and index_is_clean(global_args)
         and proposal_is_untouched(global_args, proposals)
     ):
         # Reserve the normal commit-message generator for the approved and
         # staged changes, rather than drafting a special low-effort title now.
-        if head_sha(global_args) == expected_head and index_is_clean(global_args) and proposal_is_untouched(global_args, proposals):
-            write_spellcheck_notice(global_args, expected_head, list(proposals), model)
+        current = review_head(global_args, expected_head, expected_branch)
+        if current and index_is_clean(global_args) and proposal_is_untouched(global_args, proposals):
+            write_spellcheck_notice(global_args, current, list(proposals), model,
+                                    requested_at_ms=requested_at_ms)
     return 0
 
 
-def spawn_post_commit(global_args: list[str], paths: list[str], committed_head: str, core_path: str, previous_head: str = "") -> None:
-    if not paths or not committed_head:
+def spawn_post_commit(global_args: list[str], paths: list[str], committed_head: str, core_path: str, previous_head: str = "", wait_for_push: bool = False) -> None:
+    if not paths or not committed_head or repository_spellcheck_disabled(global_args):
         return
     env = os.environ.copy()
     env["SCM_TOOLKIT_COMMIT_CORE"] = core_path
-    gate = read_push_gate(global_args, previous_head)
-    job = {"global_args": global_args, "paths": paths, "head": committed_head}
+    gate = read_push_gate(global_args, previous_head) if wait_for_push else None
+    job = {"global_args": global_args, "paths": paths, "head": committed_head,
+           "branch": active_branch(global_args), "requested_at_ms": int(time.time() * 1000)}
     if gate:
         job.update({"push_gate": gate["token"], "branch": gate["branch"]})
     env[SPELLCHECK_JOB_ENV] = json.dumps(job, separators=(",", ":"))

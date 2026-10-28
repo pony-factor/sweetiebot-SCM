@@ -20,18 +20,19 @@ def inventory(verbose=False):
     owners = {}
     problems = []
     actual = {path.name for suffix in ("py", "js")
-              for path in (ROOT / "tests").glob(f"test_*.{suffix}")}
+              for path in (ROOT / "tests").glob(f"*.{suffix}")
+              if path.name != "__init__.py"}
     for group, spec in groups.items():
         if not spec.get("tests"):
             problems.append(f"{group} has no tests")
         for name in spec["tests"]:
-            if not re.fullmatch(r"test_[A-Za-z0-9_]+\.(?:py|js)", name):
+            if not re.fullmatch(r"[A-Za-z0-9_]+\.(?:py|js)", name):
                 problems.append(f"Invalid test name: {name}")
             if name in owners:
                 problems.append(f"{name} assigned to {owners[name]} and {group}")
             owners[name] = group
         for path in spec.get("syntax", []):
-            if not path.startswith(("assets/", "efs/", "scripts/")) or Path(path).is_absolute():
+            if not path.startswith(("assets/", "extension/", "scripts/")) or Path(path).is_absolute():
                 problems.append(f"Invalid syntax path: {path}")
             elif not (ROOT / path).is_file():
                 problems.append(f"Missing source for syntax check: {path}")
@@ -55,11 +56,21 @@ def inventory(verbose=False):
     return data
 
 
+PLAYWRIGHT_JS_IMPORT = re.compile(
+    r"""(?:\brequire\s*\(\s*['"]playwright['"]\s*\)"""
+    r"""|\bimport\s*\(\s*['"]playwright['"]\s*\)"""
+    r"""|\bfrom\s+['"]playwright['"]"""
+    r"""|\bimport\s+['"]playwright['"])"""
+)
+
+
 def browser_needed(spec):
-    # Only Node-based suites run via the group runner use Playwright.
+    # Require a full browser for all supported Playwright import forms, not
+    # just CommonJS. A false positive only costs browser setup; a false negative
+    # silently makes genuine browser tests run without Chromium installed.
     return any(
-        re.search(r"""require\s*\(\s*['"]playwright['"]\s*\)""",
-                  (ROOT / "tests" / name).read_text(encoding="utf-8"))
+        PLAYWRIGHT_JS_IMPORT.search(
+            (ROOT / "tests" / name).read_text(encoding="utf-8"))
         for name in spec["tests"] if name.endswith(".js")
     )
 
@@ -91,7 +102,7 @@ def run_group(name, spec):
         env["PYTHONPATH"] = os.pathsep.join(
             [str(ROOT / "scripts"), str(ROOT / "tests"), env.get("PYTHONPATH", "")]
         )
-        modules = [Path(item).stem for item in python_tests]
+        modules = [f"tests.{Path(item).stem}" for item in python_tests]
         if execute([sys.executable, "-m", "unittest", "-v", *modules], env):
             print(f"::error::{name} Python regressions failed", file=sys.stderr)
             failures += 1
