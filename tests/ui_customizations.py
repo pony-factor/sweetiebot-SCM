@@ -47,7 +47,10 @@ class UiCustomizationTests(unittest.TestCase):
             self.assertEqual(view['name'], 'Research')
             self.assertEqual(view['contextualTitle'], 'Research')
             self.assertEqual(view['icon'], 'media/efs.svg')
-            self.assertTrue((companion / 'media/efs.svg').is_file())
+            self.assertEqual(
+                (companion / 'media/efs.svg').read_bytes(),
+                workspace_search.source_files()[Path('media/efs.svg')].read_bytes(),
+            )
             self.assertIn({'command':'fixture.preserve','title':'Preserve me'}, efs['contributes']['commands'])
             self.assertEqual(ui.plan(extension, settings, companion), [])
 
