@@ -249,7 +249,8 @@ SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh only while visible and focused; pause after GitHub rate limits.", "GitHub"),
     Setting("pullRequestRefreshIntervalSeconds", "scm-toolkit.pull-request-refresh-interval-seconds", "Pull-request refresh interval (seconds)", "Default 120 seconds; choose 30–3600. Manual refresh is unaffected.", "GitHub", "integer", minimum=30, maximum=3600),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR and pony research", "Use this ChatGPT project for PR drafting, independent pony-profile research, and batch squash-merging. Paste the project URL; leave blank for regular chats.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "Shared ChatGPT project", "Project for PR/merge chats and pony research, also inherited by native Spellcheck Only and manual commit-title suggestions when no dedicated review Project is set. Blank uses regular chats.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptReviewProjectUrl", "scm-toolkit.chatgpt-review-project-url", "ChatGPT Project for commit titles and Spellcheck Only", "Optional dedicated Project for manual ChatGPT commit-title suggestions and native Spellcheck Only. Blank inherits the shared Project or regular chats. Automatic background jobs still use Ollama.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("horizontalBranchSelector", "scm-toolkit.horizontal-branch-selector", "Horizontal branch selector", "Click the branch box beside the message field to open horizontal branch options in the bottom panel. Turn off to open the native branch picker instead.", "Source control"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
@@ -348,7 +349,7 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Hide bullets for emoji-only squash summaries", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
+    Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Omit hyphens when every commit title starts with an emoji", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
     Setting("squashTrailerSeparatorStyle", "scm-toolkit.squash-trailer-separator-style", "Squash co-author separator", "Divider between squash summaries and Co-authored-by trailers: Hyphens (---------), Underscores (__________), or None. Underscores remain the default.", "Pull requests", "select", ("underscores", "hyphens", "none")),
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
@@ -357,6 +358,7 @@ SETTINGS = (
     Setting("mergeRefreshIntervalSeconds", "scm-toolkit.merge-refresh-interval-seconds", "Merge refresh interval (seconds)", "Delay between GitHub status updates in an active merge dashboard. Choose 30–3600 seconds.", "GitHub", "integer", minimum=30, maximum=3600),
     Setting("githubRateLimitCooldownSeconds", "scm-toolkit.github-rate-limit-cooldown-seconds", "GitHub rate-limit fallback (seconds)", "Pause when GitHub does not supply a reset time. Choose 60–3600 seconds. Server reset times always take precedence.", "GitHub", "integer", minimum=60, maximum=3600),
     Setting("mergePostSummaries", "scm-toolkit.merge-post-summaries", "Post AI merge summaries to GitHub", "Opt in to a concise summary on each selected PR after its merge is verified. Local explanations always remain available. Off by default.", "Lindsey"),
+    Setting("mergeShowPrCommits", "scm-toolkit.merge-show-pr-commits", "Show PR commits in bulk merge", "Display the selected PR’s commit-history graph in Lindsey’s bulk-merge details. Hide it to give the diff the full width without changing merge behavior. On by default.", "Lindsey"),
     Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
     Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
@@ -371,7 +373,7 @@ SETTINGS = (
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Relative Codex reset times", "Convert Codex's absolute reset dates and times into live relative countdowns in usage-limit banners (for example, 'resets October 24 at 3 PM' becomes 'resets in 1d 4h').", "Codex"),
     Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
-    Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Five-hour usage circle and bar", "Show a bottom-left usage circle and a thin bar along the bottom of the input. Both empty as the five-hour allowance is used and use the pie’s warning color for the final 10%.", "Codex"),
+    Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Five-hour pie and weekly usage bar", "Replace the composer’s + icon with the five-hour remaining-usage pie while retaining the attachment menu. Show the weekly remaining allowance as a thin bar along the bottom of the input.", "Codex"),
     Setting("codexCloudTasks", "scm-toolkit.codex-cloud-tasks", "Enable cloud tasks", "Allow Codex’s cloud execution selector. Off by default: tasks stay local and the native location/usage menu is hidden. Apply through app repair, then reload the intended window.", "Codex"),
     Setting("codexResetTimePieIndicator", "scm-toolkit.codex-reset-time-pie-indicator", "Reset countdown pie indicators", "Show a time-remaining pie beside each five-hour and weekly Codex usage-menu reset countdown. Pies empty as the reset approaches; hiding reset times overrides this setting. Off by default.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
@@ -965,6 +967,17 @@ def render_form(
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
+            squash_formatting = {"squashOmitBulletsForEmojiTitles", "filterSyncCommitSummaries", "squashTrailerSeparatorStyle"}
+            controls = (
+                '<div class="settings-group"><h3>Squash formatting</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.name in squash_formatting)
+                + '</div><div class="settings-group"><h3>Pull requests</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name not in squash_formatting)
+                + '</div>'
+            )
             controls = (
                 '<div class="setting"><span><strong>Codex Pony repository access</strong>'
                 '<small>New PR requires Codex Pony to be installed on the repository owner’s account or organization, '
