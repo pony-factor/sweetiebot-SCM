@@ -110,7 +110,7 @@ async function run() {
   const end = pickerSource.indexOf('    const refreshAutoPublish = () => {', start);
   assert(start >= 0 && end > start);
   let currentEnabled = false, failUpdate = false, changed, click;
-  const errors = [];
+  const buttonErrors = [];
   const button = {
     attrs: {}, active: new Set(), disabled: false,
     setAttribute(name, value) { this.attrs[name] = value; },
@@ -133,7 +133,7 @@ async function run() {
       },
       onDidChangeConfiguration(fn) { changed = fn; return { dispose() {} }; }
     },
-    notifications: { error(error) { errors.push(error.message); } },
+    notifications: { error(error) { buttonErrors.push(error.message); } },
     widget: { disposables: { add() {} } }
   });
   vm.runInContext('let updatingAutoCommit = false;\n' + pickerSource.slice(start, end)
@@ -152,7 +152,7 @@ async function run() {
   await click({ stopPropagation() {} });
   assert.equal(currentEnabled, false);
   assert.equal(button.disabled, false);
-  assert.deepEqual(errors, ['Write failed']);
+  assert.deepEqual(buttonErrors, ['Write failed']);
   failUpdate = false;
   await click({ stopPropagation() {} });
   assert.equal(currentEnabled, true);
