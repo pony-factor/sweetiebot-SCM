@@ -98,7 +98,7 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    const key=isCodex(p.name,p.email)?'codex@noreply@openai.com':p.name.toLowerCase();
    const old=names.get(key);
    // First appearance controls each identity's spelling, email, and position.
-   if (!old) names.set(key,{...p,appearance:appearance++});
+   if (!old) names.set(key,{...p,name:isCodex(p.name,p.email)?mergeNames(p.name):p.name,appearance:appearance++});
    else if (isCodex(p.name,p.email)) names.set(key,{...old,name:mergeNames(old.name,p.name)});
  };
  for(const entry of commits){
