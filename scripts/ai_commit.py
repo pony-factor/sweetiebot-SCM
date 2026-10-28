@@ -204,8 +204,13 @@ def generation_integer_setting(key, default, maximum):
 
 def generation_request_seconds():
     options = GENERATION_OPTIONS.get()
-    return options[0] if options else generation_integer_setting(
-        'scm-toolkit.ai-commit-request-timeout-seconds', GENERATION_REQUEST_SECONDS, 900)
+    if options:
+        return options[0]
+    # Qwen MLKV prefills one prompt token at a time on the ANE. A normal
+    # commit prompt can exceed Ollama's default even after model preparation.
+    default = 300 if coreml_backend_enabled() else GENERATION_REQUEST_SECONDS
+    return generation_integer_setting(
+        'scm-toolkit.ai-commit-request-timeout-seconds', default, 900)
 
 
 def generation_attempts():

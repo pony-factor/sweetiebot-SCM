@@ -28,6 +28,16 @@ class CoreMLBackendTests(unittest.TestCase):
         with patch.object(coreml.sys, "platform", "darwin"):
             self.assertFalse(coreml.available("/no/such/sweetiebot-ane"))
 
+    def test_coreml_timeout_allows_recurrent_prefill_and_respects_overrides(self):
+        with patch.object(ai_commit, "coreml_backend_enabled", return_value=True):
+            with patch.object(ai_commit, "git_config_string", return_value=""):
+                self.assertEqual(ai_commit.generation_request_seconds(), 300)
+            with patch.object(ai_commit, "git_config_string", return_value="60"):
+                self.assertEqual(ai_commit.generation_request_seconds(), 60)
+        with patch.object(ai_commit, "coreml_backend_enabled", return_value=False), \
+                patch.object(ai_commit, "git_config_string", return_value=""):
+            self.assertEqual(ai_commit.generation_request_seconds(), 45)
+
     def test_generation_preserves_prompt_and_schema_with_long_lived_worker(self):
         with tempfile.TemporaryDirectory() as temp:
             command = Path(temp) / "fake_ane"

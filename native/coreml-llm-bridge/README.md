@@ -56,6 +56,10 @@ template with thinking disabled, and greedy decoding. Their context holds
 error rather than silently dropping staged changes. Other registered models
 use the generic loader and its sampling defaults.
 
+Qwen prefills the prompt one token at a time. Core ML requests default to
+300 seconds to accommodate this; an explicit ai-commit-request-timeout-seconds
+setting overrides that default. Ollama keeps its 45-second default.
+
 The bridge does **not** natively enforce JSON
 Schema; Sweetiebot requests JSON in the prompt and
 continues to validate every title and emoji using its existing checks.
