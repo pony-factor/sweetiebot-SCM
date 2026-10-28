@@ -1,0 +1,1585 @@
+import json
+import io
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import configurator
+import install
+import branch_names
+import toolkit_settings
+from pathlib import Path
+
+
+def form_values():
+    values = {}
+    for pack in branch_names.load_catalog()["packs"]:
+        values.setdefault("branchNameKnownPack", []).append(pack["id"])
+        values.setdefault("branchNamePack", []).append(pack["id"])
+
+    for setting in configurator.SETTINGS:
+        current = install.DEFAULT_SETTINGS[setting.name]
+        if setting.kind == "packs":
+            continue
+        if setting.kind == "bool":
+            if current:
+                values[setting.name] = ["true"]
+        else:
+            values[setting.name] = [str(current)]
+    return values
+
+
+class SubmissionTests(unittest.TestCase):
+    def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
+        values = form_values()
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(install.DEFAULT_SETTINGS[name], '')
+        values.update(windowHeading=['${rootName} (${activeRepositoryBranchName})'],
+                      windowName=['${activeEditorShort}${separator}${appName}'])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        for name in ('windowHeading', 'windowName'):
+            self.assertEqual(current[name], values[name][0])
+            self.assertEqual(payload['vscodeSettings'][name], values[name][0])
+        page = configurator.render_form(current, [], 'Ready', 'test-token', 'Save')
+        for name in ('windowHeading', 'windowName'):
+            self.assertIn(f'name="{name}"', page)
+        self.assertIn('placeholder="VS Code default"', page)
+        self.assertIn("window.title", page)
+        self.assertIn('id="heading-layout"', page)
+        self.assertIn('id="heading-available"', page)
+        self.assertIn('id="heading-add-text"', page)
+        self.assertIn('name="windowShowModifiedStatus"', page)
+        self.assertIn('name="windowShowPushingStatus"', page)
+        values.update(windowHeading=[''], windowName=[''])
+        restored = configurator.parse_submission(values)
+        self.assertEqual(restored['windowHeading'], '')
+        self.assertEqual(restored['windowName'], '')
+        values['windowName'] = ['one\ntwo']
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
+    def test_lindsey_has_its_own_dashboard_settings_page(self):
+        names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeShowPrCommits"}
+        controls = [setting for setting in configurator.SETTINGS if setting.name in names]
+        self.assertEqual({setting.section for setting in controls}, {"Lindsey"})
+        values = form_values()
+        values.update(mergeTimelineTimestampMode=["clock"], mergeSidebarWidthPercent=["45"], mergeTimelineHeightPercent=["60"])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertEqual(payload["mergeTimelineTimestampMode"], "clock")
+        self.assertEqual(payload["mergeSidebarWidthPercent"], 45)
+        self.assertEqual(payload["mergeTimelineHeightPercent"], 60)
+        for name, bad in [("mergeTimelineTimestampMode", "invalid"), ("mergeSidebarWidthPercent", "76"), ("mergeTimelineHeightPercent", "14")]:
+            invalid = dict(values, **{name: [bad]})
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(invalid)
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('>Lindsey</button>', page)
+        for name in names:
+            self.assertIn(f'name="{name}"', page)
+
+    def test_github_refresh_controls_round_trip(self):
+        values = form_values()
+        values.pop("mergeAutoRefresh", None)
+        values.update(mergeRefreshIntervalSeconds=["180"], githubRateLimitCooldownSeconds=["600"])
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertFalse(payload["mergeAutoRefresh"])
+        self.assertEqual(payload["mergeRefreshIntervalSeconds"], 180)
+        self.assertEqual(payload["githubRateLimitCooldownSeconds"], 600)
+        for name, value in [("mergeRefreshIntervalSeconds", "29"), ("githubRateLimitCooldownSeconds", "59")]:
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(dict(values, **{name: [value]}))
+
+    def test_bulk_merge_commit_history_toggle_defaults_on_and_persists(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["mergeShowPrCommits"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["mergeShowPrCommits"], "scm-toolkit.merge-show-pr-commits")
+        values = form_values()
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["mergeShowPrCommits"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["mergeShowPrCommits"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="mergeShowPrCommits" value="true" checked', page)
+        values.pop("mergeShowPrCommits")
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled["mergeShowPrCommits"])
+        self.assertFalse(configurator.extension_settings_payload(disabled)["vscodeSettings"]["mergeShowPrCommits"])
+
+    def test_merge_summaries_are_opt_in_and_persist(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["mergePostSummaries"])
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["mergePostSummaries"])
+        values["mergePostSummaries"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["mergePostSummaries"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="mergePostSummaries" value="true" checked', page)
+
+    def test_sync_commit_filter_defaults_on_and_persists(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],
+                         "scm-toolkit.filter-sync-commit-summaries")
+        values = form_values()
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["filterSyncCommitSummaries"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["filterSyncCommitSummaries"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="filterSyncCommitSummaries" value="true" checked', page)
+        self.assertIn("Exclude sync commits from squash summaries", page)
+        values.pop("filterSyncCommitSummaries")
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled["filterSyncCommitSummaries"])
+        self.assertFalse(configurator.extension_settings_payload(disabled)["vscodeSettings"]["filterSyncCommitSummaries"])
+
+    def test_emoji_only_squash_summary_format_toggle(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["squashOmitBulletsForEmojiTitles"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["squashOmitBulletsForEmojiTitles"],
+                         "scm-toolkit.squash-omit-bullets-for-emoji-titles")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["squashOmitBulletsForEmojiTitles"])
+        values["squashOmitBulletsForEmojiTitles"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["squashOmitBulletsForEmojiTitles"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashOmitBulletsForEmojiTitles"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="squashOmitBulletsForEmojiTitles" value="true" checked', page)
+        self.assertIn("Omit hyphens when every commit title starts with an emoji", page)
+
+    def test_squash_separator_style_round_trip(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["squashTrailerSeparatorStyle"], "underscores")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["squashTrailerSeparatorStyle"],
+                         "scm-toolkit.squash-trailer-separator-style")
+        for style in ("underscores", "hyphens", "none"):
+            values = form_values()
+            values["squashTrailerSeparatorStyle"] = [style]
+            parsed = configurator.parse_submission(values)
+            self.assertEqual(parsed["squashTrailerSeparatorStyle"], style)
+            self.assertEqual(configurator.extension_settings_payload(parsed)["vscodeSettings"]["squashTrailerSeparatorStyle"], style)
+            page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+            self.assertIn('name="squashTrailerSeparatorStyle"', page)
+            self.assertIn(f'<option value="{style}" selected>', page)
+        values["squashTrailerSeparatorStyle"] = ["unknown"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
+    def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],
+                         "scm-toolkit.ai-title-explanations")
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["aiTitleExplanations"])
+        values["aiTitleExplanations"] = ["true"]
+        settings = configurator.parse_submission(values)
+        self.assertTrue(settings["aiTitleExplanations"])
+        page = configurator.render_form(settings, [], "Ready", "test-token", "Save")
+        self.assertIn('name="aiTitleExplanations" value="true" checked', page)
+        self.assertIn("Explain AI commit title choices", page)
+        self.assertFalse("aiTitleExplanations" in configurator.extension_settings_payload(settings)["vscodeSettings"])
+
+    def test_spellcheck_menu_documents_repository_override(self):
+        page = configurator.render_form(
+            dict(toolkit_settings.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save"
+        )
+        self.assertIn("Opt out in one repository", page)
+        self.assertIn("<code>.vscode/settings.json</code>", page)
+        self.assertIn("&quot;scmToolkit.postCommitSpellcheck&quot;: false", page)
+        self.assertIn("Other repositories still spellcheck", page)
+
+    def test_spellcheck_line_break_preference_can_be_toggled(self):
+        values = form_values()
+        values["spellcheckPreserveLineBreaks"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["spellcheckPreserveLineBreaks"])
+        page = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="spellcheckPreserveLineBreaks"', page)
+        self.assertIn("Preserve intentional line breaks", page)
+        values.pop("spellcheckPreserveLineBreaks")
+        self.assertFalse(configurator.parse_submission(values)["spellcheckPreserveLineBreaks"])
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["spellcheckPreserveLineBreaks"])
+
+    def test_commit_coauthor_identity_can_be_changed_safely(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["codexCoauthorName"], "Codex")
+        self.assertEqual(configurator.parse_submission(values)["codexCoauthorEmail"], "noreply@openai.com")
+        values["codexCoauthorName"] = ["Contributor Bot"]
+        values["codexCoauthorEmail"] = ["123+bot[bot]@users.noreply.github.com"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["codexCoauthorName"], "Contributor Bot")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="codexCoauthorName" value="Contributor Bot"', page)
+        self.assertIn('name="codexCoauthorEmail" value="123+bot[bot]@users.noreply.github.com"', page)
+        for bad in ("", "Bad <Name>", "Bad\\nCo-authored-by: Intruder <x@y>", "N" * 101):
+            values["codexCoauthorName"] = [bad]
+            with self.assertRaisesRegex(ValueError, "co-author name"):
+                configurator.parse_submission(values)
+        values["codexCoauthorName"] = ["Contributor Bot"]
+        for bad in ("", "no-at-sign", "a@b\\nCo-authored-by: Intruder <x@y>", "a <a@b>"):
+            values["codexCoauthorEmail"] = [bad]
+            with self.assertRaisesRegex(ValueError, "co-author email"):
+                configurator.parse_submission(values)
+
+    def test_pull_request_refresh_interval_validation(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["pullRequestRefreshIntervalSeconds"], "120")
+        page = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="pullRequestRefreshIntervalSeconds"', page)
+        for bad in ["0", "5", "29", "3601", "Infinity", "12.5", "invalid"]:
+            values["pullRequestRefreshIntervalSeconds"] = [bad]
+            with self.assertRaises(ValueError, msg=bad):
+                configurator.parse_submission(values)
+        values["pullRequestRefreshIntervalSeconds"] = ["600"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["pullRequestRefreshIntervalSeconds"], "600")
+        self.assertEqual(configurator.extension_settings_payload(parsed)["vscodeSettings"]["pullRequestRefreshIntervalSeconds"], 600)
+
+    def test_chatgpt_project_url_validation(self):
+        values = form_values()
+        values["chatgptProjectUrl"] = ["https://chatgpt.com/g/g-p-sample123/project/"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["chatgptProjectUrl"], "https://chatgpt.com/g/g-p-sample123/project")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="chatgptProjectUrl"', page)
+        values["chatgptProjectUrl"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["chatgptProjectUrl"], "")
+        for bad_url in [
+            "https://chatgpt.com.evil.test/g/g-p-sample/project",
+            "http://chatgpt.com/g/g-p-sample/project",
+            "https://chatgpt.com/g/g-p-sample/project?redirect=1",
+            "https://chatgpt.com/",
+            "https://user@chatgpt.com/g/g-p-sample/project",
+        ]:
+            values["chatgptProjectUrl"] = [bad_url]
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(values)
+
+    def test_add_separator_appears_immediately_above_available_buttons(self):
+        page = configurator.render_form(dict(toolkit_settings.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        preview = page.index('class="message-bar-preview"')
+        add_separator = page.index('id="message-bar-add-separator"')
+        available = page.index('class="message-bar-hidden"')
+        self.assertLess(preview, add_separator)
+        self.assertLess(add_separator, available)
+        self.assertEqual(page.count('id="message-bar-add-separator"'), 1)
+
+    def test_available_push_control_is_disabled_without_a_visibility_switch(self):
+        values = form_values()
+        values["messageBarLayout"] = ['{"before":["codex"],"after":[]}']
+        values["postCommitAction"] = ["push"]
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["commitAndPush"])
+        self.assertEqual(parsed["postCommitAction"], "none")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertNotIn('type="checkbox" name="commitAndPush"', page)
+        self.assertNotIn("Button options", page)
+        self.assertIn('data-message-bar-zone="hidden"><div class="message-bar-item message-bar-push"', page)
+
+    def test_native_update_controls_preserve_vscode_startup_preferences(self):
+        current = dict(toolkit_settings.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {
+            "appUpdateSettings": {"mode": "start"},
+            "extensionUpdateSettings": {"autoCheckUpdates": False, "autoUpdate": False},
+        })
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="nativeAppUpdateMode"', page)
+        self.assertIn('name="nativeExtensionAutoCheckUpdates"', page)
+        self.assertIn('name="nativeExtensionAutoUpdate"', page)
+        payload = configurator.extension_settings_payload(current)
+        self.assertEqual(payload["appUpdateSettings"], {"mode": "start"})
+        self.assertEqual(payload["extensionUpdateSettings"], {"autoCheckUpdates": False, "autoUpdate": False})
+        self.assertNotIn("showReleaseNotes", payload["appUpdateSettings"])
+        self.assertTrue(current["automaticAppRepair"])
+        for mode in ("default", "start", "manual", "none"):
+            values = form_values()
+            values["nativeAppUpdateMode"] = [mode]
+            self.assertEqual(configurator.parse_submission(values)["nativeAppUpdateMode"], mode)
+
+    def test_push_checkbox_and_automatic_sync_are_independent(self):
+        values = form_values()
+        values.pop("postCommitAction")
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["postCommitAction"], "none")
+        self.assertTrue(parsed["autoPullClean"])
+        values["postCommitAction"] = ["push"]
+        values.pop("autoPullClean")
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["postCommitAction"], "push")
+        self.assertFalse(parsed["autoPullClean"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('type="checkbox" name="postCommitAction" value="push" checked', page)
+        self.assertNotIn('<select name="postCommitAction"', page)
+        self.assertIn("Automatically sync", page)
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["autoPullClean"])
+
+    def test_custom_sync_direction_names_round_trip(self):
+        values = form_values()
+        values["incomingSyncLabel"] = ["Remote work"]
+        values["outgoingSyncLabel"] = ["Ship it"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["incomingSyncLabel"], "Remote work")
+        self.assertEqual(parsed["outgoingSyncLabel"], "Ship it")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="incomingSyncLabel" value="Remote work"', page)
+        self.assertIn('name="outgoingSyncLabel" value="Ship it"', page)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertEqual(payload["incomingSyncLabel"], "Remote work")
+        self.assertEqual(payload["outgoingSyncLabel"], "Ship it")
+        values["incomingSyncLabel"] = [""]
+        values["outgoingSyncLabel"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["incomingSyncLabel"], "")
+        self.assertEqual(configurator.parse_submission(values)["outgoingSyncLabel"], "")
+        values["incomingSyncLabel"] = ["bad\nname"]
+        with self.assertRaisesRegex(ValueError, "one line"):
+            configurator.parse_submission(values)
+
+    def test_sync_direction_count_toggles_round_trip(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncCount"])
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncCount"])
+        values = form_values()
+        values["hideIncomingSyncCount"] = ["true"]
+        values.pop("hideOutgoingSyncCount")
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertTrue(payload["hideIncomingSyncCount"])
+        self.assertFalse(payload["hideOutgoingSyncCount"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="hideIncomingSyncCount" value="true" checked', page)
+        self.assertIn('name="hideOutgoingSyncCount" value="true"', page)
+
+    def test_pr_warning_highlights_require_opt_in(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["prWarningHighlights"])
+        values = form_values()
+        values.pop("prWarningHighlights", None)
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true"', page)
+        self.assertNotIn('name="prWarningHighlights" value="true" checked', page)
+        self.assertFalse(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+
+        values["prWarningHighlights"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["prWarningHighlights"])
+        self.assertTrue(configurator.extension_settings_payload(parsed)["vscodeSettings"]["prWarningHighlights"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="prWarningHighlights" value="true" checked', page)
+
+    def test_sync_direction_arrow_toggles_round_trip(self):
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideIncomingSyncArrow"])
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["hideOutgoingSyncArrow"])
+        values = form_values()
+        values["hideIncomingSyncArrow"] = ["true"]
+        values["hideOutgoingSyncArrow"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["hideIncomingSyncArrow"])
+        self.assertTrue(parsed["hideOutgoingSyncArrow"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="hideIncomingSyncArrow" value="true" checked', page)
+        self.assertIn('name="hideOutgoingSyncArrow" value="true" checked', page)
+        payload = configurator.extension_settings_payload(parsed)["vscodeSettings"]
+        self.assertTrue(payload["hideIncomingSyncArrow"])
+        self.assertTrue(payload["hideOutgoingSyncArrow"])
+        values.pop("hideOutgoingSyncArrow")
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["hideIncomingSyncArrow"])
+        self.assertFalse(parsed["hideOutgoingSyncArrow"])
+
+    def test_legacy_post_commit_sync_is_replaced_by_unchecked_push(self):
+        current = dict(toolkit_settings.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {"gitSettings": {"postCommitCommand": "sync"}})
+        self.assertEqual(current["postCommitAction"], "none")
+
+    def test_button_visibility_comes_from_layout_instead_of_legacy_switches(self):
+        values = form_values()
+        values["messageBarLayout"] = ['{"before":["codex"],"after":["autocomplete"]}']
+        values.pop("codexCoauthor")
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["codexCoauthor"])
+        self.assertTrue(parsed["autocompleteToggle"])
+        self.assertFalse(parsed["branchPicker"])
+        self.assertFalse(parsed["ponyBranch"])
+        self.assertFalse(parsed["mcpPullRequest"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        for name in (*configurator.MESSAGE_BAR_VISIBILITY_SETTINGS, "inlineSuggestions"):
+            self.assertNotIn(f'type="checkbox" name="{name}"', page)
+            self.assertIn(f'type="hidden" name="{name}"', page)
+
+    def test_relative_codex_reset_time_setting_explains_conversion(self):
+        setting = next(item for item in configurator.SETTINGS
+                       if item.name == "codexUsageResetCountdown")
+        self.assertEqual(setting.label, "Relative Codex reset times")
+        self.assertIn("absolute reset dates and times", setting.description)
+        self.assertIn("live relative countdowns", setting.description)
+        self.assertEqual(setting.git_key, "scm-toolkit.codex-usage-reset-countdown")
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "token", "Save")
+        self.assertIn("Relative Codex reset times", page)
+        self.assertIn("live relative countdowns", page)
+        self.assertIn('name="codexResetTimePieIndicator"', page)
+
+    def test_rate_limit_sticker_toggle_and_local_picker(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["codexRateLimitSticker"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="codexRateLimitSticker"', page)
+        self.assertIn('id="sticker-upload"', page)
+        self.assertIn("Cached", configurator.STICKER_SCRIPT)
+        values.pop("codexRateLimitSticker")
+        self.assertFalse(configurator.parse_submission(values)["codexRateLimitSticker"])
+
+    def test_gear_page_covers_every_toolkit_and_extension_setting(self):
+        controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
+        self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
+        self.assertEqual(set(controls), set(toolkit_settings.DEFAULT_SETTINGS))
+        package = json.loads((Path(__file__).parent.parent / "extension/package.json").read_text())
+        properties = set(package["contributes"]["configuration"]["properties"])
+        exposed = {
+            f"{root}.{key}"
+            for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
+            for key in toolkit_settings.VSCODE_SETTINGS[group]
+        }
+        # Extension-native and repository-scoped settings do not belong
+        # to the global Git-backed configurator's managed controls.
+        self.assertEqual(properties - exposed, {
+            "scmToolkit.postCommitSpellcheck",
+            "scmToolkit.startCompactPRSession",
+            "scmToolkit.promptForIndependentWorkspaceTrust",
+            "scmToolkit.mergePostStatusUpdates",
+        })
+        self.assertFalse(exposed - properties)
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        for name in controls:
+            if name not in {"branchNameDisabledPacks", "kefaniaShowCloseButton"}:
+                self.assertIn(f'name="{name}"', page)
+
+    def test_kefania_close_after_merge_round_trips(self):
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["kefaniaCloseAfterMerge"])
+        values["kefaniaCloseAfterMerge"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["kefaniaCloseAfterMerge"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="kefaniaCloseAfterMerge" value="true" checked', page)
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertTrue(payload["vscodeSettings"]["kefaniaCloseAfterMerge"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertTrue(current["kefaniaCloseAfterMerge"])
+
+    def test_automatic_workspace_cleanup_round_trips_into_vscode(self):
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["automaticWorkspaceCleanup"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="automaticWorkspaceCleanup" value="true" checked', page)
+
+        values.pop("automaticWorkspaceCleanup")
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["automaticWorkspaceCleanup"])
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertFalse(payload["vscodeSettings"]["automaticWorkspaceCleanup"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertFalse(current["automaticWorkspaceCleanup"])
+
+    def test_search_box_placeholder_round_trips_into_vscode(self):
+        values = form_values()
+        values["workspaceSearchPlaceholder"] = ["SATS"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["workspaceSearchPlaceholder"], "SATS")
+        self.assertEqual(configurator.extension_settings_payload(parsed)["workspaceSearch"]["placeholder"], "SATS")
+        values["workspaceSearchPlaceholder"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["workspaceSearchPlaceholder"], "")
+
+    def test_notification_position_round_trips_into_vscode(self):
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {
+            "workbenchNotificationSettings": {"position": "top-right"},
+        })
+        self.assertEqual(current["notificationPosition"], "top-right")
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="notificationPosition"', page)
+        self.assertIn('<option value="top-right" selected>Top-right</option>', page)
+
+        values = form_values()
+        values["notificationPosition"] = ["bottom-right"]
+        payload = configurator.extension_settings_payload(configurator.parse_submission(values))
+        self.assertEqual(payload["workbenchNotificationSettings"]["position"], "bottom-right")
+
+        values["notificationPosition"] = ["center"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
+    def test_ludicrous_mode_defaults_off_and_round_trips(self):
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
+        values["ludicrousMode"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertNotIn("ludicrousMode", payload["vscodeSettings"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="ludicrousMode" value="true" checked', page)
+        self.assertIn('Ludicrous mode', page)
+        self.assertEqual(toolkit_settings.SETTING_KEYS["ludicrousMode"], "scm-toolkit.ludicrous-mode")
+        with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
+            configurator.save_settings(parsed)
+        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.ludicrous-mode", "true"] for call in run.call_args_list))
+        values.pop("ludicrousMode")
+        self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
+
+    def test_kefania_x_position_round_trips_and_validates(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["kefaniaCloseButtonPosition"], "left")
+        for position in ("left", "middle", "right"):
+            values["kefaniaCloseButtonPosition"] = [position]
+            parsed = configurator.parse_submission(values)
+            self.assertEqual(parsed["kefaniaCloseButtonPosition"], position)
+            self.assertTrue(parsed["kefaniaShowCloseButton"])
+            payload = configurator.extension_settings_payload(parsed)
+            self.assertEqual(payload["vscodeSettings"]["kefaniaCloseButtonPosition"], position)
+            current = dict(install.DEFAULT_SETTINGS)
+            configurator.apply_vscode_settings(current, payload)
+            page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+            self.assertIn('<select name="kefaniaCloseButtonPosition">', page)
+            self.assertIn(f'<option value="{position}" selected>{position.capitalize()}</option>', page)
+            self.assertNotIn('name="kefaniaCloseButtonLeft"', page)
+            self.assertNotIn('name="kefaniaShowCloseButton"', page)
+        values["kefaniaCloseButtonPosition"] = ["hidden"]
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["kefaniaShowCloseButton"])
+        self.assertEqual(parsed["kefaniaCloseButtonPosition"], "left")
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertFalse(payload["vscodeSettings"]["kefaniaShowCloseButton"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('<option value="hidden" selected>Hidden</option>', page)
+        self.assertNotIn('name="kefaniaShowCloseButton"', page)
+        with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
+            configurator.save_settings(parsed)
+        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.kefania-show-close-button", "false"] for call in run.call_args_list))
+        for invalid in ("", "center", "top", "left\\nright"):
+            values["kefaniaCloseButtonPosition"] = [invalid]
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(values)
+
+    def test_legacy_kefania_close_position_is_preserved_until_saved(self):
+        def read_string(key, default, preserve_empty=False):
+            if key == "scm-toolkit.kefania-close-button-position":
+                return None
+            return default
+        with patch.object(toolkit_settings, "read_git_string", side_effect=read_string), patch.object(toolkit_settings, "read_git_bool", side_effect=lambda key, default: False if key == "scm-toolkit.kefania-close-button-left" else default):
+            settings = toolkit_settings.load_settings()
+        self.assertEqual(settings["kefaniaCloseButtonPosition"], "right")
+
+    def test_pr_auto_publish_preference_round_trips_into_vscode(self):
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["autoPublishPullRequests"])
+
+        values.pop("autoPublishPullRequests")
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["autoPublishPullRequests"])
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertFalse(payload["vscodeSettings"]["autoPublishPullRequests"])
+
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertFalse(current["autoPublishPullRequests"])
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="autoPublishPullRequests"', page)
+        self.assertNotIn('name="autoPublishPullRequests" value="true" checked', page)
+
+    def test_cloud_preference_round_trips_into_vscode(self):
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, {
+            "vscodeSettings": {"autoPublishNewBranches": True},
+            "workspaceSearch": {"resultLimit": 35},
+            "gitSettings": {"postCommitCommand": "push"},
+        })
+        self.assertTrue(current["autoPublishNewBranches"])
+        page = configurator.render_form(current, [], "Ready", "test-token", "Save")
+        self.assertIn('name="autoPublishNewBranches" value="true" checked', page)
+        values = form_values()
+        values["autoPublishNewBranches"] = ["true"]
+        values["workspaceSearchResultLimit"] = ["35"]
+        values["postCommitAction"] = ["push"]
+        payload = configurator.extension_settings_payload(configurator.parse_submission(values))
+        self.assertTrue(payload["vscodeSettings"]["autoPublishNewBranches"])
+        self.assertEqual(payload["workspaceSearch"]["resultLimit"], 35)
+        self.assertEqual(payload["gitSettings"]["postCommitCommand"], "push")
+
+    def test_search_preferences_reject_values_outside_runtime_contract(self):
+        for key, value in (("workspaceSearchResultLimit", "101"), ("workspaceSearchMaxFiles", "1.5"),
+                           ("workspaceSearchMaxFileSizeMB", "nan"), ("workspaceSearchMode", "invalid"),
+                           ("workspaceSearchOllamaUrl", "https://example.com")):
+            with self.subTest(key=key):
+                values = form_values()
+                values[key] = [value]
+                with self.assertRaises(ValueError):
+                    configurator.parse_submission(values)
+
+    def test_manual_spellcheck_preview_defaults_off_and_has_own_model(self):
+        values = form_values()
+        self.assertFalse(install.DEFAULT_SETTINGS["spellcheckManualCommit"])
+        self.assertEqual(install.DEFAULT_SETTINGS["spellcheckModel"], "qwen2.5:3b")
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["spellcheckManualCommit"])
+        self.assertEqual(parsed["spellcheckModel"], "qwen2.5:3b")
+        values["spellcheckManualCommit"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["spellcheckManualCommit"])
+
+    def test_manual_draft_emoji_toggle_is_independent_of_spellcheck(self):
+        values = form_values()
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "scm-toolkit.draft-commit-emoji")
+        self.assertFalse(configurator.parse_submission(values)["draftCommitEmoji"])
+        values["draftCommitEmoji"] = ["true"]
+        configured = configurator.parse_submission(values)
+        self.assertTrue(configured["draftCommitEmoji"])
+        self.assertFalse(configured["spellcheckManualCommit"])
+        page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
+        self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
+    def test_spellcheck_changes_commit_emoji_setting_is_independent(self):
+        values = form_values()
+        key = "spellcheckChangesEmoji"
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.spellcheck-changes-emoji")
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
+        self.assertTrue(configurator.parse_submission(values)[key])
+        unchecked = dict(values)
+        unchecked.pop(key)
+        self.assertFalse(configurator.parse_submission(unchecked)[key])
+        values[key] = ["true"]
+        rendered = configurator.render_form(configurator.parse_submission(values), [], "Ready", "test-token", "Save")
+        self.assertIn('name="spellcheckChangesEmoji" value="true" checked', rendered)
+        self.assertIn("<h3>After committing</h3>", rendered)
+
+    def test_spellchecking_suite_defaults_validation_and_grouping(self):
+        values = form_values()
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckAction"], "automatic")
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckDelaySeconds"], "1.5")
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["draftSpellcheckStyle"], "spelling")
+        values.update({
+            "spellcheckManualCommit": ["true"],
+            "draftSpellcheckAction": ["review"],
+            "draftSpellcheckDelaySeconds": ["2.5"],
+            "draftSpellcheckStyle": ["grammar"],
+            "draftSpellcheckVocabulary": ["Instinet\nSoroban"],
+            "draftSpellcheckGuidance": ["Keep legal terminology unchanged."],
+            "draftCommitEmoji": ["true"],
+        })
+        parsed = configurator.parse_submission(values)
+        for key in ("draftSpellcheckAction", "draftSpellcheckDelaySeconds", "draftSpellcheckStyle",
+                    "draftSpellcheckVocabulary", "draftSpellcheckGuidance"):
+            self.assertEqual(parsed[key], values[key][0])
+        page = configurator.render_form(parsed, [], "Ready", "token", "Save")
+        self.assertIn(">Spellcheck Changes</button>", page)
+        self.assertIn("<h3>While drafting a commit</h3>", page)
+        self.assertIn("<h3>After committing</h3>", page)
+        self.assertIn('name="draftSpellcheckAction"', page)
+        self.assertIn('name="draftSpellcheckDelaySeconds"', page)
+        self.assertIn('name="draftSpellcheckVocabulary"', page)
+        self.assertIn('name="draftSpellcheckGuidance"', page)
+        self.assertIn('name="draftCommitEmoji" value="true" checked', page)
+
+    def test_spellcheck_thinking_effort_uses_supported_persisted_levels(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckThinkingEffort"], "default")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckThinkingEffort"],
+                         "scm-toolkit.spellcheck-thinking-effort")
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["spellcheckThinkingEffort"], "default")
+        for effort in ("low", "medium", "high"):
+            with self.subTest(effort=effort):
+                values["spellcheckThinkingEffort"] = [effort]
+                configured = configurator.parse_submission(values)
+                self.assertEqual(configured["spellcheckThinkingEffort"], effort)
+                page = configurator.render_form(configured, [], "Ready", "test-token", "Save")
+                self.assertIn('name="spellcheckThinkingEffort"', page)
+                self.assertIn(f'<option value="{effort}" selected>', page)
+        values["spellcheckThinkingEffort"] = ["maximum"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
+    def test_spellchecking_suite_rejects_invalid_inputs(self):
+        invalid = (
+            ("draftSpellcheckAction", "silent"),
+            ("draftSpellcheckStyle", "rewrite"),
+            ("draftSpellcheckDelaySeconds", "0.1"),
+            ("draftSpellcheckDelaySeconds", "11"),
+            ("draftSpellcheckDelaySeconds", "nan"),
+            ("draftSpellcheckVocabulary", "word\n" * 101),
+            ("draftSpellcheckGuidance", "x" * 2001),
+            ("draftSpellcheckVocabulary", "x\x00"),
+        )
+        for name, value in invalid:
+            with self.subTest(name=name, value=value[:30]):
+                form = form_values()
+                form[name] = [value]
+                with self.assertRaises(ValueError):
+                    configurator.parse_submission(form)
+
+    def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["aiEmojiPriorityRules"])
+        values.pop("aiEmojiPriorityRules")
+        self.assertFalse(configurator.parse_submission(values)["aiEmojiPriorityRules"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn("Enforce custom emoji priorities", page)
+        self.assertIn('name="aiEmojiPriorityRules" value="true" checked', page)
+
+    def test_staged_whitespace_toggle_defaults_on_and_can_be_disabled(self):
+        setting = next(setting for setting in configurator.SETTINGS if setting.name == "normalizeStagedWhitespace")
+        self.assertEqual(setting.section, "Source control")
+        self.assertEqual(setting.label, "Normalize line endings and whitespace")
+        self.assertIn("Commit with Codex", setting.description)
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["normalizeStagedWhitespace"])
+        self.assertEqual(
+            toolkit_settings.SETTING_KEYS["normalizeStagedWhitespace"],
+            "scm-toolkit.normalize-staged-whitespace",
+        )
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["normalizeStagedWhitespace"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="normalizeStagedWhitespace" value="true" checked', page)
+        values.pop("normalizeStagedWhitespace")
+        self.assertFalse(configurator.parse_submission(values)["normalizeStagedWhitespace"])
+        page = configurator.render_form(
+            dict(install.DEFAULT_SETTINGS, normalizeStagedWhitespace=False),
+            [], "Ready", "test-token", "Save",
+        )
+        self.assertIn('name="normalizeStagedWhitespace" value="true"', page)
+        self.assertNotIn('name="normalizeStagedWhitespace" value="true" checked', page)
+
+    def test_ai_commit_fallback_toggle_defaults_on_and_supports_strict_debugging(self):
+        setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
+        self.assertEqual(setting.section, "Ollama")
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)["aiCommitFallback"])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('name="aiCommitFallback" value="true" checked', page)
+        values.pop("aiCommitFallback")
+        self.assertFalse(configurator.parse_submission(values)["aiCommitFallback"])
+
+    def test_commit_time_budget_setting_renders_and_validates(self):
+        for name, default, maximum, key in (
+                ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
+                ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
+            setting = next(s for s in configurator.SETTINGS if s.name == name)
+            self.assertEqual(setting.section, 'Ollama')
+            self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
+            self.assertEqual(toolkit_settings.SETTING_KEYS[name], key)
+            values = form_values()
+            for value in ('1', default, maximum):
+                values[name] = [value]
+                parsed = configurator.parse_submission(values)
+                self.assertEqual(parsed[name], value)
+                page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
+                self.assertIn(f'name="{name}"', page)
+                self.assertIn('id="commit-generation-budget"', page)
+                self.assertNotIn('name="aiCommitTimeBudgetSeconds"', page)
+            for value in ('', '0', '-1', str(int(maximum) + 1), '1.5', 'nan'):
+                values[name] = [value]
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    configurator.parse_submission(values)
+
+    def test_rebuild_button_is_not_a_preference_toggle(self):
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('id="rebuild-app"', page)
+        self.assertIn("pollRebuildStatus", page)
+        self.assertNotIn('name="rebuildApp"', page)
+
+    def test_post_commit_spellcheck_toggle_defaults_off_and_saves_on(self):
+        values = form_values()
+        self.assertFalse(install.DEFAULT_SETTINGS["postCommitSpellcheck"])
+        self.assertFalse(configurator.parse_submission(values)["postCommitSpellcheck"])
+        values["postCommitSpellcheck"] = ["true"]
+        self.assertTrue(configurator.parse_submission(values)["postCommitSpellcheck"])
+
+    def test_browser_toggles_default_off_and_save_on(self):
+        values = form_values()
+        self.assertFalse(install.DEFAULT_SETTINGS["cmdClickCloseOthers"])
+        self.assertFalse(install.DEFAULT_SETTINGS["browserChatgptHome"])
+        parsed = configurator.parse_submission(values)
+        self.assertFalse(parsed["cmdClickCloseOthers"])
+        self.assertFalse(parsed["browserChatgptHome"])
+        values["cmdClickCloseOthers"] = ["true"]
+        values["browserChatgptHome"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["cmdClickCloseOthers"])
+        self.assertTrue(parsed["browserChatgptHome"])
+
+    def test_blank_browser_url_saves_custom_destination_and_defaults_to_chatgpt(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], "https://chatgpt.com/")
+        for url in ("https://example.com/path?q=hello#section", "http://localhost:3000/", "about:blank"):
+            values["browserHomeUrl"] = [url]
+            self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], url)
+        values["browserHomeUrl"] = [""]
+        self.assertEqual(configurator.parse_submission(values)["browserHomeUrl"], "https://chatgpt.com/")
+        values["browserHomeUrl"] = ["not a URL"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
+    def test_optional_name_packs_default_off(self):
+        self.assertEqual(
+            set(install.DEFAULT_SETTINGS["branchNameDisabledPacks"].split(",")),
+            {"pony-life", "idw-comics", "g5-remaining", "g4-pets"},
+        )
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS,
+            [],
+            "Ready",
+            "test-token",
+            "Save",
+        )
+        for pack_id in ("pony-life", "idw-comics", "g5-remaining", "g4-pets"):
+            self.assertIn(
+                f'<input type="checkbox" name="branchNamePack" value="{pack_id}">',
+                page,
+            )
+            self.assertNotIn(
+                f'<input type="checkbox" name="branchNamePack" value="{pack_id}" checked>',
+                page,
+            )
+
+    def test_branch_name_bundles_render_as_browsable_tabs(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS,
+            [],
+            "Ready",
+            "test-token",
+            "Save",
+        )
+
+        self.assertIn('class="pack-tabs" role="tablist"', page)
+        self.assertIn('class="pack-tab" role="tab"', page)
+        self.assertIn('class="pack-panel" role="tabpanel"', page)
+        self.assertIn('class="pack-names"', page)
+        self.assertIn('Find a bundle or name', page)
+        self.assertIn('queen-chrysalis', page)
+        self.assertIn('Use this bundle', page)
+        self.assertIn("ArrowRight", page)
+        self.assertNotIn('class="pack-grid"', page)
+        self.assertNotIn('class="pack-card"', page)
+
+    def test_parses_optional_composer_colors(self):
+        values = form_values()
+        values['codexSendBackground'] = ['#43AF49']
+        values['codexComposerLabelColor'] = ['#43AF49']
+        values['codexNewChatDotColor'] = ['#AABBCC']
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed['codexSendBackground'], '#43AF49')
+        self.assertEqual(parsed['codexComposerLabelColor'], '#43AF49')
+        self.assertEqual(parsed['codexNewChatDotColor'], '#AABBCC')
+        self.assertEqual(toolkit_settings.SETTING_KEYS['codexNewChatDotColor'],
+                         'scm-toolkit.codex-new-chat-dot-color')
+        page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
+        self.assertIn('name="codexNewChatDotColor" value="#AABBCC"', page)
+        self.assertEqual(parsed['codexSendForeground'], '')
+
+    def test_rejects_invalid_composer_color(self):
+        for name in ('codexSendBackground', 'codexNewChatDotColor'):
+            with self.subTest(name=name):
+                values = form_values()
+                values[name] = ['#fff;display:none']
+                with self.assertRaisesRegex(ValueError, 'hexadecimal'):
+                    configurator.parse_submission(values)
+
+    def test_parses_checked_and_unchecked_switches(self):
+        values = form_values()
+        values.pop("branchPicker")
+        layout = json.loads(values["messageBarLayout"][0])
+        for zone in layout:
+            layout[zone] = [item for item in layout[zone] if item not in {"branch", "sync", "home"}]
+        values["messageBarLayout"] = [json.dumps(layout)]
+
+        parsed = configurator.parse_submission(values)
+
+        self.assertFalse(parsed["branchPicker"])
+        self.assertTrue(parsed["commitAndPush"])
+        self.assertEqual(parsed["aiCommitModel"], "qwen2.5-coder:7b")
+        self.assertEqual(parsed["sourceControlLabel"], "Sweetiebot")
+        self.assertEqual(parsed["messagePlaceholder"], "Message")
+        self.assertTrue(parsed["openPanelOnStartup"])
+        self.assertEqual(parsed["commitButtonLabel"], "Send")
+        self.assertEqual(parsed["commitAndSendButtonLabel"], "Send")
+        self.assertTrue(parsed["autoPublishToggle"])
+        self.assertFalse(parsed["cmdClickCloseOthers"])
+        self.assertFalse(parsed["browserChatgptHome"])
+        self.assertFalse(parsed["workspaceSearchActivityBar"])
+        self.assertEqual(parsed["workspaceSearchLabel"], "EFS")
+        self.assertEqual(parsed["workspaceSearchPlaceholder"], "Search your workspace…")
+        self.assertFalse(parsed["workspaceSearchAskOllama"])
+        self.assertEqual(parsed["workspaceSearchChatModel"], "")
+        self.assertEqual(parsed["branchNameDisabledPacks"], "")
+        self.assertEqual(parsed["branchCustomNames"], "")
+        self.assertEqual(parsed["branchNameImports"], "[]")
+
+    def test_parses_disabled_custom_and_imported_branch_names(self):
+        values = form_values()
+        values["branchNamePack"].remove("g4-creatures")
+        values["branchCustomNames"] = ["my-oc\nrainy-friend"]
+        values["branchNameImports"] = [
+            '[{"id":"friends","label":"Friends","names":["other-oc"]}]'
+        ]
+
+        parsed = configurator.parse_submission(values)
+
+        self.assertEqual(parsed["branchNameDisabledPacks"], "g4-creatures")
+        self.assertEqual(parsed["branchCustomNames"], "my-oc,rainy-friend")
+        self.assertIn('"id":"friends"', parsed["branchNameImports"])
+
+    def test_ask_ollama_requires_chat_model_when_enabled(self):
+        values = form_values()
+        values["workspaceSearchAskOllama"] = ["true"]
+        values["workspaceSearchChatModel"] = [""]
+
+        with self.assertRaisesRegex(ValueError, "requires a chat model"):
+            configurator.parse_submission(values)
+
+    def test_ask_ollama_accepts_selected_chat_model(self):
+        values = form_values()
+        values["workspaceSearchAskOllama"] = ["true"]
+        values["workspaceSearchChatModel"] = ["qwen3:8b"]
+
+        parsed = configurator.parse_submission(values)
+
+        self.assertTrue(parsed["workspaceSearchAskOllama"])
+        self.assertEqual(parsed["workspaceSearchChatModel"], "qwen3:8b")
+
+    def test_rejects_invalid_imported_branch_name(self):
+        values = form_values()
+        values["branchNameImports"] = [
+            '[{"id":"friends","label":"Friends","names":["Not Safe"]}]'
+        ]
+
+        with self.assertRaisesRegex(ValueError, "branch-safe slug"):
+            configurator.parse_submission(values)
+
+    def test_rejects_invalid_memory_threshold(self):
+        values = form_values()
+        values["aiLowMemoryGiB"] = ["0"]
+
+        with self.assertRaisesRegex(ValueError, "greater than zero"):
+            configurator.parse_submission(values)
+
+    def test_memory_threshold_uses_compact_numeric_control(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save"
+        )
+
+        self.assertIn(
+            'type="number" min="0.1" step="0.1" inputmode="decimal" class="compact-number" name="aiLowMemoryGiB"',
+            page,
+        )
+        self.assertIn(
+            ".field-row input.compact-number{width:76px;min-width:76px",
+            page,
+        )
+
+    def test_form_escapes_values_and_lists_local_models(self):
+        current = dict(install.DEFAULT_SETTINGS, defaultBranch='<script>alert("x")</script>')
+
+        page = configurator.render_form(
+            current,
+            ["local:model"],
+            "Detected one model.",
+            "test-token",
+            "Save and install",
+        )
+
+        self.assertNotIn('<script>alert("x")</script>', page)
+        self.assertIn("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;", page)
+        self.assertIn('let installedModels = ["local:model"];', page)
+        self.assertIn("/save?token=test-token", page)
+        self.assertIn("fetch('/autosave' + location.search", page)
+        self.assertIn('id="save-status"', page)
+        self.assertIn('class="settings-layout"', page)
+        self.assertIn('class="settings-tabs" role="tablist" aria-orientation="vertical"', page)
+        self.assertIn("function activateSettingsCategory", page)
+        tab_markup = page.split('<button class="settings-tab"')[1:]
+        panel_markup = page.split('<section class="settings-panel"')[1:]
+        expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 2  # Diagnostics and GitHub Apps manage their own state.
+        self.assertEqual(len(tab_markup), expected_sections)
+        self.assertEqual(len(panel_markup), expected_sections)
+        self.assertEqual(
+            sum('aria-selected="true"' in item.split('>', 1)[0] for item in tab_markup),
+            1,
+        )
+        self.assertEqual(
+            sum(' hidden' not in item.split('>', 1)[0] for item in panel_markup),
+            1,
+        )
+        self.assertNotIn('value="cancel"', page)
+        self.assertIn("G4 ponies", page)
+        self.assertIn('name="branchNamePack"', page)
+        self.assertIn('name="branchCustomNames"', page)
+        self.assertIn('name="branchNameImports"', page)
+        self.assertIn('name="sourceControlLabel"', page)
+        self.assertIn('name="messagePlaceholder"', page)
+        self.assertIn('name="openPanelOnStartup"', page)
+        self.assertIn("Open Sweetie Bot on startup", page)
+        self.assertIn('name="commitButtonLabel"', page)
+        self.assertIn('name="commitAndSendButtonLabel"', page)
+        self.assertIn('name="autoPublishToggle"', page)
+        self.assertIn('name="cmdClickCloseOthers"', page)
+        self.assertIn('name="browserChatgptHome"', page)
+        self.assertIn('name="codexUsagePieIndicator"', page)
+        self.assertIn('name="codexResetTimePieIndicator"', page)
+        self.assertIn('name="codexHideChatTimestamps"', page)
+        self.assertIn('name="codexHideDictation"', page)
+        self.assertIn('name="codexShortModelLabels"', page)
+        self.assertIn('name="workspaceSearchActivityBar"', page)
+        self.assertIn('name="workspaceSearchLabel"', page)
+        self.assertIn('name="workspaceSearchPlaceholder"', page)
+        self.assertIn('name="workspaceSearchAskOllama"', page)
+        self.assertIn('name="workspaceSearchChatModel"', page)
+        self.assertNotIn('name="aiCommitCustomInstructions"', page)
+        self.assertNotIn("Sync AI commits with Codex instructions", page)
+        self.assertIn("updateAskOllamaRequirement", page)
+        self.assertIn('name="commitInstructions"', page)
+        self.assertIn('id="generate-signing-key"', page)
+        self.assertIn('id="open-signing-key-manager"', page)
+        self.assertNotIn('name="chatgptCustomInstructions"', page)
+        self.assertNotIn('id="sync-chatgpt-instructions"', page)
+        self.assertNotIn('name="pgpSecretKey"', page)
+        self.assertNotIn("Import ChatGPT personalization", page)
+
+
+    def test_extension_payload_exposes_startup_user_setting(self):
+        parsed = configurator.parse_submission(form_values())
+        parsed["openPanelOnStartup"] = False
+        parsed["messagePlaceholder"] = "Commit here"
+        parsed["commitButtonLabel"] = "Commit"
+        parsed["commitAndSendButtonLabel"] = "Commit + Push"
+        parsed["sourceControlLabel"] = "Sweetiebot"
+        parsed["messageBarLayout"] = '{"before":["branch","home"],"after":["push"]}'
+
+        payload = configurator.extension_settings_payload(parsed)
+
+        self.assertFalse(payload["vscodeSettings"]["openPanelOnStartup"])
+        self.assertEqual(payload["vscodeSettings"]["messagePlaceholder"], "Commit here")
+        self.assertEqual(payload["vscodeSettings"]["commitButtonLabel"], "Commit")
+        self.assertEqual(payload["vscodeSettings"]["commitAndSendButtonLabel"], "Commit + Push")
+        self.assertEqual(payload["vscodeSettings"]["sourceControlLabel"], "Sweetiebot")
+        self.assertEqual(payload["vscodeSettings"]["messageBarLayout"], parsed["messageBarLayout"])
+        self.assertEqual(
+            payload["workspaceSearch"]["embeddingModel"],
+            install.DEFAULT_SETTINGS["workspaceSearchEmbeddingModel"],
+        )
+
+class GitConfigTests(unittest.TestCase):
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_disabled_staged_whitespace_setting_loads(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: default
+        read_bool.side_effect = lambda key, default: (
+            False if key == "scm-toolkit.normalize-staged-whitespace" else default
+        )
+        settings = toolkit_settings.load_settings()
+        self.assertFalse(settings["normalizeStagedWhitespace"])
+
+
+    @patch("toolkit_settings.subprocess.run")
+    def test_global_git_settings_use_stable_directory(self, run):
+        run.side_effect = lambda args, **kwargs: SimpleNamespace(
+            returncode=1 if "--get" in args else 0, stdout="", stderr=""
+        )
+
+        self.assertTrue(toolkit_settings.read_git_bool("scm-toolkit.branch-picker", True))
+        self.assertEqual(toolkit_settings.read_git_string("scm-toolkit.remote", "origin"), "origin")
+        toolkit_settings.persist_message_bar_layout({"messageBarLayout": '{"before":[],"after":[]}'})
+        self.assertEqual(run.call_count, 4)
+        self.assertTrue(all(call.kwargs.get("cwd") == Path.home() for call in run.call_args_list))
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_disabled_pack_setting_can_be_explicitly_empty(self, read_string, read_bool):
+        read_bool.side_effect = lambda _key, default: default
+
+        def read_value(key, default, preserve_empty=False):
+            if key == "scm-toolkit.branch-name-disabled-packs":
+                self.assertTrue(preserve_empty)
+                return ""
+            return default
+
+        read_string.side_effect = read_value
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["branchNameDisabledPacks"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_legacy_short_placeholder_false_restores_native_placeholder(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            None if key == "scm-toolkit.message-placeholder" else default
+        )
+        read_bool.side_effect = lambda key, default: (
+            False if key == "scm-toolkit.short-placeholder" else default
+        )
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["messagePlaceholder"], "")
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
+    def test_new_message_placeholder_overrides_legacy_toggle(self, read_string, read_bool):
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            "Commit here" if key == "scm-toolkit.message-placeholder" else default
+        )
+        read_bool.return_value = False
+
+        settings = toolkit_settings.load_settings()
+
+        self.assertEqual(settings["messagePlaceholder"], "Commit here")
+        self.assertFalse(any(
+            call.args[0] == "scm-toolkit.short-placeholder"
+            for call in read_bool.call_args_list
+        ))
+
+    @patch("configurator.shutil.which", return_value="/usr/bin/git")
+    @patch("configurator.subprocess.run")
+    def test_saves_every_supported_setting(self, run, _which):
+        run.side_effect = lambda args, **_kwargs: SimpleNamespace(
+            returncode=1 if "--get" in args else 0,
+            stdout="",
+            stderr="",
+        )
+
+        configurator.save_settings(configurator.parse_submission(form_values()))
+
+        writes = [call.args[0] for call in run.call_args_list if "--replace-all" in call.args[0]]
+        self.assertEqual(len(writes), len(configurator.SETTINGS))
+        self.assertTrue(all(call.kwargs.get('cwd') == Path.home() for call in run.call_args_list))
+        self.assertIn(
+            [
+                "/usr/bin/git",
+                "config",
+                "--global",
+                "--replace-all",
+                "scm-toolkit.ai-commit-model",
+                "qwen2.5-coder:7b",
+            ],
+            writes,
+        )
+
+
+class OllamaTests(unittest.TestCase):
+    @patch("configurator.urllib.request.build_opener")
+    def test_reads_models_from_local_ollama(self, build_opener):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {"models": [{"name": "qwen:test"}, {"model": "other:test"}]}
+        ).encode()
+        build_opener.return_value.open.return_value = response
+
+        models, status = configurator.fetch_ollama_models()
+
+        self.assertEqual(models, ["other:test", "qwen:test"])
+        self.assertIn("2 local Ollama models", status)
+        build_opener.return_value.open.assert_called_once_with(
+            "http://127.0.0.1:11434/api/tags", timeout=2
+        )
+
+
+class ModelSetupTests(unittest.TestCase):
+    def test_missing_embedding_model_blocks_save_even_with_chat_models(self):
+        settings = dict(install.DEFAULT_SETTINGS)
+        with patch("configurator.fetch_ollama_models", return_value=(["qwen2.5-coder:7b", "qwen2.5-coder:3b"], "Ollama ready")):
+            with self.assertRaisesRegex(ValueError, "Search embedding model.*not installed"):
+                configurator.validate_models(settings)
+
+    def test_chat_model_cannot_be_used_for_embeddings(self):
+        settings = dict(install.DEFAULT_SETTINGS, workspaceSearchEmbeddingModel="qwen2.5-coder:3b")
+        with patch("configurator.fetch_ollama_models", return_value=(["qwen2.5-coder:7b", "qwen2.5-coder:3b"], "Ready")), patch("configurator.ollama_request", return_value=io.BytesIO(b'{"capabilities":["completion"]}')):
+            with self.assertRaisesRegex(ValueError, "does not support embeddings"):
+                configurator.validate_models(settings)
+
+    def test_spellcheck_model_is_only_required_when_preview_is_enabled(self):
+        settings = dict(
+            install.DEFAULT_SETTINGS,
+            aiCommit=False,
+            workspaceSearchEmbeddingModel="embed",
+            spellcheckModel="missing:spell",
+        )
+        with patch("configurator.fetch_ollama_models", return_value=(["embed:latest"], "Ready")), patch(
+            "configurator.ollama_request", return_value=io.BytesIO(b'{"capabilities":["embedding"]}')
+        ):
+            configurator.validate_models(settings)
+            settings["spellcheckManualCommit"] = True
+            with self.assertRaisesRegex(ValueError, "Spellcheck model.*not installed"):
+                configurator.validate_models(settings)
+
+    def test_optional_chat_model_need_not_be_installed_when_disabled(self):
+        settings = dict(install.DEFAULT_SETTINGS, aiCommit=False, workspaceSearchEmbeddingModel="embed", workspaceSearchChatModel="missing:chat")
+        with patch("configurator.fetch_ollama_models", return_value=(["embed:latest"], "Ready")), patch("configurator.ollama_request", return_value=io.BytesIO(b'{"capabilities":["embedding"]}')):
+            configurator.validate_models(settings)
+
+    def test_rejects_empty_or_invalid_download_tag(self):
+        for value in ["", "name\nother", "-option", "name;command"]:
+            with self.assertRaises(ValueError):
+                configurator.model_tag(value)
+
+    def test_rendered_setup_script_is_valid_javascript(self):
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        page = configurator.render_form(install.DEFAULT_SETTINGS, ["</script>"], "Ready", "test-token", "Save")
+        script = page.split("<script>")[1].split("</script>")[0]
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "setup.js"
+            path.write_text(script)
+            subprocess.run(["node", "--check", str(path)], check=True, capture_output=True)
+        self.assertIn('name="workspaceSearchEmbeddingModel"', page)
+        self.assertIn('class="download-model"', page)
+
+    def test_model_picker_uses_anchored_custom_dropdown(self):
+        page = configurator.render_form(
+            install.DEFAULT_SETTINGS,
+            ["qwen3-embedding:0.6b", "qwen2.5-coder:7b"],
+            "Ready",
+            "test-token",
+            "Save",
+        )
+
+        self.assertIn('class="model-picker"', page)
+        self.assertIn('class="model-options" role="listbox"', page)
+        self.assertIn('role="combobox"', page)
+        self.assertIn('class="model-picker-toggle"', page)
+        self.assertIn('position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000', page)
+        self.assertIn("function openModelPicker", page)
+        self.assertIn("function chooseModel", page)
+        self.assertIn("You can still enter a model tag manually.", page)
+        self.assertNotIn("<datalist", page)
+        self.assertNotIn('list="ollama-models"', page)
+
+
+class ManualRebuildTests(unittest.TestCase):
+    def test_rebuild_invokes_explicit_installer(self):
+        with patch("configurator.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="Installed", stderr="")
+            message = configurator._manual_rebuild()
+        args = run.call_args.args[0]
+        self.assertEqual(args[0], configurator.sys.executable)
+        self.assertEqual(args[-1], "--install")
+        self.assertTrue(str(args[1]).endswith("/repair.py"))
+        self.assertEqual(run.call_args.kwargs["cwd"], Path.home())
+        self.assertIn("Reload Window", message)
+
+    def test_rebuild_reports_installer_failure(self):
+        with patch("configurator.subprocess.run", return_value=SimpleNamespace(
+            returncode=1, stdout="Oops", stderr="Repair failed",
+        )):
+            with self.assertRaisesRegex(RuntimeError, "Installer exited with status 1"):
+                configurator._manual_rebuild()
+
+
+class ServerTests(unittest.TestCase):
+    def test_app_credential_endpoint_requires_exact_origin_and_token(self):
+        opened = threading.Event()
+        captured = {}
+
+        def open_browser(url):
+            captured['url'] = url
+            opened.set()
+            return True
+
+        with patch('configurator.webbrowser.open', side_effect=open_browser), \
+                patch('configurator.print'), \
+                patch('configurator.save_app', return_value={'message': 'Saved'}) as save:
+            thread = threading.Thread(target=configurator.run_configurator,
+                                      args=(install.DEFAULT_SETTINGS,), daemon=True)
+            thread.start()
+            self.assertTrue(opened.wait(5))
+            parsed = urllib.parse.urlsplit(captured['url'])
+            origin = f'{parsed.scheme}://{parsed.netloc}'
+            endpoint = origin + '/github-apps/save?' + parsed.query
+            try:
+                for headers, url in [({}, endpoint), ({'Origin': 'https://other.example'}, endpoint),
+                                     ({'Origin': origin}, origin + '/github-apps/save')]:
+                    request = urllib.request.Request(url, data=b'role=kefania', headers=headers)
+                    with self.assertRaises(urllib.error.HTTPError) as denied:
+                        urllib.request.urlopen(request, timeout=5)
+                    denied.exception.close()
+                save.assert_not_called()
+                request = urllib.request.Request(endpoint, data=b'role=kefania',
+                                                 headers={'Origin': origin})
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertEqual(json.load(response), {'message': 'Saved'})
+                save.assert_called_once_with({'role': ['kefania']})
+            finally:
+                request = urllib.request.Request(origin + '/save?' + parsed.query, data=b'action=cancel')
+                with urllib.request.urlopen(request, timeout=5):
+                    pass
+                thread.join(5)
+            self.assertFalse(thread.is_alive())
+
+    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
+    def test_rebuild_endpoint_requires_token_and_prevents_overlap(self, _models):
+        opened = threading.Event()
+        release = threading.Event()
+        captured = {}
+        def open_browser(url):
+            captured["url"] = url
+            opened.set()
+            return True
+        def rebuild():
+            release.wait(5)
+            return "Rebuild complete. Reload VS Code."
+        with patch("configurator.webbrowser.open", side_effect=open_browser), \
+             patch("configurator._manual_rebuild", side_effect=rebuild) as installer, \
+             patch("configurator.print") as protocol:
+            thread = threading.Thread(target=configurator.run_configurator, args=(install.DEFAULT_SETTINGS,),
+                                      kwargs={"parent_pid": configurator.os.getpid()})
+            thread.start()
+            self.assertTrue(opened.wait(5))
+            parsed = urllib.parse.urlsplit(captured["url"])
+            def endpoint(path, authorized=True):
+                return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query if authorized else "", ""))
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(urllib.request.Request(endpoint("/rebuild", False), data=b"", method="POST"))
+            self.assertEqual(denied.exception.code, 404)
+            with urllib.request.urlopen(urllib.request.Request(endpoint("/rebuild"), data=b"", method="POST")) as response:
+                self.assertTrue(json.load(response)["started"])
+            with self.assertRaises(urllib.error.HTTPError) as duplicate:
+                urllib.request.urlopen(urllib.request.Request(endpoint("/rebuild"), data=b"", method="POST"))
+            self.assertEqual(duplicate.exception.code, 409)
+            with urllib.request.urlopen(endpoint("/rebuild-status")) as response:
+                self.assertTrue(json.load(response)["running"])
+            release.set()
+            for _ in range(30):
+                with urllib.request.urlopen(endpoint("/rebuild-status")) as response:
+                    status = json.load(response)
+                if status["finished"]:
+                    break
+                threading.Event().wait(0.05)
+            self.assertTrue(status["finished"])
+            self.assertFalse(status["error"])
+            self.assertIn("Reloading this VS Code window", status["message"])
+            installer.assert_called_once()
+            protocol.assert_any_call(json.dumps({"rebuildComplete": True}), flush=True)
+            urllib.request.urlopen(urllib.request.Request(endpoint("/save"), data=b"action=cancel", method="POST")).close()
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+
+    def test_settings_server_exits_when_extension_host_disappears(self):
+        with patch('configurator.os.kill', side_effect=ProcessLookupError), patch('builtins.print'):
+            thread = threading.Thread(target=lambda: configurator.run_configurator(
+                install.DEFAULT_SETTINGS, open_browser=False, parent_pid=12345,
+            ), daemon=True)
+            thread.start()
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive(), 'An orphaned settings server must release its port')
+
+    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
+    def test_local_server_serves_form_and_can_cancel(self, _models):
+        opened = threading.Event()
+        captured = {}
+        result = {}
+
+        def open_browser(url):
+            captured["url"] = url
+            opened.set()
+            return True
+
+        def run_server():
+            result["saved"] = configurator.run_configurator(install.DEFAULT_SETTINGS)
+
+        with patch("configurator.webbrowser.open", side_effect=open_browser), patch("configurator.print"):
+            thread = threading.Thread(target=run_server)
+            thread.start()
+            self.assertTrue(opened.wait(5))
+            with urllib.request.urlopen(captured["url"], timeout=5) as response:
+                page = response.read().decode()
+            self.assertIn("Sweetiebot SCM Setup", page)
+            setup_url = urllib.parse.urlsplit(captured["url"])
+            def endpoint(path):
+                return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
+            with urllib.request.urlopen(endpoint("/models"), timeout=5) as response:
+                self.assertEqual(json.load(response)["models"], [])
+            # A change to VS Code's user settings reaches the already-open page.
+            changes = urllib.parse.urlencode({
+                "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                "windowName": "${activeEditorShort}",
+                "windowShowModifiedStatus": "false",
+                "windowShowPushingStatus": "false",
+            }).encode()
+            with urllib.request.urlopen(urllib.request.Request(
+                endpoint("/sync-window-settings"), data=changes, method="POST"
+            )) as response:
+                self.assertTrue(json.load(response)["synced"])
+            with urllib.request.urlopen(endpoint("/health")) as response:
+                self.assertEqual(json.load(response)["windowSettings"], {
+                    "windowHeading": "${rootName} — ${activeRepositoryBranchName}",
+                    "windowName": "${activeEditorShort}",
+                    "windowShowModifiedStatus": False,
+                    "windowShowPushingStatus": False,
+                })
+            with urllib.request.urlopen(endpoint("/")) as response:
+                updated_page = response.read().decode()
+            self.assertIn('value="${rootName} — ${activeRepositoryBranchName}"', updated_page)
+            self.assertIn('value="${activeEditorShort}"', updated_page)
+            with self.assertRaises(urllib.error.HTTPError) as bad:
+                urllib.request.urlopen(urllib.request.Request(
+                    endpoint("/sync-window-settings"), data=b"windowHeading=x", method="POST"
+                ))
+            self.assertEqual(bad.exception.code, 400)
+            request = urllib.request.Request(endpoint("/pull"), data=b"model=embed:test", method="POST")
+            with patch("configurator.ollama_request", return_value=io.BytesIO(b'{"status":"downloading","completed":1,"total":2}\n{"status":"success"}\n')) as pull:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    events = [json.loads(line) for line in response]
+                self.assertEqual(events[-1]["status"], "success")
+                pull.assert_called_once_with("/api/pull", {"model": "embed:test", "stream": True}, timeout=3600)
+
+            parsed_url = urllib.parse.urlsplit(captured["url"])
+            cancel_url = urllib.parse.urlunsplit(
+                (parsed_url.scheme, parsed_url.netloc, "/save", parsed_url.query, "")
+            )
+            request = urllib.request.Request(
+                cancel_url,
+                data=b"action=cancel",
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertIn("Configuration cancelled", response.read().decode())
+            thread.join(5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(result["saved"])
+
+    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
+    def test_autosave_persists_without_closing_server(self, _models):
+        opened = threading.Event()
+        captured = {}
+        result = {}
+
+        def open_browser(url):
+            captured["url"] = url
+            opened.set()
+            return True
+
+        def run_server():
+            result["saved"] = configurator.run_configurator(install.DEFAULT_SETTINGS)
+
+        with patch("configurator.webbrowser.open", side_effect=open_browser), \
+             patch("configurator.validate_models") as validate, \
+             patch("configurator.save_settings") as save, \
+             patch("configurator.save_commit_instructions"), \
+             patch("configurator.print"):
+            thread = threading.Thread(target=run_server)
+            thread.start()
+            self.assertTrue(opened.wait(5))
+            parsed = urllib.parse.urlsplit(captured["url"])
+
+            def endpoint(path):
+                return urllib.parse.urlunsplit(
+                    (parsed.scheme, parsed.netloc, path, parsed.query, "")
+                )
+
+            values = form_values()
+            values.pop("branchPicker")
+            values["messageBarLayout"] = ['{"before":[],"after":["codex"]}']
+            request = urllib.request.Request(
+                endpoint("/autosave"),
+                data=urllib.parse.urlencode(values, doseq=True).encode(),
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertTrue(json.load(response)["saved"])
+            self.assertTrue(thread.is_alive())
+            self.assertFalse(save.call_args.args[0]["branchPicker"])
+            validate.assert_not_called()
+
+            finish_values = form_values()
+            finish_values["action"] = ["save"]
+            request = urllib.request.Request(
+                endpoint("/save"),
+                data=urllib.parse.urlencode(finish_values, doseq=True).encode(),
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertIn("Configuration saved", response.read().decode())
+            thread.join(5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(result["saved"])
+
+    @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
+    def test_extension_mode_emits_url_without_opening_external_browser(self, _models):
+        ready = threading.Event()
+        captured = {}
+        result = {}
+
+        def capture_output(line, **kwargs):
+            message = json.loads(line)
+            if "url" not in message:
+                captured["settings"] = message
+                return
+            captured["url"] = message["url"]
+            captured["flushed"] = kwargs.get("flush")
+            ready.set()
+
+        def run_server():
+            result["saved"] = configurator.run_configurator(
+                install.DEFAULT_SETTINGS, open_browser=False
+            )
+
+        with patch("configurator.print", side_effect=capture_output), \
+             patch("configurator.webbrowser.open") as browser, \
+             patch("configurator.save_settings") as save, \
+             patch("configurator.save_commit_instructions"), \
+             patch("configurator.validate_models", side_effect=ValueError("Ollama offline")) as validate:
+            thread = threading.Thread(target=run_server)
+            thread.start()
+            self.assertTrue(ready.wait(5))
+            parsed = urllib.parse.urlsplit(captured["url"])
+            try:
+                self.assertTrue(captured["flushed"])
+                with urllib.request.urlopen(captured["url"], timeout=5) as response:
+                    page = response.read().decode()
+                    self.assertIn("Sweetiebot SCM Setup", page)
+                    self.assertIn('value="save" hidden>Done', page)
+                    self.assertNotIn("Import signing key", page)
+                for path in ("/autosave", "/save", "/autosave"):
+                    values = form_values()
+                    values.pop("branchPicker")
+                    values["messageBarLayout"] = ['{"before":[],"after":["codex"]}']
+                    endpoint = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
+                    request = urllib.request.Request(endpoint, data=urllib.parse.urlencode(values, doseq=True).encode(), method="POST")
+                    with urllib.request.urlopen(request, timeout=5) as response:
+                        self.assertTrue(json.load(response)["saved"])
+                    self.assertTrue(thread.is_alive())
+                    self.assertFalse(save.call_args.args[0]["branchPicker"])
+                    with urllib.request.urlopen(captured["url"], timeout=5) as response:
+                        self.assertEqual(response.status, 200)
+                validate.assert_not_called()
+                self.assertIn("workspaceSearch", captured["settings"])
+                unauthorized = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(unauthorized, timeout=5)
+                self.assertEqual(denied.exception.code, 404)
+                denied.exception.close()
+            finally:
+                cancel_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/save", parsed.query, ""))
+                request = urllib.request.Request(cancel_url, data=b"action=cancel", method="POST")
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertIn("Configuration cancelled", response.read().decode())
+                thread.join(5)
+            browser.assert_not_called()
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(result["saved"])
+
+
+if __name__ == "__main__":
+    unittest.main()

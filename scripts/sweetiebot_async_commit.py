@@ -22,6 +22,18 @@ import time
 from sweetiebot_diagnostics import log_event
 
 PLACEHOLDER = "placeholder_"
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+BASE58_ID_PATTERN = r"[1-9A-HJ-NP-Za-km-z]{11}"
+PLACEHOLDER_SUBJECT_PATTERN = (
+    rf"(?:{re.escape(PLACEHOLDER)}{BASE58_ID_PATTERN}|"
+    rf"💭 Generate local commit message \[{BASE58_ID_PATTERN}\])"
+)
+
+
+def new_job_id():
+    """Generate a cryptographically random, fixed-length Base58 identifier."""
+    return "".join(secrets.choice(BASE58_ALPHABET) for _ in range(11))
+
 JOURNAL = "sweetiebot-async-commit.json"
 LOCK = "sweetiebot-async-commit.lock"
 WAIT_SECONDS = 1200
@@ -425,7 +437,7 @@ def begin(real_git, global_args, commit_args, stat, diff, files,
         except RuntimeError:
             previous_head = ""  # Initial root commit.
         job = {
-            "id": secrets.token_hex(8), "sha": "", "previous_head": previous_head,
+            "id": new_job_id(), "sha": "", "previous_head": previous_head,
             "branch": branch, "stat": stat, "diff": diff, "files": files,
             "file_context": file_context, "include_description": include_description,
             "global_args": global_args, "pid": 0, "created_at": time.time(),
