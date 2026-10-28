@@ -11,7 +11,10 @@ import github_apps_ui
 
 class AppSettingsTests(unittest.TestCase):
     def test_gui_path_uses_homebrew_node_for_pem_validation(self):
-        with patch.object(github_apps.shutil, 'which', return_value=None), \
+        # This test exercises the Finder PATH fallback on a Linux CI runner.
+        # Simulate macOS so the real Keychain-only guard remains in production.
+        with patch.object(github_apps.sys, 'platform', 'darwin'), \
+                patch.object(github_apps.shutil, 'which', return_value=None), \
                 patch.object(Path, 'is_file', return_value=True), \
                 patch.object(github_apps.os, 'access', return_value=True), \
                 patch.object(github_apps.subprocess, 'run', return_value=Mock(returncode=1)) as run, \
