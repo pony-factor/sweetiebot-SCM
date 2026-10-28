@@ -196,6 +196,24 @@ async function capturePendingFiles(root, run) {
   return { patch, files, head, ref, index, tracked: [...new Set([...tracked, ...staged])] };
 }
 
+async function backupPendingFiles(root, directory, snapshot) {
+  if (!snapshot.patch && !snapshot.index && !snapshot.files.length) return null;
+  const recovery = path.join(directory, '.sweetiebot-handoff-backup');
+  await fs.mkdir(recovery, { mode: 0o700 });
+  await fs.writeFile(path.join(recovery, 'worktree.patch'), snapshot.patch, { mode: 0o600, flag: 'wx' });
+  await fs.writeFile(path.join(recovery, 'index.patch'), snapshot.index, { mode: 0o600, flag: 'wx' });
+  await fs.writeFile(path.join(recovery, 'snapshot.json'), JSON.stringify({
+    head: snapshot.head, ref: snapshot.ref, tracked: snapshot.tracked, files: snapshot.files
+  }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+  for (const file of snapshot.files) {
+    const target = path.join(recovery, 'files', file.name);
+    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await fs.copyFile(path.join(root, file.name), target, require('node:fs').constants.COPYFILE_EXCL);
+    await fs.chmod(target, 0o600);
+  }
+  return recovery;
+}
+
 async function copyPendingFiles(root, destination, directory, snapshot) {
   for (const { name } of snapshot.files) {
     if (await fs.lstat(path.join(destination, name)).then(() => true, error => {
@@ -208,6 +226,13 @@ async function copyPendingFiles(root, destination, directory, snapshot) {
     try {
       await fs.writeFile(patchFile, snapshot.patch, { mode: 0o600, flag: 'wx' });
       await exec('git', ['-C', destination, 'apply', '--binary', patchFile]);
+    } finally { await fs.rm(patchFile, { force: true }); }
+  }
+  if (snapshot.index) {
+    const patchFile = path.join(directory, '.sweetiebot-handoff-index.patch');
+    try {
+      await fs.writeFile(patchFile, snapshot.index, { mode: 0o600, flag: 'wx' });
+      await exec('git', ['-C', destination, 'apply', '--cached', '--binary', patchFile]);
     } finally { await fs.rm(patchFile, { force: true }); }
   }
   for (const file of snapshot.files) {
@@ -236,6 +261,13 @@ async function removeTransferredFiles(root, destination, directory, snapshot, ru
       await exec('git', ['-C', destination, 'apply', '--reverse', '--check', '--binary', patchFile]);
     } finally { await fs.rm(patchFile, { force: true }); }
   }
+  if (snapshot.index) {
+    const indexPatch = path.join(directory, '.sweetiebot-handoff-index-verify.patch');
+    try {
+      await fs.writeFile(indexPatch, snapshot.index, { mode: 0o600, flag: 'wx' });
+      await exec('git', ['-C', destination, 'apply', '--cached', '--reverse', '--check', '--binary', indexPatch]);
+    } finally { await fs.rm(indexPatch, { force: true }); }
+  }
   for (const file of snapshot.files) {
     const source = path.join(root, file.name);
     const target = path.join(destination, file.name);
@@ -245,7 +277,7 @@ async function removeTransferredFiles(root, destination, directory, snapshot, ru
     }
   }
   // Remove only transferred tracked paths, including their old staged entries.
-  // The destination remains unstaged; unrelated source paths are untouched.
+  // The destination retains the original staging; unrelated source paths are untouched.
   if (snapshot.tracked.length) {
     await exec('git', ['-C', root, '--literal-pathspecs', 'restore', '--source=' + snapshot.head,
       '--staged', '--worktree', '--', ...snapshot.tracked]);
@@ -322,9 +354,12 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   let added = false;
   let transferred = false;
   let handoff;
+  let recovery;
   try {
     handoff = await prepareCodexHandoff(vscode, root);
-    const pendingFiles = handoff && create ? await capturePendingFiles(root, run) : null;
+    // File ownership follows New Branch even when no Codex chat is open.
+    const pendingFiles = create ? await capturePendingFiles(root, run) : null;
+    if (pendingFiles) recovery = await backupPendingFiles(root, directory, pendingFiles);
     const args = ['-C', original, 'worktree', 'add'];
     if (create && !adoptExisting) args.push('-b', branch);
     args.push('--', destination, create && !adoptExisting ? (start || 'main') : branch);
@@ -362,9 +397,10 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
       await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
         { ...handoff, destination: transferred ? destination : root }).catch(() => {});
     }
-    if (!added) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+    if (!added && !recovery) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
     // Once added, retain the checkout and any edits even if opening fails.
     if (transferred) error.message += ' Transferred edits remain in ' + destination + '; the source checkout was cleaned.';
+    if (recovery) error.message += ' A recovery copy is saved in ' + recovery + '.';
     throw error;
   }
 }

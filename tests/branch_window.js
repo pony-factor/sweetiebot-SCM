@@ -33,6 +33,13 @@ const { findLiveBranchWindow, focusExistingBranchWindow, SESSION_MAX_AGE_MS } =
     assert.equal(calls[0][1].fsPath, workspace);
     assert.deepEqual(calls[0][2], { forceNewWindow: true });
 
+    const alias = path.join(baseDirectory, 'repo-alias');
+    await fs.symlink(destination, alias, 'dir');
+    await writeSession({ roots: [alias] });
+    assert.equal((await findLiveBranchWindow(destination, options)).target, workspace,
+      'Canonicalize session roots, including macOS /var and /private/var aliases');
+    await writeSession();
+
     calls.length = 0;
     const failed = { ...editor, commands: { async executeCommand(...args) {
       calls.push(args);

@@ -39,7 +39,8 @@ async function findLiveBranchWindow(destination, {
         if (!Number.isSafeInteger(record.pid) || record.pid === sourcePid ||
             !alive(record.pid) || !Array.isArray(record.roots)) continue;
         const roots = record.roots.filter(root => typeof root === 'string' && path.isAbsolute(root));
-        if (!roots.some(root => root === resolved || root.startsWith(resolved + path.sep))) continue;
+        const resolvedRoots = await Promise.all(roots.map(root => io.realpath(root).catch(() => null)));
+        if (!resolvedRoots.some(root => root && (root === resolved || root.startsWith(resolved + path.sep)))) continue;
         let target = resolved;
         if (record.workspaceFile) {
           if (typeof record.workspaceFile !== 'string' ||
