@@ -9,6 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  workbench-repair:
+    name: SCM repair isolation (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify SCM repair with incompatible optional extensions
+        run: python -m unittest tests.install.WorkbenchRepairTests -v
+
   inventory:
     name: Test inventory
     runs-on: ubuntu-latest

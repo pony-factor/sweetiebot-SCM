@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import tempfile
 import workspace_search
 import codex_colors
@@ -1407,6 +1408,28 @@ def invalidate_extension_cache(app):
         print(f'Could not reset the VS Code extension manifest cache ({type(error).__name__}); another reload may be needed.')
 
 
+def repair_workbench(app, settings, *, check=False):
+    """Restore SCM independently of optional extension patch compatibility."""
+    version, paths = application_paths(app)
+    old = [path.read_text() for path in paths]
+    new = list(transform(*old, settings=settings))
+    components_changed = sync_live_components(paths[0].parent, check=True)
+    if check:
+        print(f"Validated SCM workbench repair for VS Code {version}; no files changed.")
+        return
+    if old != [path.read_text() for path in paths]:
+        raise RuntimeError("VS Code changed during validation; retry the command.")
+    if old != new:
+        backup = Path(tempfile.mkdtemp(prefix="sweetiebot-scm-repair-"))
+        for path in paths:
+            shutil.copy2(path, backup / path.name)
+        write_pair(paths, new, old)
+        print(f"Previous workbench files saved to {backup}")
+    if components_changed:
+        sync_live_components(paths[0].parent)
+    print(f"Restored SCM workbench for VS Code {version}. Reload the intended window to apply the change.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1434,7 +1457,10 @@ def main():
     )
     parser.add_argument("--ui-only", action="store_true", help="Update Codex UI and EFS view labels/icons without host or workbench patches")
     parser.add_argument("--repair", action="store_true", help="Repair app patches and refresh companion tools")
+    parser.add_argument("--workbench-only", action="store_true", help="Restore only SCM workbench patches and live components, independently of Codex patches")
     args = parser.parse_args()
+    if args.workbench_only and (args.uninstall or args.configure or args.codex_only or args.ui_only or args.codex_extension):
+        parser.error("--workbench-only cannot be combined with --uninstall, --configure, --codex-only, --ui-only, or --codex-extension")
     if args.repair and (args.uninstall or args.configure or args.codex_only):
         parser.error("--repair cannot be combined with --uninstall, --configure, or --codex-only")
 
@@ -1444,6 +1470,9 @@ def main():
     if args.ui_only and (args.uninstall or args.configure or args.repair or args.codex_only):
         parser.error("--ui-only cannot be combined with uninstall, configure, repair, or codex-only")
     settings = load_settings()
+    if args.workbench_only:
+        repair_workbench(args.app, settings, check=args.check)
+        return
     if args.ui_only:
         import ui_customizations
         manifest = codex_label.manifest_path(args.codex_extension)

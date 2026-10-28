@@ -1,4 +1,6 @@
 import json
+import contextlib
+import io
 import subprocess
 from pathlib import Path
 import tempfile
@@ -1504,6 +1506,106 @@ class InstallerScriptsLayoutTests(unittest.TestCase):
         self.assertFalse((root / "scripts/ci_test_groups.json").exists())
         workflow = (root / ".github/workflows/check.yml").read_text(encoding="utf-8")
         self.assertEqual(workflow.count("scripts/ci/ci_test_runner.py"), 3)
+
+
+class WorkbenchRepairTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.app = self.root / "Code.app"
+        resources = self.app / "Contents/Resources/app"
+        workbench = resources / "out/vs/workbench"
+        workbench.mkdir(parents=True)
+        (resources / "package.json").write_text(json.dumps({"version": "1.143.1"}))
+        self.paths = [workbench / "workbench.desktop.main.js", workbench / "workbench.desktop.main.css"]
+        self.original = [workbench_fixture(), "base-css"]
+        for path, content in zip(self.paths, self.original):
+            path.write_text(content)
+        mkdtemp = tempfile.mkdtemp
+        self.backups = patch.object(install.tempfile, "mkdtemp", side_effect=lambda **kwargs: mkdtemp(dir=self.root, **kwargs))
+        self.backups.start()
+        self.addCleanup(self.backups.stop)
+        self.output = io.StringIO()
+        redirect = contextlib.redirect_stdout(self.output)
+        redirect.__enter__()
+        self.addCleanup(redirect.__exit__, None, None, None)
+
+    def contents(self):
+        return [path.read_text() for path in self.paths]
+
+    def test_cli_repairs_scm_without_touching_optional_extensions(self):
+        with patch("sys.argv", ["install.py", "--app", str(self.app), "--workbench-only", "--repair"]), \
+                patch.object(install, "load_settings", return_value=SETTINGS), \
+                patch.object(install, "codex_bundle_paths", side_effect=ValueError("Unsupported Codex extension build")) as codex, \
+                patch.object(install.workspace_search, "sync_extension") as extension, \
+                patch.object(install, "sync_ai_wrapper") as wrapper, \
+                patch.object(install, "persist_message_bar_layout") as persist:
+            install.main()
+        codex.assert_not_called()
+        extension.assert_not_called()
+        wrapper.assert_not_called()
+        persist.assert_not_called()
+        js, css = self.contents()
+        self.assertIn("scmToolkitCreateControls(this,", js)
+        self.assertIn('"commitButtonLabel":"Send"', js)
+        self.assertIn(install.START, css)
+        self.assertTrue((self.paths[0].parent / "sweetiebot/manifest.json").is_file())
+        backups = list(self.root.glob("sweetiebot-scm-repair-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual([(backups[0] / path.name).read_text() for path in self.paths], self.original)
+
+    def test_check_does_not_write_bundles_components_or_backups(self):
+        with patch("sys.argv", ["install.py", "--app", str(self.app), "--workbench-only", "--check"]), \
+                patch.object(install, "load_settings", return_value=SETTINGS):
+            install.main()
+        self.assertEqual(self.contents(), self.original)
+        self.assertFalse((self.paths[0].parent / "sweetiebot").exists())
+        self.assertEqual(list(self.root.glob("sweetiebot-scm-repair-*")), [])
+
+    def test_unsupported_workbench_preserves_both_files(self):
+        self.paths[0].write_text("unsupported workbench")
+        before = self.contents()
+        with self.assertRaisesRegex(ValueError, "Unsupported VS Code build"):
+            install.repair_workbench(self.app, SETTINGS)
+        self.assertEqual(self.contents(), before)
+        self.assertFalse((self.paths[0].parent / "sweetiebot").exists())
+
+    def test_incomplete_patch_preserves_both_files(self):
+        self.paths[0].write_text(self.original[0] + install.START)
+        before = self.contents()
+        with self.assertRaisesRegex(ValueError, "Incomplete toolkit installation"):
+            install.repair_workbench(self.app, SETTINGS)
+        self.assertEqual(self.contents(), before)
+
+    def test_concurrent_application_edit_is_preserved(self):
+        transform = install.transform
+        def changed(*args, **kwargs):
+            result = transform(*args, **kwargs)
+            self.paths[0].write_text("concurrent application edit")
+            return result
+        with patch.object(install, "transform", side_effect=changed), \
+                self.assertRaisesRegex(RuntimeError, "VS Code changed during validation"):
+            install.repair_workbench(self.app, SETTINGS)
+        self.assertEqual(self.contents(), ["concurrent application edit", self.original[1]])
+        self.assertEqual(list(self.root.glob("sweetiebot-scm-repair-*")), [])
+
+    def test_repeated_repair_is_idempotent(self):
+        install.repair_workbench(self.app, SETTINGS)
+        first = self.contents()
+        install.repair_workbench(self.app, SETTINGS)
+        self.assertEqual(self.contents(), first)
+        self.assertEqual(len(list(self.root.glob("sweetiebot-scm-repair-*"))), 1)
+        self.assertEqual(first[0].count(install.START), 1)
+
+    def test_incompatible_modes_are_rejected_before_loading_settings(self):
+        for flag in ("--uninstall", "--configure", "--codex-only", "--ui-only"):
+            with self.subTest(flag=flag), \
+                    patch("sys.argv", ["install.py", "--workbench-only", flag]), \
+                    patch.object(install, "load_settings") as settings, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                install.main()
+            settings.assert_not_called()
 
 
 if __name__ == "__main__":

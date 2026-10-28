@@ -20,6 +20,15 @@ Double-click `scripts/install.command` to build/open a locally signed **Sweetieb
 
 Inspect **Output → Sweetie Bot app repair** when UI customizations disappear. Use `python3 scripts/install.py --check` to validate compatibility and app permissions before reinstalling. VS Code may report an installation-integrity warning because its application files changed.
 
+If SCM controls disappear after a VS Code update and the full installer stops on an unsupported Codex patch, restore the SCM workbench independently:
+
+```sh
+python3 scripts/install.py --workbench-only --check
+python3 scripts/install.py --workbench-only
+```
+
+This uses the existing customization settings and guarded workbench transforms, saves the previous workbench files in the printed backup directory, and refreshes the live workbench components. Reload the affected VS Code window afterward. Codex assets, companion extensions, Git configuration, and repository files are untouched. An unsupported or externally modified workbench patch still stops the repair before writing.
+
 ## Security and removal
 
 The settings server listens on local authenticated loopback. GitHub App PEMs belong in Keychain or private credential files, never repo files or debug output ([App guide](distinct-github-apps.md)). **Workspace Trust** remains VS Code's decision: trusting the managed parent trusts **all** its children, including future ones. Never trust an uncontrolled parent.
