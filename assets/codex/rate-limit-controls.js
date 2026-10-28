@@ -83,8 +83,10 @@ const scmToolkitRateLimitStickerEnabled = "__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENAB
 // after the installer has compacted its defaultMessage. Reapply the compact
 // presentation as soon as the message's text changes, before the next paint.
 function scmToolkitIsUntimedRateLimitWarning(value) {
-    return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i
-        .test(String(value || '').replace(/\s+/g, ' ').trim());
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (globalThis.scmToolkitHideRateLimitTimes === true
+        && /^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|later)\b[^<>]*$/i.test(text)) return true;
+    return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i.test(text);
 }
 
 // Queued prompts live beside the composer, outside the transcript. Their
@@ -101,7 +103,7 @@ function scmToolkitCompactUntimedRateLimitNode(node) {
     // Never rewrite user input, dialogs, clickable upgrade cards, or any
     // notice with a meaningful reset time. The exact message match also
     // prevents changing timed/otherwise informative rate-limit notices.
-    if (node.closest?.('[contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], [data-scm-toolkit-reset-action]')) return false;
+    if (node.closest?.('[data-message-author-role="user"], [data-conversation-role="user"], [contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], [data-scm-toolkit-reset-action]')) return false;
     if (node.querySelector?.('a, button, input, textarea, select, [role="button"]')) return false;
     for (const descendant of node.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || []) {
         if (scmToolkitIsUntimedRateLimitWarning(descendant.textContent)) return false;

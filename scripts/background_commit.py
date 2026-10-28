@@ -142,13 +142,15 @@ def recover_finalization(meta):
     file.unlink()
 
 
-def fork_branch(source, name, expected_head, destination=None):
+def fork_branch(source, name, expected_head, destination=None, expected_tip=None):
     """Capture a pending base and its subscription under the finalizer's lock."""
     meta = Path(git('rev-parse', '--absolute-git-dir'))
     with repository_lock(meta):
         recover_finalization(meta)
         if state()[0] != expected_head:
             raise RuntimeError('The active branch changed while preparing the new branch.')
+        if expected_tip and branch_tip(expected_head) != expected_tip:
+            raise RuntimeError('The original branch advanced before the recovery fork. Review its commits.')
         if (meta / 'sweetiebot-async-commit.json').exists():
             raise RuntimeError('Wait for the existing commit message to finish before branching.')
         git('check-ref-format', '--branch', name)
@@ -1014,6 +1016,35 @@ def work(directory, commit_only=False):
             os.environ.update(previous_env)
 
 
+def dismiss_merged_push(job_id):
+    """Release a confirmed blocked old-branch push without losing local commits."""
+    if not re.fullmatch(r'[0-9a-f]{16}', job_id):
+        raise ValueError('Invalid merged push job identifier.')
+    meta = Path(git('rev-parse', '--absolute-git-dir'))
+    marker = meta / MARKER
+    with repository_lock(meta):
+        entries = queue_entries(marker)
+        if not entries or entries[0]['id'] != job_id:
+            raise RuntimeError('The paused merged-branch job changed. Review the queue again.')
+        paused = read_journal(Path(entries[0]['directory']) / 'job.json')
+        if not paused or paused.get('phase') != 'blocked' or not paused.get('mergedBranch'):
+            raise RuntimeError('The selected job is no longer paused for a merged branch.')
+        if paused.get('provisional') or not paused.get('sha'):
+            raise RuntimeError('The local commit must finish before releasing its push.')
+        for entry in entries:
+            file = Path(entry['directory']) / 'job.json'
+            job = read_journal(file)
+            if not job or job['branch'] != paused['branch']:
+                continue
+            job['push'] = False
+            if job['id'] == job_id:
+                job['phase'] = 'committed'
+                job.pop('error', None)
+                job.pop('mergedBranch', None)
+            write_journal(file, job)
+    return True
+
+
 def control(action):
     marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
     entries = queue_entries(marker)
@@ -1331,6 +1362,8 @@ if __name__ == '__main__':
             print(completed_branch_base(core.REAL_GIT, [], sys.argv[2]))
         elif len(sys.argv) == 5 and sys.argv[1] == '--fork-branch':
             print(fork_branch(*sys.argv[2:]))
+        elif len(sys.argv) == 6 and sys.argv[1] == '--fork-verified':
+            print(fork_branch(*sys.argv[2:5], expected_tip=sys.argv[5]))
         elif len(sys.argv) == 6 and sys.argv[1] == '--fork-worktree':
             print(fork_branch(*sys.argv[2:]))
         elif sys.argv[1:] == ['--enqueue']:
@@ -1344,6 +1377,9 @@ if __name__ == '__main__':
             resume()
         elif len(sys.argv) == 3 and sys.argv[1] == '--work':
             work(Path(sys.argv[2]))
+        elif len(sys.argv) == 3 and sys.argv[1] == '--dismiss-merged':
+            dismiss_merged_push(sys.argv[2])
+            resume()
         elif sys.argv[1:] in (['--retry'], ['--cancel']):
             control(sys.argv[1][2:])
             if sys.argv[1] == '--retry':

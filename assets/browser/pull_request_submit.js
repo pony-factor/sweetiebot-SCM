@@ -113,13 +113,15 @@
       if (mergeLaunch && !latest) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
-        // Current ChatGPT renders assistant Markdown without the older role
-        // attribute. Keep both layouts scoped to assistant output so a JSON
-        // example in the user's launch prompt can never become a handoff.
-        const assistantCode = ['[data-message-author-role="assistant"]',
-          '[data-markdown-text-style="assistant-message"]'].flatMap(scope =>
-          ['pre code', 'pre', '[data-testid="code-block"]'].map(block => scope + ' ' + block)).join(', ');
-        for (const code of document.querySelectorAll(assistantCode)) {
+        // Support both current assistant Markdown and conversation-role markup.
+        // Conversation-role markers label the header, while the assistant
+        // response body is its sibling inside the same message container.
+        const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
+          ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
+            .map(node => node.parentElement).filter(Boolean)];
+        const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
+        for (const code of codes) {
           try {
             const text = code.textContent || '';
             // Some ChatGPT code blocks include their language/copy toolbar
