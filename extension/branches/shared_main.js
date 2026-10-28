@@ -9,7 +9,6 @@ const { independentWorkspaceParent } = require('./workspace_trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
 const { prepareCodexHandoff } = require('../codex/workspace_handoff');
-const { focusExistingBranchWindow } = require('./window');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -316,7 +315,6 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (branch === 'main') {
     const main = await mainRoot(root, options);
     if (root === main && current === 'main') return true;
-    if (await focusExistingBranchWindow(vscode, main, options)) return true;
     await switchRepository(vscode, root, main, options);
     return true;
   }
@@ -342,9 +340,8 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
-    // A live destination window owns its editors and Codex state. Bring it
-    // forward and close the source, rather than repointing this workspace.
-    if (await focusExistingBranchWindow(vscode, destination, options)) return true;
+    // Reuse the destination worktree in this window so the initiating chat
+    // follows the user's branch choice even when another window has it open.
     await switchRepository(vscode, root, destination, { ...options, branch });
     return true;
   }

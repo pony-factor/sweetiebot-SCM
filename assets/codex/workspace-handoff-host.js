@@ -99,12 +99,12 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         const thread = await read(threadId);
         const oldCwd = await canonical(thread.cwd);
         const root = await canonical(from);
-        const relative = path.relative(root, oldCwd);
+        let relative = path.relative(root, oldCwd);
         if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
-            // A chat opened from history can belong to a different checkout.
-            // Leave that worker bound to its own files and let Git navigation
-            // proceed without handing off this unrelated thread.
-            return null;
+            // Explicit branch navigation moves the visible chat too, including
+            // a historical thread still attached to another checkout. Its old
+            // relative path has no meaning in this workspace; use the new root.
+            relative = '';
         }
         const wasActive = thread.status?.type === 'active';
         if (wasActive) {
