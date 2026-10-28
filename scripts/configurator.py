@@ -90,11 +90,27 @@ stickerReset?.addEventListener('click', async () => {
 """
 
 COMMIT_HOTKEY_STYLE = """
-.hotkey-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px}
-.hotkey-status{display:block;color:var(--muted);font-size:12px}
+.hotkey-setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);align-items:center}
+.hotkey-actions{display:grid;grid-template-columns:max-content max-content max-content minmax(0,1fr);align-items:center;gap:8px;min-width:0}
+.hotkey-value{font:600 13px ui-monospace,monospace;background:var(--bg);padding:7px 11px;border:1px solid var(--line);border-radius:6px;white-space:nowrap}
+.hotkey-actions button{white-space:nowrap}
+.hotkey-status{grid-column:1/-1;min-width:0;overflow-wrap:anywhere;color:var(--muted);font-size:12px}
 .hotkey-status.error-state{color:#ffb3ad}
+@media(max-width:1080px){.hotkey-setting{grid-template-columns:minmax(0,1fr);gap:8px}}
 """
+PERMISSIONS_SCRIPT = r"""
+document.getElementById('codex-permissions')?.addEventListener('click', async () => {
+  const status = document.getElementById('codex-permissions-status');
+  try {
+    const response = await fetch('/codex-permissions' + location.search, {method:'POST'});
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error);
+    status.textContent = 'Choose permissions in the Codex menu.';
+  } catch (error) { status.textContent = error.message; }
+});
+"""
+
+
 COMMIT_HOTKEY_SCRIPT = r"""
 const hotkeyNames = {
   Space:'space', Enter:'enter', Tab:'tab', Escape:'escape',
@@ -205,7 +221,7 @@ def _commit_hotkey_control(
             "shortcuts may still take precedence." if available else
             "Open this page from Sweetiebot in VS Code to edit its shortcut.")
     return (
-        f'<div class="setting"><span><strong>{html.escape(label)}</strong>'
+        f'<div class="setting hotkey-setting"><span><strong>{html.escape(label)}</strong>'
         f'<small>{html.escape(description)}</small></span>'
         '<div class="hotkey-actions">'
         f'<output id="{prefix}-value" class="hotkey-value">{shown}</output>'
@@ -233,7 +249,8 @@ SETTINGS = (
     Setting("pullRequestAutoRefresh", "scm-toolkit.pull-request-auto-refresh", "Refresh active Pull Requests tab", "Refresh only while visible and focused; pause after GitHub rate limits.", "GitHub"),
     Setting("pullRequestRefreshIntervalSeconds", "scm-toolkit.pull-request-refresh-interval-seconds", "Pull-request refresh interval (seconds)", "Default 120 seconds; choose 30–3600. Manual refresh is unaffected.", "GitHub", "integer", minimum=30, maximum=3600),
     Setting("pullRequestQuickMerge", "scm-toolkit.pull-request-quick-merge", "Quick squash-merge button", "Show a merge button beside GitHub pull requests to squash and merge into main without opening them. Requires the GitHub CLI.", "GitHub"),
-        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "ChatGPT project for PR and pony research", "Use this ChatGPT project for PR drafting, independent pony-profile research, and batch squash-merging. Paste the project URL; leave blank for regular chats.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptProjectUrl", "scm-toolkit.chatgpt-project-url", "Shared ChatGPT project", "Project for PR/merge chats and pony research, also inherited by native Spellcheck Only and manual commit-title suggestions when no dedicated review Project is set. Blank uses regular chats.", "GitHub", "chatgpt_project_url"),
+        Setting("chatgptReviewProjectUrl", "scm-toolkit.chatgpt-review-project-url", "ChatGPT Project for commit titles and Spellcheck Only", "Optional dedicated Project for manual ChatGPT commit-title suggestions and native Spellcheck Only. Blank inherits the shared Project or regular chats. Automatic background jobs still use Ollama.", "GitHub", "chatgpt_project_url"),
     Setting("branchPicker", "scm-toolkit.branch-picker", "Branch picker", "Show the current branch in the commit-message row.", "Message bar"),
     Setting("horizontalBranchSelector", "scm-toolkit.horizontal-branch-selector", "Horizontal branch selector", "Click the branch box beside the message field to open horizontal branch options in the bottom panel. Turn off to open the native branch picker instead.", "Source control"),
     Setting("messageBarLayout", "scm-toolkit.message-bar-layout", "Message bar layout", "Arrange the message-bar buttons and add as many separators as you need.", "Message bar", "message_bar"),
@@ -263,7 +280,7 @@ SETTINGS = (
     Setting("codexCoauthorName", "scm-toolkit.codex-coauthor-name", "Commit co-author name", "Display name written into the Co-authored-by trailer; defaults to Codex.", "Message bar", "coauthor_name"),
     Setting("codexCoauthorEmail", "scm-toolkit.codex-coauthor-email", "Commit co-author email", "Email in the Co-authored-by trailer. To link a GitHub account, enter an address associated with that account.", "Message bar", "coauthor_email"),
     Setting("codexCommitContext", "scm-toolkit.codex-commit-context", "Local commit messages from Codex text", "When the co-author commit message is blank, use this window's current conversation and staged changes with local Ollama. Codex keeps running.", "Source control"),
-    Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Prevent idle sleep on macOS while Codex tasks are running. The display can still turn off. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
+    Setting("codexKeepAwake", "scm-toolkit.codex-keep-awake", "Keep awake while Codex works", "Keep macOS and its display awake and postpone the automatic screensaver while Codex tasks are running. Enabled by default; VS Code's Codex Keep Awake setting can override it.", "Codex"),
     Setting("codexWindowLabel", "scm-toolkit.codex-window-label", "Codex window label", "Rename the Codex sidebar and its Activity Bar / secondary sidebar title, e.g. CelestAI. Use Codex to restore its original label; apply with app repair and reload VS Code.", "Codex", "text"),
     Setting("hideIncomingSyncCount", "scm-toolkit.hide-incoming-sync-count", "Hide incoming count", "Remove the incoming commit count from Sync.", "Source control"),
     Setting("hideOutgoingSyncCount", "scm-toolkit.hide-outgoing-sync-count", "Hide outgoing count", "Remove the outgoing commit count from Sync.", "Source control"),
@@ -324,6 +341,7 @@ SETTINGS = (
     Setting("aiCoremlCommand", "scm-toolkit.ai-coreml-command", "Core ML bridge executable", "Absolute path to your locally built sweetiebot-ane bridge. Install instructions in native/coreml-llm-bridge/README.md.", "Ollama", "text"),
     Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
+    Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
     Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
     Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
@@ -335,9 +353,16 @@ SETTINGS = (
     Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
     Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
     Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
-    Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Hide bullets for emoji-only squash summaries", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
+    Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Omit hyphens when every commit title starts with an emoji", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
+    Setting("squashTrailerSeparatorStyle", "scm-toolkit.squash-trailer-separator-style", "Squash co-author separator", "Divider between squash summaries and Co-authored-by trailers: Hyphens (---------), Underscores (__________), or None. Underscores remain the default.", "Pull requests", "select", ("underscores", "hyphens", "none")),
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
     Setting("mcpPullRequest", "scm-toolkit.mcp-pull-request", "Pull-request button", "Draft in ChatGPT and publish with codex-pony. The GitHub app must have access to this repository; click the button for setup help when access is missing.", "Pull requests"),
+    Setting("prWarningHighlights", "scm-toolkit.pr-warning-highlights", "Highlight PR eligibility warnings", "Opt in to a colored PR button when its eligibility or setup check fails. Off keeps the icon muted gray while retaining validation and diagnostic tooltips.", "Pull requests"),
+    Setting("mergeAutoRefresh", "scm-toolkit.merge-auto-refresh", "Refresh active merge dashboard", "Refresh GitHub status only while the merge dashboard is visible and its window is focused. Local merge work continues in the background.", "GitHub"),
+    Setting("mergeRefreshIntervalSeconds", "scm-toolkit.merge-refresh-interval-seconds", "Merge refresh interval (seconds)", "Delay between GitHub status updates in an active merge dashboard. Choose 30–3600 seconds.", "GitHub", "integer", minimum=30, maximum=3600),
+    Setting("githubRateLimitCooldownSeconds", "scm-toolkit.github-rate-limit-cooldown-seconds", "GitHub rate-limit fallback (seconds)", "Pause when GitHub does not supply a reset time. Choose 60–3600 seconds. Server reset times always take precedence.", "GitHub", "integer", minimum=60, maximum=3600),
+    Setting("mergePostSummaries", "scm-toolkit.merge-post-summaries", "Post AI merge summaries to GitHub", "Opt in to a concise summary on each selected PR after its merge is verified. Local explanations always remain available. Off by default.", "Lindsey"),
+    Setting("mergeShowPrCommits", "scm-toolkit.merge-show-pr-commits", "Show PR commits in bulk merge", "Display the selected PR’s commit-history graph in Lindsey’s bulk-merge details. Hide it to give the diff the full width without changing merge behavior. On by default.", "Lindsey"),
     Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
     Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
@@ -352,15 +377,23 @@ SETTINGS = (
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Relative Codex reset times", "Convert Codex's absolute reset dates and times into live relative countdowns in usage-limit banners (for example, 'resets October 24 at 3 PM' becomes 'resets in 1d 4h').", "Codex"),
     Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
-    Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Usage pie indicator", "Replace the Codex remaining-usage percentage with a circular indicator that empties as the five-hour allowance is used.", "Codex"),
+    Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Five-hour pie and weekly usage bar", "Replace the composer’s + icon with the five-hour remaining-usage pie while retaining the attachment menu. Show the weekly remaining allowance as a thin bar along the bottom of the input.", "Codex"),
+    Setting("codexCloudTasks", "scm-toolkit.codex-cloud-tasks", "Enable cloud tasks", "Allow Codex’s cloud execution selector. Off by default: tasks stay local and the native location/usage menu is hidden. Apply through app repair, then reload the intended window.", "Codex"),
+    Setting("codexResetTimePieIndicator", "scm-toolkit.codex-reset-time-pie-indicator", "Reset countdown pie indicators", "Show a time-remaining pie beside each five-hour and weekly Codex usage-menu reset countdown. Pies empty as the reset approaches; hiding reset times overrides this setting. Off by default.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
+    Setting("codexHidePermissionsIcon", "scm-toolkit.codex-hide-permissions-icon", "Hide permissions icon", "Choose permissions from Change permissions below instead of the Codex composer icon.", "Codex"),
+    Setting("codexFlatComposer", "scm-toolkit.codex-flat-composer", "Flat prompt box", "Use a compact prompt surface with subtle corners, no shadow, and a theme-colored focus border.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
+    Setting("codexShowQueuedDelete", "scm-toolkit.codex-show-queued-delete", "Show queued-message Delete button", "Show the trash button beside queued Codex messages. Turn off to hide it; inline editing and Steer remain available. Apply through app repair, then reload the Codex view.", "Codex"),
+    Setting("codexShowQueuePause", "scm-toolkit.codex-show-queue-pause", "Show Pause queue button", "Show Pause queue / Resume queue above queued Codex messages. Pauses automatic queued sends while allowing the current response to finish. Apply through app repair, then reload the Codex view.", "Codex"),
+    Setting("codexInlineQueuedEditing", "scm-toolkit.codex-inline-queued-editing", "Edit queued messages inline", "Click queued message text to edit it in place. Automatic turns wait until you save, cancel, or leave the editor.", "Codex"),
     Setting("codexInlineLocation", "scm-toolkit.codex-inline-location", "Computer and usage beside access", "Move the native computer and usage control beside the access icon.", "Codex"),
     Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Place a clipboard action beside the Codex send control. Submit when idle, or use native queued follow-ups while a task is running.", "Codex"),
+    Setting("codexSendWing", "scm-toolkit.codex-send-wing", "Pegasus wing Send icon", "Replace the native Send arrow with a white-outline wing. Follows theme and Send icon color settings; Queue and Stop stay native.", "Codex"),
     Setting("codexSendBackground", "scm-toolkit.codex-send-background", "Send button background", "Hex color for the Codex send button. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexNewChatDotColor", "scm-toolkit.codex-new-chat-dot-color", "New Chat notification dot", "Hex color for the unread dot on the Codex New Chat icon. Leave blank to follow the Send button background, or the theme if that is unset.", "Codex", "color"),
-    Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon. Leave blank to use the theme.", "Codex", "color"),
+    Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon or pegasus-wing outline. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexComposerLabelColor", "scm-toolkit.codex-composer-label-color", "Composer control color", "Hex color for Full access, Work locally, and the + add-context control. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexHideDictation", "scm-toolkit.codex-hide-dictation", "Hide dictation button", "Hide the microphone dictation control in Codex chat.", "Codex"),
@@ -875,7 +908,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexHideChatTimestamps",
+                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'
@@ -888,6 +921,7 @@ def render_form(
                 for heading, is_time in (("Time", True), ("Customization", False))
             )
         if section == "Codex":
+            controls += '<div class="setting"><span><strong>Codex permissions</strong><small>Use Codex’s permissions menu, including its access confirmations.</small></span><button type="button" id="codex-permissions">Change permissions…</button><span id="codex-permissions-status" role="status"></span></div>'
             image_status = ("Custom image cached on this computer" if codex_sticker.sticker_path().is_file()
                             else "Bundled Twilight image")
             controls += (
@@ -937,6 +971,17 @@ def render_form(
             )
             controls += _local_setup_controls()
         if section == "Pull requests":
+            squash_formatting = {"squashOmitBulletsForEmojiTitles", "filterSyncCommitSummaries", "squashTrailerSeparatorStyle"}
+            controls = (
+                '<div class="settings-group"><h3>Squash formatting</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.name in squash_formatting)
+                + '</div><div class="settings-group"><h3>Pull requests</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.section == section
+                          and setting.name not in squash_formatting)
+                + '</div>'
+            )
             controls = (
                 '<div class="setting"><span><strong>Codex Pony repository access</strong>'
                 '<small>New PR requires Codex Pony to be installed on the repository owner’s account or organization, '
@@ -962,7 +1007,14 @@ def render_form(
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
                           for setting in SETTINGS if setting.section == section
                           and setting.name not in draft_controls)
-                + '</div>'
+                + '<div class="setting"><span><strong>Opt out in one repository</strong>'
+                  '<small>Keep the global Spellcheck toggle on, but stop automatic post-commit '
+                  'Markdown corrections in a particular repository. In that repository, add '
+                  '<code>&quot;scmToolkit.postCommitSpellcheck&quot;: false</code> to '
+                  '<code>.vscode/settings.json</code>. Other repositories still spellcheck. '
+                  'Remove the entry or set it to <code>true</code> to restore spellcheck there. '
+                  'Draft commit checks and manual Spellcheck Only remain available.</small>'
+                  '</span></div></div>'
             )
         tab_id = f"settings-tab-{index}"
         panel_id = f"settings-panel-{index}"
@@ -1016,6 +1068,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 {COMMIT_HOTKEY_SCRIPT}
 {APP_SCRIPT}
 {STICKER_SCRIPT}
+{PERMISSIONS_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
@@ -1110,7 +1163,7 @@ async function pollRebuildStatus() {{
   }}
 }}
 rebuildButton?.addEventListener('click', async () => {{
-  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? Reload VS Code after a successful rebuild.')) return;
+  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? This VS Code window will reload when the rebuild succeeds.')) return;
   rebuildButton.disabled = true;
   rebuildStatus.textContent = 'Saving settings…';
   if (autosaveTimer) {{
@@ -1516,7 +1569,7 @@ def extension_settings_payload(settings: dict[str, bool | str]) -> dict[str, obj
         payload["workspaceSearch"][key] = int(settings[VSCODE_SETTINGS["workspaceSearch"][key]])
     payload["workspaceSearch"]["maxFileSizeMB"] = float(settings["workspaceSearchMaxFileSizeMB"])
     payload["vscodeSettings"]["pullRequestRefreshIntervalSeconds"] = int(settings["pullRequestRefreshIntervalSeconds"])
-    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent"):
+    for key in ("mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeRefreshIntervalSeconds", "githubRateLimitCooldownSeconds"):
         payload["vscodeSettings"][key] = int(settings[key])
     return payload
 
@@ -1586,7 +1639,13 @@ def run_configurator(
             message = f"Rebuild failed: {error}"
             failed = True
         with rebuild_lock:
+            if not failed and parent_pid is not None:
+                message = "Rebuild complete. Reloading this VS Code window…"
             rebuild_status.update(running=False, finished=True, error=failed, message=message)
+        if not failed and parent_pid is not None:
+            # The owning extension host reloads only its own VS Code window.
+            # Failed rebuilds keep the settings page and error visible.
+            print(json.dumps({"rebuildComplete": True}), flush=True)
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, content: str, status: int = 200) -> None:
@@ -1684,6 +1743,13 @@ def run_configurator(
                 self._send_json({"error": "Request too large."}, 413)
                 return
             data = self.rfile.read(length)
+            if path == "/codex-permissions":
+                if parent_pid is None:
+                    self._send_json({"error": "Open Magic Settings from VS Code to change Codex permissions."}, 409)
+                    return
+                print(json.dumps({"codexPermissions": True}), flush=True)
+                self._send_json({"opened": True})
+                return
             if path == "/sticker-upload":
                 # Reject cross-origin requests; the token is required as well.
                 origin = self.headers.get("Origin")

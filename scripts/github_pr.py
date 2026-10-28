@@ -74,7 +74,7 @@ def transform_refresh(source, remove=False):
     commands = list(REFRESH_COMMAND.finditer(source))
     if len(tree) != 1 or len(commands) != 1:
         raise ValueError('Unsupported GitHub PR tree build: expected one matching anchor.')
-    helper = (Path(__file__).resolve().parent.parent / 'efs/github_pr_refresh.js').read_text().split('\nmodule.exports')[0]
+    helper = (Path(__file__).resolve().parent.parent / 'extension/github/pr_refresh.js').read_text().split('\nmodule.exports')[0]
     original = tree[0].group()
     factory = f'(()=>{{{helper}\nreturn installPullRequestRefresh;}})()'
     edits = [(original, f'({factory})({tree[0].group(1)},{original},this)'),
@@ -89,6 +89,8 @@ def transform_refresh(source, remove=False):
                       '((sweetiebotError)=>{globalThis.__sweetiebotGitHubPrRefreshError?.(sweetiebotError);'
                       'return /connect timeout|connection timeout|timed?\\s*out|UND_ERR_CONNECT_TIMEOUT/i.test(sweetiebotError)'
                       '?"⏳ GitHub took too long to respond. Try refreshing.":'
+                      '/API rate limit exceeded|secondary rate limit|abuse detection|too many requests|HTTP 429/i.test(sweetiebotError)'
+                      '?"GitHub API rate limit reached. Automatic refresh is paused; use Retry after reset in the GitHub notification.":'
                       + notice.group() + '})(' + notice.group(1) + ')'))
     for original, replacement in edits:
         source = source.replace(original, replacement, 1)

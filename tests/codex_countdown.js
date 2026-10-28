@@ -1,0 +1,72 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+let now = 1_800_000_000_000;
+let updateTimer;
+let cleared;
+let Countdown;
+const context = vm.createContext({
+    HTMLElement: class {
+        getAttribute() { return this.resetAt; }
+    },
+    Node: { TEXT_NODE: 3 },
+    Date: { now: () => now },
+    setInterval(callback) { updateTimer = callback; return 7; },
+    clearInterval(timer) { cleared = timer; },
+    customElements: {
+        get() {},
+        define(name, element) { Countdown = element; },
+    },
+});
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/countdown.js'), 'utf8'), context);
+const jsx = (tag, props, key) => ({ tag, props, key });
+context.jsx = jsx;
+context.resetAt = (now + 4 * 3_600_000 + 23 * 60_000) / 1000;
+
+for (const [message, expected] of [
+    ['Your limit resets on {time}.', 'Your limit resets in '],
+    ['Try again at {time}.', 'Try again in '],
+    ['Wait until {time}.', 'Wait '],
+]) {
+    context.message = message;
+    const parts = vm.runInContext('scmToolkitUsageResetMessage(message, resetAt, jsx)', context);
+    assert.equal(parts[0], expected);
+    assert.equal(parts[1].props['reset-at'], context.resetAt);
+    assert.equal(parts[2], '.');
+}
+assert.equal(vm.runInContext('scmToolkitUsageResetMessage("No reset available", null, jsx)', context), 'No reset available');
+let nativeCalls = 0;
+const nativeCopy = { title: 'Native title', description: 'Native description', extra: 'preserved' };
+context.resolveCopy = (banner, intl) => {
+    nativeCalls++;
+    assert.equal(intl, 'intl');
+    return nativeCopy;
+};
+context.banner = { reset_at: context.resetAt, title: 'Try again at {time}.', description: 'Plain description' };
+const copy = vm.runInContext('scmToolkitUsageResetCopy(banner, "intl", resolveCopy, jsx)', context);
+assert.equal(nativeCalls, 1);
+assert.equal(copy.title[0], 'Try again in ');
+assert.equal(copy.title[1].props['reset-at'], context.resetAt);
+assert.equal(copy.description, nativeCopy.description);
+assert.equal(copy.extra, nativeCopy.extra);
+for (const reset of [null, undefined, 'invalid']) {
+    context.banner = { reset_at: reset, title: 'At {time}', description: 'At {time}' };
+    assert.equal(vm.runInContext('scmToolkitUsageResetCopy(banner, "intl", resolveCopy, jsx)', context), nativeCopy);
+}
+context.banner = { reset_at: context.resetAt, title: 'Untimed title', description: 'Untimed description' };
+assert.equal(vm.runInContext('scmToolkitUsageResetCopy(banner, "intl", resolveCopy, jsx)', context), nativeCopy);
+const element = new Countdown();
+element.resetAt = context.resetAt;
+element.connectedCallback();
+assert.equal(element.textContent, '4h 23m');
+now += 60_000;
+updateTimer();
+assert.equal(element.textContent, '4h 22m');
+now += 5 * 3_600_000;
+updateTimer();
+assert.equal(element.textContent, '0m');
+element.disconnectedCallback();
+assert.equal(cleared, 7);
+console.log('Codex countdown rendering and lifecycle checks passed.');

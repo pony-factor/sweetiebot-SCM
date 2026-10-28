@@ -1,0 +1,159 @@
+import json
+import subprocess
+import unittest
+import github_pr
+
+HOST = 'else if((await pr.githubRepository.getMetadata()).delete_branch_on_merge){const result=await prompt(repo,pr);return result.isReply?void 0:result.message}'
+LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick:wrap(event=>{event.preventDefault(),open()},"onClick")'
+
+
+class GitHubPRTests(unittest.TestCase):
+    def test_description_hydrates_only_incomplete_models_before_initialization(self):
+        source = 'async updateItemNow(e){var t,i,r;this._item=e,this.context={body:e.body,bodyHTML:e.bodyHTML}}'
+        patched = github_pr.transform_description(source)
+        self.assertEqual(github_pr.transform_description(patched), patched)
+        self.assertEqual(github_pr.transform_description(patched, remove=True), source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_description(source + source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_description(patched.replace('sweetiebotResolved;', 'changed;', 1))
+        script = '''
+const assert=require('node:assert/strict');
+class Panel { PATCHED }
+(async()=>{
+ for(const [body,bodyHTML,expected] of [['Text',undefined,1],['Text','',1],
+   ['Text','  ',1],['Text','<p>Text</p>',0],['',undefined,0]]) {
+  const panel=new Panel();let calls=0;
+  const model={body,bodyHTML,remote:{owner:'owner',repositoryName:'repo'},number:214};
+  panel._folderRepositoryManager={resolvePullRequest:async(...args)=>{
+   calls++;assert.deepEqual(args,['owner','repo',214]);
+   return {...model,bodyHTML:'<p>Text</p>'};
+  }};
+  await panel.updateItemNow(model);
+  assert.equal(calls,expected);
+  assert.equal(panel.context.bodyHTML,expected?'<p>Text</p>':bodyHTML);
+ }
+ const panel=new Panel();
+ panel._folderRepositoryManager={resolvePullRequest:async()=>{throw new Error('offline')}};
+ await assert.rejects(panel.updateItemNow({body:'Text',remote:{},number:214}),/offline/);
+ assert.equal(panel.context,undefined);
+})().catch(error=>{console.error(error);process.exitCode=1});
+'''.replace('PATCHED', patched)
+        subprocess.run(['node', '-e', script], check=True)
+
+    def test_timeout_notice_is_short_and_preserves_other_errors(self):
+        notice = 's.l10n.t("Fetching pull requests failed: {0}",Pe(l))'
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)};'
+                  's.window.showErrorMessage(' + notice + ',...u)')
+        patched = github_pr.transform_refresh(source)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        metadata = patched.split(github_pr.REFRESH_START)[1].split(github_pr.REFRESH_END)[0]
+        replacement = json.loads(metadata.removeprefix('/* edits:').removesuffix(' */'))[-1][1]
+        script = '''
+const assert = require('node:assert/strict');
+const s = {l10n:{t:(template, message)=>template.replace('{0}',message)}};
+const Pe = error => error.message;
+const errors = [];
+globalThis.__sweetiebotGitHubPrRefreshError = message => errors.push(message);
+function format(l) { return REPLACEMENT; }
+for (const message of ['Connect Timeout Error (attempted address: api.github.com:443, timeout: 10000ms)',
+                       'request timed out', 'UND_ERR_CONNECT_TIMEOUT']) {
+ assert.equal(format({message}), '⏳ GitHub took too long to respond. Try refreshing.');
+}
+for (const message of ['Bad credentials', 'Not Found']) {
+ assert.equal(format({message}), 'Fetching pull requests failed: ' + message);
+}
+assert.equal(format({message:'API rate limit exceeded'}), 'GitHub API rate limit reached. Automatic refresh is paused; use Retry after reset in the GitHub notification.');
+assert.equal(errors.length, 6);
+assert(errors.includes('API rate limit exceeded'));
+'''.replace('REPLACEMENT', replacement)
+        subprocess.run(['node', '-e', script], check=True)
+
+    def test_tree_refresh_is_reversible_idempotent_and_guarded(self):
+        source = 's.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});' + 'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)}'
+        patched = github_pr.transform_refresh(source)
+        # Compile the actual injected code, including all helper declarations.
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+        self.assertIn('return this.prsTreeModel', patched)
+        with self.assertRaises(ValueError):
+            github_pr.transform_refresh(source + source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_refresh(patched.replace('120000', '10000', 1))
+
+    def test_tree_refresh_supports_multiselect_option_in_0168(self):
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:cn(),manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)}')
+        patched = github_pr.transform_refresh(source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        self.assertIn("registerCommand('sweetiebot.squashMergeTreePullRequest'", patched)
+        self.assertIn('canSelectMany:cn()', patched)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+
+    def test_tree_refresh_supports_cache_only_refresh_in_0170(self):
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:ji(),manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache()}')
+        patched = github_pr.transform_refresh(source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        self.assertIn("registerCommand('sweetiebot.squashMergeTreePullRequest'", patched)
+        self.assertIn('a=>{return this.prsTreeModel.forceClearCache()}', patched)
+        self.assertNotIn('this.refreshAllQueryResults', patched)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+
+    def test_reversible_idempotent_and_guarded(self):
+        for kind, original in [('host', HOST), ('webview', LINK)]:
+            source = 'prefix;' + original + ';suffix;'
+            patched = github_pr.transform(source, kind)
+            self.assertEqual(github_pr.transform(patched, kind), patched)
+            self.assertEqual(github_pr.transform(patched, kind, remove=True), source)
+            with self.assertRaises(ValueError):
+                github_pr.transform(original + original, kind)
+            with self.assertRaises(ValueError):
+                github_pr.transform(patched.replace('data-sweetiebot-url' if kind == 'webview' else 'return void 0', 'changed', 1), kind)
+
+    def test_prompt_only_suppressed_for_repository_auto_deletion(self):
+        original = 'if(configured)await automatic(repo,pr);' + HOST
+        patched = github_pr.transform(HOST, 'host').split(github_pr.START)[0]
+        script = '''
+const assert = require('node:assert/strict');
+async function check(body, configured, deletes) {
+ let prompts=0, automaticCalls=0;
+ const repo={}, pr={githubRepository:{getMetadata:async()=>({delete_branch_on_merge:deletes})}};
+ const prompt=async()=>{prompts++;return {isReply:false,message:{}}};
+ const automatic=async()=>{automaticCalls++};
+ const fn = new Function('configured','repo','pr','prompt','automatic','return (async()=>{'+body+'})()');
+ await fn(configured,repo,pr,prompt,automatic);
+ return {prompts,automaticCalls};
+}
+(async()=>{
+ const before=BEFORE, after=AFTER;
+ assert.equal((await check(before,false,true)).prompts,1);
+ assert.deepEqual(await check(after,false,true),{prompts:0,automaticCalls:0});
+ assert.deepEqual(await check(after,false,false),{prompts:0,automaticCalls:0});
+ assert.deepEqual(await check(after,true,true),{prompts:0,automaticCalls:1});
+})().catch(error=>{console.error(error);process.exitCode=1});
+'''.replace('BEFORE', json.dumps(original)).replace('AFTER', json.dumps('if(configured)await automatic(repo,pr);' + patched))
+        subprocess.run(['node', '-e', script], check=True)
+
+    def test_number_link_uses_one_opener_and_retains_keyboard_support(self):
+        patched = github_pr.transform(LINK, 'webview').split(github_pr.START)[0]
+        script = '''
+const assert = require('node:assert/strict');
+let opens=0;
+const url='https://github.com/owner/repo/pull/33',context={},wrap=fn=>fn,open=()=>{opens++};
+const before=({BEFORE}),after=({AFTER});
+function click(link){if(link.href)opens++;link.onClick({preventDefault(){}});}
+click(before);assert.equal(opens,2);
+opens=0;click(after);assert.equal(opens,1);
+after.onKeyDown({key:'Enter',preventDefault(){}});assert.equal(opens,2);
+after.onKeyDown({key:'Escape'});assert.equal(opens,2);
+assert.equal(after.role,'link');assert.equal(after.tabIndex,0);
+assert.equal(after.title,url);assert.equal(after['data-vscode-context'],JSON.stringify(context));
+'''.replace('BEFORE', LINK).replace('AFTER', patched)
+        subprocess.run(['node', '-e', script], check=True)

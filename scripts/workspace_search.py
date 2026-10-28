@@ -12,7 +12,13 @@ from pathlib import Path
 from toolkit_settings import load_settings, VSCODE_SETTINGS
 
 HERE = Path(__file__).resolve().parent
-SOURCE = HERE.parent / "efs"
+SOURCE = HERE.parent / "extension"
+# Shared artwork stays in assets while VS Code receives stable installed icon paths.
+IMAGE_SOURCES = {
+    "efs.svg": Path("efs.svg"),
+    "merge-prs-light.svg": Path("kefania/merge-prs-light.svg"),
+    "merge-prs-dark.svg": Path("kefania/merge-prs-dark.svg"),
+}
 STANDALONE_CONTAINER_ID = "scmToolkit-workspaceSearchContainer"
 LEGACY_EXTENSION_PATTERNS = ("jfwooten4.scm-toolkit-workspace-search-*",)
 
@@ -43,6 +49,7 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
     workspace_view = contributes["views"]["scm"][0]
     companion_views = contributes["views"]["scm"][1:]
     workspace_view["name"] = str(settings["workspaceSearchLabel"])
+    workspace_view["icon"] = "media/efs.svg"
     workspace_view["contextualTitle"] = str(settings["workspaceSearchLabel"])
     properties = contributes["configuration"]["properties"]
     properties["scmToolkit.workspaceSearch.askOllama"]["default"] = bool(
@@ -86,14 +93,55 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
     return package
 
 
+def transform_view_manifest(source, settings):
+    """Update only EFS view metadata, preserving unrelated installed commands."""
+    package = json.loads(source)
+    expected = render_package(settings)
+    if (package.get('publisher'), package.get('name')) != (expected['publisher'], expected['name']):
+        raise ValueError('Not a Sweetiebot companion manifest.')
+    contributes = package.setdefault('contributes', {})
+    views = contributes.setdefault('views', {})
+    current = None
+    for location, entries in list(views.items()):
+        for entry in entries:
+            if entry.get('id') == 'scmToolkit.workspaceSearch':
+                if current is not None:
+                    raise ValueError('EFS view could not be identified uniquely.')
+                current = dict(entry)
+        views[location] = [entry for entry in entries if entry.get('id') != 'scmToolkit.workspaceSearch']
+    if current is None:
+        raise ValueError('Installed EFS view was not found.')
+    current.update(name=str(settings['workspaceSearchLabel']), contextualTitle=str(settings['workspaceSearchLabel']), icon='media/efs.svg')
+    containers = contributes.setdefault('viewsContainers', {})
+    for location, entries in list(containers.items()):
+        containers[location] = [entry for entry in entries if entry.get('id') != STANDALONE_CONTAINER_ID]
+        if not containers[location]:
+            del containers[location]
+    target = STANDALONE_CONTAINER_ID if settings['workspaceSearchActivityBar'] else 'scm'
+    views.setdefault(target, []).insert(0, current)
+    for location in list(views):
+        if not views[location] and location != 'scm':
+            del views[location]
+    if settings['workspaceSearchActivityBar']:
+        containers.setdefault('activitybar', []).append({
+            'id': STANDALONE_CONTAINER_ID, 'title': str(settings['workspaceSearchLabel']), 'icon':'media/efs.svg'})
+    if not containers:
+        contributes.pop('viewsContainers', None)
+    return json.dumps(package, indent=2) + '\n'
+
+
 def source_files(root: Path | None = None) -> dict[Path, Path]:
     here = root / "scripts" if root is not None else HERE
-    source_root = root / "efs" if root is not None else SOURCE
+    source_root = root / "extension" if root is not None else SOURCE
     files = {
         path.relative_to(source_root): path
         for path in source_root.rglob("*")
         if path.is_file()
     }
+    image_root = here.parent / "assets/imgs"
+    for icon_name, asset_path in IMAGE_SOURCES.items():
+        files[Path("media") / icon_name] = image_root / asset_path
+    # Preserve extension/THIRD_PARTY_NOTICES.md and its existing creator credits.
     files[Path("prune_merged_branches.py")] = here / "prune_merged_branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
     files[Path("github_apps.py")] = here / "github_apps.py"
@@ -117,7 +165,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("branch_name_packs.json")] = here / "branch_name_packs.json"
     files[Path("local_setup.py")] = here / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
-    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("efs", {".js", ".json", ".svg", ".md", ".html"})):
+    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("extension", {".js", ".json", ".svg", ".md", ".html"})):
         for source in (here.parent / directory).rglob("*"):
             if source.is_file() and source.suffix.lower() in suffixes:
                 files[Path("codex-customizations") / source.relative_to(here.parent)] = source

@@ -35,6 +35,20 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             if (message?.type !== 'scm-toolkit-context-response' || request?.webview !== webview) return;
             pending.delete(message.id);
             clearTimeout(request.timeout);
+            if (request.shareOnly) {
+                if (message.error || message.conversationId !== request.shareOnly) {
+                    request.reject(new Error(message.error || 'The active chat changed while sharing.'));
+                    return;
+                }
+                void vscode.env.clipboard.readText().then(async value => {
+                    if (!/^https:\/\/chatgpt\.com\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(value)) {
+                        throw new Error('Codex did not copy a verified public chat link.');
+                    }
+                    if (request.clipboard !== undefined) await vscode.env.clipboard.writeText(request.clipboard);
+                    request.resolve({ ...sourceFor(message.conversationId), sharedUrl: value });
+                }).catch(request.reject);
+                return;
+            }
             if (request.identityOnly) {
                 if (message.hasConversation && !uuid.test(message.conversationId ?? '')) {
                     request.reject(new Error('Cannot identify the visible Codex chat; its worker was not moved.'));
@@ -43,13 +57,28 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null });
                 return;
             }
-            const text = typeof message.text === 'string' ? message.text.trim().slice(-6000) : '';
+            if (request.modelOnly) {
+                const label = value => typeof value === 'string' && value.length <= 100
+                    ? value.replace(/\s+/g, ' ').trim() : '';
+                request.resolve({ name: label(message.model?.name), effort: label(message.model?.effort) });
+                return;
+            }
+            // Keep a substantial transcript for PR intent, not merely its last
+            // few turns. URL transport will independently enforce its 70 KB cap.
+            const clipped = typeof message.text === 'string' ? message.text.trim().slice(-95000) : '';
+            // Never start the URL-bound context with a split UTF-16 surrogate.
+            const text = /^[\uDC00-\uDFFF]/.test(clipped) ? clipped.slice(1) : clipped;
             if (!text) {
                 request.reject(new Error('Open a Codex conversation with text in this window first.'));
                 return;
             }
             if (request.includeSource) {
-                request.resolve({ text, source: sourceFor(message.conversationId) });
+                const label = value => typeof value === 'string' && value.length <= 100
+                    ? value.replace(/\s+/g, ' ').trim() : '';
+                const name = label(message.model?.name);
+                const effort = label(message.model?.effort);
+                request.resolve({ text, source: sourceFor(message.conversationId),
+                    ...((name || effort) ? { model: { name, effort } } : {}) });
             } else {
                 request.resolve(text);
             }
@@ -68,7 +97,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const capture = (includeSource, identityOnly = false) => {
+    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -89,10 +118,10 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error('Codex text capture timed out. Reopen this window after installing the toolkit.'));
-            }, 5000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly });
+            }, shareOnly ? 45000 : 5000);
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
-            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, allowHidden }).then(sent => {
+            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -114,7 +143,12 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         'sweetiebot.readCodexConversation',
         () => capture(true)
     );
+    const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async threadId => {
+        if (!uuid.test(threadId || '')) throw new Error('A verified active Codex chat is required.');
+        return capture(false, false, false, threadId, await vscode.env.clipboard.readText());
+    });
     const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
+    const modelCommand = vscode.commands.registerCommand('sweetiebot.readCodexModel', () => capture(false, false, true));
     const legacyTextCommand = vscode.commands.registerCommand(
         'scmToolkit.readCodexContext', () => capture(false)
     );
@@ -126,6 +160,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         textCommand.dispose();
         sourceCommand.dispose();
         identityCommand.dispose();
+        shareCommand.dispose();
+        modelCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
         provider.initializeWebview = originalInitialize;
