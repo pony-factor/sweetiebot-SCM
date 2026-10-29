@@ -411,6 +411,17 @@ async function run() {
   assert.equal(sessionLaunches[0].options.branch, 'draft');
   assert.deepEqual(sessionLaunches[0].options.source, chatSource);
   assert.equal(calls.length, 0, 'Source host must not own any PR browser or confirmation window');
+  const regularExecute = vscode.commands.executeCommand;
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.shareCodexConversation') throw Error('Native Share timed out');
+    return regularExecute(id, ...args);
+  };
+  codexSnapshot = { text: 'Unanswered PR intent', source: codexSource };
+  const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  vscode.commands.executeCommand = regularExecute;
+  codexSnapshot = undefined;
   launchInSeparateWorkspace = false;
 
   await callback({ rootUri: uri }, {

@@ -95,7 +95,7 @@ async function run() {
   const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click });
   const menuButton = control('Chat actions', () => { stage = 1; });
   const shareButton = control('Share', () => { stage = 2; });
-  const copyButton = control('Copy link', () => { copyButton.isConnected = false; stage = 3; });
+  const copyButton = control('Copy shared link', () => { stage = 3; });
   copyButton.isConnected = true;
   copyButton.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
   const sharingUI = vm.createContext({
