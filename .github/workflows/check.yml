@@ -39,6 +39,14 @@ jobs:
       - name: Verify exhaustive, exclusive test assignments
         run: python3 scripts/ci/ci_test_runner.py verify
 
+  coreml-bridge:
+    name: Compile optional Neural Engine bridge
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build optional Swift bridge (no model download)
+        run: swift build --package-path native/coreml-llm-bridge -c release --product sweetiebot-ane
+
   suites:
     name: ${{ matrix.label }}
     needs: inventory

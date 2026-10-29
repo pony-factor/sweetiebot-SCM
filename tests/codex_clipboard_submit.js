@@ -44,6 +44,10 @@ assert.equal(hooks.classify(stop), '');
 assert.equal(hooks.chooseAction([send, stop], false), send);
 assert.equal(hooks.chooseAction([send, stop, queue], true), queue);
 assert.equal(hooks.chooseAction([send, stop], true), send, 'native default queues active follow-ups');
+assert.equal(hooks.chooseAction([send, queue], false, true), queue, 'FIFO queue goes first');
+assert.equal(hooks.chooseAction([send], false, true), null, 'never leapfrog a pending queue');
+assert.equal(hooks.chooseAction([send, queue], false, false), send, 'idle clipboard submits');
+assert.equal(hooks.hasPendingQueue({querySelector: () => ({})}), true);
 assert.equal(hooks.chooseAction([button('Send', 'submit', true)], false), null);
 assert.equal(hooks.chooseAction([button('Stop and send')], true), null, 'never select interruption');
 

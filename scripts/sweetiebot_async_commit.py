@@ -1,8 +1,7 @@
-"""Durable, local-only commit-message finalization and push barrier.
+"""Recovery and push barriers for retired legacy provisional commits.
 
-Git commits a temporary title immediately. A detached Ollama worker replaces the
-commit object without touching the index or working tree. All Git operations that
-could move or publish the ref must pass through the installed Git wrapper.
+New commits use direct or durable background mode. Existing legacy journal jobs
+must still finalize or block ref moves and publication safely after an upgrade.
 """
 from __future__ import annotations
 

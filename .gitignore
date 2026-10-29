@@ -7,3 +7,7 @@ __pycache__/
 
 # Built locally from source; never track compiled/signed app payloads.
 /Sweetiebot Installer.app/
+
+# Swift package build products and local package-manager state.
+/native/coreml-llm-bridge/.build/
+/native/coreml-llm-bridge/.swiftpm/

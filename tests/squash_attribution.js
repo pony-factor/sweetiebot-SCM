@@ -59,6 +59,25 @@ async function run(){
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Codex (Web) <noreply@openai.com>'
  ].join('\n'));
+ const firstSeen=[
+  {commit:{author:{name:'Mara Example',email:'mara@example.org'},
+    message:'First\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Alice Example <alice@example.org>'}},
+  {commit:{author:{name:'JOHN WOOTEN',email:'60260750+JFWooten4@users.noreply.github.com'},
+    message:'Second\n\nCo-authored-by: mara example <mara+later@example.org>\nCo-authored-by: ALICE EXAMPLE <alice+later@example.org>'}},
+  {commit:{author:{name:'Zoe Example',email:'zoe@example.org'},message:'Third'}}
+ ];
+ const chronological=squashMessage('🧪 Preserve first human attribution',270,firstSeen);
+ assert.deepEqual(chronological.trailers,[
+  'Co-authored-by: Mara Example <mara@example.org>',
+  'Co-authored-by: John Wooten <noreply@wooten.link>',
+  'Co-authored-by: Alice Example <alice@example.org>',
+  'Co-authored-by: Zoe Example <zoe@example.org>',
+  'Co-authored-by: Codex (Web) <noreply@openai.com>'
+ ], 'Keep first-seen human order, name spelling and email despite later author or trailer matches');
+ const excluded=squashMessage('🧪 Exclude primary human',270,firstSeen,
+   {primaryAuthor:{name:'MARA EXAMPLE',email:'mara@example.org'}});
+ assert.deepEqual(excluded.trailers,chronological.trailers.slice(1),
+   'Removing the squash Git author must not reorder other contributors');
  assert(!/(^|\n)\* /.test(formatted.message), 'Commit list must use hyphens, not asterisks');
  assert(!formatted.message.includes('\n\n\n'), 'No extra blank lines between entries');
  assert.equal((formatted.message.match(/^Co-authored-by:/gm)||[]).length,2,

@@ -13,6 +13,7 @@ import workspace_search
 import codex_colors
 import codex_label
 import codex_composer
+import codex_cannon
 import codex_queued_edit
 import codex_usage
 import codex_context
@@ -44,6 +45,8 @@ CODEX_PROMOTIONS_START = '\n/* scm-toolkit-codex-promotions:start */\n'
 CODEX_PROMOTIONS_END = '\n/* scm-toolkit-codex-promotions:end */\n'
 CODEX_TIMESTAMPS_START = '\n/* scm-toolkit-codex-timestamps:start */\n'
 CODEX_TIMESTAMPS_END = '\n/* scm-toolkit-codex-timestamps:end */\n'
+CODEX_CANNON_START = '\n/* scm-toolkit-codex-cannon:start */\n'
+CODEX_CANNON_END = '\n/* scm-toolkit-codex-cannon:end */\n'
 CODEX_DICTATION_START = '\n/* scm-toolkit-codex-dictation:start */\n'
 CODEX_DICTATION_END = '\n/* scm-toolkit-codex-dictation:end */\n'
 
@@ -68,6 +71,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary = Path(destination) if destination is not None else ai_wrapper_path()
     primary_files = [
         (HERE / "ai_commit.py", primary),
+        (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "background_commit.py", primary.with_name("background_commit.py")),
         (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
@@ -1005,7 +1009,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True, cannon_payload=None):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -1048,6 +1052,12 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
         js = strip_codex_timestamps_payload(js)
+    if js.count(CODEX_CANNON_START) != js.count(CODEX_CANNON_END) or js.count(CODEX_CANNON_START) > 1:
+        raise ValueError('Incomplete Codex cannon patch; refusing to overwrite it.')
+    if CODEX_CANNON_START in js:
+        before, rest = js.split(CODEX_CANNON_START, 1)
+        _, after = rest.split(CODEX_CANNON_END, 1)
+        js = before + after
     if CODEX_PROMOTIONS_START in js:
         js = strip_codex_promotions_payload(js)
 
@@ -1109,10 +1119,16 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + CODEX_PROMOTIONS_END
         )
 
+    if not remove and cannon_payload:
+        js += CODEX_CANNON_START + cannon_payload + CODEX_CANNON_END
+
     if not remove and hide_timestamps:
         js += (
             CODEX_TIMESTAMPS_START
-            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text()
+            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text().replace(
+                '__SCM_TOOLKIT_ACTIVITY_CANNON__',
+                'data:image/png;base64,' + base64.b64encode(
+                    (HERE.parent / 'assets/imgs/activity-cannon.png').read_bytes()).decode('ascii'))
             + CODEX_TIMESTAMPS_END
         )
 
@@ -1583,14 +1599,15 @@ def plan_codex_patches(args, settings):
     inline_location = settings["codexInlineLocation"] and not args.uninstall
     clipboard_submit = settings["codexClipboardSubmit"] and not args.uninstall
     send_wing = settings.get("codexSendWing", True) and not args.uninstall
+    interrupt_send = settings.get("codexInterruptOnSendClick", True) and not args.uninstall
     for composer_path, composer_old, composer_new in codex_composer.patch_files(
-        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing
+        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing, interrupt_send=interrupt_send
     ):
         if composer_path in paths:
             index = paths.index(composer_path)
             new[index] = codex_composer.transform_layout(
                 new[index], inline_location, clipboard_submit,
-                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing)
+                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing, interrupt_send)
         else:
             paths.append(composer_path)
             old.append(composer_old)
@@ -1622,11 +1639,19 @@ def plan_codex_patches(args, settings):
             old.append(queue_old)
             new.append(queue_new)
 
+    cannon_payload = None
+    if settings["codexShowCannon"] and not args.uninstall:
+        try:
+            cannon_payload = codex_cannon.bundle()
+        except (OSError, ValueError) as error:
+            print(f'Warning: Flawless-GPT cannon unavailable: {error}. Skipping optional cannon.')
+
     should_find_codex = (
         settings["codexUsageResetCountdown"]
         or hide_reset_times
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
+        or settings["codexShowCannon"]
         or settings["codexHideDictation"]
         or settings["codexShortModelLabels"]
         or settings["codexWindowLabel"] != "Codex"
@@ -1654,6 +1679,7 @@ def plan_codex_patches(args, settings):
                 short_model_labels=settings["codexShortModelLabels"],
                 window_label=settings["codexWindowLabel"],
                 sticker_enabled=settings["codexRateLimitSticker"],
+                cannon_payload=cannon_payload,
                 remove=args.uninstall,
             )
         except ValueError as error:
@@ -1663,6 +1689,7 @@ def plan_codex_patches(args, settings):
                 or CODEX_LIMIT_START in codex_old
                 or CODEX_PROMOTIONS_START in codex_old
                 or CODEX_TIMESTAMPS_START in codex_old
+                or CODEX_CANNON_START in codex_old
                 or CODEX_DICTATION_START in codex_old
                 or CODEX_LABELS_START in codex_old
                 or CODEX_WINDOW_LABEL_START in codex_old

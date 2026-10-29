@@ -34,7 +34,8 @@
         "post_commit_spellcheck_toggle.js",
         "push_recovery.js",
         "push_retry.js",
-        "spellcheck_preview.js"
+        "spellcheck_preview.js",
+        "coreml_backend.py"
       ],
       "syntax": [
         "extension/codex/attribution.js",
@@ -45,7 +46,8 @@
         "assets/browser/spellcheck_bridge.js",
         "scripts/ai_commit.py",
         "scripts/commit_diagnostics_dashboard.py",
-        "scripts/sweetiebot_async_commit.py"
+        "scripts/sweetiebot_async_commit.py",
+        "scripts/coreml_backend.py"
       ]
     },
     "branches": {
@@ -145,6 +147,7 @@
         "chatgpt_project.js",
         "chatgpt_project_setup.js",
         "codex_adaptive_video.js",
+        "codex_cannon.py",
         "codex_clipboard_submit.js",
         "codex_colors.py",
         "codex_composer.py",
@@ -168,6 +171,7 @@
         "codex_rate_limit_controls.js",
         "codex_recent_chats.py",
         "codex_refresh.js",
+        "codex_send_interrupt.js",
         "codex_send_wing.js",
         "codex_short_model_labels.js",
         "codex_startup.py",
@@ -185,6 +189,7 @@
         "assets/codex/permissions-webview.js",
         "assets/codex/queued-edit-bridge.js",
         "assets/codex/queued-edit.js",
+        "assets/codex/send-interrupt.js",
         "assets/codex/send-wing.js",
         "assets/codex/video-frames.js",
         "scripts/codex_queued_edit.py",

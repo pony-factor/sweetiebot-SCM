@@ -243,7 +243,15 @@ function installPullRequestRefresh(vscode, view, owner) {
       timer = setInterval(refresh, interval());
     }
   };
-  owner._register(view.onDidChangeVisibility(update));
+  let previouslyVisible = Boolean(view.visible);
+  owner._register(view.onDidChangeVisibility(() => {
+    const visible = Boolean(view.visible);
+    // Opening the PR sidebar bypasses only the periodic interval, never
+    // the in-flight request guard or the GitHub rate-limit cooldown.
+    if (visible && !previouslyVisible) lastAttemptAt = -Infinity;
+    previouslyVisible = visible;
+    update();
+  }));
   owner._register(vscode.window.onDidChangeWindowState(update));
   owner._register(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration('scmToolkit.pullRequestAutoRefresh') ||

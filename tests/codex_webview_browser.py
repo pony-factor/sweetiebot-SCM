@@ -9,6 +9,7 @@ This runs real JS assets in a browser DOM, not the proprietary Codex extension.
 
 from pathlib import Path
 import os
+import base64
 import shutil
 import sys
 
@@ -26,7 +27,8 @@ header {padding:10px;background:#222}
 <div class="row"><time id="single">9:19 PM</time><span>Another activity</span></div>
 <div class="row"><span id="relative">Today at 6:44 PM</span><span>Something else</span></div>
 <article data-message-id="m1"><p>Meet at <span id="prose">9:18 PM</span></p><span id="message">CelestAI: Codex, says the message</span><div class="markdown"><span id="markdown-time">9:18 PM</span></div><a id="link-time" href="#activity-row">9:18 PM</a></article>
-<button id="activity" aria-expanded="false" aria-label="Worked for 1m 48s">Worked for 1m 48s</button>
+<button id="activity" aria-expanded="false" aria-label="Worked for 1m 48s"><span>Worked for 1m 48s</span><svg width="16" height="16"></svg></button>
+<button id="native-activity" aria-expanded="false"><span>Activity</span><svg width="16" height="16"></svg></button>
 <div id="ordinary">9:18 PM is not a separator</div>
 </body></html>"""
 
@@ -77,7 +79,9 @@ def run():
             "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", '"CelestAI"'
         )
         page.add_script_tag(content=title)
-        timestamp = (ASSETS / "hide-chat-timestamps.js").read_text()
+        timestamp = (ASSETS / "hide-chat-timestamps.js").read_text().replace(
+            '__SCM_TOOLKIT_ACTIVITY_CANNON__', 'data:image/png;base64,' + base64.b64encode(
+                (ROOT / 'assets/imgs/activity-cannon.png').read_bytes()).decode('ascii'))
         page.add_script_tag(content=timestamp)
 
         def state(selector):
@@ -93,7 +97,24 @@ def run():
         for selector in ["#summary", "#prose", "#message", "#markdown-time", "#link-time", "#ordinary"]:
             assert state(selector)["display"] != "none", (selector, state(selector))
         assert state("#title")["text"] == "CelestAINew Chat"
-        assert state("#activity")["text"] == "Activity"
+        assert state("#activity")["text"] == "Worked for 1m 48s"
+        assert page.locator("#activity").get_attribute("data-scm-toolkit-activity-dots") == "•"
+        assert page.eval_on_selector("#activity", 'el => getComputedStyle(el, "::after").order') == "-1"
+        assert page.eval_on_selector("#activity", 'el => getComputedStyle(el, "::after").fontSize') == "24px"
+        for selector in ['#activity', '#native-activity']:
+            assert page.locator(selector).get_attribute('data-scm-toolkit-activity-cannon') == 'true'
+            assert page.locator(selector).get_attribute('aria-label') == 'Activity'
+            assert page.eval_on_selector(selector + ' svg', 'el => getComputedStyle(el).display') == 'none'
+            assert page.eval_on_selector(selector, 'el => getComputedStyle(el, "::before").width') == '19px'
+            assert 'data:image/png;base64,' in page.eval_on_selector(selector, 'el => getComputedStyle(el, "::before").backgroundImage')
+            page.eval_on_selector(selector, "el => el.onclick = () => el.setAttribute('aria-expanded', String(el.getAttribute('aria-expanded') !== 'true'))")
+            page.locator(selector).click()
+            assert page.locator(selector).get_attribute('aria-expanded') == 'true'
+            page.locator(selector).focus()
+            page.keyboard.press('Enter')
+            assert page.locator(selector).get_attribute('aria-expanded') == 'false'
+        page.eval_on_selector('#activity span', "el => el.textContent = 'Worked for 3m 59s'")
+        page.wait_for_function("document.querySelector('#activity').getAttribute('data-scm-toolkit-activity-dots') === '• • •'")
         assert state("#message")["text"] == "CelestAI: Codex, says the message"
         assert page.locator("#link-time").get_attribute("href") == "#activity-row"
         assert page.locator("#new-chat").is_enabled()
