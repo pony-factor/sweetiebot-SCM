@@ -235,7 +235,7 @@ assert.equal(f.navigations.length, 0, 'A PR drafting launch cannot invoke Lindse
 f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),
   text:'',assistantText:'I prepared the conflict resolution but omitted the link.'});
 f.tick(250);f.composer.innerText='';f.tick(500);f.tick(6500);
-assert.match(f.composer.innerText,/Your response did not contain a complete/,'Missing link requests the encoded result');
+assert.match(f.composer.innerText,/did not contain a complete usable Apply/,'Missing link requests the encoded result');
 f.tick(500);
 assert.equal(f.clicks(),2,'The first follow-up is sent exactly once');
 f.composer.innerText='';
