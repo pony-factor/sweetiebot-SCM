@@ -287,17 +287,22 @@ def main():
 
         page.goto('about:blank')
         page.set_content('''<div data-conversation-role="user"><p id="user-copy">You've hit your usage limit. Try again at 10:26 PM.</p></div>
-            <article><p data-message-author-role="assistant" id="warning">You've hit your usage limit. Upgrade your plan or add credits to continue, or try again at 10:26 PM.</p></article>
+            <article><p data-message-author-role="assistant" id="warning">You've hit your usage limit. Upgrade your plan or add credits to continue, or try again at 10:26 PM.</p>
+              <p data-message-author-role="assistant" id="untimed-warning">You've hit your usage limit. Try again later.</p></article>
             <div style="position:absolute;bottom:20px;left:10px;width:350px">
               <div contenteditable="true" role="textbox" style="height:80px;border:1px solid"></div>
               <div role="status" id="footer">Rate limited</div></div>''')
         limit = (ROOT / 'assets/codex/rate-limit-controls.js').read_text().replace('"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"', repr(PNG)).replace('"__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__"','true')
         page.add_script_tag(content=limit)
         for _ in range(15):
-            page.eval_on_selector('#warning', "el=>el.textContent=\"You've hit your usage limit. Try again at 10:26 PM.\"")
-            page.wait_for_function("document.getElementById('warning').textContent==='Rate limited'")
+            # React may restore an untimed transcript warning repeatedly.
+            # Preserve concrete reset-time warnings for the user and continuation.
+            page.eval_on_selector('#untimed-warning', "el=>el.textContent=\"You've hit your usage limit. Try again later.\"")
+            page.wait_for_function("document.getElementById('untimed-warning').textContent==='Rate limited'")
+            assert '10:26 PM' in page.inner_text('#warning')
         assert page.inner_text('#user-copy').startswith("You've hit")
-        assert page.eval_on_selector('#warning', 'el=>getComputedStyle(el).fontSize') == '0px'
+        assert page.eval_on_selector('#untimed-warning', 'el=>getComputedStyle(el).fontSize') == '0px'
+        assert page.eval_on_selector('#warning', 'el=>getComputedStyle(el).fontSize') != '0px'
         page.wait_for_selector('[data-scm-toolkit-rate-limit-pony] img')
         assert page.eval_on_selector('[data-scm-toolkit-rate-limit-pony] img', 'el=>el.complete && el.naturalWidth>0')
         page.eval_on_selector('#footer', "el=>{el.textContent='Rated limited';el.style.width='100%';el.style.height='200px'}")
