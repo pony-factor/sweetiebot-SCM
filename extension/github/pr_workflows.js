@@ -44,6 +44,12 @@ function boundedLaunch(makePrompt, makeUrl, evidence, { shortenContext } = {}) {
 }
 
 async function openWorkflow(vscode, url, { openToSide = false } = {}) {
+  const destination = new URL(url);
+  const flags = new URLSearchParams(destination.hash.slice(1));
+  if (destination.origin === 'https://chatgpt.com' && (flags.get('sweetiebot_merge') === '1' || flags.get('sweetiebot_pr') === '1')) {
+    destination.searchParams.set('sweetiebot_launch', require('node:crypto').randomUUID());
+    url = destination.href;
+  }
   const before = new Set(vscode.window.tabGroups?.all.flatMap(group => group.tabs) || []);
   // VS Code's URL reuse ignores fragments, so PR/profile launches must always
   // get distinct tabs and a fresh preload rather than reusing a project chat.

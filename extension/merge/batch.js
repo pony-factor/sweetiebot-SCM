@@ -202,6 +202,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
     const prompt = (makePrompt ? makePrompt(selection) + '\n\n' : '') + instructions;
     const url = new URL(destination);
     bridge.setPrompt(prompt);
+    url.searchParams.set('sweetiebot_launch', new URL(bridge.url).pathname.split('/').pop());
     url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: bridge.url }).toString();
     await onState(state());
     return { url: url.href, callback: bridge.url, instructions };

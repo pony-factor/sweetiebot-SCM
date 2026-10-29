@@ -23,7 +23,7 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
     if (request.headers.host !== new URL(origin).host || ![route, route + '/status', route + '/prompt'].includes(request.url)) return json(404, { error: 'Unknown merge handoff.' });
     if (request.url === route + '/prompt') {
       if (request.method !== 'GET') return json(405, { error: 'Read-only merge prompt.' });
-      if (request.headers.origin && request.headers.origin !== origin) return json(403, { error: 'Use the native workflow transport.' });
+      if (request.headers.origin && request.headers.origin !== origin) return json(403, { error: 'Use the workflow transport.' });
       return prompt ? json(200, { prompt }) : json(404, { error: 'Merge prompt is not ready.' });
     }
     if (request.url === route + '/status') {
