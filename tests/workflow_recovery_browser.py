@@ -148,7 +148,7 @@ def main():
         page.add_script_tag(content=message_bar)
         page.evaluate('''() => {
             const bar=document.getElementById('bar');
-            const classes={push:'push',branch:'branch',sync:'sync-branch',delete:'delete-branch',autocomplete:'autocomplete',spellcheck:'spellcheck','post-spellcheck':'post-spellcheck',codex:'codex-coauthor','auto-publish':'auto-publish',home:'home','pull-request':'pull-request','pony-branch':'pony-branch'};
+            const classes={push:'push',branch:'branch',sync:'sync-branch',delete:'delete-branch',autocomplete:'autocomplete',spellcheck:'spellcheck','post-spellcheck':'post-spellcheck',codex:'codex-coauthor','auto-commit':'auto-commit','auto-publish':'auto-publish',home:'home','pull-request':'pull-request','pony-branch':'pony-branch'};
             for(const id of SCM_TOOLKIT_MESSAGE_BAR_IDS){
                 const node=document.createElement(id.startsWith('separator')?'span':'button');
                 node.className='scm-toolkit-'+(classes[id]||'divider');
