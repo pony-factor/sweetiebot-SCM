@@ -71,6 +71,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
         (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "background_commit.py", primary.with_name("background_commit.py")),
+        (HERE.parent / "extension/commits/pony_git_publish.js", primary.with_name("pony_git_publish.js")),
         (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
         (HERE / "cloud_repo_sync.py", primary.with_name("cloud_repo_sync.py")),
         (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),

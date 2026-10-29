@@ -152,7 +152,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
-                reject(new Error('Codex text capture timed out. Reopen this window after installing the toolkit.'));
+                reject(new Error(shareOnly
+                    ? 'Codex Share is still preparing. PR creation can continue without its public link.'
+                    : 'Codex text capture timed out. Reopen this window after installing the toolkit.'));
             }, shareOnly ? 155000 : 5000);
             pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
