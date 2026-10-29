@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../extension/merge/local_human_squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -15,7 +15,17 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const inWork=(...args)=>git('-C',work,...args);
   const inRemote=(...args)=>git('--git-dir='+remote,...args);
   const pushes=[];
+  const oldGlobalConfig=process.env.GIT_CONFIG_GLOBAL;
   try {
+    if(requireSignedCommit) {
+      await run('ssh-keygen',['-q','-t','ed25519','-N','','-C',author.email,'-f',path.join(root,'signing_key')]);
+      const publicKey=(await fs.readFile(path.join(root,'signing_key.pub'),'utf8')).trim();
+      const allowed=path.join(root,'allowed_signers');
+      await fs.writeFile(allowed,author.email+' '+publicKey+'\n');
+      const config=path.join(root,'gitconfig');
+      await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
+      process.env.GIT_CONFIG_GLOBAL=config;
+    }
     await git('init','--quiet','--bare','--initial-branch=main',remote);
     await git('init','--quiet','--initial-branch=main',work);
     await inWork('remote','add','origin',remote);
@@ -57,6 +67,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       if(endpoint.endsWith('/pulls/1'))return pr();
       if(endpoint.includes('/pulls/1/commits?'))return commits;
+      if(endpoint.includes('/pulls?state=open&per_page=100&page='))return [];
       if(endpoint.includes('/rules/branches/')){
         if(rulesUnavailable||rulesForbidden)throw Object.assign(Error('HTTP 403'),{status:403,githubMessage:rulesUnavailable?'Upgrade to GitHub Pro or make this repository public to enable this feature.':'Resource not accessible by integration'});
         return rules;
@@ -68,7 +79,10 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       if(endpoint.includes('/commits/')){
         const sha=endpoint.split('/').at(-1);
         const [name,email,...message]=(await inRemote('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
-        return {commit:{author:{name,email},message:message.join('\0')},parents:(await inRemote('show','-s','--format=%P',sha)).split(' ').map(sha=>({sha}))};
+        const signed=/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',sha));
+        return {commit:{author:{name,email},message:message.join('\0'),
+          verification:{verified:signed,reason:signed?'valid':'unsigned'}},
+          parents:(await inRemote('show','-s','--format=%P',sha)).split(' ').map(sha=>({sha}))};
       }
       throw Error('Unexpected API write or endpoint: '+endpoint);
     };
@@ -76,8 +90,16 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     const localGit=async(...args)=>{
       if(args[0]==='clone')args[3]=remote;
       if(args.includes('push')){
-        pushes.push(args);assert(!args.some(arg=>arg.startsWith('--force')));
-        assert(args.at(-1).endsWith(':refs/heads/main') || advanceBase&&args.at(-1).endsWith(':refs/heads/feature'),'Only selected references receive new commits');
+        pushes.push(args);
+        const lease=args.find(arg=>arg.startsWith('--force-with-lease='));
+        assert(!args.includes('--force'),'Never force-push a base branch');
+        if(lease) {
+          assert.equal(lease,'--force-with-lease=refs/heads/feature:'+headSha);
+          assert(args.at(-1).endsWith(':refs/heads/feature'),'A leased rewrite may target only the PR head');
+        } else {
+          assert(args.at(-1).endsWith(':refs/heads/main') || advanceBase&&args.at(-1).endsWith(':refs/heads/feature'),
+            'Normal pushes target only the selected base or PR head');
+        }
         if(race){competing=await inRemote('commit-tree',baseSha+'^{tree}','-p',baseSha,'-m','Concurrent base update');await inRemote('update-ref','refs/heads/main',competing,baseSha);}
       }
       return git(...args);
@@ -91,9 +113,17 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       const result=await action();
       if(protectedBase||rules.length||failed){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
-        assert.equal(result.merged,true,JSON.stringify(result));if(!humanOpener)assert.equal(result.method,'local-git');assert.equal(pushes.length,humanOpener?(advanceBase?1:0):advanceBase?2:1);
+        assert.equal(result.merged,true,JSON.stringify(result));
+        if(requireSignedCommit) assert.equal(result.method,'local-signed-squash');
+        else if(!humanOpener) assert.equal(result.method,'local-git');
+        assert.equal(pushes.length,requireSignedCommit?2:humanOpener?(advanceBase?1:0):advanceBase?2:1);
         assert.equal(await inRemote('rev-parse',result.sha+'^1'),baseSha);
-        if(!humanOpener)assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
+        if(requireSignedCommit) {
+          assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha,'A signed squash has only the base as its parent');
+          assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),'The published squash carries a real SSH signature');
+          await inRemote('verify-commit',result.sha);
+          assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
+        } else if(!humanOpener) assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
         await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),'finished feature');
@@ -101,8 +131,12 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
     }
     if(!advanceBase)assert.equal(await branch('feature'),headSha,'The original PR head is never rewritten or synchronized unnecessarily');
-  } finally {await fs.rm(root,{recursive:true,force:true});}
+  } finally {
+    if(oldGlobalConfig===undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL=oldGlobalConfig;
+    await fs.rm(root,{recursive:true,force:true});
+  }
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{humanOpener:true,lostAck:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true}])await fixture(options);
- console.log('Local Git merge preserves original heads and human authors, verifies ancestry, respects rules/checks and rejects destination races.');
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{humanOpener:true,lostAck:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true}])await fixture(options);
+ console.log('Local Git merges preserve history and human authors; signed squashes verify signatures, lease only the PR head, fast-forward unprotected bases, and respect checks and branch rules.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,7 +1,9 @@
 'use strict';
 
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
+const { promisify } = require('node:util');
+const exec = promisify(execFile);
 const { verifiedHumanAuthor } = require('./human_squash_merge');
 const { humanSquashMerge } = require('./local_human_squash');
 const { squashMessage, readCommits } = require('./squash_attribution');
@@ -9,6 +11,14 @@ const { squashMessage, readCommits } = require('./squash_attribution');
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
 const SHA = /^[a-f0-9]{40}$/i;
+
+async function gitCommitSigningEnabled(directory) {
+  if (typeof directory !== 'string' || !directory.trim()) return false;
+  const { stdout } = await exec('git', [
+    '-C', directory, 'config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign'
+  ], { timeout: 5000, maxBuffer: 4096 });
+  return stdout.trim() === 'true';
+}
 
 // VS Code callers provide the signed-in user's transport; local handoffs
 // inherit that same session through GH_TOKEN, never the PR-creation bot.
@@ -69,8 +79,11 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 }
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
-  { humanMerge = humanSquashMerge, method = 'squash', gitToken } = {}) {
+  { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath } = {}) {
   if (!['squash', 'merge', 'local-signed-squash'].includes(method)) throw new Error('Unknown merge method.');
+  if (method === 'squash' && repositoryPath && await gitCommitSigningEnabled(repositoryPath)) {
+    method = 'local-signed-squash';
+  }
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||
@@ -154,11 +167,6 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   };
   if (method === 'local-signed-squash') {
     if (pr.mergeable !== true) throw new Error('The PR must be confirmed mergeable before starting a signed local squash.');
-    const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
-    const human = verifiedHumanAuthor(originalCommits);
-    if (pr.user.type === 'User' && human.login.toLowerCase() === pr.user.login.toLowerCase()) {
-      throw new Error('This PR already has a matching human opener; use the normal squash option without rewriting the PR branch.');
-    }
     return mergeWithHumanAuthor(true);
   }
   if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
@@ -188,4 +196,4 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }
 
-module.exports = { squashMergePullRequest, githubApi };
+module.exports = { squashMergePullRequest, githubApi, gitCommitSigningEnabled };

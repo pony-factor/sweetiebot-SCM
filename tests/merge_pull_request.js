@@ -2,7 +2,12 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { existsSync } = require('node:fs');
-const { githubApi } = require('../extension/merge/pull_request');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { execFile } = require('node:child_process');
+const run = require('node:util').promisify(execFile);
+const { githubApi, gitCommitSigningEnabled } = require('../extension/merge/pull_request');
 const { squashMergePullRequest } = require('../extension/merge/pull_request');
 
 (async () => {
@@ -131,10 +136,37 @@ const { squashMergePullRequest } = require('../extension/merge/pull_request');
   assert.equal(signedOptions.rewriteReason,'');
   assert.equal(signedOptions.requireSignedCommit,true);
   assert.equal(signedOptions.offerAuthorChoice,false);
-  await assert.rejects(squashMergePullRequest(input,async(endpoint,options)=>{
+  let humanSignedOptions;
+  const humanSignedResult=await squashMergePullRequest(input,async(endpoint,options)=>{
     if(endpoint==='repos/owner/repo/pulls/12'&&!options)return {...pr,mergeable:true};
     return api(endpoint,options);
-  },{method:'local-signed-squash',humanMerge:async()=>{throw Error('Should not sign a human-opened PR');}}),/matching human opener/);
+  },{method:'local-signed-squash',humanMerge:async(repository,number,options)=>{
+    humanSignedOptions=options;
+    assert.equal(repository,'owner/repo');assert.equal(number,12);
+    return {merged:true,sha:'b'.repeat(40)};
+  }});
+  assert.equal(humanSignedResult.merged,true,'A signed squash is available for a matching human opener too');
+  assert.equal(humanSignedOptions.requireSignedCommit,true);
+  assert.equal(humanSignedOptions.localGitMerge,true);
+
+  const signingRepo=await fs.mkdtemp(path.join(os.tmpdir(),'sweetiebot-signing-config-'));
+  try {
+    await run('git',['init','--quiet',signingRepo]);
+    assert.equal(await gitCommitSigningEnabled(signingRepo),false);
+    await run('git',['-C',signingRepo,'config','commit.gpgsign','true']);
+    assert.equal(await gitCommitSigningEnabled(signingRepo),true);
+    let autoSignedOptions;
+    const autoSignedResult=await squashMergePullRequest(input,async(endpoint,options)=>{
+      if(endpoint==='repos/owner/repo/pulls/12'&&!options)return {...pr,mergeable:true};
+      return api(endpoint,options);
+    },{repositoryPath:signingRepo,humanMerge:async(repository,number,options)=>{
+      autoSignedOptions=options;
+      return {merged:true,sha:'b'.repeat(40)};
+    }});
+    assert.equal(autoSignedResult.merged,true);
+    assert.equal(autoSignedOptions.requireSignedCommit,true,
+      'The default Kefania squash action honors local commit.gpgsign=true');
+  } finally { await fs.rm(signingRepo,{recursive:true,force:true}); }
   // A human opener differing from the original author uses the same local path.
   let differentAuthorPrepared = false;
   assert((await squashMergePullRequest(input, async (endpoint, options) => {
