@@ -45,6 +45,11 @@ class BackgroundCommitTests(unittest.TestCase):
     def git(self, *args, **kwargs):
         return subprocess.check_output(['/usr/bin/git', *args], text=True, **kwargs).strip()
 
+    def assert_no_placeholder_titles(self, *revisions):
+        subjects = self.git('log', '--format=%s', *revisions)
+        self.assertNotIn('hoof_', subjects)
+        self.assertNotIn('placeholder_', subjects)
+
     def queue(self, **request):
         result = worker.enqueue({'message': '🧪 Record captured change', **request}, start=False)
         directory = self.root / 'jobs' / result['id']
@@ -361,6 +366,16 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
 
+    def test_finalized_advance_with_untracked_hoof_placeholder_stays_blocked(self):
+        directory = self.queue(push=True)
+        self.git('commit', '--allow-empty', '-qm', 'hoof_123456789AB')
+        before = self.git('rev-parse', 'HEAD')
+        worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertIn('unfinished commit messages', self.job(directory)['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
+
     def test_finalized_job_cannot_recover_after_reset_removes_queued_commit(self):
         directory = self.queue(push=True)
         alternate = self.git('commit-tree', 'HEAD^{tree}', input='Unrelated root\n')
@@ -650,7 +665,7 @@ class BackgroundCommitTests(unittest.TestCase):
             directory = self.queue(message='', push=True, signoff=True)
         provisional = self.git('rev-parse', 'HEAD')
         self.assertRegex(directory.name, r'^[1-9A-HJ-NP-Za-km-z]{11}$')
-        self.assertEqual(self.git('log', '-1', '--format=%s'), 'placeholder_' + directory.name)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'hoof_' + directory.name)
         identity = self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI')
         self.assertIn(worker.PLACEHOLDER, self.git('log', '-1', '--format=%s'))
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
@@ -1241,7 +1256,7 @@ worker.work(Path(sys.argv[2]))
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Finish shared base', '')):
             worker.work(first)
         self.assertEqual(self.git('rev-parse', 'isolated'), self.git('rev-parse', 'main'))
-        self.assertNotIn('placeholder_', self.git('log', '--format=%s', 'isolated'))
+        self.assert_no_placeholder_titles('isolated')
         self.assertEqual((destination / 'story.txt').read_text(), 'Independent topic edit\n')
         self.assertEqual((self.repo / 'story.txt').read_text(), before)
 
@@ -1268,7 +1283,7 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(self.git('show', ':story.txt'), 'Later staging')
         self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Fork snapshot')
         self.assertEqual((self.repo / 'draft.txt').read_text(), 'Untracked draft\n')
-        self.assertNotIn('placeholder_', self.git('log', '--format=%s'))
+        self.assert_no_placeholder_titles()
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'fork'), self.job(second)['sha'])
 
     def test_fork_recovery_moves_all_refs_after_interruption(self):
@@ -1335,6 +1350,8 @@ worker.work(Path(sys.argv[2]))
         self.git('commit', '-q', '-m', 'Base')
         base = self.git('rev-parse', 'HEAD')
         self.git('commit', '--allow-empty', '-q', '-m', 'placeholder_123456789AB')
+        self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
+        self.git('commit', '--allow-empty', '-q', '-m', 'hoof_123456789AB')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
         self.git('commit', '--allow-empty', '-q', '-m', 'Later completed message')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
@@ -1537,8 +1554,7 @@ worker.work(Path(sys.argv[2]))
         self.assertEqual(self.git('log', '-1', '--format=%B'), message)
         remote = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote, self.git('rev-parse', 'HEAD'))
-        self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote))
-
+        self.assert_no_placeholder_titles(remote)
     def test_multiple_placeholders_finalize_in_order_and_preserve_later_staging(self):
         directories = []
         for n in range(3):
@@ -1558,7 +1574,7 @@ worker.work(Path(sys.argv[2]))
                 worker.work(directory)
             self.assertEqual(self.job(directory)['phase'], 'done')
             remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
-            self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote_tip))
+        self.assert_no_placeholder_titles(remote_tip)
             self.assertEqual(self.git('show', 'HEAD:story.txt'), 'Captured change 2')
             self.assertEqual(self.git('show', ':story.txt'), 'Later staged work')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
@@ -1751,8 +1767,7 @@ worker.work(directory)
             worker.resume(parallel=False)
         self.assertEqual([self.job(directory)['phase'] for directory in (first, second, third)], ['done'] * 3)
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
-        self.assertNotIn('placeholder_', self.git('log', '--format=%s'))
-
+        self.assert_no_placeholder_titles()
     def test_offline_earlier_push_does_not_block_later_title_or_push(self):
         first = self.queue(message='', push=True)
         (self.repo / 'story.txt').write_text('Second snapshot\n')
@@ -1771,8 +1786,7 @@ worker.work(directory)
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
         remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote_tip, self.git('rev-parse', 'HEAD'))
-        self.assertNotIn('placeholder_', self.git('log', '--format=%s', remote_tip))
-
+        self.assert_no_placeholder_titles(remote_tip)
     def test_inflight_older_worker_can_recover_after_a_new_placeholder(self):
         first = self.queue(message='')
         (self.repo / 'story.txt').write_text('Second snapshot\n')
@@ -1811,8 +1825,7 @@ worker.work(directory)
             worker.work(second)
         self.assertEqual(self.job(second)['phase'], 'done')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '2')
-        self.assertNotIn('placeholder_', self.git('log', '--format=%s'))
-
+        self.assert_no_placeholder_titles()
     def test_cancel_preserves_staging_and_releases_gate(self):
         directory = self.queue()
         tree = self.git('write-tree')
