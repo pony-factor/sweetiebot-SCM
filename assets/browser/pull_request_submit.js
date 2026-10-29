@@ -137,7 +137,8 @@
             || url.href.length > 80000) continue;
         const result = new URLSearchParams(url.hash.slice(1));
         const expectedKeys = mergeLaunch ? ['result', 'result_gz'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
-        if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
+        if ([...result.keys()].some(key => !expectedKeys.includes(key)) ||
+            (mergeLaunch ? !expectedKeys.some(key => result.get(key)?.trim()) : !expectedKeys.every(key => result.get(key)?.trim()))) continue;
         if (mergeLaunch) {
           try {
             if (Boolean(result.get('result')) === Boolean(result.get('result_gz'))) continue;
