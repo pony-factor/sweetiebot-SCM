@@ -115,6 +115,7 @@ jobs:
           python tests/codex_queued_edit_browser.py
           python tests/codex_webview_browser.py
           python tests/codex_webview_iframe.py
+          python tests/workflow_recovery_browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
           node tests/codex_hide_chat_timestamps.js
@@ -150,3 +151,24 @@ jobs:
           node tests/github_app_settings.js
           node tests/kefania_app_environment.js
           node tests/lindsey_bulk_merge.js
+
+  packaged-runtime:
+    name: Installed extension imports (${{ matrix.os }})
+    needs: inventory
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve every installed relative JavaScript dependency
+        run: python -m unittest tests.packaged_runtime -v

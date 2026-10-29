@@ -127,7 +127,8 @@
         "pr_workflows.js",
         "pull_request.js",
         "squash_attribution.js",
-        "ai_review_reply.js"
+        "ai_review_reply.js",
+        "workflow_recovery.js"
       ],
       "syntax": [
         "extension/github/pr_actions.js",
@@ -188,7 +189,9 @@
         "assets/codex/send-wing.js",
         "assets/codex/video-frames.js",
         "scripts/codex_queued_edit.py",
-        "scripts/ui_customizations.py"
+        "scripts/ui_customizations.py",
+        "assets/codex/rate-limit-continuation.js",
+        "assets/codex/activity-cannon.js"
       ]
     },
     "kefania": {
@@ -338,7 +341,8 @@
         "reload_guard.js",
         "repair.py",
         "runtime_revision.js",
-        "update.py"
+        "update.py",
+        "packaged_runtime.py"
       ],
       "syntax": [
         "extension/extension.js",
@@ -364,6 +368,7 @@
   "specialized_browser_tests": [
     "codex_webview_browser.py",
     "codex_webview_iframe.py",
-    "codex_queued_edit_browser.py"
+    "codex_queued_edit_browser.py",
+    "workflow_recovery_browser.py"
   ]
 }
