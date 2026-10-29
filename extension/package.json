@@ -345,7 +345,11 @@
         },
         "scmToolkit.squashTrailerSeparatorStyle": {
           "type": "string",
-          "enum": ["underscores", "hyphens", "none"],
+          "enum": [
+            "underscores",
+            "hyphens",
+            "none"
+          ],
           "default": "underscores",
           "scope": "application",
           "description": "Divider between squash summaries and co-author trailers: ten underscores, nine hyphens, or none."
@@ -677,6 +681,26 @@
           "type": "boolean",
           "default": false,
           "description": "Hide the Codex permissions icon; use Change permissions in Magic Settings instead."
+        },
+        "scmToolkit.mergeAutoFixCi": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Opt in to opening a separate repair task once per failed PR head after Lindsey's built-in CI retry is exhausted. Never bypasses checks, approvals or merge policies."
+        },
+        "scmToolkit.mergeAutoFixCiMethod": {
+          "type": "string",
+          "enum": [
+            "web",
+            "codex"
+          ],
+          "enumDescriptions": [
+            "Open failing-checks repair using GPT web.",
+            "Open failing-checks repair in an isolated Codex branch workspace."
+          ],
+          "default": "web",
+          "scope": "application",
+          "description": "Runner for automatic CI repair during Lindsey bulk merges; also selected by dashboard manual runner buttons."
         }
       }
     }

@@ -10,7 +10,7 @@ const execute = promisify(execFile);
 const VALID_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 async function pendingDirectory(root, run) {
-  const { stdout } = await run('git', ['rev-parse', '--absolute-git-dir'], { cwd: root });
+  const { stdout } = await run(process.env.SCM_TOOLKIT_REAL_GIT || 'git', ['rev-parse', '--absolute-git-dir'], { cwd: root });
   return path.join(String(stdout).trim(), 'sweetiebot-pony-publish');
 }
 
@@ -46,7 +46,7 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   const relativePath = `ponies/${storedPath}`;
   const root = path.resolve(directory);
   const git = async (...args) => {
-    const { stdout } = await run('git', args, {
+    const { stdout } = await run(process.env.SCM_TOOLKIT_REAL_GIT || 'git', args, {
       cwd: root, timeout: 30000, maxBuffer: 512 * 1024,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
     });
@@ -179,3 +179,19 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
 }
 
 module.exports = { publishPonyProfile, pendingPonyProfiles };
+
+if (require.main === module) {
+  (async () => {
+    let input = '';
+    for await (const chunk of process.stdin) {
+      input += chunk;
+      if (Buffer.byteLength(input) > 10000) throw new Error('Pony publication request is too large.');
+    }
+    const request = JSON.parse(input);
+    const result = await publishPonyProfile(request.directory, request.pony, request.path);
+    process.stdout.write(JSON.stringify(result));
+  })().catch(error => {
+    process.stderr.write(error.message + '\n');
+    process.exitCode = 1;
+  });
+}

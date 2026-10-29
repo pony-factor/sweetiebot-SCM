@@ -2417,23 +2417,9 @@ def main() -> None:
         if len(split_groups) > 1:
             raise SystemExit(commit_split_groups(argv, split_groups))
         spellcheck_enabled = post_commit_spellcheck_enabled()
-        use_async = (
-            git_config_bool("scm-toolkit.ai-commit-async", False)
-            and not spellcheck_enabled
-            and git_output("config", "--type=bool", "--get", "commit.gpgsign").strip() != "true"
-            and not any(arg == "-S" or arg.startswith(("-S", "--gpg-sign")) for arg in commit_args)
-            and bool(current_branch())
-        )
-        if use_async:
-            # Only automatically generated ordinary staged commits use the
-            # placeholder. Explicit messages and special modes remain intact.
-            sys.modules.setdefault("ai_commit", sys.modules[__name__])
-            from sweetiebot_async_commit import begin
-            raise SystemExit(begin(
-                REAL_GIT, GIT_GLOBAL_ARGS, commit_args, stat, diff, files,
-                should_add_default_branch_description(), staged_file_context(files),
-                os.path.abspath(__file__),
-            ))
+        # Legacy provisional mode is retired. Only existing pending jobs are
+        # recovered by the Git operation barrier above; new commits use direct
+        # title generation or the separate durable background queue.
         title, description = generate_message(
             stat,
             diff,

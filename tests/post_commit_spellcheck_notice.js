@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice
+  finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, registerPostCommitSpellcheckNotice
 } = require('../extension/commits/post_commit_spellcheck_notice');
 const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange, spellcheckChangeSpans } = require('../extension/commits/spellcheck_diff');
 
@@ -100,6 +100,107 @@ test('never reopens a prior-session spellcheck notice, including late background
   assert.deepEqual(await takeNotice(legacyCurrent.repo,
     {fs: legacyCurrent.io, git: legacyCurrent.git, sessionStartedAt: 2000}),
     {head, paths: ['notes/report.md'], root: '/repo'});
+});
+
+test('reload discards an open spellcheck popup and late results from the previous VS Code session', async () => {
+  const requestedAt = timestamp => JSON.stringify({
+    version: 1, head, paths: ['notes/report.md'], requestedAtMs: timestamp
+  });
+  const f = fixture({noticeContent: requestedAt(1100), mtimeMs: 2500});
+  const noticePath = '/repo/.git/sweetiebot-spellcheck-ready.json';
+  const commands = new Map();
+  let rescan;
+  let diffReads = 0;
+  let activeContext;
+  let visiblePopup;
+  const vscode = {
+    commands: {
+      registerCommand(name, callback) {
+        commands.set(name, callback);
+        return {dispose() { commands.delete(name); }};
+      }
+    },
+    extensions: {
+      getExtension(id) {
+        assert.equal(id, 'vscode.git');
+        return {activate: async () => ({getAPI() {
+          return {
+            repositories: [f.repo],
+            onDidOpenRepository(callback) {
+              rescan = callback;
+              return {dispose() { if (rescan === callback) rescan = undefined; }};
+            }
+          };
+        }})};
+      }
+    }
+  };
+  const flush = async () => {
+    // The real scanner processes the notice asynchronously after Git activates.
+    for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve));
+  };
+  async function activate(startedAt) {
+    const context = {subscriptions: []};
+    const realNow = Date.now;
+    Date.now = () => startedAt;
+    try {
+      await registerPostCommitSpellcheckNotice(vscode, context, {
+        fs: f.io, git: f.git, diff: async () => { diffReads++; return patch; }
+      });
+    } finally {
+      Date.now = realNow;
+    }
+    activeContext = context;
+    await flush();
+  }
+  function openPopup() {
+    visiblePopup = commands.get('sweetiebot.takeSpellcheckPopup')();
+    return visiblePopup;
+  }
+  function reloadWindow() {
+    // A VS Code reload disposes registered commands, pending popup sessions,
+    // and repository pollers before a fresh extension host is activated.
+    for (const subscription of [...activeContext.subscriptions].reverse()) subscription.dispose();
+    visiblePopup = undefined;
+    activeContext = undefined;
+  }
+
+  try {
+    await activate(1000);
+    const first = openPopup();
+    assert.equal(first?.title, 'Spellcheck Changes', 'A current-session spellcheck opens a real review payload');
+    assert.match(first.html, /notes\/report\.md/);
+    assert.equal(diffReads, 1);
+    assert.equal(f.files.size, 0, 'The notice is claimed on first presentation');
+
+    reloadWindow();
+    assert.equal(visiblePopup, undefined, 'Reload closes the visible modal');
+    assert.equal(takeSpellcheckPopup(), undefined, 'The old extension cannot replay a queued modal');
+    await assert.rejects(
+      finishSpellcheckPreview(vscode, first.sessionId, 'revert', ''),
+      /no longer available/,
+      'Disposed reviews cannot accept or revert edits after reload'
+    );
+
+    // The worker began in the first session, but writes its notice only
+    // after the second VS Code activation. Its file timestamp looks new.
+    f.files.set(noticePath, requestedAt(1100));
+    await activate(2000);
+    assert.equal(openPopup(), undefined, 'Old worker results cannot reopen Spellcheck Changes');
+    assert.equal(diffReads, 1, 'Stale results never even reach diff rendering');
+    assert.equal(f.files.size, 0, 'The stale notice is consumed, not replayed');
+    assert.equal(f.repo.state.workingTreeChanges.length, 1, "The user's unstaged correction survives reload");
+
+    // A genuinely new spellcheck in the reloaded session still works.
+    f.files.set(noticePath, requestedAt(2100));
+    assert.equal(typeof rescan, 'function');
+    rescan();
+    await flush();
+    assert.equal(openPopup()?.title, 'Spellcheck Changes');
+    assert.equal(diffReads, 2, 'A new-session notice still opens its own review');
+  } finally {
+    if (activeContext) reloadWindow();
+  }
 });
 
 test('refuses to read a symlinked or oversized metadata notice', async () => {

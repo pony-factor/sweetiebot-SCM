@@ -107,7 +107,7 @@ The Git wrapper is installed as `~/.local/bin/scm-toolkit-git`. If setting `git.
 
 Commit instructions are read from `~/.config/sweetiebot/commit-instructions.md`; the shared starter lives at `assets/commit-instructions.md`. They guide the title style without changing what was actually staged. The model can generate descriptions on the default branch; detailed descriptions on other branches are a separate opt-in setting.
 
-**Durable background Commit and Push is opt-in and off by default.** Direct mode commits normally. In durable mode, Sweetiebot saves the staged tree as a local temporary-title commit, finalizes the title in order, and pushes only after finalization. A macOS login agent can recover unfinished work while VS Code is closed if the Mac is awake and the user remains logged in. Do not amend, reset, or push a branch with unresolved placeholder jobs; use the recorded recovery information. The older **Legacy provisional commit finalization** setting is a different option.
+**Durable background Commit and Push is opt-in and off by default.** Direct mode commits normally. In durable mode, Sweetiebot saves the staged tree as a local temporary-title commit, finalizes the title in order, and pushes only after finalization. A macOS login agent can recover unfinished work while VS Code is closed if the Mac is awake and the user remains logged in. Do not amend, reset, or push a branch with unresolved placeholder jobs; use the recorded recovery information. The former legacy provisional mode is retired; its saved `scm-toolkit.ai-commit-async` setting no longer affects new commits. Recovery safeguards remain for unfinished legacy jobs.
 
 Git hooks, GPG signing, staged/unstaged selection, and remote branch rules still apply. A preflight checks GitHub size limits for automatically generated commits. An oversized individual file requires explicit action; GitHub's diff-view limits are warnings rather than evidence that a commit is safe to split. **Normalize staged whitespace** controls eligible added-line trailing whitespace and final newlines independently of title generation.
 
@@ -172,6 +172,8 @@ The GitHub App, GitHub CLI, local Kefania service, VS Code, and ChatGPT account 
 
 A **ChatGPT project for PR and pony research** is optional. When a branch name identifies a pony, local pony info or independent research can open separately without inserting character notes into the PR description. Keep the dedicated PR workspace open until the session completes.
 
+Newly researched Kafania pony profiles are published as isolated, one-file commits on its tracked `main` branch. The shared detached Sweetiebot worker journals pending publication and retries after failures, including after VS Code restarts while the Mac user session is active. Existing profiles are not rewritten; unrelated staged files and unpushed commits remain untouched. Rejected pushes and divergent histories require manual recovery, never a force-push.
+
 ### Review, conflict resolution, and merge with Lindsey
 
 Sweetiebot's **Lindsey** integration provides individual and bulk PR review/merge surfaces, a progress dashboard, and an activity timeline. **Settings → Pull requests → Squash co-author separator** selects the default ten-underscore divider (`__________`), the conventional nine-hyphen divider (`---------`), or **None** (a standard blank line before Git trailers). The GitHub Pull Requests view can show a quick squash-merge control; **Merge All** and selected bulk operations launch a dedicated ChatGPT workspace. Selecting PRs or submitting merge requests is not itself a completed merge.
@@ -195,6 +197,18 @@ ollama pull qwen3-embedding:0.6b
 Workspace Search is a **local file index**, not a complete historical archive of every ChatGPT conversation, PDF, commit, or external source. It does not upload your workspace to GitHub for search. See [Workspace Search details](docs/workspace-search.md) and [EFS attribution](efs/THIRD_PARTY_NOTICES.md).
 
 ## Codex, browser, and window controls
+
+### Flawless-GPT cannon in Codex
+
+**Codex → Time → Show cannon** (off by default) enables Flawless-GPT’s cannon and minute counter beside active **Working for** and completed **Worked for** durations in the Codex sidebar. Precise elapsed times remain available, and the cannon takes priority over the Hide chat timestamps activity-label substitution.
+
+```sh
+git config --global scm-toolkit.codex-show-cannon true
+python3 scripts/install.py --codex-only
+```
+
+The installer pins and validates the original Flawless-GPT [duration JavaScript](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/js/chat/worked-duration.js), [stylesheet](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/css/worked-duration.css), and [cannon image](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/artwork/searching-complete.png). Resources are cached under `~/.cache/sweetiebot/flawless-cannon/` for offline repair. A pinned local checkout may be set with `SCM_TOOLKIT_FLAWLESS_SOURCE_DIR`. If unavailable, installation skips only the optional cannon.
+
 
 Sweetiebot also has settings for supported Codex composer controls, usage-limit displays, promotion cards, dictation visibility, sidebar labels, and **Keep awake while Codex works**. **Codex → Customization → Pegasus wing Send icon** replaces the Send arrow with a white-outline SVG wing by default. Its color follows the VS Code theme or the existing **Send button icon** override; Queue and Stop keep their native appearance. Disable it to restore the arrow. Other controls affect Integrated Browser blank-tab URLs, browser tab handling, window labels, notifications, and title-bar buttons. Availability depends on the installed VS Code/Codex build and whether the corresponding patch anchors are supported.
 

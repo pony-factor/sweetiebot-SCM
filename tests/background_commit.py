@@ -79,6 +79,46 @@ class BackgroundCommitTests(unittest.TestCase):
         worker.write_journal(directory / 'job.json', job)
         return directory
 
+    def test_pony_job_is_durable_and_preserves_unrelated_staging(self):
+        profile = self.repo / 'ponies' / 'g4-mares' / 'stardom.json'
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({
+            'packId': 'g4-mares', 'slug': 'stardom', 'profile': 'Research'
+        }))
+        request = {'pony': {'packId': 'g4-mares', 'slug': 'stardom'},
+                   'path': 'g4-mares/stardom.json'}
+        staged = self.git('diff', '--cached', '--name-only')
+        with patch.object(worker.shutil, 'which', return_value='/usr/bin/node'):
+            first = worker.enqueue_pony(request, start=False)
+            again = worker.enqueue_pony(request, start=False)
+        self.assertTrue(first['queued'])
+        self.assertEqual(first['id'], again['id'])
+        record = self.job(self.root / 'jobs' / first['id'])
+        self.assertEqual(record['kind'], 'pony-profile')
+        self.assertEqual(record['phase'], 'queued')
+        self.assertEqual(record['path'], request['path'])
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), staged)
+        with self.assertRaisesRegex(ValueError, 'Unexpected pony profile path'):
+            worker.enqueue_pony({**request, 'path': '../unsafe.json'}, start=False)
+
+    def test_pony_worker_waits_behind_background_commits(self):
+        profile = self.repo / 'ponies' / 'g4-mares' / 'stardom.json'
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({
+            'packId': 'g4-mares', 'slug': 'stardom', 'profile': 'Research'
+        }))
+        with patch.object(worker.shutil, 'which', return_value='/usr/bin/node'):
+            accepted = worker.enqueue_pony({
+                'pony': {'packId': 'g4-mares', 'slug': 'stardom'},
+                'path': 'g4-mares/stardom.json'}, start=False)
+        pending = self.root / 'jobs' / accepted['id']
+        self.queue(push=True)
+        worker.work_pony(pending)
+        job = self.job(pending)
+        self.assertEqual(job['phase'], 'waiting')
+        self.assertIn('background commit', job['error'])
+        self.assertGreater(job['nextAttemptAt'], time.time())
+
     def test_inspection_snapshot_reuses_blob_sizes_without_second_cat_file(self):
         snapshot = self.approved_snapshot()
         with patch.object(worker.core, 'staged_blob_sizes', side_effect=AssertionError(

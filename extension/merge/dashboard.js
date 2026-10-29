@@ -6,6 +6,7 @@ const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./blocker_actions');
 const { createReactionChoices } = require('./reaction_choices');
 const { createMergeDashboardPersistence } = require('./dashboard_persistence');
+const { deferredCiRepairCandidate } = require('./auto_ci_repair');
 const { createLindseyReadFetch } = require('../github/read_api');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
@@ -297,6 +298,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const inlineComments = new Map();
   const observedReviewActivity = new Map();
   const reportedDeferrals = new Set();
+  const autoCiAttempts = new Set();
+  let latestBatchState = null;
   const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
     storageDirectory: context?.globalStorageUri?.fsPath,
     launch: async (pr, comment, option, engine = 'web') => {
@@ -346,6 +349,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })), events, error,
       postStatusUpdates: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
+      autoFixCi: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) === true,
+      autoFixCiMethod: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web',
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
       showPrCommits: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeShowPrCommits', true) !== false,
@@ -548,6 +553,72 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     return activeRefresh;
   }
 
+
+  // Let the existing in-batch integrated-head repair finish before opening a
+  // separate runner. A task never grants permission to merge or waive checks.
+  function queueAutomaticCiRepair(state) {
+    if (disposed || !state || state.repository !== selection.repository || state.rateLimit ||
+        vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) !== true) return;
+    for (const pr of prs) {
+      const candidate = deferredCiRepairCandidate(state, pr);
+      if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
+      const key = pr.number + ':' + candidate.headSha;
+      if (autoCiAttempts.has(key)) continue;
+      autoCiAttempts.add(key);
+      launchingActions.add(pr.number);
+      publish();
+      void (async () => {
+        const fresh = await githubGet(readFetch, token, selection.repository, '/pulls/' + pr.number);
+        if (disposed || fresh.state !== 'open' || fresh.draft || fresh.merged ||
+            fresh.merged_at || fresh.number !== pr.number || fresh.html_url !== pr.url ||
+            fresh.head?.repo?.full_name !== selection.repository ||
+            fresh.head?.ref !== candidate.head || fresh.head?.sha !== candidate.headSha ||
+            fresh.base?.ref !== candidate.base || fresh.base?.sha !== candidate.baseSha) {
+          addEvent(pr, 'updated', 'Automatic CI repair skipped · PR head, base or state changed');
+          return;
+        }
+        const checkApi = endpoint => {
+          const prefix = 'repos/' + selection.repository;
+          if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');
+          return githubGet(readFetch, token, selection.repository, endpoint.slice(prefix.length));
+        };
+        const checks = await require('./checks').readMergeChecks(
+          checkApi, selection.repository, candidate.headSha);
+        if (checks.state !== 'failed') {
+          addEvent(pr, 'updated', 'Automatic CI repair skipped · current checks are ' + checks.state);
+          return;
+        }
+        const notes = await readReports(readFetch, token, selection.repository, pr.number, 3,
+          { headSha: candidate.headSha, baseSha: candidate.baseSha });
+        const snapshot = { ...pr, ...candidate, ...notes, state: 'blocked',
+          currentHead: candidate.headSha, mergeableState: fresh.mergeable_state };
+        if (notes.review || blockerOptions(snapshot).length >= 2) {
+          addEvent(pr, 'blocked', 'Automatic CI repair skipped · a human implementation choice is pending');
+          return;
+        }
+        if (disposed || vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) !== true) {
+          addEvent(pr, 'updated', 'Automatic CI repair canceled · preference disabled');
+          return;
+        }
+        const method = vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web';
+        const option = manualBlockerActions(snapshot).find(action => action.id === 'fix-checks');
+        if (!option) return;
+        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, method);
+        addEvent(pr, opened === false ? 'updated' : 'action',
+          opened === false ? 'Automatic CI repair was not opened'
+            : 'Automatic CI repair opened with ' + (method === 'codex' ? 'Codex' : 'ChatGPT') +
+              ' · merge remains blocked until checks pass',
+          checks.names.join(', ').slice(0, 1000));
+      })().catch(failure => {
+        if (!disposed) addEvent(pr, 'error', 'Automatic CI repair could not start',
+          String(failure.message || failure).slice(0, 1000));
+      }).finally(() => {
+        launchingActions.delete(pr.number);
+        publish();
+      });
+    }
+  }
+
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
       return onFocusWorker(message.number);
@@ -556,6 +627,21 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (message?.type === 'refresh') return refresh({ force: true });
     if (message?.type === 'select-pr') {
       if (Number.isSafeInteger(message.number) && byNumber.has(message.number)) persistence.select(message.number);
+      return;
+    }
+    if (message?.type === 'auto-fix-ci' || message?.type === 'auto-fix-ci-method') {
+      const enabled = message.type === 'auto-fix-ci';
+      if (enabled ? typeof message.enabled !== 'boolean'
+        : !['web', 'codex'].includes(message.method)) return;
+      try {
+        await vscode.workspace.getConfiguration('scmToolkit').update(
+          enabled ? 'mergeAutoFixCi' : 'mergeAutoFixCiMethod',
+          enabled ? message.enabled : message.method, vscode.ConfigurationTarget.Global);
+      } catch (failure) {
+        error = 'Could not save automatic CI repair preference: ' + failure.message;
+      }
+      publish();
+      if (latestBatchState) queueAutomaticCiRepair(latestBatchState);
       return;
     }
     if (['post-summaries', 'post-status-updates'].includes(message?.type)) {
@@ -657,7 +743,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       clearTimer(timer); actualInterval = refreshInterval();
       timer = setTimer(() => { void refresh(); }, actualInterval);
     }
-    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeTimelineTimestampMode', 'mergeShowPrCommits', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
+    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod', 'mergeTimelineTimestampMode', 'mergeShowPrCommits', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
       .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
   });
   panel.onDidDispose(() => {
@@ -712,6 +798,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (event.stage === 'pushed' || event.stage === 'checks-passed') void refresh();
   }, recordBatchState(state, { restored = false } = {}) {
     if (state?.repository !== selection.repository || !Array.isArray(state.deferred)) return;
+    latestBatchState = state;
     for (const [number, item] of Object.entries(state.activities || {})) {
       const pr = byNumber.get(Number(number));
       if (!pr || typeof item?.phase !== 'string' || typeof item.message !== 'string') continue;
@@ -776,6 +863,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       addEvent(pr, 'blocked', 'Deferred for this batch · other selected PRs can continue', String(item.reason || '').slice(0, 4000));
     }
     publish();
+    queueAutomaticCiRepair(state);
   }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
     for (const failure of result.summaryErrors || []) {
