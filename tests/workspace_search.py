@@ -18,7 +18,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             files = workspace_search.source_files()
-            for name in ('ai_commit.py', 'background_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py', 'merged_branch.py'):
+            for name in ('ai_commit.py', 'coreml_backend.py', 'background_commit.py', 'sweetiebot_async_commit.py', 'sweetiebot_diagnostics.py', 'merged_branch.py'):
                 relative = Path(name)
                 (root / name).write_bytes(files[relative].read_bytes())
             repo = root / 'repo'
@@ -35,7 +35,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             files = workspace_search.source_files()
-            for name in ('ai_commit.py', 'background_commit.py', 'sweetiebot_async_commit.py',
+            for name in ('ai_commit.py', 'coreml_backend.py', 'background_commit.py', 'sweetiebot_async_commit.py',
                          'sweetiebot_diagnostics.py', 'merged_branch.py'):
                 (root / name).write_bytes(files[Path(name)].read_bytes())
             subprocess.run(['/usr/bin/git', 'init', '-q', '-b', 'main', str(root)], check=True)

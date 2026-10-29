@@ -187,6 +187,14 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
   assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'queued' }, {}), 'queued',
+    'GitHub-queued PRs are distinguished from merely awaiting checks');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable',
+    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
+    'Conflict resolution must not conceal failing checks');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'blocked',
+    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
+    'A blocked PR is not marked resolved solely because its head changed');
   assert.equal(mergePhase({ state: 'open', mergeable: true,
     head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'resolved');
   assert.equal(mergePhase({ state: 'open', mergeable: true,

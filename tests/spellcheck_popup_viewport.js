@@ -50,3 +50,30 @@ test('spellcheck modal fits and remains usable in very narrow and short workbenc
     }
   } finally { await browser.close(); }
 });
+
+test('embedded browser webview yields to spellcheck modal and returns when it closes', async () => {
+  const browser = await chromium.launch({headless: true});
+  try {
+    const page = await browser.newPage();
+    try {
+      await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body>
+        <div class="monaco-workbench">
+          <iframe class="webview" title="Sweetiebot Settings"></iframe>
+          <dialog class="scm-toolkit-spellcheck-popup" aria-label="Spellcheck Changes">
+            <button>Close</button><p>Review changes</p>
+          </dialog>
+        </div>
+      </body></html>`);
+      const webview = page.locator('iframe.webview');
+      const dialog = page.locator('dialog.scm-toolkit-spellcheck-popup');
+      const visibility = () => webview.evaluate(element => getComputedStyle(element).visibility);
+      assert.equal(await visibility(), 'visible', 'embedded Settings is visible before review');
+      await dialog.evaluate(element => element.showModal());
+      assert.equal(await visibility(), 'hidden', 'embedded browser cannot cover the modal');
+      assert.equal(await dialog.isVisible(), true, 'spellcheck remains visible');
+      assert.equal(await webview.count(), 1, 'Settings remains mounted');
+      await dialog.evaluate(element => element.close());
+      assert.equal(await visibility(), 'visible', 'Settings returns without a reload');
+    } finally { await page.close(); }
+  } finally { await browser.close(); }
+});
