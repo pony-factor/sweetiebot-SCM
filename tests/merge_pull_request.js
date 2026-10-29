@@ -111,8 +111,8 @@ const { squashMergePullRequest } = require('../extension/merge/pull_request');
   await assert.rejects(squashMergePullRequest(input, localRequest, {
     humanMerge:async()=>({merged:true,sha:'invalid'})
   }), /did not confirm/);
-  // Explicit local signing must request a signed commit and a leased head
-  // rewrite rather than silently falling back to GitHub's merge commit.
+  // Explicit local signing must preserve the PR head and sign the local
+  // author-attributed merge commit rather than silently falling back to GitHub.
   let signedOptions;
   const signedBotTransport=async(endpoint,options)=>{
     if(endpoint==='repos/owner/repo/pulls/12'&&!options)return {...botPR,mergeable:true};
@@ -126,8 +126,9 @@ const { squashMergePullRequest } = require('../extension/merge/pull_request');
     }
   });
   assert.equal(signedResult.merged,true);
-  assert.equal(signedOptions.allowHistoryRewrite,true);
-  assert.equal(signedOptions.rewriteReason,'preserve-human-author');
+  assert.equal(signedOptions.allowHistoryRewrite,false);
+  assert.equal(signedOptions.localGitMerge,true);
+  assert.equal(signedOptions.rewriteReason,'');
   assert.equal(signedOptions.requireSignedCommit,true);
   assert.equal(signedOptions.offerAuthorChoice,false);
   await assert.rejects(squashMergePullRequest(input,async(endpoint,options)=>{
