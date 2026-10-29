@@ -20,12 +20,15 @@ import time
 
 from sweetiebot_diagnostics import log_event
 
-PLACEHOLDER = "placeholder_"
+PLACEHOLDER = "hoof_"
+LEGACY_PLACEHOLDER = "placeholder_"
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 BASE58_ID_PATTERN = r"[1-9A-HJ-NP-Za-km-z]{11}"
+LEGACY_HEX_ID_PATTERN = r"[0-9a-f]{16}"
 PLACEHOLDER_SUBJECT_PATTERN = (
     rf"(?:{re.escape(PLACEHOLDER)}{BASE58_ID_PATTERN}|"
-    rf"💭 Generate local commit message \[{BASE58_ID_PATTERN}\])"
+    rf"{re.escape(LEGACY_PLACEHOLDER)}(?:{BASE58_ID_PATTERN}|{LEGACY_HEX_ID_PATTERN})|"
+    rf"💭 Generate local commit message \[(?:{BASE58_ID_PATTERN}|{LEGACY_HEX_ID_PATTERN})\])"
 )
 
 
