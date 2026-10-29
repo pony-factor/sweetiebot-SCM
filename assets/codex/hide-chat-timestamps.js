@@ -163,9 +163,8 @@
 
     function processTextNode(node) {
         if (timestampContainer(node)) hideTimestamp(node);
-        else if (!globalThis.scmToolkitShowCannon
-            && (activityLeadPattern.test(normalize(node.textContent))
-                || normalize(node.textContent) === 'Activity')) relabelActivityDuration(node);
+        else if (!globalThis.scmToolkitShowCannon && activityLeadPattern.test(normalize(node.textContent))) relabelActivityDuration(node);
+        else if (!globalThis.scmToolkitShowCannon && normalize(node.textContent) === 'Activity') relabelActivityDuration(node);
     }
 
     function hasTimestampAncestor(node) {
