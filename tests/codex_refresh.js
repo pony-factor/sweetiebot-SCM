@@ -10,6 +10,8 @@ const intervals = new Map();
 let enabled = true, installed = true, paused = false;
 let revision = 'initial';
 let releaseServer, stopping = false, reloads = 0;
+let preserveCalls = 0, preserveAvailable = true, preserveFails = false;
+const reloadEvents = [];
 const notices = [];
 let invalidations = 0;
 const warnings = [];
@@ -55,7 +57,22 @@ const vscode = {
   env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },
   workspace: { getConfiguration() { return { get() { return enabled; } }; },
     onDidChangeConfiguration(fn) { configurationChanged = fn; return { dispose() {} }; } },
-  commands: { executeCommand(command) { assert.equal(command, 'workbench.action.reloadWindow'); reloads++; } },
+  commands: {
+    async getCommands() {
+      return preserveAvailable ? ['sweetiebot.preserveCodexConversation'] : [];
+    },
+    async executeCommand(command) {
+      if (command === 'sweetiebot.preserveCodexConversation') {
+        preserveCalls++;
+        reloadEvents.push('preserve');
+        if (preserveFails) throw new Error('Codex view closed during capture');
+        return true;
+      }
+      assert.equal(command, 'workbench.action.reloadWindow');
+      reloadEvents.push('reload');
+      reloads++;
+    }
+  },
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },
   window: { onDidChangeWindowState(fn) { focusChanged = fn; return { dispose() {} }; }, showInformationMessage(message) { notices.push(message); return Promise.resolve(); }, showWarningMessage(message) { warnings.push(message); return Promise.resolve(); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
   extensions: {
@@ -102,6 +119,8 @@ assert.equal(reloads, 0, 'reload waits for the old settings server to exit');
 releaseServer();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 1);
+assert.equal(preserveCalls, 1, 'Capture a visible Codex thread before reload');
+assert.deepEqual(reloadEvents, ['preserve', 'reload'], 'Restore snapshot precedes reload');
 assert.equal(invalidations, 1, 'the first reload invalidates the extension cache');
 focusChanged({ focused: false });
 assert.equal(timers.size, 0, 'unfocused windows do not repair');
@@ -109,6 +128,7 @@ revision = 'changed-by-another-window';
 [...intervals.values()][0](); tick();
 children.at(-1).callbacks.get('close')(0); tick();
 assert.equal(reloads, 1, 'a repaired background window waits until focused');
+assert.equal(preserveCalls, 1, 'Unfocused windows must not capture or reopen Codex threads');
 assert.equal(invalidations, 1, 'background repair leaves the extension cache alone');
 focusChanged({ focused: true });
 tick();
@@ -116,9 +136,14 @@ assert.equal(launches, 4, 'returning to a stale window checks installed updates 
 children.at(-1).callbacks.get('close')(0);
 tick();
 assert.equal(notices.length, 0);
+preserveFails = true;
 await Promise.resolve(); releaseServer();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 2, 'a stale window automatically reloads after focus and repair');
+assert.equal(preserveCalls, 2, 'The focused window attempts another capture');
+assert.deepEqual(reloadEvents, ['preserve', 'reload', 'preserve', 'reload'],
+  'Capture failure cannot prevent an otherwise authorized reload');
+preserveFails = false;
 assert.equal(invalidations, 2);
 // A newly loaded window already has those bytes, even if the installer reports work again.
 const reloaded = { ...context, subscriptions: [] };
@@ -179,12 +204,14 @@ for (const delay of [15000, 60000, 300000]) {
 children.at(-1).callbacks.get('close')(1);
 assert.equal(timers.size, 0, 'persistent failures stop retrying until the next scheduled check');
 assert.equal(notices.length, noticesBeforeBusy, 'failed repairs never offer a reload');
+preserveAvailable = false;
 changed(); tick();
 revision = 'recovered';
 children.at(-1).callbacks.get('close')(0);
 tick();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(reloads, 3, 'an extension update automatically reloads after recovery');
+assert.equal(preserveCalls, 2, 'Missing Codex command cannot block app repair or trigger a capture');
 retryContext.subscriptions.at(-1).dispose();
 paused = true;
 const pausedContext = { ...context, subscriptions: [] };
