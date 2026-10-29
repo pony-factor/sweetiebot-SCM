@@ -219,7 +219,7 @@
           break;
         }
       }
-      if (mergeLaunch && !latest && !staging && !stagedUrl && !generating) {
+      if (mergeLaunch && !latest && !staging && !stagedUrl) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
         // Support both current assistant Markdown and conversation-role markup.
@@ -245,7 +245,7 @@
               .toString('base64url');
             const url = callback.href + '#result_gz=' + encoded;
             if (url.length <= 80000) latest = url;
-            else if (!stageAttempted) stageCompressed(encoded, claimedStagingId);
+            else if (!stageAttempted && !generating) stageCompressed(encoded, claimedStagingId);
           } catch { /* Incomplete code blocks remain in the chat until complete. */ }
         }
       }

@@ -74,9 +74,12 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
   for (const bad of [
     { ...input, repository: 'other/repo' }, { ...input, results: [input.results[0], input.results[0]] },
-    ...[{ number: 13 }, { headSha: 'c'.repeat(40) }, { baseSha: '' }, { patch: '' }, { patch: 'x'.repeat(60001) }]
+    ...[{ number: 13 }, { headSha: 'c'.repeat(40) }, { baseSha: '' }, { patch: '' }, { patch: 'x'.repeat(MAX_PATCH_BYTES + 1) }]
       .map(change => ({ ...input, results: [{ ...input.results[0], ...change }] }))
   ]) assert.throws(() => validateResolution(bad, selection));
+  assert.doesNotThrow(() => validateResolution({ ...input,
+    results: [{ ...input.results[0], patch: 'x'.repeat(60001) }] }, selection),
+  'A complete previously oversized patch remains accepted without truncation');
   let calls = 0;
   const empty = { ...input, results: [] };
   assert.deepEqual(validateResolution(empty, selection), []);
