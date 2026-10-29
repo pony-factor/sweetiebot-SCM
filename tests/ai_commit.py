@@ -815,6 +815,9 @@ class ManualSpellcheckTests(unittest.TestCase):
 
 class TitleTests(unittest.TestCase):
     def setUp(self):
+        backend = patch.object(ai_commit, "coreml_backend_enabled", return_value=False)
+        backend.start()
+        self.addCleanup(backend.stop)
         instructions = patch.object(ai_commit, "commit_custom_instructions", return_value="")
         instructions.start()
         self.addCleanup(instructions.stop)

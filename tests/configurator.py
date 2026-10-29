@@ -51,6 +51,19 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("Git commit signing is disabled.", controls)
         self.assertIn("A signing key is configured", controls)
 
+    def test_backend_preference_order_renders_and_round_trips(self):
+        for value, label in [("ollama", "Ollama only"), ("coreml", "Core ML only"),
+                             ("coreml,ollama", "Core ML → Ollama"),
+                             ("ollama,coreml", "Ollama → Core ML")]:
+            with self.subTest(value=value):
+                values = form_values()
+                values["aiBackend"] = [value]
+                parsed = configurator.parse_submission(values)
+                self.assertEqual(parsed["aiBackend"], value)
+                page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+                self.assertIn("Backend preference order", page)
+                self.assertIn(f'<option value="{value}" selected>{label}</option>', page)
+
     def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
         values = form_values()
         for name in ('windowHeading', 'windowName'):
@@ -802,7 +815,7 @@ class SubmissionTests(unittest.TestCase):
 
     def test_ai_commit_fallback_toggle_defaults_on_and_supports_strict_debugging(self):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
-        self.assertEqual(setting.section, "Ollama")
+        self.assertEqual(setting.section, "Commits")
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
         values = form_values()
@@ -817,7 +830,7 @@ class SubmissionTests(unittest.TestCase):
                 ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
                 ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
             setting = next(s for s in configurator.SETTINGS if s.name == name)
-            self.assertEqual(setting.section, 'Ollama')
+            self.assertEqual(setting.section, 'Commits')
             self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
             self.assertEqual(toolkit_settings.SETTING_KEYS[name], key)
             values = form_values()

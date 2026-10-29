@@ -334,20 +334,24 @@ SETTINGS = (
     Setting("spellcheckChangesEmoji", "scm-toolkit.spellcheck-changes-emoji", "Add professional emoji to spellcheck commits", "Include the professional leading emoji from normal AI commit-title generation when accepting reviewed Spellcheck Changes. Turn off to omit it without changing title quality, model effort, or attribution. On by default.", "Spellcheck Changes"),
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
-    Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
+    Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages with the selected local AI backend.", "Commits"),
+    Setting("aiBackend", "scm-toolkit.ai-backend", "Backend preference order", "Choose one backend or the order to try them. If a backend fails or produces no valid message, try the next before using a simple fallback. Core ML requires its bridge and prepared models; Workspace Search still uses Ollama.", "Commits", "select", ("ollama", "coreml", "coreml,ollama", "ollama,coreml")),
+    Setting("aiCoremlModel", "scm-toolkit.ai-coreml-model", "Core ML model", "Registered CoreML-LLM model ID. Default qwen3.5-2b; run sweetiebot-ane --prepare MODEL to download and compile it before use.", "Commits", "text"),
+    Setting("aiCoremlLowMemoryModel", "scm-toolkit.ai-coreml-low-memory-model", "Core ML low-memory model", "Registered smaller CoreML-LLM model ID, used when available RAM falls below your threshold.", "Commits", "text"),
+    Setting("aiCoremlCommand", "scm-toolkit.ai-coreml-command", "Core ML bridge executable", "Absolute path to your locally built sweetiebot-ane bridge. Install instructions in native/coreml-llm-bridge/README.md.", "Commits", "text"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
     Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
-    Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
-    Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
-    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
-    Setting("aiCommitRequestTimeoutSeconds", "scm-toolkit.ai-commit-request-timeout-seconds", "Commit request timeout (seconds)", "Maximum wait for one model request. Choose 1–900 seconds. The overall generation budget is this timeout multiplied by the attempt count.", "Ollama", "integer", minimum=1, maximum=900),
-    Setting("aiCommitAttempts", "scm-toolkit.ai-commit-attempts", "Attempts per model step", "Maximum attempts for each emoji check or title-generation step. Choose 1–10. All steps and retries share the calculated overall budget; changes apply to new jobs immediately.", "Ollama", "integer", minimum=1, maximum=10),
-    Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
-    Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. On by default.", "Ollama"),
-    Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
-    Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
-    Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
-    Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
+    Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Commits"),
+    Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Commits"),
+    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Commits"),
+    Setting("aiCommitRequestTimeoutSeconds", "scm-toolkit.ai-commit-request-timeout-seconds", "Commit request timeout (seconds)", "Maximum wait for one model request. Choose 1–900 seconds. The overall generation budget is this timeout multiplied by the attempt count.", "Commits", "integer", minimum=1, maximum=900),
+    Setting("aiCommitAttempts", "scm-toolkit.ai-commit-attempts", "Attempts per model step", "Maximum attempts for each emoji check or title-generation step. Choose 1–10. All steps and retries share the calculated overall budget; changes apply to new jobs immediately.", "Commits", "integer", minimum=1, maximum=10),
+    Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Commits"),
+    Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. On by default.", "Commits"),
+    Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Commits"),
+    Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Commits", "model"),
+    Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Commits", "model"),
+    Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Commits", "number"),
     Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Omit hyphens when every commit title starts with an emoji", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
     Setting("squashTrailerSeparatorStyle", "scm-toolkit.squash-trailer-separator-style", "Squash co-author separator", "Divider between squash summaries and Co-authored-by trailers: Hyphens (---------), Underscores (__________), or None. Underscores remain the default.", "Pull requests", "select", ("underscores", "hyphens", "none")),
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
@@ -441,7 +445,7 @@ def validate_models(settings: dict) -> None:
     required = ["workspaceSearchEmbeddingModel"]
     if settings.get("workspaceSearchAskOllama"):
         required.append("workspaceSearchChatModel")
-    if settings.get("aiCommit"):
+    if settings.get("aiCommit") and settings.get("aiBackend", "ollama") == "ollama":
         required.extend(["aiCommitModel", "aiCommitLowMemoryModel"])
     if settings.get("spellcheckManualCommit"):
         required.append("spellcheckModel")
@@ -763,10 +767,12 @@ def _setting_control(setting: Setting, current: object) -> str:
 
     value = html.escape(str(current), quote=True)
     if setting.kind == "select":
+        backend_labels = {"ollama": "Ollama only", "coreml": "Core ML only",
+                          "coreml,ollama": "Core ML → Ollama", "ollama,coreml": "Ollama → Core ML"}
         options = "".join(
             f'<option value="{html.escape(choice, quote=True)}"'
             + (' selected' if choice == str(current) else '')
-            + f'>{html.escape(choice.capitalize() if choice else "None")}</option>'
+            + f'>{html.escape(backend_labels[choice] if setting.name == "aiBackend" else choice.capitalize() if choice else "None")}</option>'
             for choice in setting.choices
         )
         return (
@@ -1001,7 +1007,7 @@ def render_form(
                 'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
             ) + controls
         status = ""
-        if section in {"Ollama", "Search", "Spellcheck Changes"}:
+        if section in {"Commits", "Search", "Spellcheck Changes"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
         if section == "Spellcheck Changes":
             draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",

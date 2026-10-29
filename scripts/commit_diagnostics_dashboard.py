@@ -148,7 +148,7 @@ DIAGNOSTICS_PANEL = """
 <h3>Queued commits — all repositories</h3>
 <div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Repository</th><th>Branch</th><th>Phase / issue</th><th>Job</th></tr></thead><tbody id="diagnostics-jobs"></tbody></table></div>
 <h3>Recent diagnostic events</h3>
-<p class="status">Counts and averages use only retained logs (up to four rotating files). New successful AI generations show their final title and duration. Enable Explain AI commit title choices in Ollama settings for optional notes; earlier events cannot be reconstructed.</p>
+<p class="status">Counts and averages use only retained logs (up to four rotating files). New successful AI generations show their final title and duration. Enable Explain AI commit title choices in Commits settings for optional notes; earlier events cannot be reconstructed.</p>
 <div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Event</th><th>Final title</th><th>Duration</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
 </div>
 """
