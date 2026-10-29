@@ -1232,7 +1232,7 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         const commitDraftValue = repository.inputBox?.value;
-        if (command === 'sweetiebot.createBranch')
+        if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
           await require('./commit_drafts').preserveCommitDraft(vscode, repository.rootUri.fsPath, undefined, commitDraftValue);
         const attempt = async () => {
           const remote = options?.remote || 'origin';
