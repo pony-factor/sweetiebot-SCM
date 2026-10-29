@@ -11,6 +11,7 @@ function scmToolkitActivityMinutes(value) {
 (() => {
     if (!globalThis.scmToolkitActivityCannonEnabled || globalThis.scmToolkitActivityCannonInstalled) return;
     globalThis.scmToolkitActivityCannonInstalled = true;
+    globalThis.scmToolkitShowCannon = true; // Share duration ownership with the native timestamp helper.
     const style = document.createElement('style');
     style.textContent = '[data-scm-toolkit-activity-cannon]{font-size:0!important;display:inline-flex!important;align-items:center;gap:6px}[data-scm-toolkit-activity-cannon]>:not(svg){font-size:0!important}[data-scm-toolkit-activity-cannon]::before{content:attr(data-scm-toolkit-activity-dots);font-size:24px;line-height:1}[data-scm-toolkit-activity-cannon]::after{content:"";display:inline-block;width:22px;height:22px;background:center/contain no-repeat var(--scm-toolkit-activity-cannon-image)}';
     (document.head || document.documentElement).append(style);

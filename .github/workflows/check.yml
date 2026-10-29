@@ -174,20 +174,21 @@ jobs:
         run: python -m unittest tests.packaged_runtime -v
 
   native-prompt-transport:
-    name: Sandboxed browser prompt transport (${{ matrix.os }})
+    name: Sandboxed browser prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
     needs: inventory
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        electron: ['43.7.7', '45.1.0']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install the native test runtime
-        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@45.1.0
+        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@${{ matrix.electron }}
       - name: Exercise sandbox, strict CSP, prompt delivery and JSON handoff
         shell: bash
         run: |

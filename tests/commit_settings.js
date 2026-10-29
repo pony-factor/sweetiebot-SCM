@@ -47,8 +47,8 @@ for (const initiallyAttached of [false, true]) {
     disposables: { add(value) { disposed = value; } }
   };
   const button = { parentElement: null, remove() { this.parentElement = null; } };
-  const context = vm.createContext({ widget, button });
-  vm.runInContext(attach + '\nscmToolkitAttachCommitSettings(widget, button);', context);
+  const context = vm.createContext({ widget, button, changes: true });
+  vm.runInContext(attach + '\nscmToolkitAttachCommitSettings(widget, button, () => changes);', context);
   assert.equal(observed, initiallyAttached ? root : documentRoot);
   if (!initiallyAttached) {
     assert.equal(button.parentElement, widget.element,
@@ -61,6 +61,12 @@ for (const initiallyAttached of [false, true]) {
   assert(classes.has('scm-toolkit-commit-settings'));
   callback();
   assert.equal(button.parentElement, dropdown, 'Repeated mutations preserve placement');
+  context.changes = false;
+  callback();
+  assert.equal(button.parentElement, widget.element, 'An empty repository keeps the wand in the message bar even when Dash is enabled');
+  context.changes = true;
+  callback();
+  assert.equal(button.parentElement, dropdown);
   dropdown = null;
   callback();
   assert.equal(button.parentElement, widget.element,

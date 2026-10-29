@@ -23,6 +23,8 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
         if (method === 'thread/read') {
           assert.equal(params.includeTurns, false, 'Never hydrate conversation contents for a handoff');
           result = { thread: { id: wrongThread ? 'another-chat' : threadId, cwd: from, status: { type: active ? 'active' : 'idle' } } };
+        } else if (method === 'account/rateLimits/read') {
+          result = { rateLimits: {primary:{usedPercent:100,resetsAt:Math.floor(Date.now()/1000)+600},secondary:{usedPercent:100,resetsAt:Math.floor(Date.now()/1000)+1200}} };
         } else if (method === 'thread/turns/list') {
           assert.equal(params.itemsView, 'notLoaded');
           result = { data: [{ id: 'running-turn', status: turnStatus }] };
@@ -55,6 +57,14 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     const context = vm.createContext({ require, setTimeout, clearTimeout, Date });
     vm.runInContext(await fs.readFile(path.join(__dirname, '../assets/codex/workspace-handoff-host.js'), 'utf8'), context);
     const disposable = context.scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode);
+    const lookup=commands.get('sweetiebot.codex.readRateLimitReset');
+    const limits=await lookup({threadId});
+    assert(limits.known && limits.limited && limits.resetAt>Date.now()+1100000);
+    const lookups=requests.filter(request=>request.method==='account/rateLimits/read').length;
+    await lookup({threadId});
+    assert.equal(requests.filter(request=>request.method==='account/rateLimits/read').length,lookups,'Reset lookups share a bounded cache');
+    assert.equal((await lookup({threadId:'wrong-thread'})).known,false);
+    requests.length=0;
     const prepare = commands.get('sweetiebot.codex.prepareWorkspaceHandoff');
     const resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
     const openCheckout = commands.get('sweetiebot.codex.openChatCheckout');

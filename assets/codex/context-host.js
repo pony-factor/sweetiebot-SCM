@@ -20,6 +20,14 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     provider.handleMessage = function(webview, message) {
+        if (message?.type === 'scm-toolkit-read-limit-reset') {
+            void vscode.commands.executeCommand('sweetiebot.codex.readRateLimitReset', message)
+                .then(result => webview.postMessage({ type: 'scm-toolkit-limit-reset-result',
+                    threadId: message.threadId, requestId: message.requestId, ...result }))
+                .catch(() => webview.postMessage({ type: 'scm-toolkit-limit-reset-result',
+                    threadId: message.threadId, requestId: message.requestId, known: false }));
+            return;
+        }
         if (message?.type === 'scm-toolkit-continue-at-reset') {
             void vscode.commands.executeCommand('sweetiebot.codex.continueAfterRateLimit', message)
                 .catch(error => vscode.window.showWarningMessage('Automatic continuation paused: ' + error.message));

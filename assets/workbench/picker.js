@@ -452,20 +452,20 @@ function scmToolkitCustomizeMessagePlaceholder(
     }));
 }
 
-function scmToolkitAttachCommitSettings(widget, button) {
+function scmToolkitAttachCommitSettings(widget, button, hasChanges = () => true) {
     const doc = widget.element.ownerDocument;
     const Observer = doc.defaultView?.MutationObserver;
     // Native Source Control action rows can be briefly absent, recycled, or
     // rendered at a different index. Never leave Magic Settings detached.
     widget.element.append(button);
-    if (!Observer) return;
+    if (!Observer) return () => {};
 
     let observedRoot;
     const observeRoot = root => {
         if (observedRoot === root) return;
         observer.disconnect();
         observer.observe(root, {
-            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index', 'class', 'style', 'hidden']
+            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index', 'class', 'style', 'hidden', 'disabled', 'aria-disabled']
         });
         observedRoot = root;
     };
@@ -479,7 +479,10 @@ function scmToolkitAttachCommitSettings(widget, button) {
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
         const nativeDropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
-        const dropdown = nativeDropdown?.getClientRects?.().length === 0 ? undefined : nativeDropdown;
+        const inactive = !hasChanges() || nativeDropdown?.getClientRects?.().length === 0
+            || nativeDropdown?.matches?.('.disabled, [aria-disabled="true"]')
+            || nativeDropdown?.querySelector?.('.monaco-button.disabled, .monaco-button[aria-disabled="true"], button:disabled');
+        const dropdown = inactive ? undefined : nativeDropdown;
         const destination = dropdown || widget.element;
         if (button.parentElement === destination) return;
         button.parentElement?.classList.remove('scm-toolkit-commit-settings');
@@ -499,6 +502,7 @@ function scmToolkitAttachCommitSettings(widget, button) {
             button.remove();
         }
     });
+    return update;
 }
 
 async function scmToolkitPullCleanRepository(provider, commands, repositoryArgument) {
@@ -1682,7 +1686,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         ponyBranchButton,
         stackedBranchButton
     );
-    scmToolkitAttachCommitSettings(widget, settingsButton);
+    let currentInput;
+    const refreshSettings = scmToolkitAttachCommitSettings(widget, settingsButton,
+        () => currentInput?.repository.provider.groups.some(group => group.resources.length > 0) === true);
 
     const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
         settings, event => openBranchPicker(event), branchButton);
@@ -1699,7 +1705,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let pullRequestEligibilityRequest = 0;
     let repositoryResolveToken = 0;
     let defaultBranchRetry;
-    let currentInput;
     let pending = false;
     let deletingBranch = false;
     let creatingPullRequest = false;
@@ -2627,6 +2632,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentInput = input;
             settingsButton.hidden = false;
             const provider = input.repository.provider;
+            refreshSettings();
+            if (typeof provider.onDidChangeResources === 'function')
+                widget.repositoryDisposables.add(provider.onDidChangeResources(refreshSettings));
             currentRepositoryUri = provider.rootUri;
             const resolveBase = async () => {
                 try {

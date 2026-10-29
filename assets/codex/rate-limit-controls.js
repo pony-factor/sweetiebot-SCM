@@ -185,8 +185,10 @@ function scmToolkitPlainRateLimitNodes(root) {
             }
             // Do not replace a label nested inside a real action or editor.
             const controls = node.querySelectorAll?.('button, a, input, textarea, select, [role="button"]') || [];
-            if (controls.length || node.matches?.('button, a, [role="button"]')
-                || node.querySelector?.(scmToolkitCodexEditorSelector)) {
+            // Reaching the composer owner ends the search; the isolated
+            // status already found below it remains safe to replace.
+            if (node.querySelector?.(scmToolkitCodexEditorSelector)) break;
+            if (controls.length || node.matches?.('button, a, [role="button"]')) {
                 card = null;
                 break;
             }
@@ -396,6 +398,19 @@ function scmToolkitStyleRateLimitStickerCard(node) {
     node.style.alignSelf = 'flex-start';
 }
 function scmToolkitSyncRateLimitPony(root) {
+    // React can recycle a native footer while retaining our attributes. Retire
+    // stale mount flags so its illustration returns after the next render.
+    for (const companion of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony-companion]')) {
+        if (!companion.querySelector?.('img')) companion.remove();
+    }
+    for (const card of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony], [data-scm-toolkit-rate-limit-pony-mounted]')) {
+        if (card.getAttribute?.('data-scm-toolkit-rate-limit-pony-companion') === 'true') continue;
+        if (card.getAttribute?.('data-scm-toolkit-rate-limit-pony') === 'true' && !card.querySelector?.('img'))
+            card.removeAttribute?.('data-scm-toolkit-rate-limit-pony');
+        if (card.dataset?.scmToolkitRateLimitPonyMounted === 'true'
+            && !card.parentElement?.querySelector?.('[data-scm-toolkit-rate-limit-pony-companion] img'))
+            delete card.dataset.scmToolkitRateLimitPonyMounted;
+    }
     // Remove misplaced companions from older injections without touching the
     // queued prompt or its real attachments.
     for (const sticker of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony-companion]')) {
@@ -470,7 +485,7 @@ function scmToolkitSyncRateLimitPony(root) {
     if (globalThis.scmToolkitResetShortcutInstalled) return;
     globalThis.scmToolkitResetShortcutInstalled = true;
     const style = document.createElement('style');
-    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}';
+    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:inline-flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;padding:4px!important}';
     (document.head || document.documentElement).appendChild(style);
     let queued = false;
     const sync = () => {

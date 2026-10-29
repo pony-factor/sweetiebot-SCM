@@ -38,6 +38,11 @@ def main():
         assert page.evaluate('opened') == 2
         page.eval_on_selector('#actions', "el=>el.style.display='flex'")
         page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='actions'")
+        page.eval_on_selector('#actions button', 'el=>el.disabled=true')
+        page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='input'")
+        assert wand.is_visible()
+        page.eval_on_selector('#actions button', 'el=>el.disabled=false')
+        page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='actions'")
         page.eval_on_selector('#actions', "el=>el.remove()")
         page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='input'")
 
@@ -137,6 +142,9 @@ def main():
         assert page.eval_on_selector('#warning', 'el=>getComputedStyle(el).fontSize') == '0px'
         page.wait_for_selector('[data-scm-toolkit-rate-limit-pony] img')
         assert page.eval_on_selector('[data-scm-toolkit-rate-limit-pony] img', 'el=>el.complete && el.naturalWidth>0')
+        page.eval_on_selector('#footer', "el=>{el.textContent='Rated limited';el.style.width='100%';el.style.height='200px'}")
+        page.wait_for_selector('#footer img')
+        assert page.eval_on_selector('#footer', 'el=>el.getBoundingClientRect().height<150 && el.getBoundingClientRect().width<200'), 'React cannot restore the oversized empty footer'
         # Mount the opt-in control after an already-compacted notice.
         page.evaluate('window.messages=[]')
         page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
@@ -158,6 +166,29 @@ def main():
         assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0, 'Old transcript warnings are not an active limit'
         page.evaluate("document.body.append(document.createElement('hr'))")
         assert page.evaluate('messages.length') == 1
+        # Unknown reset times use a bounded read-only native lookup only after opt-in.
+        for still_limited in [True, False]:
+            page.goto('about:blank')
+            page.set_content('<div role="status">Rate limited</div><form><textarea></textarea></form>')
+            page.evaluate('window.messages=[];window.testNow=Date.now();Date.now=()=>testNow')
+            page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
+            page.evaluate("scmToolkitInstallRateLimitContinuation({postMessage:m=>messages.push(m)},()=> 'lookup-thread')")
+            page.get_by_role('button', name='Continue unanswered work at reset').wait_for()
+            assert page.evaluate('messages.length') == 0, 'Never poll quotas before opt-in'
+            page.get_by_role('button', name='Continue unanswered work at reset').click()
+            page.wait_for_function("messages.length===1 && messages[0].type==='scm-toolkit-read-limit-reset'")
+            page.evaluate("""limited => window.postMessage({type:'scm-toolkit-limit-reset-result',
+                threadId:'lookup-thread',requestId:messages[0].requestId,known:true,limited,resetAt:testNow+60000},'*')""", still_limited)
+            if still_limited:
+                page.get_by_role('button', name='Cancel continuation at reset').wait_for()
+                page.evaluate("testNow+=62000;document.body.append(document.createElement('hr'))")
+                page.wait_for_function("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')")
+                assert page.evaluate("messages.filter(m=>m.type==='scm-toolkit-continue-at-reset').length") == 1
+            else:
+                page.wait_for_function("!document.querySelector('[data-scm-toolkit-continue-at-reset]')")
+                page.evaluate("testNow+=120000;document.body.append(document.createElement('hr'))")
+                page.wait_for_timeout(100)
+                assert page.evaluate('messages.length') == 1, 'An account that is no longer limited cannot auto-continue'
         assert not errors, errors
         browser.close()
         print('Rendered wand visibility, recycled toolbar, active cannon, limit rewrites, Twilight image and opt-in continuation passed.')

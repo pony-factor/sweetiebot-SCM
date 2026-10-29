@@ -93,6 +93,23 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
     }));
 
     const continuedResets = new Set();
+    let limitLookup;
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.readRateLimitReset', async ({ threadId }) => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (!threadId || identity?.threadId !== threadId) return { known: false };
+        if (limitLookup && Date.now() - limitLookup.at < 30000) return limitLookup.result;
+        const result = send('account/rateLimits/read', {}).then(value => {
+            const windows = [value?.rateLimits?.primary, value?.rateLimits?.secondary].filter(Boolean);
+            if (!windows.length) return { known: false };
+            const exhausted = windows.filter(window => Number(window.usedPercent) >= 100);
+            const resets = exhausted.map(window => Number(window.resetsAt) * 1000)
+                .filter(reset => Number.isFinite(reset) && reset > Date.now() && reset < Date.now() + 31 * 86400000);
+            return { known: true, limited: exhausted.length > 0, resetAt: resets.length ? Math.max(...resets) : null };
+        }).catch(() => ({ known: false }));
+        limitLookup = { at: Date.now(), result };
+        return result;
+    }));
+
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.continueAfterRateLimit', async ({ threadId, resetAt }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
         const key = threadId + ':' + resetAt;

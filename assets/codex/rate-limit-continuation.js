@@ -14,6 +14,7 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
     if (globalThis.scmToolkitRateLimitContinuationInstalled) return;
     globalThis.scmToolkitRateLimitContinuationInstalled = true;
     let armed, timer, button, knownReset, knownThread, queued = false;
+    let lookups = 0, lastLookup = -Infinity, lookupRequest, quotaAvailable = false;
     const continued = new Set();
     const transcript = '[role="log"], [data-testid="message-list"], [data-testid*="transcript"], [data-testid^="conversation-turn-"], [data-message-author-role], [data-conversation-role], [data-message-id], [data-turn-id]';
     const excluded = '[data-message-author-role="user"], [data-conversation-role="user"], [data-testid="queued-message"], [aria-label^="Preview queued message"], [contenteditable], pre, code';
@@ -23,13 +24,14 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         queued = false;
         const threadId = identity();
         const limited = notices();
-        if (threadId !== knownThread) { armed = undefined; knownReset = undefined; knownThread = threadId; }
+        if (threadId !== knownThread) { armed = undefined; knownReset = undefined; knownThread = threadId; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; }
         const activeFooter = limited.some(node => !node.closest(transcript))
             || [...document.querySelectorAll('[data-scm-toolkit-rate-limit-pony="true"]:not([data-scm-toolkit-rate-limit-pony-companion]), [data-scm-toolkit-rate-limit-pony-mounted="true"]')]
                 .some(node => !node.closest(transcript) && (node.querySelector('img') || /rate(?:d)? limited/i.test(node.textContent)));
         if (!activeFooter || !threadId) {
-            clearTimeout(timer); button?.remove(); button = undefined; armed = undefined; knownReset = undefined; return;
+            clearTimeout(timer); button?.remove(); button = undefined; armed = undefined; knownReset = undefined; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; return;
         }
+        if (quotaAvailable) { clearTimeout(timer); button?.remove(); button = undefined; armed = undefined; return; }
         for (const notice of limited) {
             // Preserve the first absolute deadline: a relative label must not
             // extend the reset on each DOM refresh.
@@ -41,7 +43,7 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         if (!button?.isConnected) {
             button = document.createElement('button'); button.type = 'button';
             button.dataset.scmToolkitContinueAtReset = 'true';
-            button.addEventListener('click', () => { armed = armed ? undefined : threadId; update(); });
+            button.addEventListener('click', () => { if (!armed) { lookups = 0; lastLookup = -Infinity; } armed = armed ? undefined : threadId; update(); });
             composer.parentElement.append(button);
         }
         const label = armed ? (knownReset ? 'Cancel continuation at reset' : 'Cancel · waiting for reset time') : 'Continue unanswered work at reset';
@@ -49,6 +51,11 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         button.setAttribute('aria-pressed', String(Boolean(armed)));
         clearTimeout(timer);
         if (!armed) return;
+        if (!knownReset && lookups < 3 && Date.now() - lastLookup >= 30000) {
+            lookups++; lastLookup = Date.now();
+            lookupRequest = globalThis.crypto?.randomUUID?.() || String(Date.now()) + '-' + Math.random();
+            api.postMessage({ type: 'scm-toolkit-read-limit-reset', threadId, requestId: lookupRequest });
+        }
         if (knownReset && Date.now() >= knownReset + 1000) {
             // Native queued prompts take precedence over an automatic Continue.
             if (document.querySelector('[data-testid="queued-message"], [aria-label^="Preview queued message"]') || composer.textContent?.trim() || composer.value?.trim()) return;
@@ -60,6 +67,16 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
     };
     const schedule = () => { if (!queued) { queued = true; queueMicrotask(update); } };
     new MutationObserver(schedule).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+    window.addEventListener('message', event => {
+        const result = event.data;
+        if (result?.type !== 'scm-toolkit-limit-reset-result' || !armed || result.threadId !== identity()
+            || result.requestId !== lookupRequest) return;
+        lookupRequest = undefined;
+        if (result.known && result.limited === false) quotaAvailable = true;
+        if (result.limited && Number.isFinite(result.resetAt) && result.resetAt > Date.now()
+            && result.resetAt < Date.now() + 31 * 86400000) knownReset = Math.max(knownReset || 0, result.resetAt);
+        schedule();
+    });
     window.addEventListener('hashchange', schedule);
     schedule();
 }
