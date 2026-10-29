@@ -10,7 +10,7 @@ const { waitForMergeChecks } = require('./checks');
 const SHA = /^[a-f0-9]{40}$/i;
 
 async function localAuthorMerge({ repository, number, original, headSha, baseSha, tree, author, message,
-  git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false }) {
+  git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false, privateRepository = false }) {
   const root = 'repos/' + repository, prPath = root + '/pulls/' + number;
   const head = original.head.ref, base = original.base.ref;
   const blocked = reason => ({ merged:false,status:'blocked',number,reason,headSha,base,baseSha });
@@ -24,7 +24,17 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
     if (branch.commit?.sha !== baseSha) throw Object.assign(Error('Base changed before local Git merge.'),{code:'MERGE_BASE_CHANGED'});
     // Never use direct Git pushes to bypass a protected branch or repository rule.
     if (branch.protected !== false) return 'The base branch is protected; local Git cannot bypass its merge policy.';
-    const rules = await api(root + '/rules/branches/' + encodeURIComponent(base));
+    let rules;
+    try { rules = await api(root + '/rules/branches/' + encodeURIComponent(base)); }
+    catch (error) {
+      // GitHub Free private repos cannot enforce rulesets. This exact product
+      // availability response is distinct from an unknown permission failure.
+      // The fresh branch.protected === false check above remains mandatory.
+      const unavailable = privateRepository && error.status === 403
+        && /^Upgrade to GitHub Pro or make this repository public to enable this feature\.?$/i.test(error.githubMessage || '');
+      if (!unavailable) throw error;
+      rules = [];
+    }
     if (!Array.isArray(rules) || rules.length) return 'The base has active branch rules; local Git will not bypass them.';
     if (fresh.mergeable === false || fresh.mergeable_state === 'blocked') return 'GitHub reports a blocked or conflicting PR.';
   };

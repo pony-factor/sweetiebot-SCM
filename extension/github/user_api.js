@@ -24,7 +24,12 @@ function githubUserAPI(token, fetchImpl = globalThis.fetch, { sleep = ms => new 
       await response.body?.cancel?.();
       await sleep(Math.max(attempt ? 1500 : 500, Number.isFinite(requested) ? requested : 0));
     }
-    if (!response.ok) throw await githubResponseError(response, 'GitHub user request failed (HTTP ' + response.status + ').');
+    if (!response.ok) {
+      const error = await githubResponseError(response, 'GitHub user request failed (HTTP ' + response.status + ').');
+      if (!error.rateLimited) error.message += ' ' + method + ' ' + endpoint.split('?')[0]
+        + (error.githubMessage ? ': ' + error.githubMessage : '');
+      throw error;
+    }
     return response.status === 204 ? null : response.json();
   };
 }

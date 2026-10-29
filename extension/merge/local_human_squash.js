@@ -341,7 +341,8 @@ async function humanSquashMerge(repository, number, {
     const finishLocal = async (sha, finalTree) => require('./local_author_merge').localAuthorMerge({
       repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
       message: preparedMessage, git: inRepo, api, directory: temp, checkOptions,
-      expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit
+      expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit,
+      privateRepository: repositoryInfo.private === true
     });
     if (localGitMerge && operation === 'merge' && !nativeSquash) {
       const finalTree = await inRepo('write-tree');
