@@ -2,18 +2,35 @@
 
 const stages = {
   preparing: 'Preparing the selected PR',
+  'reading-pr': 'Reading GitHub PR identity, branch rules and contributors',
+  'reading-checks': 'Reading checks on the selected GitHub head',
+  'creating-checkout': 'Creating an isolated local checkout',
+  cloning: 'Fetching repository history into the isolated checkout',
+  'inspecting-files': 'Verifying local ancestry and changed files',
   'message-prepared': 'Commit message verified',
   integrating: 'Integrating with the current base',
   'applying-resolution': 'Applying the conflict resolution',
   'decision-commit': 'Recording the file resolution',
   'sync-prepared': 'Branch update prepared',
   prepared: 'Integration prepared',
+  pushing: 'Pushing the prepared branch update to GitHub',
   pushed: 'Branch update pushed',
   'verifying-push': 'Verifying the pushed branch',
   'waiting-checks': 'Waiting for integrated-head checks',
   'checks-passed': 'Integrated-head checks passed',
+  'checks-polled': 'GitHub checks refreshed',
+  'preparing-merge': 'Creating and verifying the local merge commit',
+  'pushing-merge': 'Pushing the verified merge to the upstream base',
+  'verifying-merge': 'Verifying the destination commit and GitHub merge status',
   merging: 'Waiting for GitHub to confirm the merge'
 };
+
+function stageLocation(stage) {
+  if (['reviewing', 'refreshing'].includes(stage)) return 'review';
+  return ['reading-pr', 'reading-checks', 'cloning', 'pushing', 'pushed', 'verifying-push',
+    'waiting-checks', 'checks-polled', 'checks-passed', 'pushing-merge', 'verifying-merge',
+    'merging', 'verifying', 'waiting', 'checks_failed', 'merged'].includes(stage) ? 'upstream' : 'local';
+}
 
 function withMergeProgress(vscode, { numbers, branchOnly }, task,
   { schedule = setInterval, cancel = clearInterval, now = Date.now } = {}) {
@@ -42,4 +59,4 @@ function withMergeProgress(vscode, { numbers, branchOnly }, task,
   });
 }
 
-module.exports = { withMergeProgress };
+module.exports = { withMergeProgress, stages, stageLocation };

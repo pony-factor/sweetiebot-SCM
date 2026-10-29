@@ -1,5 +1,16 @@
 'use strict';
 
+async function localPrompt(address) {
+  const callback = new URLSearchParams(new URL(address).hash.slice(1)).get('return_to');
+  return new Promise((resolve, reject) => {
+    require('node:http').get(callback + '/prompt', response => {
+      let body = ''; response.on('data', chunk => {body += chunk;});
+      response.on('end', () => {try {resolve(JSON.parse(body).prompt);} catch(error){reject(error);}});
+    }).on('error', reject);
+  });
+}
+
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -124,6 +135,11 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     const mergeHost = { ...target, workspace: { workspaceFile: mergeWorkspace, workspaceFolders: [{ uri: root }] },
       window: {}, commands: { async executeCommand(...args) { mergeCalls.push(args); } } };
     await resumePRSession(mergeHost, context);
+    const openedMerge = new URL(mergeCalls.at(-1)[1].url);
+    assert(openedMerge.searchParams.get('sweetiebot_launch'));
+    openedMerge.searchParams.delete('sweetiebot_launch');
+    assert.equal(openedMerge.href, mergeUrl);
+    mergeCalls.at(-1)[1].url = openedMerge.href;
     assert.deepEqual(mergeCalls, [...layoutCommands.map(command => [command]),
       ['workbench.action.browser.open', { url: mergeUrl, openToSide: false }]]);
     await resumePRSession(mergeHost, context);
@@ -204,8 +220,10 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       const launchPayload = new URLSearchParams(new URL(dashboardCalls[3][1].url).hash.slice(1));
       assert(launchPayload.get('return_to').includes('/lindsey-merge/'));
       assert.match(launchPayload.get('return_to'), /^http:\/\/127\.0\.0\.1:\d+\/lindsey-merge\/[\da-f-]{36}$/);
-      assert(launchPayload.get('q').includes('LOCAL LINDSEY CLI HANDOFF'));
-      assert(launchPayload.get('q').includes('COMPLETE git unified diff'));
+      assert.equal(launchPayload.has('q'), false);
+      const transportedPrompt = await localPrompt(dashboardCalls[3][1].url);
+      assert(transportedPrompt.includes('LOCAL LINDSEY CLI HANDOFF'));
+      assert(transportedPrompt.includes('COMPLETE git unified diff'));
       assert.deepEqual(dashboardCalls.map((call, index) => index === 3 ? [call[0]] : call), [
         ...layoutCommands.map(command => [command]),
         ['workbench.action.browser.open'],
@@ -257,7 +275,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       await resumePRSession({ ...instrumented,
         workspace: { workspaceFile: actionWorkspace, workspaceFolders: [{ uri: root }] } }, context);
       const branchLaunch = new URLSearchParams(new URL(dashboardCalls.at(-1)[1].url).hash.slice(1));
-      assert(branchLaunch.get('q').includes('BRANCH-ONLY EXECUTION'));
+      assert((await localPrompt(dashboardCalls.at(-1)[1].url)).includes('BRANCH-ONLY EXECUTION'));
       const callback = branchLaunch.get('return_to');
       const rejected = await priorFetch(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({

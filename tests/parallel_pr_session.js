@@ -1,4 +1,15 @@
 'use strict';
+
+async function localPrompt(address) {
+  const callback = new URLSearchParams(new URL(address).hash.slice(1)).get('return_to');
+  return new Promise((resolve, reject) => {
+    require('node:http').get(callback + '/prompt', response => {
+      let body = ''; response.on('data', chunk => {body += chunk;});
+      response.on('end', () => {try {resolve(JSON.parse(body).prompt);} catch(error){reject(error);}});
+    }).on('error', reject);
+  });
+}
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -69,13 +80,14 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr
     assert(originalSelection.pullRequests.every(pr => pr.headSha === 'a'.repeat(40)), 'Recovery preserves original dashboard snapshots');
     const launches = calls.filter(([command]) => command === 'workbench.action.browser.open');
     assert.equal(launches.length, 3, 'Large independent queues open three GPT sessions');
-    const assigned = launches.flatMap(([, options]) => {
-      const prompt = new URLSearchParams(new URL(options.url).hash.slice(1)).get('q');
+    const assigned = [];
+    for (const [, options] of launches) {
+      const prompt = await localPrompt(options.url);
       assert(prompt.includes('PARALLEL REVIEW LANE'));
       const snapshot = prompt.match(/Refreshed selected snapshots: (\[[^\n]+\])/)[1];
       assert(JSON.parse(snapshot).every(pr => pr.headSha === 'c'.repeat(40)), 'Explicit recovery reviews the current heads');
-      return JSON.parse(snapshot).map(pr => pr.number);
-    });
+      assigned.push(...JSON.parse(snapshot).map(pr => pr.number));
+    }
     assert.equal(assigned.length, 11); assert.equal(new Set(assigned).size, 11);
     assert.equal(recorded.workers.length, 3);
     await dashboardOptions.onFocusWorker(2);

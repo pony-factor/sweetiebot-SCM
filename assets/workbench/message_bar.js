@@ -109,7 +109,82 @@ function scmToolkitRefreshMessageBarSeparators(layout, elements) {
     }
 }
 
-function scmToolkitApplyMessageBarLayout(widget, settings) {
+function scmToolkitResponsiveMessageBar(widget, layout, elements, editor, controls) {
+    const root = widget.element, win = root.ownerDocument.defaultView;
+    if (!win?.ResizeObserver || !widget.inputEditor?.layout || !widget.getContentHeight) return;
+    root.classList.add('scm-toolkit-responsive-message-bar');
+    const groups = [];
+    for (const zone of ['before', 'after']) {
+        let ids = [];
+        for (const id of layout[zone]) {
+            if (id.startsWith('separator-') && ids.length) { groups.push({ zone, ids }); ids = []; }
+            ids.push(id);
+        }
+        if (ids.length) groups.push({ zone, ids });
+    }
+    const breaks = groups.filter(group => group.zone === 'after').map(group => {
+        const node = root.ownerDocument.createElement('span');
+        node.className = 'scm-toolkit-message-break'; node.hidden = true;
+        elements[group.ids[0]].before(node);
+        return { node, group };
+    });
+    const nativeHeight = widget.getContentHeight.bind(widget), nativeLayout = widget.inputEditor.layout;
+    const nativeEvent = widget.onDidChangeContentHeight, listeners = new Set();
+    const nativeWidth = controls.width.bind(controls);
+    let extra = 0, reserved = 0, queued = false, disposed = false;
+    widget.getContentHeight = () => nativeHeight() + extra;
+    widget.inputEditor.layout = function(dimension, ...args) {
+        return nativeLayout.call(this, { ...dimension, height: Math.max(1, dimension.height - extra) }, ...args);
+    };
+    if (nativeEvent) widget.onDidChangeContentHeight = (listener, ...args) => {
+        listeners.add(listener);
+        const subscription = nativeEvent.call(widget, listener, ...args);
+        return { dispose() { listeners.delete(listener); subscription.dispose(); } };
+    };
+    const width = ids => ids.reduce((total, id) => {
+        const node = elements[id];
+        return total + (!node?.hidden && node?.isConnected ? node.getBoundingClientRect().width : 0);
+    }, 0);
+    const update = () => {
+        queued = false; if (disposed) return;
+        const baseAvailable = Math.max(0, root.clientWidth - (widget.getToolbarWidth?.() || 0));
+        const extras = [...root.children].filter(node => node.matches('.scm-toolkit-settings, .scm-toolkit-stacked-branch') && !node.hidden)
+            .reduce((sum, node) => sum + node.getBoundingClientRect().width, 0);
+        const available = Math.max(0, baseAvailable - extras);
+        if (!available) return;
+        const minimum = Math.min(128, available);
+        editor.style.minWidth = minimum + 'px';
+        const before = groups.filter(group => group.zone === 'before').reduce((sum, group) => sum + width(group.ids), 0);
+        let used = before + minimum, wrapped = false;
+        reserved = before + extras;
+        for (const { node, group } of breaks) {
+            const size = width(group.ids);
+            const wrap = size > 0 && used > 0 && used + size > available;
+            node.hidden = !wrap;
+            if (wrap) { used = 0; wrapped = true; }
+            used += size;
+            if (!wrapped) reserved += size;
+        }
+        reserved = Math.min(reserved, Math.max(0, baseAvailable - minimum));
+        const next = Math.max(0, Math.ceil(root.scrollHeight - editor.getBoundingClientRect().height));
+        if (next !== extra) { extra = next; for (const listener of listeners) listener(); }
+        widget.layout();
+    };
+    const schedule = () => { if (!queued && !disposed) { queued = true; win.requestAnimationFrame(update); } };
+    controls.width = () => reserved;
+    const resize = new win.ResizeObserver(schedule); resize.observe(root);
+    const mutations = new win.MutationObserver(schedule);
+    for (const node of Object.values(elements)) mutations.observe(node, { attributes: true, attributeFilter: ['hidden'] });
+    widget.disposables.add({ dispose() {
+        disposed = true; resize.disconnect(); mutations.disconnect(); breaks.forEach(({ node }) => node.remove());
+        widget.getContentHeight = nativeHeight; widget.inputEditor.layout = nativeLayout; widget.onDidChangeContentHeight = nativeEvent;
+        controls.width = nativeWidth;
+        root.classList.remove('scm-toolkit-responsive-message-bar'); editor.style.removeProperty('min-width');
+    } });
+    schedule();
+}
+
+function scmToolkitApplyMessageBarLayout(widget, settings, controls) {
     const layout = scmToolkitMessageBarLayout(settings.messageBarLayout);
     const elements = scmToolkitMessageBarElements(widget);
     const editor = widget.element.querySelector(':scope > .scm-editor-container');
@@ -146,6 +221,7 @@ function scmToolkitApplyMessageBarLayout(widget, settings) {
     }
 
     refreshSeparators();
+    scmToolkitResponsiveMessageBar(widget, layout, elements, editor, controls);
     return refreshSeparators;
 }
 
@@ -168,7 +244,7 @@ scmToolkitCreateControls = function(...args) {
     };
     args[6] = layoutSettings;
     const controls = scmToolkitCreateControlsWithoutMessageBarLayout(...args);
-    const refreshSeparators = scmToolkitApplyMessageBarLayout(widget, settings) ?? (() => {});
+    const refreshSeparators = scmToolkitApplyMessageBarLayout(widget, settings, controls) ?? (() => {});
     const bindWithoutMessageBarLayout = controls.bind.bind(controls);
     controls.bind = input => {
         bindWithoutMessageBarLayout(input);

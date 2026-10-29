@@ -126,8 +126,9 @@ const { squashMergePullRequest } = require('../extension/merge/pull_request');
     }
   });
   assert.equal(signedResult.merged,true);
-  assert.equal(signedOptions.allowHistoryRewrite,true);
-  assert.equal(signedOptions.rewriteReason,'preserve-human-author');
+  assert.equal(signedOptions.allowHistoryRewrite,false);
+  assert.equal(signedOptions.localGitMerge,true);
+  assert.equal(signedOptions.rewriteReason,'');
   assert.equal(signedOptions.requireSignedCommit,true);
   assert.equal(signedOptions.offerAuthorChoice,false);
   await assert.rejects(squashMergePullRequest(input,async(endpoint,options)=>{

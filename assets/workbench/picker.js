@@ -458,14 +458,14 @@ function scmToolkitAttachCommitSettings(widget, button) {
     // Native Source Control action rows can be briefly absent, recycled, or
     // rendered at a different index. Never leave Magic Settings detached.
     widget.element.append(button);
-    if (!Observer) return;
+    if (!Observer) return () => {};
 
     let observedRoot;
     const observeRoot = root => {
         if (observedRoot === root) return;
         observer.disconnect();
         observer.observe(root, {
-            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index']
+            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index', 'class', 'style', 'hidden', 'disabled', 'aria-disabled']
         });
         observedRoot = root;
     };
@@ -478,7 +478,10 @@ function scmToolkitAttachCommitSettings(widget, button) {
         const rows = inputRow?.parentElement;
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
-        const dropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
+        const nativeDropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
+        // Clean repositories still show the disabled native action. Keep the
+        // wand after its dropdown, inside the same custom outline in all states.
+        const dropdown = nativeDropdown?.getClientRects?.().length === 0 ? undefined : nativeDropdown;
         const destination = dropdown || widget.element;
         if (button.parentElement === destination) return;
         button.parentElement?.classList.remove('scm-toolkit-commit-settings');
@@ -498,6 +501,7 @@ function scmToolkitAttachCommitSettings(widget, button) {
             button.remove();
         }
     });
+    return update;
 }
 
 async function scmToolkitPullCleanRepository(provider, commands, repositoryArgument) {
@@ -1687,7 +1691,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         ponyBranchButton,
         stackedBranchButton
     );
-    scmToolkitAttachCommitSettings(widget, settingsButton);
+    let currentInput;
+    const refreshSettings = scmToolkitAttachCommitSettings(widget, settingsButton);
 
     const branchStrip = scmToolkitCreateBranchStrip(widget, commands, notifications,
         settings, event => openBranchPicker(event), branchButton);
@@ -1704,7 +1709,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let pullRequestEligibilityRequest = 0;
     let repositoryResolveToken = 0;
     let defaultBranchRetry;
-    let currentInput;
     let pending = false;
     let deletingBranch = false;
     let creatingPullRequest = false;
@@ -2671,6 +2675,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentInput = input;
             settingsButton.hidden = false;
             const provider = input.repository.provider;
+            refreshSettings();
             currentRepositoryUri = provider.rootUri;
             const resolveBase = async () => {
                 try {

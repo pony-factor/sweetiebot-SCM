@@ -201,8 +201,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
     ].join('\n\n');
     const prompt = (makePrompt ? makePrompt(selection) + '\n\n' : '') + instructions;
     const url = new URL(destination);
-    url.hash = new URLSearchParams({ sweetiebot_merge: '1', q: prompt, return_to: bridge.url }).toString();
-    if (Buffer.byteLength(url.href) > 70000) throw Error('The refreshed batch prompt exceeds the browser launch budget.');
+    bridge.setPrompt(prompt);
+    url.searchParams.set('sweetiebot_launch', new URL(bridge.url).pathname.split('/').pop());
+    url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: bridge.url }).toString();
     await onState(state());
     return { url: url.href, callback: bridge.url, instructions };
   }

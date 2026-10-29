@@ -22,6 +22,7 @@
         "commit_limits.js",
         "commit_mode_settings.py",
         "commit_settings.js",
+        "commit_drafts.js",
         "commit_shortcut.js",
         "finalized_commit_recovery.js",
         "local_codex_commit.py",
@@ -129,7 +130,8 @@
         "pr_workflows.js",
         "pull_request.js",
         "squash_attribution.js",
-        "ai_review_reply.js"
+        "ai_review_reply.js",
+        "workflow_recovery.js"
       ],
       "syntax": [
         "extension/github/pr_actions.js",
@@ -193,7 +195,9 @@
         "assets/codex/send-wing.js",
         "assets/codex/video-frames.js",
         "scripts/codex_queued_edit.py",
-        "scripts/ui_customizations.py"
+        "scripts/ui_customizations.py",
+        "assets/codex/rate-limit-continuation.js",
+        "assets/codex/activity-cannon.js"
       ]
     },
     "kefania": {
@@ -243,7 +247,8 @@
         "merge_resolution_git.js",
         "pr_session.js",
         "pull_request_batch.js",
-        "pushed_pr.js"
+        "pushed_pr.js",
+        "local_author_merge.js"
       ],
       "syntax": [
         "extension/merge/lindsey_bulk_merge.js",
@@ -275,7 +280,8 @@
         "extension/github/pull_request_batch.js",
         "extension/github/pushed_pr.js",
         "extension/merge/resolution_commits.js",
-        "extension/merge/summary.js"
+        "extension/merge/summary.js",
+        "extension/merge/local_author_merge.js"
       ]
     },
     "browser-ui": {
@@ -343,7 +349,8 @@
         "reload_guard.js",
         "repair.py",
         "runtime_revision.js",
-        "update.py"
+        "update.py",
+        "packaged_runtime.py"
       ],
       "syntax": [
         "extension/extension.js",
@@ -369,6 +376,7 @@
   "specialized_browser_tests": [
     "codex_webview_browser.py",
     "codex_webview_iframe.py",
-    "codex_queued_edit_browser.py"
+    "codex_queued_edit_browser.py",
+    "workflow_recovery_browser.py"
   ]
 }
