@@ -140,13 +140,16 @@ async function run() {
 
   let shareRequest, stage = 0;
   const sharedResponses = [];
-  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click });
-  const menuButton = control('Chat actions', () => { stage = 1; });
+  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click,
+    dispatchEvent() {} });
+  const menuButton = control('Chat actions', () => {});
+  menuButton.dispatchEvent = event => { if (event.type === 'pointerdown' && event.button === 0) stage = 1; };
   const shareButton = control('Share', () => { stage = 2; });
   const copyButton = control('Copy shared link', () => { stage = 3; });
   copyButton.isConnected = true;
   copyButton.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
   const sharingUI = vm.createContext({
+    PointerEvent: class { constructor(type, options) { Object.assign(this, {type}, options); } },
     setTimeout,
     window: { location: { hash: `#/local/${conversationId}` }, addEventListener: (_, callback) => { shareRequest = callback; } },
     document: { querySelectorAll: selector => selector === 'button' ? [menuButton]
@@ -170,6 +173,7 @@ async function run() {
   legacyCopy.isConnected = true;
   legacyCopy.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
   const legacyUI = vm.createContext({
+    PointerEvent: class { constructor(type, options) { Object.assign(this, {type}, options); } },
     setTimeout,
     window: { location: { hash: `#/local/${conversationId}` },
       addEventListener: (_, callback) => { legacyRequest = callback; } },

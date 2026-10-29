@@ -101,6 +101,12 @@ function scmToolkitRegisterCodexSnapshot(api) {
                 if (!findCopy()) {
                     const menu = await waitFor(() => [...document.querySelectorAll('button')].find(element =>
                         visible(element) && label(element) === 'Chat actions'));
+                    // The current dropdown opens on pointerdown, as it does
+                    // for a physical mouse press; click() alone never opens it.
+                    for (const type of ['pointerdown', 'pointerup']) {
+                        menu.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+                            button: 0, pointerType: 'mouse', isPrimary: true }));
+                    }
                     menu.click();
                     const share = await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')]
                         .find(element => visible(element) && /^Share(?: chat)?(?:…|\.\.\.)?$/.test(label(element))));
