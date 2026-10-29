@@ -147,6 +147,7 @@ console.log('Fragment and merge handoff checks passed.');
 
 const mergeCallback = 'http://127.0.0.1:1234/lindsey-merge/11111111-2222-4333-8444-555555555555';
 const mergeReturn = mergeCallback + '#result=' + encodeURIComponent(JSON.stringify({ version: 1, repository: 'owner/repo', results: [] }));
+const fallbackGzUrl=mergeCallback+'#result_gz='+gzipSync(Buffer.from(JSON.stringify({version:1,repository:'owner/repo',results:[]})),{level:9}).toString('base64url');
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: 'Merge #41 & #42', resultLinks: [mergeReturn], streaming: true });
 f.tick(2500); assert.equal(f.navigations.length, 0);
 f.setStreaming(false); f.tick(2500);
@@ -170,20 +171,20 @@ assert.deepEqual(f.navigations, [mergeReturn], 'Merge collection still works aft
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   assistantCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })] });
 f.tick(2500);
-assert.deepEqual(f.navigations, [mergeReturn], 'Complete assistant JSON recovers an omitted final apply link');
+assert.deepEqual(f.navigations, [fallbackGzUrl], 'Complete assistant JSON recovers an omitted final apply link');
 // The live ChatGPT conversation layout uses data-conversation-role.
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   conversationCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })], streaming: true });
 f.tick(2500);
 assert.equal(f.navigations.length, 0, 'New conversation markup still waits for response completion');
 f.setStreaming(false); f.tick(2500);
-assert.deepEqual(f.navigations, [mergeReturn], 'Collect final handoffs from the current ChatGPT conversation markup');
+assert.deepEqual(f.navigations, [fallbackGzUrl], 'Collect final handoffs from the current ChatGPT conversation markup');
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   modernAssistantCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })], streaming: true });
 f.tick(2500);
 assert.equal(f.navigations.length, 0, 'Current assistant Markdown waits for the response to finish');
 f.setStreaming(false); f.tick(2500);
-assert.deepEqual(f.navigations, [mergeReturn], 'Current assistant Markdown without the old role attribute reaches the handoff');
+assert.deepEqual(f.navigations, [fallbackGzUrl], 'Current assistant Markdown without the old role attribute reaches the handoff');
 const punctuated = {version:1, repository:'owner/repo', results:[{number:1, patch:"function f() { return ['x!']*2; }"}]};
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text:'',
   resultLinks:[mergeCallback+'#result='+encodeURIComponent('{"version":1')],
@@ -191,7 +192,7 @@ f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback),
 f.tick(2500);
 assert.equal(f.navigations.length,1,'A broken Markdown link recovers from a complete assistant code block with a toolbar');
 assert(!/[!'()*]/.test(new URL(f.navigations[0]).hash),'Locally encoded handoffs contain no raw Markdown delimiters');
-assert.deepEqual(JSON.parse(new URLSearchParams(new URL(f.navigations[0]).hash.slice(1)).get('result')),punctuated);
+assert.deepEqual(JSON.parse(gunzipSync(Buffer.from(new URLSearchParams(new URL(f.navigations[0]).hash.slice(1)).get('result_gz'),'base64url')).toString('utf8')),punctuated);
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   resultLinks: [mergeReturn], streaming: true, backgroundStreaming: true });
 f.tick(2500);
