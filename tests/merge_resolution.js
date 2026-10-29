@@ -8,6 +8,7 @@ const { createHash } = require('node:crypto');
 const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions, MAX_PATCH_BYTES } = require('../extension/merge/resolution');
 const { createMergeHandoff } = require('../extension/merge/handoff');
 const { patchPaths, safePatchPath } = require('../extension/merge/patch');
+const { validateResolutionHunks, applyResolutionHunks } = require('../extension/merge/conflict_hunks');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const { reviewPublicationInstructions } = require('../extension/merge/review_policy');
 assert(reviewPublicationInstructions().includes('Never create a per-file inline comment'));
@@ -32,7 +33,9 @@ assert(handoffPolicy.includes('mandatory final result'),'Apply with Lindsey is m
 assert(handoffPolicy.includes('RARE OVERSIZE LAST RESORT ONLY'),'Short token transport is an exceptional fallback');
 assert(handoffPolicy.includes('SWEETIEBOT_HANDOFF_GZIP_V1'),'No raw diffs in oversized handoffs');
 assert(handoffPolicy.includes('<details>'),'Oversized transport stays collapsed in chat');
-assert.equal(MAX_PATCH_BYTES,8*1024*1024,'Larger complete patches remain accepted');
+assert.equal(MAX_PATCH_BYTES,32*1024*1024,'Larger complete patches remain accepted');
+assert(handoffPolicy.includes('BULK CONFLICT RESOLUTION'),'Compact per-hunk merge integration is preferred');
+assert(handoffPolicy.includes('resolutionHunks'),'Model need not output complete Git diffs');
 
 assert(handoffPolicy.includes('#result_gz='),'Primary Apply link uses gzip Base64URL');
 assert(handoffPolicy.includes('ONLY following the browser'),'Raw JSON is a last-resort fallback');
@@ -80,6 +83,28 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   assert.doesNotThrow(() => validateResolution({ ...input,
     results: [{ ...input.results[0], patch: 'x'.repeat(60001) }] }, selection),
   'A complete previously oversized patch remains accepted without truncation');
+  const conflict = 'header\n<<<<<<< HEAD\ncurrent main\n=======\nPR feature\n>>>>>>> feature\nfooter\n';
+  const same = [{index:0,choice:'both-ours-first',ours:'current main\n',theirs:'PR feature\n'}];
+  assert.equal(applyResolutionHunks(conflict,same),'header\ncurrent main\nPR feature\nfooter\n');
+  assert.equal(applyResolutionHunks(conflict,[{index:0,choice:'custom',resolved:'integrated\n'}]),
+    'header\nintegrated\nfooter\n','Only the contested region is replaced');
+  assert.throws(() => applyResolutionHunks(conflict,[{index:0,choice:'custom',resolved:'<<<<<<< unresolved\n'}]), /markers/);
+  assert.throws(() => applyResolutionHunks(conflict,[{index:0,choice:'ours',ours:'stale'}]), /does not match/);
+  assert.throws(() => applyResolutionHunks(conflict,[]), /count changed/);
+  assert.throws(() => validateResolutionHunks([{path:'../secrets',hunks:same}]), /safe file/);
+  assert.throws(() => validateResolutionHunks([{path:'file.txt',hunks:[{index:1,choice:'ours'}]}]), /ordered/);
+  assert.throws(() => validateResolutionHunks([{path:'file.txt',hunks:[{index:0,choice:'custom'}]}]), /ordered/);
+  const compactDecision=[{path:'file.txt',title:'🛠️ Keep both sides',description:'Retain the corrected main behavior and PR feature.'}];
+  const compactHunks=[{path:'file.txt',hunks:[{index:0,choice:'both-ours-first'}]}];
+  const compactInput={...input,results:[{...input.results[0],resolutionHunks:compactHunks,decisions:compactDecision}]};
+  assert.equal(validateResolution(compactInput,selection)[0].resolutionHunks[0].hunks[0].choice,'both-ours-first');
+  assert.throws(() => validateResolution({...compactInput,results:[{...compactInput.results[0],patch:'patch'}]},selection),/never both/);
+  assert.throws(() => validateResolution({...compactInput,results:[{...compactInput.results[0],decisions:[]}]},selection),/concrete/);
+  await executeResolution(compactInput,selection,{merge:async(_repo,_number,options)=>{
+    assert.equal(options.resolutionPatch,null);
+    assert.deepEqual(options.resolutionHunks,compactHunks,'Local executor receives only the small conflict choices');
+    return {merged:false,status:'synced'};
+  }});
   let calls = 0;
   const empty = { ...input, results: [] };
   assert.deepEqual(validateResolution(empty, selection), []);

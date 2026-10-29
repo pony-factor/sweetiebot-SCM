@@ -11,6 +11,7 @@ const path = require('node:path');
 const { existsSync } = require('node:fs');
 const { splitSquashTrailers, squashMessage, readCommits } = require('./squash_attribution');
 const { patchPaths, safePatchPath } = require('./patch');
+const { validateResolutionHunks, applyResolutionHunks } = require('./conflict_hunks');
 const { readMergeChecks, waitForMergeChecks } = require('./checks');
 const { readPushedPR } = require('../github/pushed_pr');
 
@@ -22,7 +23,7 @@ const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh
 const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
-  api, git, gitToken, expected, resolutionPatch = null, repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
+  api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
   allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
@@ -61,9 +62,13 @@ async function humanSquashMerge(repository, number, {
       head !== expected.head || original.title !== expected.title)) {
     throw Error('Selected PR head, base or title changed; prepare a fresh handoff.');
   }
-  if (resolutionPatch !== null && baseSha !== expected.baseSha) throw refreshBase();
+  resolutionHunks = validateResolutionHunks(resolutionHunks);
+  const compactResolution = resolutionHunks.length > 0;
+  if (compactResolution && resolutionPatch !== null) throw Error('Compact hunks and a full patch are mutually exclusive.');
+  const needsResolution = resolutionPatch !== null || compactResolution;
+  if (needsResolution && baseSha !== expected.baseSha) throw refreshBase();
   if (resolutionPatch !== null && (!expected || typeof resolutionPatch !== 'string' ||
-      !resolutionPatch.trim() || Buffer.byteLength(resolutionPatch) > 8 * 1024 * 1024)) {
+      !resolutionPatch.trim() || Buffer.byteLength(resolutionPatch) > 32 * 1024 * 1024)) {
     throw Error('A complete bounded resolution patch requires an exact selected snapshot.');
   }
   if (original?.state !== 'open' || original.draft || original.merged_at ||
@@ -112,7 +117,7 @@ async function humanSquashMerge(repository, number, {
   const nativeSquash = repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
-  if (offerAuthorChoice && operation === 'merge' && resolutionPatch === null && original.mergeable === true && !nativeSquash &&
+  if (offerAuthorChoice && operation === 'merge' && !needsResolution && original.mergeable === true && !nativeSquash &&
       !allowHistoryRewrite && commits.length > 1) {
     return { merged: false, status: 'blocked', needsAuthorChoice: true, number, base, baseSha,
       reason: 'This PR has no merge conflict. It was opened by a bot or a different account, so GitHub’s native squash would assign the wrong Git author. Choose Merge preserving commits to retain the original commits without rebasing or rewriting history. A single human-authored squash would require a separately approved history rewrite.' };
@@ -172,10 +177,10 @@ async function humanSquashMerge(repository, number, {
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
   // GitHub can squash a clean human-opened PR without a preliminary sync.
-  if (operation === 'merge' && resolutionPatch === null && original.mergeable === true && nativeSquash) {
+  if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash) {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && resolutionPatch === null && !requireSignedCommit) {
+  if (operation === 'merge' && alreadyPrepared && !needsResolution && !requireSignedCommit) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
@@ -213,7 +218,7 @@ async function humanSquashMerge(repository, number, {
     if (!originalFiles.length || originalFiles.some(name => !safePatchPath(name))) {
       throw Error('PR contains unsafe or secret-bearing paths; local execution is blocked.');
     }
-    if (mergeBase === liveBase && resolutionPatch === null) {
+    if (mergeBase === liveBase && !needsResolution) {
       if (operation === 'sync') return { merged: false, status: 'synced', number,
         sha: originalSha, previousHeadSha: originalSha, base, baseSha, unchanged: true,
         reason: 'PR branch already contains the current base; no incremental commit or push was needed.' };
@@ -235,9 +240,10 @@ async function humanSquashMerge(repository, number, {
     const requiredFiles = originalFiles.filter(name => treeEntries.get(liveBase).get(name) !== treeEntries.get(liveHead).get(name));
     await inRepo('checkout', '--quiet', '--detach', liveBase);
     let resolvedFiles;
-    if (resolutionPatch !== null) {
+    if (needsResolution) {
       // Determine actual conflicts independently of model-supplied metadata.
-      try { await inRepo('merge', '--squash', '--no-commit', liveHead); }
+      try { await inRepo(...(compactResolution ? ['-c', 'merge.conflictStyle=merge'] : []),
+        'merge', '--squash', '--no-commit', liveHead); }
       catch (error) {
         conflicts = (await inRepo('diff', '--name-only', '--diff-filter=U', '-z')).split('\0').filter(Boolean);
         if (!conflicts.length) throw error;
@@ -248,6 +254,39 @@ async function humanSquashMerge(repository, number, {
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
           conflictPaths: conflicts, reason: 'Provide a specific decision title and explanation for each conflicted file before synchronizing the PR branch.' };
       }
+      if (compactResolution) {
+        const actual = conflicts.slice().sort();
+        const supplied = resolutionHunks.map(file => file.path).sort();
+        if (!actual.length || JSON.stringify(actual) !== JSON.stringify(supplied)) {
+          throw Error('Compact resolution must cover exactly the actual conflicting files.');
+        }
+        for (const file of resolutionHunks) {
+          if (!originalFiles.includes(file.path) || !safePatchPath(file.path)) {
+            throw Error('Compact conflict resolution attempted an unrelated or unsafe path.');
+          }
+          const location = path.join(temp, file.path);
+          const stat = await fs.lstat(location);
+          const real = await fs.realpath(location);
+          if (!stat.isFile() || stat.size > 64 * 1024 * 1024 ||
+              !real.startsWith(temp + path.sep)) {
+            throw Error('Compact conflict resolution must target an ordinary bounded checked-out file.');
+          }
+          const source = await fs.readFile(location);
+          if (source.includes(0)) throw Error('Binary conflict content cannot use compact resolutions.');
+          const text = new TextDecoder('utf-8', { fatal: true }).decode(source);
+          const resolved = applyResolutionHunks(text, file.hunks);
+          await fs.writeFile(location, resolved, { encoding: 'utf8' });
+          await inRepo('add', '--', file.path);
+        }
+        const unresolved = await inRepo('diff', '--name-only', '--diff-filter=U', '-z');
+        if (unresolved) throw Error('Unresolved Git conflicts remain after compact application.');
+        resolvedFiles = (await inRepo('diff', '--cached', '--name-only', '-z'))
+          .split('\0').filter(Boolean).sort();
+        if (resolvedFiles.some(file => !originalFiles.includes(file))) {
+          throw Error('Compact resolution modified a path outside the selected pull request.');
+        }
+        await inRepo('diff', '--cached', '--check');
+      } else {
       const patchFile = path.join(temp, '.git', 'sweetiebot-resolution.patch');
       await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
       const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
@@ -282,6 +321,7 @@ async function humanSquashMerge(repository, number, {
         await inRepo('apply', '--index', '--', supplementalFile);
       }
       await inRepo('diff', '--cached', '--check');
+      }
     } else {
       progress('integrating');
       try { await inRepo('merge', '--squash', '--no-commit', liveHead); }
@@ -295,7 +335,7 @@ async function humanSquashMerge(repository, number, {
     }
     // A clean integration is not a conflict resolution. Do not append main-only
     // changes or restart CI merely because the base branch advanced.
-    if (operation === 'sync' && resolutionPatch === null && !conflicts.length) {
+    if (operation === 'sync' && !needsResolution && !conflicts.length) {
       return { merged: false, status: 'synced', unchanged: true, number,
         sha: originalSha, previousHeadSha: originalSha, base, baseSha,
         reason: 'No merge conflicts or explicit resolution changes; left the PR branch unchanged.' };

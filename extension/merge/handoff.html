@@ -26,7 +26,7 @@
         const { value: part, done } = await reader.read();
         if (done) break;
         size += part.byteLength;
-        if (size > 16 * 1024 * 1024) throw Error('Decompressed handoff exceeds 16 MiB.');
+        if (size > 64 * 1024 * 1024) throw Error('Decompressed handoff exceeds 64 MiB.');
         parts.push(part);
       }
     } finally { await reader.cancel().catch(() => {}); }

@@ -76,7 +76,7 @@
       // Almost all handoffs use the short inline gzip URL. Only an oversized
       // complete payload is staged in memory on the nonce-scoped loopback server.
       if (stageAttemptRound === formatPhase || awaitingResponseChange || stagedUrl || staging || !/^[A-Za-z0-9_-]+$/.test(data) ||
-          data.length > 12 * 1024 * 1024 ||
+          data.length > 48 * 1024 * 1024 ||
           callback.href.length + '#result_gz='.length + data.length <= 80000) return;
       stageAttemptRound = formatPhase;
       let bytes, digest, body;
@@ -86,7 +86,7 @@
         digest = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
         if (expectedId && expectedId !== digest) throw Error('The short Apply link does not match its payload.');
         body = JSON.stringify({ id: digest, data });
-        if (Buffer.byteLength(body) > 16 * 1024 * 1024) throw Error('Oversized staged handoff.');
+        if (Buffer.byteLength(body) > 64 * 1024 * 1024) throw Error('Oversized staged handoff.');
       } catch { stagingFailed = true; return; }
       staging = true;
       const http = require('node:http');
@@ -196,7 +196,7 @@
               const encoded = result.get('result_gz');
               if (!/^[A-Za-z0-9_-]+$/.test(encoded)) continue;
               const gzip = require('node:zlib').gunzipSync(
-                Buffer.from(encoded, 'base64url'), { maxOutputLength: 16 * 1024 * 1024 });
+                Buffer.from(encoded, 'base64url'), { maxOutputLength: 64 * 1024 * 1024 });
               input = JSON.parse(gzip.toString('utf8'));
             } else input = JSON.parse(result.get('result'));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;

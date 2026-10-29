@@ -150,6 +150,20 @@ const run = promisify(execFile);
       assert(invalidPatch.reason.includes('correct hunk lengths'));
       assert.equal(pushes.length, 0, 'Reject invalid patch syntax before any branch write');
     }
+    if (resolving) {
+      const compact = [{path:'file.txt',hunks:[{index:0,choice:'custom',
+        resolved:'feature and base update\n'}]}];
+      await assert.rejects(attempt({resolutionPatch:null,resolutionHunks:[{path:'wrong-file.txt',hunks:compact[0].hunks}],
+        operation:'sync'}), /exactly the actual conflicting files/,'Wrong compact path cannot enter the index');
+      const compressedResolution=await attempt({resolutionPatch:null,resolutionHunks:compact,operation:'sync'});
+      assert.equal(compressedResolution.status,'synced','Compact conflict choices integrate through the real local Git executor');
+      assert.equal(await git('--git-dir='+remote,'show',compressedResolution.sha+':file.txt'),
+        'feature and base update','Local Git assembles the complete resolved file from the small hunk');
+      assert.equal(await git('--git-dir='+remote,'show',compressedResolution.sha+':clean.txt'),'updated clean');
+      assert.equal(await branch('main'),baseSha,'Compact resolution never updates main');
+      await git('--git-dir='+remote,'update-ref','refs/heads/feature',headSha,compressedResolution.sha);
+      pushed=false;pushes.length=0;
+    }
     assert.equal(await branch('feature'), headSha, 'Every blocked preflight leaves the selected branch unchanged');
     assert.equal(await branch('main'), baseSha, 'Every blocked preflight leaves main unchanged');
     // An ordinary fast-forward push must preserve a competing branch update.

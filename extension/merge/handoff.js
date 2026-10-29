@@ -15,13 +15,13 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8');
   let attempted = false, running = false, outcome, failure;
   let staged; // Only the rare oversized handoff occupies local memory.
-  const maxBodyBytes = 16 * 1024 * 1024;
+  const maxBodyBytes = 64 * 1024 * 1024;
   async function readBody(request) {
     let bytes = 0;
     const chunks = [];
     for await (const chunk of request) {
       bytes += chunk.length;
-      if (bytes > maxBodyBytes) throw Object.assign(Error('Complete handoff exceeds 16 MiB; nothing was applied.'), { status: 413 });
+      if (bytes > maxBodyBytes) throw Object.assign(Error('Complete handoff exceeds 64 MiB; nothing was applied.'), { status: 413 });
       chunks.push(chunk);
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
