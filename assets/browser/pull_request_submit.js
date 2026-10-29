@@ -58,7 +58,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   // Remove transport metadata before ChatGPT hydrates or constructs requests.
   // The complete prompt remains in this isolated preload closure.
   if (fragmentLaunch) {
-    const clean = new URL(launch.href); clean.hash = '';
+    const clean = new URL(launch.href); clean.hash = ''; clean.searchParams.delete('sweetiebot_launch');
     history.replaceState(history.state, '', clean.href);
   }
   const collectResult = () => {
@@ -308,6 +308,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       clean.searchParams.delete('q');
       clean.searchParams.delete('sweetiebot_pr');
       clean.searchParams.delete('sweetiebot_merge');
+      clean.searchParams.delete('sweetiebot_launch');
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
       button.click();
@@ -333,26 +334,15 @@ scmToolkitStartPullRequestWorkflow();
         || callback.username || callback.password || callback.search || callback.hash
         || !/^\/lindsey-merge\/[0-9a-f-]{36}$/.test(callback.pathname)) return;
   } catch { return; }
-  const clean = new URL(launch.href); clean.hash = '';
+  const clean = new URL(launch.href); clean.hash = ''; clean.searchParams.delete('sweetiebot_launch');
   history.replaceState(history.state, '', clean.href);
-  const request = require('node:http').get(callback.href + '/prompt', { timeout: 15000 }, response => {
-    const chunks = []; let bytes = 0;
-    response.on('data', chunk => {
-      bytes += chunk.length;
-      if (bytes > 100000) return request.destroy(new Error('Merge prompt exceeds transport limit.'));
-      chunks.push(chunk);
-    });
-    response.on('end', () => {
-      try {
-        if (response.statusCode !== 200) throw Error('Merge prompt transport failed.');
-        const { prompt } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        if (typeof prompt !== 'string' || !prompt.trim()) throw Error('Empty merge prompt.');
-        args.set('q', prompt);
-        launch.hash = args.toString();
-        scmToolkitStartPullRequestWorkflow(launch.href);
-      } catch (error) { console.error('Sweetiebot merge launch:', error.message); }
-    });
-  });
-  request.on('timeout', () => request.destroy(new Error('Merge prompt transport timed out.')));
-  request.on('error', error => console.error('Sweetiebot merge launch:', error.message));
+  require('electron').ipcRenderer.invoke('sweetiebot:merge-prompt')
+    .then(raw => {
+      if (new TextEncoder().encode(raw).length > 100000) throw Error('Merge prompt exceeds transport limit.');
+      const { prompt } = JSON.parse(raw);
+      if (typeof prompt !== 'string' || !prompt.trim()) throw Error('Empty merge prompt.');
+      args.set('q', prompt);
+      launch.hash = args.toString();
+      scmToolkitStartPullRequestWorkflow(launch.href);
+    }).catch(error => console.error('Sweetiebot merge launch:', error.message));
 })();

@@ -12,10 +12,10 @@ function scmToolkitActivityMinutes(value) {
     if (!globalThis.scmToolkitActivityCannonEnabled || globalThis.scmToolkitActivityCannonInstalled) return;
     globalThis.scmToolkitActivityCannonInstalled = true;
     const style = document.createElement('style');
-    style.textContent = '[data-scm-toolkit-activity-cannon]{font-size:0!important;display:inline-flex!important;align-items:center;gap:6px}[data-scm-toolkit-activity-cannon]::before{content:attr(data-scm-toolkit-activity-dots);font-size:24px;line-height:1}[data-scm-toolkit-activity-cannon]::after{content:"";display:inline-block;width:22px;height:22px;background:center/contain no-repeat var(--scm-toolkit-activity-cannon-image)}';
+    style.textContent = '[data-scm-toolkit-activity-cannon]{font-size:0!important;display:inline-flex!important;align-items:center;gap:6px}[data-scm-toolkit-activity-cannon]>:not(svg){font-size:0!important}[data-scm-toolkit-activity-cannon]::before{content:attr(data-scm-toolkit-activity-dots);font-size:24px;line-height:1}[data-scm-toolkit-activity-cannon]::after{content:"";display:inline-block;width:22px;height:22px;background:center/contain no-repeat var(--scm-toolkit-activity-cannon-image)}';
     (document.head || document.documentElement).append(style);
     const scan = () => {
-        for (const node of document.querySelectorAll('span, p, button, summary, [data-scm-toolkit-activity-cannon]')) {
+        for (const node of document.querySelectorAll('span, p, div, button, summary, [data-scm-toolkit-activity-cannon]')) {
             if (node.closest('[data-message-author-role="user"], [data-conversation-role="user"], [contenteditable], pre, code')) continue;
             const minutes = scmToolkitActivityMinutes(node.textContent);
             if (minutes === null) {
