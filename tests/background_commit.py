@@ -46,9 +46,9 @@ class BackgroundCommitTests(unittest.TestCase):
         return subprocess.check_output(['/usr/bin/git', *args], text=True, **kwargs).strip()
 
     def assert_no_placeholder_titles(self, *revisions):
-        subjects = self.git('log', '--format=%s', *revisions)
-        self.assertNotIn('hoof_', subjects)
-        self.assertNotIn('placeholder_', subjects)
+        subjects = self.git('log', '--format=%s', *revisions).splitlines()
+        for subject in subjects:
+            self.assertIsNone(worker.re.fullmatch(worker.PLACEHOLDER_SUBJECT_PATTERN, subject), subject)
 
     def queue(self, **request):
         result = worker.enqueue({'message': '🧪 Record captured change', **request}, start=False)
@@ -366,9 +366,9 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
         self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'for-each-ref'), '')
 
-    def test_finalized_advance_with_untracked_hoof_placeholder_stays_blocked(self):
+    def test_finalized_advance_with_untracked_configured_placeholder_stays_blocked(self):
         directory = self.queue(push=True)
-        self.git('commit', '--allow-empty', '-qm', 'hoof_123456789AB')
+        self.git('commit', '--allow-empty', '-qm', worker.get_placeholder_prefix() + '123456789AB')
         before = self.git('rev-parse', 'HEAD')
         worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'blocked')
@@ -661,13 +661,14 @@ class BackgroundCommitTests(unittest.TestCase):
                 self.assertEqual(status()['pushPending'], expected)
 
     def test_placeholder_clears_staging_before_generation_and_push(self):
-        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):
-            directory = self.queue(message='', push=True, signoff=True)
+        with patch.object(worker, 'get_placeholder_prefix', return_value='pony_'):
+            with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Must run later')):
+                directory = self.queue(message='', push=True, signoff=True)
         provisional = self.git('rev-parse', 'HEAD')
         self.assertRegex(directory.name, r'^[1-9A-HJ-NP-Za-km-z]{11}$')
-        self.assertEqual(self.git('log', '-1', '--format=%s'), 'hoof_' + directory.name)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'pony_' + directory.name)
+        self.assertEqual(self.job(directory)['placeholder_prefix'], 'pony_')
         identity = self.git('show', '-s', '--format=%an|%ae|%aI|%cn|%ce|%cI')
-        self.assertIn(worker.PLACEHOLDER, self.git('log', '-1', '--format=%s'))
         self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
         self.assertEqual(self.git('status', '--porcelain'), '')
         remote = '--git-dir=' + str(self.root / 'remote')
@@ -1351,7 +1352,7 @@ worker.work(Path(sys.argv[2]))
         base = self.git('rev-parse', 'HEAD')
         self.git('commit', '--allow-empty', '-q', '-m', 'placeholder_123456789AB')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
-        self.git('commit', '--allow-empty', '-q', '-m', 'hoof_123456789AB')
+        self.git('commit', '--allow-empty', '-q', '-m', worker.get_placeholder_prefix() + '123456789AB')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)
         self.git('commit', '--allow-empty', '-q', '-m', 'Later completed message')
         self.assertEqual(worker.completed_branch_base('/usr/bin/git', [], 'main'), base)

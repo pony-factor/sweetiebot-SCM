@@ -8,6 +8,10 @@ from pathlib import Path
 from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
 
 
+DEFAULT_PLACEHOLDER_PREFIX = "hoof_"
+PLACEHOLDER_PREFIX_PATTERN = r"[A-Za-z][A-Za-z0-9_-]{0,14}_"
+
+
 DEFAULT_SETTINGS = {
     "branchPicker": True,
     "horizontalBranchSelector": True,
@@ -104,6 +108,7 @@ DEFAULT_SETTINGS = {
     "aiCoremlLowMemoryModel": "qwen3.5-0.8b",
     "aiCoremlCommand": "~/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane",
     "durableBackgroundCommits": False,
+    "placeholderPrefix": DEFAULT_PLACEHOLDER_PREFIX,
     "autoCommitWithCodex": False,
     "aiDetailedCommitStyle": False,
     "aiTitleExplanations": False,
@@ -364,6 +369,7 @@ SETTING_KEYS = {
     "aiCoremlLowMemoryModel": "scm-toolkit.ai-coreml-low-memory-model",
     "aiCoremlCommand": "scm-toolkit.ai-coreml-command",
     "durableBackgroundCommits": "scm-toolkit.durable-background-commits",
+    "placeholderPrefix": "scm-toolkit.placeholder-prefix",
     "autoCommitWithCodex": "scm-toolkit.auto-commit-with-codex",
     "aiDetailedCommitStyle": "scm-toolkit.ai-detailed-commit-style",
     "aiTitleExplanations": "scm-toolkit.ai-title-explanations",
