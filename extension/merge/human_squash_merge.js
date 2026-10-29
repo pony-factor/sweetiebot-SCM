@@ -52,7 +52,7 @@ function verifyCommit(commit, expected, author) {
 }
 
 
-async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localMerge, trailerSeparatorStyle } = {}) {
+async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localGitMerge = false, expected: selected, localMerge, trailerSeparatorStyle } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
@@ -73,6 +73,10 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
     throw Error('PR must be open, mergeable, unstacked, and have a distinct head and base.');
   }
 
+  if (selected && (selected.headSha !== headSha || selected.head !== head || selected.base !== base || selected.title !== original.title)) {
+    throw Error('Selected PR head, base or title changed before the local Git handoff.');
+  }
+
   // PR base.sha can lag behind the branch even on a fresh PR response.
   // Snapshot the branch itself and recheck it before the merge write.
   const readBaseTip = async () => {
@@ -84,6 +88,13 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
 
   const commits = await readCommits(async ([endpoint]) => api(endpoint), repository, number);
   const author = humanAuthor(commits);
+  if (localGitMerge) {
+    localMerge ||= require('./local_human_squash').humanSquashMerge;
+    return localMerge(repository, number, {
+      api, gitToken, localGitMerge: true, allowHistoryRewrite: false,
+      expected: { headSha, baseSha, head, base, title: original.title }
+    });
+  }
   const prepareSquash = async () => {
     // Only the local one-PR merge action opts into this last resort. The local
     // executor independently verifies necessity, branch isolation, live tips,

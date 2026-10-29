@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -75,6 +76,19 @@ class AsyncCommitTests(unittest.TestCase):
             self.assertTrue(all(call.args == (asynchronous.BASE58_ALPHABET,)
                                 for call in choose.call_args_list))
 
+    def test_placeholder_subject_pattern_supports_new_and_legacy_titles(self):
+        subjects = (
+            'hoof_123456789AB',
+            'placeholder_123456789AB',
+            'placeholder_0123456789abcdef',
+            '💭 Generate local commit message [123456789AB]',
+            '💭 Generate local commit message [0123456789abcdef]',
+        )
+        for subject in subjects:
+            with self.subTest(subject=subject):
+                self.assertIsNotNone(re.fullmatch(asynchronous.PLACEHOLDER_SUBJECT_PATTERN, subject))
+        self.assertIsNone(re.fullmatch(asynchronous.PLACEHOLDER_SUBJECT_PATTERN, 'hoof_0123456789A'))
+
     def test_commit_returns_with_placeholder_then_finalizes_without_restage(self):
         self.assertEqual(self.prepare(), 0)
         job = asynchronous.read_journal(self.pending())
@@ -84,7 +98,7 @@ class AsyncCommitTests(unittest.TestCase):
         tree = self.git("rev-parse", "HEAD^{tree}").stdout.strip()
         self.assertIn(asynchronous.PLACEHOLDER, self.title())
         self.assertRegex(job['id'], r'^[1-9A-HJ-NP-Za-km-z]{11}$')
-        self.assertEqual(self.title(), 'placeholder_' + job['id'])
+        self.assertEqual(self.title(), 'hoof_' + job['id'])
 
         # Work continues while the model works. The worker must not include it.
         (self.root / "story.md").write_text("Subsequent staged story\n", encoding="utf-8")

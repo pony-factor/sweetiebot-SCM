@@ -46,6 +46,28 @@ function githubRepository(remoteUrl) {
   return match ? `https://github.com/${match[1]}/${match[2]}` : undefined;
 }
 
+async function findOpenPullRequest(vscode, repositoryUrl, branch, request) {
+  const normalized = githubRepository(repositoryUrl);
+  if (!normalized || !branch) throw new Error('Select a GitHub repository and head branch.');
+  const repository = normalized.slice('https://github.com/'.length);
+  if (!request) {
+    const session = await require('./session').githubSession(vscode);
+    const fetchRead = require('./read_api').createLindseyReadFetch(repository);
+    request = require('./user_api').githubUserAPI(session.accessToken, fetchRead);
+  }
+  // Do not filter by base or draft status: either can still have an open PR.
+  const query = new URLSearchParams({ state: 'open', head: repository.split('/')[0] + ':' + branch, per_page: '100' });
+  const pulls = await request('repos/' + repository + '/pulls?' + query);
+  if (!Array.isArray(pulls)) throw new Error('GitHub returned an invalid pull-request list.');
+  const pr = pulls.find(pr => pr.state === 'open' && pr.head?.ref === branch
+    && pr.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase());
+  if (!pr) return undefined;
+  if (!Number.isSafeInteger(pr.number) || pr.number < 1 || pr.html_url !== normalized + '/pull/' + pr.number) {
+    throw new Error('GitHub returned an invalid existing pull-request reference.');
+  }
+  return { number: pr.number, url: pr.html_url, head: branch, base: pr.base?.ref };
+}
+
 function kefaniaRulesPath(repositoryPath) {
   return path.join(path.dirname(path.resolve(repositoryPath)), KEFANIA_DIRECTORY, KEFANIA_RULES_FILE);
 }
@@ -355,6 +377,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const readInstructions = dependencies.readInstructions || readKefaniaInstructions;
   const readPony = dependencies.readPony || readSweetiebotPony;
   const run = dependencies.runKefania || runKefania;
+  const findOpenPR = dependencies.findOpenPullRequest || findOpenPullRequest;
   const verifyPublished = dependencies.verifyPublishedBranch || verifyPublishedBranch;
   const resolveStackBase = dependencies.stackedPullRequestBase || stackedPullRequestBase;
   const merge = dependencies.mergePullRequest || squashMergePullRequest;
@@ -424,7 +447,11 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // underway. Open the PR workspace now; its drafting flow waits for the
     // durable queue to finish before checking published-branch eligibility.
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
-    if (waitForCommits) return { allowed: true, reason: 'pending-commits' };
+    if (waitForCommits) {
+      const pullRequest = await findOpenPR(vscode, repositoryUrl, options.branch);
+      if (pullRequest) return { allowed: false, reason: 'open-pr', pullRequest };
+      return { allowed: true, reason: 'pending-commits' };
+    }
     await verifyPublished(repository.rootUri.fsPath, options.branch, options.remote);
     const evidence = await run(repository.rootUri.fsPath, {
       repository: repositoryUrl.slice('https://github.com/'.length),
@@ -523,6 +550,16 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
 
+    if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    // Recheck at click time, before sharing a conversation or launching a
+    // workspace. The picker's cached eligibility can predate PR publication.
+    const existing = await findOpenPR(vscode, repositoryUrl, branch);
+    if (existing) {
+      await vscode.window.showInformationMessage(`PR #${existing.number} already exists for ${branch}; opening it instead.`);
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(existing.url));
+      return { ...existing, existing: true, repositoryUrl };
+    }
+
     let source = normalizeConversationSource(options.source);
     let conversationContext = typeof options.conversationContext === 'string' ? options.conversationContext : '';
     let conversationModel = options.conversationModel;
@@ -536,6 +573,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // Capture a fresh native Share snapshot in the originating window before
     // opening the independent Kefania session. Do not share a different chat.
     if (source?.kind === 'codex' && !options.source) {
+      try {
       const shared = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,
       }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid));
@@ -543,6 +581,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         throw new Error('Kefania could not verify publication of the active Codex chat.');
       }
       source = { ...source, sharedUrl: shared.sharedUrl };
+      } catch (error) {
+        void vscode.window.showWarningMessage('The chat could not be shared. Kefania will continue with the captured conversation and local chat link. ' + error.message);
+      }
     }
 
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
@@ -774,6 +815,7 @@ module.exports = {
   verifyPublishedBranch,
   appendSourceDetails,
   githubRepository,
+  findOpenPullRequest,
   kefaniaRulesPath,
   matchSweetiebotPonyCatalog,
   normalizeConversationSource,

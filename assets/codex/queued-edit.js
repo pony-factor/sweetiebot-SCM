@@ -223,7 +223,7 @@
       .scm-toolkit-queue-pause button:hover { background:var(--vscode-toolbar-hoverBackground); }
       .scm-toolkit-queue-pause [role=status] { font-size:12px; color:var(--vscode-descriptionForeground); }
       .scm-toolkit-queue-editor { min-width:0; padding:8px; border:1px solid var(--vscode-focusBorder,#888); border-radius:8px; background:var(--vscode-input-background); margin:4px 0; }
-      .scm-toolkit-queue-editor textarea { display:block; box-sizing:border-box; width:100%; min-height:72px; max-height:none; overflow-y:hidden; resize:vertical; border:0; outline:0; background:transparent; color:inherit; font:inherit; line-height:1.5; white-space:pre-wrap; }
+      .scm-toolkit-queue-editor textarea { display:block; box-sizing:border-box; width:100%; min-height:72px; max-height:40vh; overflow-y:auto; resize:vertical; border:0; outline:0; background:transparent; color:inherit; font:inherit; line-height:1.5; white-space:pre-wrap; }
       .scm-toolkit-queue-editor footer { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:12px; }
       .scm-toolkit-queue-editor [role=status] { flex:1 1 100%; opacity:.8; }
       .scm-toolkit-queue-editor button { border:0; border-radius:4px; padding:3px 8px; background:var(--vscode-button-secondaryBackground); color:inherit; cursor:pointer; }
@@ -233,7 +233,12 @@
       .scm-toolkit-queue-editor .scm-toolkit-queue-cancel:focus-visible { outline:1px solid var(--vscode-focusBorder,#888); outline-offset:1px; }
     `;
     document.head.append(style);
-    const autoSize = field => { field.style.height = 'auto'; field.style.height = Math.max(72, field.scrollHeight) + 'px'; };
+    const autoSize = field => {
+        const scroll = field.scrollTop;
+        field.style.height = 'auto';
+        field.style.height = Math.min(Math.max(72, field.scrollHeight), Math.max(72, window.innerHeight * .4)) + 'px';
+        field.scrollTop = scroll;
+    };
     function adapterFor(row) {
         const id = row.dataset.scmToolkitQueueId;
         const host = row.dataset.scmToolkitQueueHost;
@@ -275,7 +280,7 @@
             save.disabled = state.moved || field.disabled || state.receipt?.canRestore === false;
             cancel.disabled = state.phase === 'opening' || state.phase === 'saving' || state.receipt?.canRestore === false;
             status.textContent = state.error || (state.phase === 'saving' ? 'Saving…' : state.phase === 'opening' ? 'Pausing queue…' : 'Queue paused while you edit. Leaving the editor saves your changes.');
-            if (document.activeElement !== field) field.value = state.text;
+            if (document.activeElement !== field && field.value !== state.text) field.value = state.text;
             autoSize(field);
             if (state.phase === 'editing' && !focused && field.isConnected) { focused = true; field.focus(); }
         });
@@ -286,6 +291,9 @@
         anchor.parent.insertBefore(box, anchor.before?.parentElement === anchor.parent ? anchor.before : null);
         field.addEventListener('input', () => { edit.update(field.value); autoSize(field); });
         field.addEventListener('keydown', event => {
+            // Native composer shortcuts must never intercept editing keys or
+            // IME Enter and accidentally submit a different queued message.
+            event.stopPropagation();
             if (event.isComposing) return;
             if (event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey))) {
                 event.preventDefault(); event.stopPropagation(); void edit.finish(event.key === 'Escape');
@@ -294,8 +302,11 @@
         save.addEventListener('click', () => void edit.finish());
         cancel.addEventListener('click', () => void edit.finish(true));
         box.addEventListener('focusout', () => setTimeout(() => {
-            if (!box.contains(document.activeElement) && edit.phase === 'editing') void edit.finish();
-        }, 0));
+            // React can briefly detach/reparent this editor. Losing focus to
+            // the document body is not a request to commit an unfinished edit.
+            if (!box.contains(document.activeElement) && document.activeElement !== document.body
+                && document.activeElement !== document.documentElement && edit.phase === 'editing') void edit.finish();
+        }, 250));
         void edit.begin(recovery);
     }
     document.addEventListener('click', event => {

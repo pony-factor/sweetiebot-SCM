@@ -66,6 +66,15 @@ assert.equal(uploads, 1);
 assert.equal(dropped.stopped, true, 'native attachment processing happens once');
 listeners.get('drop')(event('drop', false));
 assert.equal(uploads, 1, 'text and internal drags are left alone');
+const readyImage = { name: 'Screenshot.png', type: 'image/png', size: 4096 };
+const readyDrop = event('drop');
+readyDrop.dataTransfer = { files: [readyImage], types: ['Files', 'text/html'], items: [{
+    kind: 'file', type: 'image/png', getAsFile: () => readyImage,
+    webkitGetAsEntry() { throw Error('Ready images must not resolve OS file promises'); },
+}], getData() { throw Error('Ready images must not copy HTML drag payloads'); } };
+listeners.get('drop')(readyDrop);
+assert.equal(uploads, 2, 'a ready image reaches the native upload synchronously in the drop event');
+assert.equal(readyDrop.stopped, true);
 let hiddenUploads = 0;
 const disposeHidden = context.scmToolkitRegisterImageDropTarget(
     { contains: () => true, getClientRects: () => [] }, () => {}, () => {}, () => hiddenUploads++);

@@ -13,7 +13,6 @@ import workspace_search
 import codex_colors
 import codex_label
 import codex_composer
-import codex_cannon
 import codex_queued_edit
 import codex_usage
 import codex_context
@@ -45,8 +44,6 @@ CODEX_PROMOTIONS_START = '\n/* scm-toolkit-codex-promotions:start */\n'
 CODEX_PROMOTIONS_END = '\n/* scm-toolkit-codex-promotions:end */\n'
 CODEX_TIMESTAMPS_START = '\n/* scm-toolkit-codex-timestamps:start */\n'
 CODEX_TIMESTAMPS_END = '\n/* scm-toolkit-codex-timestamps:end */\n'
-CODEX_CANNON_START = '\n/* scm-toolkit-codex-cannon:start */\n'
-CODEX_CANNON_END = '\n/* scm-toolkit-codex-cannon:end */\n'
 CODEX_DICTATION_START = '\n/* scm-toolkit-codex-dictation:start */\n'
 CODEX_DICTATION_END = '\n/* scm-toolkit-codex-dictation:end */\n'
 
@@ -74,6 +71,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
         (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "background_commit.py", primary.with_name("background_commit.py")),
+        (HERE.parent / "extension/commits/pony_git_publish.js", primary.with_name("pony_git_publish.js")),
         (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
         (HERE / "cloud_repo_sync.py", primary.with_name("cloud_repo_sync.py")),
         (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),
@@ -894,7 +892,7 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
-def codex_rate_limit_script(sticker_enabled=True):
+def codex_rate_limit_script(sticker_enabled=True, cannon_enabled=False):
     """Embed user-private cached artwork or bundled Twilight in the local Codex webview."""
     script = (CODEX_ASSETS / "rate-limit-controls.js").read_text()
     placeholder = '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"'
@@ -912,8 +910,14 @@ def codex_rate_limit_script(sticker_enabled=True):
         else:
             mime, data = custom
         data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
-    return (script.replace(placeholder, json.dumps(data_url))
-            .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
+    script = (script.replace(placeholder, json.dumps(data_url))
+              .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
+    if cannon_enabled:
+        image = (CODEX_ASSETS.parent / 'imgs/activity-cannon.png').read_bytes()
+        script += ('\nglobalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage='
+                   + json.dumps('data:image/png;base64,' + base64.b64encode(image).decode('ascii')) + ';\n'
+                   + (CODEX_ASSETS / 'activity-cannon.js').read_text())
+    return script
 
 
 def codex_transcript_compact_edits(js, hide_reset_times=False):
@@ -1009,7 +1013,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True, cannon_payload=None):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True, cannon_enabled=False):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -1052,12 +1056,6 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
         js = strip_codex_dictation_payload(js)
     if CODEX_TIMESTAMPS_START in js:
         js = strip_codex_timestamps_payload(js)
-    if js.count(CODEX_CANNON_START) != js.count(CODEX_CANNON_END) or js.count(CODEX_CANNON_START) > 1:
-        raise ValueError('Incomplete Codex cannon patch; refusing to overwrite it.')
-    if CODEX_CANNON_START in js:
-        before, rest = js.split(CODEX_CANNON_START, 1)
-        _, after = rest.split(CODEX_CANNON_END, 1)
-        js = before + after
     if CODEX_PROMOTIONS_START in js:
         js = strip_codex_promotions_payload(js)
 
@@ -1102,7 +1100,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + codex_rate_limit_script(sticker_enabled=sticker_enabled)
+               + codex_rate_limit_script(sticker_enabled=sticker_enabled, cannon_enabled=cannon_enabled)
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:
@@ -1118,9 +1116,6 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
             + (CODEX_ASSETS / "hide-promotions.js").read_text()
             + CODEX_PROMOTIONS_END
         )
-
-    if not remove and cannon_payload:
-        js += CODEX_CANNON_START + cannon_payload + CODEX_CANNON_END
 
     if not remove and hide_timestamps:
         js += (
@@ -1640,13 +1635,6 @@ def plan_codex_patches(args, settings):
             old.append(queue_old)
             new.append(queue_new)
 
-    cannon_payload = None
-    if settings["codexShowCannon"] and not args.uninstall:
-        try:
-            cannon_payload = codex_cannon.bundle()
-        except (OSError, ValueError) as error:
-            print(f'Warning: Flawless-GPT cannon unavailable: {error}. Skipping optional cannon.')
-
     should_find_codex = (
         settings["codexUsageResetCountdown"]
         or hide_reset_times
@@ -1680,7 +1668,7 @@ def plan_codex_patches(args, settings):
                 short_model_labels=settings["codexShortModelLabels"],
                 window_label=settings["codexWindowLabel"],
                 sticker_enabled=settings["codexRateLimitSticker"],
-                cannon_payload=cannon_payload,
+                cannon_enabled=settings["codexShowCannon"],
                 remove=args.uninstall,
             )
         except ValueError as error:
@@ -1690,7 +1678,6 @@ def plan_codex_patches(args, settings):
                 or CODEX_LIMIT_START in codex_old
                 or CODEX_PROMOTIONS_START in codex_old
                 or CODEX_TIMESTAMPS_START in codex_old
-                or CODEX_CANNON_START in codex_old
                 or CODEX_DICTATION_START in codex_old
                 or CODEX_LABELS_START in codex_old
                 or CODEX_WINDOW_LABEL_START in codex_old
@@ -1862,7 +1849,8 @@ def main():
             workspace_search.remove_legacy_extensions()
         if old != list(new):
             if old != [path.read_text() for path in paths]:
-                raise RuntimeError("VS Code changed during validation; retry the command.")
+                changed = [str(path) for path, expected in zip(paths, old) if path.read_text() != expected]
+                raise RuntimeError("VS Code changed during validation; retry the command. Changed assets: " + ', '.join(changed))
             write_pair(paths, new, old)
         if not args.codex_only:
             sync_live_components(workbench_paths[0].parent, remove=args.uninstall)

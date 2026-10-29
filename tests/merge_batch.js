@@ -1,4 +1,11 @@
 'use strict';
+async function readPrompt(address) {
+  const args = new URLSearchParams(new URL(address).hash.slice(1));
+  assert.equal(args.has('q'), false, 'Prompt bodies must never appear in launch URLs');
+  assert(address.length < 500, 'Launch metadata remains bounded independently of prompt size');
+  return (await (await fetch(args.get('return_to') + '/prompt')).json()).prompt;
+}
+
 const assert = require('node:assert/strict');
 const { createMergeBatch } = require('../extension/merge/batch');
 const { readMergeChecks, waitForMergeChecks } = require('../extension/merge/checks');
@@ -53,7 +60,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(first.value.batch.merged.length, 1);
     assert.equal(first.value.batch.activities[1].phase, 'merged');
     assert.equal(first.value.batch.activities[2].phase, 'reviewing');
-    let prompt = new URLSearchParams(new URL(first.value.continueUrl).hash.slice(1)).get('q');
+    let prompt = await readPrompt(first.value.continueUrl);
     assert(prompt.includes('Preserve the main calculation fix.'));
     assert(prompt.includes('GITHUB REVIEW PUBLICATION POLICY'));
     assert(prompt.includes('publish zero inline comments'));
@@ -64,7 +71,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert(prompt.includes('"baseAdvancedByEarlierWork":true'));
     assert(prompt.includes('"initiallyMergeable":true'));
     const conflict = await submit(first.value.continueUrl, [item(2, d)]);
-    prompt = new URLSearchParams(new URL(conflict.value.continueUrl).hash.slice(1)).get('q');
+    prompt = await readPrompt(conflict.value.continueUrl);
     assert(prompt.includes('price.js'));
     assert(prompt.includes('needs_resolution'));
     assert.equal(conflict.value.batch.deferred.length, 0, 'A routine overlap does not request human input');
@@ -88,7 +95,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(forbidden.status,400);assert.equal(repairAttempts,0);
     const first=await submit(repair.url,[{...item(1,c),operation:'sync'}]);
     assert(first.value.continueUrl,'Manual PR repair automatically continues after discovering conflicts');
-    const prompt=new URLSearchParams(new URL(first.value.continueUrl).hash.slice(1)).get('q');
+    const prompt=await readPrompt(first.value.continueUrl);
     assert(prompt.includes('BRANCH-ONLY EXECUTION'));
     assert(prompt.includes('options.html'));
     const second=await submit(first.value.continueUrl,[{...item(1,c,'complete patch\n'),operation:'sync'}]);
@@ -230,7 +237,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     const failed = await submit(failing.url, [item(1, c)]);
     assert.equal(failed.value.batch.deferred.length, 0);
     assert(failed.value.continueUrl, 'Give AI the actual failure before stopping');
-    const prompt = new URLSearchParams(new URL(failed.value.continueUrl).hash.slice(1)).get('q');
+    const prompt = await readPrompt(failed.value.continueUrl);
     assert(prompt.includes('inspect the actual failing job logs'));
     assert(prompt.includes('missing warning preference in test harness'));
     const exhausted = await submit(failed.value.continueUrl, [item(1, c, 'complete repaired patch\n', e)]);

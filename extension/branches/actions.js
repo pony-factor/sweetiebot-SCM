@@ -1231,6 +1231,9 @@ function registerBranchCommands(vscode, context) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
       try {
         const repository = await resolveRepository(uri);
+        const commitDraftValue = repository.inputBox?.value;
+        if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
+          await require('./commit_drafts').preserveCommitDraft(vscode, repository.rootUri.fsPath, undefined, commitDraftValue);
         const attempt = async () => {
           const remote = options?.remote || 'origin';
           const defaultBranch = needsDefaultBranch.has(command)
@@ -1271,10 +1274,10 @@ function registerBranchCommands(vscode, context) {
               });
             }
           }
-          return action(repository, {
+          const result = await action(repository, {
             ...options, defaultBranch,
             ...(command === 'sweetiebot.createBranch' && defaultBranch === 'main' ? {
-              isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork })
+              isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork, commitDraftValue })
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
               reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details)
@@ -1285,6 +1288,9 @@ function registerBranchCommands(vscode, context) {
               })
             } : {})
           });
+          if (command === 'sweetiebot.createBranch' && commitDraftValue && !repository.inputBox.value)
+            repository.inputBox.value = commitDraftValue;
+          return result;
         };
         try {
           return await queueRepositoryOperation(repository, attempt);

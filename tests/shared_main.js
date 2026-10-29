@@ -22,7 +22,7 @@ async function openedRoot(result) {
   const githubDirectory = path.join(temporary, 'GitHub');
   const baseDirectory = path.join(temporary, 'Workspaces');
   const root = path.join(githubDirectory, 'owner', 'repo');
-  const options = { githubDirectory, baseDirectory };
+  const options = { githubDirectory, baseDirectory, alive: () => true };
   try {
     await fs.mkdir(root, { recursive: true });
     git('init', '-b', 'main', root);
@@ -145,10 +145,17 @@ async function openedRoot(result) {
         'Save the same-chat handoff before an extension-host restart');
       return true;
     };
+    // Existing windows must not steal this branch switch or its Codex chat.
+    await fs.writeFile(path.join(path.dirname(topic), '.sweetiebot-session-2345-test.json'),
+      JSON.stringify({ pid: process.pid + 1, roots: [topic], workspaceFile: topicWorkspace }));
+    await fs.writeFile(path.join(first.directory, '.sweetiebot-session-2345-test.json'),
+      JSON.stringify({ pid: process.pid + 1, roots: [root], workspaceFile: first.target }));
     await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: topic }, name: 'Repo' }]);
     assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'),
       'An existing saved workspace must not reopen the window');
+    assert(!moving.commands.calls.some(call => call[0] === 'workbench.action.closeWindow'),
+      'Keep the initiating window and chat even when the topic is open elsewhere');
     const saved = moving.commands.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1];
     assert.equal(saved.workspace, first.target, 'Keep the existing workspace identity');
     assert.equal(saved.plan.destination, topic);

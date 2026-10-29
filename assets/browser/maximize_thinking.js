@@ -17,6 +17,12 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
     || text((element.getAttribute('aria-labelledby') || '').split(' ')
       .map(id => document.getElementById(id)?.textContent || '').join(' '))
     || text(element.getAttribute('title')) || text(element.textContent);
+  const plainSix = selector => {
+    const clone = selector.cloneNode?.(true);
+    clone?.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove());
+    const content = text(clone?.textContent ?? selector.innerText ?? selector.textContent);
+    return /^(?:GPT[- ]?)?6(?:\s*(?:instant|low|medium|high|thinking))?$/i.test(content);
+  };
   const level = element => {
     const selected = text(element.getAttribute('data-selected-reasoning-effort')).toLowerCase();
     if (Object.hasOwn(ranks, selected)) return selected;
@@ -64,12 +70,39 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
     if (status.textContent !== message) status.textContent = message;
   };
   const ensure = () => {
+    // New chats can inherit Work mode. Workflow reviews explicitly use
+    // ChatGPT 6; never silently run them in the separately persisted Sol mode.
+    const mode = [...document.querySelectorAll('button[aria-label^="Switch mode,"]')]
+      .find(node => visible(node) && /^Switch mode, current mode:/i.test(label(node)));
+    if (mode && !/^Switch mode, current mode: ChatGPT$/i.test(label(mode))) {
+      const chat = [...document.querySelectorAll(optionsQuery)].find(node => visible(node) && /^ChatGPT$/i.test(label(node)));
+      if (chat) chat.click();
+      else if (mode.getAttribute('aria-expanded') !== 'true') mode.click();
+      mark('Selecting ChatGPT 6 High before sending…');
+      return false;
+    }
     if (pending && (!pending.selector.isConnected || Date.now() - pending.started > 10000)) {
       pending = undefined;
     }
     if (pending) {
       const {selector, state} = pending;
       const menu = findMenu(selector);
+      if (pending.wantPlainModel) {
+        if (plainSix(selector)) {
+          state.attempts = 0;
+          finish(menu);
+          state.confirmed = undefined; // Verify reasoning power after model selection.
+          return false;
+        }
+        const choices = [...document.querySelectorAll(optionsQuery)].filter(visible);
+        const six = choices.find(node => /^(?:GPT[- ]?)?6$/i.test(label(node)));
+        const models = choices.find(node => /^Select model$/i.test(label(node)));
+        if (six) six.click();
+        else if (models) models.click();
+        else if (!menu && Date.now() - pending.opened > 500) { selector.click(); pending.opened = Date.now(); }
+        mark('Selecting ChatGPT 6 before setting High…');
+        return false;
+      }
       if (pending.target && level(selector) === pending.target) finish(menu);
       else if (menu) {
         const slider = menu.querySelector('[role="slider"][aria-valuemax][aria-valuenow]');
@@ -106,13 +139,16 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
     for (const selector of controls) {
       let state = states.get(selector);
       if (!state) { state = {attempts: 0, adjustments: 0}; states.set(selector, state); }
-      if (state.confirmed === level(selector)) continue;
+      if (state.confirmed === level(selector)
+          && (!/^(select chatgpt model|select model)$/i.test(label(selector)) || plainSix(selector))) continue;
       if (state.attempts++ >= 5) {
         mark('Maximum thinking could not be confirmed. Check the thinking setting before sending manually.');
         return false;
       }
       state.adjustments = 0;
       pending = {selector, state, started: Date.now(), opened: Date.now(),
+        wantPlainModel: /^(select chatgpt model|select model)$/i.test(label(selector))
+          && !plainSix(selector),
         before: new Set(document.querySelectorAll('[role="menu"], [role="listbox"]'))};
       key(selector, 'ArrowDown');
       mark('Selecting maximum thinking before sending…');

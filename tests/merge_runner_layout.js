@@ -32,7 +32,7 @@ const {openRepairRunner}=require('../extension/merge/runner_layout');
   await openRepairRunner(vscode,url,{repository:'o/r',number:494});
   assert.equal(opens,1);
   assert.deepEqual(groups[0].tabs,[batch]);
-  assert(groups[1].tabs.some(tab=>tab.url===url),'Second runner is stacked below the original batch');
+  assert(groups[1].tabs.some(tab=>{const opened=new URL(tab.url);assert(opened.searchParams.get('sweetiebot_launch'));opened.searchParams.delete('sweetiebot_launch');return opened.href===url;}),'Second runner is stacked below the original batch');
   assert(groups[2].tabs.includes(dashboard)&&groups[2].tabs.includes(draft));
   assert.equal(draft.draft,'unsent text');assert.equal(setting,true,'Original editor setting is restored');
   await Promise.all([openRepairRunner(vscode,url+'2',{repository:'o/r',number:492}),openRepairRunner(vscode,url+'3',{repository:'o/r',number:496})]);

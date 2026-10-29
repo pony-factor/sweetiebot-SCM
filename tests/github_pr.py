@@ -1,5 +1,7 @@
 import json
 import subprocess
+import tempfile
+from pathlib import Path
 import unittest
 import github_pr
 
@@ -8,6 +10,23 @@ LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick
 
 
 class GitHubPRTests(unittest.TestCase):
+    def test_new_build_tree_handlers_survive_unsupported_optional_cleanup(self):
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:ji(),manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache()}')
+        with tempfile.TemporaryDirectory() as temporary:
+            extension = Path(temporary)
+            asset = extension / 'dist/extension.js'
+            asset.parent.mkdir()
+            asset.write_text(source)
+            edits = github_pr.patch_files(extension)
+            self.assertEqual(len(edits), 1)
+            patched = edits[0][2]
+            self.assertNotIn(github_pr.START, patched)
+            self.assertIn("registerCommand('sweetiebot.squashMergeTreePullRequest'", patched)
+            asset.write_text(patched)
+            self.assertEqual(github_pr.patch_files(extension)[0][2], patched)
+            self.assertEqual(github_pr.patch_files(extension, remove=True)[0][2], source)
+
     def test_description_hydrates_only_incomplete_models_before_initialization(self):
         source = 'async updateItemNow(e){var t,i,r;this._item=e,this.context={body:e.body,bodyHTML:e.bodyHTML}}'
         patched = github_pr.transform_description(source)
