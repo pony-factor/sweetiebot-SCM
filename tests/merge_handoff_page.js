@@ -2,13 +2,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const {gzipSync} = require('node:zlib');
 const script = fs.readFileSync(require.resolve('../extension/merge/handoff.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
-async function page({raw, state, result, statusFailsDuringPost = false}) {
+async function page({raw, compressedRaw, state, result, statusFailsDuringPost = false}) {
   const status = {}, results = {after(){}}, navigations = [], posts = [];
   let poll;
-  const sandbox = {URL,URLSearchParams,JSON,Error,
+  const sandbox = {URL,URLSearchParams,JSON,Error,Blob,DecompressionStream,TextDecoder,Uint8Array,atob,
     document:{getElementById:id=>id==='status'?status:results,createElement:()=>({})},
-    location:{hash:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
+    location:{hash:compressedRaw!==undefined?'#result_gz='+compressedRaw:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
     history:{replaceState(){}},setInterval:callback=>{poll=callback;return 1;},clearInterval(){},
     fetch:async (path,options)=> {
       if(options?.method==='POST') {
@@ -29,6 +30,14 @@ async function page({raw, state, result, statusFailsDuringPost = false}) {
   const fresh=await page({raw:JSON.stringify({version:1}),result});
   assert.equal(fresh.posts.length,1);
   assert.deepEqual(fresh.navigations,[result.continueUrl],'Continue immediately without a background-tab timer');
+  const prepared={version:1,repository:'owner/repo',results:[{number:1,patch:'diff --git a/file b/file\\n'+'+one line\\n'.repeat(200)}]};
+  const gz=gzipSync(Buffer.from(JSON.stringify(prepared)),{level:9}).toString('base64url');
+  const compact=await page({compressedRaw:gz,result});
+  assert.equal(compact.posts.length,1,'Gzip handoff is decoded and submitted once');
+  assert.deepEqual(JSON.parse(compact.posts[0]),prepared,'Large repeated patch data is preserved byte-for-byte');
+  const badGzip=await page({compressedRaw:gz.slice(0,-9)+'AAAAAAAAA'});
+  assert.equal(badGzip.posts.length,0,'Damaged gzip never reaches the local executor');
+  assert.match(badGzip.status,/incomplete|malformed/);
   const legacy=await page({raw:'{}',result,statusFailsDuringPost:true});
   assert.deepEqual(legacy.navigations,[result.continueUrl],'A missing status endpoint cannot discard a successful original apply response');
   assert.equal(legacy.posts.length,1,'Failed status polling never retries Git execution');

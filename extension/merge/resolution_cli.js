@@ -8,7 +8,7 @@ async function main() {
   const [option, file, ...extra] = process.argv.slice(2);
   if (option !== '--input' || !file || extra.length) throw Error('Usage: merge_resolution_cli.js --input handoff.json');
   const stat = await fs.lstat(file);
-  if (!stat.isFile() || stat.size > 200000) throw Error('Invalid or oversized merge handoff.');
+  if (!stat.isFile() || stat.size > 24 * 1024 * 1024) throw Error('Invalid or oversized merge handoff.');
   const { input, selection } = JSON.parse(await fs.readFile(file, 'utf8'));
   const result = await executeResolution(input, validateSelection(selection), {
     // This local entrypoint executes an already-authorized selected merge.

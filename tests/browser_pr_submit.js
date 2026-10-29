@@ -2,9 +2,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { gzipSync, gunzipSync } = require('node:zlib');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], assistantText = '', streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
+  let currentAssistantText = assistantText;
   const timers = new Map();
   const listeners = new Map();
   const composer = { innerText: text, getClientRects: () => [1], focus() {} };
@@ -29,9 +31,9 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   }
   const window = { location: location(url), Storage, localStorage:new Storage() }; window.top = window;
   const history = { state: {}, replaceState(state, title, url) { window.location = location(url); } };
-  vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
+  vm.runInNewContext(source, { window, history, URL, URLSearchParams, Buffer, Date: { now: () => now },
     sweetiebotEnsureMaximumThinking: () => thinkingReady,
-    require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
+    require(name) { if (name === 'node:zlib') return { gzipSync, gunzipSync }; assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { createElement() { return { style: {}, setAttribute() {}, remove() { this.removed = true; } }; }, execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ type: 'input', isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
@@ -39,11 +41,11 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
         if (selector.includes('Stop streaming')) return streaming ? [{ ...button, getClientRects: () => backgroundStreaming ? [] : [1] }] : hiddenStop ? [{getClientRects:()=>[]}] : [];
-        const message = values => ({ querySelectorAll(selector) {
+        const message = values => ({ textContent: currentAssistantText || values.join(' '), querySelectorAll(selector) {
           assert.equal(selector, 'pre code, pre, [data-testid="code-block"]');
           return values.map(textContent => ({ textContent }));
         } });
-        if (selector === '[data-message-author-role="assistant"]') return assistantCodes.length ? [message(assistantCodes)] : [];
+        if (selector === '[data-message-author-role="assistant"]') return assistantCodes.length || currentAssistantText ? [message(assistantCodes)] : [];
         // The role is on a header sibling, not an ancestor of the code block.
         if (selector === '[data-conversation-role="assistant"]') return conversationCodes.length ? [{ parentElement: message(conversationCodes) }] : [];
         if (selector === '[data-markdown-text-style="assistant-message"]') return modernAssistantCodes.length ? [message(modernAssistantCodes)] : [];
@@ -56,7 +58,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
   return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, setStreamError(value){streamError=value;}, retryButton, retries:()=>retries, retryNotices, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
-    sidebarClicks: () => sidebarClicks, revealSidebar: () => { sidebar = true; },
+    sidebarClicks: () => sidebarClicks, setAssistantText(value){currentAssistantText = value;}, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
 let f = fixture({ disabled: true });
@@ -149,6 +151,15 @@ f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback),
 f.tick(2500); assert.equal(f.navigations.length, 0);
 f.setStreaming(false); f.tick(2500);
 assert.deepEqual(f.navigations, [mergeReturn], 'Collect a completed local merge result automatically for sequential continuation');
+const compactPayload={version:1,repository:'owner/repo',results:[{number:41,patch:'diff --git a/b b/b\\n'+'+updated\\n'.repeat(100)}]};
+const compactUrl=mergeCallback+'#result_gz='+gzipSync(Buffer.from(JSON.stringify(compactPayload)),{level:9}).toString('base64url');
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',resultLinks:[compactUrl]});
+f.tick(250);f.tick(2500);f.tick(2500);
+assert.deepEqual(f.navigations,[compactUrl],'Complete compressed Apply with Lindsey links are accepted');
+const badCompact=compactUrl.slice(0,-6)+'invalid';
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',resultLinks:[badCompact]});
+f.tick(2500);
+assert.equal(f.navigations.length,0,'Corrupt gzip data never triggers local execution');
 const partialLinks = [mergeCallback + '#result=' + encodeURIComponent('{"version":1,"repository":"owner/repo","results":[{"patch":"unfinished')];
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: partialLinks });
 f.tick(2500);
@@ -197,6 +208,30 @@ f = fixture({ url: fragmentUrl + '&return_to=' + encodeURIComponent(mergeCallbac
 f.tick(3000);
 assert.equal(f.navigations.length, 0, 'A PR drafting launch cannot invoke Lindsey merge callback');
 
+// A nonce-bound merge answer missing its button receives one link-only follow-up,
+// then and only then a last-resort JSON request; neither step repeats Git.
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),
+  text:'',assistantText:'I prepared the conflict resolution but omitted the link.'});
+f.tick(250);f.composer.innerText='';f.tick(6500);
+assert.match(f.composer.innerText,/Your response did not contain a complete/,'Missing link requests the encoded result');
+f.tick(500);
+assert.equal(f.clicks(),2,'The first follow-up is sent exactly once');
+f.composer.innerText='';
+f.setAssistantText('The link is still unavailable after retry.');
+f.tick(250);f.tick(6500);
+assert.match(f.composer.innerText,/As a last resort/,'Second failure requests fenced JSON');
+f.tick(500);
+assert.equal(f.clicks(),3,'At most one link retry and one JSON fallback request');
+f.tick(30000);assert.equal(f.clicks(),3,'No unbounded follow-up loop');
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+  assistantText:'Incomplete result without link',streaming:true});
+f.tick(10000);
+assert.equal(f.clicks(),1,'Never ask for a missing link while the assistant is streaming');
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+  assistantText:'Incomplete result without link'});
+f.listeners.get('input').forEach(fn=>fn({type:'input',isTrusted:true}));
+f.tick(10000);
+assert.equal(f.clicks(),1,'User intervention cancels automatic follow-up');
 const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);

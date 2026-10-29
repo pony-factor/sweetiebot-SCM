@@ -61,15 +61,18 @@
     const clean = new URL(launch.href); clean.hash = '';
     history.replaceState(history.state, '', clean.href);
   }
+  let initialSubmitted = false;
   const collectResult = () => {
     if (!callback) return;
     const expires = Date.now() + (mergeLaunch ? 6 * 3600000 : 1200000);
     let previous, stableSince;
     let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
     let recoveryAllowed = true;
+    let followupInjecting = false, followupPending, followupInserted = false;
+    let formatPhase = 0, awaitingResponseChange, lastResponseText = '', responseStableSince = Date.now();
     const clearNotice = () => { retryNotice?.remove(); retryNotice = undefined; };
     const cancelRecovery = event => {
-      if (!event.isTrusted || (event.type === 'input' && inserting)) return;
+      if (!event.isTrusted || (event.type === 'input' && (inserting || followupInjecting))) return;
       if (event.type === 'click') {
         const button = event.target.closest?.('button');
         if (!/^(?:send|send prompt|stop|stop streaming|retry|try again)$/i.test(
@@ -85,6 +88,39 @@
     };
     document.addEventListener('input', cancelRecovery, true);
     document.addEventListener('click', cancelRecovery, true);
+    const driveFollowup = () => {
+      if (!followupPending || !recoveryAllowed) return;
+      const composer = document.querySelector('#prompt-textarea')
+        || document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
+      const current = String(composer?.value ?? composer?.innerText ?? composer?.textContent ?? '').trim();
+      if (!composer || !composer.getClientRects().length || (current && current !== followupPending)) return;
+      if (!current) {
+        composer.focus();
+        followupInjecting = true;
+        try {
+          if (composer.tagName === 'TEXTAREA') {
+            Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(composer, followupPending);
+            composer.dispatchEvent(new Event('input', { bubbles: true }));
+          } else {
+            followupInserted = document.execCommand('insertText', false, followupPending);
+          }
+        } finally { followupInjecting = false; }
+        if (composer.tagName === 'TEXTAREA') followupInserted = true;
+        return;
+      }
+      if (!followupInserted) return;
+      const button = document.querySelector(
+        'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
+      );
+      if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true'
+          || !button.getClientRects().length || /stop|voice/i.test(button.getAttribute('aria-label') || '')
+          || button.getAttribute('data-testid') === 'stop-button') return;
+      if (globalThis.sweetiebotEnsureMaximumThinking &&
+          !globalThis.sweetiebotEnsureMaximumThinking()) return;
+      awaitingResponseChange = lastResponseText;
+      followupPending = undefined; followupInserted = false; formatPhase++;
+      button.click();
+    };
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
@@ -100,13 +136,21 @@
         if (url.origin !== callback.origin || url.pathname !== callback.pathname || url.search
             || url.href.length > 80000) continue;
         const result = new URLSearchParams(url.hash.slice(1));
-        const expectedKeys = mergeLaunch ? ['result'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
+        const expectedKeys = mergeLaunch ? ['result', 'result_gz'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
         if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
         if (mergeLaunch) {
           try {
-            const input = JSON.parse(result.get('result'));
+            if (Boolean(result.get('result')) === Boolean(result.get('result_gz'))) continue;
+            let input;
+            if (result.get('result_gz')) {
+              const encoded = result.get('result_gz');
+              if (!/^[A-Za-z0-9_-]+$/.test(encoded)) continue;
+              const gzip = require('node:zlib').gunzipSync(
+                Buffer.from(encoded, 'base64url'), { maxOutputLength: 16 * 1024 * 1024 });
+              input = JSON.parse(gzip.toString('utf8'));
+            } else input = JSON.parse(result.get('result'));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
-          } catch { continue; } // Streaming hrefs can contain a truncated JSON string.
+          } catch { continue; } // Reject truncated or malformed encoded links before local execution.
         }
         latest = url.href;
       }
@@ -130,12 +174,11 @@
             if (start < 0 || end < start) continue;
             const input = JSON.parse(text.slice(start, end + 1));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
-            // encodeURIComponent leaves Markdown delimiters such as () raw.
-            // Build the URL locally with strict encoding so patch syntax
-            // cannot terminate a rendered Markdown destination.
-            const encoded = encodeURIComponent(JSON.stringify(input)).replace(/[!'()*]/g,
-              character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
-            const url = callback.href + '#result=' + encoded;
+            // A last-resort fenced JSON fallback still becomes a short gzip
+            // link automatically, without copying the raw diff into Lindsey.
+            const encoded = require('node:zlib').gzipSync(Buffer.from(JSON.stringify(input)), { level: 9 })
+              .toString('base64url');
+            const url = callback.href + '#result_gz=' + encoded;
             if (url.length <= 80000) latest = url;
           } catch { /* Incomplete code blocks remain in the chat until complete. */ }
         }
@@ -146,6 +189,29 @@
       if (latest && !generating && Date.now() - stableSince >= 2000) {
         finishRecovery(); window.location.assign(latest); return;
       }
+      // If the first completed answer omitted its clickable compressed link,
+      // ask once for the link, then request raw JSON only as a last resort.
+      // Do not overwrite user input, retry Git, or act on an unsubmitted prompt.
+      if (mergeLaunch && initialSubmitted && recoveryAllowed && !latest && !generating) {
+        const assistantNodes = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
+          ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
+            .map(node => node.parentElement).filter(Boolean)];
+        const responseText = assistantNodes.map(node => (node.textContent || '').slice(-4000))
+          .filter(Boolean).at(-1) || '';
+        if (responseText !== lastResponseText) {
+          lastResponseText = responseText; responseStableSince = Date.now();
+        }
+        if (awaitingResponseChange && responseText !== awaitingResponseChange) awaitingResponseChange = undefined;
+        const stable = responseText && !awaitingResponseChange &&
+          Date.now() - responseStableSince >= 6000;
+        if (stable && !followupPending && formatPhase < 2) {
+          followupPending = formatPhase === 0
+            ? 'Your response did not contain a complete, clickable Apply with Lindsey link to the exact provided callback. Retry now: serialize the entire prepared resolution JSON, gzip it, Base64URL-encode it using a code execution tool, and output ONLY the complete [Apply with Lindsey](<callback#result_gz=...>) Markdown link. Never truncate the link or display the raw JSON.'
+            : 'The Apply with Lindsey link is still unavailable. As a last resort, output ONLY the COMPLETE versioned resolution object in a fenced json block, with every patch line intact. No abbreviated fields or truncated diffs; the local Sweetiebot browser will construct the Apply link from your JSON.';
+        }
+      }
+      driveFollowup();
       // Recover only a visible response-stream failure in this nonce-bound
       // workflow. Never resend the prompt or retry a local Git handoff.
       let retry;
@@ -306,6 +372,7 @@
       clean.searchParams.delete('sweetiebot_merge');
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
+      initialSubmitted = true;
       button.click();
       return;
     }

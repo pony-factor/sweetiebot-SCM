@@ -13,6 +13,7 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   const route = '/lindsey-merge/' + randomUUID();
   const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8');
   let attempted = false, running = false, outcome, failure;
+  const maxBodyBytes = 16 * 1024 * 1024;
   const server = createServer({ maxHeaderSize: 16384 }, async (request, response) => {
     const origin = 'http://127.0.0.1:' + server.address().port;
     response.setHeader('Cache-Control', 'no-store');
@@ -39,7 +40,7 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
       const chunks = [];
       for await (const chunk of request) {
         bytes += chunk.length;
-        if (bytes > 100000) return json(413, { error: 'Complete handoff exceeds 100 KB.' });
+        if (bytes > maxBodyBytes) return json(413, { error: 'Complete handoff exceeds the 16 MiB safety limit. Nothing was applied.' });
         chunks.push(chunk);
       }
       input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
