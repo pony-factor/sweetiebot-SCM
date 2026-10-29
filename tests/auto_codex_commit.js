@@ -100,6 +100,63 @@ async function run() {
   await scanAutoCodexCommits(vscode, new Set(), errors);
   await scanAutoCodexCommits(vscode, new Set(), errors);
   assert.equal(warnings.length, 1, 'a persistent queue error is only reported once');
+  // The message bar and background scheduler share exactly one configuration setting.
+  const pickerSource = fs.readFileSync(path.join(__dirname, '../assets/workbench/picker.js'), 'utf8');
+  const barSource = fs.readFileSync(path.join(__dirname, '../assets/workbench/message_bar.js'), 'utf8');
+  assert(barSource.includes("autoCommitToggle: active.has('auto-commit')"));
+  assert(barSource.includes("'auto-commit': root.querySelector"));
+  assert(pickerSource.includes('autoCommitButton.hidden = false'));
+  const start = pickerSource.indexOf('    const refreshAutoCommit = () => {');
+  const end = pickerSource.indexOf('    const refreshAutoPublish = () => {', start);
+  assert(start >= 0 && end > start);
+  let currentEnabled = false, failUpdate = false, changed, click;
+  const buttonErrors = [];
+  const button = {
+    attrs: {}, active: new Set(), disabled: false,
+    setAttribute(name, value) { this.attrs[name] = value; },
+    classList: { toggle() {} },
+    addEventListener(name, handler) { assert.equal(name, 'click'); click = handler; }
+  };
+  button.classList.toggle = (name, value) => {
+    if (value) button.active.add(name);
+    else button.active.delete(name);
+  };
+  const controlContext = vm.createContext({
+    autoCommitButton: button,
+    configuration: {
+      getValue(name) { assert.equal(name, 'scmToolkit.autoCommitWithCodex'); return currentEnabled; },
+      async updateValue(name, value) {
+        assert.equal(name, 'scmToolkit.autoCommitWithCodex');
+        if (failUpdate) throw Error('Write failed');
+        currentEnabled = value;
+        changed({ affectsConfiguration: key => key === name });
+      },
+      onDidChangeConfiguration(fn) { changed = fn; return { dispose() {} }; }
+    },
+    notifications: { error(error) { buttonErrors.push(error.message); } },
+    widget: { disposables: { add() {} } }
+  });
+  vm.runInContext('let updatingAutoCommit = false;\n' + pickerSource.slice(start, end)
+    + '\nthis.refresh = refreshAutoCommit;', controlContext);
+  controlContext.refresh();
+  assert.equal(button.attrs['aria-pressed'], 'false');
+  assert.match(button.title, /no push/);
+  await click({ stopPropagation() {} });
+  assert.equal(currentEnabled, true);
+  assert.equal(button.attrs['aria-pressed'], 'true');
+  assert(button.active.has('scm-toolkit-auto-commit-active'));
+  currentEnabled = false;
+  changed({ affectsConfiguration: key => key === 'scmToolkit.autoCommitWithCodex' });
+  assert.equal(button.attrs['aria-pressed'], 'false');
+  failUpdate = true;
+  await click({ stopPropagation() {} });
+  assert.equal(currentEnabled, false);
+  assert.equal(button.disabled, false);
+  assert.deepEqual(buttonErrors, ['Write failed']);
+  failUpdate = false;
+  await click({ stopPropagation() {} });
+  assert.equal(currentEnabled, true);
+
   const manifest = require('../extension/package.json');
   const option = manifest.contributes.configuration.properties['scmToolkit.autoCommitWithCodex'];
   assert.equal(option.default, false);

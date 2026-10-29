@@ -9,6 +9,7 @@ const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
     'spellcheck',
     'post-spellcheck',
     'codex',
+    'auto-commit',
     'auto-publish',
     'separator-2',
     'home',
@@ -17,7 +18,7 @@ const SCM_TOOLKIT_MESSAGE_BAR_IDS = [
 ];
 
 const SCM_TOOLKIT_DEFAULT_MESSAGE_BAR_LAYOUT = {
-    before: ['branch', 'codex'],
+    before: ['branch', 'codex', 'auto-commit'],
     after: [
         'push',
         'sync',
@@ -78,6 +79,7 @@ function scmToolkitMessageBarElements(widget) {
         spellcheck: root.querySelector(':scope > .scm-toolkit-spellcheck'),
         'post-spellcheck': root.querySelector(':scope > .scm-toolkit-post-spellcheck'),
         codex: root.querySelector(':scope > .scm-toolkit-codex-coauthor'),
+        'auto-commit': root.querySelector(':scope > .scm-toolkit-auto-commit'),
         'auto-publish': root.querySelector(':scope > .scm-toolkit-auto-publish'),
         'separator-2': root.querySelectorAll(':scope > .scm-toolkit-divider')[1],
         home: root.querySelector(':scope > .scm-toolkit-home'),
@@ -160,6 +162,7 @@ scmToolkitCreateControls = function(...args) {
         branchCleanup: active.has('delete'),
         autocompleteToggle: active.has('autocomplete'),
         codexCoauthor: active.has('codex'),
+        autoCommitToggle: active.has('auto-commit'),
         autoPublishToggle: active.has('auto-publish'),
         mcpPullRequest: active.has('pull-request'),
     };
