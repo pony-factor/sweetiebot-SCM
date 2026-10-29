@@ -339,7 +339,6 @@ SETTINGS = (
     Setting("aiCoremlModel", "scm-toolkit.ai-coreml-model", "Core ML model", "Registered CoreML-LLM model ID. Default qwen3.5-2b; run sweetiebot-ane --prepare MODEL to download and compile it before use.", "Commits", "text"),
     Setting("aiCoremlLowMemoryModel", "scm-toolkit.ai-coreml-low-memory-model", "Core ML low-memory model", "Registered smaller CoreML-LLM model ID, used when available RAM falls below your threshold.", "Commits", "text"),
     Setting("aiCoremlCommand", "scm-toolkit.ai-coreml-command", "Core ML bridge executable", "Absolute path to your locally built sweetiebot-ane bridge. Install instructions in native/coreml-llm-bridge/README.md.", "Commits", "text"),
-    Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Commits"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
     Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Commits"),
@@ -389,7 +388,8 @@ SETTINGS = (
     Setting("codexShowQueuePause", "scm-toolkit.codex-show-queue-pause", "Show Pause queue button", "Show Pause queue / Resume queue above queued Codex messages. Pauses automatic queued sends while allowing the current response to finish. Apply through app repair, then reload the Codex view.", "Codex"),
     Setting("codexInlineQueuedEditing", "scm-toolkit.codex-inline-queued-editing", "Edit queued messages inline", "Click queued message text to edit it in place. Automatic turns wait until you save, cancel, or leave the editor.", "Codex"),
     Setting("codexInlineLocation", "scm-toolkit.codex-inline-location", "Computer and usage beside access", "Move the native computer and usage control beside the access icon.", "Codex"),
-    Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Place a clipboard action beside the Codex send control. Submit when idle, or use native queued follow-ups while a task is running.", "Codex"),
+    Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Send clipboard text when idle and no messages are waiting; otherwise join the native FIFO queue without interrupting the current task.", "Codex"),
+    Setting("codexInterruptOnSendClick", "scm-toolkit.codex-interrupt-on-send-click", "Click Send to interrupt Codex", "When Codex is working, clicking its native Send or Queue control stops the current response and sends the typed message once native Send becomes available. Enter keeps native queue behavior; the clipboard button never interrupts. Turn off to retain native clicks.", "Codex"),
     Setting("codexSendWing", "scm-toolkit.codex-send-wing", "Pegasus wing Send icon", "Replace the native Send arrow with a white-outline wing. Follows theme and Send icon color settings; Queue and Stop stay native.", "Codex"),
     Setting("codexSendBackground", "scm-toolkit.codex-send-background", "Send button background", "Hex color for the Codex send button. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexNewChatDotColor", "scm-toolkit.codex-new-chat-dot-color", "New Chat notification dot", "Hex color for the unread dot on the Codex New Chat icon. Leave blank to follow the Send button background, or the theme if that is unset.", "Codex", "color"),
@@ -398,6 +398,7 @@ SETTINGS = (
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexHideDictation", "scm-toolkit.codex-hide-dictation", "Hide dictation button", "Hide the microphone dictation control in Codex chat.", "Codex"),
     Setting("codexHideChatTimestamps", "scm-toolkit.codex-hide-chat-timestamps", "Hide chat timestamps", "Hide standalone date/time separators inside Codex conversations.", "Codex"),
+    Setting("codexShowCannon", "scm-toolkit.codex-show-cannon", "Show cannon", "Use Flawless-GPT’s cannon for live Working for and completed Worked for durations in the Codex sidebar.", "Codex"),
     Setting("codexNewChatPlaceholder", "scm-toolkit.codex-new-chat-placeholder", "New chat input text", "Replace ‘Do anything’ in a new Codex chat. Leave blank to use the original text. Apply through app repair, then reload VS Code.", "Codex", "optional_text"),
     Setting("codexFollowUpPlaceholder", "scm-toolkit.codex-follow-up-placeholder", "Follow-up input text", "Replace ‘Ask for follow-up changes’ in a local Codex chat. Leave blank to use the original text. Apply through app repair, then reload VS Code.", "Codex", "optional_text"),
 )
@@ -844,15 +845,29 @@ def _local_setup_controls() -> str:
             f'{html.escape(label)}</option>'
         )
     if not options:
-        options.append('<option value="">No local OpenPGP signing keys found</option>')
+        empty_label = (
+            "No local OpenPGP signing keys found"
+            if status.get("gpgAvailable")
+            else "Cannot list OpenPGP keys: GnuPG unavailable"
+        )
+        options.append(f'<option value="">{empty_label}</option>')
 
-    configured_label = (
-        f"Git is configured to sign with {configured[-16:]}."
-        if configured
-        else "Git commit signing is not configured."
-    )
+    signing_format = str(status.get("format") or "openpgp")
+    if not status.get("enabled"):
+        configured_label = "Git commit signing is disabled."
+        if configured:
+            configured_label += f" A signing key is configured: {configured[-16:]}."
+    elif configured:
+        configured_label = f"Git commit signing is enabled with {configured[-16:]} ({signing_format})."
+        if signing_format == "openpgp" and status.get("gpgAvailable") and not any(
+            str(key.get("fingerprint") or "").upper().endswith(configured.removeprefix("0X").rstrip("!"))
+            for key in keys
+        ):
+            configured_label += " The configured key was not found among local OpenPGP keys."
+    else:
+        configured_label = "Git commit signing is enabled, but no signing key is explicitly configured."
     if not status.get("gpgAvailable"):
-        configured_label += " GnuPG was not found on PATH."
+        configured_label += " GnuPG is unavailable; local OpenPGP keys could not be checked."
 
     key_disabled = "" if keys else " disabled"
     generate_disabled = "" if status.get("gpgAvailable") else " disabled"
@@ -910,7 +925,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps",
+                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps", "codexShowCannon",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'
