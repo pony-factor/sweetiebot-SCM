@@ -170,6 +170,30 @@ async function run() {
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
+  {
+    const githubBulletUrl = 'https://github.com/pony-factor/sweetiebot-SCM/pull/495';
+    const bulletInput = [
+      '- Linked to ' + githubBulletUrl + '.',
+      '  - Linked to [PR #495](' + githubBulletUrl + ')!',
+      '- Linked to ' + githubBulletUrl + ', with additional context.',
+      '- Linked to https://example.com/pull/495.',
+      'This paragraph ends in ' + githubBulletUrl + '.',
+      '- Ordinary sentence.',
+      '- Linked to ' + githubBulletUrl + '?  '
+    ].join('\n');
+    const bulletExpected = [
+      '- Linked to ' + githubBulletUrl,
+      '  - Linked to [PR #495](' + githubBulletUrl + ')',
+      '- Linked to ' + githubBulletUrl + ', with additional context.',
+      '- Linked to https://example.com/pull/495.',
+      'This paragraph ends in ' + githubBulletUrl + '.',
+      '- Ordinary sentence.',
+      '- Linked to ' + githubBulletUrl + '  '
+    ].join('\n');
+    assert.equal(appendSourceDetails(bulletInput, undefined), bulletExpected);
+    assert.equal(appendSourceDetails(bulletInput, codexSource).split('\n\n<details>')[0], bulletExpected.trimEnd(),
+      'Source detail insertion trims trailing whitespace without restoring URL punctuation');
+  }
   const withoutShare = pullRequestPrompt({
     branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
     instructions: '', source: codexSource
@@ -219,6 +243,7 @@ async function run() {
   assert(prompt.includes('berry-punch'));
   assert.match(prompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
   assert.match(prompt, /Keep each reference as a complete raw HTTPS URL/);
+  assert.match(prompt, /When a bullet ends immediately after a GitHub URL, omit any punctuation/);
   const browserPrompt = pullRequestPrompt({
     branch: 'draft', repositoryPath: '/repo', repositoryUrl: 'https://github.com/owner/repo',
     base: 'main', instructions: rules,
@@ -226,6 +251,7 @@ async function run() {
   });
   assert.match(browserPrompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
   assert.match(browserPrompt, /Keep each reference as a complete raw HTTPS URL/);
+  assert.match(browserPrompt, /When a bullet ends immediately after a GitHub URL, omit any punctuation/);
   assert(browserPrompt.indexOf(rules) < browserPrompt.indexOf('Place every GitHub pull-request'),
     'Cross-reference placement overrides older canonical layout instructions');
   assert(!browserPrompt.includes('Weave each GitHub reference into the same sentence'),

@@ -334,21 +334,24 @@ SETTINGS = (
     Setting("spellcheckChangesEmoji", "scm-toolkit.spellcheck-changes-emoji", "Add professional emoji to spellcheck commits", "Include the professional leading emoji from normal AI commit-title generation when accepting reviewed Spellcheck Changes. Turn off to omit it without changing title quality, model effort, or attribution. On by default.", "Spellcheck Changes"),
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellcheck Changes"),
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellcheck Changes", "textarea"),
-    Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages through the local Ollama service.", "Ollama"),
-    Setting("aiCommitAsync", "scm-toolkit.ai-commit-async", "Legacy provisional commit finalization", "Older optional Git-wrapper mode: create a temporary local commit, then replace its message. Distinct from durable background Commit and Push; off by default.", "Ollama"),
+    Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages with the selected local AI backend.", "Commits"),
+    Setting("aiBackend", "scm-toolkit.ai-backend", "Backend preference order", "Choose one backend or the order to try them. If a backend fails or produces no valid message, try the next before using a simple fallback. Core ML requires its bridge and prepared models; Workspace Search still uses Ollama.", "Commits", "select", ("ollama", "coreml", "coreml,ollama", "ollama,coreml")),
+    Setting("aiCoremlModel", "scm-toolkit.ai-coreml-model", "Core ML model", "Registered CoreML-LLM model ID. Default qwen3.5-2b; run sweetiebot-ane --prepare MODEL to download and compile it before use.", "Commits", "text"),
+    Setting("aiCoremlLowMemoryModel", "scm-toolkit.ai-coreml-low-memory-model", "Core ML low-memory model", "Registered smaller CoreML-LLM model ID, used when available RAM falls below your threshold.", "Commits", "text"),
+    Setting("aiCoremlCommand", "scm-toolkit.ai-coreml-command", "Core ML bridge executable", "Absolute path to your locally built sweetiebot-ane bridge. Install instructions in native/coreml-llm-bridge/README.md.", "Commits", "text"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
     Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
-    Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Ollama"),
-    Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Ollama"),
-    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Ollama"),
-    Setting("aiCommitRequestTimeoutSeconds", "scm-toolkit.ai-commit-request-timeout-seconds", "Commit request timeout (seconds)", "Maximum wait for one model request. Choose 1–900 seconds. The overall generation budget is this timeout multiplied by the attempt count.", "Ollama", "integer", minimum=1, maximum=900),
-    Setting("aiCommitAttempts", "scm-toolkit.ai-commit-attempts", "Attempts per model step", "Maximum attempts for each emoji check or title-generation step. Choose 1–10. All steps and retries share the calculated overall budget; changes apply to new jobs immediately.", "Ollama", "integer", minimum=1, maximum=10),
-    Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Ollama"),
-    Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. On by default.", "Ollama"),
-    Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Ollama"),
-    Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Ollama", "model"),
-    Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Ollama", "model"),
-    Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Ollama", "number"),
+    Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Commits"),
+    Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Commits"),
+    Setting("aiCommitFallback", "scm-toolkit.ai-commit-fallback", "Fall back to simple commit messages", "After failed attempts or when the generation time budget expires, use a simple staged-file message instead of blocking the commit. Missing models fall back immediately. Disable for strict AI-only debugging.", "Commits"),
+    Setting("aiCommitRequestTimeoutSeconds", "scm-toolkit.ai-commit-request-timeout-seconds", "Commit request timeout (seconds)", "Maximum wait for one model request. Choose 1–900 seconds. The overall generation budget is this timeout multiplied by the attempt count.", "Commits", "integer", minimum=1, maximum=900),
+    Setting("aiCommitAttempts", "scm-toolkit.ai-commit-attempts", "Attempts per model step", "Maximum attempts for each emoji check or title-generation step. Choose 1–10. All steps and retries share the calculated overall budget; changes apply to new jobs immediately.", "Commits", "integer", minimum=1, maximum=10),
+    Setting("aiDefaultBranchDescription", "scm-toolkit.ai-default-branch-description", "Default-branch descriptions", "Add a short description when generating commits on the default branch.", "Commits"),
+    Setting("aiEmojiPriorityRules", "scm-toolkit.ai-emoji-priority-rules", "Enforce custom emoji priorities", "Check your custom emoji priority list in order and enforce the first matching rule. Requires a priority list in your commit instructions and can increase generation time. On by default.", "Commits"),
+    Setting("aiModelPicker", "scm-toolkit.ai-model-picker", "Model picker command", "Install the separate model-selection helper.", "Commits"),
+    Setting("aiCommitModel", "scm-toolkit.ai-commit-model", "Normal model", "Ollama model used when memory is available.", "Commits", "model"),
+    Setting("aiCommitLowMemoryModel", "scm-toolkit.ai-commit-low-memory-model", "Low-memory model", "Smaller Ollama model used below the memory threshold.", "Commits", "model"),
+    Setting("aiLowMemoryGiB", "scm-toolkit.ai-low-memory-gib", "Low-memory threshold (GiB)", "Available-memory threshold for selecting the smaller model.", "Commits", "number"),
     Setting("squashOmitBulletsForEmojiTitles", "scm-toolkit.squash-omit-bullets-for-emoji-titles", "Omit hyphens when every commit title starts with an emoji", "Remove the leading hyphens only when every included commit title begins with an emoji. Mixed titles keep their bullets. Off by default.", "Pull requests"),
     Setting("squashTrailerSeparatorStyle", "scm-toolkit.squash-trailer-separator-style", "Squash co-author separator", "Divider between squash summaries and Co-authored-by trailers: Hyphens (---------), Underscores (__________), or None. Underscores remain the default.", "Pull requests", "select", ("underscores", "hyphens", "none")),
     Setting("filterSyncCommitSummaries", "scm-toolkit.filter-sync-commit-summaries", "Exclude sync commits from squash summaries", "Hide routine Sync brach/branch to main commits and their descriptions in generated PR squash summaries, while preserving all author and co-author credits. On by default.", "Pull requests"),
@@ -372,7 +375,6 @@ SETTINGS = (
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Relative Codex reset times", "Convert Codex's absolute reset dates and times into live relative countdowns in usage-limit banners (for example, 'resets October 24 at 3 PM' becomes 'resets in 1d 4h').", "Codex"),
     Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
-    Setting("codexShowCannon", "scm-toolkit.codex-show-cannon", "Show cannon", "Replace active and completed work-duration labels with the Flawless cannon and one dot per elapsed minute. Native activity controls remain available.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Five-hour pie and weekly usage bar", "Replace the composer’s + icon with the five-hour remaining-usage pie while retaining the attachment menu. Show the weekly remaining allowance as a thin bar along the bottom of the input.", "Codex"),
     Setting("codexCloudTasks", "scm-toolkit.codex-cloud-tasks", "Enable cloud tasks", "Allow Codex’s cloud execution selector. Off by default: tasks stay local and the native location/usage menu is hidden. Apply through app repair, then reload the intended window.", "Codex"),
@@ -386,8 +388,9 @@ SETTINGS = (
     Setting("codexShowQueuePause", "scm-toolkit.codex-show-queue-pause", "Show Pause queue button", "Show Pause queue / Resume queue above queued Codex messages. Pauses automatic queued sends while allowing the current response to finish. Apply through app repair, then reload the Codex view.", "Codex"),
     Setting("codexInlineQueuedEditing", "scm-toolkit.codex-inline-queued-editing", "Edit queued messages inline", "Click queued message text to edit it in place. Automatic turns wait until you save, cancel, or leave the editor.", "Codex"),
     Setting("codexInlineLocation", "scm-toolkit.codex-inline-location", "Computer and usage beside access", "Move the native computer and usage control beside the access icon.", "Codex"),
-    Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Place a clipboard action beside the Codex send control. Submit when idle, or use native queued follow-ups while a task is running.", "Codex"),
-    Setting("codexSendWing", "scm-toolkit.codex-send-wing", "Pegasus wing Send icon", "Replace the native Send arrow with a white-outline wing. Follows theme and Send icon color settings; Queue and Stop stay native.", "Codex"),
+    Setting("codexClipboardSubmit", "scm-toolkit.codex-clipboard-submit", "Clipboard Send / Queue button", "Send clipboard text when idle and no messages are waiting; otherwise join the native FIFO queue without interrupting the current task.", "Codex"),
+    Setting("codexInterruptOnSendClick", "scm-toolkit.codex-interrupt-on-send-click", "Click Send to interrupt Codex", "When Codex is working, clicking its native Send or Queue control stops the current response and sends the typed message once native Send becomes available. Enter keeps native queue behavior; the clipboard button never interrupts. Turn off to retain native clicks.", "Codex"),
+    Setting("codexSendWing", "scm-toolkit.codex-send-wing", "Pegasus wing Send/Stop icons", "Replace the native Send arrow with a white-outline wing and the Stop square with a mirrored wing. Follows theme and Send icon color settings; Queue stays native.", "Codex"),
     Setting("codexSendBackground", "scm-toolkit.codex-send-background", "Send button background", "Hex color for the Codex send button. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexNewChatDotColor", "scm-toolkit.codex-new-chat-dot-color", "New Chat notification dot", "Hex color for the unread dot on the Codex New Chat icon. Leave blank to follow the Send button background, or the theme if that is unset.", "Codex", "color"),
     Setting("codexSendForeground", "scm-toolkit.codex-send-foreground", "Send button icon", "Hex color for the Codex send icon or pegasus-wing outline. Leave blank to use the theme.", "Codex", "color"),
@@ -395,6 +398,7 @@ SETTINGS = (
     Setting("codexDropAccent", "scm-toolkit.codex-drop-accent", "Image drop accent", "Hex color for the drop highlight, border, and attachment prompt. Leave blank to use the theme.", "Codex", "color"),
     Setting("codexHideDictation", "scm-toolkit.codex-hide-dictation", "Hide dictation button", "Hide the microphone dictation control in Codex chat.", "Codex"),
     Setting("codexHideChatTimestamps", "scm-toolkit.codex-hide-chat-timestamps", "Hide chat timestamps", "Hide standalone date/time separators inside Codex conversations.", "Codex"),
+    Setting("codexShowCannon", "scm-toolkit.codex-show-cannon", "Show cannon", "Replace active and completed work-duration labels with the Flawless cannon and one dot per elapsed minute. Native activity controls remain available.", "Codex"),
     Setting("codexNewChatPlaceholder", "scm-toolkit.codex-new-chat-placeholder", "New chat input text", "Replace ‘Do anything’ in a new Codex chat. Leave blank to use the original text. Apply through app repair, then reload VS Code.", "Codex", "optional_text"),
     Setting("codexFollowUpPlaceholder", "scm-toolkit.codex-follow-up-placeholder", "Follow-up input text", "Replace ‘Ask for follow-up changes’ in a local Codex chat. Leave blank to use the original text. Apply through app repair, then reload VS Code.", "Codex", "optional_text"),
 )
@@ -441,7 +445,7 @@ def validate_models(settings: dict) -> None:
     required = ["workspaceSearchEmbeddingModel"]
     if settings.get("workspaceSearchAskOllama"):
         required.append("workspaceSearchChatModel")
-    if settings.get("aiCommit"):
+    if settings.get("aiCommit") and settings.get("aiBackend", "ollama") == "ollama":
         required.extend(["aiCommitModel", "aiCommitLowMemoryModel"])
     if settings.get("spellcheckManualCommit"):
         required.append("spellcheckModel")
@@ -763,10 +767,12 @@ def _setting_control(setting: Setting, current: object) -> str:
 
     value = html.escape(str(current), quote=True)
     if setting.kind == "select":
+        backend_labels = {"ollama": "Ollama only", "coreml": "Core ML only",
+                          "coreml,ollama": "Core ML → Ollama", "ollama,coreml": "Ollama → Core ML"}
         options = "".join(
             f'<option value="{html.escape(choice, quote=True)}"'
             + (' selected' if choice == str(current) else '')
-            + f'>{html.escape(choice.capitalize() if choice else "None")}</option>'
+            + f'>{html.escape(backend_labels[choice] if setting.name == "aiBackend" else choice.capitalize() if choice else "None")}</option>'
             for choice in setting.choices
         )
         return (
@@ -839,15 +845,29 @@ def _local_setup_controls() -> str:
             f'{html.escape(label)}</option>'
         )
     if not options:
-        options.append('<option value="">No local OpenPGP signing keys found</option>')
+        empty_label = (
+            "No local OpenPGP signing keys found"
+            if status.get("gpgAvailable")
+            else "Cannot list OpenPGP keys: GnuPG unavailable"
+        )
+        options.append(f'<option value="">{empty_label}</option>')
 
-    configured_label = (
-        f"Git is configured to sign with {configured[-16:]}."
-        if configured
-        else "Git commit signing is not configured."
-    )
+    signing_format = str(status.get("format") or "openpgp")
+    if not status.get("enabled"):
+        configured_label = "Git commit signing is disabled."
+        if configured:
+            configured_label += f" A signing key is configured: {configured[-16:]}."
+    elif configured:
+        configured_label = f"Git commit signing is enabled with {configured[-16:]} ({signing_format})."
+        if signing_format == "openpgp" and status.get("gpgAvailable") and not any(
+            str(key.get("fingerprint") or "").upper().endswith(configured.removeprefix("0X").rstrip("!"))
+            for key in keys
+        ):
+            configured_label += " The configured key was not found among local OpenPGP keys."
+    else:
+        configured_label = "Git commit signing is enabled, but no signing key is explicitly configured."
     if not status.get("gpgAvailable"):
-        configured_label += " GnuPG was not found on PATH."
+        configured_label += " GnuPG is unavailable; local OpenPGP keys could not be checked."
 
     key_disabled = "" if keys else " disabled"
     generate_disabled = "" if status.get("gpgAvailable") else " disabled"
@@ -905,7 +925,7 @@ def render_form(
         if section == "Codex":
             time_settings = {
                 "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
-                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps",
+                "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps", "codexShowCannon",
             }
             controls = "".join(
                 f'<div class="settings-group"><h3>{heading}</h3>'
@@ -987,7 +1007,7 @@ def render_form(
                 'Manage app access</a>. After setup, click New PR and choose Retry to refresh the access check.</small></span></div>'
             ) + controls
         status = ""
-        if section in {"Ollama", "Search", "Spellcheck Changes"}:
+        if section in {"Commits", "Search", "Spellcheck Changes"}:
             status = f'<p class="status">{html.escape(ollama_status)}</p>'
         if section == "Spellcheck Changes":
             draft_controls = {"spellcheckManualCommit", "draftSpellcheckAction",

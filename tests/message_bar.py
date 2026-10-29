@@ -19,10 +19,10 @@ from message_bar_configurator import render_message_bar_control
 class MessageBarLayoutTests(unittest.TestCase):
     def test_default_layout_contains_every_control_once(self):
         items = DEFAULT_MESSAGE_BAR_LAYOUT["before"] + DEFAULT_MESSAGE_BAR_LAYOUT["after"]
-        self.assertEqual(len(items), 14)
+        self.assertEqual(len(items), 15)
         self.assertEqual(set(items), set(MESSAGE_BAR_ITEM_IDS))
         self.assertEqual(len(items), len(set(items)))
-        self.assertEqual(DEFAULT_MESSAGE_BAR_LAYOUT["before"], ["branch", "codex"])
+        self.assertEqual(DEFAULT_MESSAGE_BAR_LAYOUT["before"], ["branch", "codex", "auto-commit"])
 
     def test_saved_order_and_button_preferences_survive_default_changes(self):
         saved = json.dumps({"before": ["home", "separator-37", "branch"], "after": ["codex"]})
@@ -73,9 +73,10 @@ class MessageBarLayoutTests(unittest.TestCase):
             '{"before":["home"],"after":["pull-request"]}'
         )
         self.assertEqual(control.count('data-message-bar-zone='), 3)
-        self.assertEqual(control.count('data-message-bar-id='), 14)
+        self.assertEqual(control.count('data-message-bar-id='), 15)
         self.assertIn('data-message-bar-zone="hidden"', control)
         self.assertIn('id="message-bar-reset"', control)
+        self.assertIn('data-message-bar-id="auto-commit"', control)
         self.assertIn('name="messageBarLayout"', control)
 
     def test_placeholder_is_editable_in_the_preview_and_escaped(self):

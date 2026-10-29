@@ -68,6 +68,7 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary = Path(destination) if destination is not None else ai_wrapper_path()
     primary_files = [
         (HERE / "ai_commit.py", primary),
+        (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
         (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
         (HERE / "background_commit.py", primary.with_name("background_commit.py")),
         (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
@@ -1118,7 +1119,10 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
     if not remove and hide_timestamps:
         js += (
             CODEX_TIMESTAMPS_START
-            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text()
+            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text().replace(
+                '__SCM_TOOLKIT_ACTIVITY_CANNON__',
+                'data:image/png;base64,' + base64.b64encode(
+                    (HERE.parent / 'assets/imgs/activity-cannon.png').read_bytes()).decode('ascii'))
             + CODEX_TIMESTAMPS_END
         )
 
@@ -1589,14 +1593,15 @@ def plan_codex_patches(args, settings):
     inline_location = settings["codexInlineLocation"] and not args.uninstall
     clipboard_submit = settings["codexClipboardSubmit"] and not args.uninstall
     send_wing = settings.get("codexSendWing", True) and not args.uninstall
+    interrupt_send = settings.get("codexInterruptOnSendClick", True) and not args.uninstall
     for composer_path, composer_old, composer_new in codex_composer.patch_files(
-        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing
+        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing, interrupt_send=interrupt_send
     ):
         if composer_path in paths:
             index = paths.index(composer_path)
             new[index] = codex_composer.transform_layout(
                 new[index], inline_location, clipboard_submit,
-                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing)
+                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing, interrupt_send)
         else:
             paths.append(composer_path)
             old.append(composer_old)
@@ -1633,6 +1638,7 @@ def plan_codex_patches(args, settings):
         or hide_reset_times
         or settings["codexHidePromotions"]
         or settings["codexHideChatTimestamps"]
+        or settings["codexShowCannon"]
         or settings["codexHideDictation"]
         or settings["codexShortModelLabels"]
         or settings["codexWindowLabel"] != "Codex"

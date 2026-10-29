@@ -642,6 +642,45 @@
     cursor: default;
 }
 
+.scm-view .scm-editor > .scm-toolkit-auto-commit {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    width: 27px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--vscode-input-background);
+    color: var(--vscode-descriptionForeground);
+    cursor: pointer;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-commit[hidden] {
+    display: none;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-commit:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-commit:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-commit:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-commit-active {
+    color: var(--vscode-textLink-foreground);
+    background: var(--vscode-toolbar-activeBackground, var(--vscode-input-background));
+}
+
 .scm-view .scm-editor > .scm-toolkit-auto-publish-active::after {
     content: '✓';
     position: absolute;
@@ -805,6 +844,13 @@
 .extensions-viewlet > .header > .extensions-search-container {
     flex: 1;
     min-width: 0;
+}
+
+/* Embedded VS Code browser surfaces can cover workbench modal dialogs.
+   Keep Settings mounted, but hide the composited webview only while the
+   blocking spellcheck review is open. Visibility restores on dialog close. */
+body:has(.scm-toolkit-spellcheck-popup[open]) .webview {
+    visibility: hidden !important;
 }
 
 .scm-toolkit-spellcheck-popup {

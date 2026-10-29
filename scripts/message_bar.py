@@ -16,6 +16,7 @@ MESSAGE_BAR_ITEMS = (
     ("spellcheck", "Spellcheck preview"),
     ("post-spellcheck", "Spellcheck after committing"),
     ("codex", "Codex co-author"),
+    ("auto-commit", "Auto-commit every 30 seconds"),
     ("auto-publish", "Auto-publish"),
     ("separator-2", "Separator"),
     ("home", "Home"),
@@ -36,7 +37,7 @@ MESSAGE_BAR_VISIBILITY_SETTINGS = {
 }
 
 DEFAULT_MESSAGE_BAR_LAYOUT = {
-    "before": ["branch", "codex"],
+    "before": ["branch", "codex", "auto-commit"],
     "after": [
         "push",
         "sync",

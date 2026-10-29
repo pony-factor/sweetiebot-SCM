@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-let tick, enabled = true, fetches = 0, merges = 0, cleared = false, clock = 0, mergeError = false;
+let tick, mainChange, topicChange, enabled = true, fetches = 0, merges = 0, cleared = false, clock = 0, mergeError = false;
 let topicFetches = 0, topicMerges = 0;
 const fetchCalls = [];
 const main = { rootUri: { scheme: 'file', fsPath: '/repo' }, state: {
@@ -18,6 +18,8 @@ const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: {
   assert.equal(options.ref, 'kefania', 'Topic branches fetch their tracked branch');
   topicFetches++;
 } };
+main.state.onDidChange = callback => { mainChange = callback; return { dispose() { mainChange = undefined; } }; };
+topic.state.onDidChange = callback => { topicChange = callback; return { dispose() { topicChange = undefined; } }; };
 const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../extension/branches/actions')), process,
   require(name) {
     if (name === 'node:util') return { promisify(fn) { return (...args) => new Promise((resolve, reject) =>
@@ -54,7 +56,7 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
     return require(name);
   },
   Date: { now() { return clock; } },
-  setInterval(callback, delay) { assert.equal(delay, 1000); tick = callback; return { unref() {} }; },
+  setInterval(callback, delay) { assert.equal(delay, 60000, 'Use one-minute fallback, not one-second polling'); tick = callback; return { unref() {} }; },
   clearInterval() { cleared = true; }
 };
 vm.runInNewContext(fs.readFileSync(require.resolve('../extension/branches/actions'), 'utf8'), sandbox);
@@ -99,9 +101,11 @@ const vscode = {
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
   assert.equal(topicFetches, 1, 'Tracked non-default branches are fetched without a renderer');
   assert.equal(topicMerges, 1, 'Incoming commits on kefania fast-forward automatically');
+  assert.equal(typeof mainChange, 'function', 'Subscribe to SCM state changes');
+  assert.equal(typeof topicChange, 'function', 'Subscribe to topic-branch changes');
 
   topic.state.HEAD.behind = 1;
-  tick(); await new Promise(resolve => setImmediate(resolve));
+  topicChange(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(topicFetches, 1, 'Known topic updates do not require another fetch');
   assert.equal(topicMerges, 2, 'Known topic updates pull on the next scan');
 
@@ -124,7 +128,7 @@ const vscode = {
   assert.equal(merges, 1);
 
   main.state.HEAD.behind = 1;
-  tick(); await new Promise(resolve => setImmediate(resolve));
+  mainChange(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'Known incoming commits do not wait for another network fetch');
   assert.equal(merges, 2, 'Incoming commits are pulled on the next one-second check');
 
@@ -135,10 +139,9 @@ const vscode = {
   assert.equal(fetches, 1, 'Auto-pull does not fetch while a commit is active');
   assert.equal(merges, 2, 'Auto-pull cannot move HEAD while a commit is active');
   await handlers['sweetiebot.endCommit'](main.rootUri);
-
-  tick(); await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'Releasing a commit lease does not trigger a redundant fetch');
-  assert.equal(merges, 3, 'The pending fast-forward can run after the commit finishes');
+  assert.equal(merges, 3, 'The pending fast-forward runs immediately after the commit finishes');
 
   clock = 60000;
   tick(); await new Promise(resolve => setImmediate(resolve));
@@ -160,6 +163,8 @@ const vscode = {
   tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
   assert.equal(merges, 6, 'Disabling automatic pull also prevents pending fast-forwards');
   context.subscriptions.at(-1).dispose(); assert(cleared);
+  assert.equal(mainChange, undefined, 'Dispose Git listeners on shutdown');
+  assert.equal(topicChange, undefined);
   enabled = true; tick(); await new Promise(resolve => setImmediate(resolve)); assert.equal(fetches, 2);
   console.log('Default and tracked topic branches auto-pull without a rendered input and respect safeguards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

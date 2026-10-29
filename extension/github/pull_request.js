@@ -28,7 +28,7 @@ const DEFAULT_MCP_TOOL = 'github_create_pull_request';
 const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
 const CONVERSATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODEX_SHARED_LINKS_KEY = 'sweetiebot.codexSharedConversationUrls';
-const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item (starting with `- `). Keep each reference as a complete raw HTTPS URL, embedded in the sentence explaining its relationship to the change. Do not turn URLs into Markdown links, label them only by number, put them in normal paragraphs, or leave them as standalone URL-only bullets. This bullet placement takes precedence over conflicting placement guidance in the canonical rules; continue verifying and citing sources as required.';
+const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item (starting with `- `). Keep each reference as a complete raw HTTPS URL, embedded in the sentence explaining its relationship to the change. Do not turn URLs into Markdown links, label them only by number, put them in normal paragraphs, or leave them as standalone URL-only bullets. When a bullet ends immediately after a GitHub URL, omit any punctuation that would follow the URL, including after a Markdown link wrapping that URL. Keep normal punctuation in other prose. This bullet placement takes precedence over conflicting placement guidance in the canonical rules; continue verifying and citing sources as required.';
 
 async function readLudicrousMode(run = promisify(execFile)) {
   try {
@@ -201,10 +201,21 @@ function sourceDetailsMarkdown(source) {
   ].join('\n');
 }
 
+function stripGithubBulletPunctuation(body) {
+  if (typeof body !== 'string') return body;
+  // Do not let a sentence-ending mark become part of a terminal GitHub URL.
+  // Leave ordinary prose, non-GitHub links, and inline references untouched.
+  return body.replace(/^([ \t]*[-*+][ \t]+.*?)([.!?,;:]+)([ \t]*)$/gm,
+    (whole, text, punctuation, whitespace) =>
+      /(?:\[[^\]\r\n]+\]\(https:\/\/(?:www\.)?github\.com\/[^\s)<>]+\)|(?:^|[ \t])https:\/\/(?:www\.)?github\.com\/[^\s<>()]+)$/i.test(text)
+        ? text + whitespace : whole);
+}
+
 function appendSourceDetails(body, source) {
+  const normalized = stripGithubBulletPunctuation(body);
   const details = sourceDetailsMarkdown(source);
-  if (!details || typeof body !== 'string') return body;
-  const main = body.trimEnd()
+  if (!details || typeof normalized !== 'string') return normalized;
+  const main = normalized.trimEnd()
     .replace(/\n*<details>\s*<summary>Source details<\/summary>[\s\S]*?<\/details>\s*$/i, '')
     .trimEnd();
   return main + '\n\n' + details;

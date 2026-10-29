@@ -1612,6 +1612,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     codexButton.title = `Commit with ${settings.codexCoauthorName || 'Codex'} co-author`;
     codexButton.setAttribute('aria-label', codexButton.title);
 
+    const autoCommitButton = doc.createElement('button');
+    autoCommitButton.type = 'button';
+    autoCommitButton.className = 'scm-toolkit-auto-commit codicon codicon-clock';
+    autoCommitButton.hidden = true;
+
     const autoPublishButton = doc.createElement('button');
     autoPublishButton.type = 'button';
     autoPublishButton.className = 'scm-toolkit-auto-publish codicon codicon-cloud-upload';
@@ -1678,6 +1683,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         spellcheckButton,
         postSpellcheckButton,
         codexButton,
+        autoCommitButton,
         autoPublishButton,
         secondDivider,
         homeButton,
@@ -1714,6 +1720,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     const postSpellcheckState = scmToolkitPostSpellcheckStates.get(doc)
         || { enabled: Boolean(settings.postCommitSpellcheck) };
     scmToolkitPostSpellcheckStates.set(doc, postSpellcheckState);
+    let updatingAutoCommit = false;
     let updatingAutoPublish = false;
     let publishingBranch;
     let committingWithCodex = false;
@@ -1860,6 +1867,39 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             refreshSpellcheck();
         }
     };
+
+    const refreshAutoCommit = () => {
+        const enabled = configuration.getValue('scmToolkit.autoCommitWithCodex') === true;
+        autoCommitButton.classList.toggle('scm-toolkit-auto-commit-active', enabled);
+        autoCommitButton.setAttribute('aria-pressed', String(enabled));
+        const description = enabled
+            ? 'Turn off automatic local Codex co-author commits every 30 seconds'
+            : 'Turn on automatic local Codex co-author commits every 30 seconds (no push)';
+        autoCommitButton.title = description;
+        autoCommitButton.setAttribute('aria-label', description);
+        autoCommitButton.disabled = updatingAutoCommit;
+    };
+
+    const toggleAutoCommit = async event => {
+        event.stopPropagation();
+        if (updatingAutoCommit) return;
+        updatingAutoCommit = true;
+        refreshAutoCommit();
+        const enabled = configuration.getValue('scmToolkit.autoCommitWithCodex') === true;
+        try {
+            await configuration.updateValue('scmToolkit.autoCommitWithCodex', !enabled);
+        } catch (error) {
+            notifications.error(error);
+        } finally {
+            updatingAutoCommit = false;
+            refreshAutoCommit();
+        }
+    };
+
+    autoCommitButton.addEventListener('click', toggleAutoCommit);
+    widget.disposables.add(configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('scmToolkit.autoCommitWithCodex')) refreshAutoCommit();
+    }));
 
     const refreshAutoPublish = () => {
         const enabled = configuration.getValue('scmToolkit.autoPublishNewBranches') === true;
@@ -2561,6 +2601,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const codexWidth = codexButton.hidden
                 ? 0
                 : codexButton.getBoundingClientRect().width;
+            const autoCommitWidth = autoCommitButton.hidden
+                ? 0
+                : autoCommitButton.getBoundingClientRect().width;
             const autoPublishWidth = autoPublishButton.hidden
                 ? 0
                 : autoPublishButton.getBoundingClientRect().width;
@@ -2579,7 +2622,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const settingsWidth = settingsButton.parentElement === widget.element && !settingsButton.hidden
                 ? settingsButton.getBoundingClientRect().width : 0;
             return settingsWidth + homeWidth + branchWidth + pushWidth + syncWidth + deleteWidth + firstDividerWidth
-                + autocompleteWidth + spellcheckWidth + postSpellcheckWidth + codexWidth + autoPublishWidth + secondDividerWidth
+                + autocompleteWidth + spellcheckWidth + postSpellcheckWidth + codexWidth + autoCommitWidth + autoPublishWidth + secondDividerWidth
                 + pullRequestWidth + ponyBranchWidth + stackedBranchWidth;
         },
 
@@ -2616,10 +2659,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             spellcheckButton.disabled = true;
             postSpellcheckButton.hidden = true;
             codexButton.hidden = true;
+            autoCommitButton.hidden = true;
             autoPublishButton.hidden = true;
             autoPublishButton.disabled = true;
             secondDivider.hidden = true;
             codexButton.disabled = true;
+            autoCommitButton.disabled = true;
             pullRequestButton.hidden = true;
             pullRequestButton.disabled = true;
             ponyBranchButton.hidden = true;
@@ -2695,6 +2740,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 refreshCodexCommit();
             }
 
+            if (settings.autoCommitToggle) {
+                autoCommitButton.hidden = false;
+                refreshAutoCommit();
+            }
+
             if (settings.autoPublishToggle) {
                 autoPublishButton.hidden = false;
                 refreshAutoPublish();
@@ -2702,7 +2752,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
             const groupedControlsVisible =
                 !autocompleteButton.hidden || !spellcheckButton.hidden || !postSpellcheckButton.hidden
-                    || !codexButton.hidden || !autoPublishButton.hidden;
+                    || !codexButton.hidden || !autoCommitButton.hidden || !autoPublishButton.hidden;
             firstDivider.hidden = !groupedControlsVisible;
             secondDivider.hidden = !groupedControlsVisible;
 
@@ -2721,13 +2771,13 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             syncButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !deleteButton.hidden || !autocompleteButton.hidden || !spellcheckButton.hidden
-                    || !postSpellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !postSpellcheckButton.hidden || !codexButton.hidden || !autoCommitButton.hidden || !autoCommitButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             deleteButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !autocompleteButton.hidden || !spellcheckButton.hidden || !postSpellcheckButton.hidden || !codexButton.hidden
-                    || !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !autoCommitButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             autocompleteButton.classList.toggle(
@@ -2737,15 +2787,20 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             );
             spellcheckButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !postSpellcheckButton.hidden || !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
+                !postSpellcheckButton.hidden || !codexButton.hidden || !autoCommitButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             postSpellcheckButton.classList.toggle(
                 'scm-toolkit-has-following-control',
-                !codexButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
+                !codexButton.hidden || !autoCommitButton.hidden || !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden
             );
             codexButton.classList.toggle(
+                'scm-toolkit-has-following-control',
+                !autoPublishButton.hidden || !pullRequestButton.hidden
+                    || !ponyBranchButton.hidden || !homeButton.hidden
+            );
+            autoCommitButton.classList.toggle(
                 'scm-toolkit-has-following-control',
                 !autoPublishButton.hidden || !pullRequestButton.hidden
                     || !ponyBranchButton.hidden || !homeButton.hidden

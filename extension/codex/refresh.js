@@ -63,6 +63,21 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
         reportReloadBlock(newerBlock);
         return;
       }
+      // Preserve only the active Codex conversation ID in that webview's VS Code
+      // state. This is best-effort; a missing/closed Codex view must not prevent
+      // an otherwise safe application update.
+      try {
+        const commands = await vscode.commands.getCommands(true);
+        if (commands.includes('sweetiebot.preserveCodexConversation')) {
+          await vscode.commands.executeCommand('sweetiebot.preserveCodexConversation');
+        }
+      } catch (error) {
+        output.appendLine('Codex conversation could not be preserved: ' + error.message);
+      }
+      if (disposed || !enabled() || !focused || runtimeRevision(vscode, context) !== revision) {
+        reloadRevision = undefined;
+        return;
+      }
       // Persist before reload: the next activation loses in-memory state.
       await rememberAutomaticReload(context, revision);
       invalidateUserExtensionCache(context, output);

@@ -132,32 +132,31 @@ async function fixture(check) {
     assert.equal((await pendingPonyProfiles(root, { run })).length, 1, 'Retry after the manual commit is published');
   });
 
-  const timers = [], attempts = [];
-  let fail = true, active = 0;
+  const calls = [];
+  let failQueue = false;
   const queue = createPonyPublishQueue({
     pending: async () => [{ pony, path: stored }],
-    publish: async (_root, _pony, storedPath) => {
-      assert.equal(++active, 1, 'Serial publication');
-      attempts.push(storedPath); await Promise.resolve(); active--;
-      if (fail) throw new Error('Offline');
-      return { pushed: true };
-    },
-    schedule: (callback, delay) => { const timer = { callback, delay, unref() {} }; timers.push(timer); return timer; },
-    cancel: timer => { timer.cancelled = true; }
+    script: '/fixture/background_commit.py',
+    enqueue: async (script, directory, request, action) => {
+      calls.push({ script, directory, request, action });
+      if (failQueue) throw new Error('Worker is temporarily unavailable');
+      return { queued: true, id: 'pony-durable-job' };
+    }
   });
   await queue.resume('/fixture');
-  const first = queue.enqueue('/fixture', pony, stored);
-  assert.equal(queue.enqueue('/fixture', pony, stored), first, 'Deduplicate pending jobs');
-  assert.equal((await first).retryScheduled, true);
-  assert.equal(timers[0].delay, 15000);
-  timers[0].callback();
-  await queue.enqueue('/fixture', pony, stored);
-  assert.equal(timers[1].delay, 30000);
-  fail = false; timers[1].callback();
-  assert.equal((await queue.enqueue('/fixture', pony, stored)).publication.pushed, true);
-  assert.equal(attempts.length, 3);
-  await queue.enqueue('/fixture', pony, stored);
-  assert.equal(attempts.length, 4, 'Success removes the job rather than retaining a stale result');
+  assert.equal(calls.length, 1, 'Pending receipt is handed to the durable worker on startup');
+  assert.equal(calls[0].action, '--enqueue-pony');
+  assert.deepEqual(calls[0].request, { pony, path: stored });
+  const first = await queue.enqueue('/fixture', pony, stored);
+  assert.equal(first.retryScheduled, true, 'The worker—not the VS Code timer—owns retries');
+  assert.equal(first.publication.queued, true);
+  failQueue = true;
+  const failed = await queue.enqueue('/fixture', pony, stored);
+  assert.match(failed.publicationError, /temporarily unavailable/);
+  assert.equal(failed.retryScheduled, undefined, 'Do not promise retries without an accepted job');
+  failQueue = false;
+  const again = await queue.enqueue('/fixture', pony, stored);
+  assert.equal(again.retryScheduled, true, 'Existing journal can be re-enqueued after restart');
   queue.dispose();
-  console.log('Pony publication retry, restart recovery, manual batch, and safety checks passed (mock Git).');
+  console.log('Pony publisher receipts, restart handoff, and detached-worker queue checks passed (mock Git).');
 })().catch(error => { console.error(error); process.exitCode = 1; });

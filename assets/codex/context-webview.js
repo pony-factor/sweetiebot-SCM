@@ -1,6 +1,8 @@
 // Read-only snapshot requests; never submit, steer, focus, or stop a Codex turn.
 function scmToolkitRegisterCodexSnapshot(api) {
     const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+    const reloadKey = 'sweetiebotReloadConversation';
+    let restored = false;
 
     const conversationId = (allowHidden = false) => {
         const locations = [
@@ -51,7 +53,32 @@ function scmToolkitRegisterCodexSnapshot(api) {
 
     window.addEventListener('message', async event => {
         const request = event.data;
+        // Restore only after Codex announces its persisted state is ready.
+        if (request?.type === 'persisted-atom-sync' && !restored) {
+            restored = true;
+            const state = api.getState?.();
+            const saved = state?.[reloadKey];
+            if (saved !== undefined) {
+                const next = { ...state };
+                delete next[reloadKey];
+                api.setState?.(next); // Consume once, preserving unrelated VS Code state.
+                if (typeof saved === 'string' && new RegExp('^' + uuid.source + '$', 'i').test(saved)) {
+                    api.postMessage({ type: 'scm-toolkit-restore-conversation', conversationId: saved });
+                }
+            }
+        }
         if (request?.type !== 'scm-toolkit-context-request' || typeof request.id !== 'string') return;
+        if (request.reloadState === true) {
+            const current = conversationId();
+            const next = { ...(api.getState?.() ?? {}) };
+            delete next[reloadKey];
+            if (current) next[reloadKey] = current;
+            api.setState?.(next);
+            api.postMessage({
+                type: 'scm-toolkit-context-response', id: request.id, conversationId: current
+            });
+            return;
+        }
         if (request.shareOnly) {
             const visible = element => element.getClientRects().length;
             const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();

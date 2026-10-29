@@ -1366,30 +1366,68 @@ function registerBranchCommands(vscode, context) {
     }),
     vscode.commands.registerCommand('sweetiebot.endCommit', async (uri, options) => {
       const repository = await resolveRepository(uri);
-      return queueRepositoryOperation(repository, async () => {
+      const result = await queueRepositoryOperation(repository, async () => {
         try {
           await releaseSpellcheckPushGate(repository, options?.gateToken, options?.pushed === true);
         } finally {
           endRepositoryCommit(repository, options?.gateToken);
         }
       });
+      // A finished commit may unblock an incoming fast-forward.
+      run();
+      return result;
     })
   );
 
   if (vscode.window?.createOutputChannel) registerSyncReportPublisher(vscode, context);
 
-  let scanning = false, disposed = false;
+  let scanning = false, rescanRequested = false, disposed = false, gitApi;
   const lastFetch = new WeakMap();
   const retryAfter = new WeakMap();
+  const listeners = new Map();
+  const fingerprint = repository => {
+    const state = repository.state || {};
+    const head = state.HEAD || {};
+    return JSON.stringify([head.name, head.commit, head.upstream?.remote, head.upstream?.name,
+      head.ahead, head.behind, state.mergeChanges?.length]);
+  };
+  const watch = repository => {
+    if (!repository?.rootUri || listeners.has(repository)) return;
+    let previous = fingerprint(repository);
+    const disposable = repository.state?.onDidChange?.(() => {
+      const current = fingerprint(repository);
+      if (current === previous) return; // Ignore unrelated status/working-tree redraws.
+      previous = current;
+      run(); // Commit, push, fetch and checkout changes are checked promptly.
+    });
+    listeners.set(repository, disposable || { dispose() {} });
+  };
   const scan = async () => {
-    if (scanning || disposed) return;
+    if (disposed) return;
+    if (scanning) { rescanRequested = true; return; }
     scanning = true;
     try {
       const extension = vscode.extensions.getExtension('vscode.git');
       if (!extension) return;
       const git = await extension.activate();
-      for (const repository of git.getAPI(1).repositories ?? []) {
+      if (!gitApi) {
+        gitApi = git.getAPI(1);
+        if (typeof gitApi.onDidOpenRepository === 'function') {
+          context.subscriptions.push(gitApi.onDidOpenRepository(repository => {
+            watch(repository);
+            run();
+          }));
+        }
+        if (typeof gitApi.onDidCloseRepository === 'function') {
+          context.subscriptions.push(gitApi.onDidCloseRepository(repository => {
+            listeners.get(repository)?.dispose();
+            listeners.delete(repository);
+          }));
+        }
+      }
+      for (const repository of gitApi.repositories ?? []) {
         if (disposed || repository.rootUri.scheme !== 'file') continue;
+        watch(repository);
         const head = repository.state.HEAD;
         if (!head?.name || commitInProgress(repository)) continue;
         const now = Date.now();
@@ -1416,18 +1454,28 @@ function registerBranchCommands(vscode, context) {
           await autoPullClean(repository, { fetch });
           retryAfter.delete(repository);
         }).catch(() => {
-          // Avoid repeatedly attempting an overlapping fast-forward every second.
+          // Respect a backoff before retrying overlapping changes.
           retryAfter.set(repository, Date.now() + 5000);
         }); // Git preserves edits when an incoming path overlaps.
       }
     } finally {
       scanning = false;
+      if (rescanRequested && !disposed) {
+        rescanRequested = false;
+        run();
+      }
     }
   };
   const run = () => void scan().catch(() => {});
-  const timer = setInterval(run, 1000);
+  // Git change events are immediate; the minute timer is only a safety net.
+  const timer = setInterval(run, 60000);
   timer.unref?.();
-  context.subscriptions.push({ dispose() { disposed = true; clearInterval(timer); } });
+  context.subscriptions.push({ dispose() {
+    disposed = true;
+    clearInterval(timer);
+    for (const listener of listeners.values()) listener.dispose();
+    listeners.clear();
+  } });
   run();
 }
 
