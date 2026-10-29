@@ -16,9 +16,9 @@ import time
 from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
-from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER, alive,
-                                    related_pending_jobs, new_job_id, BASE58_ID_PATTERN,
-                                    PLACEHOLDER_SUBJECT_PATTERN)
+from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER,
+                                    LEGACY_PLACEHOLDER, alive, related_pending_jobs, new_job_id,
+                                    BASE58_ID_PATTERN, PLACEHOLDER_SUBJECT_PATTERN)
 from sweetiebot_diagnostics import log_event
 
 MARKER = 'sweetiebot-background-commit.json'
@@ -260,7 +260,7 @@ def captured_chain(marker, branch, *, allow_extension=False, allow_finalized_adv
                                   check=False).returncode):
                 raise RuntimeError('The branch advanced outside the queued commits; background work was paused.')
             subjects = git('log', '--format=%s', previous + '..' + actual).splitlines()
-            if any(re.fullmatch(r'(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])', subject)
+            if any(re.fullmatch(PLACEHOLDER_SUBJECT_PATTERN, subject)
                    for subject in subjects):
                 raise RuntimeError('The branch contains unfinished commit messages; background work was paused.')
         else:
@@ -1061,7 +1061,8 @@ def work(directory, commit_only=False):
                 with repository_lock(job['gitdir']):
                     captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                     job = read_journal(file)
-                    generated = not job['message'].startswith((PLACEHOLDER, '💭 Generate local commit message ['))
+                    generated = not job['message'].startswith((PLACEHOLDER, LEGACY_PLACEHOLDER,
+                                                               '💭 Generate local commit message ['))
                     job['phase'] = 'finalizing' if job.get('provisional') and generated else 'committed'
                     job.pop('error', None)
                     write_journal(file, job)

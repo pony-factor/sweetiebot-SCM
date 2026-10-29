@@ -399,6 +399,8 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  void require('./branches/commit_drafts').registerCommitDrafts(vscode, context)
+    .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);

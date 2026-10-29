@@ -9,7 +9,6 @@ const { independentWorkspaceParent } = require('./workspace_trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
 const { prepareCodexHandoff } = require('../codex/workspace_handoff');
-const { focusExistingBranchWindow } = require('./window');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -161,6 +160,7 @@ async function openSharedMainWorkspace(vscode, options = {}) {
 }
 
 async function replaceRepository(vscode, root, destination, options) {
+  await require('./commit_drafts').preserveCommitDraft(vscode, root, destination, options.commitDraftValue);
   const run = options.run || git;
   const folders = [];
   for (const folder of vscode.workspace.workspaceFolders || []) {
@@ -311,12 +311,14 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   const run = options.run || git;
   if (!repository.rootUri?.fsPath || !branch || !vscode.workspace?.workspaceFolders?.length) return false;
   const root = await fs.realpath(repository.rootUri.fsPath);
+  if (!Object.hasOwn(options, 'commitDraftValue') && typeof repository.inputBox?.value === 'string')
+    options.commitDraftValue = repository.inputBox.value;
+  await require('./commit_drafts').preserveCommitDraft(vscode, root, undefined, options.commitDraftValue);
   const original = await originalRepository(root, options);
   const current = await run(['-C', root, 'branch', '--show-current']);
   if (branch === 'main') {
     const main = await mainRoot(root, options);
     if (root === main && current === 'main') return true;
-    if (await focusExistingBranchWindow(vscode, main, options)) return true;
     await switchRepository(vscode, root, main, options);
     return true;
   }
@@ -342,9 +344,8 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
-    // A live destination window owns its editors and Codex state. Bring it
-    // forward and close the source, rather than repointing this workspace.
-    if (await focusExistingBranchWindow(vscode, destination, options)) return true;
+    // Reuse the destination worktree in this window so the initiating chat
+    // follows the user's branch choice even when another window has it open.
     await switchRepository(vscode, root, destination, { ...options, branch });
     return true;
   }

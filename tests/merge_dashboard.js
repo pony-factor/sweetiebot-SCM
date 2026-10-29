@@ -388,6 +388,22 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
+  assert(panel.webview.html.includes('class="dashboard-brand"'),
+    'Keep the repository identity grouped beside the dashboard title');
+  assert(panel.webview.html.includes('aria-label="Bulk merge preferences"'),
+    'Group merge preferences accessibly');
+  assert(panel.webview.html.includes('class="toolbar-option"'),
+    'Show custom but theme-aware checkbox labels in the merge toolbar');
+  assert(panel.webview.html.includes('id="progress" class="pill" role="status" aria-live="polite"'),
+    'Announce merge progress changes without removing the compact status pill');
+  assert(panel.webview.html.includes('.overview input[type="checkbox"]:focus-visible'),
+    'Retain keyboard focus styling for custom checkbox controls');
+  assert(panel.webview.html.includes('.pr[aria-current="true"]::before'),
+    'Visually distinguish the selected PR without relying only on background color');
+  assert(panel.webview.html.includes('@media(max-width:1250px)'),
+    'Wrap toolbar options instead of clipping them at medium widths');
+  assert(panel.webview.html.includes('@media(prefers-reduced-motion:reduce)'),
+    'Honor reduced-motion preferences for dashboard transitions');
   assert(panel.webview.html.includes('runner-switch'), 'Runner uses the theme-aware sliding pill');
   assert(panel.webview.html.includes("runner.dataset.engine = value"), 'Runner animation follows the selected destination');
   assert(panel.webview.html.includes("workspaceRow.hidden = value !== 'codex'"),
@@ -659,20 +675,34 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
   dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha, title: '🔄 Sync branch to main' });
-  assert.equal(events.at(-1).events.at(-1).commitTitle, '🔄 Sync branch to main');
-  assert.match(mergeActivityPresentation(events.at(-1).events.at(-1)).summary, /pushed to the PR branch/,
+  const pushedEvent = events.at(-1).events.findLast(event => event.commitTitle === '🔄 Sync branch to main');
+  assert.equal(pushedEvent.location, 'upstream');
+  assert.match(mergeActivityPresentation(pushedEvent).summary, /pushed to the PR branch/,
     'Operational timeline entries lead with the runner action rather than hiding it behind a commit title');
-  assert(!events.at(-1).events.at(-1).details);
+  assert(!pushedEvent.details);
   await dashboard.flushLocalState();
   assert.equal(createMergeDashboardPersistence(localContext, selection).restoredRecovery[12].stage, 'pushed');
 
-  assert.match(events.at(-1).events.at(-1).message, /not merged/);
+  assert.match(pushedEvent.message, /not merged/);
   dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
     status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
-  assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
-  assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
-  assert.equal(events.at(-1).events.at(-1).commitSha, sha);
+  const blockedEvent = events.at(-1).events.findLast(event => event.state === 'blocked');
+  assert.match(blockedEvent.message, /Stopped after pushing/);
+  assert.match(blockedEvent.details, /PR changed after guarded push/);
+  assert.equal(blockedEvent.commitSha, sha);
   assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
+  dashboard.recordLocalProgress({number:12,stage:'integrating'});
+  assert.equal(events.at(-1).events.at(-1).location,'local');
+  const poll={number:12,stage:'checks-polled',sha,state:'pending',nextPollAt:Date.now()+15000,
+    evidence:[{name:'Regression tests',result:'in_progress'}]};
+  dashboard.recordLocalProgress(poll);
+  assert.equal(events.at(-1).prs[0].activity.location,'upstream');
+  assert.equal(events.at(-1).prs[0].activity.phase,'waiting-checks');
+  assert.match(events.at(-1).events.at(-1).details,/Regression tests: in_progress/);
+  const pollCount=events.at(-1).events.length,stepStarted=events.at(-1).prs[0].activity.at;
+  dashboard.recordLocalProgress({...poll,nextPollAt:Date.now()+16000});
+  assert.equal(events.at(-1).events.length,pollCount,'Unchanged check polls refresh the live status without flooding history');
+  assert.equal(events.at(-1).prs[0].activity.at,stepStarted,'A poll cannot restart the elapsed step clock');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
   dashboard.recordLocalProgress({ number: 12, stage: 'invented' });
@@ -776,7 +806,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   info = { ...info, state: 'closed', merged: false };
   await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
-  assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
+  assert(events.at(-1).events.some(event => event.message === 'PR was closed without merging'));
   // A verified executor result updates the badge immediately, even in a hidden
   // dashboard with an older open response already in flight and a failed poll.
   info = { ...info, state: 'open', merged: false };

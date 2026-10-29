@@ -15,7 +15,7 @@
         const style = document.createElement('style');
         style.id = styleId;
         // A persistent stylesheet wins over React resetting the inline style.
-        style.textContent = `[${hiddenAttribute}] { display: none !important; }
+        style.textContent = `[${hiddenAttribute}] { display: none !important; }` + (globalThis.scmToolkitShowCannon ? "" : `
             [${activityAttribute}] {
                 display: inline-flex !important; align-items: center;
                 font-size: 0 !important; gap: 6px !important;
@@ -33,7 +33,7 @@
                 white-space: normal; pointer-events: none;
             }
             [${activityAttribute}]:not([data-scm-toolkit-activity-dots])::after,
-            [${activityAttribute}][data-scm-toolkit-activity-dots=""]::after { display: none; }`;
+            [${activityAttribute}][data-scm-toolkit-activity-dots=""]::after { display: none; }`);
         root.appendChild(style);
     }
 

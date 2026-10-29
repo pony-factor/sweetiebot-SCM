@@ -139,18 +139,21 @@ def patch_files(extension_path=None, remove=False):
             if not path.is_file():
                 continue
             old = path.read_text()
-            if remove and START not in old:
+            markers = (START, REFRESH_START, DESCRIPTION_START, github_pr_reactions.CSP_START, github_pr_reactions.WEBVIEW_START)
+            if remove and not any(marker in old for marker in markers):
                 continue
+            # Existing guarded patches must always unpatch cleanly. An unrelated
+            # optional anchor in a newer build must not suppress tree commands.
+            stripped = (github_pr_reactions.transform_csp(old, remove=True) if kind == 'host'
+                        else github_pr_reactions.transform_webview(old, remove=True))
+            stripped = transform_description(transform_refresh(stripped, remove=True), remove=True) if kind == 'host' else stripped
             try:
-                stripped = (github_pr_reactions.transform_csp(old, remove=True) if kind == 'host'
-                            else github_pr_reactions.transform_webview(old, remove=True))
-                stripped = transform_description(transform_refresh(stripped, remove=True), remove=True) if kind == 'host' else stripped
                 new = transform(stripped, kind, remove)
             except ValueError:
-                if START in old or REFRESH_START in old:
+                if START in old:
                     raise
-                print(f'Warning: unsupported GitHub PR asset {path.name}; skipping this optional fix.')
-                continue
+                print(f'Warning: unsupported GitHub PR {kind} cleanup in {path.name}; retaining independent tree and reaction repairs.')
+                new = stripped
             if kind == 'host' and not remove:
                 try:
                     new = transform_description(new)

@@ -20,6 +20,19 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     provider.handleMessage = function(webview, message) {
+        if (message?.type === 'scm-toolkit-read-limit-reset') {
+            void vscode.commands.executeCommand('sweetiebot.codex.readRateLimitReset', message)
+                .then(result => webview.postMessage({ type: 'scm-toolkit-limit-reset-result',
+                    threadId: message.threadId, requestId: message.requestId, ...result }))
+                .catch(() => webview.postMessage({ type: 'scm-toolkit-limit-reset-result',
+                    threadId: message.threadId, requestId: message.requestId, known: false }));
+            return;
+        }
+        if (message?.type === 'scm-toolkit-continue-at-reset') {
+            void vscode.commands.executeCommand('sweetiebot.codex.continueAfterRateLimit', message)
+                .catch(error => vscode.window.showWarningMessage('Automatic continuation paused: ' + error.message));
+            return;
+        }
         if (message?.type === 'scm-toolkit-open-chat-checkout') {
             // Resolve identity in this host; never accept a filesystem path from the DOM.
             void vscode.commands.executeCommand('sweetiebot.codex.openChatCheckout', message.threadId)
@@ -55,6 +68,11 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     return;
                 }
                 void vscode.env.clipboard.readText().then(async value => {
+                    const until = Date.now() + 5000;
+                    while (!/^https:\/\/chatgpt\.com\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(value) && Date.now() < until) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        value = await vscode.env.clipboard.readText();
+                    }
                     if (!/^https:\/\/chatgpt\.com\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(value)) {
                         throw new Error('Codex did not copy a verified public chat link.');
                     }
@@ -134,8 +152,10 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
-                reject(new Error('Codex text capture timed out. Reopen this window after installing the toolkit.'));
-            }, shareOnly ? 45000 : 5000);
+                reject(new Error(shareOnly
+                    ? 'Codex Share is still preparing. PR creation can continue without its public link.'
+                    : 'Codex text capture timed out. Reopen this window after installing the toolkit.'));
+            }, shareOnly ? 155000 : 5000);
             pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
             webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState }).then(sent => {

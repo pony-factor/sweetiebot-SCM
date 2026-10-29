@@ -365,6 +365,7 @@ async function run() {
     update: async (key, value) => { sharedState.set(key, value); },
   } };
   registerPullRequestCommand(vscode, context, {
+    findOpenPullRequest: async () => existingPullRequest,
     verifyPublishedBranch: async () => {},
     pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
@@ -436,6 +437,17 @@ async function run() {
   assert.equal(sessionLaunches[0].options.branch, 'draft');
   assert.deepEqual(sessionLaunches[0].options.source, chatSource);
   assert.equal(calls.length, 0, 'Source host must not own any PR browser or confirmation window');
+  const regularExecute = vscode.commands.executeCommand;
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.shareCodexConversation') throw Error('Native Share timed out');
+    return regularExecute(id, ...args);
+  };
+  codexSnapshot = { text: 'Unanswered PR intent', source: codexSource };
+  const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  vscode.commands.executeCommand = regularExecute;
+  codexSnapshot = undefined;
   launchInSeparateWorkspace = false;
 
   await callback({ rootUri: uri }, {
@@ -453,7 +465,8 @@ async function run() {
   const browserOptions = calls[1].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
-  assert.equal(url.search, '', 'PR prompt must not enter the HTTP request target');
+  assert.equal(url.searchParams.has('q'), false, 'PR prompt must not enter the HTTP request target');
+  assert(url.searchParams.get('sweetiebot_launch'), 'Each workflow must load a fresh document');
   assert.equal(new URLSearchParams(url.hash.slice(1)).get('sweetiebot_pr'), '1');
   const openedPrompt = new URLSearchParams(url.hash.slice(1)).get('q');
   assert.match(openedPrompt, /"draft"/);
@@ -530,6 +543,8 @@ async function run() {
 
   // Repeated clicks must reuse an open PR for the head even if its base differs.
   existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', head: 'draft', base: 'release' };
+  launchInSeparateWorkspace = true;
+  const launchesBeforeExisting = sessionLaunches.length;
   calls.length = 0;
   const existingResult = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.equal(existingResult.existing, true);
@@ -537,6 +552,9 @@ async function run() {
   assert.deepEqual(calls.map(call => call.id), ['vscode.open']);
   assert.equal(calls[0].args[0].value, existingPullRequest.url);
   assert.match(informationMessages.at(-1), /already exists/);
+  assert.equal(sessionLaunches.length, launchesBeforeExisting,
+    'An existing PR must block the independent workspace before any drafting starts');
+  launchInSeparateWorkspace = false;
   browserAvailable = false;
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });

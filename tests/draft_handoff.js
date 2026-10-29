@@ -66,6 +66,7 @@ const {createDraftHandoff} = require('../extension/codex/draft_handoff');
     const pageHtml = await page.text();
     assert.match(pageHtml, /Publish pull request/);
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
+    assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\)\)\)/, 'The confirmation window renders the independent pony profile as Markdown, including timestamped moment links');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
     assert.equal(writes,0,'Opening a draft must not publish it');
     const detailsId = '44444444-2222-4333-8444-555555555555';

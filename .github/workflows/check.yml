@@ -123,6 +123,8 @@ jobs:
           python tests/codex_queued_edit_browser.py
           python tests/codex_webview_browser.py
           python tests/codex_webview_iframe.py
+      - name: Commit wand placement, shared outline and workflow recovery
+        run: python tests/workflow_recovery_browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
           node tests/codex_hide_chat_timestamps.js
@@ -158,3 +160,60 @@ jobs:
           node tests/github_app_settings.js
           node tests/kefania_app_environment.js
           node tests/lindsey_bulk_merge.js
+
+  packaged-runtime:
+    name: Installed extension imports (${{ matrix.os }})
+    needs: inventory
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve every installed relative JavaScript dependency
+        run: python -m unittest tests.packaged_runtime -v
+
+  native-prompt-transport:
+    name: Sandboxed browser prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
+    needs: inventory
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        electron: ['43.7.7', '45.1.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the native test runtime
+        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@${{ matrix.electron }}
+      - name: Exercise sandbox, strict CSP, prompt delivery and JSON handoff
+        shell: bash
+        run: |
+          unset ELECTRON_RUN_AS_NODE
+          runner="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/.bin/electron"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            # Electron's Chromium sandbox requires a root-owned, setuid helper.
+            # Do not disable sandboxing or pass --no-sandbox in this security test.
+            # Some runners defer the Electron binary download until first use.
+            node "$RUNNER_TEMP/sweetiebot-native-ci/node_modules/electron/install.js"
+            sandbox="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/electron/dist/chrome-sandbox"
+            sudo chown root:root "$sandbox"
+            sudo chmod 4755 "$sandbox"
+            test -u "$sandbox"
+            test "$(stat -c %u "$sandbox")" = 0
+            xvfb-run -a "$runner" tests/fixtures/prompt-transport.cjs
+          else
+            "$runner" tests/fixtures/prompt-transport.cjs
+          fi

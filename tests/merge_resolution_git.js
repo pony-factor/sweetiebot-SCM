@@ -31,6 +31,8 @@ const run = promisify(execFile);
     await fs.writeFile(path.join(working, 'feature-only.txt'), 'retain this new feature\n');
     await fs.writeFile(path.join(working, 'clean.txt'), 'updated clean\n');
     await fs.unlink(path.join(working, 'remove.txt'));
+    await fs.writeFile(path.join(working, 'feature-art.png'), Buffer.from([137,80,78,71,13,10,26,10,0,255,1]));
+    await repo('add', 'feature-art.png');
     await repo('add', 'feature-only.txt');
     await repo('commit', '--quiet', '-am', '🐛 Preserve feature\n\nCo-authored-by: Codex <noreply@openai.com>');
     const firstSha = await repo('rev-parse', 'HEAD');
@@ -171,6 +173,7 @@ const run = promisify(execFile);
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     if (resolving) {
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
+      assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':feature-art.png'), await git('--git-dir=' + remote, 'rev-parse', headSha + ':feature-art.png'), 'Text conflict resolution retains the exact clean binary blob');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':clean.txt'), 'updated clean');
       await assert.rejects(git('--git-dir=' + remote, 'show', incremental.sha + ':remove.txt'));
     }
