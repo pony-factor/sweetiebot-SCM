@@ -715,8 +715,8 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
-    if setting.name == "kefaniaShowCloseButton":
-        return ""
+    if setting.name in {"kefaniaShowCloseButton", "codexHidePermissionsIcon"}:
+        return ""  # The composer layout tray supersedes the old permissions-hide toggle.
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
         disabled = "" if current is True else " disabled"
         return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
