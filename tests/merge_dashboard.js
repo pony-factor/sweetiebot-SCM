@@ -388,6 +388,22 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
+  assert(panel.webview.html.includes('class="dashboard-brand"'),
+    'Keep the repository identity grouped beside the dashboard title');
+  assert(panel.webview.html.includes('aria-label="Bulk merge preferences"'),
+    'Group merge preferences accessibly');
+  assert(panel.webview.html.includes('class="toolbar-option"'),
+    'Show custom but theme-aware checkbox labels in the merge toolbar');
+  assert(panel.webview.html.includes('id="progress" class="pill" role="status" aria-live="polite"'),
+    'Announce merge progress changes without removing the compact status pill');
+  assert(panel.webview.html.includes('.overview input[type="checkbox"]:focus-visible'),
+    'Retain keyboard focus styling for custom checkbox controls');
+  assert(panel.webview.html.includes('.pr[aria-current="true"]::before'),
+    'Visually distinguish the selected PR without relying only on background color');
+  assert(panel.webview.html.includes('@media(max-width:1250px)'),
+    'Wrap toolbar options instead of clipping them at medium widths');
+  assert(panel.webview.html.includes('@media(prefers-reduced-motion:reduce)'),
+    'Honor reduced-motion preferences for dashboard transitions');
   assert(panel.webview.html.includes('runner-switch'), 'Runner uses the theme-aware sliding pill');
   assert(panel.webview.html.includes("runner.dataset.engine = value"), 'Runner animation follows the selected destination');
   assert(panel.webview.html.includes("workspaceRow.hidden = value !== 'codex'"),
