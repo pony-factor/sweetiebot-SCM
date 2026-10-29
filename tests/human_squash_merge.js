@@ -166,6 +166,15 @@ async function main() {
     await assert.rejects(humanSquashMerge('owner/repo',12,{api:blocked.api,git}),pattern);
     assert(!blocked.calls.some(c => c.method !== 'GET'));
   }
+  const local = fixture({commits:[secondHuman,oneHuman]});
+  let localOptions;
+  const localResult=await humanSquashMerge('owner/repo',12,{api:local.api,localGitMerge:true,
+    localMerge:async(repo,number,options)=>{assert.equal(repo,'owner/repo');assert.equal(number,12);localOptions=options;return {merged:true,sha:mergedSha};}});
+  assert(localResult.merged);
+  assert.equal(localOptions.localGitMerge,true);
+  assert.equal(localOptions.allowHistoryRewrite,false);
+  assert.equal(localOptions.expected.headSha,oldSha);
+  assert(!local.calls.some(call=>call.method!=='GET'),'Sidebar handoff never attempts a native bot-authored squash');
   const mismatch = fixture({incorrectResultAuthor:true});
   await assert.rejects(humanSquashMerge('owner/repo',12,{api:mismatch.api,git}), /author/);
   await assert.rejects(humanSquashMerge('bad',12,{api:approved.api}), /Invalid/);

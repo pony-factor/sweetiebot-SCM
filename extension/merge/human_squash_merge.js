@@ -52,7 +52,7 @@ function verifyCommit(commit, expected, author) {
 }
 
 
-async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localMerge, trailerSeparatorStyle } = {}) {
+async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localGitMerge = false, localMerge, trailerSeparatorStyle } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
@@ -84,6 +84,13 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
 
   const commits = await readCommits(async ([endpoint]) => api(endpoint), repository, number);
   const author = humanAuthor(commits);
+  if (localGitMerge) {
+    localMerge ||= require('./local_human_squash').humanSquashMerge;
+    return localMerge(repository, number, {
+      api, gitToken, localGitMerge: true, allowHistoryRewrite: false,
+      expected: { headSha, baseSha, head, base, title: original.title }
+    });
+  }
   const prepareSquash = async () => {
     // Only the local one-PR merge action opts into this last resort. The local
     // executor independently verifies necessity, branch isolation, live tips,

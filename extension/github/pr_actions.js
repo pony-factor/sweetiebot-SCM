@@ -68,13 +68,13 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   // GitHub's native squash endpoint assigns the PR opener as Git author.
   // Bot-opened PRs need verified human authorship, but the one-click button
   // must never change a PR branch's history to manufacture a squash.
-  // A pre-existing, correctly attributed single commit can rebase-merge as-is;
-  // otherwise stop and explain the non-rewriting merge alternative.
+  // Delegate to local Git for a verified human-authored integration commit
+  // retaining both parents and the original PR head.
   if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
   }
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false });
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
@@ -92,7 +92,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const commits = await readCommits(api, repo, Number(number));
   const human = verifiedHumanAuthor(commits);
   if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false });
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
     if (!landed.merged || finished.state !== 'MERGED' ||
