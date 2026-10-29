@@ -349,9 +349,11 @@ assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], undefined);
 const warningCopy = "You've hit your usage limit. Upgrade your plan or add credits to continue, or Try again later.";
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy), true);
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy.replace('Try', 'try')), true);
+// Timed warnings belong to the separate hide-reset-times preference, not to
+// the generic untimed-message compactor. Retain the deadline in normal mode.
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), false);
 context.scmToolkitHideRateLimitTimes = true;
-assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), true);
+assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), false);
 context.scmToolkitHideRateLimitTimes = false;
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning('Upgrade your plan or add credits'), false);
 const warningParts = [
@@ -413,6 +415,8 @@ const observerMessage = {
 observerText.parentElement = observerMessage;
 const syntheticDocument = {
     nodeType: 9,
+    createElement: () => ({ textContent: '' }),
+    documentElement: { appendChild() {} },
     querySelectorAll(query) {
         return query.startsWith('p, span, div,') ? [observerMessage] : [];
     },

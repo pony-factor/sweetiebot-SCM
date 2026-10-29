@@ -659,20 +659,34 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(events.at(-1).events.at(-1).details.includes('src/file.js'));
   assert.equal(events.at(-1).prs[0].localDecisions['src/file.js'].description, 'Preserve existing callers with an adapter.');
   dashboard.recordLocalProgress({ number: 12, stage: 'pushed', sha, title: '🔄 Sync branch to main' });
-  assert.equal(events.at(-1).events.at(-1).commitTitle, '🔄 Sync branch to main');
-  assert.match(mergeActivityPresentation(events.at(-1).events.at(-1)).summary, /pushed to the PR branch/,
+  const pushedEvent = events.at(-1).events.findLast(event => event.commitTitle === '🔄 Sync branch to main');
+  assert.equal(pushedEvent.location, 'upstream');
+  assert.match(mergeActivityPresentation(pushedEvent).summary, /pushed to the PR branch/,
     'Operational timeline entries lead with the runner action rather than hiding it behind a commit title');
-  assert(!events.at(-1).events.at(-1).details);
+  assert(!pushedEvent.details);
   await dashboard.flushLocalState();
   assert.equal(createMergeDashboardPersistence(localContext, selection).restoredRecovery[12].stage, 'pushed');
 
-  assert.match(events.at(-1).events.at(-1).message, /not merged/);
+  assert.match(pushedEvent.message, /not merged/);
   dashboard.recordLocalResult({ repository: selection.repository, results: [{ number: 12,
     status: 'blocked', preparedHead: sha, reason: 'PR changed after guarded push' }] });
-  assert.match(events.at(-1).events.at(-1).message, /Stopped after pushing/);
-  assert.match(events.at(-1).events.at(-1).details, /PR changed after guarded push/);
-  assert.equal(events.at(-1).events.at(-1).commitSha, sha);
+  const blockedEvent = events.at(-1).events.findLast(event => event.state === 'blocked');
+  assert.match(blockedEvent.message, /Stopped after pushing/);
+  assert.match(blockedEvent.details, /PR changed after guarded push/);
+  assert.equal(blockedEvent.commitSha, sha);
   assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
+  dashboard.recordLocalProgress({number:12,stage:'integrating'});
+  assert.equal(events.at(-1).events.at(-1).location,'local');
+  const poll={number:12,stage:'checks-polled',sha,state:'pending',nextPollAt:Date.now()+15000,
+    evidence:[{name:'Regression tests',result:'in_progress'}]};
+  dashboard.recordLocalProgress(poll);
+  assert.equal(events.at(-1).prs[0].activity.location,'upstream');
+  assert.equal(events.at(-1).prs[0].activity.phase,'waiting-checks');
+  assert.match(events.at(-1).events.at(-1).details,/Regression tests: in_progress/);
+  const pollCount=events.at(-1).events.length,stepStarted=events.at(-1).prs[0].activity.at;
+  dashboard.recordLocalProgress({...poll,nextPollAt:Date.now()+16000});
+  assert.equal(events.at(-1).events.length,pollCount,'Unchanged check polls refresh the live status without flooding history');
+  assert.equal(events.at(-1).prs[0].activity.at,stepStarted,'A poll cannot restart the elapsed step clock');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
   dashboard.recordLocalProgress({ number: 12, stage: 'invented' });
@@ -776,7 +790,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   info = { ...info, state: 'closed', merged: false };
   await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
-  assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
+  assert(events.at(-1).events.some(event => event.message === 'PR was closed without merging'));
   // A verified executor result updates the badge immediately, even in a hidden
   // dashboard with an older open response already in flight and a failed poll.
   info = { ...info, state: 'open', merged: false };

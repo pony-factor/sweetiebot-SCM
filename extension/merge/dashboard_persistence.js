@@ -23,6 +23,7 @@ function validEvent(event, numbers) {
   return {
     number: event.number,
     state: event.state.slice(0, 36),
+    ...(['local', 'upstream', 'review'].includes(event.location) ? { location: event.location } : {}),
     message: event.message.slice(0, MAX_EVENT_TEXT),
     ...(typeof event.details === 'string' && event.details
       ? { details: event.details.slice(0, MAX_EVENT_DETAILS) } : {}),

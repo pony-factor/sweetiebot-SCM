@@ -104,8 +104,9 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     return { merged: false, status: 'blocked' };
   } });
   await executeResolution(input, selection, { authorHandoff: true, merge: async (repo, number, options) => {
-    assert.equal(options.allowHistoryRewrite, true, 'Trusted local merge handoff enables the necessary author preparation');
-    assert.equal(options.rewriteReason, 'preserve-human-author');
+    assert.equal(options.allowHistoryRewrite, undefined, 'Local Git handoff must never authorize rewriting an existing commit');
+    assert.equal(options.rewriteReason, undefined);
+    assert.equal(options.localGitMerge, true, 'Bot-opened PRs use the local Git integration route');
     return { merged: false, status: 'waiting' };
   } });
   await executeResolution({ ...input, results: input.results.map(item => ({ ...item, operation: 'sync' })) }, selection, { authorHandoff: true, merge: async (repo, number, options) => {

@@ -84,8 +84,10 @@ const scmToolkitRateLimitStickerEnabled = "__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENAB
 // presentation as soon as the message's text changes, before the next paint.
 function scmToolkitIsUntimedRateLimitWarning(value) {
     const text = String(value || '').replace(/\s+/g, ' ').trim();
-    if (globalThis.scmToolkitHideRateLimitTimes === true
-        && /^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|later)\b[^<>]*$/i.test(text)) return true;
+    // A concrete reset time is useful information; keep the entire message.
+    // The optional timed-warning hider owns that separate user preference.
+    if (/\btry again\s+(?:at|on|in|after|until)\b/i.test(text)) return false;
+    if (/^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|later)\b[^<>]*$/i.test(text)) return true;
     return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i.test(text);
 }
 
@@ -118,6 +120,8 @@ function scmToolkitCompactUntimedRateLimitNode(node) {
     };
     collect(node);
     if (!textNodes.length) return false;
+    node.setAttribute?.('data-scm-toolkit-rate-limit-original', node.textContent);
+    node.setAttribute?.('data-scm-toolkit-compact-limit', 'true');
     textNodes[0].textContent = 'Rate limited';
     for (const text of textNodes.slice(1)) text.textContent = '';
     return true;
@@ -184,8 +188,10 @@ function scmToolkitPlainRateLimitNodes(root) {
             }
             // Do not replace a label nested inside a real action or editor.
             const controls = node.querySelectorAll?.('button, a, input, textarea, select, [role="button"]') || [];
-            if (controls.length || node.matches?.('button, a, [role="button"]')
-                || node.querySelector?.(scmToolkitCodexEditorSelector)) {
+            // Reaching the composer owner ends the search; the isolated
+            // status already found below it remains safe to replace.
+            if (node.querySelector?.(scmToolkitCodexEditorSelector)) break;
+            if (controls.length || node.matches?.('button, a, [role="button"]')) {
                 card = null;
                 break;
             }
@@ -395,6 +401,19 @@ function scmToolkitStyleRateLimitStickerCard(node) {
     node.style.alignSelf = 'flex-start';
 }
 function scmToolkitSyncRateLimitPony(root) {
+    // React can recycle a native footer while retaining our attributes. Retire
+    // stale mount flags so its illustration returns after the next render.
+    for (const companion of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony-companion]')) {
+        if (!companion.querySelector?.('img')) companion.remove();
+    }
+    for (const card of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony], [data-scm-toolkit-rate-limit-pony-mounted]')) {
+        if (card.getAttribute?.('data-scm-toolkit-rate-limit-pony-companion') === 'true') continue;
+        if (card.getAttribute?.('data-scm-toolkit-rate-limit-pony') === 'true' && !card.querySelector?.('img'))
+            card.removeAttribute?.('data-scm-toolkit-rate-limit-pony');
+        if (card.dataset?.scmToolkitRateLimitPonyMounted === 'true'
+            && !card.parentElement?.querySelector?.('[data-scm-toolkit-rate-limit-pony-companion] img'))
+            delete card.dataset.scmToolkitRateLimitPonyMounted;
+    }
     // Remove misplaced companions from older injections without touching the
     // queued prompt or its real attachments.
     for (const sticker of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony-companion]')) {
@@ -412,7 +431,7 @@ function scmToolkitSyncRateLimitPony(root) {
     card.dataset.scmToolkitRateLimitPonyPending = 'true';
     const image = root.createElement('img');
     image.alt = 'Twilight Sparkle holding a STOP sign — rate limited';
-    image.title = 'Rate limited · Twilight Sparkle art by CaptainPudgeMuffin';
+    image.title = 'Rate limited · Twilight Sparkle STOP illustration';
     image.width = 96;
     image.style.width = '96px';
     image.style.maxWidth = '100%';
@@ -468,6 +487,9 @@ function scmToolkitSyncRateLimitPony(root) {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
     if (globalThis.scmToolkitResetShortcutInstalled) return;
     globalThis.scmToolkitResetShortcutInstalled = true;
+    const style = document.createElement('style');
+    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:inline-flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;padding:4px!important}';
+    (document.head || document.documentElement).appendChild(style);
     let queued = false;
     const sync = () => {
         if (queued) return;

@@ -1,0 +1,27 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {registerCommitDrafts,preserveCommitDraft}=require('../extension/branches/commit_drafts');
+(async()=>{
+ const values=new Map();let opened;
+ const source={rootUri:{fsPath:'/workspace/source'},inputBox:{value:'✨ Keep this exact subject\n\nUnsent details 🪄'}};
+ const api={repositories:[source],onDidOpenRepository(fn){opened=fn;return{dispose(){}};}};
+ const vscode={extensions:{getExtension:()=>({activate:async()=>({getAPI:()=>api})})},window:{showWarningMessage:message=>assert.fail(message)}};
+ const context={subscriptions:[],globalState:{get:key=>values.get(key),update:async(key,value)=>{if(value===undefined)values.delete(key);else values.set(key,value);}}};
+ await registerCommitDrafts(vscode,context);
+ const text=source.inputBox.value;
+ await preserveCommitDraft(vscode,'/workspace/source', '/workspace/new',text);
+ source.inputBox.value='';
+ const destination={rootUri:{fsPath:'/workspace/new'},inputBox:{value:''}};
+ opened(destination);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(destination.inputBox.value,text,'New worktree restores the exact unsent commit draft');
+ opened(source);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(source.inputBox.value,text,'Original worktree retains its own draft too');
+ const existing={rootUri:{fsPath:'/workspace/existing'},inputBox:{value:'Destination draft'}};api.repositories.push(existing);
+ await preserveCommitDraft(vscode,'/workspace/source','/workspace/existing');opened(existing);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(existing.inputBox.value,'Destination draft');
+ await preserveCommitDraft(vscode,'/workspace/source','/workspace/newer');
+ const newer={rootUri:{fsPath:'/workspace/newer'},inputBox:{value:'Typed while the branch was opening'}};
+ opened(newer);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(newer.inputBox.value,'Typed while the branch was opening','Later typing is never overwritten');
+ console.log('Commit drafts survive new-worktree navigation and preserve existing destination text.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

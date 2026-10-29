@@ -92,6 +92,39 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         return { threadId, cwd: root };
     }));
 
+    const continuedResets = new Set();
+    let limitLookup;
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.readRateLimitReset', async ({ threadId }) => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (!threadId || identity?.threadId !== threadId) return { known: false };
+        if (limitLookup && Date.now() - limitLookup.at < 30000) return limitLookup.result;
+        const result = send('account/rateLimits/read', {}).then(value => {
+            const windows = [value?.rateLimits?.primary, value?.rateLimits?.secondary].filter(Boolean);
+            if (!windows.length) return { known: false };
+            const exhausted = windows.filter(window => Number(window.usedPercent) >= 100);
+            const resets = exhausted.map(window => Number(window.resetsAt) * 1000)
+                .filter(reset => Number.isFinite(reset) && reset > Date.now() && reset < Date.now() + 31 * 86400000);
+            return { known: true, limited: exhausted.length > 0, resetAt: resets.length ? Math.max(...resets) : null };
+        }).catch(() => ({ known: false }));
+        limitLookup = { at: Date.now(), result };
+        return result;
+    }));
+
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.continueAfterRateLimit', async ({ threadId, resetAt }) => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        const key = threadId + ':' + resetAt;
+        if (!threadId || identity?.threadId !== threadId || !Number.isFinite(resetAt)
+            || Date.now() < resetAt || Date.now() - resetAt > 300000 || continuedResets.has(key)) return false;
+        const thread = await read(threadId);
+        if (thread.status?.type === 'active') return false;
+        const turns = await send('thread/turns/list', { threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
+        if (turns?.data?.[0]?.status !== 'failed') return false;
+        continuedResets.add(key); // A lost response must not submit twice.
+        await send('turn/start', { threadId, cwd: await canonical(thread.cwd), clientUserMessageId: randomUUID(),
+            input: [{ type: 'text', text: 'Continue answering the unanswered requests in this conversation.', text_elements: [] }] });
+        return true;
+    }));
+
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.prepareWorkspaceHandoff', async ({ from }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
         if (!identity?.threadId) return null;
@@ -99,9 +132,12 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         const thread = await read(threadId);
         const oldCwd = await canonical(thread.cwd);
         const root = await canonical(from);
-        const relative = path.relative(root, oldCwd);
+        let relative = path.relative(root, oldCwd);
         if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
-            throw new Error('This Codex chat is attached to another checkout. Its worker was not moved.');
+            // Explicit branch navigation moves the visible chat too, including
+            // a historical thread still attached to another checkout. Its old
+            // relative path has no meaning in this workspace; use the new root.
+            relative = '';
         }
         const wasActive = thread.status?.type === 'active';
         if (wasActive) {
