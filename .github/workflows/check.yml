@@ -206,6 +206,8 @@ jobs:
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             # Electron's Chromium sandbox requires a root-owned, setuid helper.
             # Do not disable sandboxing or pass --no-sandbox in this security test.
+            # Some runners defer the Electron binary download until first use.
+            node "$RUNNER_TEMP/sweetiebot-native-ci/node_modules/electron/install.js"
             sandbox="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/electron/dist/chrome-sandbox"
             sudo chown root:root "$sandbox"
             sudo chmod 4755 "$sandbox"
