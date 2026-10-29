@@ -55,10 +55,13 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false, col
 
 async function waitForMergeChecks(api, repository, sha, { expectChecks = false,
   collectEvidence = false, timeoutMs = 8 * 60 * 1000, intervalMs = 15000, now = Date.now,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), onPoll } = {}) {
   const deadline = now() + timeoutMs;
   for (;;) {
-    const result = await readMergeChecks(api, repository, sha, { expectChecks, collectEvidence });
+    const result = await readMergeChecks(api, repository, sha, { expectChecks, collectEvidence: collectEvidence || typeof onPoll === 'function' });
+    try { onPoll?.({ ...result, checkedAt: new Date(now()).toISOString(),
+      nextPollAt: result.state === 'pending' && now() < deadline ? now() + intervalMs : 0 }); }
+    catch { /* Display callbacks cannot change check enforcement. */ }
     if (result.state !== 'pending' || now() >= deadline) return result;
     await sleep(intervalMs);
   }

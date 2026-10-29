@@ -44,6 +44,7 @@ async function humanSquashMerge(repository, number, {
     try { onProgress({ number, stage, ...detail }); } catch { /* Display failures cannot change Git execution. */ }
   };
   progress('preparing', { description: expected.explanation });
+  progress('reading-pr');
   const prPath = endpoint + '/pulls/' + number;
   const original = await api(prPath);
   const base = original?.base?.ref;
@@ -133,6 +134,7 @@ async function humanSquashMerge(repository, number, {
     !sections[1].includes('Co-authored-by: ' + author.name + ' <');
   const message = alreadyPrepared ? existing : preparedMessage;
   let operationCommitTitle = commits.at(-1)?.commit?.message?.split('\n')[0] || prepared.title;
+  progress('reading-checks', { sha: originalSha });
   const initialChecks = await readMergeChecks(api, repository, originalSha);
   if (repairChecks && (resolutionPatch === null || initialChecks.state !== 'failed')) {
     throw Error('A check repair requires a complete patch and confirmed failing checks on the selected head.');
@@ -140,7 +142,8 @@ async function humanSquashMerge(repository, number, {
   const finish = async (sha, expected, method = 'rebase') => {
     progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
-      ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true
+      ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
+      onPoll: checks => progress('checks-polled', { sha, ...checks })
     });
     if (checks.state !== 'passed') return { merged: false, status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
       sha, previousHeadSha: originalSha, base, baseSha, number, author,
@@ -203,8 +206,10 @@ async function humanSquashMerge(repository, number, {
   try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
   catch { throw Error('Invalid Git branch name.'); }
   try {
+    progress('creating-checkout');
     temp = await temporaryDirectory();
     const remote = 'https://github.com/' + repository + '.git';
+    progress('cloning');
     await git('clone', '--quiet', '--no-checkout', remote, temp);
     const inRepo = (...args) => git('-C', temp, ...args);
     const verifyPushedPR = preparedSha => readPushedPR({
@@ -224,6 +229,7 @@ async function humanSquashMerge(repository, number, {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
     if (liveBase !== baseSha) throw refreshBase();
+    progress('inspecting-files');
     const mergeBase = await inRepo('merge-base', liveBase, liveHead);
     if (!SHA.test(mergeBase)) throw Error('No verified common ancestor.');
     const originalFiles = (await inRepo('diff', '--name-only', '-z', mergeBase, liveHead)).split('\0').filter(Boolean).sort();
@@ -359,6 +365,7 @@ async function humanSquashMerge(repository, number, {
       await checkHeadWritable();
       // An exact-head lease plus the ancestry check above guarantees this is
       // an append-only update, including if someone rewinds the remote ref.
+      progress('pushing', { sha: prepared.sha, title: operationCommitTitle });
       await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
       pushedSha = prepared.sha;
       progress('pushed', { sha: prepared.sha, title: operationCommitTitle });
@@ -408,6 +415,7 @@ async function humanSquashMerge(repository, number, {
     if (await readBaseTip() !== baseSha) throw refreshBase();
     // Close the PR-dependency race immediately before the only destructive push.
     await checkHeadRewriteSafety();
+    progress('pushing', { sha: preparedSha, title: operationCommitTitle });
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
     pushedSha = preparedSha;

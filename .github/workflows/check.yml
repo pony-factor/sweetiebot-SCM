@@ -115,7 +115,8 @@ jobs:
           python tests/codex_queued_edit_browser.py
           python tests/codex_webview_browser.py
           python tests/codex_webview_iframe.py
-          python tests/workflow_recovery_browser.py
+      - name: Commit wand placement, shared outline and workflow recovery
+        run: python tests/workflow_recovery_browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
           node tests/codex_hide_chat_timestamps.js

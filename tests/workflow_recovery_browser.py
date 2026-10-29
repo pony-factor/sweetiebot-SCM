@@ -14,10 +14,70 @@ def main():
         page = browser.new_page(viewport={'width': 380, 'height': 720})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
+        # Render the actual Lindsey page, including the host-provided helpers.
+        dashboard=(ROOT / 'extension/merge/dashboard.html').read_text()
+        for marker, filename in {
+            '__MARKDOWN_RENDERER__':'dashboard_markdown.js','__DIFF_RENDERER__':'dashboard_diff.js',
+            '__COMMIT_TREE__':'commit_tree.js','__ACTIVITY_RENDERER__':'dashboard_activity.js',
+            '__TIMESTAMP_FORMATTER__':'dashboard_timestamps.js',
+        }.items():
+            dashboard=dashboard.replace(marker,(ROOT / 'extension/merge' / filename).read_text())
+        dashboard=dashboard.replace('__NONCE__','fixture').replace('__CSP_SOURCE__','https://fixture.invalid')
+        dashboard=dashboard.replace('__RATE_LIMIT_FORMATTER__','function rateLimitMessage(){return "Rate limited";}')
+        page.evaluate('window.acquireVsCodeApi=()=>({getState:()=>({}),setState(){},postMessage(){}})')
+        page.route('https://**/*',lambda route:route.abort())
+        page.set_content(dashboard)
+        page.evaluate('''() => {
+            const now=Date.now();
+            const pr=number=>({number,title:'Feature '+number,head:'topic-'+number,base:'main',state:'waiting',
+                files:[],commits:[],events:[],blockerOptions:[],manualActions:[],reviewComments:[]});
+            const first=pr(1),second=pr(2);
+            first.activity={phase:'integrating',location:'local',message:'Integrating in the isolated checkout',
+                at:new Date(now-125000).toISOString(),updatedAt:new Date(now-4000).toISOString()};
+            second.activity={phase:'waiting-checks',location:'upstream',message:'Waiting for integrated-head checks',
+                at:new Date(now-65000).toISOString(),updatedAt:new Date(now-2000).toISOString(),nextPollAt:now+15000,
+                checks:[{name:'Regression tests',result:'in_progress'}]};
+            window.dashboardState={type:'state',repository:'fixture/repo',prs:[first,second],showPrCommits:false,
+                events:[{id:1,number:1,state:'progress',location:'local',message:'Creating isolated checkout',details:'Existing worktree preserved',at:new Date(now).toISOString()},
+                    {id:2,number:2,state:'progress',location:'upstream',message:'Pushing branch update to GitHub',at:new Date(now).toISOString()}]};
+            window.postMessage(dashboardState,'*');
+        }''')
+        page.wait_for_selector('.activity-elapsed')
+        assert page.locator('#current-activity .activity-origin.local').count() == 1
+        assert page.locator('#current-activity .activity-origin.upstream').count() == 1
+        assert page.locator('#events .activity-origin.local').count() == 1
+        assert page.locator('#events .activity-origin.upstream').count() == 1
+        assert 'Regression tests · in_progress' in page.inner_text('.activity-checks')
+        assert 'next GitHub check in' in page.inner_text('#current-activity')
+        clock=page.locator('.activity-elapsed').first.inner_text()
+        page.locator('#events summary').first.click()
+        page.evaluate("window.openActivity=document.querySelector('#events details')")
+        page.wait_for_function("document.querySelector('.activity-elapsed').textContent!=="+repr(clock))
+        assert page.evaluate("openActivity===document.querySelector('#events details') && openActivity.open"), 'Clock ticks cannot rebuild or close timeline entries'
+        for width in (1100, 440, 320):
+            page.set_viewport_size({'width':width,'height':900})
+            page.wait_for_timeout(50)
+            geometry=page.evaluate('''() => {
+                const bar=document.getElementById('merge-progress'),r=bar.getBoundingClientRect();
+                return {below:r.top>=document.querySelector('header').getBoundingClientRect().bottom,
+                    left:r.left,right:r.right,radius:parseFloat(getComputedStyle(bar).borderRadius),
+                    active:bar.dataset.active};
+            }''')
+            assert geometry['below'] and geometry['left'] >= 0 and geometry['right'] <= width, geometry
+            assert geometry['radius'] > 0 and geometry['active'] == 'true'
+        page.evaluate("dashboardState.error='GitHub request failed';window.postMessage(dashboardState,'*')")
+        page.wait_for_function("document.getElementById('merge-progress').dataset.active==='false'")
+        assert page.locator('.activity-elapsed').count() == 0, 'Failed work cannot keep claiming active elapsed progress'
+        assert not errors, errors
+        page.unroute('https://**/*')
+        page.goto('about:blank')
+        page.set_viewport_size({'width':380,'height':720})
         picker = (ROOT / 'assets/workbench/picker.js').read_text()
         attach = picker[picker.index('function scmToolkitAttachCommitSettings('):picker.index('async function scmToolkitPullCleanRepository(')]
-        page.set_content('<div class="scm-view"><div id="rows"><div class="monaco-list-row" data-index="0"><div class="scm-editor" id="input" style="height:30px"></div></div><div class="monaco-list-row" data-index="1"><div class="button-container"><div class="monaco-button-dropdown" id="actions" style="display:flex;height:30px"><button>Commit</button></div></div></div></div></div>')
+        page.set_content('<div class="scm-view" id="scm" style="width:350px"><div id="rows"><div class="monaco-list-row" data-index="0"><div class="scm-editor" id="input" style="height:30px"></div></div><div class="monaco-list-row" data-index="1"><div class="button-container"><div class="monaco-button-dropdown" id="actions" style="display:flex;height:30px"><button class="monaco-button">Commit</button><button class="monaco-button monaco-dropdown-button" aria-label="Commit options">⌄</button></div></div></div></div></div>')
         page.add_style_tag(content=(ROOT / 'assets/workbench/picker.css').read_text())
+        page.add_style_tag(content=':root{--vscode-button-border:rgb(32,156,210);--vscode-foreground:white;--vscode-cornerRadius-small:5px}.monaco-button-dropdown{box-sizing:border-box;width:100%}.monaco-button{min-width:0;flex:1 1 auto;border:1px solid red}.monaco-dropdown-button{flex:0 0 24px}')
+        page.add_style_tag(content=(ROOT / 'assets/workbench/outlined_buttons.css').read_text())
         page.add_script_tag(content=attach)
         page.evaluate('''() => {
             window.opened=0;
@@ -25,6 +85,9 @@ def main():
             button.setAttribute('aria-label','Open Sweetiebot SCM settings');
             button.innerHTML='<span class="scm-toolkit-settings-icon">🪄</span>';
             button.onclick=()=>opened++;
+            window.commits=0;window.menus=0;
+            document.querySelector('#actions > .monaco-button').onclick=()=>commits++;
+            document.querySelector('#actions > .monaco-dropdown-button').onclick=()=>menus++;
             scmToolkitAttachCommitSettings({element:document.getElementById('input'),layout(){},disposables:{add(){}}},button);
         }''')
         wand = page.get_by_role('button', name='Open Sweetiebot SCM settings')
@@ -39,11 +102,40 @@ def main():
         assert page.evaluate('opened') == 2
         page.eval_on_selector('#actions', "el=>el.style.display='flex'")
         page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='actions'")
-        page.eval_on_selector('#actions button', 'el=>el.disabled=true')
-        page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='input'")
-        assert wand.is_visible()
-        page.eval_on_selector('#actions button', 'el=>el.disabled=false')
-        page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='actions'")
+        for disabled in (False, True, False):
+            page.eval_on_selector('#actions', '''(el,disabled)=>{
+                el.classList.toggle('disabled',disabled);
+                for(const button of el.querySelectorAll('.monaco-button')){button.disabled=disabled;button.classList.toggle('disabled',disabled);}
+                el.querySelector('.monaco-button').textContent=disabled?'Dash':'Commit';
+            }''', disabled)
+            for width in (350, 240, 180):
+                page.eval_on_selector('#scm','(el,width)=>el.style.width=width+"px"',width)
+                page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='actions'")
+                geometry=page.eval_on_selector('#actions', '''el=>{
+                    const wand=el.querySelector('.scm-toolkit-settings'),arrow=el.querySelector('.monaco-dropdown-button');
+                    const r=el.getBoundingClientRect(),w=wand.getBoundingClientRect(),a=arrow.getBoundingClientRect();
+                    return {last:el.lastElementChild===wand,after:w.left>=a.right-1,inside:w.right<=r.right-1,
+                        height:w.height,overflow:el.scrollWidth-el.clientWidth,border:getComputedStyle(el).borderRightColor,
+                        borderWidth:getComputedStyle(el).borderRightWidth,wandBorder:getComputedStyle(wand).borderRightWidth,
+                        disabled:wand.disabled,radius:getComputedStyle(el).borderTopRightRadius};
+                }''')
+                assert geometry['last'] and geometry['after'] and geometry['inside'], (disabled,width,geometry)
+                assert geometry['height'] >= 24 and geometry['overflow'] <= 1, (disabled,width,geometry)
+                assert geometry['border'] == 'rgb(32, 156, 210)' and geometry['borderWidth'] == '1px'
+                assert geometry['wandBorder'] == '0px' and geometry['radius'] == '5px', 'One custom outline surrounds commit, dropdown and wand'
+                assert not geometry['disabled']
+            before=page.evaluate('opened')
+            wand.click()
+            wand.press('Enter')
+            assert page.evaluate('opened') == before+2, 'Settings stays usable when commit and dropdown are disabled'
+            assert page.evaluate('commits===0 && menus===0'), 'Settings cannot commit or open the commit menu'
+        page.eval_on_selector('#actions', '''el=>{
+            const replacement=el.cloneNode(false);
+            replacement.innerHTML='<button class="monaco-button" disabled>Dash</button><button class="monaco-button monaco-dropdown-button" disabled>⌄</button>';
+            el.replaceWith(replacement);
+        }''')
+        page.wait_for_function("document.querySelector('#actions').lastElementChild?.classList.contains('scm-toolkit-settings')")
+        assert wand.is_visible(), 'A recycled disabled action retains the same settings control'
         page.eval_on_selector('#actions', "el=>el.remove()")
         page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='input'")
 

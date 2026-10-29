@@ -1,5 +1,36 @@
 'use strict';
 
+function mergeActivityOrigin(event) {
+  const location = ['local', 'upstream', 'review'].includes(event?.location) ? event.location
+    : event?.state === 'progress' || event?.state === 'action' ? 'local' : 'upstream';
+  return { location, label: location === 'upstream' ? 'Upstream · GitHub' : location === 'review' ? 'AI review' : 'Local',
+    icon: location === 'upstream' ? '↗' : location === 'review' ? '✦' : '▣' };
+}
+
+function renderMergeActivityOrigin(parent, event) {
+  const origin = mergeActivityOrigin(event), document = parent.ownerDocument;
+  const badge = document.createElement('span');
+  badge.className = 'activity-origin ' + origin.location;
+  badge.title = origin.label;
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true'); icon.textContent = origin.icon;
+  badge.appendChild(icon);
+  const label = document.createElement('span'); label.textContent = origin.label;
+  badge.appendChild(label); parent.appendChild(badge);
+}
+
+function mergeActivityElapsed(activity, now = Date.now()) {
+  const start = Date.parse(activity?.at), updated = Date.parse(activity?.updatedAt || activity?.at);
+  if (!Number.isFinite(start)) return '';
+  const duration = ms => {
+    const seconds = Math.max(0, Math.floor(ms / 1000));
+    return seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm ' + seconds % 60 + 's';
+  };
+  return duration(now - start) + ' in this step' + (Number.isFinite(updated)
+    ? ' · last update ' + duration(now - updated) + ' ago' : '')
+    + (activity.nextPollAt > now ? ' · next GitHub check in ' + Math.ceil((activity.nextPollAt - now) / 1000) + 's' : '');
+}
+
 function mergeActivityPresentation(event, prs = []) {
   const message = String(event?.message || '').trim();
   const details = String(event?.details || '');
@@ -60,5 +91,6 @@ function renderMergeActivitySummary(parent, number, presentation, linkConversati
 }
 
 if (typeof module === 'object' && module.exports) {
-  module.exports = { mergeActivityPresentation, renderMergeActivitySummary };
+  module.exports = { mergeActivityPresentation, renderMergeActivitySummary,
+    mergeActivityOrigin, renderMergeActivityOrigin, mergeActivityElapsed };
 }

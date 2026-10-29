@@ -29,12 +29,14 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
     if (fresh.mergeable === false || fresh.mergeable_state === 'blocked') return 'GitHub reports a blocked or conflicting PR.';
   };
   onProgress('waiting-checks',{sha:headSha});
-  const checks = await waitForMergeChecks(api,repository,headSha,{...checkOptions,expectChecks,collectEvidence:true});
+  const checks = await waitForMergeChecks(api,repository,headSha,{...checkOptions,expectChecks,collectEvidence:true,
+    onPoll: checks => onProgress('checks-polled',{sha:headSha,...checks})});
   if (checks.state !== 'passed') return { ...blocked('Checks on the integrated PR head have not passed.'),
     status:checks.state==='pending'?'waiting':'checks_failed',sha:headSha,previousHeadSha:original.head.sha };
   const reason = await checkSnapshot();
   if (reason) return blocked(reason);
   if (await git('rev-parse',headSha+'^{tree}') !== tree) throw Error('The local merge tree differs from the checked PR head.');
+  onProgress('preparing-merge',{sha:headSha});
   const file=path.join(directory,'.git','sweetiebot-local-merge-message');
   await fs.writeFile(file,message+'\n',{mode:0o600});
   const sha=await git('-c','user.name='+author.name,'-c','user.email='+author.email,
@@ -48,7 +50,9 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   if (changed) return blocked(changed);
   onProgress('merging',{sha,title:message.split('\n')[0]});
   // Ordinary fast-forward only: a concurrent destination update rejects this push.
+  onProgress('pushing-merge',{sha,title:message.split('\n')[0]});
   await git('push','origin',sha+':refs/heads/'+base);
+  onProgress('verifying-merge',{sha});
   const destination=await api(root+'/commits/'+sha);
   verifyCommit(destination,message,author);
   if (destination.parents?.length!==2 || destination.parents[0].sha!==baseSha || destination.parents[1].sha!==headSha) throw Error('Remote merge ancestry was not verified.');
