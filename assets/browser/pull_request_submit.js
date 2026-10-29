@@ -7,10 +7,12 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   const payload = fragmentLaunch ? fragment : launch.searchParams;
   const prLaunch = payload.get('sweetiebot_pr') === '1';
   const mergeLaunch = fragmentLaunch && payload.get('sweetiebot_merge') === '1';
+  const collectOnly = mergeLaunch && fragment.get('sweetiebot_collect') === '1';
   const prompt = payload.get('q');
-  if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
-      || prLaunch === mergeLaunch || !prompt) return;
-  if (prompt.length > 100000 || (launchAddress === window.location.href && encodeURIComponent(prompt).length > 70000)) return;
+  const existingConversation = /^\/(?:g\/g-p-[A-Za-z0-9-]+\/)?c\/[A-Za-z0-9-]+\/?$/.test(launch.pathname);
+  if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname) || collectOnly && existingConversation)
+      || prLaunch === mergeLaunch || (!prompt && !collectOnly) || collectOnly && prompt) return;
+  if (prompt && (prompt.length > 100000 || (launchAddress === window.location.href && encodeURIComponent(prompt).length > 70000))) return;
 
   let callback;
   try {
@@ -22,8 +24,10 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   } catch { /* Older manual drafting links do not collect results automatically. */ }
   // Give this action's new tab a blank draft without deleting or replacing the
   // user's shared draft. ChatGPT reads storage in its page world, not preload.
+  if (collectOnly && !callback) return;
+  let inserting = false;
   let composerIsolated = false;
-  if (fragmentLaunch && (callback || mergeLaunch)) {
+  if (!collectOnly && fragmentLaunch && (callback || mergeLaunch)) {
     const isolateComposerDraft = () => {
       const storage = window.localStorage;
       const keys = new Set(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']);
@@ -66,7 +70,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
     const expires = Date.now() + (mergeLaunch ? 6 * 3600000 : 1200000);
     let previous, stableSince;
     let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
-    let recoveryAllowed = true;
+    let recoveryAllowed = !collectOnly;
     const clearNotice = () => { retryNotice?.remove(); retryNotice = undefined; };
     const cancelRecovery = event => {
       if (!event.isTrusted || (event.type === 'input' && inserting)) return;
@@ -191,6 +195,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   // Collection also covers a deliberate manual Send; publication is owned by
   // the local receiver and its auto-publish preference.
   collectResult();
+  if (collectOnly) return;
 
   // Collapse only the Sweetiebot launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
@@ -234,7 +239,6 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   let timer;
   let stopped = false;
   let inserted = false;
-  let inserting = false;
   const stop = () => {
     stopped = true;
     clearTimeout(timer);

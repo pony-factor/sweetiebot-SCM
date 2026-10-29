@@ -17,6 +17,12 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
     || text((element.getAttribute('aria-labelledby') || '').split(' ')
       .map(id => document.getElementById(id)?.textContent || '').join(' '))
     || text(element.getAttribute('title')) || text(element.textContent);
+  const plainSix = selector => {
+    const clone = selector.cloneNode?.(true);
+    clone?.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove());
+    const content = text(clone?.textContent ?? selector.innerText ?? selector.textContent);
+    return /^(?:GPT[- ]?)?6(?:\s*(?:instant|low|medium|high|thinking))?$/i.test(content);
+  };
   const level = element => {
     const selected = text(element.getAttribute('data-selected-reasoning-effort')).toLowerCase();
     if (Object.hasOwn(ranks, selected)) return selected;
@@ -82,7 +88,7 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
       const {selector, state} = pending;
       const menu = findMenu(selector);
       if (pending.wantPlainModel) {
-        if (/^(?:GPT[- ]?)?6(?:\s|$)/i.test(text(selector.innerText || selector.textContent))) {
+        if (plainSix(selector)) {
           state.attempts = 0;
           finish(menu);
           state.confirmed = undefined; // Verify reasoning power after model selection.
@@ -133,7 +139,8 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
     for (const selector of controls) {
       let state = states.get(selector);
       if (!state) { state = {attempts: 0, adjustments: 0}; states.set(selector, state); }
-      if (state.confirmed === level(selector)) continue;
+      if (state.confirmed === level(selector)
+          && (!/^(select chatgpt model|select model)$/i.test(label(selector)) || plainSix(selector))) continue;
       if (state.attempts++ >= 5) {
         mark('Maximum thinking could not be confirmed. Check the thinking setting before sending manually.');
         return false;
@@ -141,7 +148,7 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
       state.adjustments = 0;
       pending = {selector, state, started: Date.now(), opened: Date.now(),
         wantPlainModel: /^(select chatgpt model|select model)$/i.test(label(selector))
-          && !/^(?:GPT[- ]?)?6(?:\s|$)/i.test(text(selector.innerText || selector.textContent)),
+          && !plainSix(selector),
         before: new Set(document.querySelectorAll('[role="menu"], [role="listbox"]'))};
       key(selector, 'ArrowDown');
       mark('Selecting maximum thinking before sending…');
