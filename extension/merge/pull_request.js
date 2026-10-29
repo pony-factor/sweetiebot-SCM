@@ -163,7 +163,9 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
         landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' } : {});
     }
     return { merged: true, sha: landed.sha, url: result.url,
-      number: result.number, base, author: landed.author };
+      number: result.number, base, author: landed.author,
+      ...(landed.method ? { method: landed.method } : {}),
+      ...(landed.signed ? { signed: true } : {}) };
   };
   if (method === 'local-signed-squash') {
     if (pr.mergeable !== true) throw new Error('The PR must be confirmed mergeable before starting a signed local squash.');

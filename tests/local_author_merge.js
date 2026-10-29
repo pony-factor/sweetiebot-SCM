@@ -104,7 +104,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       return git(...args);
     };
-    const action=()=>humanSquashMerge('owner/repo',1,{api,git:localGit,localGitMerge:true,
+    const action=()=>humanSquashMerge('owner/repo',1,{api,git:localGit,localGitMerge:true,requireSignedCommit,
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-'))});
     if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
