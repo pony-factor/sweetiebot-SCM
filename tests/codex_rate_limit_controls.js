@@ -564,6 +564,7 @@ const nativeBanner = makeNode(
     rect(0, 0, 280, 54), nativeComposer
 );
 nativeBanner.matches = selector => selector === 'aside';
+nativeBanner.removeAttribute = name => { delete nativeBanner.attrs[name]; };
 nativeBanner.style = {
     setProperty(name, value, priority) { this[name] = value; this.priority = priority; },
     removeProperty(name) { delete this[name]; },
