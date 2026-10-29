@@ -82,8 +82,8 @@ function scmToolkitRegisterCodexSnapshot(api) {
         if (request.shareOnly) {
             const visible = element => element.getClientRects().length;
             const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
-            const waitFor = async find => {
-                const until = Date.now() + 35000;
+            const waitFor = async (find, timeout = 15000) => {
+                const until = Date.now() + timeout;
                 while (Date.now() < until) {
                     if (conversationId() !== request.shareOnly) throw new Error('The active chat changed; sharing stopped.');
                     const found = find();
@@ -94,14 +94,24 @@ function scmToolkitRegisterCodexSnapshot(api) {
             };
             try {
                 if (conversationId() !== request.shareOnly) throw new Error('Open the originating chat in this workspace before sharing.');
-                const menu = await waitFor(() => [...document.querySelectorAll('button')].find(element =>
-                    visible(element) && label(element) === 'Chat actions'));
-                menu.click();
-                const share = await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')]
-                    .find(element => visible(element) && /^Share(?: chat)?(?:…|\.\.\.)?$/.test(label(element))));
-                share.click();
-                const copy = await waitFor(() => [...document.querySelectorAll('[role="dialog"] button')]
-                    .find(element => visible(element) && !element.disabled && /^Copy(?: shared)? link$/i.test(label(element))));
+                const findCopy = () => [...document.querySelectorAll('[role="dialog"] button')]
+                    .find(element => visible(element) && /^Copy(?: shared)? link$/i.test(label(element)));
+                // A previous attempt can leave Share open while its snapshot is
+                // still preparing. Reuse it rather than waiting for a hidden menu.
+                if (!findCopy()) {
+                    const menu = await waitFor(() => [...document.querySelectorAll('button')].find(element =>
+                        visible(element) && label(element) === 'Chat actions'));
+                    menu.click();
+                    const share = await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')]
+                        .find(element => visible(element) && /^Share(?: chat)?(?:…|\.\.\.)?$/.test(label(element))));
+                    share.click();
+                }
+                // Long chats with images prepare asynchronously before Copy is
+                // enabled; publication remains owned by Codex's native dialog.
+                const copy = await waitFor(() => {
+                    const button = findCopy();
+                    return button && !button.disabled ? button : null;
+                }, 120000);
                 // The native dialog owns publication, permissions and clipboard copying.
                 // Require its public-audience notice; never widen a workspace audience.
                 const dialog = copy.closest('[role="dialog"]');

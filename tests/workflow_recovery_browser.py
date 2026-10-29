@@ -68,6 +68,9 @@ def main():
         page.evaluate("dashboardState.error='GitHub request failed';window.postMessage(dashboardState,'*')")
         page.wait_for_function("() => document.getElementById('merge-progress').dataset.active==='false'")
         assert page.locator('.activity-elapsed').count() == 0, 'Failed work cannot keep claiming active elapsed progress'
+        page.evaluate("dashboardState.prs[0].state='merged';window.postMessage(dashboardState,'*')")
+        page.wait_for_selector('.flag.merged')
+        assert page.locator('.flag.merged').first.evaluate("e=>getComputedStyle(e).backgroundColor") == 'rgb(255, 255, 255)', 'Merged pill must retain its white interior'
         assert not errors, errors
         page.unroute('https://**/*')
         page.goto('about:blank')
