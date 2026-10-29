@@ -248,6 +248,7 @@
         "pr_session.js",
         "pull_request_batch.js",
         "pushed_pr.js",
+        "local_author_merge.js"
       ],
       "syntax": [
         "extension/merge/lindsey_bulk_merge.js",
@@ -280,6 +281,7 @@
         "extension/github/pushed_pr.js",
         "extension/merge/resolution_commits.js",
         "extension/merge/summary.js",
+        "extension/merge/local_author_merge.js"
       ]
     },
     "browser-ui": {
