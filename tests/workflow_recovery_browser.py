@@ -1,5 +1,6 @@
 """Render the controls users lost; exercise real DOM replacement and CSS."""
 from pathlib import Path
+import base64
 import os
 from playwright.sync_api import sync_playwright
 
@@ -130,8 +131,8 @@ def main():
         # rewriting the shared artwork when an attachment/progress node changes.
         page.goto('about:blank')
         page.set_content('''<div id="history" style="width:180px">
-            <button id="disclosure" aria-label="Activity" style="display:flex;max-width:100%;white-space:nowrap"><span id="long">Worked for 2h</span></button>
-            </div><div id="progress"></div>''')
+            <button id="disclosure" aria-label="Activity" aria-expanded="false" style="display:flex;max-width:100%;white-space:nowrap"><span id="long">Worked for 2h</span><span><svg id="activity-arrow" width="16" height="16"><path d="M1 1L8 8L1 15"/></svg></span></button>
+            </div><div id="progress"></div><button aria-label="Other disclosure"><svg id="other-arrow" width="16" height="16"></svg></button>''')
         page.evaluate('''(image) => {
             globalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage=image;
             for(let i=0;i<60;i++){const label=document.createElement('div');label.textContent='Worked for 30m';document.getElementById('history').append(label);}
@@ -140,7 +141,7 @@ def main():
             CSSStyleDeclaration.prototype.setProperty=function(name,...args){if(name==='--scm-toolkit-activity-cannon-image')imageWrites++;return set.call(this,name,...args);};
             const query=document.querySelectorAll.bind(document);
             document.querySelectorAll=function(selector){if(selector.includes('data-scm-toolkit-activity-cannon'))fullScans++;return query(selector);};
-            document.getElementById('disclosure').onclick=()=>opened++;
+            document.getElementById('disclosure').onclick=()=>{opened++;document.getElementById('disclosure').setAttribute('aria-expanded',String(opened%2===1));};
         }''', PNG)
         page.add_script_tag(content=(ROOT / 'assets/codex/activity-cannon.js').read_text())
         for width in (180, 320, 100):
@@ -153,6 +154,13 @@ def main():
             assert geometry['imageWidth'] == '22px'
         page.get_by_role('button', name='Activity', exact=True).click()
         assert page.evaluate('opened') == 1
+        assert page.locator('#activity-arrow').is_hidden(), 'The expanded disclosure hides its separate arrow'
+        page.get_by_role('button', name='Activity', exact=True).press('Enter')
+        assert page.evaluate('opened') == 2
+        assert page.locator('#activity-arrow').is_hidden(), 'The collapsed disclosure hides its separate arrow'
+        assert page.locator('#other-arrow').is_visible(), 'Other disclosure icons remain native'
+        page.eval_on_selector('#activity-arrow', 'el=>el.replaceWith(el.cloneNode(true))')
+        assert page.locator('#activity-arrow').is_hidden(), 'React cannot bring the arrow back on rerender'
         assert page.evaluate('imageWrites') == 1, 'Artwork is shared once across the full history'
         before=page.evaluate('fullScans')
         page.evaluate('''() => {
@@ -162,6 +170,28 @@ def main():
         page.wait_for_function("document.getElementById('long').dataset.scmToolkitActivityDots==='•••'")
         assert page.evaluate('imageWrites') == 1, 'Image/progress updates never rewrite the artwork'
         assert page.evaluate('fullScans') == before, 'Image/progress updates never rescan the transcript'
+        page.add_script_tag(content=(ROOT / 'assets/codex/image-drop.js').read_text())
+        image_bytes=base64.b64encode((ROOT / 'assets/imgs/activity-cannon.png').read_bytes()).decode()
+        page.evaluate('''data => {
+            window.dropDelivered=false;window.previewReady=false;
+            scmToolkitRegisterImageDropTarget(document.getElementById('progress'),e=>e.preventDefault(),()=>{},e=>{
+                e.preventDefault();window.dropDelivered=true;
+                const file=e.dataTransfer.files[0],reader=new FileReader();
+                reader.onload=()=>{const img=document.createElement('img');img.id='drop-preview';img.onload=()=>{window.previewReady=true;};img.src=reader.result;document.getElementById('progress').append(img);};
+                reader.readAsDataURL(file);
+            });
+            const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0)),transfer=new DataTransfer();
+            transfer.items.add(new File([bytes],'cannon-upload-validation.png',{type:'image/png'}));
+            document.getElementById('progress').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));
+        }''', image_bytes)
+        assert page.evaluate('dropDelivered'), 'The real File reaches the upload handler in the drop event'
+        page.wait_for_function('previewReady')
+        assert page.eval_on_selector('#drop-preview', 'el=>el.naturalWidth>0')
+        assert page.evaluate('imageWrites') == 1
+        assert page.evaluate('fullScans') == before
+        page.eval_on_selector('#long', "el=>el.textContent='Unrelated action'")
+        page.wait_for_function("!document.getElementById('disclosure').hasAttribute('data-scm-toolkit-activity-disclosure')")
+        assert page.locator('#activity-arrow').is_visible(), 'A recycled non-activity control regains its own icon'
 
         page.goto('about:blank')
         page.set_content('''<div data-conversation-role="user"><p id="user-copy">You've hit your usage limit. Try again at 10:26 PM.</p></div>

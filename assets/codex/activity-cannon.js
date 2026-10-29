@@ -18,20 +18,33 @@ function scmToolkitActivityMinutes(value) {
     // megabytes of inline style on every historical label after every update.
     document.documentElement.style.setProperty('--scm-toolkit-activity-cannon-image', 'url("' + globalThis.scmToolkitActivityCannonImage + '")');
     (document.head || document.documentElement).append(style);
+    style.textContent += '[data-scm-toolkit-activity-disclosure] svg{display:none!important}[data-scm-toolkit-activity-disclosure]::marker{content:""}[data-scm-toolkit-activity-disclosure]::-webkit-details-marker{display:none}';
     const selector = 'span, p, div, button, summary, [data-scm-toolkit-activity-cannon]';
+    const syncDisclosure = node => {
+        const control = node.closest?.('button, summary, [role="button"], [aria-expanded]');
+        if (!control) return;
+        const decorated = scmToolkitActivityMinutes(control.textContent) !== null
+            && (control.hasAttribute('data-scm-toolkit-activity-cannon')
+                || control.querySelector('[data-scm-toolkit-activity-cannon]'));
+        if (decorated && !control.hasAttribute('data-scm-toolkit-activity-disclosure'))
+            control.setAttribute('data-scm-toolkit-activity-disclosure', 'true');
+        else if (!decorated && control.hasAttribute('data-scm-toolkit-activity-disclosure'))
+            control.removeAttribute('data-scm-toolkit-activity-disclosure');
+    };
     const update = node => {
-            if (!node.matches?.(selector)) return;
-            if (node.closest('[data-message-author-role="user"], [data-conversation-role="user"], [contenteditable], pre, code')) return;
-            const minutes = scmToolkitActivityMinutes(node.textContent);
-            if (minutes === null) {
-                node.removeAttribute('data-scm-toolkit-activity-cannon');
-                node.removeAttribute('data-scm-toolkit-activity-dots');
-                return;
-            }
-            if ([...node.children].some(child => scmToolkitActivityMinutes(child.textContent) !== null)) return;
-            if (!node.hasAttribute('data-scm-toolkit-activity-cannon')) node.setAttribute('data-scm-toolkit-activity-cannon', 'true');
-            const dots = '•'.repeat(Math.min(minutes, 120));
-            if (node.getAttribute('data-scm-toolkit-activity-dots') !== dots) node.setAttribute('data-scm-toolkit-activity-dots', dots);
+        if (!node.matches?.(selector)) return;
+        if (node.closest('[data-message-author-role="user"], [data-conversation-role="user"], [contenteditable], pre, code')) return;
+        const minutes = scmToolkitActivityMinutes(node.textContent);
+        if (minutes === null || [...node.children].some(child => scmToolkitActivityMinutes(child.textContent) !== null)) {
+            if (node.hasAttribute('data-scm-toolkit-activity-cannon')) node.removeAttribute('data-scm-toolkit-activity-cannon');
+            if (node.hasAttribute('data-scm-toolkit-activity-dots')) node.removeAttribute('data-scm-toolkit-activity-dots');
+            syncDisclosure(node);
+            return;
+        }
+        if (!node.hasAttribute('data-scm-toolkit-activity-cannon')) node.setAttribute('data-scm-toolkit-activity-cannon', 'true');
+        const dots = '•'.repeat(Math.min(minutes, 120));
+        if (node.getAttribute('data-scm-toolkit-activity-dots') !== dots) node.setAttribute('data-scm-toolkit-activity-dots', dots);
+        syncDisclosure(node);
     };
     const scan = root => {
         update(root);
