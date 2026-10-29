@@ -34,6 +34,23 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_missing_gpg_does_not_claim_no_keys_exist(self):
+        status = {"gpgAvailable": False, "configured": "0123456789ABCDEF", "enabled": True, "keys": []}
+        with patch.object(configurator, "signing_status", return_value=status), \
+             patch.object(configurator, "load_commit_instructions", return_value=""):
+            controls = configurator._local_setup_controls()
+        self.assertIn("Cannot list OpenPGP keys: GnuPG unavailable", controls)
+        self.assertIn("local OpenPGP keys could not be checked", controls)
+        self.assertNotIn("No local OpenPGP signing keys found", controls)
+
+    def test_configured_key_does_not_imply_signing_enabled(self):
+        status = {"gpgAvailable": True, "configured": "0123456789ABCDEF", "enabled": False, "keys": []}
+        with patch.object(configurator, "signing_status", return_value=status), \
+             patch.object(configurator, "load_commit_instructions", return_value=""):
+            controls = configurator._local_setup_controls()
+        self.assertIn("Git commit signing is disabled.", controls)
+        self.assertIn("A signing key is configured", controls)
+
     def test_backend_preference_order_renders_and_round_trips(self):
         for value, label in [("ollama", "Ollama only"), ("coreml", "Core ML only"),
                              ("coreml,ollama", "Core ML → Ollama"),
@@ -77,6 +94,19 @@ class SubmissionTests(unittest.TestCase):
         values['windowName'] = ['one\ntwo']
         with self.assertRaises(ValueError):
             configurator.parse_submission(values)
+
+    def test_retired_provisional_setting_is_not_available_or_resubmitted(self):
+        self.assertNotIn("aiCommitAsync", toolkit_settings.DEFAULT_SETTINGS)
+        self.assertNotIn("aiCommitAsync", toolkit_settings.SETTING_KEYS)
+        self.assertNotIn("aiCommitAsync", {setting.name for setting in configurator.SETTINGS})
+        values = form_values()
+        values["aiCommitAsync"] = ["true"]  # Old saved forms cannot reactivate it.
+        parsed = configurator.parse_submission(values)
+        self.assertNotIn("aiCommitAsync", parsed)
+        self.assertFalse(parsed["durableBackgroundCommits"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertNotIn("Legacy provisional commit finalization", page)
+        self.assertIn("Durable background Commit and Push", page)
 
     def test_lindsey_has_its_own_dashboard_settings_page(self):
         names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeShowPrCommits"}
@@ -445,6 +475,17 @@ class SubmissionTests(unittest.TestCase):
         values.pop("codexRateLimitSticker")
         self.assertFalse(configurator.parse_submission(values)["codexRateLimitSticker"])
 
+    def test_codex_send_interrupt_option_is_persisted(self):
+        key = "codexInterruptOnSendClick"
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.codex-interrupt-on-send-click")
+        values = form_values()
+        values.pop(key)
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled[key])
+        self.assertIn("Click Send to interrupt Codex", configurator.render_form(
+            disabled, [], "Ready", "token", "Save"))
+
     def test_gear_page_covers_every_toolkit_and_extension_setting(self):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
@@ -463,6 +504,8 @@ class SubmissionTests(unittest.TestCase):
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
             "scmToolkit.mergePostStatusUpdates",
+            "scmToolkit.mergeAutoFixCi",
+            "scmToolkit.mergeAutoFixCiMethod",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
