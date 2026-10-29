@@ -439,7 +439,8 @@ async function run() {
   const browserOptions = calls[1].args[0];
   const url = new URL(browserOptions.url);
   assert.equal(url.origin, 'https://chatgpt.com');
-  assert.equal(url.search, '', 'PR prompt must not enter the HTTP request target');
+  assert.equal(url.searchParams.has('q'), false, 'PR prompt must not enter the HTTP request target');
+  assert(url.searchParams.get('sweetiebot_launch'), 'Each workflow must load a fresh document');
   assert.equal(new URLSearchParams(url.hash.slice(1)).get('sweetiebot_pr'), '1');
   const openedPrompt = new URLSearchParams(url.hash.slice(1)).get('q');
   assert.match(openedPrompt, /"draft"/);

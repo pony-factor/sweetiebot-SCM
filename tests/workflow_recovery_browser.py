@@ -42,6 +42,73 @@ def main():
         page.wait_for_function("document.querySelector('.scm-toolkit-settings').parentElement.id==='input'")
 
         page.goto('about:blank')
+        page.set_viewport_size({'width': 1100, 'height': 720})
+        page.set_content('<div class="scm-view"><div class="scm-editor" id="bar" style="width:960px"></div></div>')
+        page.add_style_tag(content=(ROOT / 'assets/workbench/picker.css').read_text())
+        page.add_style_tag(content='.scm-editor-container{height:26px}.scm-editor-container textarea{box-sizing:border-box;height:26px;resize:none;white-space:pre;overflow:hidden}')
+        message_bar = (ROOT / 'assets/workbench/message_bar.js').read_text().split('const scmToolkitCreateControlsWithoutMessageBarLayout')[0]
+        page.add_script_tag(content=message_bar)
+        page.evaluate('''() => {
+            const bar=document.getElementById('bar');
+            const classes={push:'push',branch:'branch',sync:'sync-branch',delete:'delete-branch',autocomplete:'autocomplete',spellcheck:'spellcheck','post-spellcheck':'post-spellcheck',codex:'codex-coauthor','auto-publish':'auto-publish',home:'home','pull-request':'pull-request','pony-branch':'pony-branch'};
+            for(const id of SCM_TOOLKIT_MESSAGE_BAR_IDS){
+                const node=document.createElement(id.startsWith('separator')?'span':'button');
+                node.className='scm-toolkit-'+(classes[id]||'divider');
+                node.textContent=id==='branch'?'hyper-sonic':id.startsWith('separator')?'':'x';
+                bar.append(node);
+            }
+            const editor=document.createElement('div');editor.className='scm-editor-container';
+            editor.innerHTML='<textarea aria-label="Commit message">A normal commit message</textarea>';bar.append(editor);
+            window.controls={width:()=>500};
+            window.widget={element:bar,inputEditor:{layout(size){editor.firstChild.style.width=size.width+'px';}},
+                getContentHeight:()=>26,getToolbarWidth:()=>0,disposables:{add(){}},
+                layout(){this.inputEditor.layout({width:bar.clientWidth-controls.width(),height:this.getContentHeight()});}};
+            scmToolkitApplyMessageBarLayout(widget,{messageBarLayout:undefined},controls);
+        }''')
+        for width in (960, 440, 320, 240, 960):
+            page.eval_on_selector('#bar', '(el,width)=>el.style.width=width+"px"', width)
+            page.wait_for_timeout(75)
+            geometry=page.evaluate('''() => {
+                const root=document.getElementById('bar'),editor=root.querySelector('textarea');
+                const r=root.getBoundingClientRect(),e=editor.getBoundingClientRect();
+                return {width:e.width,height:e.height,barHeight:r.height,reserved:controls.width(),
+                    overflow:root.scrollWidth-root.clientWidth,contentHeight:widget.getContentHeight()};
+            }''')
+            assert geometry['width'] >= 128, (width, geometry)
+            assert geometry['height'] <= 30, (width, geometry)
+            assert geometry['overflow'] <= 2, (width, geometry)
+            assert geometry['barHeight'] < 160, (width, geometry)
+            assert geometry['contentHeight'] >= geometry['barHeight'] - 2, (width, geometry)
+        page.goto('about:blank')
+        page.set_content('''<button id="mode" aria-label="Switch mode, current mode: Work" aria-expanded="false">Work</button>
+            <div id="mode-menu" role="menu" hidden><button role="menuitem" id="chat">ChatGPT</button></div>
+            <button id="model" aria-label="Select ChatGPT model" aria-haspopup="menu" aria-controls="power-menu" aria-expanded="false">GPT-5.6 Sol Medium</button>
+            <div id="power-menu" role="menu" hidden><button role="menuitem" id="models">Select model</button>
+              <div id="power" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1"></div></div>
+            <div id="models-menu" role="menu" hidden><button role="menuitemradio" id="six">6</button><button role="menuitemradio">GPT-5.6 Sol</button></div>
+            <div><div id="prompt-textarea" contenteditable="true"></div></div>''')
+        page.evaluate('''() => {
+            window.selectedModel='GPT-5.6 Sol';window.power=1;
+            const model=document.getElementById('model'),mode=document.getElementById('mode');
+            const powers=['Instant','Medium','High'];
+            const render=()=>{model.textContent=selectedModel+' '+powers[power];document.getElementById('power').setAttribute('aria-valuenow',power);};
+            mode.onclick=()=>{document.getElementById('mode-menu').hidden=false;mode.setAttribute('aria-expanded','true');};
+            document.getElementById('chat').onclick=()=>{mode.setAttribute('aria-label','Switch mode, current mode: ChatGPT');mode.textContent='ChatGPT';mode.setAttribute('aria-expanded','false');document.getElementById('mode-menu').hidden=true;};
+            const open=()=>{document.getElementById('power-menu').hidden=false;model.setAttribute('aria-expanded','true');};
+            model.onclick=open;model.onkeydown=e=>{if(e.key==='ArrowDown')open();};
+            document.getElementById('models').onclick=()=>document.getElementById('models-menu').hidden=false;
+            document.getElementById('six').onclick=()=>{selectedModel='6';render();document.getElementById('models-menu').hidden=true;};
+            document.getElementById('power').onkeydown=e=>{if(e.key==='ArrowRight'){power=Math.min(2,power+1);render();}};
+            document.getElementById('power-menu').onkeydown=e=>{if(e.key==='Escape'){document.getElementById('power-menu').hidden=true;model.setAttribute('aria-expanded','false');}};
+        }''')
+        page.add_script_tag(content=(ROOT / 'assets/browser/maximize_thinking.js').read_text())
+        page.wait_for_function('sweetiebotEnsureMaximumThinking()', polling=100)
+        assert page.evaluate('selectedModel') == '6'
+        assert page.evaluate('power') == 2
+        assert page.get_attribute('#mode','aria-label') == 'Switch mode, current mode: ChatGPT'
+        page.set_viewport_size({'width':380,'height':720})
+
+        page.goto('about:blank')
         page.set_content('<div id="activity">Working for 6m 20s</div><span id="clock">Working for 6m 20s</span><div data-conversation-role="user"><span id="user">Working for 9m</span></div>')
         page.evaluate('(image)=>{globalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage=image}', PNG)
         page.add_script_tag(content=(ROOT / 'assets/codex/activity-cannon.js').read_text())

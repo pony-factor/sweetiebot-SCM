@@ -24,6 +24,22 @@ assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
     const address = 'https://chatgpt.com/#' + new URLSearchParams({sweetiebot_merge:'1',return_to:bridge.url});
     assert(address.length < 250);
     assert.equal((await (await fetch(bridge.url + '/prompt')).json()).prompt, prompt);
+    let promptHandler, navigate;
+    const frame={url:'https://chatgpt.com/'};
+    const contents={mainFrame:frame, ipc:{handle(channel, handler){assert.equal(channel,'sweetiebot:merge-prompt');promptHandler=handler;}},
+      getBackgroundThrottling:()=>true,setBackgroundThrottling(){},on(_event,listener){navigate=listener;}};
+    vm.runInNewContext(fs.readFileSync(path.join(root,'assets/browser/pr_background.js'),'utf8'),
+      {URL,URLSearchParams,fetch,AbortSignal,Uint8Array,TextDecoder,_view:{webContents:contents}});
+    await assert.rejects(promptHandler({senderFrame:frame}),/Invalid merge prompt sender/);
+    navigate({},address,false,true);
+    assert.equal(JSON.parse(await promptHandler({senderFrame:frame})).prompt,prompt);
+    await assert.rejects(promptHandler({senderFrame:{url:frame.url}}),/Invalid merge prompt sender/);
+    frame.url='https://evil.invalid/';
+    await assert.rejects(promptHandler({senderFrame:frame}),/Invalid merge prompt sender/);
+    frame.url='https://chatgpt.com/';
+    navigate({},'https://evil.invalid/',false,true);
+    await assert.rejects(promptHandler({senderFrame:frame}),/Invalid merge prompt sender/);
+
     assert.equal((await fetch(bridge.url + '/prompt',{headers:{Origin:'https://evil.invalid'}})).status,403);
     assert.equal((await (await fetch(bridge.url+'/status')).json()).phase,'ready','Reading a prompt never executes a merge');
     assert.throws(()=>bridge.setPrompt('x'.repeat(100001)),/transport budget/);
@@ -31,7 +47,14 @@ assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
     let received;
     const window = {location:new URL(address)};window.top=window;
     const errors=[];
-    vm.runInNewContext(loader,{window,URL,URLSearchParams,Buffer,require,
+    vm.runInNewContext(loader,{window,URL,URLSearchParams,TextEncoder,AbortSignal,
+      require(name){
+        assert.equal(name,'electron','Sandbox uses only its supported Electron API');
+        return {ipcRenderer:{async invoke(channel){
+          assert.equal(channel,'sweetiebot:merge-prompt');
+          return await (await fetch(bridge.url+'/prompt')).text();
+        }}};
+      },
       console:{error:(...args)=>errors.push(args)},
       history:{state:{},replaceState(_state,_title,url){window.location=new URL(url);}},
       scmToolkitStartPullRequestWorkflow(url){received=new URLSearchParams(new URL(url).hash.slice(1)).get('q');}});

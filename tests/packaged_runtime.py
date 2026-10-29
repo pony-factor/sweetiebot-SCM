@@ -10,6 +10,13 @@ import workspace_search
 
 
 class PackagedRuntimeTests(unittest.TestCase):
+    def test_installed_repair_payload_contains_cannon_and_stop_artwork(self):
+        files = workspace_search.source_files()
+        for name in ('activity-cannon.png', 'twi-stop.png'):
+            key = Path('codex-customizations/assets/imgs') / name
+            self.assertIn(key, files)
+            self.assertTrue(files[key].read_bytes().startswith(b'\x89PNG\r\n\x1a\n'))
+
     def test_all_installed_relative_javascript_dependencies_resolve(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

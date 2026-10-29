@@ -1841,7 +1841,8 @@ def main():
             workspace_search.remove_legacy_extensions()
         if old != list(new):
             if old != [path.read_text() for path in paths]:
-                raise RuntimeError("VS Code changed during validation; retry the command.")
+                changed = [str(path) for path, expected in zip(paths, old) if path.read_text() != expected]
+                raise RuntimeError("VS Code changed during validation; retry the command. Changed assets: " + ', '.join(changed))
             write_pair(paths, new, old)
         if not args.codex_only:
             sync_live_components(workbench_paths[0].parent, remove=args.uninstall)
