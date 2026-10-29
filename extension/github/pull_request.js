@@ -562,6 +562,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // Capture a fresh native Share snapshot in the originating window before
     // opening the independent Kefania session. Do not share a different chat.
     if (source?.kind === 'codex' && !options.source) {
+      try {
       const shared = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,
       }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid));
@@ -569,6 +570,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         throw new Error('Kefania could not verify publication of the active Codex chat.');
       }
       source = { ...source, sharedUrl: shared.sharedUrl };
+      } catch (error) {
+        void vscode.window.showWarningMessage('The chat could not be shared. Kefania will continue with the captured conversation and local chat link. ' + error.message);
+      }
     }
 
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');

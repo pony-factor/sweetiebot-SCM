@@ -465,7 +465,7 @@ function scmToolkitAttachCommitSettings(widget, button) {
         if (observedRoot === root) return;
         observer.disconnect();
         observer.observe(root, {
-            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index']
+            subtree: true, childList: true, attributes: true, attributeFilter: ['data-index', 'class', 'style', 'hidden']
         });
         observedRoot = root;
     };
@@ -478,7 +478,8 @@ function scmToolkitAttachCommitSettings(widget, button) {
         const rows = inputRow?.parentElement;
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
-        const dropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
+        const nativeDropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
+        const dropdown = nativeDropdown?.getClientRects?.().length === 0 ? undefined : nativeDropdown;
         const destination = dropdown || widget.element;
         if (button.parentElement === destination) return;
         button.parentElement?.classList.remove('scm-toolkit-commit-settings');

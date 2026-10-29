@@ -20,6 +20,11 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     provider.handleMessage = function(webview, message) {
+        if (message?.type === 'scm-toolkit-continue-at-reset') {
+            void vscode.commands.executeCommand('sweetiebot.codex.continueAfterRateLimit', message)
+                .catch(error => vscode.window.showWarningMessage('Automatic continuation paused: ' + error.message));
+            return;
+        }
         if (message?.type === 'scm-toolkit-open-chat-checkout') {
             // Resolve identity in this host; never accept a filesystem path from the DOM.
             void vscode.commands.executeCommand('sweetiebot.codex.openChatCheckout', message.threadId)
@@ -41,6 +46,11 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     return;
                 }
                 void vscode.env.clipboard.readText().then(async value => {
+                    const until = Date.now() + 5000;
+                    while (!/^https:\/\/chatgpt\.com\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(value) && Date.now() < until) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        value = await vscode.env.clipboard.readText();
+                    }
                     if (!/^https:\/\/chatgpt\.com\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(value)) {
                         throw new Error('Codex did not copy a verified public chat link.');
                     }

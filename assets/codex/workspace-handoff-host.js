@@ -92,6 +92,22 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         return { threadId, cwd: root };
     }));
 
+    const continuedResets = new Set();
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.continueAfterRateLimit', async ({ threadId, resetAt }) => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        const key = threadId + ':' + resetAt;
+        if (!threadId || identity?.threadId !== threadId || !Number.isFinite(resetAt)
+            || Date.now() < resetAt || Date.now() - resetAt > 300000 || continuedResets.has(key)) return false;
+        const thread = await read(threadId);
+        if (thread.status?.type === 'active') return false;
+        const turns = await send('thread/turns/list', { threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
+        if (turns?.data?.[0]?.status !== 'failed') return false;
+        continuedResets.add(key); // A lost response must not submit twice.
+        await send('turn/start', { threadId, cwd: await canonical(thread.cwd), clientUserMessageId: randomUUID(),
+            input: [{ type: 'text', text: 'Continue answering the unanswered requests in this conversation.', text_elements: [] }] });
+        return true;
+    }));
+
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.prepareWorkspaceHandoff', async ({ from }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
         if (!identity?.threadId) return null;

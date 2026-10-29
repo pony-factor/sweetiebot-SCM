@@ -74,7 +74,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
                     .find(element => visible(element) && /^Share(?: chat)?(?:…|\.\.\.)?$/.test(label(element))));
                 share.click();
                 const copy = await waitFor(() => [...document.querySelectorAll('[role="dialog"] button')]
-                    .find(element => visible(element) && !element.disabled && label(element) === 'Copy link'));
+                    .find(element => visible(element) && !element.disabled && /^Copy(?: shared)? link$/i.test(label(element))));
                 // The native dialog owns publication, permissions and clipboard copying.
                 // Require its public-audience notice; never widen a workspace audience.
                 const dialog = copy.closest('[role="dialog"]');
@@ -82,7 +82,8 @@ function scmToolkitRegisterCodexSnapshot(api) {
                     throw new Error('Choose Anyone with the link in Codex Share before retrying New PR.');
                 }
                 copy.click();
-                await waitFor(() => !copy.isConnected);
+                // Copy link can leave the native dialog open. The host waits
+                // for the verified clipboard URL instead of requiring closure.
                 api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: request.shareOnly });
             } catch (error) {
                 api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, error: error.message });
@@ -169,4 +170,5 @@ function scmToolkitRegisterCodexSnapshot(api) {
     });
     window.addEventListener('hashchange', scheduleCheckoutButton);
     scheduleCheckoutButton();
+    if (typeof scmToolkitInstallRateLimitContinuation === 'function') scmToolkitInstallRateLimitContinuation(api, conversationId);
 }

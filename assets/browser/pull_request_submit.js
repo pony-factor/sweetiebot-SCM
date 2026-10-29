@@ -1,7 +1,7 @@
 /* Submit only the exact prompt launched by Sweetiebot's PR or merge action. */
-(() => {
+function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href) {
   if (window.top !== window) return;
-  const launch = new URL(window.location.href);
+  const launch = new URL(launchAddress);
   const fragment = new URLSearchParams(launch.hash.slice(1));
   const fragmentLaunch = fragment.get('sweetiebot_pr') === '1' || fragment.get('sweetiebot_merge') === '1';
   const payload = fragmentLaunch ? fragment : launch.searchParams;
@@ -10,7 +10,7 @@
   const prompt = payload.get('q');
   if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
       || prLaunch === mergeLaunch || !prompt) return;
-  if (encodeURIComponent(prompt).length > 70000) return;
+  if (prompt.length > 100000 || (launchAddress === window.location.href && encodeURIComponent(prompt).length > 70000)) return;
 
   let callback;
   try {
@@ -88,8 +88,12 @@
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
-        .some(button => mergeLaunch ? !button.hidden && !button.disabled &&
-          button.getAttribute?.('aria-disabled') !== 'true' : button.getClientRects().length > 0);
+        .some(button => {
+          const style = window.getComputedStyle?.(button);
+          return !button.hidden && !button.disabled && button.getAttribute?.('aria-disabled') !== 'true'
+            && style?.display !== 'none' && style?.visibility !== 'hidden'
+            && (mergeLaunch || button.getClientRects().length > 0);
+        });
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
@@ -119,7 +123,7 @@
         const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
           ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
           ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
-            .map(node => node.parentElement).filter(Boolean)];
+            .map(node => node.closest?.('[data-testid^="conversation-turn-"], article') || node.parentElement).filter(Boolean)];
         const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
         for (const code of codes) {
           try {
@@ -312,4 +316,43 @@
     timer = setTimeout(attempt, 250);
   };
   attempt();
+}
+scmToolkitStartPullRequestWorkflow();
+
+// Keep prompt bodies out of navigation URLs and browser-generated metadata.
+(() => {
+  if (window.top !== window) return;
+  const launch = new URL(window.location.href);
+  const args = new URLSearchParams(launch.hash.slice(1));
+  if (launch.origin !== 'https://chatgpt.com' || args.get('sweetiebot_merge') !== '1' || args.has('q')) return;
+  if (!(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))) return;
+  let callback;
+  try {
+    callback = new URL(args.get('return_to'));
+    if (callback.protocol !== 'http:' || callback.hostname !== '127.0.0.1' || !callback.port
+        || callback.username || callback.password || callback.search || callback.hash
+        || !/^\/lindsey-merge\/[0-9a-f-]{36}$/.test(callback.pathname)) return;
+  } catch { return; }
+  const clean = new URL(launch.href); clean.hash = '';
+  history.replaceState(history.state, '', clean.href);
+  const request = require('node:http').get(callback.href + '/prompt', { timeout: 15000 }, response => {
+    const chunks = []; let bytes = 0;
+    response.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes > 100000) return request.destroy(new Error('Merge prompt exceeds transport limit.'));
+      chunks.push(chunk);
+    });
+    response.on('end', () => {
+      try {
+        if (response.statusCode !== 200) throw Error('Merge prompt transport failed.');
+        const { prompt } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (typeof prompt !== 'string' || !prompt.trim()) throw Error('Empty merge prompt.');
+        args.set('q', prompt);
+        launch.hash = args.toString();
+        scmToolkitStartPullRequestWorkflow(launch.href);
+      } catch (error) { console.error('Sweetiebot merge launch:', error.message); }
+    });
+  });
+  request.on('timeout', () => request.destroy(new Error('Merge prompt transport timed out.')));
+  request.on('error', error => console.error('Sweetiebot merge launch:', error.message));
 })();
