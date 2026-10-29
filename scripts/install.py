@@ -1600,14 +1600,15 @@ def plan_codex_patches(args, settings):
     clipboard_submit = settings["codexClipboardSubmit"] and not args.uninstall
     send_wing = settings.get("codexSendWing", True) and not args.uninstall
     interrupt_send = settings.get("codexInterruptOnSendClick", True) and not args.uninstall
+    composer_layout = settings.get("codexComposerLayout") if not args.uninstall else None
     for composer_path, composer_old, composer_new in codex_composer.patch_files(
-        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing, interrupt_send=interrupt_send
+        args.codex_extension, inline=inline_location, paste_button=clipboard_submit, wing_button=send_wing, interrupt_send=interrupt_send, composer_layout=composer_layout
     ):
         if composer_path in paths:
             index = paths.index(composer_path)
             new[index] = codex_composer.transform_layout(
                 new[index], inline_location, clipboard_submit,
-                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing, interrupt_send)
+                codex_composer.clipboard_module(composer_path) if clipboard_submit else None, send_wing, interrupt_send, composer_layout)
         else:
             paths.append(composer_path)
             old.append(composer_old)

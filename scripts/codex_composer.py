@@ -22,6 +22,9 @@ INTERRUPT_START = '\n/* scm-toolkit-codex-send-interrupt:start */\n'
 INTERRUPT_END = '\n/* scm-toolkit-codex-send-interrupt:end */\n'
 INTERRUPT_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/send-interrupt.js'
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/composer-controls.js'
+CUSTOM_ASSET = ASSET.parent / 'composer-layout.js'
+CUSTOM_START = '\n/* scm-toolkit-codex-composer-layout:start */\n'
+CUSTOM_END = '\n/* scm-toolkit-codex-composer-layout:end */\n'
 PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
 PLACEHOLDER_END = '\nscm-toolkit-codex-placeholders:end */\n'
 PLACEHOLDER_DISPLAY_START = '\n/* scm-toolkit-codex-placeholder-display:start */\n'
@@ -122,7 +125,7 @@ def clipboard_module(bundle_path: Path) -> str | None:
 
 def transform_layout(source: str, inline: bool = True, paste_button: bool = False,
                      native_clipboard_module: str | None = None, wing_button: bool = False,
-                     interrupt_send: bool = False) -> str:
+                     interrupt_send: bool = False, composer_layout: str | None = None) -> str:
     """Place the native computer/usage control beside access without changing React source."""
     source = transform(source)
     if source.count(LAYOUT_START) != source.count(LAYOUT_END) or source.count(LAYOUT_START) > 1:
@@ -144,6 +147,12 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
             if source.count(replacement) != 1:
                 raise ValueError('Installed Codex clipboard editor hook changed.')
             source = source.replace(replacement, original, 1)
+    if source.count(CUSTOM_START) != source.count(CUSTOM_END) or source.count(CUSTOM_START) > 1:
+        raise ValueError("Incomplete Codex composer layout patch.")
+    if CUSTOM_START in source:
+        before, rest = source.split(CUSTOM_START, 1)
+        _, after = rest.split(CUSTOM_END, 1)
+        source = before + after
     is_composer = 'composer.placeholder.localFollowUp.locally' in source
     if source.count(WING_START) != source.count(WING_END) or source.count(WING_START) > 1:
         raise ValueError('Incomplete Codex send wing patch.')
@@ -165,6 +174,11 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
             source += INTERRUPT_START + ';\n' + runtime_payload('send interrupt', INTERRUPT_ASSET.read_text()) + INTERRUPT_END
         if inline and is_composer:
             source += LAYOUT_START + ';\n' + runtime_payload('composer layout', ASSET.read_text()) + LAYOUT_END
+        if composer_layout is not None and is_composer:
+            from codex_composer_layout import parse_layout
+            payload = CUSTOM_ASSET.read_text().replace(
+                "__SCM_TOOLKIT_COMPOSER_LAYOUT__", json.dumps(parse_layout(composer_layout)))
+            source += CUSTOM_START + ";\n" + runtime_payload("composer custom layout", payload) + CUSTOM_END
         if paste_button:
             edits = []
             anchors = list(re.finditer(editor_anchor, source))
@@ -184,7 +198,7 @@ def transform_layout(source: str, inline: bool = True, paste_button: bool = Fals
     return source
 
 
-def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False, wing_button: bool = False, interrupt_send: bool = False):
+def patch_files(extension_path: Path | None = None, inline: bool | None = None, paste_button: bool = False, wing_button: bool = False, interrupt_send: bool = False, composer_layout: str | None = None):
     """Yield only Codex webview bundles that still contain the retired patch."""
     candidates = (
         [Path(extension_path)]
@@ -197,9 +211,9 @@ def patch_files(extension_path: Path | None = None, inline: bool | None = None, 
             if inline is None:
                 if START in original:
                     yield path, original, transform(original)
-            elif START in original or LAYOUT_START in original or PASTE_START in original or WING_START in original or INTERRUPT_START in original or 'id:`composer.placeholder.localFollowUp.locally`' in original or (paste_button and 'this.dictation=new ' in original and re.search(r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}', original)):
+            elif START in original or LAYOUT_START in original or PASTE_START in original or WING_START in original or INTERRUPT_START in original or CUSTOM_START in original or 'id:`composer.placeholder.localFollowUp.locally`' in original or (paste_button and 'this.dictation=new ' in original and re.search(r'this\.dictation=new [\w$]+\([\w$]+,\(\)=>this\.isInputActive\)\}', original)):
                 module = clipboard_module(path) if paste_button else None
-                yield path, original, transform_layout(original, inline, paste_button, module, wing_button, interrupt_send)
+                yield path, original, transform_layout(original, inline, paste_button, module, wing_button, interrupt_send, composer_layout)
 
 
 def repair(extension_path: Path | None = None) -> list[Path]:

@@ -151,6 +151,7 @@
         "codex_clipboard_submit.js",
         "codex_colors.py",
         "codex_composer.py",
+        "codex_composer_layout.py",
         "codex_context.js",
         "codex_context.py",
         "codex_countdown.js",
@@ -193,7 +194,9 @@
         "assets/codex/send-wing.js",
         "assets/codex/video-frames.js",
         "scripts/codex_queued_edit.py",
-        "scripts/ui_customizations.py"
+        "scripts/ui_customizations.py",
+        "assets/codex/composer-layout.js",
+        "scripts/codex_composer_layout.py"
       ]
     },
     "kefania": {

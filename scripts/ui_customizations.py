@@ -78,11 +78,11 @@ def plan(extension, settings, companion=None):
         cloud_tasks=settings.get('codexCloudTasks', False))
     for path, _, _ in codex_usage.patch_files(extension, **usage_options):
         add(path, lambda old: codex_usage.transform(old, **usage_options))
-    for path, _, _ in codex_composer.patch_files(extension, inline=settings['codexInlineLocation'], paste_button=settings['codexClipboardSubmit'], interrupt_send=settings.get('codexInterruptOnSendClick', True)):
+    for path, _, _ in codex_composer.patch_files(extension, inline=settings['codexInlineLocation'], paste_button=settings['codexClipboardSubmit'], interrupt_send=settings.get('codexInterruptOnSendClick', True), composer_layout=settings.get('codexComposerLayout')):
         def composer(old, path=path):
             updated = codex_composer.transform_layout(old, settings['codexInlineLocation'], settings['codexClipboardSubmit'],
                 codex_composer.clipboard_module(path) if settings['codexClipboardSubmit'] else None,
-                interrupt_send=settings.get('codexInterruptOnSendClick', True))
+                interrupt_send=settings.get('codexInterruptOnSendClick', True), composer_layout=settings.get('codexComposerLayout'))
             if 'id:`composer.placeholder.localFollowUp.locally`' in updated or codex_composer.PLACEHOLDER_START in updated:
                 updated = codex_composer.transform_placeholders(updated, settings)
             return updated
