@@ -160,6 +160,7 @@ async function openSharedMainWorkspace(vscode, options = {}) {
 }
 
 async function replaceRepository(vscode, root, destination, options) {
+  await require('./commit_drafts').preserveCommitDraft(vscode, root, destination, options.commitDraftValue);
   const run = options.run || git;
   const folders = [];
   for (const folder of vscode.workspace.workspaceFolders || []) {
@@ -310,6 +311,9 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   const run = options.run || git;
   if (!repository.rootUri?.fsPath || !branch || !vscode.workspace?.workspaceFolders?.length) return false;
   const root = await fs.realpath(repository.rootUri.fsPath);
+  if (!Object.hasOwn(options, 'commitDraftValue') && typeof repository.inputBox?.value === 'string')
+    options.commitDraftValue = repository.inputBox.value;
+  await require('./commit_drafts').preserveCommitDraft(vscode, root, undefined, options.commitDraftValue);
   const original = await originalRepository(root, options);
   const current = await run(['-C', root, 'branch', '--show-current']);
   if (branch === 'main') {
