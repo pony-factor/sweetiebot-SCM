@@ -46,6 +46,16 @@ class RetiredComposerPatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'send wing'):
             codex_composer.transform_layout(source + codex_composer.WING_START, False)
 
+    def test_click_send_interrupt_patch_is_reversible(self):
+        source = '/* composer.placeholder.localFollowUp.locally */\nbase;'
+        enabled = codex_composer.transform_layout(source, inline=False, interrupt_send=True)
+        self.assertIn(codex_composer.INTERRUPT_START, enabled)
+        self.assertIn('scmToolkitCodexInterruptSend', enabled)
+        self.assertEqual(codex_composer.transform_layout(enabled, False, interrupt_send=True), enabled)
+        self.assertEqual(codex_composer.transform_layout(enabled, False), source)
+        with self.assertRaisesRegex(ValueError, 'interrupt'):
+            codex_composer.transform_layout(source + codex_composer.INTERRUPT_START, False)
+
     def test_clipboard_native_service_discovery_and_reinstallation(self):
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory) / 'app-initial-fixture.js'

@@ -449,6 +449,17 @@ class SubmissionTests(unittest.TestCase):
         values.pop("codexRateLimitSticker")
         self.assertFalse(configurator.parse_submission(values)["codexRateLimitSticker"])
 
+    def test_codex_send_interrupt_option_is_persisted(self):
+        key = "codexInterruptOnSendClick"
+        self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.codex-interrupt-on-send-click")
+        values = form_values()
+        values.pop(key)
+        disabled = configurator.parse_submission(values)
+        self.assertFalse(disabled[key])
+        self.assertIn("Click Send to interrupt Codex", configurator.render_form(
+            disabled, [], "Ready", "token", "Save"))
+
     def test_gear_page_covers_every_toolkit_and_extension_setting(self):
         controls = {setting.name: setting.git_key for setting in configurator.SETTINGS}
         self.assertEqual(controls, toolkit_settings.SETTING_KEYS)
