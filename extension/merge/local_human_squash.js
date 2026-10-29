@@ -260,6 +260,7 @@ async function humanSquashMerge(repository, number, {
         if (!actual.length || JSON.stringify(actual) !== JSON.stringify(supplied)) {
           throw Error('Compact resolution must cover exactly the actual conflicting files.');
         }
+        const isolatedRoot = await fs.realpath(temp);
         for (const file of resolutionHunks) {
           if (!originalFiles.includes(file.path) || !safePatchPath(file.path)) {
             throw Error('Compact conflict resolution attempted an unrelated or unsafe path.');
@@ -268,7 +269,7 @@ async function humanSquashMerge(repository, number, {
           const stat = await fs.lstat(location);
           const real = await fs.realpath(location);
           if (!stat.isFile() || stat.size > 64 * 1024 * 1024 ||
-              !real.startsWith(temp + path.sep)) {
+              !real.startsWith(isolatedRoot + path.sep)) {
             throw Error('Compact conflict resolution must target an ordinary bounded checked-out file.');
           }
           const source = await fs.readFile(location);

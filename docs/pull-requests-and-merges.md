@@ -14,6 +14,14 @@ The sync-commit filter normally omits routine `Sync brach/branch to main` entrie
 
 The optional external Lindsey runner is discovered by [`extension/lindsey_bulk_merge.js`](../extension/merge/lindsey_bulk_merge.js). **There is no local `scripts/bulk-merge.js` in Sweetiebot.** Its remote script and deployment must be managed separately.
 
+## One-click Lindsey handoffs and bulk conflict resolutions
+
+**Apply with Lindsey** is the primary action: ChatGPT returns one compact link and a brief explanation, not a raw Git diff. Normal handoffs use a gzip/Base64URL fragment. A short SHA-256 link and a collapsed compressed transport payload are reserved for exceptionally large responses that cannot fit the normal link; only the nonce-scoped local bridge stages those bytes. The local executor verifies the selected PR snapshot before changing Git, and a failed transfer does not partially apply the fix.
+
+When many files or large files conflict, the assistant should prefer **compact conflict hunks** rather than reproduce entire unified diffs. Set `patch: null` and supply `resolutionHunks`, each naming an affected PR file and ordered zero-based Git conflict regions. A region can choose `ours` (current base), `theirs` (PR feature), `both-ours-first`, `both-theirs-first`, or `custom` with the complete replacement text for that region. Include a specific per-file decision. The local isolated Git merge preserves nonconflicting changes; it independently verifies actual conflicted files, hunk counts, and optional expected sides. Incomplete, stale, or unrelated resolutions fail closed.
+
+Complete text patches remain supported when a compact hunk is unsuitable. Resource limits reject oversized input explicitly; no patch is silently truncated. Binary, secret-bearing, symlink, submodule, rename, and unrelated path changes remain prohibited. After execution, branch-only repairs append commits to the selected PR branch without force-pushing or changing `main`.
+
 ## AI reviews and authorization boundaries
 
 **Respond to AI Code Review** selects one unresolved inline thread, waits for a published relevant single-commit change, asks a local model to assess the exact diff, posts a bounded explanation in the **original thread**, then resolves it if substantiated. See [full procedure and safeguards](ai-review-reply.md). A general PR conversation comment is not the same operation.

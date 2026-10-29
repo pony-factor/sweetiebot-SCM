@@ -38,7 +38,7 @@ assert(handoffPolicy.includes('BULK CONFLICT RESOLUTION'),'Compact per-hunk merg
 assert(handoffPolicy.includes('resolutionHunks'),'Model need not output complete Git diffs');
 
 assert(handoffPolicy.includes('#result_gz='),'Primary Apply link uses gzip Base64URL');
-assert(handoffPolicy.includes('ONLY following the browser'),'Raw JSON is a last-resort fallback');
+assert(handoffPolicy.includes('No raw JSON is output unless the browser requests its second and final fallback'),'Raw JSON is a last-resort fallback');
 assert(!handoffPolicy.includes('The complete versioned JSON in a fenced json block in your FINAL assistant response is the primary handoff'),'Raw JSON must not be primary');
 
 assert(handoffPolicy.includes('https://github.com/OWNER/REPO/pull/NUMBER/changes/FULL40SHA'));
