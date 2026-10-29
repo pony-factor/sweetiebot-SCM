@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../extension/merge/local_human_squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -21,7 +21,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false}={}
     await inWork('remote','add','origin',remote);
     await fs.writeFile(path.join(work,'file.txt'),'base\n');
     await inWork('add','file.txt');await inWork('commit','--quiet','-m','Base');
-    const baseSha=await inWork('rev-parse','HEAD');
+    let baseSha=await inWork('rev-parse','HEAD');
     await inWork('checkout','--quiet','-b','feature');
     const commits=[];
     for(const [index,text] of ['first feature\n','finished feature\n'].entries()) {
@@ -31,6 +31,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false}={}
       commits.push({sha,author:{type:'User',login:'human'},commit:{author,message:await inWork('show','-s','--format=%B',sha)}});
     }
     const headSha=commits.at(-1).sha;
+    if(advanceBase){
+      await inWork('checkout','--quiet','main');await fs.writeFile(path.join(work,'base-only.txt'),'Retain the new base behavior\n');
+      await inWork('add','base-only.txt');await inWork('commit','--quiet','-m','Advance base');baseSha=await inWork('rev-parse','HEAD');
+      await inWork('checkout','--quiet','feature');
+    }
     await inWork('push','--quiet','origin','main','feature');
     const branch=name=>inRemote('rev-parse','refs/heads/'+name);
     const pr=async()=>{
@@ -38,16 +43,23 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false}={}
       const merged=tip!==baseSha && !race;
       return {state:merged?'closed':'open',merged,merged_at:merged?'2026-10-28':null,
         merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:true,mergeable_state:'clean',
-        user:{type:'Bot',login:'automation[bot]'},head:{ref:'feature',sha:await branch('feature'),repo:{full_name:'owner/repo'}},
+        user:humanOpener?{type:'User',login:'human'}:{type:'Bot',login:'automation[bot]'},head:{ref:'feature',sha:await branch('feature'),repo:{full_name:'owner/repo'}},
         base:{ref:'main',sha:tip,repo:{full_name:'owner/repo'}}};
     };
-    const api=async endpoint=>{
+    const api=async (endpoint,method,fields=[])=>{
       if(endpoint==='repos/owner/repo')return {default_branch:'main',allow_squash_merge:true,allow_rebase_merge:true};
+      if(endpoint.endsWith('/pulls/1/merge')&&method==='PUT'){
+        assert(humanOpener,'Only a matching human opener uses native squash');
+        const values=Object.fromEntries(fields.filter((_,i)=>i%2).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)];}));
+        assert.equal(values.merge_method,'squash');
+        const mergedSha=await inRemote('commit-tree',values.sha+'^{tree}','-p',baseSha,'-m',values.commit_title+'\n\n'+values.commit_message);
+        await inRemote('update-ref','refs/heads/main',mergedSha,baseSha);if(lostAck)throw Error('Merge response was lost');return {merged:true,sha:mergedSha};
+      }
       if(endpoint.endsWith('/pulls/1'))return pr();
       if(endpoint.includes('/pulls/1/commits?'))return commits;
       if(endpoint.includes('/rules/branches/'))return rules;
-      if(endpoint.includes('/branches/')){const name=decodeURIComponent(endpoint.split('/').at(-1));return {protected:name==='main'?protectedBase:true,commit:{sha:await branch(name)}};}
-      if(endpoint.includes('/check-runs?'))return {check_runs:failed?[{name:'regression',status:'completed',conclusion:'failure'}]:[]};
+      if(endpoint.includes('/branches/')){const name=decodeURIComponent(endpoint.split('/').at(-1));return {protected:name==='main'?protectedBase:!advanceBase,commit:{sha:await branch(name)}};}
+      if(endpoint.includes('/check-runs?'))return {check_runs:failed||failedOriginalOnly?[{name:'regression',status:'completed',conclusion:failed||endpoint.includes(headSha)?'failure':'success'}]:[]};
       if(endpoint.includes('/check-suites?'))return {check_suites:[]};
       if(endpoint.includes('/status?'))return {statuses:[]};
       if(endpoint.includes('/commits/')){
@@ -62,7 +74,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false}={}
       if(args[0]==='clone')args[3]=remote;
       if(args.includes('push')){
         pushes.push(args);assert(!args.some(arg=>arg.startsWith('--force')));
-        assert(args.at(-1).endsWith(':refs/heads/main'),'Only the destination receives a new commit');
+        assert(args.at(-1).endsWith(':refs/heads/main') || advanceBase&&args.at(-1).endsWith(':refs/heads/feature'),'Only selected references receive new commits');
         if(race){competing=await inRemote('commit-tree',baseSha+'^{tree}','-p',baseSha,'-m','Concurrent base update');await inRemote('update-ref','refs/heads/main',competing,baseSha);}
       }
       return git(...args);
@@ -75,16 +87,18 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false}={}
       const result=await action();
       if(protectedBase||rules.length||failed){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
-        assert.equal(result.merged,true,JSON.stringify(result));assert.equal(result.method,'local-git');assert.equal(pushes.length,1);
+        assert.equal(result.merged,true,JSON.stringify(result));if(!humanOpener)assert.equal(result.method,'local-git');assert.equal(pushes.length,humanOpener?(advanceBase?1:0):advanceBase?2:1);
         assert.equal(await inRemote('rev-parse',result.sha+'^1'),baseSha);
-        assert.equal(await inRemote('rev-parse',result.sha+'^2'),headSha);
+        if(!humanOpener)assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
+        await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
+        if(advanceBase)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),'finished feature');
         assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
       }
     }
-    assert.equal(await branch('feature'),headSha,'The original PR head is never rewritten or synchronized unnecessarily');
+    if(!advanceBase)assert.equal(await branch('feature'),headSha,'The original PR head is never rewritten or synchronized unnecessarily');
   } finally {await fs.rm(root,{recursive:true,force:true});}
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{humanOpener:true,lostAck:true}])await fixture(options);
  console.log('Local Git merge preserves original heads and human authors, verifies ancestry, respects rules/checks and rejects destination races.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

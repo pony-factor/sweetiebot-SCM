@@ -175,6 +175,9 @@ async function main() {
   assert.equal(localOptions.allowHistoryRewrite,false);
   assert.equal(localOptions.expected.headSha,oldSha);
   assert(!local.calls.some(call=>call.method!=='GET'),'Sidebar handoff never attempts a native bot-authored squash');
+  await assert.rejects(humanSquashMerge('owner/repo',12,{api:local.api,localGitMerge:true,
+    expected:{headSha:'f'.repeat(40),head:'bot-topic',base:'main',title:basePR().title},
+    localMerge:async()=>{throw Error('Stale head reached Git');}}),/Selected PR head, base or title changed/);
   const mismatch = fixture({incorrectResultAuthor:true});
   await assert.rejects(humanSquashMerge('owner/repo',12,{api:mismatch.api,git}), /author/);
   await assert.rejects(humanSquashMerge('bad',12,{api:approved.api}), /Invalid/);

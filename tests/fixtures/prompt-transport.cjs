@@ -25,8 +25,14 @@ app.whenReady().then(async () => {
   bridge = await createMergeHandoff({repository:'test/fixture',pullRequests:[{
     number:1,title:'Fixture',head:'topic',base:'main',headSha:'a'.repeat(40),url:'https://github.com/test/fixture/pull/1'
   }]}, {validate(input){assert.equal(input.repository,'test/fixture');assert.deepEqual(input.results,[]);},
-    async execute(){executions++;return {merged:[],validated:true};},
-    onResult(){assert.equal(executions,1);setTimeout(()=>finish(),300);}});
+    async execute(){executions++;return {repository:'test/fixture',results:[],validated:true};},
+    onResult(){
+      assert.equal(executions,1);
+      setTimeout(async()=>{
+        try {assert.match(await win.webContents.executeJavaScript('document.getElementById("status").textContent'),/^No pull requests were delegated/);finish();}
+        catch(error){finish(error);}
+      },500);
+    }});
   bridge.setPrompt(prompt);
   const preload = path.join(temporary, 'preload.cjs');
   fs.writeFileSync(preload, 'globalThis.sweetiebotEnsureMaximumThinking=()=>true;\n'

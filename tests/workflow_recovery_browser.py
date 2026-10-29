@@ -82,13 +82,13 @@ def main():
         page.goto('about:blank')
         page.set_content('''<button id="mode" aria-label="Switch mode, current mode: Work" aria-expanded="false">Work</button>
             <div id="mode-menu" role="menu" hidden><button role="menuitem" id="chat">ChatGPT</button></div>
-            <button id="model" aria-label="Select ChatGPT model" aria-haspopup="menu" aria-controls="power-menu" aria-expanded="false">GPT-5.6 Sol Medium</button>
+            <button id="model" aria-label="Select ChatGPT model" aria-haspopup="menu" aria-controls="power-menu" aria-expanded="false">6 Sol 6 Medium</button>
             <div id="power-menu" role="menu" hidden><button role="menuitem" id="models">Select model</button>
               <div id="power" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1"></div></div>
             <div id="models-menu" role="menu" hidden><button role="menuitemradio" id="six">6</button><button role="menuitemradio">GPT-5.6 Sol</button></div>
             <div><div id="prompt-textarea" contenteditable="true"></div></div>''')
         page.evaluate('''() => {
-            window.selectedModel='GPT-5.6 Sol';window.power=1;
+            window.selectedModel='6 Sol 6';window.power=1;
             const model=document.getElementById('model'),mode=document.getElementById('mode');
             const powers=['Instant','Medium','High'];
             const render=()=>{model.textContent=selectedModel+' '+powers[power];document.getElementById('power').setAttribute('aria-valuenow',power);};
@@ -112,15 +112,19 @@ def main():
         page.set_content('<div id="activity">Working for 6m 20s</div><span id="clock">Working for 6m 20s</span><div data-conversation-role="user"><span id="user">Working for 9m</span></div>')
         page.evaluate('(image)=>{globalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage=image}', PNG)
         page.add_script_tag(content=(ROOT / 'assets/codex/activity-cannon.js').read_text())
+        page.add_script_tag(content=(ROOT / 'assets/codex/hide-chat-timestamps.js').read_text())
         assert page.get_attribute('#clock', 'data-scm-toolkit-activity-dots') == '•' * 6
         assert page.get_attribute('#user', 'data-scm-toolkit-activity-cannon') is None
+        page.eval_on_selector('#clock', "el=>el.textContent='Worked for 6m 20s'")
+        page.wait_for_function("document.getElementById('clock').dataset.scmToolkitActivityDots==='••••••'")
+        assert page.inner_text('#clock') == 'Worked for 6m 20s'
         page.eval_on_selector('#clock', "el=>el.textContent='Working for 7m 1s'")
         page.wait_for_function("document.getElementById('clock').dataset.scmToolkitActivityDots==='•••••••'")
         assert page.eval_on_selector('#clock', 'el=>getComputedStyle(el).fontSize') == '0px'
 
         page.goto('about:blank')
         page.set_content('''<div data-conversation-role="user"><p id="user-copy">You've hit your usage limit. Try again at 10:26 PM.</p></div>
-            <article><p id="warning">You've hit your usage limit. Upgrade your plan or add credits to continue, or try again at 10:26 PM.</p></article>
+            <article><p data-message-author-role="assistant" id="warning">You've hit your usage limit. Upgrade your plan or add credits to continue, or try again at 10:26 PM.</p></article>
             <div style="position:absolute;bottom:20px;left:10px;width:350px">
               <div contenteditable="true" role="textbox" style="height:80px;border:1px solid"></div>
               <div role="status" id="footer">Rate limited</div></div>''')
@@ -147,6 +151,11 @@ def main():
         }''')
         page.wait_for_function('messages.length===1')
         assert page.evaluate('messages[0].threadId') == 'test-thread'
+        page.wait_for_timeout(100)
+        assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0, 'A completed reset cannot arm a duplicate continuation'
+        page.eval_on_selector('#footer', 'el=>el.remove()')
+        page.wait_for_timeout(100)
+        assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0, 'Old transcript warnings are not an active limit'
         page.evaluate("document.body.append(document.createElement('hr'))")
         assert page.evaluate('messages.length') == 1
         assert not errors, errors
