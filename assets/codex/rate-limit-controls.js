@@ -84,6 +84,9 @@ const scmToolkitRateLimitStickerEnabled = "__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENAB
 // presentation as soon as the message's text changes, before the next paint.
 function scmToolkitIsUntimedRateLimitWarning(value) {
     const text = String(value || '').replace(/\s+/g, ' ').trim();
+    // A concrete reset time is useful information; keep the entire message.
+    // The optional timed-warning hider owns that separate user preference.
+    if (/\btry again\s+(?:at|on|in|after|until)\b/i.test(text)) return false;
     if (/^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|later)\b[^<>]*$/i.test(text)) return true;
     return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i.test(text);
 }

@@ -39,15 +39,30 @@ class CannonTest(unittest.TestCase):
         self.assertIn("new MutationObserver(scheduleScan)", compiled)
 
     def test_cannon_works_with_timestamps_and_removes_cleanly(self):
-        original = 'const app="codex";'
-        payload = "globalThis.scmToolkitShowCannon = true;"
-        installed = install.transform_codex(original, cannon_payload=payload, hide_timestamps=True)
-        self.assertIn(install.CODEX_CANNON_START, installed)
-        self.assertIn(install.CODEX_TIMESTAMPS_START, installed)
-        self.assertEqual(install.transform_codex(installed, cannon_payload=payload, hide_timestamps=True), installed)
+        # The chosen cannon is bundled locally in the rate-limit payload.
+        # Exercise that path rather than the retired pinned-upstream argument.
+        original = 'const modernStatus = "You’re out of Codex messages";'
+        installed = install.transform_codex(
+            original, cannon_enabled=True, hide_timestamps=True)
+        self.assertEqual(installed.count(install.CODEX_LIMIT_START), 1)
+        self.assertEqual(installed.count(install.CODEX_TIMESTAMPS_START), 1)
+        self.assertEqual(installed.count('globalThis.scmToolkitActivityCannonEnabled=true;'), 1)
+        self.assertEqual(installed.count('function scmToolkitActivityMinutes'), 1)
+        self.assertNotIn('CODEX_CANNON_START', installed)
+        self.assertIn("data:image/png;base64,", installed)
+        self.assertNotIn("__SCM_TOOLKIT_ACTIVITY_CANNON__", installed)
+        self.assertEqual(
+            install.transform_codex(installed, cannon_enabled=True, hide_timestamps=True),
+            installed, "Reinstalling must not duplicate the cannon")
+        disabled = install.transform_codex(
+            installed, cannon_enabled=False, hide_timestamps=True)
+        self.assertNotIn('globalThis.scmToolkitActivityCannonEnabled=true;', disabled)
+        self.assertNotIn('function scmToolkitActivityMinutes', disabled)
+        self.assertIn(install.CODEX_TIMESTAMPS_START, disabled)
+        self.assertEqual(install.transform_codex(disabled, remove=True), original)
         self.assertEqual(install.transform_codex(installed, remove=True), original)
         with self.assertRaises(ValueError):
-            install.transform_codex(original + install.CODEX_CANNON_START, cannon_payload=payload)
+            install.transform_codex(original + install.CODEX_LIMIT_START, cannon_enabled=True)
 
     def test_timestamp_hiding_yields_activity_label_to_cannon(self):
         content = (Path(__file__).resolve().parent.parent / "assets/codex/hide-chat-timestamps.js").read_text()
