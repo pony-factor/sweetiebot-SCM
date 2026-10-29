@@ -59,7 +59,9 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
             // Read the drag store synchronously: Chromium protects it once drop returns.
             const items = Array.from(transfer.items || []).map(item => {
                 const file = item.kind === 'file' ? item.getAsFile() : null;
-                const entry = item.kind === 'file' ? item.webkitGetAsEntry?.() : null;
+                // Ready files can go straight to the native handler. Resolving
+                // an OS file entry is only useful for an unmaterialized promise.
+                const entry = item.kind === 'file' && (!file || file.size === 0) ? item.webkitGetAsEntry?.() : null;
                 return { kind: item.kind, type: item.type, file, entry };
             });
             const files = Array.from(transfer.files || []);
@@ -69,8 +71,6 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
                 }
             }
             const types = Array.from(transfer.types || []);
-            const strings = new Map(types.filter(type => type !== 'Files')
-                .map(type => [type, transfer.getData(type)]));
             const pending = items.filter(item => item.kind === 'file' && !item.entry?.isDirectory
                 && (!item.file || item.file.size === 0)
                 && (item.type?.startsWith('image/')
@@ -78,6 +78,10 @@ function scmToolkitRegisterImageDropTarget(root, enter, leave, drop) {
             const allFiles = [...new Set([...files, ...items.map(item => item.file).filter(Boolean)])];
             const videos = allFiles.filter(file => /^video\//i.test(file.type || '')
                 || /\.(mp4|m4v|mov|webm|ogv)$/i.test(file.name || ''));
+            // Capture strings only when asynchronous recovery needs them after
+            // drop returns. Ordinary images must not copy large HTML drag data.
+            const strings = new Map(pending.length || videos.length
+                ? types.filter(type => type !== 'Files').map(type => [type, transfer.getData(type)]) : []);
             return { items, files, types, strings, pending, videos };
         };
         const recoverImage = async item => {

@@ -126,6 +126,42 @@ def main():
         page.eval_on_selector('#clock', "el=>el.textContent='Working for 7m 1s'")
         page.wait_for_function("document.getElementById('clock').dataset.scmToolkitActivityDots==='•••••••'")
         assert page.eval_on_selector('#clock', 'el=>getComputedStyle(el).fontSize') == '0px'
+        # A long activity history must wrap without expanding a narrow chat or
+        # rewriting the shared artwork when an attachment/progress node changes.
+        page.goto('about:blank')
+        page.set_content('''<div id="history" style="width:180px">
+            <button id="disclosure" aria-label="Activity" style="display:flex;max-width:100%;white-space:nowrap"><span id="long">Worked for 2h</span></button>
+            </div><div id="progress"></div>''')
+        page.evaluate('''(image) => {
+            globalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage=image;
+            for(let i=0;i<60;i++){const label=document.createElement('div');label.textContent='Worked for 30m';document.getElementById('history').append(label);}
+            window.imageWrites=0;window.fullScans=0;window.opened=0;
+            const set=CSSStyleDeclaration.prototype.setProperty;
+            CSSStyleDeclaration.prototype.setProperty=function(name,...args){if(name==='--scm-toolkit-activity-cannon-image')imageWrites++;return set.call(this,name,...args);};
+            const query=document.querySelectorAll.bind(document);
+            document.querySelectorAll=function(selector){if(selector.includes('data-scm-toolkit-activity-cannon'))fullScans++;return query(selector);};
+            document.getElementById('disclosure').onclick=()=>opened++;
+        }''', PNG)
+        page.add_script_tag(content=(ROOT / 'assets/codex/activity-cannon.js').read_text())
+        for width in (180, 320, 100):
+            page.eval_on_selector('#history', '(el,width)=>el.style.width=width+"px"', width)
+            geometry=page.eval_on_selector('#history', '''el=>({overflow:el.scrollWidth-el.clientWidth,
+                height:el.querySelector('#long').getBoundingClientRect().height,
+                imageWidth:getComputedStyle(el.querySelector('#long'),'::after').width})''')
+            assert geometry['overflow'] <= 1, (width, geometry)
+            assert geometry['height'] > 24, (width, geometry)
+            assert geometry['imageWidth'] == '22px'
+        page.get_by_role('button', name='Activity', exact=True).click()
+        assert page.evaluate('opened') == 1
+        assert page.evaluate('imageWrites') == 1, 'Artwork is shared once across the full history'
+        before=page.evaluate('fullScans')
+        page.evaluate('''() => {
+            for(let i=0;i<30;i++){const img=document.createElement('img');img.alt='Upload progress '+i;document.getElementById('progress').append(img);}
+            document.getElementById('long').textContent='Working for 3m';
+        }''')
+        page.wait_for_function("document.getElementById('long').dataset.scmToolkitActivityDots==='•••'")
+        assert page.evaluate('imageWrites') == 1, 'Image/progress updates never rewrite the artwork'
+        assert page.evaluate('fullScans') == before, 'Image/progress updates never rescan the transcript'
 
         page.goto('about:blank')
         page.set_content('''<div data-conversation-role="user"><p id="user-copy">You've hit your usage limit. Try again at 10:26 PM.</p></div>
