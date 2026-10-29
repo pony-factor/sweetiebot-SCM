@@ -96,7 +96,7 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
     running.child?.stderr?.on('data', chunk => {
       buffered += chunk.toString();
       const lines = buffered.split('\n');
-      buffered = lines.pop().slice(-4096);
+      buffered = lines.pop().slice(-16384);
       for (const line of lines) {
         if (!line.startsWith('LINDSEY_PROGRESS ')) continue;
         try {

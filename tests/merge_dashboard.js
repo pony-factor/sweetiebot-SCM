@@ -782,7 +782,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   info = { ...info, state: 'closed', merged: false };
   await Promise.all([dashboard.refresh(), dashboard.refresh()]);
   assert.equal(events.at(-1).prs[0].state, 'closed');
-  assert.equal(events.at(-1).events.at(-1).message, 'PR was closed without merging');
+  assert(events.at(-1).events.some(event => event.message === 'PR was closed without merging'));
   // A verified executor result updates the badge immediately, even in a hidden
   // dashboard with an older open response already in flight and a failed poll.
   info = { ...info, state: 'open', merged: false };

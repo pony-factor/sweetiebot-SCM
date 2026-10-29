@@ -59,7 +59,10 @@ async function waitForMergeChecks(api, repository, sha, { expectChecks = false,
   const deadline = now() + timeoutMs;
   for (;;) {
     const result = await readMergeChecks(api, repository, sha, { expectChecks, collectEvidence: collectEvidence || typeof onPoll === 'function' });
-    try { onPoll?.({ ...result, checkedAt: new Date(now()).toISOString(),
+    try { onPoll?.({ state: result.state, hasChecks: result.hasChecks,
+      evidence: (result.evidence || []).slice(0, 20).map(check => ({
+        name: String(check.name || '').slice(0, 160), result: String(check.result || '').slice(0, 48) })),
+      checkedAt: new Date(now()).toISOString(),
       nextPollAt: result.state === 'pending' && now() < deadline ? now() + intervalMs : 0 }); }
     catch { /* Display callbacks cannot change check enforcement. */ }
     if (result.state !== 'pending' || now() >= deadline) return result;

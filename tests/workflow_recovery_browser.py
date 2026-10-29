@@ -52,7 +52,7 @@ def main():
         clock=page.locator('.activity-elapsed').first.inner_text()
         page.locator('#events summary').first.click()
         page.evaluate("window.openActivity=document.querySelector('#events details')")
-        page.wait_for_function("document.querySelector('.activity-elapsed').textContent!=="+repr(clock))
+        page.wait_for_function("() => document.querySelector('.activity-elapsed').textContent!=="+repr(clock))
         assert page.evaluate("openActivity===document.querySelector('#events details') && openActivity.open"), 'Clock ticks cannot rebuild or close timeline entries'
         for width in (1100, 440, 320):
             page.set_viewport_size({'width':width,'height':900})
@@ -66,7 +66,7 @@ def main():
             assert geometry['below'] and geometry['left'] >= 0 and geometry['right'] <= width, geometry
             assert geometry['radius'] > 0 and geometry['active'] == 'true'
         page.evaluate("dashboardState.error='GitHub request failed';window.postMessage(dashboardState,'*')")
-        page.wait_for_function("document.getElementById('merge-progress').dataset.active==='false'")
+        page.wait_for_function("() => document.getElementById('merge-progress').dataset.active==='false'")
         assert page.locator('.activity-elapsed').count() == 0, 'Failed work cannot keep claiming active elapsed progress'
         assert not errors, errors
         page.unroute('https://**/*')
