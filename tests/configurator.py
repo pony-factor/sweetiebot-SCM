@@ -82,6 +82,19 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             configurator.parse_submission(values)
 
+    def test_retired_provisional_setting_is_not_available_or_resubmitted(self):
+        self.assertNotIn("aiCommitAsync", toolkit_settings.DEFAULT_SETTINGS)
+        self.assertNotIn("aiCommitAsync", toolkit_settings.SETTING_KEYS)
+        self.assertNotIn("aiCommitAsync", {setting.name for setting in configurator.SETTINGS})
+        values = form_values()
+        values["aiCommitAsync"] = ["true"]  # Old saved forms cannot reactivate it.
+        parsed = configurator.parse_submission(values)
+        self.assertNotIn("aiCommitAsync", parsed)
+        self.assertFalse(parsed["durableBackgroundCommits"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertNotIn("Legacy provisional commit finalization", page)
+        self.assertIn("Durable background Commit and Push", page)
+
     def test_lindsey_has_its_own_dashboard_settings_page(self):
         names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeShowPrCommits"}
         controls = [setting for setting in configurator.SETTINGS if setting.name in names]

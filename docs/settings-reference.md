@@ -35,6 +35,8 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | `scmToolkit.automaticAppRepair` | `true` | Restore compatible patches |
 | `scmToolkit.codexKeepAwake` | `true` | Hold macOS awake while Codex works |
 
+The retired `scm-toolkit.ai-commit-async` Git setting is ignored. Use `scmToolkit.durableBackgroundCommits` for background finalization, including commit-only actions; it does not require automatic pushing. Pending legacy commits retain recovery protection.
+
 The repo-level `scmToolkit.postCommitSpellcheck` **does not turn the global spellcheck feature on**. To exclude one project from post-commit Markdown changes only, add to that project's `.vscode/settings.json`:
 
 ```json

@@ -271,6 +271,36 @@ class PostCommitRoutingTests(unittest.TestCase):
                 self.assertEqual(spawn.called, returncode == 0 and not dirty and new_head != "old")
 
 
+    def test_retired_provisional_toggle_cannot_create_new_placeholder_commits(self):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(sys, "argv", ["wrapper", "commit"]))
+            for name, value in [
+                ("feature_enabled", True),
+                ("staged_whitespace_enabled", False),
+                ("staged_diff", ("1 file changed", "+text", ["note.md"])),
+                ("github_split_groups", [["note.md"]]),
+                ("post_commit_spellcheck_enabled", False),
+                ("should_add_default_branch_description", False),
+                ("generate_message", ("🗑️ Use final title directly", "")),
+            ]:
+                stack.enter_context(patch.object(ai_commit, name, return_value=value))
+            config = stack.enter_context(patch.object(ai_commit, "git_config_bool", return_value=True))
+            stack.enter_context(patch("background_commit.wait_for_background"))
+            stack.enter_context(patch("sweetiebot_async_commit.wait_for_completion"))
+            execute = stack.enter_context(patch.object(
+                ai_commit.os, "execv", side_effect=RuntimeError("direct commit")
+            ))
+            with self.assertRaisesRegex(RuntimeError, "direct commit"):
+                ai_commit.main()
+            execute.assert_called_once_with(
+                ai_commit.REAL_GIT,
+                [ai_commit.REAL_GIT, "commit", "-m", "🗑️ Use final title directly"],
+            )
+            self.assertNotIn("scm-toolkit.ai-commit-async", [
+                call.args[0] for call in config.call_args_list
+            ])
+
+
 class ConfigurationTests(unittest.TestCase):
     def test_emoji_priority_enforcement_defaults_on(self):
         with patch.object(ai_commit, "git_config_bool", return_value=True) as config:
