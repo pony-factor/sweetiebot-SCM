@@ -1405,6 +1405,9 @@ class CodexTimestampTests(unittest.TestCase):
         self.assertIn("scm-toolkit-codex-timestamps:start", patched)
         self.assertIn("data-scm-toolkit-hidden-chat-timestamp", patched)
         self.assertIn("looksLikeTimestamp", patched)
+        self.assertIn("data-scm-toolkit-activity-cannon", patched)
+        self.assertIn("data:image/png;base64,", patched)
+        self.assertNotIn("__SCM_TOOLKIT_ACTIVITY_CANNON__", patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
     def test_timestamp_hiding_can_coexist_with_other_codex_patches(self):

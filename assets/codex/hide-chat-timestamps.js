@@ -5,6 +5,8 @@
     globalThis.scmToolkitHideTimestampsInitialized = true;
     const hiddenAttribute = 'data-scm-toolkit-hidden-chat-timestamp';
     const styleId = 'scm-toolkit-hidden-chat-timestamp-style';
+    const activityAttribute = 'data-scm-toolkit-activity-cannon';
+    const activityArtwork = '__SCM_TOOLKIT_ACTIVITY_CANNON__';
 
     function installStyle() {
         if (document.getElementById?.(styleId) || !document.createElement) return;
@@ -13,7 +15,25 @@
         const style = document.createElement('style');
         style.id = styleId;
         // A persistent stylesheet wins over React resetting the inline style.
-        style.textContent = `[${hiddenAttribute}] { display: none !important; }`;
+        style.textContent = `[${hiddenAttribute}] { display: none !important; }
+            [${activityAttribute}] {
+                display: inline-flex !important; align-items: center;
+                font-size: 0 !important; gap: 6px !important;
+            }
+            [${activityAttribute}] * { display: none !important; }
+            [${activityAttribute}]::before {
+                content: ''; display: inline-block; flex: none;
+                width: 19px; height: 19px;
+                background: url("${activityArtwork}") center / contain no-repeat;
+                pointer-events: none;
+            }
+            [${activityAttribute}]::after {
+                content: attr(data-scm-toolkit-activity-dots);
+                order: -1; font-size: 24px; line-height: 19px;
+                white-space: normal; pointer-events: none;
+            }
+            [${activityAttribute}]:not([data-scm-toolkit-activity-dots])::after,
+            [${activityAttribute}][data-scm-toolkit-activity-dots=""]::after { display: none; }`;
         root.appendChild(style);
     }
 
@@ -49,18 +69,24 @@
         if (!control) return;
         // Only touch controls whose complete label is an elapsed duration.
         const label = normalize(control.textContent).replace(/[›»⌄▾>]$/, '').trim();
+        if (label !== 'Activity' && !looksLikeActivityDuration(label)) return;
+        if (control.getAttribute(activityAttribute) !== 'true') {
+            control.setAttribute(activityAttribute, 'true');
+        }
+        if (control.getAttribute('aria-label') !== 'Activity') {
+            control.setAttribute('aria-label', 'Activity');
+        }
+        // Keep the original duration text in React's DOM so live updates and
+        // later scans can always recover the elapsed time. Only CSS hides it.
         if (!looksLikeActivityDuration(label)) return;
-
-        const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
-        const nodes = [];
-        while (walker.nextNode()) nodes.push(walker.currentNode);
-        const first = nodes.find((part) => activityLeadPattern.test(normalize(part.textContent)));
-        if (!first) return;
-
-        for (const part of nodes) part.textContent = part === first ? 'Activity' : '';
-        for (const name of ['title', 'aria-label']) {
-            const value = control.getAttribute?.(name);
-            if (value != null && looksLikeActivityDuration(value)) control.setAttribute(name, 'Activity');
+        let seconds = 0;
+        for (const [, count, unit] of label.matchAll(/(\d+)\s*(days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|d|h|m|s)/gi)) {
+            const scale = /^d/i.test(unit) ? 86400 : /^h/i.test(unit) ? 3600 : /^m/i.test(unit) ? 60 : 1;
+            seconds += Number(count) * scale;
+        }
+        const dots = Array(Math.floor(seconds / 60)).fill('•').join(' ');
+        if (control.getAttribute('data-scm-toolkit-activity-dots') !== dots) {
+            control.setAttribute('data-scm-toolkit-activity-dots', dots);
         }
     }
 
@@ -138,6 +164,7 @@
     function processTextNode(node) {
         if (timestampContainer(node)) hideTimestamp(node);
         else if (!globalThis.scmToolkitShowCannon && activityLeadPattern.test(normalize(node.textContent))) relabelActivityDuration(node);
+        else if (!globalThis.scmToolkitShowCannon && normalize(node.textContent) === 'Activity') relabelActivityDuration(node);
     }
 
     function hasTimestampAncestor(node) {
@@ -170,6 +197,7 @@
                     return looksLikeTimestamp(node.textContent)
                         || hasTimestampAncestor(node)
                         || activityLeadPattern.test(normalize(node.textContent))
+                        || normalize(node.textContent) === 'Activity'
                         ? NodeFilter.FILTER_ACCEPT
                         : NodeFilter.FILTER_REJECT;
                 },
@@ -205,7 +233,7 @@
             attributes: true,
             // React may overwrite display with an inline !important value,
             // which has higher precedence than our stylesheet rule.
-            attributeFilter: [hiddenAttribute, 'aria-hidden', 'style'],
+            attributeFilter: [hiddenAttribute, activityAttribute, 'aria-hidden', 'style'],
         });
     }
 
