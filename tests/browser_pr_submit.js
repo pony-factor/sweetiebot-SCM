@@ -230,6 +230,7 @@ f.tick(10000);
 assert.equal(f.clicks(),1,'Never ask for a missing link while the assistant is streaming');
 f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
   assistantText:'Incomplete result without link'});
+f.tick(250);f.composer.innerText='';
 f.listeners.get('input').forEach(fn=>fn({type:'input',isTrusted:true}));
 f.tick(10000);
 assert.equal(f.clicks(),1,'User intervention cancels automatic follow-up');
