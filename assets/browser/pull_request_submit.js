@@ -70,15 +70,15 @@
     let recoveryAllowed = true;
     let followupInjecting = false, followupPending, followupInserted = false;
     let formatPhase = 0, awaitingResponseChange, lastResponseText = '', responseStableSince = Date.now();
-    let stagedUrl, staging = false, stageAttempted = false, stagingFailed = false;
+    let stagedUrl, staging = false, stageAttemptRound = -1, stagingFailed = false;
     let validatedCompressedHref;
     const stageCompressed = (data, expectedId) => {
       // Almost all handoffs use the short inline gzip URL. Only an oversized
       // complete payload is staged in memory on the nonce-scoped loopback server.
-      if (stageAttempted || stagedUrl || staging || !/^[A-Za-z0-9_-]+$/.test(data) ||
+      if (stageAttemptRound === formatPhase || awaitingResponseChange || stagedUrl || staging || !/^[A-Za-z0-9_-]+$/.test(data) ||
           data.length > 12 * 1024 * 1024 ||
           callback.href.length + '#result_gz='.length + data.length <= 80000) return;
-      stageAttempted = true;
+      stageAttemptRound = formatPhase;
       let bytes, digest, body;
       try {
         bytes = Buffer.from(data, 'base64url');
@@ -105,6 +105,7 @@
           } catch { stagingFailed = true; }
         });
       });
+      request.on('timeout', () => request.destroy(Error('Local staging timed out.')));
       request.on('error', () => { staging = false; stagingFailed = true; });
       request.end(body);
     };
@@ -204,7 +205,7 @@
         }
         latest = url.href;
       }
-      if (mergeLaunch && !latest && !staging && !stageAttempted && !generating) {
+      if (mergeLaunch && !latest && !staging && stageAttemptRound !== formatPhase && !awaitingResponseChange && !generating) {
         // A compact, collapsed transport block is emitted ONLY when the
         // complete gzip URL exceeds the browser budget. It has no raw diff.
         const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
@@ -245,7 +246,7 @@
               .toString('base64url');
             const url = callback.href + '#result_gz=' + encoded;
             if (url.length <= 80000) latest = url;
-            else if (!stageAttempted && !generating) stageCompressed(encoded, claimedStagingId);
+            else if (stageAttemptRound !== formatPhase && !generating) stageCompressed(encoded, claimedStagingId);
           } catch { /* Incomplete code blocks remain in the chat until complete. */ }
         }
       }

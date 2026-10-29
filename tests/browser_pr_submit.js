@@ -347,7 +347,7 @@ console.log('Bounded workflow response-stream recovery checks passed.');
     'Transport is restricted to the exact nonce-scoped local route');
   assert.equal(f.navigations.length,0,'Do not navigate before local staging acknowledgement');
   await new Promise(resolve => setImmediate(resolve));
-  f.tick(2500);
+  f.tick(2500);f.tick(2500);
   assert.deepEqual(f.navigations,[shortLink],'Compact Apply link activates after the local payload is stored');
   f.tick(30000);
   assert.equal(f.stagedRequests.length,1,'Never re-upload the staged payload');
