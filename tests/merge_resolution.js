@@ -3,7 +3,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
-const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions } = require('../extension/merge/resolution');
+const { gzipSync } = require('node:zlib');
+const { createHash } = require('node:crypto');
+const { validateResolution, validateSyncResolution, executeResolution, invokeResolutionCLI, resolutionInstructions, MAX_PATCH_BYTES } = require('../extension/merge/resolution');
 const { createMergeHandoff } = require('../extension/merge/handoff');
 const { patchPaths, safePatchPath } = require('../extension/merge/patch');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
@@ -25,7 +27,13 @@ assert(handoffPolicy.includes('ACTIONABLE BLOCKER OPTIONS'));
 assert(handoffPolicy.includes('Proactively analyze conflicts'));
 assert(handoffPolicy.includes('sweetiebot-merge-options'), 'Genuine choices are published during the initial Lindsey conflict review');
 assert(handoffPolicy.includes('NO-OP SYNCHRONIZATION'));
+assert(!handoffPolicy.includes('If gzip output still exceeds the URL budget, stop'),'Oversized results use a safe alternate transport');
 assert(handoffPolicy.includes('mandatory final result'),'Apply with Lindsey is mandatory');
+assert(handoffPolicy.includes('RARE OVERSIZE LAST RESORT ONLY'),'Short token transport is an exceptional fallback');
+assert(handoffPolicy.includes('SWEETIEBOT_HANDOFF_GZIP_V1'),'No raw diffs in oversized handoffs');
+assert(handoffPolicy.includes('<details>'),'Oversized transport stays collapsed in chat');
+assert.equal(MAX_PATCH_BYTES,8*1024*1024,'Larger complete patches remain accepted');
+
 assert(handoffPolicy.includes('#result_gz='),'Primary Apply link uses gzip Base64URL');
 assert(handoffPolicy.includes('ONLY following the browser'),'Raw JSON is a last-resort fallback');
 assert(!handoffPolicy.includes('The complete versioned JSON in a fenced json block in your FINAL assistant response is the primary handoff'),'Raw JSON must not be primary');
@@ -160,15 +168,16 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   assert.throws(() => patchPaths('GIT binary patch\n', '', ['file.txt']), /regular text/);
 
   let executions = 0, finish;
-  const bridge = await createMergeHandoff(selection, { execute: async () => {
+  const bridge = await createMergeHandoff(selection, { execute: async received => {
+    assert.deepEqual(received, input, 'A staged digest resolves to the exact original handoff');
     executions++;
     await new Promise(resolve => { finish = resolve; });
     return result;
   } });
   try {
     const url = new URL(bridge.url);
-    const post = (data, headers = {}) => new Promise((resolve, reject) => {
-      const request = http.request(url, { method: 'POST',
+    const post = (data, headers = {}, destination = url) => new Promise((resolve, reject) => {
+      const request = http.request(destination, { method: 'POST',
         headers: { 'Content-Type': 'application/json', Origin: url.origin, ...headers } }, response => {
         const chunks = [];
         response.on('data', chunk => chunks.push(chunk));
@@ -185,12 +194,29 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     assert.equal((await post(input, { Host: 'evil.invalid' })).status, 404);
     assert.equal((await post({ ...input, results: [{ ...input.results[0], number: 99 }] })).status, 400);
     assert.equal(executions, 0);
-    const pending = post(input);
+    const compressed = gzipSync(JSON.stringify(input));
+    const data = compressed.toString('base64url');
+    const id = createHash('sha256').update(compressed).digest('hex');
+    assert.equal((await post({ id, data }, { Origin: 'https://evil.invalid' }, bridge.url + '/stage')).status, 403,
+      'Cross-origin requests cannot stage untrusted Git changes');
+    assert.equal((await post({ id: '0'.repeat(64), data }, {}, bridge.url + '/stage')).status, 400,
+      'Staging verifies the SHA-256 digest before retention');
+    assert.equal((await post({ id, data: data.slice(0, -8) }, {}, bridge.url + '/stage')).status, 400,
+      'Incomplete compressed payloads cannot stage');
+    assert.equal(executions, 0, 'Staging never runs Git');
+    assert.equal((await post({ id, data }, {}, bridge.url + '/stage')).status, 201);
+    assert.equal((await post({ id, data }, {}, bridge.url + '/stage')).status, 200,
+      'Repeated staging of the same digest is idempotent');
+    assert.equal((await post({ handoffId: '0'.repeat(64) })).status, 400,
+      'Wrong or unstaged short links cannot trigger Git');
+    assert.equal(executions, 0, 'Staged data is never executed without the matching Apply');
+    const pending = post({ handoffId: id });
     const deadline = Date.now() + 5000;
     while (!finish && Date.now() < deadline) await new Promise(resolve => setImmediate(resolve));
     assert(finish, 'Valid POST should reach the local executor');
     assert.equal((await (await fetch(bridge.url + '/status')).json()).phase, 'running', 'Reload can observe execution without repeating it');
     assert.equal((await post(input)).status, 409, 'Do not run a concurrent duplicate');
+    assert.equal((await post({id,data},{},bridge.url+'/stage')).status,409,'Do not replace an executed handoff');
     finish();
     assert.equal((await pending).status, 200);
     const recovered = await (await fetch(bridge.url + '/status')).json();

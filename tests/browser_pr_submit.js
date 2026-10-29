@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { gzipSync, gunzipSync } = require('node:zlib');
+const crypto = require('node:crypto');
+const { EventEmitter } = require('node:events');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
 function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], assistantText = '', streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
@@ -14,7 +16,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { sidebarClicks++; sidebar = false; } };
   const button = { disabled, getAttribute: key => key === 'aria-label' ? label : null,
     getClientRects: () => [1], click: () => { clicks++; } };
-  const navigations = [], retryNotices = [];
+  const navigations = [], retryNotices = [], stagedRequests = [];
   let retries = 0;
   const retryButton = { disabled: false, textContent: 'Retry',
     parentElement: { textContent: 'Error in message stream Retry' },
@@ -33,7 +35,26 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   const history = { state: {}, replaceState(state, title, url) { window.location = location(url); } };
   vm.runInNewContext(source, { window, history, URL, URLSearchParams, Buffer, Date: { now: () => now },
     sweetiebotEnsureMaximumThinking: () => thinkingReady,
-    require(name) { if (name === 'node:zlib') return { gzipSync, gunzipSync }; assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
+    require(name) {
+      if (name === 'node:zlib') return { gzipSync, gunzipSync };
+      if (name === 'node:crypto') return { createHash: crypto.createHash };
+      if (name === 'node:http') return { request(options, callback) {
+        const request = new EventEmitter();
+        request.end = body => {
+          stagedRequests.push({options,body});
+          const response = new EventEmitter();
+          response.statusCode=201;
+          callback(response);
+          process.nextTick(() => {
+            response.emit('data',JSON.stringify({id:JSON.parse(body).id}));
+            response.emit('end');
+          });
+        };
+        request.destroy=()=>request.emit('error', Error('Aborted'));
+        return request;
+      } };
+      assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}};
+    },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { createElement() { return { style: {}, setAttribute() {}, remove() { this.removed = true; } }; }, execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ type: 'input', isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
@@ -57,7 +78,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
-  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, setStreamError(value){streamError=value;}, retryButton, retries:()=>retries, retryNotices, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
+  return { composer, button, window, listeners, navigations, stagedRequests, persisted, setStreaming(value){streaming=value;}, setStreamError(value){streamError=value;}, retryButton, retries:()=>retries, retryNotices, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
     sidebarClicks: () => sidebarClicks, setAssistantText(value){currentAssistantText = value;}, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
@@ -305,3 +326,36 @@ f = fixture({ url: mergeUrl, streamError: true });
 f.tick(2500);
 assert.equal(f.retries(), 0, 'No nonce-bound receiver means no automatic recovery');
 console.log('Bounded workflow response-stream recovery checks passed.');
+(async () => {
+  // Staging is a last resort only: the 80 KB gzip URL budget must actually
+  // be exceeded before any local POST occurs.
+  const oversized = {version:1,repository:'owner/repo',results:[{
+    number:41,headSha:'a'.repeat(40),baseSha:'b'.repeat(40),
+    patch:crypto.randomBytes(100000).toString('base64'),explanation:'A complete text patch.'
+  }]};
+  const data = gzipSync(JSON.stringify(oversized), {level:9}).toString('base64url');
+  assert(mergeCallback.length + '#result_gz='.length + data.length > 80000,
+    'This fixture must exceed the inline URL limit');
+  const id = crypto.createHash('sha256').update(Buffer.from(data,'base64url')).digest('hex');
+  const shortLink = mergeCallback+'#result_id='+id;
+  f = fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+    resultLinks:[shortLink],assistantCodes:['SWEETIEBOT_HANDOFF_GZIP_V1:'+data]});
+  f.tick(); // Initial Send finishes before monitoring its answer.
+  f.tick(2500);
+  assert.equal(f.stagedRequests.length,1,'Oversized handoff is staged only once');
+  assert.equal(f.stagedRequests[0].options.path,new URL(mergeCallback).pathname+'/stage',
+    'Transport is restricted to the exact nonce-scoped local route');
+  assert.equal(f.navigations.length,0,'Do not navigate before local staging acknowledgement');
+  await new Promise(resolve => setImmediate(resolve));
+  f.tick(2500);
+  assert.deepEqual(f.navigations,[shortLink],'Compact Apply link activates after the local payload is stored');
+  f.tick(30000);
+  assert.equal(f.stagedRequests.length,1,'Never re-upload the staged payload');
+  const small = gzipSync(JSON.stringify({version:1,repository:'owner/repo',results:[]})).toString('base64url');
+  f = fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+    assistantCodes:['SWEETIEBOT_HANDOFF_GZIP_V1:'+small]});
+  f.tick();f.tick(2500);
+  assert.equal(f.stagedRequests.length,0,'Normal-sized results never use local staging');
+  console.log('One-time nonce-scoped large-payload handoff and compact-link checks passed.');
+})().catch(error => { console.error(error); process.exitCode=1; });
+

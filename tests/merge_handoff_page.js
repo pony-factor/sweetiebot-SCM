@@ -4,12 +4,12 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {gzipSync} = require('node:zlib');
 const script = fs.readFileSync(require.resolve('../extension/merge/handoff.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
-async function page({raw, compressedRaw, state, result, statusFailsDuringPost = false}) {
+async function page({raw, compressedRaw, stagedId, state, result, statusFailsDuringPost = false}) {
   const status = {}, results = {after(){}}, navigations = [], posts = [];
   let poll;
   const sandbox = {URL,URLSearchParams,JSON,Error,Blob,DecompressionStream,TextDecoder,Uint8Array,atob,
     document:{getElementById:id=>id==='status'?status:results,createElement:()=>({})},
-    location:{hash:compressedRaw!==undefined?'#result_gz='+compressedRaw:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
+    location:{hash:stagedId!==undefined?'#result_id='+stagedId:compressedRaw!==undefined?'#result_gz='+compressedRaw:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
     history:{replaceState(){}},setInterval:callback=>{poll=callback;return 1;},clearInterval(){},
     fetch:async (path,options)=> {
       if(options?.method==='POST') {
@@ -38,6 +38,12 @@ async function page({raw, compressedRaw, state, result, statusFailsDuringPost = 
   const badGzip=await page({compressedRaw:gz.slice(0,-9)+'AAAAAAAAA'});
   assert.equal(badGzip.posts.length,0,'Damaged gzip never reaches the local executor');
   assert.match(badGzip.status,/incomplete|malformed/);
+  const id='a'.repeat(64);
+  const staged=await page({stagedId:id,result});
+  assert.deepEqual(JSON.parse(staged.posts[0]), {handoffId:id},
+    'The short link sends only its verified token; no unzip or patch copy on the Apply page');
+  const untrusted=await page({stagedId:'../bad',result});
+  assert.equal(untrusted.posts.length,0,'Malformed staged link must not submit');
   const legacy=await page({raw:'{}',result,statusFailsDuringPost:true});
   assert.deepEqual(legacy.navigations,[result.continueUrl],'A missing status endpoint cannot discard a successful original apply response');
   assert.equal(legacy.posts.length,1,'Failed status polling never retries Git execution');

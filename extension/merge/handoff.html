@@ -10,6 +10,7 @@
   const fragment = new URLSearchParams(location.hash.slice(1));
   const raw = fragment.get('result');
   const compressed = fragment.get('result_gz');
+  const stagedId = fragment.get('result_id');
   history.replaceState(null, '', location.pathname);
   let finished = false, timer, postPending = false;
   async function readCompressed(value) {
@@ -82,15 +83,20 @@
     }); }, 2000);
   };
   try {
-    if (raw && compressed) throw Error('Ambiguous handoff encoding; no Git operation started.');
-    if (!raw && !compressed) {
+    if ([raw, compressed, stagedId].filter(Boolean).length > 1) throw Error('Ambiguous handoff encoding; no Git operation started.');
+    if (!raw && !compressed && !stagedId) {
       const phase = await recover();
       if (phase === 'ready') throw Error('No prepared resolution. Return to the merge chat for its complete Apply with Lindsey link.');
       if (!finished) watch();
       return;
     }
     let input;
-    try { input = compressed ? await readCompressed(compressed) : JSON.parse(raw); }
+    try {
+      if (stagedId) {
+        if (!/^[a-f0-9]{64}$/.test(stagedId)) throw Error('Invalid staged digest.');
+        input = { handoffId: stagedId };
+      } else input = compressed ? await readCompressed(compressed) : JSON.parse(raw);
+    }
     catch { throw Error('The prepared result is incomplete, oversized or malformed. No Git operation was started. Return to GPT web and request a complete Apply with Lindsey link.'); }
     status.textContent = 'Applying the prepared handoff through the local Git CLI…';
     postPending = true;

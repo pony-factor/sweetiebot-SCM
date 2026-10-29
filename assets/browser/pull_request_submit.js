@@ -70,6 +70,44 @@
     let recoveryAllowed = true;
     let followupInjecting = false, followupPending, followupInserted = false;
     let formatPhase = 0, awaitingResponseChange, lastResponseText = '', responseStableSince = Date.now();
+    let stagedUrl, staging = false, stageAttempted = false, stagingFailed = false;
+    let validatedCompressedHref;
+    const stageCompressed = (data, expectedId) => {
+      // Almost all handoffs use the short inline gzip URL. Only an oversized
+      // complete payload is staged in memory on the nonce-scoped loopback server.
+      if (stageAttempted || stagedUrl || staging || !/^[A-Za-z0-9_-]+$/.test(data) ||
+          data.length > 12 * 1024 * 1024 ||
+          callback.href.length + '#result_gz='.length + data.length <= 80000) return;
+      stageAttempted = true;
+      let bytes, digest, body;
+      try {
+        bytes = Buffer.from(data, 'base64url');
+        if (bytes.toString('base64url') !== data) throw Error('Noncanonical Base64URL.');
+        digest = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+        if (expectedId && expectedId !== digest) throw Error('The short Apply link does not match its payload.');
+        body = JSON.stringify({ id: digest, data });
+        if (Buffer.byteLength(body) > 16 * 1024 * 1024) throw Error('Oversized staged handoff.');
+      } catch { stagingFailed = true; return; }
+      staging = true;
+      const http = require('node:http');
+      const request = http.request({ hostname: '127.0.0.1', port: callback.port,
+        method: 'POST', path: callback.pathname + '/stage', timeout: 10000,
+        headers: { Origin: callback.origin, Host: callback.host,
+          'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, response => {
+        let answer = '';
+        response.on('data', chunk => { answer += chunk; if (answer.length > 4096) request.destroy(); });
+        response.on('end', () => {
+          staging = false;
+          try {
+            if (![200, 201].includes(response.statusCode) || JSON.parse(answer).id !== digest)
+              throw Error('Local staging failed.');
+            stagedUrl = callback.href + '#result_id=' + digest;
+          } catch { stagingFailed = true; }
+        });
+      });
+      request.on('error', () => { staging = false; stagingFailed = true; });
+      request.end(body);
+    };
     const clearNotice = () => { retryNotice?.remove(); retryNotice = undefined; };
     const cancelRecovery = event => {
       if (!event.isTrusted || (event.type === 'input' && (inserting || followupInjecting))) return;
@@ -129,19 +167,29 @@
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
-      let latest;
+      let latest = stagedUrl;
+      let claimedStagingId;
       for (const link of links) {
         let url;
         try { url = new URL(link.href); } catch { continue; }
         if (url.origin !== callback.origin || url.pathname !== callback.pathname || url.search
             || url.href.length > 80000) continue;
         const result = new URLSearchParams(url.hash.slice(1));
-        const expectedKeys = mergeLaunch ? ['result', 'result_gz'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
+        const expectedKeys = mergeLaunch ? ['result', 'result_gz', 'result_id'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
         if ([...result.keys()].some(key => !expectedKeys.includes(key)) ||
             (mergeLaunch ? !expectedKeys.some(key => result.get(key)?.trim()) : !expectedKeys.every(key => result.get(key)?.trim()))) continue;
         if (mergeLaunch) {
+          const values = ['result', 'result_gz', 'result_id'].filter(key => result.get(key)?.trim());
+          if (values.length !== 1) continue;
+          if (values[0] === 'result_id') {
+            if (!/^[a-f0-9]{64}$/.test(result.get('result_id'))) continue;
+            claimedStagingId = result.get('result_id');
+            // A short link is inert until the complete matching payload has
+            // been authenticated and staged. Never follow an arbitrary token.
+            continue;
+          }
           try {
-            if (Boolean(result.get('result')) === Boolean(result.get('result_gz'))) continue;
+            if (url.href === validatedCompressedHref) { latest = url.href; continue; }
             let input;
             if (result.get('result_gz')) {
               const encoded = result.get('result_gz');
@@ -151,11 +199,27 @@
               input = JSON.parse(gzip.toString('utf8'));
             } else input = JSON.parse(result.get('result'));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
+            validatedCompressedHref = url.href;
           } catch { continue; } // Reject truncated or malformed encoded links before local execution.
         }
         latest = url.href;
       }
-      if (mergeLaunch && !latest) {
+      if (mergeLaunch && !latest && !staging && !stageAttempted && !generating) {
+        // A compact, collapsed transport block is emitted ONLY when the
+        // complete gzip URL exceeds the browser budget. It has no raw diff.
+        const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
+          ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
+            .map(node => node.parentElement).filter(Boolean)];
+        const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
+        for (const code of codes) {
+          const match = (code.textContent || '').match(/SWEETIEBOT_HANDOFF_GZIP_V1:([A-Za-z0-9_-]{20,})/);
+          if (!match) continue;
+          stageCompressed(match[1], claimedStagingId);
+          break;
+        }
+      }
+      if (mergeLaunch && !latest && !staging && !stagedUrl && !generating) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
         // Support both current assistant Markdown and conversation-role markup.
@@ -181,6 +245,7 @@
               .toString('base64url');
             const url = callback.href + '#result_gz=' + encoded;
             if (url.length <= 80000) latest = url;
+            else if (!stageAttempted) stageCompressed(encoded, claimedStagingId);
           } catch { /* Incomplete code blocks remain in the chat until complete. */ }
         }
       }
@@ -193,7 +258,7 @@
       // If the first completed answer omitted its clickable compressed link,
       // ask once for the link, then request raw JSON only as a last resort.
       // Do not overwrite user input, retry Git, or act on an unsubmitted prompt.
-      if (mergeLaunch && initialSubmitted && recoveryAllowed && !latest && !generating) {
+      if (mergeLaunch && initialSubmitted && recoveryAllowed && !latest && !staging && !generating) {
         const assistantNodes = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
           ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
           ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
@@ -208,7 +273,7 @@
           Date.now() - responseStableSince >= 6000;
         if (stable && !followupPending && formatPhase < 2) {
           followupPending = formatPhase === 0
-            ? 'Your response did not contain a complete, clickable Apply with Lindsey link to the exact provided callback. Retry now: serialize the entire prepared resolution JSON, gzip it, Base64URL-encode it using a code execution tool, and output ONLY the complete [Apply with Lindsey](<callback#result_gz=...>) Markdown link. Never truncate the link or display the raw JSON.'
+            ? 'The prepared response did not contain a complete usable Apply with Lindsey link. Retry once using the SAME complete serialized payload. If a gzip/Base64URL link fits 80 KB, return ONLY [Apply with Lindsey](<EXACT_CALLBACK#result_gz=COMPLETE_BASE64URL>). If larger, return ONLY [Apply with Lindsey](<EXACT_CALLBACK#result_id=SHA256_OF_GZIP_BYTES>) and a collapsed <details> block containing a text code fence with SWEETIEBOT_HANDOFF_GZIP_V1:COMPLETE_BASE64URL. Never shorten or omit the payload. Do not show raw Git diffs.'
             : 'The Apply with Lindsey link is still unavailable. As a last resort, output ONLY the COMPLETE versioned resolution object in a fenced json block, with every patch line intact. No abbreviated fields or truncated diffs; the local Sweetiebot browser will construct the Apply link from your JSON.';
         }
       }

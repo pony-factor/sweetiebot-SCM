@@ -63,7 +63,7 @@ async function humanSquashMerge(repository, number, {
   }
   if (resolutionPatch !== null && baseSha !== expected.baseSha) throw refreshBase();
   if (resolutionPatch !== null && (!expected || typeof resolutionPatch !== 'string' ||
-      !resolutionPatch.trim() || Buffer.byteLength(resolutionPatch) > 60000)) {
+      !resolutionPatch.trim() || Buffer.byteLength(resolutionPatch) > 8 * 1024 * 1024)) {
     throw Error('A complete bounded resolution patch requires an exact selected snapshot.');
   }
   if (original?.state !== 'open' || original.draft || original.merged_at ||
