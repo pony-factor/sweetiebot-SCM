@@ -890,7 +890,7 @@ def codex_transcript_countdown_edits(js):
     return edits
 
 
-def codex_rate_limit_script(sticker_enabled=True):
+def codex_rate_limit_script(sticker_enabled=True, cannon_enabled=False):
     """Embed user-private cached artwork or bundled Twilight in the local Codex webview."""
     script = (CODEX_ASSETS / "rate-limit-controls.js").read_text()
     placeholder = '"__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__"'
@@ -908,8 +908,14 @@ def codex_rate_limit_script(sticker_enabled=True):
         else:
             mime, data = custom
         data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
-    return (script.replace(placeholder, json.dumps(data_url))
-            .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
+    script = (script.replace(placeholder, json.dumps(data_url))
+              .replace(enabled_placeholder, "true" if sticker_enabled else "false"))
+    if cannon_enabled:
+        image = (CODEX_ASSETS.parent / 'imgs/activity-cannon.png').read_bytes()
+        script += ('\nglobalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage='
+                   + json.dumps('data:image/png;base64,' + base64.b64encode(image).decode('ascii')) + ';\n'
+                   + (CODEX_ASSETS / 'activity-cannon.js').read_text())
+    return script
 
 
 def codex_transcript_compact_edits(js, hide_reset_times=False):
@@ -1005,7 +1011,7 @@ def codex_countdown_edit(js):
     return original, replacement
 
 
-def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True):
+def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=False, hide_dictation=False, remove=False, short_model_labels=False, hide_reset_times=False, window_label="Codex", sticker_enabled=True, cannon_enabled=False):
     if js.count(CODEX_LABELS_START) != js.count(CODEX_LABELS_END) or js.count(CODEX_LABELS_START) > 1:
         raise ValueError("Incomplete Codex model-label patch; refusing to overwrite it.")
     if CODEX_LABELS_START in js:
@@ -1092,7 +1098,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
                 raise ValueError("Unsupported Codex build: ambiguous transcript limit message.")
             js = js.replace(original, replacement, 1)
         js += (CODEX_LIMIT_START + "/* edits:" + json.dumps(edits) + " */\n"
-               + codex_rate_limit_script(sticker_enabled=sticker_enabled)
+               + codex_rate_limit_script(sticker_enabled=sticker_enabled, cannon_enabled=cannon_enabled)
                + CODEX_LIMIT_END)
 
     if not remove and hide_reset_times:
@@ -1654,6 +1660,7 @@ def plan_codex_patches(args, settings):
                 short_model_labels=settings["codexShortModelLabels"],
                 window_label=settings["codexWindowLabel"],
                 sticker_enabled=settings["codexRateLimitSticker"],
+                cannon_enabled=settings["codexShowCannon"],
                 remove=args.uninstall,
             )
         except ValueError as error:
