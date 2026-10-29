@@ -172,3 +172,29 @@ jobs:
           node-version: '22'
       - name: Resolve every installed relative JavaScript dependency
         run: python -m unittest tests.packaged_runtime -v
+
+  native-prompt-transport:
+    name: Sandboxed browser prompt transport (${{ matrix.os }})
+    needs: inventory
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the native test runtime
+        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@45.1.0
+      - name: Exercise sandbox, strict CSP, prompt delivery and JSON handoff
+        shell: bash
+        run: |
+          unset ELECTRON_RUN_AS_NODE
+          runner="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/.bin/electron"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a "$runner" tests/fixtures/prompt-transport.cjs
+          else
+            "$runner" tests/fixtures/prompt-transport.cjs
+          fi

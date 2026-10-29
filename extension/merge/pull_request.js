@@ -139,8 +139,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       }
       return request(endpoint, { method, body });
     };
-    const landed = await humanMerge(repository, result.number, { api, gitToken, offerAuthorChoice: !signLocally,
-      allowHistoryRewrite: signLocally, rewriteReason: signLocally ? 'preserve-human-author' : '', requireSignedCommit: signLocally,
+    const landed = await humanMerge(repository, result.number, { api, gitToken, localGitMerge: true, offerAuthorChoice: false,
+      allowHistoryRewrite: false, rewriteReason: '', requireSignedCommit: signLocally,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
