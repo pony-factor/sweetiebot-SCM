@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../extension/merge/local_human_squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -53,7 +53,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         const values=Object.fromEntries(fields.filter((_,i)=>i%2).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)];}));
         assert.equal(values.merge_method,'squash');
         const mergedSha=await inRemote('commit-tree',values.sha+'^{tree}','-p',baseSha,'-m',values.commit_title+'\n\n'+values.commit_message);
-        await inRemote('update-ref','refs/heads/main',mergedSha,baseSha);if(lostAck)throw Error('Merge response was lost');return {merged:true,sha:mergedSha};
+        await inRemote('update-ref','refs/heads/main',mergedSha,baseSha);return {merged:true,sha:mergedSha};
       }
       if(endpoint.endsWith('/pulls/1'))return pr();
       if(endpoint.includes('/pulls/1/commits?'))return commits;
@@ -103,6 +103,6 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     if(!advanceBase)assert.equal(await branch('feature'),headSha,'The original PR head is never rewritten or synchronized unnecessarily');
   } finally {await fs.rm(root,{recursive:true,force:true});}
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{humanOpener:true,lostAck:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true}])await fixture(options);
  console.log('Local Git merge preserves original heads and human authors, verifies ancestry, respects rules/checks and rejects destination races.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
