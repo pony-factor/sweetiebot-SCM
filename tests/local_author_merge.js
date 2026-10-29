@@ -124,7 +124,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           await inRemote('verify-commit',result.sha);
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
         } else if(!humanOpener) assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
-        await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
+        if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),'finished feature');
         assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
