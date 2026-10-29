@@ -17,7 +17,7 @@ const executeGh = args => run(gh, args, { timeout: 120000 });
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
   { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000,
-    humanMerge = humanSquashMerge, readAPI } = {}) {
+    humanMerge = humanSquashMerge, readAPI, preferLocalGit = true } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -72,6 +72,17 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   // retaining both parents and the original PR head.
   if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
+  }
+  if (preferLocalGit && !pr.isCrossRepository) {
+    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true,
+      expected: { headSha: pr.headRefOid, head: pr.headRefName, base: pr.baseRefName, title: pr.title } });
+    if (landed.status === 'waiting') return { merged: false, pending: true, repo, number, base: pr.baseRefName };
+    if (!landed.merged) throw new Error(landed.reason || 'The local Git merge did not complete.');
+    const finished = await read();
+    if (finished.state !== 'MERGED' || finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
+      throw new Error('Local Git merge landed but its GitHub PR state could not be verified.');
+    }
+    return { merged: true, repo, number, base: pr.baseRefName, pr: finished, sha: landed.sha, author: landed.author };
   }
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
     const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });

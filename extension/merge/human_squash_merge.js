@@ -52,7 +52,7 @@ function verifyCommit(commit, expected, author) {
 }
 
 
-async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localGitMerge = false, localMerge, trailerSeparatorStyle } = {}) {
+async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localGitMerge = false, expected: selected, localMerge, trailerSeparatorStyle } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
@@ -71,6 +71,10 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
       !SHA.test(headSha || '') ||
       !head || !base || head === base || head === 'main' || head === 'master') {
     throw Error('PR must be open, mergeable, unstacked, and have a distinct head and base.');
+  }
+
+  if (selected && (selected.headSha !== headSha || selected.head !== head || selected.base !== base || selected.title !== original.title)) {
+    throw Error('Selected PR head, base or title changed before the local Git handoff.');
   }
 
   // PR base.sha can lag behind the branch even on a fresh PR response.
