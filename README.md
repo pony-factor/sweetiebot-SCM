@@ -197,6 +197,18 @@ Workspace Search is a **local file index**, not a complete historical archive of
 
 ## Codex, browser, and window controls
 
+### Flawless-GPT cannon in Codex
+
+**Codex → Time → Show cannon** (off by default) enables Flawless-GPT’s cannon and minute counter beside active **Working for** and completed **Worked for** durations in the Codex sidebar. Precise elapsed times remain available, and the cannon takes priority over the Hide chat timestamps activity-label substitution.
+
+```sh
+git config --global scm-toolkit.codex-show-cannon true
+python3 scripts/install.py --codex-only
+```
+
+The installer pins and validates the original Flawless-GPT [duration JavaScript](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/js/chat/worked-duration.js), [stylesheet](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/css/worked-duration.css), and [cannon image](https://github.com/pony-factor/flawless-GPT/blob/bb98089c648709ea18ceae6b6c6dad843bd93a57/artwork/searching-complete.png). Resources are cached under `~/.cache/sweetiebot/flawless-cannon/` for offline repair. A pinned local checkout may be set with `SCM_TOOLKIT_FLAWLESS_SOURCE_DIR`. If unavailable, installation skips only the optional cannon.
+
+
 Sweetiebot also has settings for supported Codex composer controls, usage-limit displays, promotion cards, dictation visibility, sidebar labels, and **Keep awake while Codex works**. **Codex → Customization → Pegasus wing Send icon** replaces the Send arrow with a white-outline SVG wing by default. Its color follows the VS Code theme or the existing **Send button icon** override; Queue and Stop keep their native appearance. Disable it to restore the arrow. Other controls affect Integrated Browser blank-tab URLs, browser tab handling, window labels, notifications, and title-bar buttons. Availability depends on the installed VS Code/Codex build and whether the corresponding patch anchors are supported.
 
 Prefer the live settings page for the current option names and defaults rather than old release-specific instructions.

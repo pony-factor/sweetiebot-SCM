@@ -145,6 +145,7 @@
         "chatgpt_project.js",
         "chatgpt_project_setup.js",
         "codex_adaptive_video.js",
+        "codex_cannon.py",
         "codex_clipboard_submit.js",
         "codex_colors.py",
         "codex_composer.py",
