@@ -807,6 +807,13 @@
     min-width: 0;
 }
 
+/* Embedded VS Code browser surfaces can cover workbench modal dialogs.
+   Keep Settings mounted, but hide the composited webview only while the
+   blocking spellcheck review is open. Visibility restores on dialog close. */
+body:has(.scm-toolkit-spellcheck-popup[open]) .webview {
+    visibility: hidden !important;
+}
+
 .scm-toolkit-spellcheck-popup {
     box-sizing: border-box;
     width: min(1100px, calc(100vw - 16px));
