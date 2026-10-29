@@ -554,3 +554,109 @@ assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).card, localVa
 assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).rich, true);
 
 console.log('Codex reset shortcut, persistent compact rate-limit text, and composer sticker checks passed.');
+
+// Regression fixture: real Oct 29 Codex DOM had an outer green <aside>
+// containing a hidden native "You're out of Codex messages" card plus
+// <span data-scm-toolkit-rate-limited="true" role="status">Rate limited</span>.
+// That banner must be replaced as a whole, not decorated with a second card.
+const nativeComposer = makeNode('', rect(0, 0, 320, 800), appRoot);
+nativeComposer.matches = selector => selector.includes('[data-codex-composer-root]');
+nativeComposer.querySelector = selector =>
+    selector.includes('textarea,') ? editor : null;
+const nativeBanner = makeNode(
+    "You're out of Codex messages. Your rate limit resets in 1h 24m. Upgrade Add Credits Rate limited",
+    rect(0, 0, 280, 54), nativeComposer
+);
+nativeBanner.matches = selector => selector === 'aside';
+nativeBanner.removeAttribute = name => { delete nativeBanner.attrs[name]; };
+nativeBanner.style = {
+    setProperty(name, value, priority) { this[name] = value; this.priority = priority; },
+    removeProperty(name) { delete this[name]; },
+};
+const originalNativeCopy = nativeBanner.textContent;
+const nativeMarker = makeNode('Rate limited', rect(10, 0, 90, 20), nativeBanner);
+let nativeSticker = null;
+let showNativeMarker = true;
+const nativeEvents = {};
+let nativeImages = 0;
+nativeComposer.insertBefore = (sticker, reference) => {
+    assert.equal(reference, nativeBanner);
+    nativeSticker = sticker;
+    sticker.nextElementSibling = nativeBanner;
+    nativeBanner.previousElementSibling = sticker;
+    sticker.remove = () => {
+        nativeSticker = null;
+        nativeBanner.previousElementSibling = null;
+    };
+};
+const nativeRoot = {
+    querySelectorAll(selector) {
+        if (selector === '[data-scm-toolkit-rate-limited="true"]')
+            return showNativeMarker ? [nativeMarker] : [];
+        if (selector === '[data-scm-toolkit-native-rate-limit-pony]')
+            return nativeSticker ? [nativeSticker] : [];
+        if (selector === '[data-scm-toolkit-rate-limit-native-hidden="true"]')
+            return nativeBanner.attrs['data-scm-toolkit-rate-limit-native-hidden'] === 'true'
+                ? [nativeBanner] : [];
+        if (selector.startsWith('textarea,')) return [editor];
+        return [];
+    },
+    createElement(tag) {
+        if (tag === 'img') {
+            nativeImages++;
+            return {
+                style: {},
+                addEventListener(name, handler) { nativeEvents[name] = handler; },
+            };
+        }
+        assert.equal(tag, 'div');
+        return {
+            attrs: {}, style: {}, children: [],
+            setAttribute(name, value) { this.attrs[name] = value; },
+            getAttribute(name) { return this.attrs[name] ?? null; },
+            append(child) { this.children.push(child); },
+        };
+    },
+};
+assert.equal(context.scmToolkitCollapsedNativeRateLimitBanner(nativeRoot), nativeBanner);
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeImages, 1, 'one image request while loading');
+assert.equal(nativeSticker, null, 'do not hide the fallback before the image loads');
+assert.equal(nativeBanner.style.display, undefined);
+nativeEvents.load();
+assert.equal(nativeSticker.attrs['data-scm-toolkit-native-rate-limit-pony'], 'true');
+assert.equal(nativeSticker.attrs.role, 'status');
+assert.match(nativeSticker.attrs['aria-label'], /Twilight Sparkle/);
+assert.equal(nativeSticker.children[0].src, '__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__');
+assert.equal(nativeSticker.style.border, '0', 'native green border must not survive');
+assert.equal(nativeSticker.style.background, 'transparent');
+assert.equal(nativeBanner.style.display, 'none');
+assert.equal(nativeBanner.style.priority, 'important');
+assert.equal(nativeBanner.textContent, originalNativeCopy, 'leave provider reset details untouched');
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeImages, 1, 'idempotent on DOM resync');
+
+// Ending the rate limit removes the image and restores the exact native banner.
+showNativeMarker = false;
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeSticker, null);
+assert.equal(nativeBanner.style.display, undefined);
+assert.equal(nativeBanner.attrs['data-scm-toolkit-rate-limit-native-hidden'], undefined);
+
+// A failed local image keeps the original warning visible and prevents retries.
+showNativeMarker = true;
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeImages, 2);
+nativeEvents.error();
+assert.equal(nativeBanner.style.display, undefined);
+assert.equal(nativeSticker, null);
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeImages, 2);
+
+// The optional sticker setting must disable this path as well.
+const disabledNativeImages = nativeImages;
+disabledContext.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeImages, disabledNativeImages);
+assert.equal(nativeBanner.style.display, undefined);
+

@@ -385,6 +385,104 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
         else if (notice.style) notice.style.display = 'none';
     }
 }
+// Codex's native banner can be compacted by hide-reset-times.js into a
+// [data-scm-toolkit-rate-limited] span while keeping the full outer <aside>.
+// In that layout the generic "rich" notice branch would add a companion pony
+// without removing the original green border. Replace the entire presentation
+// only for the uniquely identified banner in the live composer.
+function scmToolkitCollapsedNativeRateLimitBanner(root) {
+    const banners = new Set();
+    for (const status of root.querySelectorAll?.('[data-scm-toolkit-rate-limited="true"]') || []) {
+        const banner = status.closest?.('aside');
+        const composer = banner?.closest?.('[data-codex-composer-root]');
+        if (!composer || status.closest?.(scmToolkitRateLimitTranscriptSelector)
+            || scmToolkitIsQueuedPrompt(status)
+            || !composer.querySelector?.(scmToolkitCodexEditorSelector)) continue;
+        banners.add(banner);
+    }
+    return banners.size === 1 ? [...banners][0] : null;
+}
+function scmToolkitRestoreNativeRateLimitBanner(banner) {
+    if (banner?.getAttribute?.('data-scm-toolkit-rate-limit-native-hidden') !== 'true') return;
+    banner.style?.removeProperty?.('display');
+    banner.removeAttribute?.('data-scm-toolkit-rate-limit-native-hidden');
+}
+function scmToolkitCleanNativeRateLimitStickers(root, activeBanner) {
+    for (const sticker of root.querySelectorAll?.('[data-scm-toolkit-native-rate-limit-pony]') || []) {
+        if (activeBanner && sticker.nextElementSibling === activeBanner) continue;
+        scmToolkitRestoreNativeRateLimitBanner(sticker.nextElementSibling);
+        sticker.remove?.();
+    }
+    for (const banner of root.querySelectorAll?.('[data-scm-toolkit-rate-limit-native-hidden="true"]') || []) {
+        if (banner !== activeBanner) scmToolkitRestoreNativeRateLimitBanner(banner);
+    }
+}
+function scmToolkitSyncCollapsedNativeRateLimitPony(root) {
+    const banner = scmToolkitCollapsedNativeRateLimitBanner(root);
+    if (!banner || !scmToolkitRateLimitStickerEnabled) {
+        scmToolkitCleanNativeRateLimitStickers(root, null);
+        return false;
+    }
+    scmToolkitCleanNativeRateLimitStickers(root, banner);
+    const previous = banner.previousElementSibling;
+    if (previous?.getAttribute?.('data-scm-toolkit-native-rate-limit-pony') === 'true') {
+        // A React rerender may replace the aside without replacing its sibling.
+        if (banner.getAttribute?.('data-scm-toolkit-rate-limit-native-hidden') !== 'true') {
+            banner.setAttribute('data-scm-toolkit-rate-limit-native-hidden', 'true');
+            banner.style.setProperty('display', 'none', 'important');
+        }
+        return true;
+    }
+    if (banner.dataset.scmToolkitRateLimitPonyUnavailable === 'true'
+        || banner.dataset.scmToolkitRateLimitPonyPending === 'true'
+        || !banner.parentElement?.insertBefore) return true;
+
+    banner.dataset.scmToolkitRateLimitPonyPending = 'true';
+    const image = root.createElement('img');
+    image.alt = 'Twilight Sparkle holding a STOP sign — rate limited';
+    image.title = 'Rate limited · Twilight Sparkle art by CaptainPudgeMuffin';
+    image.width = 96;
+    image.style.width = '96px';
+    image.style.maxWidth = '100%';
+    image.style.height = 'auto';
+    image.style.display = 'block';
+    image.style.borderRadius = '8px';
+    image.addEventListener('load', () => {
+        delete banner.dataset.scmToolkitRateLimitPonyPending;
+        if (!banner.isConnected || scmToolkitCollapsedNativeRateLimitBanner(root) !== banner
+            || !scmToolkitRateLimitStickerEnabled || !banner.parentElement?.insertBefore
+            || banner.previousElementSibling?.getAttribute?.('data-scm-toolkit-native-rate-limit-pony') === 'true') return;
+        const sticker = root.createElement('div');
+        sticker.setAttribute('data-scm-toolkit-native-rate-limit-pony', 'true');
+        sticker.setAttribute('data-scm-toolkit-rate-limit-pony', 'true');
+        sticker.setAttribute('role', 'status');
+        sticker.setAttribute('aria-label', image.alt);
+        // This is the replacement, not another green-bordered notification.
+        sticker.style.display = 'inline-flex';
+        sticker.style.alignSelf = 'flex-start';
+        sticker.style.maxWidth = '100%';
+        sticker.style.minWidth = '0';
+        sticker.style.border = '0';
+        sticker.style.outline = 'none';
+        sticker.style.boxShadow = 'none';
+        sticker.style.background = 'transparent';
+        sticker.style.padding = '0';
+        sticker.append(image);
+        banner.parentElement.insertBefore(sticker, banner);
+        // Preserve the untouched native banner underneath, so a failed image
+        // never causes a blank warning and removing the sticker restores it.
+        banner.setAttribute('data-scm-toolkit-rate-limit-native-hidden', 'true');
+        banner.style.setProperty('display', 'none', 'important');
+    });
+    image.addEventListener('error', () => {
+        delete banner.dataset.scmToolkitRateLimitPonyPending;
+        banner.dataset.scmToolkitRateLimitPonyUnavailable = 'true';
+        scmToolkitRestoreNativeRateLimitBanner(banner);
+    });
+    image.src = scmToolkitTwilightStopSource;
+    return true;
+}
+
 function scmToolkitStyleRateLimitStickerCard(node) {
     node.style.border = '1px solid var(--vscode-focusBorder, currentColor)';
     node.style.borderRadius = '12px';
@@ -419,6 +517,7 @@ function scmToolkitSyncRateLimitPony(root) {
     for (const sticker of root.querySelectorAll('[data-scm-toolkit-rate-limit-pony-companion]')) {
         if (scmToolkitIsQueuedPrompt(sticker.parentElement)) sticker.remove();
     }
+    if (scmToolkitSyncCollapsedNativeRateLimitPony(root)) return;
     const {card, notices, rich} = scmToolkitFooterRateLimitNotice(root);
     if (!card) return;
     scmToolkitNormalizeRateLimitTypo(card);
