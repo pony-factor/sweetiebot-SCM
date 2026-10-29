@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../extension/merge/local_human_squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -47,7 +47,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         base:{ref:'main',sha:tip,repo:{full_name:'owner/repo'}}};
     };
     const api=async (endpoint,method,fields=[])=>{
-      if(endpoint==='repos/owner/repo')return {default_branch:'main',allow_squash_merge:true,allow_rebase_merge:true};
+      if(endpoint==='repos/owner/repo')return {default_branch:'main',allow_squash_merge:true,allow_rebase_merge:true,private:privateRepository};
       if(endpoint.endsWith('/pulls/1/merge')&&method==='PUT'){
         assert(humanOpener,'Only a matching human opener uses native squash');
         const values=Object.fromEntries(fields.filter((_,i)=>i%2).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)];}));
@@ -57,7 +57,10 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       if(endpoint.endsWith('/pulls/1'))return pr();
       if(endpoint.includes('/pulls/1/commits?'))return commits;
-      if(endpoint.includes('/rules/branches/'))return rules;
+      if(endpoint.includes('/rules/branches/')){
+        if(rulesUnavailable||rulesForbidden)throw Object.assign(Error('HTTP 403'),{status:403,githubMessage:rulesUnavailable?'Upgrade to GitHub Pro or make this repository public to enable this feature.':'Resource not accessible by integration'});
+        return rules;
+      }
       if(endpoint.includes('/branches/')){const name=decodeURIComponent(endpoint.split('/').at(-1));return {protected:name==='main'?protectedBase:!advanceBase,commit:{sha:await branch(name)}};}
       if(endpoint.includes('/check-runs?'))return {check_runs:failed||failedOriginalOnly?[{name:'regression',status:'completed',conclusion:failed||endpoint.includes(headSha)?'failure':'success'}]:[]};
       if(endpoint.includes('/check-suites?'))return {check_suites:[]};
@@ -82,7 +85,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     const action=()=>humanSquashMerge('owner/repo',1,{api,git:localGit,localGitMerge:true,
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-'))});
-    if(race){await assert.rejects(action(),/rejected|fetch first|non-fast-forward/);assert.equal(await branch('main'),competing);}
+    if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
+    else if(race){await assert.rejects(action(),/rejected|fetch first|non-fast-forward/);assert.equal(await branch('main'),competing);}
     else {
       const result=await action();
       if(protectedBase||rules.length||failed){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
@@ -99,6 +103,6 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     if(!advanceBase)assert.equal(await branch('feature'),headSha,'The original PR head is never rewritten or synchronized unnecessarily');
   } finally {await fs.rm(root,{recursive:true,force:true});}
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{humanOpener:true,lostAck:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{humanOpener:true,lostAck:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true}])await fixture(options);
  console.log('Local Git merge preserves original heads and human authors, verifies ancestry, respects rules/checks and rejects destination races.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

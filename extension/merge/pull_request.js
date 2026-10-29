@@ -56,7 +56,10 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
         let message = stderr;
         try { message += ' ' + JSON.parse(response.body).message; } catch { /* gh can return only stderr. */ }
         const limited = require('../github/rate_limit').rateLimitError({ status: response.status || Number(stderr.match(/HTTP (\d{3})/)?.[1]) || (/rate.?limit/i.test(message) ? 403 : 0), headers: response.headers, message });
-        return finish(limited || new Error('GitHub rejected the request (' + (response.status || stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.'));
+        const failure = limited || new Error('GitHub rejected the request (' + (response.status || stderr.match(/HTTP (\d{3})/)?.[1] || 'check authentication, reviews, and branch protection') + '). Check the PR before retrying.');
+        failure.status = response.status || Number(stderr.match(/HTTP (\d{3})/)?.[1]);
+        failure.githubMessage = String(message || '').slice(0, 500);
+        return finish(failure);
       }
       try { finish(null, JSON.parse(response.body || (method === 'DELETE' ? 'null' : ''))); }
       catch { finish(new Error('GitHub returned an invalid merge response. Check the PR before retrying.')); }

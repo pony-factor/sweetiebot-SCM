@@ -22,6 +22,7 @@
         "commit_limits.js",
         "commit_mode_settings.py",
         "commit_settings.js",
+        "commit_drafts.js",
         "commit_shortcut.js",
         "finalized_commit_recovery.js",
         "local_codex_commit.py",
