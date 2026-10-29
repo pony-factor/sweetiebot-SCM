@@ -172,7 +172,7 @@ async function humanSquashMerge(repository, number, {
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
   // GitHub can squash a clean human-opened PR without a preliminary sync.
-  if (operation === 'merge' && resolutionPatch === null && original.mergeable === true && nativeSquash) {
+  if (operation === 'merge' && resolutionPatch === null && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
   if (operation === 'merge' && alreadyPrepared && resolutionPatch === null && !requireSignedCommit) {
