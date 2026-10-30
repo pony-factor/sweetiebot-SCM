@@ -970,4 +970,5 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
 }
 
 module.exports = { REPORT_MARKER, REVIEW_MARKER, validateSelection,
-  reportFromComments, normalizeInlineReviewComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard, branchDisplayLabel };
+  reportFromComments, normalizeInlineReviewComments, mergePhase, normalizeFiles, githubGet, configuredTimelineMode,
+  routineTimelineEvent, startMergeDashboard, branchDisplayLabel };
