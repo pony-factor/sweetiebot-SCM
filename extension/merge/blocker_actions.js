@@ -48,7 +48,7 @@ function stripReportOptions(text) { return String(text || '').replace(OPTIONS_MA
 
 function blockerOptions(pr) {
   if (pr.snapshotChanged || ['merged', 'closed'].includes(pr.state)) return [];
-  if (!['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
+  if (!['checks', 'blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
   const suggestions = [...(pr.localReview?.options || []), ...(pr.review?.options || []), ...(pr.report?.options || [])].filter(option => !ROUTINE_ACTIONS.has(option.id.replace(/^report-/, ''))).slice(0, 6);
   const choices = [...suggestions.filter(option => option.recommended), ...suggestions];
   const seen = new Set(), labels = new Set();
@@ -64,7 +64,7 @@ function blockerOptions(pr) {
 
 function manualBlockerActions(pr) {
   if (['merged', 'closed'].includes(pr.state)) return [];
-  if (!pr.snapshotChanged && !['blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
+  if (!pr.snapshotChanged && !['checks', 'blocked', 'conflict', 'review', 'updated'].includes(pr.state) && !pr.review && !pr.localReview) return [];
   return [
     { id: 'fix-checks', label: 'Fix failing checks', description: 'Find the actual failures and make the smallest appropriate repair.', prompt: 'Inspect the failing checks on this PR and repair the actual failure. Preserve unrelated work and verify the repair.' },
     { id: 'investigate-blocker', label: 'Investigate merge blocker', description: 'Determine whether checks, review requirements or branch rules are blocking this PR.', prompt: 'Inspect current GitHub merge eligibility, check failures and review requirements for this PR. Repair actual code or configuration failures when appropriate, but never bypass reviews, branch protection, or other merge policy. Explain any required human action.' },
@@ -89,8 +89,8 @@ function dashboardActionPlan(pr) {
   const byId = id => manual.find(action => action.id === id);
   const workspaceAction = byId('inspect-codex') || null;
   if (!manual.length) return { kind: 'none', title: '', description: '', actions: [], workspaceAction: null };
-  if (pr.state === 'blocked' && pr.mergeableState === 'unstable' && !pr.review) {
-    return { kind: 'checks', title: 'Failing checks', description: 'The PR is blocked by checks that are not passing. Inspect the actual failures and repair only what is necessary.',
+  if (pr.state === 'checks' && !pr.review) {
+    return { kind: 'checks', title: 'Failing checks', description: 'The PR cannot merge until its checks pass. Inspect the actual failures and repair only what is necessary.',
       actions: [byId('fix-checks')], workspaceAction };
   }
   const options = blockerOptions(pr);

@@ -69,7 +69,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(manual.every(action => action.manual && !action.reaction));
   assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
   assert.deepEqual(manualBlockerActions({state:'merged'}), []);
-  const checksPlan = dashboardActionPlan({ state: 'blocked', mergeableState: 'unstable' });
+  const checksPlan = dashboardActionPlan({ state: 'checks', mergeableState: 'unstable' });
   assert.equal(checksPlan.kind, 'checks');
   assert.deepEqual(checksPlan.actions.map(action => action.id), ['fix-checks']);
   assert.equal(checksPlan.workspaceAction.id, 'inspect-codex');
@@ -186,11 +186,11 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(reviewComments[2].title, 'Code review comment');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
   assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
-  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'checks');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'queued' }, {}), 'queued',
     'GitHub-queued PRs are distinguished from merely awaiting checks');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable',
-    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
+    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'checks',
     'Conflict resolution must not conceal failing checks');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'blocked',
     head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
@@ -385,6 +385,12 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     'Cleared-conflict badges retain their green state');
   assert(panel.webview.html.includes('.event.resolved{border-color:var(--vscode-testing-iconPassed,'),
     'Cleared-conflict timeline events retain their green state');
+  assert(panel.webview.html.includes('.flag.checks{color:var(--vscode-charts-blue,'),
+    'Checks-not-passing PR badges use blue instead of blocked red');
+  assert(panel.webview.html.includes('.event.checks{border-color:var(--vscode-charts-blue,'),
+    'Checks-not-passing timeline entries use blue');
+  assert(panel.webview.html.includes("checks: 'Checks not passing'"),
+    'The blue qualifier explains that CI checks have not passed');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
@@ -548,7 +554,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
   await dashboard.refresh();
-  assert.equal(events.at(-1).prs[0].state, 'blocked');
+  assert.equal(events.at(-1).prs[0].state, 'checks');
+  assert.equal(events.at(-1).events.at(-1).state, 'checks');
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; checks are not passing');
   const selectedAction = events.at(-1).prs[0].blockerOptions[0];
   const actionMessage = { type: 'blocker-action', number: 12, headSha: nextSha,
@@ -567,8 +574,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   info = { ...info, head: { ...info.head, sha: nextSha } };
   info = { ...info, mergeable_state: 'blocked' };
   await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].state, 'blocked');
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
-    'A changed blocking reason is reported even when the phase stays blocked');
+    'Branch restrictions remain distinct from checks that are not passing');
   inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
     html_url: url + '#discussion_r90',
     body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + liveDecisions },

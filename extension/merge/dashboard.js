@@ -141,7 +141,8 @@ function mergePhase(pr, previous) {
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
   if (previous.review) return 'review';
-  if (pr.mergeable_state === 'unstable' || pr.mergeable_state === 'blocked') return 'blocked';
+  if (pr.mergeable_state === 'unstable') return 'checks';
+  if (pr.mergeable_state === 'blocked') return 'blocked';
   if (previous.sawConflict && pr.mergeable === true && pr.head?.sha !== previous.originalHead) {
     return 'resolved';
   }
@@ -480,8 +481,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       conflict: 'GitHub reports merge conflicts',
       review: 'Human review required',
       queued: 'GitHub reports the pull request is queued',
+      checks: 'PR is open; checks are not passing',
       blocked: info.state !== 'open' ? 'GitHub PR state is unavailable; merging is blocked'
-        : info.mergeable_state === 'unstable' ? 'PR is open; checks are not passing'
         : 'PR is open; merging is blocked',
       updated: 'PR head differs from the selected snapshot',
       waiting: 'GitHub reports the PR is open; awaiting merge'
