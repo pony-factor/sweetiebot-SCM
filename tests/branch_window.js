@@ -74,7 +74,7 @@ const { findLiveBranchWindow, focusExistingBranchWindow, SESSION_MAX_AGE_MS } =
       'Focus a secondary checkout in a differently named workspace bucket');
 
     await writeSession({ roots: [path.join(baseDirectory, 'other')] });
-    assert.equal(await findLiveBranchWindow(destination, options),
+    assert.equal(await findLiveBranchWindow(destination, options), null,
       'A live PID without a matching checkout cannot own this branch');
     await writeSession({ pid: 99999 });
     assert.equal(await findLiveBranchWindow(destination, options), null,
