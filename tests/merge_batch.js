@@ -114,6 +114,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       destination: 'https://chatgpt.com/',
       api: async endpoint => {
         if (endpoint.includes('/branches/')) return { commit: { sha: parentMerged ? d : c } };
+        if (endpoint.includes('/compare/')) return { status: 'ahead', ahead_by: 1, merge_base_commit: { sha: b } };
         const pr = stack.pullRequests.find(pr => endpoint.endsWith('/' + pr.number));
         return { state: 'open', draft: false, title: pr.title,
           head: { ref: pr.head, sha: pr.number === 2 && parentMerged && headChanged ? e : pr.headSha,
@@ -132,10 +133,12 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       assert.equal(premature.status, 400, 'A selected child cannot merge before its ancestor');
       assert.equal(parentMerged, false, 'Dependency rejection performs no local execution');
       const first = await submit(stacked.url, [item(1, c)]);
-      if (retarget === 'main' && !headChanged) {
+      if (retarget === 'main') {
         assert.equal(first.value.batch.pullRequests.find(pr => pr.number === 2).base, 'main');
         assert.deepEqual(first.value.batch.deferred, []);
-        const second = await submit(first.value.continueUrl, [item(2, d)]);
+        assert.equal(first.value.batch.pullRequests.find(pr => pr.number === 2).headSha,
+          headChanged ? e : b, 'A linear fix to the child branch is adopted after the parent merge');
+        const second = await submit(first.value.continueUrl, [item(2, d, null, headChanged ? e : b)]);
         assert.equal(second.value.batch.merged.length, 2);
       } else {
         assert.equal(first.value.continueUrl, undefined);
@@ -162,6 +165,47 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     const finished = await submit(prepared.value.continueUrl, [item(1, c, null, e)]);
     assert.equal(finished.value.batch.merged.length, 1);
   } finally { own.dispose(); }
+
+  // A fix pushed while GPT is reviewing must replace the stale handoff
+  // instead of waiting for a completed, failed, or explicitly deferred round.
+  {
+    let liveHead = a, executions = 0;
+    const resumed = await createMergeBatch(one, {
+      destination: 'https://chatgpt.com/',
+      api: async endpoint => {
+        if (endpoint.includes('/branches/')) return { commit: { sha: c } };
+        if (endpoint.includes('/compare/')) return {
+          status: 'ahead', ahead_by: 1, merge_base_commit: { sha: a }
+        };
+        return { state: 'open', draft: false, title: 'Feature 1', mergeable: null,
+          head: { ref: 'feature-1', sha: liveHead, repo: { full_name: one.repository } },
+          base: { ref: 'main' } };
+      },
+      execute: async input => {
+        executions++;
+        assert.equal(input.results[0].headSha, e);
+        return { repository: one.repository, results: [{
+          number: 1, status: 'merged', merged: true, sha: d
+        }] };
+      }
+    });
+    try {
+      const stale = resumed.url;
+      liveHead = e;
+      const next = await resumed.reconcile([1]);
+      assert(next?.url, 'An external fast-forward starts a fresh GPT handoff');
+      assert.equal(resumed.state().pullRequests[0].headSha, e);
+      assert.equal(resumed.state().deferred.length, 0);
+      assert.equal(await resumed.reconcile([1]), null, 'The same head cannot restart the batch twice');
+      await assert.rejects(() => submit(stale, [item(1, c)]),
+        'The previous handoff is invalidated before its patch can execute');
+      const prompt = await readPrompt(next.url);
+      assert(prompt.includes('"headSha":"' + e + '"'), 'The new review receives the current PR head');
+      const finished = await submit(next.url, [item(1, c, null, e)]);
+      assert.equal(finished.value.batch.merged.length, 1);
+      assert.equal(executions, 1);
+    } finally { resumed.dispose(); }
+  }
 
   // Unchanged branch-only results must stop rather than repeatedly retrying.
   // Dashboard polling can recover a repaired head without executing an old
