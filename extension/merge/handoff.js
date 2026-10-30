@@ -13,7 +13,7 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   const selection = validateSelection(rawSelection);
   const route = '/lindsey-merge/' + randomUUID();
   const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8');
-  let attempted = false, running = false, outcome, failure;
+  let attempted = false, running = false, outcome, failure, prompt;
   let staged; // Only the rare oversized handoff occupies local memory.
   const maxBodyBytes = 64 * 1024 * 1024;
   async function readBody(request) {
@@ -33,7 +33,12 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");
     const json = (code, value) => { response.writeHead(code, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(value)); };
-    if (request.headers.host !== new URL(origin).host || ![route, route + '/status', route + '/stage'].includes(request.url)) return json(404, { error: 'Unknown merge handoff.' });
+    if (request.headers.host !== new URL(origin).host || ![route, route + '/status', route + '/prompt', route + '/stage'].includes(request.url)) return json(404, { error: 'Unknown merge handoff.' });
+    if (request.url === route + '/prompt') {
+      if (request.method !== 'GET') return json(405, { error: 'Read-only merge prompt.' });
+      if (request.headers.origin && request.headers.origin !== origin) return json(403, { error: 'Use the workflow transport.' });
+      return prompt ? json(200, { prompt }) : json(404, { error: 'Merge prompt is not ready.' });
+    }
     if (request.url === route + '/status') {
       if (request.method !== 'GET') return json(405, { error: 'Read-only handoff status.' });
       return json(200, { phase: running ? (outcome ? 'continuing' : 'running') : failure ? 'failed' : outcome ? 'finished' : 'ready',
@@ -106,6 +111,12 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   let expiry = setTimeout(expire, ttlMs);
   expiry.unref();
   return { url: 'http://127.0.0.1:' + server.address().port + route,
+    setPrompt(value) {
+      if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(JSON.stringify({ prompt: value })) > 100000) {
+        throw Error('The merge prompt exceeds the local transport budget.');
+      }
+      prompt = value;
+    },
     dispose() { clearTimeout(expiry); server.close(); } };
 }
 
