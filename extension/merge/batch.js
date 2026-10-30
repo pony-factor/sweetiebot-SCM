@@ -22,6 +22,22 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   const remaining = () => [...entries.values()].filter(pr => !merged.some(item => item.number === pr.number)
     && !deferred.some(item => item.number === pr.number) && !prepared.some(item => item.number === pr.number));
 
+  // Accept only linear additions to the exact head we previously verified.
+  // A branch rewrite, unexpected retarget, or changed PR identity stays blocked.
+  async function verifiedHeadAdvance(pr, nextHead) {
+    if (!SHA.test(nextHead || '') || nextHead === pr.headSha) return false;
+    const compared = await api('repos/' + original.repository + '/compare/' + pr.headSha + '...' + nextHead);
+    return compared?.status === 'ahead' && compared.merge_base_commit?.sha === pr.headSha &&
+      (!Number.isFinite(compared.ahead_by) || compared.ahead_by > 0);
+  }
+
+  function adoptHead(pr, headSha) {
+    pr.headSha = headSha;
+    pr.attempts = 0;
+    pr.checkFailures = 0;
+    activity(pr.number, 'refreshing', 'Verified new PR commit · preparing a current-head review');
+  }
+
   async function refreshRemaining() {
     const pending = remaining();
     for (const [index, pr] of pending.entries()) {
@@ -31,16 +47,22 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
       // GitHub can retarget an open child when this batch merges and deletes
       // its parent branch. Accept only that verified parent's destination;
-      // the child's selected head, title and repository must still match.
+      // the child's selected identity must still match. A new head must be
+      // a verified fast-forward before any older GPT patch can be reused.
       const parent = [...entries.values()].find(candidate => candidate.head === pr.base &&
         merged.some(item => item.number === candidate.number));
       const expectedBase = parent && fresh.base?.ref === parent.base ? parent.base : pr.base;
-      if (fresh.state !== 'open' || fresh.merged || fresh.draft || fresh.head?.sha !== pr.headSha ||
+      if (fresh.state !== 'open' || fresh.merged || fresh.draft ||
           fresh.head?.ref !== pr.head || fresh.base?.ref !== expectedBase || fresh.title !== pr.title ||
-          fresh.head?.repo?.full_name !== original.repository) {
+          fresh.head?.repo?.full_name !== original.repository ||
+          (fresh.head?.sha !== pr.headSha && !(await verifiedHeadAdvance(pr, fresh.head?.sha)))) {
         deferred.push({ number: pr.number, kind: 'snapshot_changed', reason: 'The selected PR changed outside this batch; review the new head or PR state.' });
-        activity(pr.number, 'blocked', 'PR snapshot changed; waiting for a verified repair or fresh selection');
+        activity(pr.number, 'blocked', 'PR identity or history changed; a fresh selection is required');
         continue;
+      }
+      if (fresh.head.sha !== pr.headSha) {
+        adoptHead(pr, fresh.head.sha);
+        await onState(state());
       }
       pr.base = expectedBase;
       const base = await api('repos/' + original.repository + '/branches/' + encodeURIComponent(pr.base));
@@ -219,7 +241,8 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         if (merged.some(item => item.number === pr.number) || prepared.some(item => item.number === pr.number)) continue;
         const blocked = deferred.find(item => item.number === pr.number);
         // Only stale-snapshot deferrals can be cleared by a repaired head.
-        if (blocked && (blocked.kind || !/selected PR (?:head, base or title changed|changed outside this batch)/i.test(blocked.reason))) continue;
+        if (blocked && !(blocked.kind === 'snapshot_changed' ||
+            (!blocked.kind && /selected PR (?:head, base or title changed|changed outside this batch)/i.test(blocked.reason)))) continue;
         const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
         if (fresh.title !== pr.title || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
             fresh.head?.repo?.full_name !== original.repository) continue;
@@ -228,18 +251,14 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           continue;
         }
         if (!repairedNumbers.includes(pr.number) || fresh.state !== 'open' || fresh.draft ||
-            fresh.mergeable !== true || !SHA.test(fresh.head?.sha || '') || fresh.head.sha === pr.headSha) continue;
-        const compared = await api('repos/' + original.repository + '/compare/' + pr.headSha + '...' + fresh.head.sha);
-        if (compared.status !== 'ahead' || compared.merge_base_commit?.sha !== pr.headSha) continue;
+            !(await verifiedHeadAdvance(pr, fresh.head?.sha))) continue;
         updates.push({ pr, blocked, headSha: fresh.head.sha });
       }
       for (const { pr, blocked, mergedSha, headSha } of updates) {
         if (mergedSha) merged.push({ number: pr.number, title: pr.title, base: pr.base, status: 'merged', destinationSha: mergedSha });
         else {
-          pr.headSha = headSha;
-          pr.attempts = 0;
-          pr.checkFailures = 0;
-          activity(pr.number, 'refreshing', 'Repair commit verified · retiring stale patches and requesting a fresh review');
+          adoptHead(pr, headSha);
+          activity(pr.number, 'refreshing', 'New PR commit verified · retiring stale patches and requesting a fresh review');
         }
         const index = deferred.indexOf(blocked);
         if (index >= 0) deferred.splice(index, 1);

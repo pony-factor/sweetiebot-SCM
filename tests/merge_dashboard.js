@@ -570,6 +570,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.deepEqual(savedModes, ['relative', 'clock', 'hidden'],
     'Reject unrecognized timestamp modes without changing persisted settings');
 
+  // A normal external fix must notify the coordinator even before GitHub
+  // reports that a previously conflicted PR is mergeable again.
+  info = { ...info, head: { ...info.head, sha: nextSha } };
+  await dashboard.refresh();
+  assert.deepEqual(refreshedQueues.at(-1), [12],
+    'A newly pushed head reaches the active batch without a conflict-cleared prerequisite');
+  info = { ...info, head: { ...info.head, sha } };
+  await dashboard.refresh();
+  // Keep the three-cycle review-comment polling phase aligned with the
+  // original regression sequence after simulating two additional head polls.
+  await dashboard.refresh();
+
   info = { ...info, head: { ...info.head, sha: nextSha }, mergeable: true, mergeable_state: 'clean' };
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nMechanically reconciled both changes.' }];
   await dashboard.refresh();
