@@ -359,11 +359,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     });
   }
 
-  function recordActivity(pr, phase, message, key) {
+  function recordActivity(pr, phase, message, key, source = {}) {
     if (pr.activityKey === key) return;
     pr.activityKey = key;
     const location = require('./progress').stageLocation(phase);
-    pr.activity = { phase, message, location, at: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const start = Number.isFinite(Date.parse(source.at)) ? source.at : now;
+    const continuing = pr.activity?.phase === phase && pr.activity?.at === start;
+    const updatedAt = Number.isFinite(Date.parse(source.updatedAt))
+      ? source.updatedAt : continuing ? now : undefined;
+    pr.activity = { phase, message, location, at: start,
+      ...(updatedAt ? { updatedAt } : {}) };
     addEvent(pr, 'progress', message, '', '', null, location);
   }
 
@@ -833,7 +839,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         continue;
       }
       recordActivity(pr, item.phase.slice(0, 48), item.message.slice(0, 320),
-        JSON.stringify([item.round, item.phase, item.message, item.at]));
+        JSON.stringify([item.round, item.phase, item.message, item.at, item.updatedAt]), item);
     }
     workers = (Array.isArray(state.workers) ? state.workers : []).filter(worker => Number.isInteger(worker.id) && worker.id > 0 && worker.id <= 3)
       .map(worker => ({ id: worker.id, label: String(worker.label || '').slice(0, 80),
