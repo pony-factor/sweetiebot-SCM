@@ -194,6 +194,9 @@ function sourceDetailsMarkdown(source) {
     '<summary>Source details</summary>',
     '',
     '- **Online:** ' + (links.online ? '[Online](' + links.online + ')' : 'Not shared'),
+    ...(source?.kind === 'codex' && validSharedConversationUrl(source.sharedUrl)
+      ? ['- **Privacy:** Online is a public snapshot that can expose user prompts and assistant replies. Sweetiebot cannot unpublish or revoke shared chat links.']
+      : []),
     ...(links.local ? ['- **Local:** [Local](' + links.local + ')'] : []),
     ...(links.desktop ? ['- **Desktop:** [Desktop](' + links.desktop + ')'] : []),
     '',
@@ -569,10 +572,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       conversationContext = codex?.text || '';
       conversationModel = codex?.model;
     }
-    source = sourceWithSharedConversationUrl(context, source);
+    // Sharing publishes a public snapshot of the active Codex conversation.
+    // Never invoke native Share or reuse cached public links without opt-in.
+    const autoShareCodexChat = vscode.workspace.getConfiguration('scmToolkit')
+      .get('kefaniaAutoShareCodexChat', false) === true;
+    if (autoShareCodexChat) source = sourceWithSharedConversationUrl(context, source);
     // Capture a fresh native Share snapshot in the originating window before
     // opening the independent Kefania session. Do not share a different chat.
-    if (source?.kind === 'codex' && !options.source) {
+    if (autoShareCodexChat && source?.kind === 'codex' && !options.source) {
       try {
       const shared = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,

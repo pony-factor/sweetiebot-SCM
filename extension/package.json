@@ -376,7 +376,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Show the selected PR's commit-history graph in Lindsey's bulk-merge dashboard. Disable to give the diff the full width."
+          "description": "Show PR commit-history graphs in Lindsey's bulk-merge dashboard. The hamburger toggle in each PR header updates this application-wide preference for all PRs and open dashboards. Disable to give the diff the full width."
         },
         "scmToolkit.mergeSidebarWidthPercent": {
           "type": "integer",
@@ -608,6 +608,12 @@
           "type": "string",
           "default": "",
           "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
+        },
+        "scmToolkit.kefaniaAutoShareCodexChat": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Opt in to publishing a public ChatGPT snapshot of the active Codex chat whenever Kefania starts a pull request. The snapshot can expose your prompts and AI replies to anyone with the link, and Kefania adds the link to public PR Source details. Sweetiebot cannot unpublish or revoke it; treat sharing as permanent. Even with sharing off, Kefania may still send captured chat text to the drafting AI."
         },
         "scmToolkit.kefaniaUseThemeColors": {
           "type": "boolean",

@@ -51,6 +51,8 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .flag.merged{color:var(--merge-complete-color);border-color:currentColor;background:#fff}
 .flag.resolved{color:var(--vscode-testing-iconPassed,#3cbb78);border-color:currentColor}
 .flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
+.flag.checks{color:var(--vscode-charts-blue,#468cdb);border-color:currentColor}
+.flag.checks-pending{color:var(--vscode-progressBar-background,#468cdb);border-color:currentColor}
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
 .events{flex:0 0 var(--timeline-height,34%);min-height:0;overflow:auto;padding:10px 16px}
 .timeline-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;flex-wrap:wrap}
@@ -63,6 +65,8 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event.merged{border-color:var(--merge-complete-color)}
 .event.resolved{border-color:var(--vscode-testing-iconPassed,#3cbb78)}
 .event.conflict,.event.review,.event.blocked,.event.error{border-color:var(--vscode-testing-iconFailed,#f07767)}
+.event.checks{border-color:var(--vscode-charts-blue,#468cdb)}
+.event.checks-pending{border-color:var(--vscode-progressBar-background,#468cdb)}
 .event.review-comment{border-color:var(--vscode-charts-blue,#468cdb)}
 .event-link{font-weight:600;color:var(--vscode-textLink-foreground,#4ca5ff)}
 .event-time{font-size:11px;color:var(--vscode-descriptionForeground)}
@@ -153,6 +157,10 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .notice{padding:8px 14px;background:var(--vscode-inputValidation-warningBackground);border-bottom:1px solid var(--vscode-inputValidation-warningBorder);color:var(--vscode-foreground)}
 .pr-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px}.pr-commit-tree{position:sticky;top:0;align-self:start;max-height:70vh;overflow:auto;border-left:1px solid var(--vscode-panel-border,#555);padding-left:12px}.commit-tree-list{position:relative}.commit-tree-list svg{position:absolute;left:0;top:0;stroke:var(--vscode-charts-green,#62b879);fill:var(--vscode-charts-green,#62b879)}.commit-tree-item{display:block;box-sizing:border-box;min-height:52px;height:auto;overflow:visible;text-align:left;border:0;background:transparent;font-size:11px;line-height:16px;padding:8px 4px;max-width:none;white-space:normal;overflow-wrap:anywhere}.commit-tree-sha{display:inline-block;font:inherit;font-family:var(--vscode-editor-font-family,monospace);background:var(--vscode-textCodeBlock-background,var(--vscode-editorWidget-background,#333));color:inherit;border-radius:3px;padding:1px 4px;white-space:nowrap}.local-runner-details{white-space:pre-wrap;overflow-wrap:anywhere}.blocker-notice{padding:8px 20px}.blocker-notice button{margin-left:8px}@media(max-width:850px){.pr-detail-layout{display:block}.pr-commit-tree{position:static;max-height:240px;border-left:0;border-top:1px solid var(--vscode-panel-border,#555);margin-top:14px}}
 .pr-detail-layout.no-commits{display:block}
+.pr-commit-tree[hidden]{display:none}
+.commit-tree-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.commit-tree-toggle svg{flex:none;width:16px;height:16px;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.commit-tree-toggle:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
 /* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
@@ -445,7 +453,8 @@ __RATE_LIMIT_FORMATTER__
   let actionEngine = 'web';
   const labels = {
     waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Conflicts cleared',
-    conflict: 'Conflict', review: 'Needs review', blocked: 'Blocked',
+    conflict: 'Conflict', review: 'Needs review', 'checks-pending': 'Checks in progress',
+    checks: 'Checks failing', blocked: 'Blocked',
     queued: 'Queued', updated: 'Updated', closed: 'Closed'
   };
   function el(tag, className, value) {
@@ -462,7 +471,7 @@ __RATE_LIMIT_FORMATTER__
   function pullRequestPriority(pr) {
     if (pr.state === 'merged') return 3;
     if (pr.state === 'closed') return 2;
-    if (pr.localReview || ['review', 'conflict', 'blocked', 'updated'].includes(pr.state)) return 0;
+    if (pr.localReview || ['review', 'conflict', 'checks', 'blocked', 'updated'].includes(pr.state)) return 0;
     return 1;
   }
   function dispatch(type, number, url) { vscode.postMessage({ type, number, url }); }
@@ -493,6 +502,29 @@ __RATE_LIMIT_FORMATTER__
     const top = show('div', 'detail-top', undefined, parent);
     show('h2', '', '#' + pr.number + ' ' + pr.title, top);
     show('span', 'flag ' + pr.state, labels[pr.state] || 'Pending', top);
+    const showCommits = model.showPrCommits !== false;
+    const commitToggle = show('button', 'secondary commit-tree-toggle', undefined, top);
+    commitToggle.type = 'button';
+    commitToggle.title = (showCommits ? 'Hide' : 'Show') + ' PR commit graphs across Lindsey';
+    commitToggle.setAttribute('aria-label', (showCommits ? 'Hide' : 'Show') + ' PR commits for all pull requests');
+    commitToggle.setAttribute('aria-expanded', String(showCommits));
+    commitToggle.setAttribute('aria-controls', 'pr-commit-tree');
+    const menuIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    menuIcon.setAttribute('viewBox', '0 0 20 20');
+    menuIcon.setAttribute('aria-hidden', 'true');
+    for (const y of [5, 10, 15]) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      for (const [key, value] of Object.entries({ x1: 3, y1: y, x2: 17, y2: y })) line.setAttribute(key, value);
+      menuIcon.appendChild(line);
+    }
+    commitToggle.appendChild(menuIcon);
+    show('span', '', 'Commits (' + (pr.commits || []).length + ')', commitToggle);
+    commitToggle.addEventListener('click', () => {
+      model.showPrCommits = !showCommits;
+      renderDetail();
+      byId('details').querySelector('.commit-tree-toggle')?.focus();
+      vscode.postMessage({ type: 'show-pr-commits', enabled: model.showPrCommits });
+    });
     if (pr.statusMessage) show('div', 'muted', pr.statusMessage, parent);
     const branchLine = show('div', 'muted', (pr.headLabel || pr.head) + ' → ' + (pr.baseLabel || pr.base) +
       (pr.mergeableState ? ' · GitHub: ' + pr.mergeableState : ''), parent);
@@ -628,8 +660,10 @@ __RATE_LIMIT_FORMATTER__
       else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
-    if (model.showPrCommits !== false) {
-      const tree = show('section', 'pr-commit-tree', undefined, layout);
+    const tree = show('section', 'pr-commit-tree', undefined, layout);
+    tree.id = 'pr-commit-tree';
+    tree.hidden = !showCommits;
+    if (showCommits) {
       disposeCommitTree = renderCommitTree(tree, pr.commits, sha => dispatch('open-commit', pr.number, sha));
       if (pr.commitError) show('p', 'muted', 'Commit history unavailable: ' + pr.commitError, tree);
     }

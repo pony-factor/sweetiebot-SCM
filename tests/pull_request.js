@@ -165,10 +165,12 @@ async function run() {
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
   assert.match(decorated, /<summary>Source details<\/summary>/);
+  assert.match(decorated, /public snapshot that can expose user prompts and assistant replies/i);
   assert.match(decorated, /- \*\*Local:\*\* \[Local\]\(vscode:\/\//);
   assert.match(decorated, /- \*\*Desktop:\*\* \[Desktop\]\(codex:\/\/threads\//);
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
+  assert(!appendSourceDetails('Local only.', codexSource).includes('Sweetiebot cannot unpublish'));
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
   {
     const githubBulletUrl = 'https://github.com/pony-factor/sweetiebot-SCM/pull/495';
@@ -295,6 +297,8 @@ async function run() {
   } };
   const codexExtension = { isActive: true, async activate() {} };
   let configuredProject = '';
+  let autoShareCodexChat = false;
+  let nativeShareCalls = 0;
   let ludicrousMode = false;
   let commitWait;
   let contextReads = 0;
@@ -314,7 +318,7 @@ async function run() {
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'scmToolkit');
-      return { get(key, fallback) { if (key === 'kefaniaCloseAfterMerge' || key === 'kefaniaUseThemeColors' || key === 'kefaniaShowCloseButton' || key === 'kefaniaCloseButtonLeft' || key === 'kefaniaCloseButtonPosition') return fallback; if (key === 'autoPublishPullRequests') return true; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
+      return { get(key, fallback) { if (key === 'kefaniaCloseAfterMerge' || key === 'kefaniaUseThemeColors' || key === 'kefaniaShowCloseButton' || key === 'kefaniaCloseButtonLeft' || key === 'kefaniaCloseButtonPosition') return fallback; if (key === 'autoPublishPullRequests') return true; if (key === 'kefaniaAutoShareCodexChat') return autoShareCodexChat; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {
       from: components => components,
@@ -355,7 +359,7 @@ async function run() {
       },
       async executeCommand(id, ...args) {
         if (id === 'sweetiebot.readCodexConversation') return codexSnapshot;
-        if (id === 'sweetiebot.shareCodexConversation') return { ...codexSnapshot.source, sharedUrl: share };
+        if (id === 'sweetiebot.shareCodexConversation') { nativeShareCalls++; return { ...codexSnapshot.source, sharedUrl: share }; }
         calls.push({ id, args });
       }
     }
@@ -443,9 +447,18 @@ async function run() {
     return regularExecute(id, ...args);
   };
   codexSnapshot = { text: 'Unanswered PR intent', source: codexSource };
+  const shareCallsBeforeOptOut = nativeShareCalls;
+  const privateSession = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(privateSession.launched, true);
+  assert.equal(nativeShareCalls, shareCallsBeforeOptOut, 'Opted-out Kefania must not invoke native public Share');
+  assert.equal(sessionLaunches.at(-1).options.source.sharedUrl, undefined,
+    'Opting out must not silently reattach a previously saved public snapshot');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  autoShareCodexChat = true;
   const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
   assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  autoShareCodexChat = false;
   vscode.commands.executeCommand = regularExecute;
   codexSnapshot = undefined;
   launchInSeparateWorkspace = false;
@@ -630,13 +643,17 @@ async function run() {
       url: codexUrl
     }
   };
+  autoShareCodexChat = true;
+  const shareCallsBeforeOptIn = nativeShareCalls;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(nativeShareCalls, shareCallsBeforeOptIn + 1, 'Opted-in Kefania shares the originating Codex chat once');
   const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open' && call.args[0].url.startsWith('https://chatgpt.com')).args[0].url);
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));
   assert(codexPrompt.includes(share), 'Attached online link is forwarded unchanged');
   assert(!codexPrompt.includes(codexSnapshot.text), 'Online link suppresses the transcript');
+  autoShareCodexChat = false;
 
   calls.length = 0;
   await uriHandler.handleUri({ path: '/codex/019c56c3-06fc-7db3-a928-9c3607e17129' });

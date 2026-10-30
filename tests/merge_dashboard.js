@@ -69,8 +69,10 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(manual.every(action => action.manual && !action.reaction));
   assert.equal(manual.find(action => action.id === 'inspect-codex').engine, 'codex');
   assert.deepEqual(manualBlockerActions({state:'merged'}), []);
-  const checksPlan = dashboardActionPlan({ state: 'blocked', mergeableState: 'unstable' });
+  const checksPlan = dashboardActionPlan({ state: 'checks', mergeableState: 'unstable' });
   assert.equal(checksPlan.kind, 'checks');
+  assert.deepEqual(dashboardActionPlan({ state: 'checks-pending', mergeableState: 'unstable' }).actions, [],
+    'In-progress checks must not offer a premature failing-check repair');
   assert.deepEqual(checksPlan.actions.map(action => action.id), ['fix-checks']);
   assert.equal(checksPlan.workspaceAction.id, 'inspect-codex');
   const conflictPlan = dashboardActionPlan({ state: 'conflict' });
@@ -186,11 +188,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(reviewComments[2].title, 'Code review comment');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
   assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
-  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {},
+    { state: 'pending' }), 'checks-pending', 'Unfinished checks are not failures');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {},
+    { state: 'failed' }), 'checks', 'Actual failed check results get their own status');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {},
+    { state: 'passed' }), 'blocked', 'Stale GitHub mergeability must not invent a check failure');
+  assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {}), 'blocked',
+    'Missing check evidence does not assert a failure');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'queued' }, {}), 'queued',
     'GitHub-queued PRs are distinguished from merely awaiting checks');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable',
-    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
+    head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }, { state: 'failed' }), 'checks',
     'Conflict resolution must not conceal failing checks');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'blocked',
     head: { sha: nextSha } }, { originalHead: sha, sawConflict: true }), 'blocked',
@@ -268,7 +277,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
-      if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod'].includes(key)) {
+      if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod', 'mergeShowPrCommits'].includes(key)) {
         assert.equal(target, 1); layoutConfig[key] = mode; return;
       }
       assert.equal(key, 'mergeTimelineTimestampMode');
@@ -308,6 +317,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   let reactionVotes = [];
   const reactionWrites = [];
   let fileRequests = 0, apiRequests = 0, commitFetches = 0;
+  let checkConclusion = 'failure';
   let requestFault, reportFault, pausePRRead;
   const fakeFetch = async (address, options) => {
     if (requestFault) throw requestFault;
@@ -335,7 +345,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
       result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
     }
     else if (/\/commits\/[a-f0-9]{40}\/check-runs$/.test(pathname)) result = { check_runs: [
-      { id: 1, name: 'CI', status: 'completed', conclusion: 'failure', app: { id: 1 } }] };
+      { id: 1, name: 'CI', status: checkConclusion === null ? 'in_progress' : 'completed',
+        conclusion: checkConclusion, app: { id: 1 } }] };
     else if (/\/commits\/[a-f0-9]{40}\/check-suites$/.test(pathname)) result = { check_suites: [] };
     else if (/\/commits\/[a-f0-9]{40}\/status$/.test(pathname)) result = { statuses: [] };
     else if (pathname.endsWith('/files')) {
@@ -385,6 +396,18 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     'Cleared-conflict badges retain their green state');
   assert(panel.webview.html.includes('.event.resolved{border-color:var(--vscode-testing-iconPassed,'),
     'Cleared-conflict timeline events retain their green state');
+  assert(panel.webview.html.includes('.flag.checks{color:var(--vscode-charts-blue,'),
+    'Checks-not-passing PR badges use blue instead of blocked red');
+  assert(panel.webview.html.includes('.event.checks{border-color:var(--vscode-charts-blue,'),
+    'Checks-not-passing timeline entries use blue');
+  assert(panel.webview.html.includes("checks: 'Checks failing'"),
+    'Failed CI has an explicit qualifier');
+  assert(panel.webview.html.includes("'checks-pending': 'Checks in progress'"),
+    'Unfinished CI is not labeled as a failure');
+  assert(panel.webview.html.includes('.flag.checks-pending{color:var(--vscode-progressBar-background,'),
+    'In-progress CI has its own progress-colored badge');
+  assert(panel.webview.html.includes('.event.checks-pending{border-color:var(--vscode-progressBar-background,'),
+    'In-progress CI has its own timeline styling');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
@@ -487,12 +510,34 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(events.at(-1).showPrCommits, true, 'Commit history remains visible by default');
   assert(panel.webview.html.includes("model.showPrCommits !== false"), "PR commit tree is conditional");
   assert(panel.webview.html.includes(".pr-detail-layout.no-commits{display:block}"), "Hidden tree restores full-width diff");
+  assert(panel.webview.html.includes("const commitToggle = show('button', 'secondary commit-tree-toggle'"),
+    'A permanent hamburger control is available even when the commit tree is hidden');
+  assert(panel.webview.html.includes("commitToggle.setAttribute('aria-expanded', String(showCommits))"),
+    'The hamburger exposes its expanded state to assistive technology');
+  assert(panel.webview.html.includes("commitToggle.setAttribute('aria-controls', 'pr-commit-tree')"),
+    'The hamburger explicitly controls the commit graph');
+  assert(panel.webview.html.includes("tree.hidden = !showCommits"),
+    'Collapsed graphs do not obstruct the PR diff');
+  assert(panel.webview.html.includes("model.showPrCommits = !showCommits"),
+    'The hamburger changes local visibility before the global preference is saved');
+  assert(panel.webview.html.includes("vscode.postMessage({ type: 'show-pr-commits', enabled: model.showPrCommits })"),
+    'The hamburger broadcasts its preference for all PRs');
+  assert(panel.webview.html.includes("byId('details').querySelector('.commit-tree-toggle')?.focus()"),
+    'Keyboard focus returns to the toggle after the PR details re-render');
   layoutConfig.mergeShowPrCommits = false;
   configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
   assert.equal(events.at(-1).showPrCommits, false, 'Setting hides commit history in an open dashboard');
   layoutConfig.mergeShowPrCommits = true;
   configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
   assert.equal(events.at(-1).showPrCommits, true, 'Setting restores commit history without reopening');
+  await messageHandler({ type: 'show-pr-commits', enabled: false });
+  assert.equal(layoutConfig.mergeShowPrCommits, false, 'Hamburger choice is saved to global configuration');
+  assert.equal(events.at(-1).showPrCommits, false, 'All PRs receive the collapsed state');
+  await messageHandler({ type: 'show-pr-commits', enabled: 'false' });
+  assert.equal(layoutConfig.mergeShowPrCommits, false, 'Malformed toggle messages cannot change the setting');
+  await messageHandler({ type: 'show-pr-commits', enabled: true });
+  assert.equal(layoutConfig.mergeShowPrCommits, true, 'The same global preference reopens every commit graph');
+  assert.equal(events.at(-1).showPrCommits, true, 'Reopened history is published without switching PRs');
 
   assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 37, timeline: 34 });
   layoutConfig.mergeSidebarWidthPercent = 50;
@@ -547,9 +592,16 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     'Validated comment links open once in the integrated browser with their comment fragment preserved');
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
+  checkConclusion = null;
   await dashboard.refresh();
-  assert.equal(events.at(-1).prs[0].state, 'blocked');
-  assert.equal(events.at(-1).events.at(-1).message, 'PR is open; checks are not passing');
+  assert.equal(events.at(-1).prs[0].state, 'checks-pending');
+  assert.equal(events.at(-1).events.at(-1).state, 'checks-pending');
+  assert.equal(events.at(-1).events.at(-1).message, 'PR is open; checks are queued or in progress');
+  checkConclusion = 'failure';
+  await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].state, 'checks');
+  assert.equal(events.at(-1).events.at(-1).state, 'checks');
+  assert.equal(events.at(-1).events.at(-1).message, 'PR is open; one or more checks failed');
   const selectedAction = events.at(-1).prs[0].blockerOptions[0];
   const actionMessage = { type: 'blocker-action', number: 12, headSha: nextSha,
     actionId: selectedAction.id, optionKey: selectedAction.key };
@@ -567,8 +619,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   info = { ...info, head: { ...info.head, sha: nextSha } };
   info = { ...info, mergeable_state: 'blocked' };
   await dashboard.refresh();
+  assert.equal(events.at(-1).prs[0].state, 'blocked');
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
-    'A changed blocking reason is reported even when the phase stays blocked');
+    'Branch restrictions remain distinct from checks that are not passing');
   inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
     html_url: url + '#discussion_r90',
     body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + liveDecisions },
