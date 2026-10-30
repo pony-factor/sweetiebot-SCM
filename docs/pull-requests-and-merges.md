@@ -12,7 +12,7 @@ PR opener, Git commit author/committer, co-author trailer and review commenter m
 
 Kefania reads `commit.gpgsign` from the selected local checkout. When it is enabled, the default squash action creates and verifies a locally signed, one-parent squash instead of using GitHub's REST squash endpoint, which does not use the local signing key. The workflow force-updates **only the PR head**, using an exact `--force-with-lease`, then advances an unprotected base with a normal fast-forward push. It refuses protected or ruleset-controlled bases, dependent PRs, failed checks, and signatures GitHub does not verify; it never force-pushes a base branch. If signing is not configured, the normal GitHub-native squash path remains unchanged.
 
-Lindsey shows a blue **Checks not passing** status for GitHub's `unstable` mergeability state, distinct from red **Blocked** (merge rules) and **Conflict** (merge conflicts); checks must still pass before merging.
+Lindsey checks the current PR head to distinguish **Checks in progress** (queued or running CI) from blue **Checks failing** (verified failed CI), rather than treating GitHub's broad `unstable` mergeability state as proof of a failure. Red **Blocked** (merge rules or unverified restrictions) and **Conflict** (merge conflicts) remain separate; checks must still pass before merging.
 
 The sync-commit filter normally omits routine `Sync brach/branch to main` entries from summaries without discarding legitimate author credits. Conflict repair belongs on the PR's head branch, preserving compatible behavior. A deterministic failing check needs analysis and a targeted fix, not repeated ungrounded reruns. Defer materially ambiguous behavior; do not silently bypass protections.
 
