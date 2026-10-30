@@ -22,6 +22,11 @@ def main():
             '__TIMESTAMP_FORMATTER__':'dashboard_timestamps.js',
         }.items():
             dashboard=dashboard.replace(marker,(ROOT / 'extension/merge' / filename).read_text())
+        # Mirror production's inline celebration predicate so the dashboard script executes.
+        celebration = (ROOT / 'extension/merge/celebration.js').read_text()
+        predicate = celebration[celebration.index('function allPullRequestsMerged('):celebration.index('\nmodule.exports')]
+        dashboard = dashboard.replace('__MERGE_CELEBRATION_PREDICATE__', predicate)
+        dashboard = dashboard.replace('__CELEBRATION_PONY__', PNG)
         dashboard=dashboard.replace('__NONCE__','fixture').replace('__CSP_SOURCE__','https://fixture.invalid')
         dashboard=dashboard.replace('__RATE_LIMIT_FORMATTER__','function rateLimitMessage(){return "Rate limited";}')
         page.evaluate('window.acquireVsCodeApi=()=>({getState:()=>({}),setState(){},postMessage(){}})')
