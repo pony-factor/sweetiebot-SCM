@@ -150,6 +150,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("commit_diagnostics_dashboard.py")] = here / "commit_diagnostics_dashboard.py"
     files[Path("commit_hotkey.py")] = here / "commit_hotkey.py"
     files[Path("toolkit_settings.py")] = here / "toolkit_settings.py"
+    files[Path("codex_composer_layout.py")] = here / "codex_composer_layout.py"
     files[Path("message_bar.py")] = here / "message_bar.py"
     files[Path("message_bar_configurator.py")] = here / "message_bar_configurator.py"
     files[Path("window_title_configurator.py")] = here / "window_title_configurator.py"

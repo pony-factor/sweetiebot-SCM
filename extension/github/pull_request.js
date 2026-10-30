@@ -696,7 +696,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       decorateDraft: draft => ({ ...draft, body: appendSourceDetails(draft.body, source) }),
       onMerge: async result => {
         const session = await require('./session').githubSession(vscode);
-        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./user_api').githubUserAPI(session.accessToken), { gitToken: session.accessToken });
+        return merge({ repository: input.repository, head: branch, base: options.base, result },
+          require('./user_api').githubUserAPI(session.accessToken),
+          { gitToken: session.accessToken, repositoryPath: repository.rootUri.fsPath });
       },
       onMergePreservingCommits: async result => {
         const session = await require('./session').githubSession(vscode);

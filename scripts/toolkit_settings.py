@@ -5,7 +5,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from codex_composer_layout import DEFAULT_LAYOUT_JSON as CODEX_LAYOUT_DEFAULT_JSON, parse_layout as parse_codex_layout, serialize_layout as serialize_codex_layout
 from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
+
+
+DEFAULT_PLACEHOLDER_PREFIX = "hoof_"
+PLACEHOLDER_PREFIX_PATTERN = r"[A-Za-z][A-Za-z0-9_-]{0,14}_"
 
 
 DEFAULT_SETTINGS = {
@@ -104,6 +109,7 @@ DEFAULT_SETTINGS = {
     "aiCoremlLowMemoryModel": "qwen3.5-0.8b",
     "aiCoremlCommand": "~/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane",
     "durableBackgroundCommits": False,
+    "placeholderPrefix": DEFAULT_PLACEHOLDER_PREFIX,
     "autoCommitWithCodex": False,
     "aiDetailedCommitStyle": False,
     "aiTitleExplanations": False,
@@ -145,6 +151,7 @@ DEFAULT_SETTINGS = {
     "codexShortModelLabels": False,
     "codexHideChatTimestamps": False,
     "codexShowCannon": False,
+    "codexComposerLayout": CODEX_LAYOUT_DEFAULT_JSON,
     "codexFlatComposer": False,
     "codexHideAccessLabel": False,
     "codexHidePermissionsIcon": False,
@@ -221,6 +228,13 @@ def load_settings():
                 default,
                 preserve_empty=name == "branchNameDisabledPacks",
             )
+    # Migrate the old permissions-hide toggle only until a layout is explicitly saved.
+    if (settings["codexHidePermissionsIcon"]
+            and read_git_string(SETTING_KEYS["codexComposerLayout"], None) is None):
+        layout = parse_codex_layout(settings["codexComposerLayout"])
+        layout["visible"].remove("access")
+        layout["hidden"].append("access")
+        settings["codexComposerLayout"] = serialize_codex_layout(layout)
     # Honor an existing right-hand preference until the user saves a dropdown choice.
     new_position = read_git_string(SETTING_KEYS["kefaniaCloseButtonPosition"], None)
     if new_position is None:
@@ -364,6 +378,7 @@ SETTING_KEYS = {
     "aiCoremlLowMemoryModel": "scm-toolkit.ai-coreml-low-memory-model",
     "aiCoremlCommand": "scm-toolkit.ai-coreml-command",
     "durableBackgroundCommits": "scm-toolkit.durable-background-commits",
+    "placeholderPrefix": "scm-toolkit.placeholder-prefix",
     "autoCommitWithCodex": "scm-toolkit.auto-commit-with-codex",
     "aiDetailedCommitStyle": "scm-toolkit.ai-detailed-commit-style",
     "aiTitleExplanations": "scm-toolkit.ai-title-explanations",
@@ -405,6 +420,7 @@ SETTING_KEYS = {
     "codexShortModelLabels": "scm-toolkit.codex-short-model-labels",
     "codexHideChatTimestamps": "scm-toolkit.codex-hide-chat-timestamps",
     "codexShowCannon": "scm-toolkit.codex-show-cannon",
+    "codexComposerLayout": "scm-toolkit.codex-composer-layout",
     "codexFlatComposer": "scm-toolkit.codex-flat-composer",
     "codexHideAccessLabel": "scm-toolkit.codex-hide-access-label",
     "codexHidePermissionsIcon": "scm-toolkit.codex-hide-permissions-icon",

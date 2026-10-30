@@ -108,6 +108,25 @@ class SubmissionTests(unittest.TestCase):
         self.assertNotIn("Legacy provisional commit finalization", page)
         self.assertIn("Durable background Commit and Push", page)
 
+    def test_placeholder_prefix_is_user_configurable_and_validated(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["placeholderPrefix"], "hoof_")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["placeholderPrefix"], "scm-toolkit.placeholder-prefix")
+        setting = next(item for item in configurator.SETTINGS if item.name == "placeholderPrefix")
+        self.assertEqual(setting.kind, "placeholder_prefix")
+
+        values = form_values()
+        values["placeholderPrefix"] = ["pony_"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["placeholderPrefix"], "pony_")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="placeholderPrefix"', page)
+
+        for invalid in ("", "pony", "_pony_", "pony!_", "pony\n_", "1pony_", "x" * 16 + "_"):
+            with self.subTest(invalid=invalid):
+                values["placeholderPrefix"] = [invalid]
+                with self.assertRaisesRegex(ValueError, "Provisional commit prefix"):
+                    configurator.parse_submission(values)
+
     def test_lindsey_has_its_own_dashboard_settings_page(self):
         names = {"mergeTimelineTimestampMode", "mergeSidebarWidthPercent", "mergeTimelineHeightPercent", "mergeShowPrCommits"}
         controls = [setting for setting in configurator.SETTINGS if setting.name in names]

@@ -19,17 +19,31 @@ import tempfile
 import time
 
 from sweetiebot_diagnostics import log_event
+from toolkit_settings import (DEFAULT_PLACEHOLDER_PREFIX, PLACEHOLDER_PREFIX_PATTERN,
+                              SETTING_KEYS, read_git_string)
 
-PLACEHOLDER = "hoof_"
+PLACEHOLDER = DEFAULT_PLACEHOLDER_PREFIX
 LEGACY_PLACEHOLDER = "placeholder_"
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 BASE58_ID_PATTERN = r"[1-9A-HJ-NP-Za-km-z]{11}"
 LEGACY_HEX_ID_PATTERN = r"[0-9a-f]{16}"
 PLACEHOLDER_SUBJECT_PATTERN = (
-    rf"(?:{re.escape(PLACEHOLDER)}{BASE58_ID_PATTERN}|"
-    rf"{re.escape(LEGACY_PLACEHOLDER)}(?:{BASE58_ID_PATTERN}|{LEGACY_HEX_ID_PATTERN})|"
+    rf"(?:{PLACEHOLDER_PREFIX_PATTERN}{BASE58_ID_PATTERN}|"
+    rf"{re.escape(LEGACY_PLACEHOLDER)}{LEGACY_HEX_ID_PATTERN}|"
     rf"💭 Generate local commit message \[(?:{BASE58_ID_PATTERN}|{LEGACY_HEX_ID_PATTERN})\])"
 )
+
+
+def get_placeholder_prefix():
+    """Read and validate the user-configured prefix for new placeholder commits."""
+    prefix = read_git_string(SETTING_KEYS["placeholderPrefix"], DEFAULT_PLACEHOLDER_PREFIX)
+    if not re.fullmatch(PLACEHOLDER_PREFIX_PATTERN, prefix):
+        raise RuntimeError(
+            "Invalid provisional commit prefix in scm-toolkit.placeholder-prefix; "
+            "use 2–16 ASCII letters, digits, hyphens, or underscores, starting with a "
+            "letter and ending with an underscore."
+        )
+    return prefix
 
 
 def new_job_id():
@@ -324,8 +338,12 @@ def finalize(real_git, global_args, job_id, title, description):
         if current_branch(real_git, global_args) != job["branch"] or head(real_git, global_args) != job["sha"]:
             raise RuntimeError("Branch advanced while a commit was pending; push remains blocked")
         headers, previous_message = commit_metadata(real_git, global_args, job["sha"])
-        if not previous_message.splitlines()[0].startswith((
-                PLACEHOLDER + job_id, "💭 Generate local commit message [" + job_id + "]")):
+        placeholder_subject = previous_message.partition("\n")[0]
+        expected_prefix = job.get("placeholder_prefix", DEFAULT_PLACEHOLDER_PREFIX)
+        if placeholder_subject not in {
+                expected_prefix + job_id, DEFAULT_PLACEHOLDER_PREFIX + job_id,
+                LEGACY_PLACEHOLDER + job_id,
+                "💭 Generate local commit message [" + job_id + "]"}:
             raise RuntimeError("The pending commit does not match its durable journal")
         message = title.strip()
         if description.strip():
@@ -440,12 +458,13 @@ def begin(real_git, global_args, commit_args, stat, diff, files,
             previous_head = ""  # Initial root commit.
         job = {
             "id": new_job_id(), "sha": "", "previous_head": previous_head,
+            "placeholder_prefix": get_placeholder_prefix(),
             "branch": branch, "stat": stat, "diff": diff, "files": files,
             "file_context": file_context, "include_description": include_description,
             "global_args": global_args, "pid": 0, "created_at": time.time(),
         }
         write_journal(journal, job)
-        placeholder = PLACEHOLDER + job["id"]
+        placeholder = job["placeholder_prefix"] + job["id"]
         try:
             result = command(real_git, global_args, "commit", *commit_args,
                              "-m", placeholder)
