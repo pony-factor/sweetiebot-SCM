@@ -692,6 +692,11 @@ __RATE_LIMIT_FORMATTER__
     if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
     const merged = model.prs.filter(p => p.state === 'merged').length;
     const resolved = model.prs.filter(p => p.conflictCleared).length;
+    const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
+    const problems = blockers.length;
+    byId('progress').textContent = merged + '/' + model.prs.length +
+      ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
+    byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
     // Only per-PR confirmed merged states unlock the celebration.
     const complete = allPullRequestsMerged(model.prs);
     if (!complete) celebrationDismissed = false;
@@ -701,11 +706,6 @@ __RATE_LIMIT_FORMATTER__
     byId('show-celebration').hidden = !complete || showCelebration;
     byId('completion-count').textContent = merged + ' of ' + model.prs.length + ' pull requests merged';
     byId('completion-recap').textContent = resolved + ' conflicts cleared · 0 remaining';
-    const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
-    const problems = blockers.length;
-    byId('progress').textContent = merged + '/' + model.prs.length +
-      ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
-    byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
     const pending = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed');
     const runningPhases = ['verifying', 'reviewing', 'applying', 'refreshing', 'preparing', 'message-prepared',
       'integrating', 'applying-resolution', 'rewrite-approved', 'prepared', 'decision-commit', 'sync-prepared',
