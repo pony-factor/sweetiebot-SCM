@@ -88,7 +88,8 @@ assert(unknown.branches.every(item => item.hasPr === null));
         return true;
       }
     }), 'occupied');
-    assert.equal(routed, topic, 'Pass the exact registered checkout to the router');
+    assert.equal(await fs.realpath(routed), await fs.realpath(topic),
+      'Pass the exact registered checkout to the router, resolving macOS path aliases');
     assert.equal(checkoutCalls, 0, 'Never check out an occupied branch');
     await assert.rejects(checkoutBranchStrip(repository, {
       branch: 'occupied', onOccupiedWorktree: async () => false
