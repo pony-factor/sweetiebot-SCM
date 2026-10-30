@@ -7,7 +7,7 @@ async function readPrompt(address) {
 }
 
 const assert = require('node:assert/strict');
-const { createMergeBatch } = require('../extension/merge/batch');
+const { createMergeBatch, recordBatchActivity } = require('../extension/merge/batch');
 const { readMergeChecks, waitForMergeChecks } = require('../extension/merge/checks');
 const a = 'a'.repeat(40), b = 'b'.repeat(40), c = 'c'.repeat(40), d = 'd'.repeat(40), e = 'e'.repeat(40);
 const selection = { repository: 'owner/repo', pullRequests: [1, 2].map(number => ({ number,
@@ -27,6 +27,29 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   headSha, baseSha, patch, explanation: number === 1 ? 'Preserve the main calculation fix.' : 'Add the optional feature without undoing the calculation fix.' });
 
 (async () => {
+  // A GPT wait starts one step clock. Duplicate snapshots are not progress;
+  // changed messages in the same phase are updates, not new steps.
+  const activities = {}, started = '2026-10-27T15:00:00Z';
+  const updated = '2026-10-27T15:01:00Z', nextRound = '2026-10-27T15:02:00Z';
+  recordBatchActivity(activities, 1, 'reviewing', 'Waiting for GPT', 2, started);
+  assert.deepEqual(activities[1], {
+    phase: 'reviewing', message: 'Waiting for GPT', round: 2, at: started
+  }, 'A fresh review has no artificial last-update timestamp');
+  recordBatchActivity(activities, 1, 'reviewing', 'Waiting for GPT', 2, updated);
+  assert.equal(activities[1].at, started, 'An unchanged activity snapshot cannot restart the step');
+  assert.equal(Object.hasOwn(activities[1], 'updatedAt'), false,
+    'An unchanged snapshot is not a progress heartbeat');
+  recordBatchActivity(activities, 1, 'reviewing', 'GPT received the revised diff', 2, updated);
+  assert.equal(activities[1].at, started);
+  assert.equal(activities[1].updatedAt, updated,
+    'A meaningful same-step change records an independent update time');
+  recordBatchActivity(activities, 1, 'reviewing', 'Waiting for GPT', 3, nextRound);
+  assert.equal(activities[1].at, nextRound, 'A different review round starts a fresh step');
+  assert.equal(Object.hasOwn(activities[1], 'updatedAt'), false);
+  recordBatchActivity(activities, 1, 'applying', 'Handoff returned', 3, updated);
+  assert.equal(activities[1].at, updated, 'A phase transition starts a fresh step');
+  assert.equal(Object.hasOwn(activities[1], 'updatedAt'), false);
+
   let base = c, calls = 0, secondAttempt = 0;
   const prs = new Map(selection.pullRequests.map(pr => [pr.number, { ...pr }]));
   const api = async endpoint => {
