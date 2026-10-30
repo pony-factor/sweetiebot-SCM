@@ -266,7 +266,11 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       request.on('error', reject);
       request.end(JSON.stringify(data));
     });
-    assert.equal((await fetch(url)).status, 200, 'GET only serves the intake page');
+    const intake = await fetch(url);
+    assert.equal(intake.status, 200, 'GET only serves the intake page');
+    const intakeHtml = await intake.text();
+    assert(intakeHtml.includes('.merge-header .dashboard-brand'), 'Use the bulk dashboard header style');
+    assert(!intakeHtml.includes('__MERGE_HEADER_CSS__'), 'Serve the resolved local stylesheet');
     assert.equal(executions, 0);
     assert.equal((await (await fetch(bridge.url + '/status')).json()).phase, 'ready');
     assert.equal((await post(input, { Origin: 'https://evil.invalid' })).status, 403);

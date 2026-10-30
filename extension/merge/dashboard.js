@@ -269,6 +269,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
+    .replace('__MERGE_HEADER_CSS__', fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8'))
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_markdown.js'), 'utf8'))
     .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'commit_tree.js'), 'utf8'))
     .replace('__ACTIVITY_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_activity.js'), 'utf8'))

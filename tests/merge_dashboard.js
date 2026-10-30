@@ -388,6 +388,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
+  assert(panel.webview.html.includes('class="merge-header"'), 'Bulk dashboard uses the shared header');
+  assert(panel.webview.html.includes('.merge-header .dashboard-brand'), 'Shared header CSS is inlined');
+  assert(!panel.webview.html.includes('__MERGE_HEADER_CSS__'), 'No unexpanded header placeholder');
   assert(panel.webview.html.includes('class="dashboard-brand"'),
     'Keep the repository identity grouped beside the dashboard title');
   assert(panel.webview.html.includes('aria-label="Bulk merge preferences"'),
