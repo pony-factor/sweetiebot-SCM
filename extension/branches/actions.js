@@ -1246,7 +1246,9 @@ function registerBranchCommands(vscode, context) {
           if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository, { refs })) return false;
           if (command === 'sweetiebot.publishBranch') {
             const merged = await mergedBranchStatus(repository, options.remote, options.branch);
-            if (merged) return warnMergedBranch(vscode, repository, merged);
+            if (merged) return warnMergedBranch(vscode, repository, merged, {
+              silent: options.silentMerged === true
+            });
           }
           if (command !== 'sweetiebot.autoPullClean' && command !== 'sweetiebot.createBranch') {
             await requireFinalizedCommit(repository, {
