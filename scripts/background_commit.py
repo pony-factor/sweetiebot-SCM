@@ -16,8 +16,8 @@ import time
 from contextlib import contextmanager, nullcontext
 
 import ai_commit as core
-from sweetiebot_async_commit import (write_journal as _write_journal, read_journal, PLACEHOLDER,
-                                    LEGACY_PLACEHOLDER, alive, related_pending_jobs, new_job_id,
+from sweetiebot_async_commit import (write_journal as _write_journal, read_journal,
+                                    get_placeholder_prefix, alive, related_pending_jobs, new_job_id,
                                     BASE58_ID_PATTERN, PLACEHOLDER_SUBJECT_PATTERN)
 from sweetiebot_diagnostics import log_event
 
@@ -1061,8 +1061,8 @@ def work(directory, commit_only=False):
                 with repository_lock(job['gitdir']):
                     captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                     job = read_journal(file)
-                    generated = not job['message'].startswith((PLACEHOLDER, LEGACY_PLACEHOLDER,
-                                                               '💭 Generate local commit message ['))
+                    generated = not re.fullmatch(
+                        PLACEHOLDER_SUBJECT_PATTERN, job['message'].partition('\n')[0])
                     job['phase'] = 'finalizing' if job.get('provisional') and generated else 'committed'
                     job.pop('error', None)
                     write_journal(file, job)
@@ -1085,7 +1085,8 @@ def work(directory, commit_only=False):
                     raise RuntimeError('The branch advanced; background commit was paused.')
                 if not job['message'].strip():
                     job['provisional'] = True
-                    job['message'] = PLACEHOLDER + job['id']
+                    job['placeholder_prefix'] = get_placeholder_prefix()
+                    job['message'] = job['placeholder_prefix'] + job['id']
                     if job.get('description'):
                         job['message'] += '\n\n' + job['description']
                 if job['trailer'] and job['trailer'] not in job['message'].splitlines():

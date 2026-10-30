@@ -19,7 +19,7 @@ import webbrowser
 from pathlib import Path
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from toolkit_settings import load_settings, VSCODE_SETTINGS
+from toolkit_settings import PLACEHOLDER_PREFIX_PATTERN, load_settings, VSCODE_SETTINGS
 from commit_diagnostics_dashboard import (
     DIAGNOSTICS_PANEL, DIAGNOSTICS_SCRIPT, DIAGNOSTICS_STYLE, read_diagnostics,
 )
@@ -340,6 +340,7 @@ SETTINGS = (
     Setting("aiCoremlLowMemoryModel", "scm-toolkit.ai-coreml-low-memory-model", "Core ML low-memory model", "Registered smaller CoreML-LLM model ID, used when available RAM falls below your threshold.", "Commits", "text"),
     Setting("aiCoremlCommand", "scm-toolkit.ai-coreml-command", "Core ML bridge executable", "Absolute path to your locally built sweetiebot-ane bridge. Install instructions in native/coreml-llm-bridge/README.md.", "Commits", "text"),
     Setting("durableBackgroundCommits", "scm-toolkit.durable-background-commits", "Durable background Commit and Push", "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background. Includes offline retries and restart recovery. Off by default.", "Source control"),
+    Setting("placeholderPrefix", "scm-toolkit.placeholder-prefix", "Provisional commit prefix", "Customize the temporary title prefix used while background commit titles are generated. Include the trailing underscore; use 2–16 ASCII letters, digits, hyphens, or underscores, starting with a letter. Default: hoof_. Existing jobs retain the prefix they started with.", "Source control", "placeholder_prefix"),
     Setting("autoCommitWithCodex", "scm-toolkit.auto-commit-with-codex", "Auto-commit with Codex every 30 seconds", "Opt in to check saved Git changes every 30 seconds and create a local commit co-authored by Codex. Automatically stages modified, deleted and untracked files. Skips clean repositories, merge conflicts and commits with drafted messages. Never pushes automatically.", "Source control"),
     Setting("aiDetailedCommitStyle", "scm-toolkit.ai-detailed-commit-style", "Detailed AI commit descriptions on all branches", "Opt in to generated explanatory commit bodies on topic branches as well as main. Your configured instructions, emoji priorities, and co-author settings apply in both fast and durable modes.", "Commits"),
     Setting("aiTitleExplanations", "scm-toolkit.ai-title-explanations", "Explain AI commit title choices", "Optional: ask the same Ollama generation request for a short explanation of the title wording. Diagnostics shows a collapsible Why this title? note. Explanations are stored locally in diagnostics logs and JSON exports, never in the Git commit. Off by default for speed and privacy.", "Commits"),
@@ -561,6 +562,11 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
         if setting.kind == "coauthor_email":
             if len(value) > 254 or not re.fullmatch(r"[^\s<>@]+@[^\s<>@]+", value):
                 raise ValueError("Commit co-author email must be a single valid name@domain address.")
+            parsed[setting.name] = value
+            continue
+        if setting.kind == "placeholder_prefix":
+            if not re.fullmatch(PLACEHOLDER_PREFIX_PATTERN, value):
+                raise ValueError("Provisional commit prefix must be 2–16 ASCII characters, start with a letter, and end with an underscore; use only letters, digits, hyphens, and underscores.")
             parsed[setting.name] = value
             continue
         if setting.kind == "optional_text":

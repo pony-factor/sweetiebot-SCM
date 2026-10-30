@@ -76,8 +76,10 @@ class AsyncCommitTests(unittest.TestCase):
             self.assertTrue(all(call.args == (asynchronous.BASE58_ALPHABET,)
                                 for call in choose.call_args_list))
 
-    def test_placeholder_subject_pattern_supports_new_and_legacy_titles(self):
+    def test_placeholder_subject_pattern_supports_custom_and_legacy_titles(self):
         subjects = (
+            asynchronous.get_placeholder_prefix() + '123456789AB',
+            'pony_123456789AB',
             'hoof_123456789AB',
             'placeholder_123456789AB',
             'placeholder_0123456789abcdef',
@@ -89,6 +91,14 @@ class AsyncCommitTests(unittest.TestCase):
                 self.assertIsNotNone(re.fullmatch(asynchronous.PLACEHOLDER_SUBJECT_PATTERN, subject))
         self.assertIsNone(re.fullmatch(asynchronous.PLACEHOLDER_SUBJECT_PATTERN, 'hoof_0123456789A'))
 
+    def test_placeholder_prefix_uses_user_setting_and_rejects_invalid_values(self):
+        with patch.object(asynchronous, "read_git_string", return_value="pony_") as read:
+            self.assertEqual(asynchronous.get_placeholder_prefix(), "pony_")
+            read.assert_called_once_with("scm-toolkit.placeholder-prefix", "hoof_")
+        with patch.object(asynchronous, "read_git_string", return_value="pony"):
+            with self.assertRaisesRegex(RuntimeError, "Invalid provisional commit prefix"):
+                asynchronous.get_placeholder_prefix()
+
     def test_commit_returns_with_placeholder_then_finalizes_without_restage(self):
         self.assertEqual(self.prepare(), 0)
         job = asynchronous.read_journal(self.pending())
@@ -96,9 +106,9 @@ class AsyncCommitTests(unittest.TestCase):
         original = self.git("rev-parse", "HEAD").stdout.strip()
         identities = self.git("log", "-1", "--format=%an|%ae|%at|%cn|%ce|%ct").stdout.strip()
         tree = self.git("rev-parse", "HEAD^{tree}").stdout.strip()
-        self.assertIn(asynchronous.PLACEHOLDER, self.title())
+        self.assertIn(asynchronous.get_placeholder_prefix(), self.title())
         self.assertRegex(job['id'], r'^[1-9A-HJ-NP-Za-km-z]{11}$')
-        self.assertEqual(self.title(), 'hoof_' + job['id'])
+        self.assertEqual(self.title(), asynchronous.get_placeholder_prefix() + job['id'])
 
         # Work continues while the model works. The worker must not include it.
         (self.root / "story.md").write_text("Subsequent staged story\n", encoding="utf-8")
@@ -165,7 +175,7 @@ class AsyncCommitTests(unittest.TestCase):
         ), patch.object(ai_commit.time, "sleep"):
             asynchronous.run_worker(self.git_exe, job["id"], str(self.pending()))
         self.assertFalse(self.pending().exists())
-        self.assertNotIn(asynchronous.PLACEHOLDER, self.title())
+        self.assertNotIn(asynchronous.get_placeholder_prefix(), self.title())
         rows = self.log_rows()
         failures = [row for row in rows if row["event"] == "request_failed"]
         self.assertEqual([row["attempt"] for row in failures], [1, 2, 3])
