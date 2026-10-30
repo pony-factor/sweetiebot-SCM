@@ -78,7 +78,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       const signing = configured || required;
       const sha = 'c'.repeat(40), tree = 'd'.repeat(40);
       const author = { name: 'Human', email: 'human@example.test' };
-      const message = '🐞 Signed Lindsey merge\\n\\nCo-authored-by: ChatGPT 6 <noreply@openai.com>';
+      const message = '🐞 Signed Lindsey merge\n\nCo-authored-by: ChatGPT 6 <noreply@openai.com>';
       const original = { state: 'open', draft: false, merged: false, title: '🐞 Signed Lindsey merge',
         head: { ref: 'feature', sha: head, repo: { full_name: 'owner/repo' } },
         base: { ref: 'main', repo: { full_name: 'owner/repo' } } };
@@ -117,10 +117,10 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
           if (signerFailure) throw Error('signer unavailable');
           return sha;
         }
-        if (args[0] === 'show') return author.name + '\\0' + author.email + '\\0' + message + '\\n';
+        if (args[0] === 'show') return author.name + '\0' + author.email + '\0' + message + '\n';
         if (args[0] === 'cat-file') {
-          return missingSignature ? 'tree ' + tree + '\\n' :
-            'tree ' + tree + '\\ngpgsig -----BEGIN SSH SIGNATURE-----\\n signature-data\\n';
+          return missingSignature ? 'tree ' + tree + '\n' :
+            'tree ' + tree + '\ngpgsig -----BEGIN SSH SIGNATURE-----\n signature-data\n';
         }
         if (args[0] === 'push') {
           assert.equal(args.at(-1), sha + ':refs/heads/main');
