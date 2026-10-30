@@ -18,6 +18,10 @@ const { warnMergedBranch } = require('../extension/branches/merged_branch');
   };
   await warnMergedBranch(vscode, { rootUri: uri }, info);
   assert.equal(calls.length, 0, 'dismissing the warning must not change branches');
+  assert.equal(await warnMergedBranch({ window: { showWarningMessage: assert.fail } },
+    { rootUri: uri }, info, { silent: true }), 'already-merged',
+  'an automatic publish check must silently skip a merged head without reopening recovery');
+  assert.equal(calls.length, 0, 'a silent check must never create a recovery branch');
   choice = 'Continue on new branch from old';
   await warnMergedBranch(vscode, { rootUri: uri }, info);
   assert.deepEqual(calls, [['sweetiebot.createBranch', uri, {
