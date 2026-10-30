@@ -50,6 +50,8 @@ jobs:
             tests.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
             tests.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
             tests.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
+            tests.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
+            tests.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
             tests.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
 
   inventory:

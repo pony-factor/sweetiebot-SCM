@@ -865,6 +865,48 @@ def rejected_push_error(job, result, remote_tip):
     return message
 
 
+def adopt_published_fast_forward(job, remote_tip):
+    """Fast-forward a clean local branch to published web work, never rewrite it.
+
+    A queued job can already be published while its checkout is behind the
+    destination. Other pending titles, dirty worktrees, or divergent history
+    must remain untouched; later jobs can perform their normal safe sync.
+    """
+    meta = Path(job['gitdir'])
+    with branch_sync_lock(meta, job['branch']):
+        with repository_lock(meta):
+            recover_finalization(meta)
+            before = branch_tip(job['branch'])
+            if before == remote_tip:
+                return True
+            if (not before or git('merge-base', '--is-ancestor', before, remote_tip,
+                                  check=False).returncode):
+                return False
+            _, jobs = captured_chain(meta / MARKER, job['branch'],
+                                     allow_extension=True, allow_finalized_advance=True)
+            if any(item.get('provisional') or item.get('replacement_sha') for item in jobs):
+                return False
+            env = os.environ.copy()
+            env.pop('GIT_INDEX_FILE', None)
+            for worktree in git('worktree', 'list', '--porcelain').split('\n\n'):
+                if ('\nbranch ' + job['branch'] in worktree
+                        and not worktree.startswith('worktree ' + job['root'] + '\n')):
+                    return False
+            active = git('symbolic-ref', '--quiet', 'HEAD', check=False,
+                         env=env).stdout.strip()
+            if active == job['branch'] and git('status', '--porcelain', env=env):
+                return False
+            # No queued commit SHA or tree changes. Reuse the crash-safe ref and
+            # checkout transaction already used by Lindsey, with an exact CAS.
+            git('update-ref', 'refs/sweetiebot/recovery/' + job['id'] + '/' + before,
+                before)
+            write_journal(meta / TRANSACTION, dict(
+                branch=job['branch'], before=before, after=remote_tip,
+                updates=[], checkout=True))
+            recover_finalization(meta)
+            return True
+
+
 def sync_with_lindsey(job, remote_tip):
     """Replay unpublished history through Lindsey, then atomically adopt its plan."""
     meta = Path(job['gitdir'])
@@ -1216,6 +1258,8 @@ def work(directory, commit_only=False):
                     published = git('ls-remote', job['remote'], job['destination'], check=False, timeout=30)
                     tip = published.stdout.split()[0] if published.returncode == 0 and published.stdout.strip() else ''
                     included = tip and git('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode == 0
+                    if included and job.get('published_title_unapplied'):
+                        adopt_published_fast_forward(job, tip)
                     if not included:
                         error = rejected_push_error(job, result, tip)
                         if error:

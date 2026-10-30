@@ -949,6 +949,54 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], tip)
 
 
+    def test_published_title_fast_forwards_clean_branch_to_web_commits(self):
+        directory = self.queue(message='', push=True)
+        provisional = self.job(directory)['sha']
+        self.git('push', '-q', 'origin', 'main')
+        web = self.root / 'web-checkout'
+        self.git('clone', '-q', '-b', 'main', str(self.root / 'remote'), str(web))
+        self.git('-C', str(web), 'config', 'user.name', 'Web Author')
+        self.git('-C', str(web), 'config', 'user.email', 'web@example.invalid')
+        (web / 'web.txt').write_text('Web-only changes\n')
+        self.git('-C', str(web), 'add', 'web.txt')
+        self.git('-C', str(web), 'commit', '-qm', 'Published web follow-up')
+        self.git('-C', str(web), 'push', '-q', 'origin', 'main')
+        web_tip = self.git('-C', str(web), 'rev-parse', 'HEAD')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), provisional)
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Archived local title', '')):
+            worker.work(directory)
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Archived local title')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), web_tip)
+        self.assertEqual(self.git('show', 'HEAD:web.txt'), 'Web-only changes')
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), provisional)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], web_tip)
+
+    def test_published_title_does_not_fast_forward_dirty_checkout(self):
+        directory = self.queue(message='', push=True)
+        provisional = self.job(directory)['sha']
+        self.git('push', '-q', 'origin', 'main')
+        web = self.root / 'web-checkout'
+        self.git('clone', '-q', '-b', 'main', str(self.root / 'remote'), str(web))
+        self.git('-C', str(web), 'config', 'user.name', 'Web Author')
+        self.git('-C', str(web), 'config', 'user.email', 'web@example.invalid')
+        (web / 'web.txt').write_text('Web change\n')
+        self.git('-C', str(web), 'add', 'web.txt')
+        self.git('-C', str(web), 'commit', '-qm', 'Newer published web change')
+        self.git('-C', str(web), 'push', '-q', 'origin', 'main')
+        web_tip = self.git('-C', str(web), 'rev-parse', 'HEAD')
+        (self.repo / 'untracked.txt').write_text('Keep my local untracked file\n')
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Preserve untracked local edits', '')):
+            worker.work(directory)
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Preserve untracked local edits')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), provisional)
+        self.assertEqual((self.repo / 'untracked.txt').read_text(),
+                         'Keep my local untracked file\n')
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], web_tip)
+
     def test_external_merge_blocks_placeholder_replacement(self):
         directory = self.queue(message='', push=True)
         self.git('branch', 'side')
