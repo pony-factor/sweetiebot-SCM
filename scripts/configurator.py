@@ -37,6 +37,7 @@ from local_setup import (
 )
 from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
+from codex_composer_layout import CONFIG_SCRIPT as CODEX_LAYOUT_SCRIPT, CONFIG_STYLE as CODEX_LAYOUT_STYLE, render_control as render_codex_layout_control, serialize_layout as serialize_codex_layout
 from window_title_configurator import WINDOW_TITLE_SCRIPT, WINDOW_TITLE_STYLE, render_heading
 from github_apps_ui import APP_PANEL, APP_SCRIPT
 from github_apps import app_status, save_app, save_mode, check_connection
@@ -383,6 +384,7 @@ SETTINGS = (
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
     Setting("codexHidePermissionsIcon", "scm-toolkit.codex-hide-permissions-icon", "Hide permissions icon", "Choose permissions from Change permissions below instead of the Codex composer icon.", "Codex"),
+    Setting("codexComposerLayout", "scm-toolkit.codex-composer-layout", "Composer layout", "Reorder and hide Codex composer controls with a fallback menu.", "Codex", "codex_layout"),
     Setting("codexFlatComposer", "scm-toolkit.codex-flat-composer", "Flat prompt box", "Use a compact prompt surface with subtle corners, no shadow, and a theme-colored focus border.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
     Setting("codexShowQueuedDelete", "scm-toolkit.codex-show-queued-delete", "Show queued-message Delete button", "Show the trash button beside queued Codex messages. Turn off to hide it; inline editing and Steer remain available. Apply through app repair, then reload the Codex view.", "Codex"),
@@ -490,6 +492,9 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             # The position dropdown supplies this legacy runtime preference.
             continue
         if setting.kind in {"packs", "names", "imports"}:
+            continue
+        if setting.kind == "codex_layout":
+            parsed[setting.name] = serialize_codex_layout(values.get(setting.name, [""])[0])
             continue
         if setting.kind == "message_bar":
             parsed[setting.name] = serialize_message_bar_layout(
@@ -716,12 +721,18 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
+    if setting.name == "codexHidePermissionsIcon":
+        # Retain a disabled field for settings inventory; it is omitted from FormData.
+        # Visibility is now controlled by the Codex composer layout instead.
+        return '<input type="hidden" name="codexHidePermissionsIcon" value="true" disabled>'
     if setting.name == "kefaniaShowCloseButton":
         return ""
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
         disabled = "" if current is True else " disabled"
         return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
     if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "commitButtonLabel", "commitAndSendButtonLabel", "windowHeading"}:
+        return ""
+    if setting.kind == "codex_layout":
         return ""
     if setting.kind == "message_bar":
         return render_message_bar_control(current)
@@ -944,6 +955,7 @@ def render_form(
                 for heading, is_time in (("Time", True), ("Customization", False))
             )
         if section == "Codex":
+            controls = render_codex_layout_control(current.get("codexComposerLayout", "")) + controls
             controls += '<div class="setting"><span><strong>Codex permissions</strong><small>Use Codex’s permissions menu, including its access confirmations.</small></span><button type="button" id="codex-permissions">Change permissions…</button><span id="codex-permissions-status" role="status"></span></div>'
             image_status = ("Custom image cached on this computer" if codex_sticker.sticker_path().is_file()
                             else "Bundled Twilight image")
@@ -1075,6 +1087,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 .actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
 .settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
+{CODEX_LAYOUT_STYLE}
 {WINDOW_TITLE_STYLE}
 {COMMIT_HOTKEY_STYLE}
 {DIAGNOSTICS_STYLE}
@@ -1089,6 +1102,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 <div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
+{CODEX_LAYOUT_SCRIPT}
 {APP_SCRIPT}
 {STICKER_SCRIPT}
 {PERMISSIONS_SCRIPT}
