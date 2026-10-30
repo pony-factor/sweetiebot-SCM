@@ -47,6 +47,9 @@ jobs:
             tests.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
             tests.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
             tests.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
+            tests.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
+            tests.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
             tests.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
 
   inventory:

@@ -25,6 +25,7 @@ MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
 FORKS = 'sweetiebot-background-forks.json'
+TITLE_NOTES = 'refs/notes/sweetiebot-published-titles'
 PARALLEL_JOBS = 6
 COMPLETED_JOB_RETENTION_DAYS = 60
 
@@ -164,7 +165,9 @@ def fork_branch(source, name, expected_head, destination=None, expected_tip=None
         pending = {job['sha'] for job in jobs if job and job.get('provisional')}
         for line in git('log', '--format=%H%x00%s', base).splitlines():
             sha, _, subject = line.partition('\x00')
-            if re.fullmatch(PLACEHOLDER_SUBJECT_PATTERN, subject) and sha not in pending:
+            if (re.fullmatch(PLACEHOLDER_SUBJECT_PATTERN, subject) and sha not in pending
+                    and git('notes', '--ref=' + TITLE_NOTES, 'show', sha,
+                            check=False).returncode):
                 raise RuntimeError('The branch base contains an unfinished commit without a background job.')
         forks = read_journal(meta / FORKS) or {}
         forks[branch] = base
@@ -202,14 +205,16 @@ def linear_branch_extension(previous, actual):
     return extension
 
 
-def require_unpublished_extension(job, extension):
-    """Never reparent external commits if the configured destination has published them."""
-    if not extension:
-        return
+def remote_contains_commit(job, sha):
+    """Check the configured remote before modifying a queued commit's identity.
+
+    A published commit cannot be retitled without rewriting its descendants.
+    Fail closed if the remote is configured but its state cannot be verified.
+    """
     remote, destination = job.get('remote'), job.get('destination')
     if not remote or not destination or git('remote', 'get-url', remote, check=False).returncode:
-        return  # No configured remote to check for a local-only commit.
-    error = ('Cannot verify that newer commits are unpublished; '
+        return False
+    error = ('Cannot verify whether queued commits are published; '
              'background finalization was paused to preserve shared history.')
     try:
         result = git('ls-remote', '--refs', remote, destination, check=False, timeout=8)
@@ -219,7 +224,7 @@ def require_unpublished_extension(job, extension):
         raise RuntimeError(error)
     rows = [line.split() for line in result.stdout.splitlines()]
     if not rows:
-        return
+        return False
     if len(rows) != 1 or len(rows[0]) != 2 or rows[0][1] != destination:
         raise RuntimeError(error)
     tip = rows[0][0]
@@ -230,11 +235,15 @@ def require_unpublished_extension(job, extension):
                      check=False, timeout=8)
         if result.returncode:
             raise RuntimeError(error)
-    if not git('merge-base', '--is-ancestor', extension[0], tip, check=False).returncode:
+    return git('merge-base', '--is-ancestor', sha, tip, check=False).returncode == 0
+
+
+def require_unpublished_extension(job, extension):
+    """Never reparent already-published external descendants."""
+    if extension and remote_contains_commit(job, extension[0]):
         raise RuntimeError('Later commits are already published upstream. SweetieBot cannot '
                            'replace an earlier provisional commit message without rewriting '
                            'that published history; no force-push was attempted.')
-
 
 def captured_chain(marker, branch, *, allow_extension=False, allow_finalized_advance=False):
     entries = [entry for entry in queue_entries(marker)
@@ -712,6 +721,30 @@ def finalize_message(directory, job):
             raise RuntimeError('An earlier queued commit message must finish first.')
         before = branch_tip(current['branch'])
         extension = linear_branch_extension(jobs[-1]['sha'], before)
+        if remote_contains_commit(current, current['sha']):
+            # The provisional commit (not just the later web commits) is already
+            # public. Preserve the exact shared SHA, tree, and descendants.
+            # A local Git note makes the generated title recoverable without
+            # changing the repository history or pushing a new commit.
+            proposed = current['message']
+            note = git('notes', '--ref=' + TITLE_NOTES, 'show', current['sha'],
+                       check=False)
+            if not note.returncode and note.stdout.strip() != proposed.strip():
+                raise RuntimeError('A different saved title exists for this published commit.')
+            if note.returncode:
+                git('notes', '--ref=' + TITLE_NOTES, 'add', '-m', proposed,
+                    current['sha'])
+            original = git('show', '-s', '--format=%B', current['sha'])
+            current.update(message=original, suggested_message=proposed,
+                           published_title_unapplied=True, provisional=False,
+                           phase='committed',
+                           title_warning=('Generated title saved in local Git notes; '
+                                          'the published commit message was not changed.'))
+            write_journal(directory / 'job.json', current)
+            job.update(current)
+            log_event('background_commit', 'published_title_preserved',
+                      outcome='warning')
+            return
         require_unpublished_extension(current, extension)
         parent = current['parent']
         updates = []
@@ -787,7 +820,8 @@ def captured_diff(job):
 def branch_recovery_candidate(job):
     error = job.get('error', '').lower()
     return bool(job.get('sha') and ('branch changed' in error
-                or 'branch advanced' in error))
+                or 'branch advanced' in error
+                or (job.get('provisional') and 'published upstream' in error)))
 
 
 def permanent_push_error(job, result):
@@ -1120,13 +1154,6 @@ def work(directory, commit_only=False):
                 recover_finalization(job['gitdir'])
                 _, pending = captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                 job = read_journal(file)
-                if (job.get('provisional') and not job.get('replacement_sha')
-                        and job['phase'] not in ('ready', 'finalizing')):
-                    # A web-created follow-up may already have published this
-                    # provisional ancestry. Block before reporting a generated
-                    # title that cannot safely replace the original commit.
-                    extension = linear_branch_extension(pending[-1]['sha'], branch_tip(job['branch']))
-                    require_unpublished_extension(job, extension)
             if job.get('provisional'):
                 if not job.get('replacement_sha') and job['phase'] not in ('ready', 'finalizing'):
                     with repository_lock(job['gitdir']):
