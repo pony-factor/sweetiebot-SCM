@@ -18,6 +18,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
   try {
     await registerAutoPublish(vscode,context); await tick();
     assert.equal(calls.length,1,'A branch in a new workspace publishes without a prior branch event');
+    assert.equal(calls[0][2].silentMerged, true,
+      'Background publishing must not display the merged-PR recovery dialog');
     change(); await tick(); assert.equal(calls.length,1,'Tracking branches are not republished');
     repository.state.HEAD={name:'manual-two',upstream:{remote:'origin',name:'main'}};
     change(); await tick(); assert.equal(calls.length,2,'Inherited tracking does not suppress a new branch');
