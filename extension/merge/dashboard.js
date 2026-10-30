@@ -662,6 +662,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       publish();
       return;
     }
+    if (message?.type === 'show-pr-commits') {
+      if (typeof message.enabled !== 'boolean') return;
+      try {
+        await vscode.workspace.getConfiguration('scmToolkit').update(
+          'mergeShowPrCommits', message.enabled, vscode.ConfigurationTarget.Global);
+      } catch (failure) {
+        error = 'Could not save PR commit graph preference: ' + failure.message;
+      }
+      publish();
+      return;
+    }
     if (message?.type === 'timestamp-mode') {
       if (!TIMELINE_MODES.includes(message.mode)) return;
       try {
