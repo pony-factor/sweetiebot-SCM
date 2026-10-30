@@ -457,16 +457,9 @@ function scmToolkitSyncCollapsedNativeRateLimitPony(root) {
         sticker.setAttribute('data-scm-toolkit-rate-limit-pony', 'true');
         sticker.setAttribute('role', 'status');
         sticker.setAttribute('aria-label', image.alt);
-        // This is the replacement, not another green-bordered notification.
-        sticker.style.display = 'inline-flex';
-        sticker.style.alignSelf = 'flex-start';
-        sticker.style.maxWidth = '100%';
-        sticker.style.minWidth = '0';
-        sticker.style.border = '0';
-        sticker.style.outline = 'none';
-        sticker.style.boxShadow = 'none';
-        sticker.style.background = 'transparent';
-        sticker.style.padding = '0';
+        // Keep the native green banner hidden, but frame the image itself
+        // with no interior spacing and center it above the composer.
+        scmToolkitStyleRateLimitStickerCard(sticker);
         sticker.append(image);
         banner.parentElement.insertBefore(sticker, banner);
         // Preserve the untouched native banner underneath, so a failed image
@@ -485,18 +478,21 @@ function scmToolkitSyncCollapsedNativeRateLimitPony(root) {
 
 function scmToolkitStyleRateLimitStickerCard(node) {
     node.style.border = '1px solid var(--vscode-focusBorder, currentColor)';
-    node.style.borderRadius = '12px';
+    node.style.borderRadius = '8px';
     node.style.outline = 'none';
     node.style.boxShadow = 'none';
-    node.style.background = 'var(--vscode-editorWidget-background, transparent)';
-    node.style.padding = '4px';
+    node.style.background = 'transparent';
+    node.style.padding = '0';
+    node.style.overflow = 'hidden';
     node.style.minWidth = '0';
     node.style.minHeight = '0';
+    node.style.maxWidth = '100%';
     node.style.width = 'max-content';
     node.style.height = 'auto';
-    node.style.display = 'inline-flex';
+    node.style.display = 'flex';
     node.style.flex = '0 0 auto';
-    node.style.alignSelf = 'flex-start';
+    node.style.alignSelf = 'center';
+    node.style.marginInline = 'auto';
 }
 function scmToolkitSyncRateLimitPony(root) {
     // React can recycle a native footer while retaining our attributes. Retire
@@ -587,7 +583,7 @@ function scmToolkitSyncRateLimitPony(root) {
     if (globalThis.scmToolkitResetShortcutInstalled) return;
     globalThis.scmToolkitResetShortcutInstalled = true;
     const style = document.createElement('style');
-    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:inline-flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;padding:4px!important}';
+    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;max-width:100%!important;padding:0!important;margin-inline:auto!important;align-self:center!important;overflow:hidden!important}';
     (document.head || document.documentElement).appendChild(style);
     let queued = false;
     const sync = () => {

@@ -3,7 +3,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const context = vm.createContext({});
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../assets/codex/rate-limit-controls.js'), 'utf8'), context);
+const rateLimitSource = fs.readFileSync(path.join(__dirname, '../assets/codex/rate-limit-controls.js'), 'utf8');
+// The injected CSS must not reinstate the previous 4px padding.
+assert.match(rateLimitSource, /padding:0!important/);
+assert.doesNotMatch(rateLimitSource, /padding:4px!important/);
+vm.runInContext(rateLimitSource, context);
 for (const [label, eligible] of [
     ['1 reset available', true], ['2 resets available', true], ['Full reset', true],
     ['0 resets available', false], ['Add credits', false],
@@ -118,8 +122,12 @@ assert.equal(footer.attrs['data-scm-toolkit-rate-limit-pony'], 'true');
 assert.equal(footer.style.border, '1px solid var(--vscode-focusBorder, currentColor)');
 assert.equal(footer.style.outline, 'none');
 assert.equal(footer.style.width, 'max-content');
-assert.equal(footer.style.borderRadius, '12px');
-assert.equal(footer.style.display, 'inline-flex');
+assert.equal(footer.style.borderRadius, '8px');
+assert.equal(footer.style.display, 'flex');
+assert.equal(footer.style.padding, '0');
+assert.equal(footer.style.overflow, 'hidden');
+assert.equal(footer.style.alignSelf, 'center');
+assert.equal(footer.style.marginInline, 'auto');
 // replaceChildren detaches the original footer label in the real webview.
 footerLabel.parentElement = null;
 assert.equal(context.scmToolkitFooterRateLimitNotice(imageRoot).card, null);
@@ -239,6 +247,10 @@ assert.equal(richNotice.textContent, 'Rate limited · resets in 2h');
 assert.equal(richNotice.querySelector('button'), nativeButton);
 assert.equal(detailParent.companion.children[0].width, 96);
 assert.equal(detailParent.companion.style.width, 'max-content');
+assert.equal(detailParent.companion.style.border, '1px solid var(--vscode-focusBorder, currentColor)');
+assert.equal(detailParent.companion.style.padding, '0');
+assert.equal(detailParent.companion.style.alignSelf, 'center');
+assert.equal(detailParent.companion.style.marginInline, 'auto');
 assert.equal(detailParent.companion.attrs['data-scm-toolkit-rate-limit-pony-companion'], 'true');
 context.scmToolkitSyncRateLimitPony(richRoot);
 assert.equal(detailParent.companion.children.length, 1);
@@ -629,8 +641,14 @@ assert.equal(nativeSticker.attrs['data-scm-toolkit-native-rate-limit-pony'], 'tr
 assert.equal(nativeSticker.attrs.role, 'status');
 assert.match(nativeSticker.attrs['aria-label'], /Twilight Sparkle/);
 assert.equal(nativeSticker.children[0].src, '__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__');
-assert.equal(nativeSticker.style.border, '0', 'native green border must not survive');
+assert.equal(nativeSticker.style.border, '1px solid var(--vscode-focusBorder, currentColor)',
+    'use a small image-hugging border instead of the wide native green banner');
 assert.equal(nativeSticker.style.background, 'transparent');
+assert.equal(nativeSticker.style.padding, '0');
+assert.equal(nativeSticker.style.overflow, 'hidden');
+assert.equal(nativeSticker.style.alignSelf, 'center');
+assert.equal(nativeSticker.style.marginInline, 'auto');
+assert.equal(nativeSticker.style.display, 'flex');
 assert.equal(nativeBanner.style.display, 'none');
 assert.equal(nativeBanner.style.priority, 'important');
 assert.equal(nativeBanner.textContent, originalNativeCopy, 'leave provider reset details untouched');
