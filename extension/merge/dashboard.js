@@ -135,13 +135,19 @@ function normalizeInlineReviewComments(comments) {
   });
 }
 
-function mergePhase(pr, previous) {
+function mergePhase(pr, previous, checkResults = null) {
   if (pr.merged || pr.merged_at || previous.state === 'merged') return 'merged';
   if (pr.state === 'closed') return 'closed';
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
   if (previous.review) return 'review';
-  if (pr.mergeable_state === 'unstable' || pr.mergeable_state === 'blocked') return 'blocked';
+  if (pr.mergeable_state === 'unstable') {
+    if (checkResults?.state === 'pending') return 'checks-pending';
+    if (checkResults?.state === 'failed') return 'checks';
+    // Do not claim a check failed when the check API cannot confirm one.
+    return 'blocked';
+  }
+  if (pr.mergeable_state === 'blocked') return 'blocked';
   if (previous.sawConflict && pr.mergeable === true && pr.head?.sha !== previous.originalHead) {
     return 'resolved';
   }
@@ -462,7 +468,21 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.inlineReviewComments = normalizeInlineReviewComments(notes.inlineComments);
       item.analysis = notes.analysis;
     }
-    const next = mergePhase(info, item);
+    // GitHub's `unstable` mergeability is not proof of failed CI. Check the
+    // current head before distinguishing unfinished checks from failures.
+    let checkResults = null;
+    if (info.state === 'open' && !info.merged && !info.merged_at &&
+        info.mergeable !== false && !item.review &&
+        info.mergeable_state === 'unstable' && SHA.test(info.head?.sha || '')) {
+      const prefix = 'repos/' + selection.repository;
+      const checkApi = endpoint => {
+        if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');
+        return githubGet(readFetch, token, selection.repository, endpoint.slice(prefix.length));
+      };
+      checkResults = await require('./checks').readMergeChecks(
+        checkApi, selection.repository, info.head.sha, { expectChecks: true });
+    }
+    const next = mergePhase(info, item, checkResults);
     item.state = next;
     if (!item.conflictCleared && (item.sawConflict && ((info.mergeable === true && info.head?.sha !== item.originalHead) || next === 'merged'))) {
       item.conflictCleared = true;
@@ -480,8 +500,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       conflict: 'GitHub reports merge conflicts',
       review: 'Human review required',
       queued: 'GitHub reports the pull request is queued',
+      'checks-pending': 'PR is open; checks are queued or in progress',
+      checks: 'PR is open; one or more checks failed',
       blocked: info.state !== 'open' ? 'GitHub PR state is unavailable; merging is blocked'
-        : info.mergeable_state === 'unstable' ? 'PR is open; checks are not passing'
+        : checkResults?.state === 'passed' ? 'Checks passed; waiting for GitHub to clear its merge restriction'
         : 'PR is open; merging is blocked',
       updated: 'PR head differs from the selected snapshot',
       waiting: 'GitHub reports the PR is open; awaiting merge'
