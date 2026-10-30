@@ -548,8 +548,15 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         if (rateLimitedUntil > Date.now()) break;
       }
       if (!disposed && !error) {
-        try { await onRefresh(prs.filter(pr => pr.sawConflict && pr.conflictCleared && pr.mergeable === true && !pr.review).map(pr => pr.number)); }
-        catch (failure) {
+        try {
+          const batchHeads = new Map((latestBatchState?.pullRequests || [])
+            .map(pr => [pr.number, pr.headSha]));
+          const candidates = prs.filter(pr =>
+            (pr.sawConflict && pr.conflictCleared && pr.mergeable === true && !pr.review) ||
+            (SHA.test(pr.currentHead || '') &&
+              pr.currentHead !== (batchHeads.get(pr.number) || pr.originalHead)));
+          await onRefresh(candidates.map(pr => pr.number));
+        } catch (failure) {
           error = 'Could not refresh the merge queue: ' + failure.message;
           if (failure.rateLimited) rateLimitedUntil = failure.retryAt || Date.now() + 60000;
         }
