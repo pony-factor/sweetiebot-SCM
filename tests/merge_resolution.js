@@ -59,6 +59,98 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       }
     }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
+  // The final two-parent Lindsey merge must honor the configured signer, not
+  // just the intermediate resolution commits.
+  const { localAuthorMerge } = require('../extension/merge/local_author_merge');
+  const signingDirectory = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'lindsey-merge-signing-'));
+  try {
+    await fs.mkdir(path.join(signingDirectory, '.git'));
+    for (const testCase of [
+      { configured: false },
+      { configured: true },
+      { configured: false, required: true },
+      { configured: true, signerFailure: true },
+      { configured: true, missingSignature: true },
+      { configured: true, githubRejectedSignature: true }
+    ]) {
+      const { configured, required = false, signerFailure = false,
+        missingSignature = false, githubRejectedSignature = false } = testCase;
+      const signing = configured || required;
+      const sha = 'c'.repeat(40), tree = 'd'.repeat(40);
+      const author = { name: 'Human', email: 'human@example.test' };
+      const message = '🐞 Signed Lindsey merge\n\nCo-authored-by: ChatGPT 6 <noreply@openai.com>';
+      const original = { state: 'open', draft: false, merged: false, title: '🐞 Signed Lindsey merge',
+        head: { ref: 'feature', sha: head, repo: { full_name: 'owner/repo' } },
+        base: { ref: 'main', repo: { full_name: 'owner/repo' } } };
+      let pushes = 0, created = 0;
+      const api = async endpoint => {
+        if (endpoint === 'repos/owner/repo/pulls/12') {
+          return pushes ? { ...original, state: 'closed', merged: true,
+            merge_commit_sha: sha } : original;
+        }
+        if (endpoint === 'repos/owner/repo/branches/main') {
+          return { protected: false, commit: { sha: base } };
+        }
+        if (endpoint === 'repos/owner/repo/rules/branches/main') return [];
+        if (endpoint.includes('/check-runs?')) return { check_runs: [] };
+        if (endpoint.includes('/check-suites?')) return { check_suites: [] };
+        if (endpoint.includes('/status?')) return { statuses: [] };
+        if (endpoint === 'repos/owner/repo/commits/' + sha) {
+          return { commit: { author, message, verification: {
+            verified: !githubRejectedSignature, reason: githubRejectedSignature ? 'bad_signature' : 'valid'
+          } }, parents: [{ sha: base }, { sha: head }] };
+        }
+        throw Error('Unexpected Lindsey signing API read: ' + endpoint);
+      };
+      const git = async (...args) => {
+        if (args[0] === 'config') {
+          assert.deepEqual(args, ['config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign']);
+          return String(configured);
+        }
+        if (args[0] === 'rev-parse') {
+          return { [head + '^{tree}']: tree, [sha + '^1']: base, [sha + '^2']: head }[args[1]];
+        }
+        if (args.includes('commit-tree')) {
+          created++;
+          assert.equal(args.includes('-S'), signing, 'Lindsey must explicitly sign commit-tree when configured');
+          assert(!args.includes('commit.gpgsign=false'));
+          if (signerFailure) throw Error('signer unavailable');
+          return sha;
+        }
+        if (args[0] === 'show') return author.name + '\0' + author.email + '\0' + message + '\n';
+        if (args[0] === 'cat-file') {
+          return missingSignature ? 'tree ' + tree + '\n' :
+            'tree ' + tree + '\ngpgsig -----BEGIN SSH SIGNATURE-----\n signature-data\n';
+        }
+        if (args[0] === 'push') {
+          assert.equal(args.at(-1), sha + ':refs/heads/main');
+          assert(!args.some(arg => arg.startsWith('--force')));
+          pushes++;
+          return '';
+        }
+        throw Error('Unexpected Lindsey signing Git command: ' + args.join(' '));
+      };
+      const action = () => localAuthorMerge({ repository: 'owner/repo', number: 12,
+        original, headSha: head, baseSha: base, tree, author, message,
+        git, api, directory: signingDirectory, requireSignedCommit: required });
+      if (signerFailure) {
+        await assert.rejects(action(), /signer unavailable/);
+        assert.equal(pushes, 0, 'Failed signing must not push an unsigned fallback');
+      } else if (missingSignature) {
+        await assert.rejects(action(), /missing its configured signature/);
+        assert.equal(pushes, 0, 'A missing signature must prevent publication');
+      } else if (githubRejectedSignature) {
+        await assert.rejects(action(), /GitHub did not verify its signature/);
+        assert.equal(pushes, 1, 'A post-push verification failure must not report success');
+      } else {
+        const merged = await action();
+        assert.equal(merged.merged, true);
+        assert.equal(merged.signed, signing ? true : undefined);
+        assert.equal(pushes, 1);
+      }
+      assert.equal(created, 1, 'Only one exact two-parent merge is prepared');
+    }
+  } finally { await fs.rm(signingDirectory, { recursive: true, force: true }); }
   for (const bad of [
     { ...input, repository: 'other/repo' }, { ...input, results: [input.results[0], input.results[0]] },
     ...[{ number: 13 }, { headSha: 'c'.repeat(40) }, { baseSha: '' }, { patch: '' }, { patch: 'x'.repeat(60001) }]
