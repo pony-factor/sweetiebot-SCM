@@ -283,6 +283,19 @@ async function openedRoot(result) {
     assert.equal(await fs.readFile(path.join(legacy, 'file.txt'), 'utf8'), 'separate old edits\n');
     git('-C', legacy, 'add', 'file.txt');
     git('-C', legacy, 'commit', '-m', 'Unpublished legacy-only commit');
+    // A legacy clone can own linked worktrees too. Selecting an occupied
+    // branch must navigate to its existing checkout, not Git checkout again.
+    const legacyTopic = path.join(temporary, 'legacy-linked-topic');
+    git('-C', legacy, 'worktree', 'add', '-b', 'legacy-topic', legacyTopic);
+    await fs.writeFile(path.join(legacyTopic, 'only-here.txt'), 'pending topic file\n');
+    const legacySwitcher = editor(legacy);
+    assert.equal(await routeBranch(legacySwitcher, { rootUri: { fsPath: legacy } },
+      { ...options, branch: 'legacy-topic' }), true);
+    assert.equal(await openedRoot({ target: legacySwitcher.commands.calls.at(-1)[1].fsPath }),
+      legacyTopic, 'Legacy clone reuses the worktree in its own Git database');
+    assert.equal(git('-C', legacy, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(legacyTopic, 'only-here.txt'), 'utf8'),
+      'pending topic file\n', 'Existing untracked files remain in that worktree');
     await assert.rejects(reconnectManagedMain(editor(legacy), options), /separate commits/,
       'A legacy clone cannot be reconnected just because its own main contains its commit');
     assert.equal(await reconnectManagedMain(editor(topic), options), false, 'Topic windows stay disconnected');

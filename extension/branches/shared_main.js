@@ -315,7 +315,7 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (!Object.hasOwn(options, 'commitDraftValue') && typeof repository.inputBox?.value === 'string')
     options.commitDraftValue = repository.inputBox.value;
   await require('./commit_drafts').preserveCommitDraft(vscode, root, undefined, options.commitDraftValue);
-  const original = await originalRepository(root, options);
+  let original = await originalRepository(root, options);
   const current = await run(['-C', root, 'branch', '--show-current']);
   if (branch === 'main') {
     const main = await mainRoot(root, options);
@@ -326,11 +326,12 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   }
   if (!create && current === branch) return true;
   if (!create && !adoptExisting && root !== original) {
-    // Linked topic worktrees can navigate to each other. Only old independent
-    // clones must fall back to their own ordinary Git branch checkout flow.
+    // A legacy clone has an independent Git database. Use its own worktree
+    // registry for branch navigation, not the canonical checkout's records.
+    // Otherwise the fallback checkout rejects an already-occupied branch.
     const common = await Promise.all([root, original].map(directory =>
       run(['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'])));
-    if (common[0] !== common[1]) return false;
+    if (common[0] !== common[1]) original = root;
   }
   if ((create || adoptExisting) && root !== original) {
     const common = await Promise.all([root, original].map(directory =>
