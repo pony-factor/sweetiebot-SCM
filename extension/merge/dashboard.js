@@ -481,7 +481,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.files = normalizeFiles(files);
       item.filesTruncated = files.length >= 300;
     }
-    if (cycle === 1 || cycle % 3 === 0 || changed || baseChanged || info.merged || item.review) {
+    // Mergeability transitions may make new blocker choices actionable before the next periodic poll.
+    if (cycle === 1 || cycle % 3 === 0 || changed || baseChanged || info.merged || item.review ||
+        item.mergeableState !== (info.mergeable_state || '')) {
       const notes = await readReports(readFetch, token, selection.repository, item.number, 2,
         { headSha: info.head?.sha, baseSha: info.base?.sha });
       decisionComments = notes.inlineComments;
