@@ -78,6 +78,7 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .activity-origin.upstream{color:var(--vscode-textLink-foreground,#468cdb)}
 .activity-current-row{padding:5px 0;border-top:1px solid var(--vscode-widget-border,#555)}
 .activity-elapsed{font-size:11px;color:var(--vscode-descriptionForeground);margin-top:3px}
+.activity-github-check{font-size:11px;color:var(--vscode-descriptionForeground);margin-top:2px}
 .activity-checks{font-size:11px;margin:3px 0 0;padding-left:18px;overflow-wrap:anywhere}
 main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -717,6 +718,12 @@ __RATE_LIMIT_FORMATTER__
           clock.activity = pr.activity;
           clock.setAttribute('aria-hidden', 'true');
         }
+        if (pr.githubRefreshing || pr.lastGitHubCheckAt) {
+          const checked = pr.githubRefreshing ? 'GitHub status · checking…'
+            : 'GitHub checked ' + formatTimelineTimestamp(pr.lastGitHubCheckAt, 'relative');
+          const checkNote = show('div', 'activity-github-check', checked, row);
+          if (!pr.githubRefreshing) checkNote.dataset.githubCheckedAt = pr.lastGitHubCheckAt;
+        }
         if (pr.activity.checks?.length) {
           const checks = show('ul', 'activity-checks', undefined, row);
           for (const check of pr.activity.checks) show('li', '', check.name + ' · ' + check.result, checks);
@@ -795,6 +802,9 @@ __RATE_LIMIT_FORMATTER__
     render();
   });
   function refreshRelativeEventTimes() {
+    for (const checked of byId('current-activity').querySelectorAll('.activity-github-check[data-github-checked-at]')) {
+      checked.textContent = 'GitHub checked ' + formatTimelineTimestamp(checked.dataset.githubCheckedAt, 'relative');
+    }
     if (model.timestampMode !== 'relative') return;
     if (model.rateLimitRetryAt && model.error) byId('notice').textContent = rateLimitMessage(model.rateLimitRetryAt, 'relative');
     for (const stamp of byId('events').querySelectorAll('.event-time[data-event-at]')) {
