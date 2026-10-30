@@ -30,7 +30,6 @@ function routineTimelineEvent(event) {
       /^Review round \d+ · waiting for GPT\b/.test(message) ||
       /^Checking current PR head, base and merge eligibility$/.test(message) ||
       /^Handoff received · waiting for local execution$/.test(message) ||
-      /^Repair commit verified · retiring stale patches and requesting a fresh review$/.test(message) ||
       /^Preparing PR in a temporary checkout$/.test(message) ||
       /^Commit message validated against the selected PR/.test(message) ||
       /^Integrating the full PR with the current base$/.test(message) ||
@@ -400,7 +399,10 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       ? source.updatedAt : continuing ? now : undefined;
     pr.activity = { phase, message, location, at: start,
       ...(updatedAt ? { updatedAt } : {}) };
-    if (!ROUTINE_BATCH_PHASES.has(phase)) addEvent(pr, 'progress', message, '', '', null, location);
+    if (!ROUTINE_BATCH_PHASES.has(phase) ||
+        (phase === 'refreshing' && /^(?:Repair|New PR) commit verified\b/.test(message))) {
+      addEvent(pr, 'progress', message, '', '', null, location);
+    }
   }
 
   function recordReviewActivity(item, notes) {
