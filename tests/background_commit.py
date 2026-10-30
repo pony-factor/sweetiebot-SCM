@@ -816,13 +816,81 @@ class BackgroundCommitTests(unittest.TestCase):
 
     def test_published_external_commit_blocks_placeholder_replacement(self):
         directory = self.queue(message='', push=True)
-        self.git('commit', '-q', '--allow-empty', '-m', 'Already published')
+        provisional = self.job(directory)['sha']
+        self.git('commit', '-q', '--allow-empty', '-m', 'Already published through web')
         self.git('push', '-q', 'origin', 'main')
         original_tip = self.git('rev-parse', 'HEAD')
-        with patch.object(worker.core, 'generate_message', return_value=('🧪 Pending title', '')):
+        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Generation must not start')):
             worker.work(directory)
-        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertIn('published upstream', job['error'])
+        self.assertIn('cannot replace an earlier provisional commit message', job['error'])
+        self.assertEqual(job['sha'], provisional)
+        self.assertTrue(job['provisional'])
         self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
+
+    def test_web_commit_published_during_generation_cannot_replace_history(self):
+        directory = self.queue(message='', push=True)
+        self.git('commit', '-q', '--allow-empty', '-m', 'Web follow-up')
+        original_tip = self.git('rev-parse', 'HEAD')
+        def publish_during_generation(*args, **kwargs):
+            self.git('push', '-q', 'origin', 'main')
+            return '🧪 Generated but not yet applied', ''
+        with patch.object(worker.core, 'generate_message', side_effect=publish_during_generation):
+            worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertIn('published upstream', job['error'])
+        self.assertIn('Generated but not yet applied', job['message'])
+        self.assertTrue(job['provisional'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
+
+    def test_published_followup_after_title_is_ready_blocks_replacement(self):
+        directory = self.queue(message='', push=True)
+        job = self.job(directory)
+        provisional = job['sha']
+        job.update(phase='ready', message='🧪 Title generated before web publication')
+        worker.write_journal(directory / 'job.json', job)
+        self.git('commit', '-q', '--allow-empty', '-m', 'Later web commit')
+        original_tip = self.git('rev-parse', 'HEAD')
+        self.git('push', '-q', 'origin', 'main')
+        with patch.object(worker.core, 'generate_message',
+                          side_effect=AssertionError('Ready title must not regenerate')):
+            worker.work(directory)
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'blocked')
+        self.assertTrue(job['provisional'])
+        self.assertIn('published upstream', job['error'])
+        self.assertEqual(job['message'], '🧪 Title generated before web publication')
+        self.assertEqual(job['sha'], provisional)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
+
+    def test_published_web_followup_blocks_multiple_pending_local_titles(self):
+        first = self.queue(message='', push=True)
+        (self.repo / 'story.txt').write_text('Second local commit\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        first_sha = self.job(first)['sha']
+        second_sha = self.job(second)['sha']
+        self.git('commit', '-q', '--allow-empty', '-m', 'Later published web commit')
+        original_tip = self.git('rev-parse', 'HEAD')
+        self.git('push', '-q', 'origin', 'main')
+        with patch.object(worker.core, 'generate_message',
+                          side_effect=AssertionError('Published history cannot be retitled')):
+            worker.work(first)
+            worker.work(second)
+        for directory, expected_sha in ((first, first_sha), (second, second_sha)):
+            job = self.job(directory)
+            self.assertEqual(job['phase'], 'blocked')
+            self.assertTrue(job['provisional'])
+            self.assertEqual(job['sha'], expected_sha)
+            self.assertIn('published upstream', job['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
 
     def test_external_merge_blocks_placeholder_replacement(self):
         directory = self.queue(message='', push=True)

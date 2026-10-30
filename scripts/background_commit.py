@@ -231,8 +231,9 @@ def require_unpublished_extension(job, extension):
         if result.returncode:
             raise RuntimeError(error)
     if not git('merge-base', '--is-ancestor', extension[0], tip, check=False).returncode:
-        raise RuntimeError('Later commits are already published; background finalization '
-                           'was paused to avoid rewriting shared history.')
+        raise RuntimeError('Later commits are already published upstream. SweetieBot cannot '
+                           'replace an earlier provisional commit message without rewriting '
+                           'that published history; no force-push was attempted.')
 
 
 def captured_chain(marker, branch, *, allow_extension=False, allow_finalized_advance=False):
@@ -1119,6 +1120,13 @@ def work(directory, commit_only=False):
                 recover_finalization(job['gitdir'])
                 _, pending = captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                 job = read_journal(file)
+                if (job.get('provisional') and not job.get('replacement_sha')
+                        and job['phase'] not in ('ready', 'finalizing')):
+                    # A web-created follow-up may already have published this
+                    # provisional ancestry. Block before reporting a generated
+                    # title that cannot safely replace the original commit.
+                    extension = linear_branch_extension(pending[-1]['sha'], branch_tip(job['branch']))
+                    require_unpublished_extension(job, extension)
             if job.get('provisional'):
                 if not job.get('replacement_sha') and job['phase'] not in ('ready', 'finalizing'):
                     with repository_lock(job['gitdir']):
