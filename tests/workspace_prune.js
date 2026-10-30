@@ -365,6 +365,23 @@ function fixture({
     await fs.writeFile(path.join(checkout, 'not-committed.txt'), 'unsaved\n');
     assert.equal(await releaseClosedWorktree(group, options), false);
     await fs.rm(path.join(checkout, 'not-committed.txt'));
+
+    // Ignored files and shared Git stashes also make a seemingly clean
+    // checkout ineligible for automatic removal.
+    await fs.writeFile(path.join(source, '.git', 'info', 'exclude'), 'ignored.tmp\n');
+    await fs.writeFile(path.join(checkout, 'ignored.tmp'), 'keep ignored\n');
+    assert.equal(git('-C', checkout, 'status', '--porcelain'), '',
+      'A normal Git status hides ignored files');
+    assert.equal(await releaseClosedWorktree(group, options), false,
+      'Ignored files must not disappear during worktree cleanup');
+    await fs.rm(path.join(checkout, 'ignored.tmp'));
+    await fs.writeFile(path.join(checkout, 'tracked.txt'), 'stash this change\n');
+    git('-C', checkout, 'stash', 'push', '-m', 'Preserve test stash');
+    assert(git('-C', source, 'stash', 'list').includes('Preserve test stash'));
+    assert.equal(await releaseClosedWorktree(group, options), false,
+      'An existing shared stash protects an otherwise clean checkout');
+    git('-C', checkout, 'stash', 'drop');
+
     await fs.utimes(stamp, new Date(), new Date());
     assert.equal(await releaseClosedWorktree(group, options), false);
     await fs.utimes(stamp, old, old);

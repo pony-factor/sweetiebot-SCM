@@ -129,6 +129,30 @@ jobs:
       - name: Run ${{ matrix.label }} checks
         run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
 
+  worktree-shutdown-safety:
+    name: Closed worktree safety (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check shutdown and pruning source and test syntax
+        run: |
+          node --check extension/branches/workspace_activity.js
+          node --check extension/branches/workspace_prune.js
+          node --check extension/branches/closed_worktree.js
+          node --check tests/workspace_activity.js
+          node --check tests/workspace_prune.js
+      - name: Test window shutdown scheduling and heartbeat cleanup
+        run: node tests/workspace_activity.js
+      - name: Test real Git worktree detachment and data-preservation gates
+        run: node tests/workspace_prune.js
+
   codex-webview-browser:
     name: Chromium CSS and DOM regression
     needs: inventory
