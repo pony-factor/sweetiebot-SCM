@@ -65,15 +65,72 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
     const clean = new URL(launch.href); clean.hash = ''; clean.searchParams.delete('sweetiebot_launch');
     history.replaceState(history.state, '', clean.href);
   }
+  let initialSubmitted = false;
   const collectResult = () => {
     if (!callback) return;
     const expires = Date.now() + (mergeLaunch ? 6 * 3600000 : 1200000);
     let previous, stableSince;
     let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
     let recoveryAllowed = !collectOnly;
+    let followupInjecting = false, followupPending, followupInserted = false;
+    let formatPhase = 0, awaitingResponseChange, lastResponseText = '', responseStableSince = Date.now();
+    let stagedUrl, staging = false, stageAttemptRound = -1, stagingFailed = false;
+    let validatedCompressedHref;
+    const validatedGzip = new Map();
+    let encodedFallbackUrl, encodingFallback = false, fallbackRaw, fallbackEncodingFailed = false;
+    let nodeZlib;
+    try { nodeZlib = require('node:zlib'); } catch { /* Sandboxed preload cannot load Node zlib. */ }
+    const nativeTransport = (action, payload) =>
+      require('electron').ipcRenderer.invoke('sweetiebot:merge-transport', { action, ...payload });
+    const stageCompressed = (data, expectedId) => {
+      // Almost all handoffs use the short inline gzip URL. Only an oversized
+      // complete payload is staged in memory on the nonce-scoped loopback server.
+      if (stageAttemptRound === formatPhase || awaitingResponseChange || stagedUrl || staging || !/^[A-Za-z0-9_-]+$/.test(data) ||
+          data.length > 48 * 1024 * 1024 ||
+          callback.href.length + '#result_gz='.length + data.length <= 80000) return;
+      stageAttemptRound = formatPhase;
+      if (!nodeZlib) {
+        staging = true;
+        void nativeTransport('stage', { data, expectedId }).then(id => {
+          if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id))
+            throw Error('Invalid staged handoff digest.');
+          stagedUrl = callback.href + '#result_id=' + id;
+        }).catch(() => { stagingFailed = true; }).finally(() => { staging = false; });
+        return;
+      }
+      let bytes, digest, body;
+      try {
+        bytes = Buffer.from(data, 'base64url');
+        if (bytes.toString('base64url') !== data) throw Error('Noncanonical Base64URL.');
+        digest = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+        if (expectedId && expectedId !== digest) throw Error('The short Apply link does not match its payload.');
+        body = JSON.stringify({ id: digest, data });
+        if (Buffer.byteLength(body) > 64 * 1024 * 1024) throw Error('Oversized staged handoff.');
+      } catch { stagingFailed = true; return; }
+      staging = true;
+      const http = require('node:http');
+      const request = http.request({ hostname: '127.0.0.1', port: callback.port,
+        method: 'POST', path: callback.pathname + '/stage', timeout: 10000,
+        headers: { Origin: callback.origin, Host: callback.host,
+          'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, response => {
+        let answer = '';
+        response.on('data', chunk => { answer += chunk; if (answer.length > 4096) request.destroy(); });
+        response.on('end', () => {
+          staging = false;
+          try {
+            if (![200, 201].includes(response.statusCode) || JSON.parse(answer).id !== digest)
+              throw Error('Local staging failed.');
+            stagedUrl = callback.href + '#result_id=' + digest;
+          } catch { stagingFailed = true; }
+        });
+      });
+      request.on('timeout', () => request.destroy(Error('Local staging timed out.')));
+      request.on('error', () => { staging = false; stagingFailed = true; });
+      request.end(body);
+    };
     const clearNotice = () => { retryNotice?.remove(); retryNotice = undefined; };
     const cancelRecovery = event => {
-      if (!event.isTrusted || (event.type === 'input' && inserting)) return;
+      if (!event.isTrusted || (event.type === 'input' && (inserting || followupInjecting))) return;
       if (event.type === 'click') {
         const button = event.target.closest?.('button');
         if (!/^(?:send|send prompt|stop|stop streaming|retry|try again)$/i.test(
@@ -89,6 +146,39 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
     };
     document.addEventListener('input', cancelRecovery, true);
     document.addEventListener('click', cancelRecovery, true);
+    const driveFollowup = () => {
+      if (!followupPending || !recoveryAllowed) return;
+      const composer = document.querySelector('#prompt-textarea')
+        || document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
+      const current = String(composer?.value ?? composer?.innerText ?? composer?.textContent ?? '').trim();
+      if (!composer || !composer.getClientRects().length || (current && current !== followupPending)) return;
+      if (!current) {
+        composer.focus();
+        followupInjecting = true;
+        try {
+          if (composer.tagName === 'TEXTAREA') {
+            Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(composer, followupPending);
+            composer.dispatchEvent(new Event('input', { bubbles: true }));
+          } else {
+            followupInserted = document.execCommand('insertText', false, followupPending);
+          }
+        } finally { followupInjecting = false; }
+        if (composer.tagName === 'TEXTAREA') followupInserted = true;
+        return;
+      }
+      if (!followupInserted) return;
+      const button = document.querySelector(
+        'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
+      );
+      if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true'
+          || !button.getClientRects().length || /stop|voice/i.test(button.getAttribute('aria-label') || '')
+          || button.getAttribute('data-testid') === 'stop-button') return;
+      if (globalThis.sweetiebotEnsureMaximumThinking &&
+          !globalThis.sweetiebotEnsureMaximumThinking()) return;
+      awaitingResponseChange = lastResponseText;
+      followupPending = undefined; followupInserted = false; formatPhase++;
+      button.click();
+    };
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
@@ -101,24 +191,71 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
-      let latest;
+      let latest = stagedUrl || encodedFallbackUrl;
+      let claimedStagingId;
       for (const link of links) {
         let url;
         try { url = new URL(link.href); } catch { continue; }
         if (url.origin !== callback.origin || url.pathname !== callback.pathname || url.search
             || url.href.length > 80000) continue;
         const result = new URLSearchParams(url.hash.slice(1));
-        const expectedKeys = mergeLaunch ? ['result'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
-        if ([...result.keys()].some(key => !expectedKeys.includes(key)) || !expectedKeys.every(key => result.get(key)?.trim())) continue;
+        const expectedKeys = mergeLaunch ? ['result', 'result_gz', 'result_id'] : callback.pathname.endsWith('/pony') ? ['profile'] : ['title', 'body'];
+        if ([...result.keys()].some(key => !expectedKeys.includes(key)) ||
+            (mergeLaunch ? !expectedKeys.some(key => result.get(key)?.trim()) : !expectedKeys.every(key => result.get(key)?.trim()))) continue;
         if (mergeLaunch) {
+          const values = ['result', 'result_gz', 'result_id'].filter(key => result.get(key)?.trim());
+          if (values.length !== 1) continue;
+          if (values[0] === 'result_id') {
+            if (!/^[a-f0-9]{64}$/.test(result.get('result_id'))) continue;
+            claimedStagingId = result.get('result_id');
+            // A short link is inert until the complete matching payload has
+            // been authenticated and staged. Never follow an arbitrary token.
+            continue;
+          }
+          if (result.get('result_gz') && !nodeZlib) {
+            if (validatedGzip.get(url.href) === 'valid') {
+              validatedCompressedHref = url.href;
+              latest = url.href;
+            } else if (!validatedGzip.has(url.href)) {
+              validatedGzip.set(url.href, 'pending');
+              void nativeTransport('validate', { data: result.get('result_gz') })
+                .then(valid => validatedGzip.set(url.href, valid === true ? 'valid' : 'invalid'))
+                .catch(() => validatedGzip.set(url.href, 'invalid'));
+            }
+            continue;
+          }
           try {
-            const input = JSON.parse(result.get('result'));
+            if (url.href === validatedCompressedHref) { latest = url.href; continue; }
+            let input;
+            if (result.get('result_gz')) {
+              const encoded = result.get('result_gz');
+              if (!/^[A-Za-z0-9_-]+$/.test(encoded)) continue;
+              const gzip = nodeZlib.gunzipSync(
+                Buffer.from(encoded, 'base64url'), { maxOutputLength: 64 * 1024 * 1024 });
+              input = JSON.parse(gzip.toString('utf8'));
+            } else input = JSON.parse(result.get('result'));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
-          } catch { continue; } // Streaming hrefs can contain a truncated JSON string.
+            validatedCompressedHref = url.href;
+          } catch { continue; } // Reject truncated or malformed encoded links before local execution.
         }
         latest = url.href;
       }
-      if (mergeLaunch && !latest) {
+      if (mergeLaunch && !latest && !staging && stageAttemptRound !== formatPhase && !awaitingResponseChange && !generating) {
+        // A compact, collapsed transport block is emitted ONLY when the
+        // complete gzip URL exceeds the browser budget. It has no raw diff.
+        const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
+          ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
+            .map(node => node.parentElement).filter(Boolean)];
+        const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
+        for (const code of codes) {
+          const match = (code.textContent || '').match(/SWEETIEBOT_HANDOFF_GZIP_V1:([A-Za-z0-9_-]{20,})/);
+          if (!match) continue;
+          stageCompressed(match[1], claimedStagingId);
+          break;
+        }
+      }
+      if (mergeLaunch && !latest && !staging && !stagedUrl) {
         // A fenced final payload is sufficient even if ChatGPT omitted its
         // link. Restrict extraction to assistant code, never the launch prompt.
         // Support both current assistant Markdown and conversation-role markup.
@@ -138,13 +275,28 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
             if (start < 0 || end < start) continue;
             const input = JSON.parse(text.slice(start, end + 1));
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
-            // encodeURIComponent leaves Markdown delimiters such as () raw.
-            // Build the URL locally with strict encoding so patch syntax
-            // cannot terminate a rendered Markdown destination.
-            const encoded = encodeURIComponent(JSON.stringify(input)).replace(/[!'()*]/g,
-              character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
-            const url = callback.href + '#result=' + encoded;
+            // A last-resort fenced JSON fallback still becomes a short gzip
+            // link automatically, without copying the raw diff into Lindsey.
+            const raw = JSON.stringify(input);
+            if (!nodeZlib) {
+              if (!encodingFallback && !fallbackEncodingFailed && fallbackRaw !== raw && !encodedFallbackUrl) {
+                fallbackRaw = raw;
+                encodingFallback = true;
+                void nativeTransport('compress', { raw }).then(encoded => {
+                  if (typeof encoded !== 'string' || !/^[A-Za-z0-9_-]+$/.test(encoded))
+                    throw Error('Invalid compressed fallback.');
+                  const url = callback.href + '#result_gz=' + encoded;
+                  if (url.length <= 80000) encodedFallbackUrl = url;
+                  else stageCompressed(encoded, claimedStagingId);
+                }).catch(() => { fallbackEncodingFailed = true; })
+                  .finally(() => { encodingFallback = false; });
+              }
+              continue;
+            }
+            const encoded = nodeZlib.gzipSync(Buffer.from(raw), { level: 9 }).toString('base64url');
+            const url = callback.href + '#result_gz=' + encoded;
             if (url.length <= 80000) latest = url;
+            else if (stageAttemptRound !== formatPhase && !generating) stageCompressed(encoded, claimedStagingId);
           } catch { /* Incomplete code blocks remain in the chat until complete. */ }
         }
       }
@@ -154,6 +306,29 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       if (latest && !generating && Date.now() - stableSince >= 2000) {
         finishRecovery(); window.location.assign(latest); return;
       }
+      // If the first completed answer omitted its clickable compressed link,
+      // ask once for the link, then request raw JSON only as a last resort.
+      // Do not overwrite user input, retry Git, or act on an unsubmitted prompt.
+      if (mergeLaunch && initialSubmitted && recoveryAllowed && !latest && !staging && !generating) {
+        const assistantNodes = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
+          ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
+          ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
+            .map(node => node.parentElement).filter(Boolean)];
+        const responseText = assistantNodes.map(node => (node.textContent || '').slice(-4000))
+          .filter(Boolean).at(-1) || '';
+        if (responseText !== lastResponseText) {
+          lastResponseText = responseText; responseStableSince = Date.now();
+        }
+        if (awaitingResponseChange && responseText !== awaitingResponseChange) awaitingResponseChange = undefined;
+        const stable = responseText && !awaitingResponseChange &&
+          Date.now() - responseStableSince >= 6000;
+        if (stable && !followupPending && formatPhase < 2) {
+          followupPending = formatPhase === 0
+            ? 'The prepared response did not contain a complete usable Apply with Lindsey link. Retry once using the SAME complete serialized payload. If a gzip/Base64URL link fits 80 KB, return ONLY [Apply with Lindsey](<EXACT_CALLBACK#result_gz=COMPLETE_BASE64URL>). If larger, return ONLY [Apply with Lindsey](<EXACT_CALLBACK#result_id=SHA256_OF_GZIP_BYTES>) and a collapsed <details> block containing a text code fence with SWEETIEBOT_HANDOFF_GZIP_V1:COMPLETE_BASE64URL. Never shorten or omit the payload. Do not show raw Git diffs.'
+            : 'The Apply with Lindsey link is still unavailable. As a last resort, output ONLY the COMPLETE versioned resolution object in a fenced json block, with every patch line intact. No abbreviated fields or truncated diffs; the local Sweetiebot browser will construct the Apply link from your JSON.';
+        }
+      }
+      driveFollowup();
       // Recover only a visible response-stream failure in this nonce-bound
       // workflow. Never resend the prompt or retry a local Git handoff.
       let retry;
@@ -315,6 +490,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       clean.searchParams.delete('sweetiebot_launch');
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
+      initialSubmitted = true;
       button.click();
       return;
     }

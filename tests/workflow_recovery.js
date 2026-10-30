@@ -24,12 +24,18 @@ assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
     const address = 'https://chatgpt.com/#' + new URLSearchParams({sweetiebot_merge:'1',return_to:bridge.url});
     assert(address.length < 250);
     assert.equal((await (await fetch(bridge.url + '/prompt')).json()).prompt, prompt);
-    let promptHandler, navigate;
+    let promptHandler, transportHandler, navigate;
     const frame={url:'https://chatgpt.com/'};
-    const contents={mainFrame:frame, ipc:{handle(channel, handler){assert.equal(channel,'sweetiebot:merge-prompt');promptHandler=handler;}},
+    const contents={mainFrame:frame, ipc:{handle(channel, handler){
+      if (channel === 'sweetiebot:merge-prompt') promptHandler = handler;
+      else if (channel === 'sweetiebot:merge-transport') transportHandler = handler;
+      else assert.fail('Unexpected native channel: ' + channel);
+    }},
       getBackgroundThrottling:()=>true,setBackgroundThrottling(){},on(_event,listener){navigate=listener;}};
     vm.runInNewContext(fs.readFileSync(path.join(root,'assets/browser/pr_background.js'),'utf8'),
       {URL,URLSearchParams,fetch,AbortSignal,Uint8Array,TextDecoder,_view:{webContents:contents}});
+    assert.equal(typeof transportHandler, 'function', 'Sandboxed gzip transport is registered alongside the prompt transport');
+    await assert.rejects(transportHandler({senderFrame:frame},{action:'validate',data:'abc'}),/Invalid merge transport sender/);
     await assert.rejects(promptHandler({senderFrame:frame}),/Invalid merge prompt sender/);
     navigate({},address,false,true);
     assert.equal(JSON.parse(await promptHandler({senderFrame:frame})).prompt,prompt);

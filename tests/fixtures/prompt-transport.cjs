@@ -11,7 +11,17 @@ const {createMergeHandoff} = require(path.join(root, 'extension/merge/handoff'))
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-electron-transport-'));
 app.setPath('userData', path.join(temporary, 'profile'));
 let bridge, win, executions = 0;
-const deadline = setTimeout(() => finish(Error('Native prompt transport timed out.')), 25000);
+const deadline = setTimeout(async () => {
+  let context = win?.webContents?.getURL() || 'no-window';
+  try {
+    const status = await Promise.race([
+      win?.webContents?.executeJavaScript('document.querySelector("#status")?.textContent || ""'),
+      new Promise(resolve => setTimeout(() => resolve('status query timed out'), 1000))
+    ]);
+    context += '; status=' + status;
+  } catch (error) { context += '; status error=' + error.message; }
+  finish(Error('Native prompt transport timed out: ' + context));
+}, 25000);
 function finish(error) {
   clearTimeout(deadline);
   bridge?.dispose();

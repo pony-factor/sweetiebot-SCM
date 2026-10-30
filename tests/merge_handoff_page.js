@@ -2,8 +2,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const {gzipSync} = require('node:zlib');
 const script = fs.readFileSync(require.resolve('../extension/merge/handoff.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
-async function page({raw, state, result, statusFailsDuringPost = false}) {
+async function page({raw, compressedRaw, stagedId, state, result, statusFailsDuringPost = false}) {
   const element = tag => ({ tag, children: [], textContent: '', className: '',
     append(...nodes) { this.children.push(...nodes); },
     replaceChildren(...nodes) { this.children = nodes; },
@@ -11,9 +12,9 @@ async function page({raw, state, result, statusFailsDuringPost = false}) {
   const status = element('p'), results = element('div'), summary = element('div');
   const navigations = [], posts = [];
   let poll;
-  const sandbox = {URL,URLSearchParams,JSON,Error,
+  const sandbox = {URL,URLSearchParams,JSON,Error,Blob,DecompressionStream,TextDecoder,Uint8Array,atob,
     document:{getElementById:id=>({status,results,summary})[id],createElement:element},
-    location:{hash:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
+    location:{hash:stagedId!==undefined?'#result_id='+stagedId:compressedRaw!==undefined?'#result_gz='+compressedRaw:raw===undefined?'':'#result='+encodeURIComponent(raw),pathname:'/lindsey-merge/nonce',assign:url=>navigations.push(url)},
     history:{replaceState(){}},setInterval:callback=>{poll=callback;return 1;},clearInterval(){},
     fetch:async (path,options)=> {
       if(options?.method==='POST') {
@@ -52,6 +53,20 @@ async function page({raw, state, result, statusFailsDuringPost = false}) {
   assert(pageMarkup.includes('class="merge-header"'));
   assert(stylesheet.includes('.merge-header .dashboard-brand'));
   assert.deepEqual(fresh.navigations,[result.continueUrl],'Continue immediately without a background-tab timer');
+  const prepared={version:1,repository:'owner/repo',results:[{number:1,patch:'diff --git a/file b/file\\n'+'+one line\\n'.repeat(200)}]};
+  const gz=gzipSync(Buffer.from(JSON.stringify(prepared)),{level:9}).toString('base64url');
+  const compact=await page({compressedRaw:gz,result});
+  assert.equal(compact.posts.length,1,'Gzip handoff is decoded and submitted once');
+  assert.deepEqual(JSON.parse(compact.posts[0]),prepared,'Large repeated patch data is preserved byte-for-byte');
+  const badGzip=await page({compressedRaw:gz.slice(0,-9)+'AAAAAAAAA'});
+  assert.equal(badGzip.posts.length,0,'Damaged gzip never reaches the local executor');
+  assert.match(badGzip.status,/incomplete|malformed/);
+  const id='a'.repeat(64);
+  const staged=await page({stagedId:id,result});
+  assert.deepEqual(JSON.parse(staged.posts[0]), {handoffId:id},
+    'The short link sends only its verified token; no unzip or patch copy on the Apply page');
+  const untrusted=await page({stagedId:'../bad',result});
+  assert.equal(untrusted.posts.length,0,'Malformed staged link must not submit');
   const legacy=await page({raw:'{}',result,statusFailsDuringPost:true});
   assert.deepEqual(legacy.navigations,[result.continueUrl],'A missing status endpoint cannot discard a successful original apply response');
   assert.equal(legacy.posts.length,1,'Failed status polling never retries Git execution');

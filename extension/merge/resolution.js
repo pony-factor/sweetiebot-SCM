@@ -8,8 +8,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { validateResolutionHunks } = require('./conflict_hunks');
 const SHA = /^[a-f0-9]{40}$/i;
-const MAX_PATCH_BYTES = 60000;
+const MAX_PATCH_BYTES = 32 * 1024 * 1024;
 
 function validateResolution(input, selection) {
   if (input?.version !== 1 || input.repository !== selection.repository ||
@@ -19,6 +20,9 @@ function validateResolution(input, selection) {
   const seen = new Set();
   return input.results.map(item => {
     const pr = selection.pullRequests.find(pr => pr.number === item?.number);
+    const resolutionHunks = validateResolutionHunks(item?.resolutionHunks);
+    if (resolutionHunks.length && item.patch !== null)
+      throw Error('Choose a full patch OR compact Git conflict hunks, never both.');
     if (!pr || seen.has(item.number) || item.headSha !== pr.headSha || !SHA.test(item.headSha) ||
         !SHA.test(item.baseSha || '') || typeof item.explanation !== 'string' ||
         !item.explanation.trim() || item.explanation.length > 4000 ||
@@ -33,10 +37,15 @@ function validateResolution(input, selection) {
     }
     seen.add(item.number);
     const decisions = require('./resolution_commits').validateDecisions(item.decisions);
+    if (resolutionHunks.length && (decisions.length !== resolutionHunks.length ||
+        resolutionHunks.some(file => !decisions.some(item => item.path === file.path)))) {
+      throw Error('Each compact conflicted file requires one concrete conflict decision.');
+    }
     if (item.repairChecks !== undefined && typeof item.repairChecks !== 'boolean') throw Error('Invalid check repair flag.');
     if (item.operation !== undefined && !['merge', 'sync'].includes(item.operation)) throw Error('Unknown local operation.');
     return { number: pr.number, headSha: pr.headSha, baseSha: item.baseSha,
-      base: pr.base, head: pr.head, title: pr.title, patch: item.patch, explanation: item.explanation,
+      base: pr.base, head: pr.head, title: pr.title, patch: item.patch, resolutionHunks,
+      explanation: item.explanation,
       operation: item.operation || 'merge', decisions, repairChecks: item.repairChecks === true,
       ...(item.commitTitle ? { commitProposal: { title: item.commitTitle, message: item.commitMessage } } : {}) };
   });
@@ -60,7 +69,7 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
     try {
       const result = await merge(selection.repository, item.number, {
         api, git, expected: item, onProgress,
-        resolutionPatch: item.patch, repairChecks: item.repairChecks,
+        resolutionPatch: item.patch, resolutionHunks: item.resolutionHunks, repairChecks: item.repairChecks,
         decisions: item.decisions, operation: item.operation, commitProposal: item.commitProposal,
         localGitMerge: item.operation === 'merge'
       });
@@ -125,11 +134,12 @@ function resolutionInstructions(selection, callback) {
     'NO-OP SYNCHRONIZATION: Do not issue a branch-only sync just because main advanced. For patch:null the local Git executor leaves a clean PR head unchanged when there are no textual conflicts or explicit file-resolution decisions, even if main has unrelated new commits. Do not create or request a synchronization commit, PR Conversation comment, review, or success summary when nothing was changed. In an authorized merge workflow, choose operation:"merge" (or omit it) rather than operation:"sync" when no branch-only conflict resolution was requested.',
     'EXPLANATION STYLE: Keep explanation to at most 80 words about the user-visible changes and the reason for the chosen integration. Do not narrate SHA, attribution or merge-message checks, executor commands, or instructions to the runner; verified progress is displayed separately.',
     'PROPOSED COMMIT MESSAGE: Include commitTitle and commitMessage for every merge result. Use the exact selected PR title with its (#number) suffix once, chronological original-commit bullets with four-space-indented wrapped bodies, exactly ten underscores and the ordered verified co-author trailers. The local runner checks your proposal against the original commits and corrects formatting or omitted credits; it never lets proposed prose discard contributor history.\n',
-    'Return ONE JSON object: {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"commitTitle":"Exact selected PR title (#123)","commitMessage":"Original commit summary and ordered credits","explanation":"what changed and why, including any resolution"}]}. Use a JSON string containing the full diff, including final newline, instead of null when resolving a conflict. Include only selected PRs that need local execution. The CLI will verify attribution from original GitHub commits, apply the exact patch with git apply --check and git apply --index in isolation, append incremental resolution and synchronization commits with an ordinary fast-forward push, and, only for operation:"merge", use the GitHub merge route preserving the verified human author and exact squash message. For bot-opened PRs, the trusted local Git handoff creates a human-authored integration commit preserving both parents, then makes an ordinary fast-forward destination push and verifies GitHub marks the original PR merged. It never rewrites the PR head and never bypasses protected branch rules. Web fields cannot grant history-rewrite permission. main is never rewritten. With operation:"sync", it only appends the selected PR branch commits; it never invokes the merge API. Checks and reviews still apply.',
+    'RESOLUTION PAYLOAD: Internally prepare the complete versioned JSON object {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"resolutionHunks":[],"decisions":[],"commitTitle":"Exact selected PR title (#123)","commitMessage":"Original commit summary and ordered credits","explanation":"what changed and why, including any resolution"}]}. Prefer patch:null and omit resolutionHunks for routine clean integration. BULK CONFLICT RESOLUTION: Prefer compact resolutionHunks for actual conflicting files instead of a huge unified diff: set patch:null, resolutionHunks:[{"path":"verified relative file","hunks":[{"index":0,"choice":"ours|theirs|both-ours-first|both-theirs-first|custom","resolved":"only for custom"}]}], plus one decision per conflicted file. Indexes are zero-based ordered Git conflict regions; ours is current BASE and theirs is the PR HEAD. Use custom to specify just the complete replacement for that region. Optionally include exact ours and theirs to verify a hunk; NEVER guess. The isolated Git executor performs the actual three-way merge locally, preserves nonconflicting edits, applies every specified conflict resolution, rejects missing or changed hunks, and validates the full integrated tree. No entire diff is required. Full unified diff patches remain available where a compact hunk cannot express the change. These two forms are mutually exclusive. Never truncate any patch or hunk; a 32 MiB text patch safety bound does not require the diff to appear in chat. No raw JSON is output unless the browser requests its second and final fallback.',
+    'BOT-OPENED PR ATTRIBUTION: For bot-opened PRs, the trusted local handoff can prepare a human-authored integration commit preserving both original parents, make an ordinary fast-forward destination push, and verify GitHub marks the original PR merged. Never rewrite the original PR head, force-push a base branch, or bypass branch-protection rules. Preserve checks and reviews before merging.',
     reviewPublicationInstructions(),
     reportOptionsInstructions(),
-    "HANDOFF DELIVERY: The complete versioned JSON in a fenced json block in your FINAL assistant response is the primary handoff. Lindsey reads that block and constructs its own correctly encoded Apply URL, so a missing or malformed model-written link must not prevent delivery. Never put the only payload in a tool output, downloadable file, .webloc, attachment, or sandbox link. Do not abbreviate or truncate the JSON or patch. If also including a clickable Apply with Lindsey link, generate it programmatically from JSON.stringify with strict RFC3986 percent encoding: encode parentheses, apostrophes, asterisks and exclamation marks too. Wrap the entire Markdown link destination in angle brackets so patch punctuation cannot terminate it. Do not hand-assemble a long encoded URL.",
-    'If every selected PR is blocked or already handled, return results:[] in that same versioned JSON object. This is a valid no-op; the local CLI must not merge anything. Optionally include a Markdown link labeled "Apply with Lindsey" to ' + callback + '#result= followed by the percent-encoded JSON object. The complete encoded URL must be under 80000 UTF-8 bytes. Do not truncate a patch to fit. Returning this link authorizes execution for this already-selected merge batch; the local page automatically submits it and displays independently verified results. In the chat, keep the handoff concise and never describe delegated PRs as merged before local execution is verified.'
+    'HANDOFF DELIVERY: The PRIMARY and mandatory final result is exactly one clickable Markdown link labeled "Apply with Lindsey", targeting the authorized callback with #result_gz= followed by URL-safe unpadded Base64 of gzip-compressed UTF-8 JSON.stringify of the complete versioned resolution object. Use a Python or JavaScript execution tool to serialize, gzip and Base64URL-encode the actual JSON bytes; never attempt to invent compressed bytes. Serialize and compress only once; build the full encoded link without hand-escaping or splitting the bytes, and let the local receiver independently verify and decode the payload. Wrap the complete Markdown destination in angle brackets. Return a short explanation beside the link, but DO NOT render a JSON block or raw diff in the normal response. If the button cannot be formed completely, do not truncate it; the Sweetiebot browser will request one automatic retry. Only after that retry fails may the browser request a complete fenced json block as a last-resort fallback. Always preserve full patches; the local runner validates and applies them. The callback is scoped, temporary and single-use.',
+    'Apply with Lindsey destination: ' + callback + '#result_gz=<GZIP_BASE64URL>. Use this normal route for every complete link under 80000 UTF-8 bytes. RARE OVERSIZE LAST RESORT ONLY: If (and only if) the complete compressed URL exceeds that budget, compute SHA-256 of the SAME gzip bytes and instead output [Apply with Lindsey](<' + callback + '#result_id=<64hex SHA256>>), followed by a collapsed HTML <details><summary>Compressed transport (only needed for local recovery)</summary> containing a fenced text block with one line SWEETIEBOT_HANDOFF_GZIP_V1:<COMPLETE_BASE64URL>, then close </details>. The scoped browser preload verifies the digest, stages the bytes locally, and enables the short link; it never sends or stores the raw diff remotely. Never use this for ordinarily sized links. The final visible answer should contain only the compact Apply link and a brief explanation; no expanded JSON or diff. If the compressed payload cannot fit even in a complete answer, report that limitation; never truncate. The full JSON must include version:1, repository, results, exact headSha/baseSha, complete patch or null, decisions when applicable, proposal and explanation. For a no-op encode results:[]. Only on an explicitly requested SECOND fallback may raw JSON be printed.'
   ].join('\n\n');
 }
 

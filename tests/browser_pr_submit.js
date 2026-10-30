@@ -2,9 +2,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { gzipSync, gunzipSync } = require('node:zlib');
+const crypto = require('node:crypto');
+const { EventEmitter } = require('node:events');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], assistantText = '', streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
+  let currentAssistantText = assistantText;
   const timers = new Map();
   const listeners = new Map();
   const composer = { innerText: text, getClientRects: () => [1], focus() {} };
@@ -12,7 +16,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
     getClientRects: () => [1], click: () => { sidebarClicks++; sidebar = false; } };
   const button = { disabled, getAttribute: key => key === 'aria-label' ? label : null,
     getClientRects: () => [1], click: () => { clicks++; } };
-  const navigations = [], retryNotices = [];
+  const navigations = [], retryNotices = [], stagedRequests = [];
   let retries = 0;
   const retryButton = { disabled: false, textContent: 'Retry',
     parentElement: { textContent: 'Error in message stream Retry' },
@@ -29,9 +33,28 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
   }
   const window = { location: location(url), Storage, localStorage:new Storage() }; window.top = window;
   const history = { state: {}, replaceState(state, title, url) { window.location = location(url); } };
-  vm.runInNewContext(source, { window, history, URL, URLSearchParams, Date: { now: () => now },
+  vm.runInNewContext(source, { window, history, URL, URLSearchParams, Buffer, Date: { now: () => now },
     sweetiebotEnsureMaximumThinking: () => thinkingReady,
-    require(name) { assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}}; },
+    require(name) {
+      if (name === 'node:zlib') return { gzipSync, gunzipSync };
+      if (name === 'node:crypto') return { createHash: crypto.createHash };
+      if (name === 'node:http') return { request(options, callback) {
+        const request = new EventEmitter();
+        request.end = body => {
+          stagedRequests.push({options,body});
+          const response = new EventEmitter();
+          response.statusCode=201;
+          callback(response);
+          process.nextTick(() => {
+            response.emit('data',JSON.stringify({id:JSON.parse(body).id}));
+            response.emit('end');
+          });
+        };
+        request.destroy=()=>request.emit('error', Error('Aborted'));
+        return request;
+      } };
+      assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}};
+    },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { createElement() { return { style: {}, setAttribute() {}, remove() { this.removed = true; } }; }, execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ type: 'input', isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
       selector === '[contenteditable="true"][role="textbox"].ProseMirror' ? composer :
@@ -39,11 +62,11 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
         if (selector.includes('Stop streaming')) return streaming ? [{ ...button, getClientRects: () => backgroundStreaming ? [] : [1] }] : hiddenStop ? [{getClientRects:()=>[]}] : [];
-        const message = values => ({ querySelectorAll(selector) {
+        const message = values => ({ textContent: currentAssistantText || values.join(' '), querySelectorAll(selector) {
           assert.equal(selector, 'pre code, pre, [data-testid="code-block"]');
           return values.map(textContent => ({ textContent }));
         } });
-        if (selector === '[data-message-author-role="assistant"]') return assistantCodes.length ? [message(assistantCodes)] : [];
+        if (selector === '[data-message-author-role="assistant"]') return assistantCodes.length || currentAssistantText ? [message(assistantCodes)] : [];
         // The role is on a header sibling, not an ancestor of the code block.
         if (selector === '[data-conversation-role="assistant"]') return conversationCodes.length ? [{ parentElement: message(conversationCodes) }] : [];
         if (selector === '[data-markdown-text-style="assistant-message"]') return modernAssistantCodes.length ? [message(modernAssistantCodes)] : [];
@@ -55,8 +78,8 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
         const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks);
       },
       removeEventListener: (name, callback) => listeners.get(name)?.delete(callback) } });
-  return { composer, button, window, listeners, navigations, persisted, setStreaming(value){streaming=value;}, setStreamError(value){streamError=value;}, retryButton, retries:()=>retries, retryNotices, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
-    sidebarClicks: () => sidebarClicks, revealSidebar: () => { sidebar = true; },
+  return { composer, button, window, listeners, navigations, stagedRequests, persisted, setStreaming(value){streaming=value;}, setStreamError(value){streamError=value;}, retryButton, retries:()=>retries, retryNotices, setThinkingReady(value){thinkingReady=value;}, clicks: () => clicks,
+    sidebarClicks: () => sidebarClicks, setAssistantText(value){currentAssistantText = value;}, revealSidebar: () => { sidebar = true; },
     tick(ms = 250) { now += ms; const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); } };
 }
 let f = fixture({ disabled: true });
@@ -145,10 +168,20 @@ console.log('Fragment and merge handoff checks passed.');
 
 const mergeCallback = 'http://127.0.0.1:1234/lindsey-merge/11111111-2222-4333-8444-555555555555';
 const mergeReturn = mergeCallback + '#result=' + encodeURIComponent(JSON.stringify({ version: 1, repository: 'owner/repo', results: [] }));
+const fallbackGzUrl=mergeCallback+'#result_gz='+gzipSync(Buffer.from(JSON.stringify({version:1,repository:'owner/repo',results:[]})),{level:9}).toString('base64url');
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: 'Merge #41 & #42', resultLinks: [mergeReturn], streaming: true });
 f.tick(2500); assert.equal(f.navigations.length, 0);
 f.setStreaming(false); f.tick(2500);
 assert.deepEqual(f.navigations, [mergeReturn], 'Collect a completed local merge result automatically for sequential continuation');
+const compactPayload={version:1,repository:'owner/repo',results:[{number:41,patch:'diff --git a/b b/b\\n'+'+updated\\n'.repeat(100)}]};
+const compactUrl=mergeCallback+'#result_gz='+gzipSync(Buffer.from(JSON.stringify(compactPayload)),{level:9}).toString('base64url');
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',resultLinks:[compactUrl]});
+f.tick(250);f.tick(2500);f.tick(2500);
+assert.deepEqual(f.navigations,[compactUrl],'Complete compressed Apply with Lindsey links are accepted');
+const badCompact=compactUrl.slice(0,-6)+'invalid';
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',resultLinks:[badCompact]});
+f.tick(2500);
+assert.equal(f.navigations.length,0,'Corrupt gzip data never triggers local execution');
 const partialLinks = [mergeCallback + '#result=' + encodeURIComponent('{"version":1,"repository":"owner/repo","results":[{"patch":"unfinished')];
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '', resultLinks: partialLinks });
 f.tick(2500);
@@ -159,24 +192,24 @@ assert.deepEqual(f.navigations, [mergeReturn], 'Merge collection still works aft
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   assistantCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })] });
 f.tick(2500);
-assert.deepEqual(f.navigations, [mergeReturn], 'Complete assistant JSON recovers an omitted final apply link');
+assert.deepEqual(f.navigations, [fallbackGzUrl], 'Complete assistant JSON recovers an omitted final apply link');
 // The live ChatGPT conversation layout uses data-conversation-role.
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   conversationCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })], streaming: true });
 f.tick(2500);
 assert.equal(f.navigations.length, 0, 'New conversation markup still waits for response completion');
 f.setStreaming(false); f.tick(2500);
-assert.deepEqual(f.navigations, [mergeReturn], 'Collect final handoffs from the current ChatGPT conversation markup');
+assert.deepEqual(f.navigations, [fallbackGzUrl], 'Collect final handoffs from the current ChatGPT conversation markup');
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   modernAssistantCodes: [JSON.stringify({ version: 1, repository: 'owner/repo', results: [] })], streaming: true });
 f.tick(2500);
 assert.equal(f.navigations.length, 0, 'Current assistant Markdown waits for the response to finish');
 f.setStreaming(false); f.tick(2500);
-assert.deepEqual(f.navigations, [mergeReturn], 'Current assistant Markdown without the old role attribute reaches the handoff');
+assert.deepEqual(f.navigations, [fallbackGzUrl], 'Current assistant Markdown without the old role attribute reaches the handoff');
 const resumeUrl='https://chatgpt.com/g/g-p-test123/c/11111111-2222-4333-8444-555555555555?sweetiebot_launch=resume#'+new URLSearchParams({sweetiebot_merge:'1',sweetiebot_collect:'1',return_to:mergeCallback});
 f=fixture({url:resumeUrl,text:'Keep this unsent draft',assistantCodes:[JSON.stringify({version:1,repository:'owner/repo',results:[]})],sidebar:true});
 f.tick(2500);
-assert.deepEqual(f.navigations,[mergeReturn],'An existing completed conversation can resume its nonce-bound collector');
+assert.deepEqual(f.navigations,[fallbackGzUrl],'An existing completed conversation can resume its nonce-bound collector with a compressed handoff');
 assert.equal(f.composer.innerText,'Keep this unsent draft');
 assert.equal(f.clicks(),0,'Collector recovery never sends another user prompt');
 assert.equal(f.sidebarClicks(),0,'Collector recovery preserves existing chat layout');
@@ -189,7 +222,7 @@ f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback),
 f.tick(2500);
 assert.equal(f.navigations.length,1,'A broken Markdown link recovers from a complete assistant code block with a toolbar');
 assert(!/[!'()*]/.test(new URL(f.navigations[0]).hash),'Locally encoded handoffs contain no raw Markdown delimiters');
-assert.deepEqual(JSON.parse(new URLSearchParams(new URL(f.navigations[0]).hash.slice(1)).get('result')),punctuated);
+assert.deepEqual(JSON.parse(gunzipSync(Buffer.from(new URLSearchParams(new URL(f.navigations[0]).hash.slice(1)).get('result_gz'),'base64url')).toString('utf8')),punctuated);
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text: '',
   resultLinks: [mergeReturn], streaming: true, backgroundStreaming: true });
 f.tick(2500);
@@ -206,6 +239,31 @@ f = fixture({ url: fragmentUrl + '&return_to=' + encodeURIComponent(mergeCallbac
 f.tick(3000);
 assert.equal(f.navigations.length, 0, 'A PR drafting launch cannot invoke Lindsey merge callback');
 
+// A nonce-bound merge answer missing its button receives one link-only follow-up,
+// then and only then a last-resort JSON request; neither step repeats Git.
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),
+  text:'',assistantText:'I prepared the conflict resolution but omitted the link.'});
+f.tick(250);f.composer.innerText='';f.tick(500);f.tick(6500);
+assert.match(f.composer.innerText,/did not contain a complete usable Apply/,'Missing link requests the encoded result');
+f.tick(500);
+assert.equal(f.clicks(),2,'The first follow-up is sent exactly once');
+f.composer.innerText='';
+f.setAssistantText('The link is still unavailable after retry.');
+f.tick(250);f.tick(6500);
+assert.match(f.composer.innerText,/As a last resort/,'Second failure requests fenced JSON');
+f.tick(500);
+assert.equal(f.clicks(),3,'At most one link retry and one JSON fallback request');
+f.tick(30000);assert.equal(f.clicks(),3,'No unbounded follow-up loop');
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+  assistantText:'Incomplete result without link',streaming:true});
+f.tick(10000);
+assert.equal(f.clicks(),1,'Never ask for a missing link while the assistant is streaming');
+f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+  assistantText:'Incomplete result without link'});
+f.tick(250);f.composer.innerText='';
+f.listeners.get('input').forEach(fn=>fn({type:'input',isTrusted:true}));
+f.tick(10000);
+assert.equal(f.clicks(),1,'User intervention cancels automatic follow-up');
 const callback = 'http://127.0.0.1:1234/kefania-draft/11111111-2222-4333-8444-555555555555/pony';
 const returnUrl = callback+'#profile=Verified%20Bushel%20profile';
 const collectLaunch = fragmentUrl+'&return_to='+encodeURIComponent(callback);
@@ -277,3 +335,36 @@ f = fixture({ url: mergeUrl, streamError: true });
 f.tick(2500);
 assert.equal(f.retries(), 0, 'No nonce-bound receiver means no automatic recovery');
 console.log('Bounded workflow response-stream recovery checks passed.');
+(async () => {
+  // Staging is a last resort only: the 80 KB gzip URL budget must actually
+  // be exceeded before any local POST occurs.
+  const oversized = {version:1,repository:'owner/repo',results:[{
+    number:41,headSha:'a'.repeat(40),baseSha:'b'.repeat(40),
+    patch:crypto.randomBytes(100000).toString('base64'),explanation:'A complete text patch.'
+  }]};
+  const data = gzipSync(JSON.stringify(oversized), {level:9}).toString('base64url');
+  assert(mergeCallback.length + '#result_gz='.length + data.length > 80000,
+    'This fixture must exceed the inline URL limit');
+  const id = crypto.createHash('sha256').update(Buffer.from(data,'base64url')).digest('hex');
+  const shortLink = mergeCallback+'#result_id='+id;
+  f = fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+    resultLinks:[shortLink],assistantCodes:['SWEETIEBOT_HANDOFF_GZIP_V1:'+data]});
+  f.tick(); // Initial Send finishes before monitoring its answer.
+  f.tick(2500);
+  assert.equal(f.stagedRequests.length,1,'Oversized handoff is staged only once');
+  assert.equal(f.stagedRequests[0].options.path,new URL(mergeCallback).pathname+'/stage',
+    'Transport is restricted to the exact nonce-scoped local route');
+  assert.equal(f.navigations.length,0,'Do not navigate before local staging acknowledgement');
+  await new Promise(resolve => setImmediate(resolve));
+  f.tick(2500);f.tick(2500);
+  assert.deepEqual(f.navigations,[shortLink],'Compact Apply link activates after the local payload is stored');
+  f.tick(30000);
+  assert.equal(f.stagedRequests.length,1,'Never re-upload the staged payload');
+  const small = gzipSync(JSON.stringify({version:1,repository:'owner/repo',results:[]})).toString('base64url');
+  f = fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
+    assistantCodes:['SWEETIEBOT_HANDOFF_GZIP_V1:'+small]});
+  f.tick();f.tick(2500);
+  assert.equal(f.stagedRequests.length,0,'Normal-sized results never use local staging');
+  console.log('One-time nonce-scoped large-payload handoff and compact-link checks passed.');
+})().catch(error => { console.error(error); process.exitCode=1; });
+
