@@ -41,6 +41,9 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     'An actual fetch failure must stay in history');
   assert(!routineTimelineEvent({ state: 'progress', message: 'Prepared commit pushed to the PR branch · not merged' }),
     'A pushed commit is a meaningful milestone');
+  assert(!routineTimelineEvent({ state: 'progress',
+    message: 'Repair commit verified · retiring stale patches and requesting a fresh review' }),
+    'A verified repair must remain visible in timeline history');
   const selection = { repository: 'pony-factor/example',
     pullRequests: [{ number: 12, title: 'Fix a conflict', url,
       head: 'feature', base: 'main', headSha: sha }] };
