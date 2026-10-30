@@ -6,16 +6,15 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src __CSP_SOURCE__ https:; style-src __CSP_SOURCE__ 'unsafe-inline'; script-src 'nonce-__NONCE__';">
 <title>Lindsey merge progress</title>
 <style>
+__MERGE_HEADER_CSS__
 :root{color-scheme:light dark;--merge-complete-color:#ac11ff}
 *{box-sizing:border-box}
 body{margin:0;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground);font:13px/1.5 var(--vscode-font-family,system-ui)}
 button{font:inherit;cursor:pointer;color:inherit}
 button:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
-header{padding:16px 20px;border-bottom:1px solid var(--vscode-panel-border,#555);display:flex;align-items:center;gap:16px;justify-content:space-between;flex-wrap:wrap}
 h1{margin:0;font-size:20px;font-weight:700}
 h2{font-size:16px;margin:0 0 12px}
 h3{margin:16px 0 8px;font-size:13px}
-.owner-logo{display:block;width:28px;height:28px;object-fit:contain;border-radius:4px;margin-top:6px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
 .overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
@@ -161,22 +160,6 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 
 /* Cohesive, theme-aware surfaces for the merge cockpit. Retain VS Code's
    colors and native control behavior in both dark and light themes. */
-:root{
-  --merge-surface:var(--vscode-editorWidget-background,var(--vscode-sideBar-background,#171a22));
-  --merge-border:var(--vscode-panel-border,var(--vscode-widget-border,#444));
-  --merge-success:var(--vscode-testing-iconPassed,#3cbb78);
-  --merge-muted:var(--vscode-descriptionForeground,#9ba3b5);
-}
-header{
-  padding:14px 20px;gap:12px 20px;
-  background:color-mix(in srgb,var(--vscode-editor-background) 86%,var(--merge-surface) 14%);
-}
-.dashboard-brand{display:flex;align-items:center;gap:11px;min-width:0}
-.dashboard-brand h1{font-size:16px;line-height:1.35;letter-spacing:-.015em;white-space:nowrap}
-.dashboard-brand .owner-logo{
-  width:32px;height:32px;margin:0;border-radius:9px;
-  border:1px solid var(--merge-border);background:var(--merge-surface)
-}
 .overview{
   flex:1 1 780px;justify-content:flex-end;min-width:0;
   gap:8px 14px;padding:9px 12px;border:1px solid var(--merge-border);
@@ -320,7 +303,7 @@ main{padding:20px 24px 32px}
 </style>
 </head>
 <body>
-<header>
+<header class="merge-header">
 <div class="dashboard-brand"><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"><h1>Lindsey · Bulk merge</h1></div>
 <div class="overview" role="group" aria-label="Bulk merge preferences"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">Using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span><label class="toolbar-option" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="toolbar-option" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><span id="progress" class="pill" role="status" aria-live="polite">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>

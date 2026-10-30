@@ -1,0 +1,22 @@
+/* Shared by the bulk dashboard and nonce-scoped local merge handoff. */
+:root {
+  --merge-surface:var(--vscode-editorWidget-background,var(--vscode-sideBar-background,#171a22));
+  --merge-border:var(--vscode-panel-border,var(--vscode-widget-border,#444));
+  --merge-success:var(--vscode-testing-iconPassed,#3cbb78);
+  --merge-muted:var(--vscode-descriptionForeground,#9ba3b5);
+}
+.merge-header {
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  padding:14px 20px;gap:12px 20px;border-bottom:1px solid var(--merge-border);
+  background:color-mix(in srgb,var(--vscode-editor-background,#111318) 86%,var(--merge-surface) 14%);
+}
+.merge-header .dashboard-brand{display:flex;align-items:center;gap:11px;min-width:0}
+.merge-header .dashboard-brand h1{
+  margin:0;font-size:16px;font-weight:700;line-height:1.35;letter-spacing:-.015em;white-space:nowrap
+}
+.merge-header .owner-logo{
+  display:block;flex:0 0 32px;width:32px;height:32px;object-fit:contain;
+  margin:0;border-radius:9px;border:1px solid var(--merge-border);background:var(--merge-surface)
+}
+@media(max-width:900px){.merge-header{padding:12px 14px}}
+@media(max-width:650px){.merge-header .dashboard-brand h1{font-size:15px}}
