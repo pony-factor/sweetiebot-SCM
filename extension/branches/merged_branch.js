@@ -20,7 +20,10 @@ async function mergedBranchStatus(repository, remote = 'origin', branch = '') {
   return mergedBranchAction(repository, '--status', branch, remote);
 }
 
-async function warnMergedBranch(vscode, repository, info) {
+async function warnMergedBranch(vscode, repository, info, { silent = false } = {}) {
+  // Automatic publication must never interrupt merged-branch cleanup with a
+  // recovery dialog. A truthy result also prevents the watcher from retrying.
+  if (silent) return 'already-merged';
   const action = `Continue on new branch from ${info.branch}`;
   const choice = await vscode.window.showWarningMessage(
     `Branch "${info.branch}" was merged in PR #${info.number}. Publishing to it is blocked.`,
