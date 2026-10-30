@@ -29,9 +29,18 @@ function mockMerge({ views = [open, open, mergedPr], submission = pending, respo
   };
   return { execute, calls };
 }
-const quickPoll = { wait: async () => {}, pollAttempts: 2 };
+const quickPoll = { preferLocalGit: false, wait: async () => {}, pollAttempts: 2 };
 
 async function main() {
+  const local = mockMerge();
+  let delegated=false;
+  const localResult=await squashMergePullRequest(url,local.execute,undefined,{humanMerge:async(repo,number,options)=>{
+    delegated=true;assert.equal(repo,'owner/repo');assert.equal(number,12);
+    assert.deepEqual(options,{allowHistoryRewrite:false,localGitMerge:true,expected:{headSha:open.headRefOid,head:open.headRefName,base:open.baseRefName,title:open.title}});
+    return {merged:true,sha:'c'.repeat(40)};
+  }});
+  assert(localResult.merged&&delegated,'The sidebar defaults to its verified local Git executor');
+  assert(!local.calls.some(args=>args.includes('--method')),'The sidebar does not submit an async merge before local checks');
   const happy = mockMerge();
   const result = await squashMergePullRequest(url, happy.execute,
     async () => { throw new Error('Main must not request alternate-base confirmation'); }, quickPoll);
@@ -58,7 +67,7 @@ async function main() {
       handled = true;
       assert.equal(repo, 'owner/repo');
       assert.equal(number, 12);
-      assert.deepEqual(options, { allowHistoryRewrite: false },
+      assert.deepEqual(options, { allowHistoryRewrite: false, localGitMerge: true },
         'The one-click squash button must never approve a force push');
       return { merged: true, sha: 'c'.repeat(40), author: { name: 'John Wooten', email: 'noreply@wooten.link' } };
     }
@@ -91,7 +100,7 @@ async function main() {
   let usedHumanHelper = false;
   const protectedAttribution = await squashMergePullRequest(url, anotherHumanOpener.execute, undefined, {
     ...quickPoll, humanMerge: async (repo, number, options) => {
-      assert.deepEqual(options, { allowHistoryRewrite: false },
+      assert.deepEqual(options, { allowHistoryRewrite: false, localGitMerge: true },
         'Different-actor PRs must not authorize history rewrites');
       usedHumanHelper = true;
       return { merged: true, sha: 'c'.repeat(40),

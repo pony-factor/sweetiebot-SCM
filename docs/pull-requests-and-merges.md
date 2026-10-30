@@ -2,7 +2,7 @@
 
 ## Creation and publication
 
-**New PR** starts a dedicated Sweetiebot PR workspace and ChatGPT drafting/research flow. The local **Kefania** runner supplies repository context, diff, actual head/base, and publication handoff. Opening a chat or creating a draft does **not** itself create a remote PR. `scmToolkit.autoPublishPullRequests` defaults to `true` in the manifest for **completed eligible drafts**; local settings and successful authorization control whether publishing actually happens. Optional independent pony-profile research is separate from PR description drafting.
+**New PR** starts a dedicated Sweetiebot PR workspace and ChatGPT drafting/research flow. The local **Kefania** runner supplies repository context, diff, actual head/base, and publication handoff. Opening a chat or creating a draft does **not** itself create a remote PR. `scmToolkit.autoPublishPullRequests` defaults to `true` in the manifest for **completed eligible drafts**; local settings and successful authorization control whether publishing actually happens. Optional independent pony-profile research is separate from PR description drafting; it includes a sourced **Important moments** section with timestamped links into verified full episodes when available. The existing confirmation window renders those Markdown links locally, and the research is not copied into the PR description.
 
 PR opener, Git commit author/committer, co-author trailer and review commenter may be different identities. See [distinct GitHub App setup](distinct-github-apps.md).
 

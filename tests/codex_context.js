@@ -140,13 +140,16 @@ async function run() {
 
   let shareRequest, stage = 0;
   const sharedResponses = [];
-  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click });
-  const menuButton = control('Chat actions', () => { stage = 1; });
+  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click,
+    dispatchEvent() {} });
+  const menuButton = control('Chat actions', () => {});
+  menuButton.dispatchEvent = event => { if (event.type === 'pointerdown' && event.button === 0) stage = 1; };
   const shareButton = control('Share', () => { stage = 2; });
-  const copyButton = control('Copy link', () => { copyButton.isConnected = false; stage = 3; });
+  const copyButton = control('Copy shared link', () => { stage = 3; });
   copyButton.isConnected = true;
   copyButton.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
   const sharingUI = vm.createContext({
+    PointerEvent: class { constructor(type, options) { Object.assign(this, {type}, options); } },
     setTimeout,
     window: { location: { hash: `#/local/${conversationId}` }, addEventListener: (_, callback) => { shareRequest = callback; } },
     document: { querySelectorAll: selector => selector === 'button' ? [menuButton]
@@ -160,6 +163,48 @@ async function run() {
   assert.equal(sharedResponses[0].conversationId,conversationId);
   await shareRequest({data:{type:'scm-toolkit-context-request',id:'wrong-chat',shareOnly:nextChat}});
   assert.match(sharedResponses[1].error,/originating chat/);
+
+  // Preserve legacy Copy link support when the native Share dialog closes.
+  let legacyRequest, legacyStage = 0;
+  const legacyResponses = [];
+  const legacyMenu = control('Chat actions', () => { legacyStage = 1; });
+  const legacyShare = control('Share', () => { legacyStage = 2; });
+  const legacyCopy = control('Copy link', () => { legacyCopy.isConnected = false; legacyStage = 3; });
+  legacyCopy.isConnected = true;
+  legacyCopy.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
+  const legacyUI = vm.createContext({
+    PointerEvent: class { constructor(type, options) { Object.assign(this, {type}, options); } },
+    setTimeout,
+    window: { location: { hash: `#/local/${conversationId}` },
+      addEventListener: (_, callback) => { legacyRequest = callback; } },
+    document: { querySelectorAll: selector => selector === 'button' ? [legacyMenu]
+      : selector === '[role="menuitem"]' && legacyStage === 1 ? [legacyShare]
+      : selector === '[role="dialog"] button' && legacyStage === 2 ? [legacyCopy] : [] }
+  });
+  load('context-webview.js', legacyUI);
+  legacyUI.scmToolkitRegisterCodexSnapshot({ postMessage: message => legacyResponses.push(message) });
+  await legacyRequest({ data: { type: 'scm-toolkit-context-request', id: 'legacy-share', shareOnly: conversationId } });
+  assert.equal(legacyStage, 3, 'Legacy Copy link must still work when its dialog closes');
+  assert.equal(legacyResponses[0].conversationId, conversationId);
+
+  let preparingRequest, preparationClock = 0, preparationCopied = false;
+  const preparingCopy = control('Copy link', () => { preparationCopied = true; });
+  Object.defineProperty(preparingCopy, 'disabled', { get: () => preparationClock < 60000 });
+  preparingCopy.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
+  const preparationResponses = [];
+  const preparingUI = vm.createContext({
+    Date: { now: () => preparationClock },
+    setTimeout(callback) { preparationClock += 1000; callback(); },
+    window: { location: { hash: `#/local/${conversationId}` },
+      addEventListener: (_, callback) => { preparingRequest = callback; } },
+    document: { querySelectorAll: selector => selector === '[role="dialog"] button' ? [preparingCopy] : [] }
+  });
+  load('context-webview.js', preparingUI);
+  preparingUI.scmToolkitRegisterCodexSnapshot({ postMessage: message => preparationResponses.push(message) });
+  await preparingRequest({ data: { type: 'scm-toolkit-context-request', id: 'preparing-share', shareOnly: conversationId } });
+  assert.equal(preparationCopied, true, 'Reuse an open Share dialog and wait beyond the old 35-second deadline');
+  assert.equal(preparationResponses[0].conversationId, conversationId);
+
 
   const registered = new Map();
   let listener;

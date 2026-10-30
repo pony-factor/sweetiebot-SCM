@@ -1,16 +1,18 @@
 /* Submit only the exact prompt launched by Sweetiebot's PR or merge action. */
-(() => {
+function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href) {
   if (window.top !== window) return;
-  const launch = new URL(window.location.href);
+  const launch = new URL(launchAddress);
   const fragment = new URLSearchParams(launch.hash.slice(1));
   const fragmentLaunch = fragment.get('sweetiebot_pr') === '1' || fragment.get('sweetiebot_merge') === '1';
   const payload = fragmentLaunch ? fragment : launch.searchParams;
   const prLaunch = payload.get('sweetiebot_pr') === '1';
   const mergeLaunch = fragmentLaunch && payload.get('sweetiebot_merge') === '1';
+  const collectOnly = mergeLaunch && fragment.get('sweetiebot_collect') === '1';
   const prompt = payload.get('q');
-  if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))
-      || prLaunch === mergeLaunch || !prompt) return;
-  if (encodeURIComponent(prompt).length > 70000) return;
+  const existingConversation = /^\/(?:g\/g-p-[A-Za-z0-9-]+\/)?c\/[A-Za-z0-9-]+\/?$/.test(launch.pathname);
+  if (launch.origin !== 'https://chatgpt.com' || !(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname) || collectOnly && existingConversation)
+      || prLaunch === mergeLaunch || (!prompt && !collectOnly) || collectOnly && prompt) return;
+  if (prompt && (prompt.length > 100000 || (launchAddress === window.location.href && encodeURIComponent(prompt).length > 70000))) return;
 
   let callback;
   try {
@@ -22,8 +24,10 @@
   } catch { /* Older manual drafting links do not collect results automatically. */ }
   // Give this action's new tab a blank draft without deleting or replacing the
   // user's shared draft. ChatGPT reads storage in its page world, not preload.
+  if (collectOnly && !callback) return;
+  let inserting = false;
   let composerIsolated = false;
-  if (fragmentLaunch && (callback || mergeLaunch)) {
+  if (!collectOnly && fragmentLaunch && (callback || mergeLaunch)) {
     const isolateComposerDraft = () => {
       const storage = window.localStorage;
       const keys = new Set(['oai/apps/lightweight-web/composerDraft/v1', 'oai/apps/conversationDrafts']);
@@ -58,7 +62,7 @@
   // Remove transport metadata before ChatGPT hydrates or constructs requests.
   // The complete prompt remains in this isolated preload closure.
   if (fragmentLaunch) {
-    const clean = new URL(launch.href); clean.hash = '';
+    const clean = new URL(launch.href); clean.hash = ''; clean.searchParams.delete('sweetiebot_launch');
     history.replaceState(history.state, '', clean.href);
   }
   let initialSubmitted = false;
@@ -67,7 +71,7 @@
     const expires = Date.now() + (mergeLaunch ? 6 * 3600000 : 1200000);
     let previous, stableSince;
     let retries = 0, errorSince, lastRetry = -Infinity, retryNotice;
-    let recoveryAllowed = true;
+    let recoveryAllowed = !collectOnly;
     let followupInjecting = false, followupPending, followupInserted = false;
     let formatPhase = 0, awaitingResponseChange, lastResponseText = '', responseStableSince = Date.now();
     let stagedUrl, staging = false, stageAttemptRound = -1, stagingFailed = false;
@@ -163,8 +167,12 @@
     const collect = () => {
       if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
-        .some(button => mergeLaunch ? !button.hidden && !button.disabled &&
-          button.getAttribute?.('aria-disabled') !== 'true' : button.getClientRects().length > 0);
+        .some(button => {
+          const style = window.getComputedStyle?.(button);
+          return !button.hidden && !button.disabled && button.getAttribute?.('aria-disabled') !== 'true'
+            && style?.display !== 'none' && style?.visibility !== 'hidden'
+            && (mergeLaunch || button.getClientRects().length > 0);
+        });
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
@@ -229,7 +237,7 @@
         const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
           ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
           ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
-            .map(node => node.parentElement).filter(Boolean)];
+            .map(node => node.closest?.('[data-testid^="conversation-turn-"], article') || node.parentElement).filter(Boolean)];
         const codes = new Set(messages.flatMap(node => [...node.querySelectorAll('pre code, pre, [data-testid="code-block"]')]));
         for (const code of codes) {
           try {
@@ -320,6 +328,7 @@
   // Collection also covers a deliberate manual Send; publication is owned by
   // the local receiver and its auto-publish preference.
   collectResult();
+  if (collectOnly) return;
 
   // Collapse only the Sweetiebot launch's sidebar once, including delayed hydration.
   // Use the close control rather than changing ChatGPT's shared preferences.
@@ -363,7 +372,6 @@
   let timer;
   let stopped = false;
   let inserted = false;
-  let inserting = false;
   const stop = () => {
     stopped = true;
     clearTimeout(timer);
@@ -437,6 +445,7 @@
       clean.searchParams.delete('q');
       clean.searchParams.delete('sweetiebot_pr');
       clean.searchParams.delete('sweetiebot_merge');
+      clean.searchParams.delete('sweetiebot_launch');
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
       initialSubmitted = true;
@@ -446,4 +455,32 @@
     timer = setTimeout(attempt, 250);
   };
   attempt();
+}
+scmToolkitStartPullRequestWorkflow();
+
+// Keep prompt bodies out of navigation URLs and browser-generated metadata.
+(() => {
+  if (window.top !== window) return;
+  const launch = new URL(window.location.href);
+  const args = new URLSearchParams(launch.hash.slice(1));
+  if (launch.origin !== 'https://chatgpt.com' || args.get('sweetiebot_merge') !== '1' || args.has('q')) return;
+  if (!(launch.pathname === '/' || /^\/g\/g-p-[A-Za-z0-9-]+\/project\/?$/.test(launch.pathname))) return;
+  let callback;
+  try {
+    callback = new URL(args.get('return_to'));
+    if (callback.protocol !== 'http:' || callback.hostname !== '127.0.0.1' || !callback.port
+        || callback.username || callback.password || callback.search || callback.hash
+        || !/^\/lindsey-merge\/[0-9a-f-]{36}$/.test(callback.pathname)) return;
+  } catch { return; }
+  const clean = new URL(launch.href); clean.hash = ''; clean.searchParams.delete('sweetiebot_launch');
+  history.replaceState(history.state, '', clean.href);
+  require('electron').ipcRenderer.invoke('sweetiebot:merge-prompt')
+    .then(raw => {
+      if (new TextEncoder().encode(raw).length > 100000) throw Error('Merge prompt exceeds transport limit.');
+      const { prompt } = JSON.parse(raw);
+      if (typeof prompt !== 'string' || !prompt.trim()) throw Error('Empty merge prompt.');
+      args.set('q', prompt);
+      launch.hash = args.toString();
+      scmToolkitStartPullRequestWorkflow(launch.href);
+    }).catch(error => console.error('Sweetiebot merge launch:', error.message));
 })();

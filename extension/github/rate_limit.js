@@ -28,7 +28,10 @@ function rateLimitError({ status, headers, message = '' }, now = Date.now()) {
 async function githubResponseError(response, fallback) {
   let message = '';
   try { message = String((await response.json())?.message || '').slice(0, 500); } catch { /* Empty or non-JSON error. */ }
-  return rateLimitError({ status: response.status, headers: response.headers, message }) || Error(fallback);
+  const error = rateLimitError({ status: response.status, headers: response.headers, message }) || Error(fallback);
+  error.status = response.status;
+  error.githubMessage = message;
+  return error;
 }
 
 const notices = new WeakMap();

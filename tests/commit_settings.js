@@ -61,6 +61,12 @@ for (const initiallyAttached of [false, true]) {
   assert(classes.has('scm-toolkit-commit-settings'));
   callback();
   assert.equal(button.parentElement, dropdown, 'Repeated mutations preserve placement');
+  dropdown.getClientRects = () => [];
+  callback();
+  assert.equal(button.parentElement, widget.element, 'An actually hidden action temporarily keeps settings reachable');
+  dropdown.getClientRects = () => [{}];
+  callback();
+  assert.equal(button.parentElement, dropdown);
   dropdown = null;
   callback();
   assert.equal(button.parentElement, widget.element,

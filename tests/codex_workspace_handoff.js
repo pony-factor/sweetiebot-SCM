@@ -14,7 +14,7 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     const threadId = '019c56c3-06fc-7db3-a928-9c3607e17129';
     const newThreadId = '019c56c3-06fc-7db3-a928-9c3607e17130';
     const commands = new Map(), providers = new Map(), requests = [], routes = [], opened = [];
-    let active = true, wrongCwd = false, wrongThread = false, identity = { threadId };
+    let active = true, wrongCwd = false, wrongThread = false, identity = { threadId }, turnStatus = 'inProgress';
     const connection = {
       registerProvider(name, callbacks) { providers.set(name, callbacks); return { dispose() { providers.delete(name); } }; },
       sendProviderRequest(name, id, method, params) {
@@ -23,9 +23,11 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
         if (method === 'thread/read') {
           assert.equal(params.includeTurns, false, 'Never hydrate conversation contents for a handoff');
           result = { thread: { id: wrongThread ? 'another-chat' : threadId, cwd: from, status: { type: active ? 'active' : 'idle' } } };
+        } else if (method === 'account/rateLimits/read') {
+          result = { rateLimits: {primary:{usedPercent:100,resetsAt:Math.floor(Date.now()/1000)+600},secondary:{usedPercent:100,resetsAt:Math.floor(Date.now()/1000)+1200}} };
         } else if (method === 'thread/turns/list') {
           assert.equal(params.itemsView, 'notLoaded');
-          result = { data: [{ id: 'running-turn', status: 'inProgress' }] };
+          result = { data: [{ id: 'running-turn', status: turnStatus }] };
         } else if (method === 'turn/interrupt') {
           assert.equal(params.turnId, 'running-turn'); active = false; result = {};
         } else if (method === 'thread/resume') {
@@ -36,7 +38,7 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
           assert(!('approvalPolicy' in params));
           result = { thread: { id: newThreadId, cwd: wrongCwd ? from : destination } };
         } else if (method === 'turn/start') {
-          assert([threadId, newThreadId].includes(params.threadId)); assert.equal(params.cwd, destination); result = { turn: { id: 'continued-turn' } };
+          assert([threadId, newThreadId].includes(params.threadId)); assert([from, destination].includes(params.cwd)); result = { turn: { id: 'continued-turn' } };
         } else assert.fail(method);
         queueMicrotask(() => providers.get(name)?.onResult({ id, result }));
       },
@@ -55,6 +57,14 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     const context = vm.createContext({ require, setTimeout, clearTimeout, Date });
     vm.runInContext(await fs.readFile(path.join(__dirname, '../assets/codex/workspace-handoff-host.js'), 'utf8'), context);
     const disposable = context.scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode);
+    const lookup=commands.get('sweetiebot.codex.readRateLimitReset');
+    const limits=await lookup({threadId});
+    assert(limits.known && limits.limited && limits.resetAt>Date.now()+1100000);
+    const lookups=requests.filter(request=>request.method==='account/rateLimits/read').length;
+    await lookup({threadId});
+    assert.equal(requests.filter(request=>request.method==='account/rateLimits/read').length,lookups,'Reset lookups share a bounded cache');
+    assert.equal((await lookup({threadId:'wrong-thread'})).known,false);
+    requests.length=0;
     const prepare = commands.get('sweetiebot.codex.prepareWorkspaceHandoff');
     const resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
     const openCheckout = commands.get('sweetiebot.codex.openChatCheckout');
@@ -68,6 +78,17 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     await assert.rejects(openCheckout(threadId), /different chat/);
     assert.equal(opened.length, 1);
     wrongThread = false;
+    const beforeUnrelated = requests.length;
+    const historical = await prepare({ from: destination });
+    assert.equal(historical.threadId, threadId, 'Move the same historical chat with the branch');
+    assert.equal(historical.relative, '', 'An outside checkout must map to the destination root');
+    assert.equal(historical.oldCwd, from, 'Retain the original worker location for recovery');
+    assert.equal(historical.wasActive, true);
+    assert.deepEqual(requests.slice(beforeUnrelated).map(request => request.method),
+      ['thread/read', 'thread/turns/list', 'turn/interrupt', 'thread/read'],
+      'Stop the historical worker before taking over the destination');
+    assert.equal(active, false);
+    active = true;
     const plan = await prepare({ from });
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));
@@ -96,6 +117,17 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     await assert.rejects(startTask({ cwd: destination, prompt: 'Selected task' }), /did not confirm/);
     assert.equal(requests.filter(request => request.method === 'turn/start').length, tasksBeforeWrongCwd);
     wrongCwd = false;
+    identity = { threadId };
+    const continueAtReset = commands.get('sweetiebot.codex.continueAfterRateLimit');
+    turnStatus = 'failed'; active = false;
+    const resetAt = Date.now() - 1000;
+    const continuationsBefore = requests.filter(request => request.method === 'turn/start').length;
+    assert.equal(await continueAtReset({ threadId, resetAt: Date.now() + 60000 }), false, 'Never retry before reset');
+    assert.equal(await continueAtReset({ threadId, resetAt }), true);
+    assert.equal(await continueAtReset({ threadId, resetAt }), false, 'Do not duplicate an uncertain continuation');
+    assert.equal(requests.filter(request => request.method === 'turn/start').length, continuationsBefore + 1);
+    turnStatus = 'completed';
+    assert.equal(await continueAtReset({ threadId, resetAt: resetAt - 1 }), false, 'Answered requests do not need continuation');
     disposable.dispose();
 
     const workspace = path.join(temporary, 'workspace.code-workspace');

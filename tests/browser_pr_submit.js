@@ -206,6 +206,15 @@ f.tick(2500);
 assert.equal(f.navigations.length, 0, 'Current assistant Markdown waits for the response to finish');
 f.setStreaming(false); f.tick(2500);
 assert.deepEqual(f.navigations, [fallbackGzUrl], 'Current assistant Markdown without the old role attribute reaches the handoff');
+const resumeUrl='https://chatgpt.com/g/g-p-test123/c/11111111-2222-4333-8444-555555555555?sweetiebot_launch=resume#'+new URLSearchParams({sweetiebot_merge:'1',sweetiebot_collect:'1',return_to:mergeCallback});
+f=fixture({url:resumeUrl,text:'Keep this unsent draft',assistantCodes:[JSON.stringify({version:1,repository:'owner/repo',results:[]})],sidebar:true});
+f.tick(2500);
+assert.deepEqual(f.navigations,[mergeReturn],'An existing completed conversation can resume its nonce-bound collector');
+assert.equal(f.composer.innerText,'Keep this unsent draft');
+assert.equal(f.clicks(),0,'Collector recovery never sends another user prompt');
+assert.equal(f.sidebarClicks(),0,'Collector recovery preserves existing chat layout');
+f=fixture({url:resumeUrl+'&q=unexpected',text:'Keep this draft',assistantCodes:[JSON.stringify({version:1,repository:'owner/repo',results:[]})]});
+f.tick(2500);assert.equal(f.navigations.length,0,'Recovery rejects an injected replacement prompt');
 const punctuated = {version:1, repository:'owner/repo', results:[{number:1, patch:"function f() { return ['x!']*2; }"}]};
 f = fixture({ url: mergeUrl + '&return_to=' + encodeURIComponent(mergeCallback), text:'',
   resultLinks:[mergeCallback+'#result='+encodeURIComponent('{"version":1')],

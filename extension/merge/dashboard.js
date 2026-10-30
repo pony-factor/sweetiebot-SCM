@@ -327,9 +327,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   });
 
   let nextEventId = 0;
-  function addEvent(pr, state, message, details, url = '', commit = null) {
+  function addEvent(pr, state, message, details, url = '', commit = null, location = state === 'action' ? 'local' : 'upstream') {
     const validCommit = SHA.test(commit?.sha || '');
-    const event = { id: ++nextEventId, number: pr.number, state, message,
+    const event = { id: ++nextEventId, number: pr.number, state, message, location,
       ...(details ? { details } : {}),
       ...(url ? { url } : {}),
       ...(validCommit ? { commitSha: commit.sha,
@@ -361,8 +361,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function recordActivity(pr, phase, message, key) {
     if (pr.activityKey === key) return;
     pr.activityKey = key;
-    pr.activity = { phase, message, at: new Date().toISOString() };
-    addEvent(pr, 'progress', message);
+    const location = require('./progress').stageLocation(phase);
+    pr.activity = { phase, message, location, at: new Date().toISOString() };
+    addEvent(pr, 'progress', message, '', '', null, location);
   }
 
   function recordReviewActivity(item, notes) {
@@ -522,7 +523,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const active = prs.filter(pr => force || pr.state !== 'merged' || !pr.mergedAt);
       for (let start = 0; start < active.length && !disposed; start += 3) {
         await Promise.all(active.slice(start, start + 3).map(async pr => {
-          try { await refreshOne(pr); }
+          try {
+            addEvent(pr, 'progress', 'Refreshing GitHub PR status, checks and review activity');
+            const started = pr.events.at(-1);
+            publish();
+            await refreshOne(pr);
+            if (pr.events.at(-1) === started)
+              addEvent(pr, 'updated', 'GitHub status refresh completed', pr.statusMessage);
+          }
           catch (failure) {
             error = failure.message;
             if (failure.rateLimited) {
@@ -757,6 +765,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const pr = byNumber.get(event?.number);
     if (!pr) return;
     const stages = {
+      ...require('./progress').stages,
       preparing: 'Preparing PR in a temporary checkout',
       'message-prepared': 'Commit message validated against the selected PR and original contributors',
       integrating: 'Integrating the full PR with the current base',
@@ -772,7 +781,20 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       merging: 'Requesting GitHub merge · awaiting confirmation'
     };
     if (!Object.hasOwn(stages, event.stage)) return;
-    pr.activity = { phase: event.stage, message: stages[event.stage], at: new Date().toISOString() };
+    const location = require('./progress').stageLocation(event.stage);
+    const checks = (Array.isArray(event.evidence) ? event.evidence : []).slice(0, 20).map(check => ({
+      name: String(check.name || '').slice(0, 160), result: String(check.result || '').slice(0, 48) }));
+    const phase = event.stage === 'checks-polled'
+      ? event.state === 'pending' ? 'waiting-checks' : event.state === 'passed' ? 'checks-passed' : 'checks_failed'
+      : event.stage;
+    const now = new Date().toISOString();
+    const message = event.stage === 'checks-polled'
+      ? checks.length ? 'GitHub checks: ' + event.state + ' · ' + checks.length + ' checks reported'
+        : event.state === 'pending' ? 'Waiting for GitHub to publish the integrated-head checks' : 'GitHub checks: ' + event.state
+      : stages[event.stage];
+    pr.activity = { phase, message, location, at: pr.activity?.phase === phase ? pr.activity.at : now,
+      updatedAt: now, ...(checks.length ? { checks } : {}),
+      ...(Number.isFinite(event.nextPollAt) && event.nextPollAt > 0 ? { nextPollAt: event.nextPollAt } : {}) };
     const sha = SHA.test(event.sha || '') ? event.sha : '';
     const file = typeof event.path === 'string' && require('./patch').safePatchPath(event.path) ? event.path : '';
     if (event.stage === 'preparing') {
@@ -789,9 +811,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
     const decision = ['decision-commit', 'preparing', 'rewrite-approved', 'message-prepared'].includes(event.stage)
       ? [String(event.title || '').slice(0, 160), String(event.description || '').slice(0, 1000)].filter(Boolean).join('\n') : '';
-    addEvent(pr, 'progress', stages[event.stage],
-      [file, decision].filter(Boolean).join('\n'), '',
-      sha ? { sha, title: event.title } : null);
+    const progressKey = JSON.stringify([event.stage, event.state, sha, file, decision, checks]);
+    if (pr.localProgressKey === progressKey) { publish(); return; }
+    pr.localProgressKey = progressKey;
+    addEvent(pr, 'progress', message,
+      [file, decision, ...checks.map(check => check.name + ': ' + check.result)].filter(Boolean).join('\n'), '',
+      sha ? { sha, title: event.title } : null, location);
     pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
       event.stage, pr.lastPushedHead || '') || pr.localRecovery;
     publish();
@@ -890,10 +915,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : 'Local preparation stopped · merge not confirmed';
       const commitSha = merged
         ? item.sha : pushed;
-      pr.activity = { phase: item.status, message, at: new Date().toISOString() };
+      const location = require('./progress').stageLocation(item.status);
+      pr.activity = { phase: item.status, message, location, at: new Date().toISOString() };
       addEvent(pr, merged ? 'merged' : continuing ? 'updated' : 'blocked',
         message, String(item.reason || '').slice(0, 4000), '',
-        commitSha ? { sha: commitSha, title: item.commitTitle } : null);
+        commitSha ? { sha: commitSha, title: item.commitTitle } : null, location);
       pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
         item.status, pushed || '') || pr.localRecovery;
     }

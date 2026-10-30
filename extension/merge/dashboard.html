@@ -22,8 +22,8 @@ h3{margin:16px 0 8px;font-size:13px}
 .refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
 .refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
 .refresh-icon svg{width:16px;height:16px}
-.bar{position:relative;height:6px;overflow:hidden;background:var(--vscode-input-background,#333);margin:0;border-radius:0}
-.bar-fill{height:100%;background:var(--merge-complete-color);width:0%;transition:width .2s}
+.bar{position:relative;height:8px;overflow:hidden;background:var(--vscode-input-background,#333);margin:8px 20px 10px;border-radius:999px}
+.bar-fill{height:100%;background:var(--merge-complete-color);width:0%;transition:width .2s;border-radius:inherit}
 .bar[data-active="true"]{background:var(--vscode-progressBar-background,#468cdb)}
 .bar[data-active="true"]::after{content:"";position:absolute;inset:0;background-image:repeating-linear-gradient(135deg,transparent 0 8px,rgba(255,255,255,.3) 8px 16px);background-size:24px 24px;animation:merge-stripes 1s linear infinite}
 @keyframes merge-stripes{to{background-position:24px 0}}
@@ -49,7 +49,7 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .row{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .name{display:block;font-weight:650;overflow-wrap:anywhere}
 .flag{font-size:11px;font-weight:700;border-radius:16px;padding:2px 9px;background:var(--vscode-input-background);border:1px solid var(--vscode-widget-border,#555);white-space:nowrap}
-.flag.merged{color:var(--merge-complete-color);border-color:currentColor}
+.flag.merged{color:var(--merge-complete-color);border-color:currentColor;background:#fff}
 .flag.resolved{color:var(--vscode-testing-iconPassed,#3cbb78);border-color:currentColor}
 .flag.conflict,.flag.review,.flag.blocked{color:var(--vscode-testing-iconFailed,#f07767);border-color:currentColor}
 .flag.queued,.flag.updated{color:var(--vscode-editorWarning-foreground,#dfa745)}
@@ -75,6 +75,11 @@ body.resizing,body.resizing *{user-select:none!important;cursor:var(--resize-cur
 .event-expanded{margin:5px 0 4px 12px;overflow-wrap:anywhere}
 .event-status{font-weight:600;font-size:12px}
 .event.progress{border-color:var(--vscode-progressBar-background,#468cdb)}
+.activity-origin{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;color:var(--vscode-descriptionForeground);margin-inline-end:7px;white-space:nowrap}
+.activity-origin.upstream{color:var(--vscode-textLink-foreground,#468cdb)}
+.activity-current-row{padding:5px 0;border-top:1px solid var(--vscode-widget-border,#555)}
+.activity-elapsed{font-size:11px;color:var(--vscode-descriptionForeground);margin-top:3px}
+.activity-checks{font-size:11px;margin:3px 0 0;padding-left:18px;overflow-wrap:anywhere}
 main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .detail-top h2{flex:1;margin:0}
@@ -153,14 +158,173 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 @media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
 /* Keep Lindsey's status, timeline, and details accessible in compact merge windows. */
 @media(max-width:650px){body{height:auto;min-height:100vh}.layout{display:block;flex:none}aside{height:370px;border-bottom:1px solid var(--vscode-panel-border,#555)}.splitter.vertical{display:none}main{overflow:visible}}
+
+/* Cohesive, theme-aware surfaces for the merge cockpit. Retain VS Code's
+   colors and native control behavior in both dark and light themes. */
+:root{
+  --merge-surface:var(--vscode-editorWidget-background,var(--vscode-sideBar-background,#171a22));
+  --merge-border:var(--vscode-panel-border,var(--vscode-widget-border,#444));
+  --merge-success:var(--vscode-testing-iconPassed,#3cbb78);
+  --merge-muted:var(--vscode-descriptionForeground,#9ba3b5);
+}
+header{
+  padding:14px 20px;gap:12px 20px;
+  background:color-mix(in srgb,var(--vscode-editor-background) 86%,var(--merge-surface) 14%);
+}
+.dashboard-brand{display:flex;align-items:center;gap:11px;min-width:0}
+.dashboard-brand h1{font-size:16px;line-height:1.35;letter-spacing:-.015em;white-space:nowrap}
+.dashboard-brand .owner-logo{
+  width:32px;height:32px;margin:0;border-radius:9px;
+  border:1px solid var(--merge-border);background:var(--merge-surface)
+}
+.overview{
+  flex:1 1 780px;justify-content:flex-end;min-width:0;
+  gap:8px 14px;padding:9px 12px;border:1px solid var(--merge-border);
+  border-radius:14px;background:var(--merge-surface);
+  box-shadow:0 4px 18px rgba(0,0,0,.08);
+}
+.overview .toolbar-option,.method-control{
+  display:inline-flex;align-items:center;gap:8px;min-height:30px;
+  color:var(--vscode-foreground);font-size:12px;white-space:nowrap
+}
+.overview .toolbar-option{cursor:pointer}
+.overview .method-control{
+  padding-left:12px;border-left:1px solid var(--merge-border)
+}
+.method-control .muted{font-size:12px;cursor:pointer}
+.overview input[type="checkbox"]{
+  appearance:none;display:inline-grid;place-items:center;flex:0 0 16px;
+  width:16px;height:16px;margin:0;border:1px solid var(--vscode-checkbox-border,var(--merge-border));
+  border-radius:5px;background:var(--vscode-checkbox-background,var(--vscode-input-background));
+  color:var(--vscode-checkbox-foreground,#fff);cursor:pointer;
+  transition:background-color 120ms ease,border-color 120ms ease
+}
+.overview input[type="checkbox"]::after{
+  content:"";width:7px;height:4px;border-left:2px solid currentColor;
+  border-bottom:2px solid currentColor;transform:translateY(-1px) rotate(-45deg) scale(0);
+  transition:transform 120ms ease
+}
+.overview input[type="checkbox"]:checked{
+  background:var(--vscode-checkbox-selectBackground,var(--vscode-button-background,#8034de));
+  border-color:var(--vscode-checkbox-selectBorder,var(--vscode-button-background,#8034de))
+}
+.overview input[type="checkbox"]:checked::after{transform:translateY(-1px) rotate(-45deg) scale(1)}
+.overview input[type="checkbox"]:focus-visible,
+.overview select:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+.overview select{
+  min-height:30px;max-width:125px;padding:4px 9px;border-radius:8px;
+  border:1px solid var(--vscode-dropdown-border,var(--merge-border));
+  background:var(--vscode-dropdown-background,var(--vscode-input-background));
+  color:var(--vscode-dropdown-foreground,var(--vscode-foreground));
+  font:inherit;font-size:12px;cursor:pointer
+}
+#progress{
+  display:inline-flex;align-items:center;gap:10px;margin-left:auto;
+  padding:6px 12px;min-height:30px;max-width:100%;
+  color:var(--vscode-foreground);font-size:12px;font-weight:600;
+  line-height:1.4;border-color:color-mix(in srgb,var(--merge-success) 45%,var(--merge-border));
+  background:color-mix(in srgb,var(--merge-success) 7%,var(--merge-surface));
+  white-space:normal
+}
+#progress::before{
+  content:"";display:block;flex:0 0 4px;width:4px;height:14px;
+  border-radius:2px;background:var(--merge-success);
+  box-shadow:6px 0 0 -1px var(--merge-success),12px -3px 0 -1px var(--merge-success);
+  margin-right:10px
+}
+.refresh-icon{
+  flex:0 0 32px;width:32px;height:32px;border-radius:9px;
+  border:1px solid transparent;transition:background-color 120ms ease,border-color 120ms ease
+}
+.refresh-icon:hover{border-color:var(--merge-border)}
+.layout{background:var(--vscode-editor-background)}
+aside{
+  background:color-mix(in srgb,var(--vscode-sideBar-background,var(--merge-surface)) 88%,var(--vscode-editor-background) 12%);
+}
+.section-heading{padding:18px 16px 10px}
+.section-heading h2,.timeline-heading h2{font-size:12px;font-weight:700;letter-spacing:.025em}
+.prs{padding:4px 12px 16px;scrollbar-color:var(--merge-border) transparent}
+.pr{
+  position:relative;margin-bottom:10px;padding:13px 14px;min-height:70px;
+  border:1px solid var(--merge-border);border-radius:12px;
+  background:var(--merge-surface);color:var(--vscode-foreground);
+  box-shadow:0 2px 8px rgba(0,0,0,.05);
+  transition:background-color 140ms ease,border-color 140ms ease,box-shadow 140ms ease
+}
+.pr::before{
+  content:"";position:absolute;top:14px;bottom:14px;left:0;width:3px;
+  border-radius:0 3px 3px 0;background:transparent
+}
+.pr:hover{
+  background:color-mix(in srgb,var(--vscode-list-hoverBackground,var(--merge-surface)) 30%,var(--merge-surface) 70%);
+  border-color:var(--vscode-focusBorder,var(--merge-border))
+}
+.pr[aria-current="true"]{
+  background:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--merge-surface)) 16%,var(--merge-surface) 84%);
+  color:var(--vscode-editor-foreground,var(--vscode-foreground));
+  border-color:var(--vscode-focusBorder,var(--merge-complete-color));
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder,var(--merge-complete-color)) 16%,transparent)
+}
+.pr[aria-current="true"]::before{background:var(--merge-complete-color)}
+.pr .row{align-items:flex-start;gap:12px}
+.pr .name{min-width:0;font-size:13px;line-height:1.5;font-weight:650}
+.pr>.muted{display:block;margin-top:6px;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.pr .flag{flex-shrink:0;margin-top:1px}
+.flag{
+  display:inline-flex;align-items:center;justify-content:center;
+  border-radius:999px;padding:3px 10px;line-height:1.5;
+  font-size:11px;letter-spacing:.01em;
+  background:color-mix(in srgb,var(--vscode-input-background) 78%,transparent)
+}
+.flag.merged{
+  background:#fff;
+  border-color:color-mix(in srgb,var(--merge-complete-color) 65%,transparent)
+}
+.flag.resolved{background:color-mix(in srgb,var(--merge-success) 10%,transparent)}
+.events{padding:14px 18px;border-top:1px solid var(--merge-border)}
+.current-activity{border-radius:0 9px 9px 0}
+.event{padding-bottom:14px}
+main{padding:20px 24px 32px}
+.detail-top{gap:12px;padding:13px 15px;margin:-2px 0 10px;background:var(--merge-surface);border:1px solid var(--merge-border);border-radius:12px}
+.detail-top h2{font-size:16px;line-height:1.45;font-weight:700;letter-spacing:-.01em}
+.panel{border-color:var(--merge-border);border-radius:12px;background:var(--merge-surface);padding:16px}
+.secondary{border-radius:8px;min-height:31px}
+.secondary:hover{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-toolbar-hoverBackground))}
+.pr-commit-tree{border-left-color:var(--merge-border)}
+@media(max-width:1250px){
+  .overview{justify-content:flex-start}
+  #progress{margin-left:0}
+  .overview .refresh-icon{margin-left:auto}
+}
+@media(max-width:900px){
+  header{padding:12px 14px}
+  .overview{flex-basis:100%;gap:8px 12px}
+  .section-heading{padding:14px 12px 8px}
+  .prs{padding:4px 8px 12px}
+  main{padding:16px}
+}
+@media(max-width:650px){
+  .dashboard-brand h1{font-size:15px}
+  .overview{padding:10px;gap:9px 12px}
+  .overview .method-control{padding-left:0;border-left:0}
+  #progress{order:2;flex:1 1 auto}
+  .overview .refresh-icon{order:3;margin-left:0}
+  .pr{padding:11px 12px;min-height:0}
+  .pr .row{flex-wrap:wrap;gap:6px}
+  .pr .flag{margin-top:0}
+  .detail-top{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  .pr,.refresh-icon,.overview input[type="checkbox"],.overview input[type="checkbox"]::after{transition:none}
+}
 </style>
 </head>
 <body>
-<div id="merge-progress" class="bar" role="progressbar" aria-label="Bulk merge progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar-fill" class="bar-fill"></div></div>
 <header>
-<div><h1>Lindsey · Bulk merge</h1><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"></div>
-<div class="overview"><label class="muted" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><label class="muted" for="auto-fix-ci-method">Using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select><label class="muted" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="muted" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><span id="progress" class="pill">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div class="dashboard-brand"><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"><h1>Lindsey · Bulk merge</h1></div>
+<div class="overview" role="group" aria-label="Bulk merge preferences"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">Using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span><label class="toolbar-option" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="toolbar-option" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><span id="progress" class="pill" role="status" aria-live="polite">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
+<div id="merge-progress" class="bar" role="progressbar" aria-label="Bulk merge progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="blocker-notice" class="blocker-notice" hidden></div>
 <div id="notice" class="notice" hidden></div>
 <div class="layout">
@@ -506,6 +670,8 @@ __RATE_LIMIT_FORMATTER__
     const pending = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed');
     const runningPhases = ['verifying', 'reviewing', 'applying', 'refreshing', 'preparing', 'message-prepared',
       'integrating', 'applying-resolution', 'rewrite-approved', 'prepared', 'decision-commit', 'sync-prepared',
+      'reading-pr', 'reading-checks', 'creating-checkout', 'cloning', 'inspecting-files', 'pushing',
+      'preparing-merge', 'pushing-merge', 'verifying-merge',
       'pushed', 'verifying-push', 'waiting-checks', 'checks-passed', 'merging', 'needs_resolution', 'needs_refresh'];
     const active = pending.length > 0 && !model.error && !(model.rateLimitRetryAt > Date.now()) &&
       (model.workers?.length ? model.workers.some(worker => !['Finished', 'Rate limited'].includes(worker.phase))
@@ -558,7 +724,21 @@ __RATE_LIMIT_FORMATTER__
     currentActivity.hidden = !operations.length;
     if (operations.length) {
       show('strong', '', 'Current activity', currentActivity);
-      for (const pr of operations) show('div', '', '#' + pr.number + ' · ' + pr.activity.message, currentActivity);
+      for (const pr of operations) {
+        const row = show('div', 'activity-current-row', undefined, currentActivity);
+        renderMergeActivityOrigin(row, pr.activity);
+        show('span', '', '#' + pr.number + ' · ' + pr.activity.message, row);
+        if (runningPhases.includes(pr.activity.phase) && !model.error && !(model.rateLimitRetryAt > Date.now())) {
+          const clock = show('div', 'activity-elapsed', mergeActivityElapsed(pr.activity), row);
+          clock.dataset.activityAt = pr.activity.at;
+          clock.activity = pr.activity;
+          clock.setAttribute('aria-hidden', 'true');
+        }
+        if (pr.activity.checks?.length) {
+          const checks = show('ul', 'activity-checks', undefined, row);
+          for (const check of pr.activity.checks) show('li', '', check.name + ' · ' + check.result, checks);
+        }
+      }
     }
     const timestampMode = ['hidden', 'relative', 'clock'].includes(model.timestampMode)
       ? model.timestampMode : 'hidden';
@@ -585,6 +765,7 @@ __RATE_LIMIT_FORMATTER__
       }
       const summary = show(presentation.expandable ? 'summary' : 'div',
         'event-summary', undefined, line);
+      renderMergeActivityOrigin(summary, event);
       const commentOnlyLink = Boolean(event.url) && event.state === 'review-comment' &&
         presentation.summary === 'PR conversation comment posted';
       const content = event.url && !commentOnlyLink
@@ -655,6 +836,11 @@ __RATE_LIMIT_FORMATTER__
   byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   setInterval(refreshRelativeEventTimes, 30000);
+  setInterval(() => {
+    if (document.hidden) return;
+    for (const clock of document.querySelectorAll('.activity-elapsed[data-activity-at]'))
+      clock.textContent = mergeActivityElapsed(clock.activity);
+  }, 1000);
   dispatch('ready');
 })();
 </script>
