@@ -1947,16 +1947,25 @@ worker.work(directory)
         (self.repo / 'story.txt').write_text('Second snapshot\n')
         self.git('add', 'story.txt')
         second = self.queue(message='', push=True)
+        original_tip = self.git('rev-parse', 'HEAD')
         (self.root / 'remote').rename(self.root / 'offline')
         with patch.object(worker.core, 'generate_message', return_value=('🧪 First final title', '')):
             worker.work(first)
-        self.assertEqual(self.job(first)['phase'], 'pushing')
+        # Never rewrite a provisional commit while publication cannot be checked.
+        # Preserve the generated title so a later retry needs no model request.
+        blocked = self.job(first)
+        self.assertEqual(blocked['phase'], 'blocked')
+        self.assertTrue(blocked['provisional'])
+        self.assertIn('Cannot verify whether queued commits are published', blocked['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
         (self.root / 'offline').rename(self.root / 'remote')
+        with patch.object(worker.core, 'generate_message',
+                          side_effect=AssertionError('Ready title must not regenerate')):
+            worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'done')
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Second final title', '')):
             worker.work(second)
         self.assertEqual(self.job(second)['phase'], 'done')
-        worker.work(first)
-        self.assertEqual(self.job(first)['phase'], 'done')
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
         remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote_tip, self.git('rev-parse', 'HEAD'))

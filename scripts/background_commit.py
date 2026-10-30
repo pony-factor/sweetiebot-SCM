@@ -821,7 +821,9 @@ def branch_recovery_candidate(job):
     error = job.get('error', '').lower()
     return bool(job.get('sha') and ('branch changed' in error
                 or 'branch advanced' in error
-                or (job.get('provisional') and 'published upstream' in error)))
+                or (job.get('provisional') and (
+                    'published upstream' in error
+                    or 'cannot verify whether queued commits are published' in error))))
 
 
 def permanent_push_error(job, result):
