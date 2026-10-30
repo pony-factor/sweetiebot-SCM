@@ -376,7 +376,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Show the selected PR's commit-history graph in Lindsey's bulk-merge dashboard. Disable to give the diff the full width."
+          "description": "Show PR commit-history graphs in Lindsey's bulk-merge dashboard. The hamburger toggle in each PR header updates this application-wide preference for all PRs and open dashboards. Disable to give the diff the full width."
         },
         "scmToolkit.mergeSidebarWidthPercent": {
           "type": "integer",
