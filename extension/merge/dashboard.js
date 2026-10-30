@@ -14,6 +14,35 @@ const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
 const SHA = /^[0-9a-f]{40,64}$/i;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const TIMELINE_MODES = ['hidden', 'relative', 'clock'];
+const ROUTINE_BATCH_PHASES = new Set(['verifying', 'reviewing', 'applying', 'refreshing']);
+const ROUTINE_LOCAL_STAGES = new Set([
+  'preparing', 'message-prepared', 'integrating', 'applying-resolution',
+  'sync-prepared', 'verifying-push', 'waiting-checks', 'merging'
+]);
+
+// Older saved snapshots may already contain routine poll entries. Keep them
+// out of the visible timeline without discarding important persisted events.
+function routineTimelineEvent(event) {
+  const message = String(event?.message || '');
+  return message === 'Refreshing GitHub PR status, checks and review activity' ||
+    message === 'GitHub status refresh completed' ||
+    (event?.state === 'progress' && (
+      /^Review round \d+ · waiting for GPT\b/.test(message) ||
+      /^Checking current PR head, base and merge eligibility$/.test(message) ||
+      /^Handoff received · waiting for local execution$/.test(message) ||
+      /^Repair commit verified · retiring stale patches and requesting a fresh review$/.test(message) ||
+      /^Preparing PR in a temporary checkout$/.test(message) ||
+      /^Commit message validated against the selected PR/.test(message) ||
+      /^Integrating the full PR with the current base$/.test(message) ||
+      /^Applying the complete conflict-resolution patch$/.test(message) ||
+      /^Branch synchronization prepared locally$/.test(message) ||
+      /^Verifying GitHub sees the pushed PR head$/.test(message) ||
+      /^Checking the integrated PR head · waiting for passing checks$/.test(message) ||
+      /^Requesting GitHub merge · awaiting confirmation$/.test(message) ||
+      /^GitHub checks: pending\b/.test(message) ||
+      /^Waiting for GitHub to publish the integrated-head checks$/.test(message)
+    ));
+}
 
 function branchDisplayLabel(branch, catalog) {
   if (branch === 'main') return '🏠';
@@ -347,7 +376,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     void panel.webview.postMessage({
       type: 'state', repository: selection.repository, workers,
       rateLimitRetryAt: rateLimitedUntil,
-      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })), events, error,
+      prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })),
+      events: events.filter(event => !routineTimelineEvent(event)), error,
       postStatusUpdates: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
       postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
       autoFixCi: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) === true,
@@ -370,7 +400,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       ? source.updatedAt : continuing ? now : undefined;
     pr.activity = { phase, message, location, at: start,
       ...(updatedAt ? { updatedAt } : {}) };
-    addEvent(pr, 'progress', message, '', '', null, location);
+    if (!ROUTINE_BATCH_PHASES.has(phase)) addEvent(pr, 'progress', message, '', '', null, location);
   }
 
   function recordReviewActivity(item, notes) {
@@ -530,15 +560,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const active = prs.filter(pr => force || pr.state !== 'merged' || !pr.mergedAt);
       for (let start = 0; start < active.length && !disposed; start += 3) {
         await Promise.all(active.slice(start, start + 3).map(async pr => {
+          pr.githubRefreshing = true;
+          publish();
           try {
-            addEvent(pr, 'progress', 'Refreshing GitHub PR status, checks and review activity');
-            const started = pr.events.at(-1);
-            publish();
             await refreshOne(pr);
-            if (pr.events.at(-1) === started)
-              addEvent(pr, 'updated', 'GitHub status refresh completed', pr.statusMessage);
-          }
-          catch (failure) {
+            pr.lastGitHubCheckAt = new Date().toISOString();
+            pr.lastError = '';
+          } catch (failure) {
             error = failure.message;
             if (failure.rateLimited) {
               rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt || Date.now() + 60000);
@@ -549,6 +577,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
               pr.lastError = failure.message;
               addEvent(pr, 'error', 'Fetch failed', failure.message);
             }
+          } finally {
+            pr.githubRefreshing = false;
           }
         }));
         if (rateLimitedUntil > Date.now()) break;
@@ -821,7 +851,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     const progressKey = JSON.stringify([event.stage, event.state, sha, file, decision, checks]);
     if (pr.localProgressKey === progressKey) { publish(); return; }
     pr.localProgressKey = progressKey;
-    addEvent(pr, 'progress', message,
+    // Routine local work and nonterminal checks update Current activity, but
+    // only durable milestones/failures belong in the historical timeline.
+    const routine = ROUTINE_LOCAL_STAGES.has(event.stage) ||
+      (event.stage === 'checks-polled' && phase === 'waiting-checks');
+    if (!routine) addEvent(pr, 'progress', message,
       [file, decision, ...checks.map(check => check.name + ': ' + check.result)].filter(Boolean).join('\n'), '',
       sha ? { sha, title: event.title } : null, location);
     pr.localRecovery = persistence.recordRecovery(pr.number, pr.originalHead,
