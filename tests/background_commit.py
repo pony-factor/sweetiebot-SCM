@@ -814,25 +814,37 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/recovery/' + job['id'] + '/' + original_tip),
                          original_tip)
 
+    def assert_published_title_archived(self, directory, original_sha, title):
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'done')
+        self.assertFalse(job['provisional'])
+        self.assertTrue(job['published_title_unapplied'])
+        self.assertEqual(job['sha'], original_sha)
+        self.assertEqual(job['suggested_message'], title)
+        self.assertIn('not changed', job['title_warning'])
+        self.assertEqual(self.git('notes', '--ref=' + worker.TITLE_NOTES,
+                                  'show', original_sha), title)
+        self.assertRegex(self.git('show', '-s', '--format=%s', original_sha),
+                         worker.PLACEHOLDER_SUBJECT_PATTERN)
+
     def test_published_external_commit_blocks_placeholder_replacement(self):
         directory = self.queue(message='', push=True)
         provisional = self.job(directory)['sha']
         self.git('commit', '-q', '--allow-empty', '-m', 'Already published through web')
         self.git('push', '-q', 'origin', 'main')
         original_tip = self.git('rev-parse', 'HEAD')
-        with patch.object(worker.core, 'generate_message', side_effect=AssertionError('Generation must not start')):
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Safe suggested local title', '')):
             worker.work(directory)
-        job = self.job(directory)
-        self.assertEqual(job['phase'], 'blocked')
-        self.assertIn('published upstream', job['error'])
-        self.assertIn('cannot replace an earlier provisional commit message', job['error'])
-        self.assertEqual(job['sha'], provisional)
-        self.assertTrue(job['provisional'])
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Safe suggested local title')
         self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'Already published through web')
 
     def test_web_commit_published_during_generation_cannot_replace_history(self):
         directory = self.queue(message='', push=True)
+        provisional = self.job(directory)['sha']
         self.git('commit', '-q', '--allow-empty', '-m', 'Web follow-up')
         original_tip = self.git('rev-parse', 'HEAD')
         def publish_during_generation(*args, **kwargs):
@@ -840,11 +852,8 @@ class BackgroundCommitTests(unittest.TestCase):
             return '🧪 Generated but not yet applied', ''
         with patch.object(worker.core, 'generate_message', side_effect=publish_during_generation):
             worker.work(directory)
-        job = self.job(directory)
-        self.assertEqual(job['phase'], 'blocked')
-        self.assertIn('published upstream', job['error'])
-        self.assertIn('Generated but not yet applied', job['message'])
-        self.assertTrue(job['provisional'])
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Generated but not yet applied')
         self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
 
@@ -860,12 +869,8 @@ class BackgroundCommitTests(unittest.TestCase):
         with patch.object(worker.core, 'generate_message',
                           side_effect=AssertionError('Ready title must not regenerate')):
             worker.work(directory)
-        job = self.job(directory)
-        self.assertEqual(job['phase'], 'blocked')
-        self.assertTrue(job['provisional'])
-        self.assertIn('published upstream', job['error'])
-        self.assertEqual(job['message'], '🧪 Title generated before web publication')
-        self.assertEqual(job['sha'], provisional)
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Title generated before web publication')
         self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
 
@@ -878,19 +883,119 @@ class BackgroundCommitTests(unittest.TestCase):
         second_sha = self.job(second)['sha']
         self.git('commit', '-q', '--allow-empty', '-m', 'Later published web commit')
         original_tip = self.git('rev-parse', 'HEAD')
+        original_tree = self.git('rev-parse', 'HEAD^{tree}')
         self.git('push', '-q', 'origin', 'main')
         with patch.object(worker.core, 'generate_message',
-                          side_effect=AssertionError('Published history cannot be retitled')):
+                          side_effect=[('🧪 First queued title', ''),
+                                       ('🧪 Second queued title', '')]):
             worker.work(first)
             worker.work(second)
-        for directory, expected_sha in ((first, first_sha), (second, second_sha)):
-            job = self.job(directory)
-            self.assertEqual(job['phase'], 'blocked')
-            self.assertTrue(job['provisional'])
-            self.assertEqual(job['sha'], expected_sha)
-            self.assertIn('published upstream', job['error'])
+        self.assert_published_title_archived(first, first_sha, '🧪 First queued title')
+        self.assert_published_title_archived(second, second_sha, '🧪 Second queued title')
         self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), original_tree)
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original_tip)
+
+    def test_published_provisional_without_followup_keeps_existing_sha(self):
+        directory = self.queue(message='', push=True)
+        original = self.git('rev-parse', 'HEAD')
+        self.git('push', '-q', 'origin', 'main')
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Preserve published identity', '')):
+            worker.work(directory)
+        self.assert_published_title_archived(directory, original,
+                                             '🧪 Preserve published identity')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], original)
+
+    def test_published_ancestor_allows_unpublished_local_title_finalization(self):
+        first = self.queue(message='', push=True)
+        first_sha = self.job(first)['sha']
+        self.git('push', '-q', 'origin', 'main')
+        (self.repo / 'story.txt').write_text('Unpublished local second change\n')
+        self.git('add', 'story.txt')
+        second = self.queue(message='', push=True)
+        with patch.object(worker.core, 'generate_message',
+                          side_effect=[('🧪 Published ancestor suggestion', ''),
+                                       ('🧪 Final unpublished second title', '')]):
+            worker.work(first)
+            worker.work(second)
+        self.assert_published_title_archived(first, first_sha,
+                                             '🧪 Published ancestor suggestion')
+        self.assertEqual(self.job(second)['phase'], 'done')
+        self.assertFalse(self.job(second).get('published_title_unapplied'))
+        self.assertEqual(self.git('log', '-1', '--format=%s'),
+                         '🧪 Final unpublished second title')
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), first_sha)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0],
+                         self.git('rev-parse', 'HEAD'))
+
+    def test_previously_blocked_published_job_can_resume_without_rewrite(self):
+        directory = self.queue(message='', push=True)
+        original = self.job(directory)['sha']
+        self.git('commit', '-q', '--allow-empty', '-m', 'Existing web follow-up')
+        self.git('push', '-q', 'origin', 'main')
+        tip = self.git('rev-parse', 'HEAD')
+        job = self.job(directory)
+        job.update(phase='blocked', error=('Later commits are already published upstream. '
+                   'SweetieBot cannot replace an earlier provisional commit message.'))
+        worker.write_journal(directory / 'job.json', job)
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Recovered published suggestion', '')):
+            worker.work(directory)
+        self.assert_published_title_archived(directory, original,
+                                             '🧪 Recovered published suggestion')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), tip)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], tip)
+
+
+    def test_published_title_fast_forwards_clean_branch_to_web_commits(self):
+        directory = self.queue(message='', push=True)
+        provisional = self.job(directory)['sha']
+        self.git('push', '-q', 'origin', 'main')
+        web = self.root / 'web-checkout'
+        self.git('clone', '-q', '-b', 'main', str(self.root / 'remote'), str(web))
+        self.git('-C', str(web), 'config', 'user.name', 'Web Author')
+        self.git('-C', str(web), 'config', 'user.email', 'web@example.invalid')
+        (web / 'web.txt').write_text('Web-only changes\n')
+        self.git('-C', str(web), 'add', 'web.txt')
+        self.git('-C', str(web), 'commit', '-qm', 'Published web follow-up')
+        self.git('-C', str(web), 'push', '-q', 'origin', 'main')
+        web_tip = self.git('-C', str(web), 'rev-parse', 'HEAD')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), provisional)
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Archived local title', '')):
+            worker.work(directory)
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Archived local title')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), web_tip)
+        self.assertEqual(self.git('show', 'HEAD:web.txt'), 'Web-only changes')
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), provisional)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], web_tip)
+
+    def test_published_title_does_not_fast_forward_dirty_checkout(self):
+        directory = self.queue(message='', push=True)
+        provisional = self.job(directory)['sha']
+        self.git('push', '-q', 'origin', 'main')
+        web = self.root / 'web-checkout'
+        self.git('clone', '-q', '-b', 'main', str(self.root / 'remote'), str(web))
+        self.git('-C', str(web), 'config', 'user.name', 'Web Author')
+        self.git('-C', str(web), 'config', 'user.email', 'web@example.invalid')
+        (web / 'web.txt').write_text('Web change\n')
+        self.git('-C', str(web), 'add', 'web.txt')
+        self.git('-C', str(web), 'commit', '-qm', 'Newer published web change')
+        self.git('-C', str(web), 'push', '-q', 'origin', 'main')
+        web_tip = self.git('-C', str(web), 'rev-parse', 'HEAD')
+        (self.repo / 'untracked.txt').write_text('Keep my local untracked file\n')
+        with patch.object(worker.core, 'generate_message',
+                          return_value=('🧪 Preserve untracked local edits', '')):
+            worker.work(directory)
+        self.assert_published_title_archived(directory, provisional,
+                                             '🧪 Preserve untracked local edits')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), provisional)
+        self.assertEqual((self.repo / 'untracked.txt').read_text(),
+                         'Keep my local untracked file\n')
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/main').split()[0], web_tip)
 
     def test_external_merge_blocks_placeholder_replacement(self):
         directory = self.queue(message='', push=True)
@@ -1842,16 +1947,25 @@ worker.work(directory)
         (self.repo / 'story.txt').write_text('Second snapshot\n')
         self.git('add', 'story.txt')
         second = self.queue(message='', push=True)
+        original_tip = self.git('rev-parse', 'HEAD')
         (self.root / 'remote').rename(self.root / 'offline')
         with patch.object(worker.core, 'generate_message', return_value=('🧪 First final title', '')):
             worker.work(first)
-        self.assertEqual(self.job(first)['phase'], 'pushing')
+        # Never rewrite a provisional commit while publication cannot be checked.
+        # Preserve the generated title so a later retry needs no model request.
+        blocked = self.job(first)
+        self.assertEqual(blocked['phase'], 'blocked')
+        self.assertTrue(blocked['provisional'])
+        self.assertIn('Cannot verify whether queued commits are published', blocked['error'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), original_tip)
         (self.root / 'offline').rename(self.root / 'remote')
+        with patch.object(worker.core, 'generate_message',
+                          side_effect=AssertionError('Ready title must not regenerate')):
+            worker.work(first)
+        self.assertEqual(self.job(first)['phase'], 'done')
         with patch.object(worker.core, 'generate_message', return_value=('🧪 Second final title', '')):
             worker.work(second)
         self.assertEqual(self.job(second)['phase'], 'done')
-        worker.work(first)
-        self.assertEqual(self.job(first)['phase'], 'done')
         self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
         remote_tip = self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'refs/heads/main')
         self.assertEqual(remote_tip, self.git('rev-parse', 'HEAD'))
