@@ -37,8 +37,9 @@
         || new URL(event.senderFrame.url).origin !== 'https://chatgpt.com')
       throw Error('Invalid merge transport sender.');
     const callback = mergeCallback;
-    const { gzipSync, gunzipSync } = require('node:zlib');
-    const { createHash } = require('node:crypto');
+    const [{ gzipSync, gunzipSync }, { createHash }] = await Promise.all([
+      import('node:zlib'), import('node:crypto')
+    ]);
     const limit = 64 * 1024 * 1024;
     const validateResult = raw => {
       if (typeof raw !== 'string' || Buffer.byteLength(raw, 'utf8') > limit)
