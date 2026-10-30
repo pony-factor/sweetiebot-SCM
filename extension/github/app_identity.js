@@ -97,7 +97,11 @@ async function getRoleInstallationToken(role, repository, {
     }
     if (!response?.ok) {
       // Never include GitHub's response body: it may contain sensitive details.
-      throw new Error('GitHub App ' + role + ' request failed (HTTP ' + response?.status + '). Check installation and permissions.');
+      const failure = new Error('GitHub App ' + role + ' request failed (HTTP ' + response?.status + '). Check installation and permissions.');
+      if (endpoint === '/repos/' + repository + '/installation' && response.status === 404) {
+        failure.code = 'SWEETIEBOT_APP_REPOSITORY_ACCESS';
+      }
+      throw failure;
     }
     try { return await response.json(); }
     catch { throw new Error('GitHub returned invalid GitHub App authentication data.'); }

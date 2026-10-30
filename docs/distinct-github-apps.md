@@ -76,7 +76,14 @@ When enabled, Sweetiebot validates `GET /app` against the configured slug
 and ID, resolves the selected repository's active installation, and requests
 an installation token **limited to that repository**. It does not send the App
 private key to either local runner. Missing permissions, missing installation,
-slug mismatch or an expired token **fail closed**: no user-token fallback.
+slug mismatch or an expired token **fail closed**. There is one narrow
+exception for **New PR**: if the App lacks access to the selected repository,
+the local PR preflight or publication retries once in `gh` CLI mode using the
+user's stored local GitHub CLI login. Inherited `GH_TOKEN` and `GITHUB_TOKEN`
+are cleared for that retry, and Sweetiebot neither reads nor logs the personal
+token. If the CLI is not authenticated, run `gh auth login` locally. Other App
+errors still fail closed; Lindsey's authentication is unchanged. A PR opened
+using this fallback belongs to the personal GitHub account rather than the App.
 
 Kefania's local `src/local-pr.js` is invoked in its existing `cli` transport
 mode with this short-lived installation token via `GH_TOKEN`. This bypasses
