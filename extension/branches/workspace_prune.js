@@ -52,7 +52,7 @@ async function isPlainDirectory(io, folder) {
   catch { return false; }
 }
 
-async function eligibleGroup(io, group, baseDirectory, now, alive) {
+async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = IDLE_MS } = {}) {
   if (!await isWorkspaceDirectory(io, group, baseDirectory) || !await isPlainDirectory(io, group)) return null;
   const manifest = await jsonFile(io, path.join(group, MANIFEST));
   const kind = manifest?.kind;
@@ -75,7 +75,7 @@ async function eligibleGroup(io, group, baseDirectory, now, alive) {
   let lastActive;
   try { lastActive = await io.lstat(activeStamp); }
   catch { return null; }
-  if (!lastActive.isFile() || now - lastActive.mtimeMs < IDLE_MS) return null;
+  if (!lastActive.isFile() || now - lastActive.mtimeMs < idleMs) return null;
 
   const workspaceNames = new Set(['workspace.code-workspace', workspaceFileName(group)]);
   const allowed = new Set([MANIFEST, ACTIVATED, PROOFS, ...workspaceNames, ...names]);
@@ -379,6 +379,88 @@ async function pruneManagedWorkspaces({
   }
 }
 
+/**
+ * Detach a closed, clean linked worktree without deleting its branch. Keep
+ * normal merged-PR pruning (which may delete proven merged refs) separate.
+ * A detached shutdown worker calls this after a reload-safe grace period.
+ */
+async function releaseClosedWorktree(group, {
+  baseDirectory = independentWorkspaceParent(), io = fs, run = command,
+  alive = isAlive, idleMs = 90 * 1000
+} = {}) {
+  if (!path.isAbsolute(group) || !await isPlainDirectory(io, baseDirectory)) return false;
+  const lock = path.join(baseDirectory, '.sweetiebot-workspace-prune.lock');
+  let lease;
+  try { lease = await io.open(lock, 'wx', 0o600); }
+  catch { return false; }
+  try {
+    const eligible = () => eligibleGroup(io, group, baseDirectory, Date.now(), alive, { idleMs });
+    const names = await eligible();
+    if (names?.length !== 1) return false;
+    const manifest = await jsonFile(io, path.join(group, MANIFEST));
+    if (!['topic-worktree', 'main-worktree'].includes(manifest?.kind)) return false;
+    const cwd = path.join(group, names[0]);
+    const siblings = [];
+    // Saved workspaces, including multi-root ones, can refer to this checkout.
+    // Search the full managed parent instead of assuming same-repository files.
+    for (const entry of await io.readdir(baseDirectory, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const parent = path.join(baseDirectory, entry.name);
+      siblings.push(parent);
+      if (await jsonFile(io, path.join(parent, MANIFEST))) continue;
+      for (const child of await io.readdir(parent, { withFileTypes: true })) {
+        if (child.isDirectory() && !child.isSymbolicLink()) siblings.push(path.join(parent, child.name));
+      }
+    }
+    const referenced = () => hasSavedWorkspaceReference(io,
+      siblings.filter(candidate => candidate !== group), cwd);
+    if (await referenced()) return false;
+    if (await run('git', ['rev-parse', '--show-toplevel'], cwd) !== cwd) return false;
+    const common = await run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
+    if (!common || path.basename(common) !== '.git') return false;
+    const original = path.dirname(common);
+    if (path.resolve(original) === path.resolve(cwd) ||
+        !await isPlainDirectory(io, original)) return false;
+    const branch = await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd);
+    if (!branch || (manifest.kind === 'main-worktree' ? branch !== 'main' : branch === 'main') ||
+        (manifest.branch && manifest.branch !== branch)) return false;
+    const head = await run('git', ['rev-parse', 'HEAD'], cwd);
+    if (!head || await run('git', ['rev-parse', 'refs/heads/' + branch], original) !== head) return false;
+    const status = () => run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd);
+    if (await status() !== '') return false;
+    // Preserve every stash and any staged, unstaged, untracked or ignored file.
+    if (await run('git', ['rev-parse', '--verify', '--quiet', 'refs/stash'], cwd) !== null) return false;
+    const list = await run('git', ['worktree', 'list', '--porcelain'], original);
+    if (!list || !list.split('\n\n').some(block => {
+      const lines = block.split('\n');
+      return lines.includes('worktree ' + cwd) && lines.includes('branch refs/heads/' + branch);
+    })) return false;
+
+    // The source may have reopened while Git was being inspected. No force
+    // removal: changes written during this check make Git refuse to detach.
+    if (!await eligible() || await referenced() || await status() !== '' ||
+        await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd) !== branch ||
+        await run('git', ['rev-parse', 'HEAD'], cwd) !== head ||
+        await run('git', ['rev-parse', 'refs/heads/' + branch], original) !== head) return false;
+    if (await run('git', ['worktree', 'remove', '--', cwd], original) === null) return false;
+    // Only known Sweetiebot metadata is removed; an unexpected new file
+    // prevents rmdir and remains untouched for inspection.
+    await io.rm(path.join(group, MANIFEST), { force: true });
+    await io.rm(path.join(group, ACTIVATED), { force: true });
+    for (const entry of await io.readdir(group, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.startsWith(SESSION_PREFIX) ||
+          !entry.name.endsWith('.json')) continue;
+      const record = await jsonFile(io, path.join(group, entry.name));
+      if (record && !alive(record.pid)) await io.rm(path.join(group, entry.name), { force: true });
+    }
+    await io.rmdir(group).catch(() => {});
+    return true;
+  } finally {
+    await lease.close();
+    await io.rm(lock, { force: true });
+  }
+}
+
 function registerWorkspaceCleanup(vscode, context) {
   const output = vscode.window.createOutputChannel('Sweetiebot Workspace Cleanup');
   context.subscriptions.push(output);
@@ -398,5 +480,5 @@ function registerWorkspaceCleanup(vscode, context) {
 }
 
 module.exports = { pruneManagedWorkspaces, eligibleGroup, mergedEvidence, cleanClone,
-  cleanWorktree, hasSavedWorkspaceReference, registerWorkspaceCleanup,
+  cleanWorktree, releaseClosedWorktree, hasSavedWorkspaceReference, registerWorkspaceCleanup,
   MANIFEST, ACTIVATED, PROOFS, SESSION_PREFIX };
