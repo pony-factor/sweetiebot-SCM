@@ -12,8 +12,14 @@ const { mergeActivityPresentation, renderMergeActivitySummary } = require('../ex
 const { classifyMergePatchLine, renderMergePatch } = require('../extension/merge/dashboard_diff');
 const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../extension/merge/blocker_actions');
 const { createMergeDashboardPersistence, stateKey } = require('../extension/merge/dashboard_persistence');
+const { allPullRequestsMerged } = require('../extension/merge/celebration');
 
 (async () => {
+  assert.equal(allPullRequestsMerged([]), false, 'An empty batch cannot celebrate');
+  assert.equal(allPullRequestsMerged([{state:'merged'}, {state:'merging'}]), false);
+  assert.equal(allPullRequestsMerged([{state:'merged'}, {state:'closed'}]), false);
+  assert.equal(allPullRequestsMerged([{state:'merged'}, {state:'blocked'}]), false);
+  assert.equal(allPullRequestsMerged([{state:'merged'}, {state:'merged'}]), true);
   const sha = 'a'.repeat(40);
   const nextSha = 'b'.repeat(40);
   const url = 'https://github.com/pony-factor/example/pull/12';
@@ -253,6 +259,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
     webview: {
       cspSource: 'vscode-webview://test',
       html: '',
+      asWebviewUri(uri) { return 'vscode-webview://test/' + require('node:path').basename(uri.fsPath); },
       onDidReceiveMessage(fn) { messageHandler = fn; },
       postMessage(msg) { events.push(JSON.parse(JSON.stringify(msg))); return Promise.resolve(true); },
     },
@@ -293,7 +300,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
       assert(options.enableScripts);
       return panel;
     } },
-    Uri: { parse: value => value },
+    Uri: { parse: value => value, file: fsPath => ({ fsPath }) },
     commands: { async executeCommand(command, options) { assert.equal(command, 'workbench.action.browser.open'); assert.equal(options.openToSide, true); openings.push(options.url); } },
     env: { async openExternal() { assert.fail('Dashboard links must never open the external browser'); } }
   };
@@ -372,6 +379,15 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('Lindsey · Bulk merge'));
+  assert(panel.webview.html.includes('Everypony made it! 🎉'), 'Show pony confirmation on complete merges');
+  assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
+  assert(panel.webview.html.includes('id="review-merges"'), 'Keep PR details and timeline available');
+  assert(panel.webview.html.includes('id="show-celebration"'), 'Allow return to finish page');
+  assert(panel.webview.html.includes('vscode-webview://test/activity-cannon.png'), 'Approved bundled art URI');
+  assert(!panel.webview.html.includes('__MERGE_CELEBRATION_PREDICATE__'));
+  assert(!panel.webview.html.includes('__CELEBRATION_PONY__'));
+  assert(panel.webview.html.includes('if (!complete) celebrationDismissed = false'));
+  assert(panel.webview.html.includes('complete && !celebrationDismissed'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
   assert(panel.webview.html.includes('--merge-complete-color:#ac11ff'),
     'Merged PRs use the requested purple');
