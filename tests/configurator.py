@@ -532,6 +532,22 @@ class SubmissionTests(unittest.TestCase):
             if name not in {"branchNameDisabledPacks", "kefaniaShowCloseButton"}:
                 self.assertIn(f'name="{name}"', page)
 
+    def test_kefania_chat_publication_is_opt_in_and_warns_before_saving(self):
+        values = form_values()
+        self.assertFalse(configurator.parse_submission(values)["kefaniaAutoShareCodexChat"])
+        values["kefaniaAutoShareCodexChat"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["kefaniaAutoShareCodexChat"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="kefaniaAutoShareCodexChat" value="true" checked', page)
+        self.assertIn("window.confirm('Enable public chat sharing for Kefania?", page)
+        self.assertIn("Sweetiebot cannot unpublish or revoke", page)
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertTrue(payload["vscodeSettings"]["kefaniaAutoShareCodexChat"])
+        current = dict(install.DEFAULT_SETTINGS)
+        configurator.apply_vscode_settings(current, payload)
+        self.assertTrue(current["kefaniaAutoShareCodexChat"])
+
     def test_kefania_close_after_merge_round_trips(self):
         values = form_values()
         self.assertFalse(configurator.parse_submission(values)["kefaniaCloseAfterMerge"])
