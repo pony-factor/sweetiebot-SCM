@@ -26,6 +26,29 @@ jobs:
       - name: Verify independent repairs with incompatible optional extensions
         run: python -m unittest tests.install.WorkbenchRepairTests tests.install.IndependentRepairTests -v
 
+  published-web-commit-titles:
+    name: Published web-commit title safety (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Check published follow-ups and safe local replay
+        run: |
+          python -m unittest -v \
+            tests.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
+            tests.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
+            tests.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
+            tests.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+
   inventory:
     name: Test inventory
     runs-on: ubuntu-latest
