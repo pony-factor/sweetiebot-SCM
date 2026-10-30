@@ -129,6 +129,37 @@ jobs:
       - name: Run ${{ matrix.label }} checks
         run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
 
+  worktree-window-handoff:
+    name: Worktree window handoff (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check worktree handoff source and test syntax
+        run: |
+          node --check extension/branches/window.js
+          node --check extension/branches/shared_main.js
+          node --check extension/branches/strip.js
+          node --check extension/branches/actions.js
+          node --check tests/branch_window.js
+          node --check tests/branch_strip.js
+          node --check tests/shared_main.js
+      - name: Test live-window focus, refusal, and stale session handling
+        run: node tests/branch_window.js
+      - name: Test Git's occupied-branch checkout guard
+        run: node tests/branch_strip.js
+      - name: Test real Git worktrees, session publication, and branch handoff
+        run: node tests/shared_main.js
+
   codex-webview-browser:
     name: Chromium CSS and DOM regression
     needs: inventory

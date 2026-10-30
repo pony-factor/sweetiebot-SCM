@@ -6,6 +6,8 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { openIndependentWorkspace } = require('../extension/branches/new_workspace');
 const { routeBranch, originalRepository, reconnectManagedMain } = require('../extension/branches/shared_main');
+const { registerManagedWindowActivity, stopManagedWindowActivity } =
+  require('../extension/branches/workspace_activity');
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const editor = root => ({
@@ -87,6 +89,40 @@ async function openedRoot(result) {
     const reopening = editor(root);
     await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
+
+    // End-to-end integration using the real session publisher rather than a
+    // handcrafted marker: routing to an occupied branch focuses its existing
+    // live workspace and only then closes the initiating window.
+    const ownerWindow = editor(topic);
+    ownerWindow.workspace.workspaceFile = { scheme: 'file', fsPath: topicWorkspace };
+    const activityContext = { subscriptions: [] };
+    await registerManagedWindowActivity(ownerWindow, activityContext, {
+      groups: [path.dirname(topic)], uuid: 'ci-live-window', pid: process.pid
+    });
+    try {
+      const sessionFile = path.join(path.dirname(topic),
+        '.sweetiebot-session-' + process.pid + '-ci-live-window.json');
+      const published = JSON.parse(await fs.readFile(sessionFile, 'utf8'));
+      assert.deepEqual(published.roots, [topic]);
+      assert.equal(published.workspaceFile, topicWorkspace);
+      const switchingWindow = editor(root);
+      assert.equal(await routeBranch(switchingWindow, { rootUri: { fsPath: root } },
+        { ...options, sourcePid: process.pid + 1, branch: 'topic' }), true);
+      assert.deepEqual(switchingWindow.commands.calls.map(call => call[0]),
+        ['vscode.openFolder', 'workbench.action.closeWindow'],
+        'Live owner receives focus before the initiating window closes');
+      assert.equal(switchingWindow.commands.calls[0][1].fsPath, topicWorkspace);
+      assert.deepEqual(switchingWindow.commands.calls[0][2], { forceNewWindow: true });
+      assert.equal(switchingWindow.workspace.workspaceFolders[0].uri.fsPath, root,
+        'Do not mutate source workspace folders while a destination window owns the branch');
+      assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+      assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
+    } finally {
+      await stopManagedWindowActivity();
+    }
+    assert.equal(await fs.stat(path.join(path.dirname(topic),
+      '.sweetiebot-session-' + process.pid + '-ci-live-window.json')).then(
+      () => true, () => false), false, 'Stopping the owner removes its live-session marker');
 
     // A failed destination apply must retain the source and a recovery copy.
     await fs.writeFile(path.join(root, 'file.txt'), 'preserve on failed transfer\n');
