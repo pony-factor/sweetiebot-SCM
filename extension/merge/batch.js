@@ -6,6 +6,16 @@ const { validateResolution, validateSyncResolution, resolutionInstructions } = r
 const SHA = /^[a-f0-9]{40}$/i;
 const { orderMergeCandidates } = require('./order');
 
+// The beginning of a step is not a heartbeat. Retain it across meaningful
+// updates to the same phase and round; identical snapshots are not updates.
+function recordBatchActivity(activities, number, phase, message, round, now = new Date().toISOString()) {
+  const previous = activities[number];
+  if (previous?.phase === phase && previous?.message === message && previous?.round === round) return;
+  const continuing = previous?.phase === phase && previous?.round === round;
+  activities[number] = { phase, message, round, at: continuing ? previous.at : now,
+    ...(continuing ? { updatedAt: now } : {}) };
+}
+
 async function createMergeBatch(rawSelection, { api, execute, makePrompt, destination,
   onResult = async () => {}, onState = async () => {}, onProgress = () => {}, reviewOrder = 'Oldest first', branchOnly = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
   const original = validateSelection(rawSelection);
@@ -14,9 +24,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   let round = 0, emptyRounds = 0, disposed = false, rateLimit, executing = false, reconciling = false;
   let generation = 0;
   const activities = {};
-  const activity = (number, phase, message) => {
-    activities[number] = { phase, message, round, at: new Date().toISOString() };
-  };
+  const activity = (number, phase, message) => recordBatchActivity(activities, number, phase, message, round);
 
   const state = () => ({ ...(rateLimit ? {rateLimit} : {}), repository: original.repository, activities: structuredClone(activities), pullRequests: [...entries.values()].map(({ attempts, ...pr }) => pr), round, merged: [...merged], ...(branchOnly ? {prepared:[...prepared]} : {}), deferred: [...deferred], history: [...history] });
   const remaining = () => [...entries.values()].filter(pr => !merged.some(item => item.number === pr.number)
@@ -257,4 +265,4 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   return { ...first, state, reconcile, dispose() { disposed = true; for (const bridge of bridges) bridge.dispose(); } };
 }
 
-module.exports = { createMergeBatch };
+module.exports = { createMergeBatch, recordBatchActivity };
