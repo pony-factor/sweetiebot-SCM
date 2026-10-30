@@ -24,7 +24,7 @@ const { verifiedHumanAuthor, verifyCommit } = require('./human_squash_merge');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
-  allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
+  localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
@@ -45,6 +45,7 @@ async function humanSquashMerge(repository, number, {
     try { onProgress({ number, stage, ...detail }); } catch { /* Display failures cannot change Git execution. */ }
   };
   progress('preparing', { description: expected.explanation });
+  progress('reading-pr');
   const prPath = endpoint + '/pulls/' + number;
   const original = await api(prPath);
   const base = original?.base?.ref;
@@ -118,7 +119,7 @@ async function humanSquashMerge(repository, number, {
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
   if (offerAuthorChoice && operation === 'merge' && !needsResolution && original.mergeable === true && !nativeSquash &&
-      !allowHistoryRewrite && commits.length > 1) {
+      !allowHistoryRewrite && !localGitMerge && commits.length > 1) {
     return { merged: false, status: 'blocked', needsAuthorChoice: true, number, base, baseSha,
       reason: 'This PR has no merge conflict. It was opened by a bot or a different account, so GitHub’s native squash would assign the wrong Git author. Choose Merge preserving commits to retain the original commits without rebasing or rewriting history. A single human-authored squash would require a separately approved history rewrite.' };
   }
@@ -138,6 +139,7 @@ async function humanSquashMerge(repository, number, {
     !sections[1].includes('Co-authored-by: ' + author.name + ' <');
   const message = alreadyPrepared ? existing : preparedMessage;
   let operationCommitTitle = commits.at(-1)?.commit?.message?.split('\n')[0] || prepared.title;
+  progress('reading-checks', { sha: originalSha });
   const initialChecks = await readMergeChecks(api, repository, originalSha);
   if (repairChecks && (resolutionPatch === null || initialChecks.state !== 'failed')) {
     throw Error('A check repair requires a complete patch and confirmed failing checks on the selected head.');
@@ -145,7 +147,8 @@ async function humanSquashMerge(repository, number, {
   const finish = async (sha, expected, method = 'rebase') => {
     progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
-      ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true
+      ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
+      onPoll: checks => progress('checks-polled', { sha, ...checks })
     });
     if (checks.state !== 'passed') return { merged: false, status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
       sha, previousHeadSha: originalSha, base, baseSha, number, author,
@@ -160,9 +163,27 @@ async function humanSquashMerge(repository, number, {
     }
     if (await readBaseTip() !== baseSha) throw Object.assign(refreshBase(), { sha, previousHeadSha: originalSha });
     progress('merging', { sha, title: operationCommitTitle });
-    const outcome = await api(prPath + '/merge', 'PUT',
-      ['-f', 'sha=' + sha, '-f', 'merge_method=' + method,
-        ...(method === 'squash' ? ['-f', 'commit_title=' + prepared.title, '-f', 'commit_message=' + prepared.message] : [])]);
+    let outcome;
+    try {
+      outcome = await api(prPath + '/merge', 'PUT',
+        ['-f', 'sha=' + sha, '-f', 'merge_method=' + method,
+          ...(method === 'squash' ? ['-f', 'commit_title=' + prepared.title, '-f', 'commit_message=' + prepared.message] : [])]);
+    } catch (error) {
+      // A failed response does not prove the server rejected the write. Read
+      // the exact PR before reporting failure; never resubmit the merge here.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let settled;
+        try { settled = await api(prPath); } catch { break; }
+        if (settled.merged === true && SHA.test(settled.merge_commit_sha || '')
+            && settled.head?.sha === sha && settled.head?.ref === head
+            && settled.base?.ref === base && settled.title === original.title) {
+          outcome = { merged: true, sha: settled.merge_commit_sha };
+          break;
+        }
+        if (attempt < 2) await (checkOptions.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms))))(200 * (attempt + 1));
+      }
+      if (!outcome) throw error;
+    }
     if (outcome?.merged !== true || !SHA.test(outcome.sha || '')) {
       throw Error('GitHub did not confirm the merge; the PR branch remains available.');
     }
@@ -177,7 +198,7 @@ async function humanSquashMerge(repository, number, {
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
   // GitHub can squash a clean human-opened PR without a preliminary sync.
-  if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash) {
+  if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
   if (operation === 'merge' && alreadyPrepared && !needsResolution && !requireSignedCommit) {
@@ -185,13 +206,15 @@ async function humanSquashMerge(repository, number, {
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
   }
-  await checkHeadWritable();
+  if (!localGitMerge || operation === 'sync' || nativeSquash) await checkHeadWritable();
   let temp, pushedSha, conflicts = [];
   try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
   catch { throw Error('Invalid Git branch name.'); }
   try {
+    progress('creating-checkout');
     temp = await temporaryDirectory();
     const remote = 'https://github.com/' + repository + '.git';
+    progress('cloning');
     await git('clone', '--quiet', '--no-checkout', remote, temp);
     const inRepo = (...args) => git('-C', temp, ...args);
     const verifyPushedPR = preparedSha => readPushedPR({
@@ -211,6 +234,7 @@ async function humanSquashMerge(repository, number, {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
     if (liveBase !== baseSha) throw refreshBase();
+    progress('inspecting-files');
     const mergeBase = await inRepo('merge-base', liveBase, liveHead);
     if (!SHA.test(mergeBase)) throw Error('No verified common ancestor.');
     const originalFiles = (await inRepo('diff', '--name-only', '-z', mergeBase, liveHead)).split('\0').filter(Boolean).sort();
@@ -223,7 +247,7 @@ async function humanSquashMerge(repository, number, {
         sha: originalSha, previousHeadSha: originalSha, base, baseSha, unchanged: true,
         reason: 'PR branch already contains the current base; no incremental commit or push was needed.' };
       if (nativeSquash) return finish(originalSha, preparedMessage, 'squash');
-      if (!rewriteApproved) return { merged: false, status: 'blocked', number,
+      if (!rewriteApproved && !localGitMerge) return { merged: false, status: 'blocked', number,
         needsAuthorChoice: true, reason: 'Squash is blocked by Git-author attribution, not merge conflicts. GitHub would credit the bot or different PR opener. Choose Merge preserving commits for a merge commit without rebasing or rewriting the PR branch; a human-authored single squash requires explicit local approval.' };
     }
     const treeEntries = new Map();
@@ -299,15 +323,18 @@ async function humanSquashMerge(repository, number, {
       // Keep Git's clean integration for PR files outside the supplied patch.
       // This diff is generated from the isolated three-way index, never from
       // the old PR tree, which could discard newer base changes.
-      let supplementalFile;
+      const cleanEntries = [];
       if (missing.length) {
-        const supplemental = await inRepo('diff', '--cached', '--binary', liveBase, '--', ...missing);
-        if (supplemental) {
-          supplementalFile = path.join(temp, '.git', 'sweetiebot-clean-integration.patch');
-          await fs.writeFile(supplementalFile, supplemental + '\n', { mode: 0o600 });
-          const stat = await inRepo('apply', '--numstat', '-z', '--', supplementalFile);
-          resolvedFiles = [...resolvedFiles, ...patchPaths(supplemental, stat, originalFiles)].sort();
+        const changed = (await inRepo('diff', '--cached', '--name-only', '-z', liveBase, '--', ...missing))
+          .split('\0').filter(Boolean);
+        for (const name of changed) {
+          if (!missing.includes(name) || !safePatchPath(name)) throw Error('Unexpected clean integration path.');
+          const entry = await inRepo('ls-files', '--stage', '-z', '--', name);
+          const match = /^(100644|100755) ([a-f0-9]{40}) 0\t([^\0]+)\0?$/.exec(entry);
+          if (entry && (!match || match[3] !== name)) throw Error('Clean integration contains an unresolved, symlink or submodule entry.');
+          cleanEntries.push(match ? {name,mode:match[1],blob:match[2]} : {name});
         }
+        resolvedFiles = [...resolvedFiles, ...cleanEntries.map(entry => entry.name)].sort();
       }
       await inRepo('reset', '--hard', liveBase);
       const baseEntries = await inRepo('ls-tree', '-z', liveBase, '--', ...resolvedFiles);
@@ -317,9 +344,11 @@ async function humanSquashMerge(repository, number, {
       progress('applying-resolution');
       await inRepo('apply', '--check', '--index', '--', patchFile);
       await inRepo('apply', '--index', '--', patchFile);
-      if (supplementalFile) {
-        await inRepo('apply', '--check', '--index', '--', supplementalFile);
-        await inRepo('apply', '--index', '--', supplementalFile);
+      // Preserve Git's own clean index entries, including image blobs. Model
+      // supplied patches remain text-only and never choose these blob IDs.
+      for (const entry of cleanEntries) {
+        if (entry.blob) await inRepo('update-index', '--add', '--cacheinfo', entry.mode, entry.blob, entry.name);
+        else await inRepo('update-index', '--force-remove', '--', entry.name);
       }
       await inRepo('diff', '--cached', '--check');
       }
@@ -350,7 +379,17 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
-    if (operation === 'sync' || conflicts.length || nativeSquash || !rewriteApproved) {
+    const finishLocal = async (sha, finalTree) => require('./local_author_merge').localAuthorMerge({
+      repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
+      message: preparedMessage, git: inRepo, api, directory: temp, checkOptions,
+      expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit,
+      privateRepository: repositoryInfo.private === true
+    });
+    if (localGitMerge && operation === 'merge' && !nativeSquash) {
+      const finalTree = await inRepo('write-tree');
+      if (finalTree === await inRepo('rev-parse', originalSha + '^{tree}')) return await finishLocal(originalSha, finalTree);
+    }
+    if (operation === 'sync' || conflicts.length || nativeSquash || localGitMerge || !rewriteApproved) {
       const finalTree = await inRepo('write-tree');
       const prepared = await require('./resolution_commits').createResolutionCommits({
         git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
@@ -368,6 +407,7 @@ async function humanSquashMerge(repository, number, {
       await checkHeadWritable();
       // An exact-head lease plus the ancestry check above guarantees this is
       // an append-only update, including if someone rewinds the remote ref.
+      progress('pushing', { sha: prepared.sha, title: operationCommitTitle });
       await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
       pushedSha = prepared.sha;
       progress('pushed', { sha: prepared.sha, title: operationCommitTitle });
@@ -380,6 +420,7 @@ async function humanSquashMerge(repository, number, {
         pushedSha = prepared.sha;
         return await finish(prepared.sha, preparedMessage, 'squash');
       }
+      if (operation === 'merge' && localGitMerge && !nativeSquash) return await finishLocal(prepared.sha, finalTree);
       return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
         reason: prepared.commits.length
@@ -416,6 +457,7 @@ async function humanSquashMerge(repository, number, {
     if (await readBaseTip() !== baseSha) throw refreshBase();
     // Close the PR-dependency race immediately before the only destructive push.
     await checkHeadRewriteSafety();
+    progress('pushing', { sha: preparedSha, title: operationCommitTitle });
     await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
       'origin', preparedSha + ':refs/heads/' + head);
     pushedSha = preparedSha;
