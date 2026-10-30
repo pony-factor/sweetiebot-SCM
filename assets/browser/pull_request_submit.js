@@ -76,6 +76,12 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
     let formatPhase = 0, awaitingResponseChange, lastResponseText = '', responseStableSince = Date.now();
     let stagedUrl, staging = false, stageAttemptRound = -1, stagingFailed = false;
     let validatedCompressedHref;
+    const validatedGzip = new Map();
+    let encodedFallbackUrl, encodingFallback = false, fallbackRaw, fallbackEncodingFailed = false;
+    let nodeZlib;
+    try { nodeZlib = require('node:zlib'); } catch { /* Sandboxed preload cannot load Node zlib. */ }
+    const nativeTransport = (action, payload) =>
+      require('electron').ipcRenderer.invoke('sweetiebot:merge-transport', { action, ...payload });
     const stageCompressed = (data, expectedId) => {
       // Almost all handoffs use the short inline gzip URL. Only an oversized
       // complete payload is staged in memory on the nonce-scoped loopback server.
@@ -83,6 +89,15 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
           data.length > 48 * 1024 * 1024 ||
           callback.href.length + '#result_gz='.length + data.length <= 80000) return;
       stageAttemptRound = formatPhase;
+      if (!nodeZlib) {
+        staging = true;
+        void nativeTransport('stage', { data, expectedId }).then(id => {
+          if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id))
+            throw Error('Invalid staged handoff digest.');
+          stagedUrl = callback.href + '#result_id=' + id;
+        }).catch(() => { stagingFailed = true; }).finally(() => { staging = false; });
+        return;
+      }
       let bytes, digest, body;
       try {
         bytes = Buffer.from(data, 'base64url');
@@ -176,7 +191,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       // The nonce-bearing callback validates ownership without depending on
       // ChatGPT's changing message-container markup.
       const links = document.querySelectorAll('a[href]');
-      let latest = stagedUrl;
+      let latest = stagedUrl || encodedFallbackUrl;
       let claimedStagingId;
       for (const link of links) {
         let url;
@@ -197,13 +212,25 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
             // been authenticated and staged. Never follow an arbitrary token.
             continue;
           }
+          if (result.get('result_gz') && !nodeZlib) {
+            if (validatedGzip.get(url.href) === 'valid') {
+              validatedCompressedHref = url.href;
+              latest = url.href;
+            } else if (!validatedGzip.has(url.href)) {
+              validatedGzip.set(url.href, 'pending');
+              void nativeTransport('validate', { data: result.get('result_gz') })
+                .then(valid => validatedGzip.set(url.href, valid === true ? 'valid' : 'invalid'))
+                .catch(() => validatedGzip.set(url.href, 'invalid'));
+            }
+            continue;
+          }
           try {
             if (url.href === validatedCompressedHref) { latest = url.href; continue; }
             let input;
             if (result.get('result_gz')) {
               const encoded = result.get('result_gz');
               if (!/^[A-Za-z0-9_-]+$/.test(encoded)) continue;
-              const gzip = require('node:zlib').gunzipSync(
+              const gzip = nodeZlib.gunzipSync(
                 Buffer.from(encoded, 'base64url'), { maxOutputLength: 64 * 1024 * 1024 });
               input = JSON.parse(gzip.toString('utf8'));
             } else input = JSON.parse(result.get('result'));
@@ -250,8 +277,23 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
             if (input?.version !== 1 || typeof input.repository !== 'string' || !Array.isArray(input.results)) continue;
             // A last-resort fenced JSON fallback still becomes a short gzip
             // link automatically, without copying the raw diff into Lindsey.
-            const encoded = require('node:zlib').gzipSync(Buffer.from(JSON.stringify(input)), { level: 9 })
-              .toString('base64url');
+            const raw = JSON.stringify(input);
+            if (!nodeZlib) {
+              if (!encodingFallback && !fallbackEncodingFailed && fallbackRaw !== raw && !encodedFallbackUrl) {
+                fallbackRaw = raw;
+                encodingFallback = true;
+                void nativeTransport('compress', { raw }).then(encoded => {
+                  if (typeof encoded !== 'string' || !/^[A-Za-z0-9_-]+$/.test(encoded))
+                    throw Error('Invalid compressed fallback.');
+                  const url = callback.href + '#result_gz=' + encoded;
+                  if (url.length <= 80000) encodedFallbackUrl = url;
+                  else stageCompressed(encoded, claimedStagingId);
+                }).catch(() => { fallbackEncodingFailed = true; })
+                  .finally(() => { encodingFallback = false; });
+              }
+              continue;
+            }
+            const encoded = nodeZlib.gzipSync(Buffer.from(raw), { level: 9 }).toString('base64url');
             const url = callback.href + '#result_gz=' + encoded;
             if (url.length <= 80000) latest = url;
             else if (stageAttemptRound !== formatPhase && !generating) stageCompressed(encoded, claimedStagingId);
