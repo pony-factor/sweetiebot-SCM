@@ -12,7 +12,8 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   onResult = () => {}, ttlMs = 6 * 3600000 } = {}) {
   const selection = validateSelection(rawSelection);
   const route = '/lindsey-merge/' + randomUUID();
-  const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8');
+  const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8')
+    .replace('__MERGE_HEADER_CSS__', readFileSync(path.join(__dirname, 'header.css'), 'utf8'));
   let attempted = false, running = false, outcome, failure, prompt;
   let staged; // Only the rare oversized handoff occupies local memory.
   const maxBodyBytes = 64 * 1024 * 1024;
