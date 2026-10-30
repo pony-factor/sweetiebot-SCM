@@ -268,7 +268,7 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
-      if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod'].includes(key)) {
+      if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod', 'mergeShowPrCommits'].includes(key)) {
         assert.equal(target, 1); layoutConfig[key] = mode; return;
       }
       assert.equal(key, 'mergeTimelineTimestampMode');
@@ -487,12 +487,34 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   assert.equal(events.at(-1).showPrCommits, true, 'Commit history remains visible by default');
   assert(panel.webview.html.includes("model.showPrCommits !== false"), "PR commit tree is conditional");
   assert(panel.webview.html.includes(".pr-detail-layout.no-commits{display:block}"), "Hidden tree restores full-width diff");
+  assert(panel.webview.html.includes("const commitToggle = show('button', 'secondary commit-tree-toggle'"),
+    'A permanent hamburger control is available even when the commit tree is hidden');
+  assert(panel.webview.html.includes("commitToggle.setAttribute('aria-expanded', String(showCommits))"),
+    'The hamburger exposes its expanded state to assistive technology');
+  assert(panel.webview.html.includes("commitToggle.setAttribute('aria-controls', 'pr-commit-tree')"),
+    'The hamburger explicitly controls the commit graph');
+  assert(panel.webview.html.includes("tree.hidden = !showCommits"),
+    'Collapsed graphs do not obstruct the PR diff');
+  assert(panel.webview.html.includes("model.showPrCommits = !showCommits"),
+    'The hamburger changes local visibility before the global preference is saved');
+  assert(panel.webview.html.includes("vscode.postMessage({ type: 'show-pr-commits', enabled: model.showPrCommits })"),
+    'The hamburger broadcasts its preference for all PRs');
+  assert(panel.webview.html.includes("byId('details').querySelector('.commit-tree-toggle')?.focus()"),
+    'Keyboard focus returns to the toggle after the PR details re-render');
   layoutConfig.mergeShowPrCommits = false;
   configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
   assert.equal(events.at(-1).showPrCommits, false, 'Setting hides commit history in an open dashboard');
   layoutConfig.mergeShowPrCommits = true;
   configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
   assert.equal(events.at(-1).showPrCommits, true, 'Setting restores commit history without reopening');
+  await messageHandler({ type: 'show-pr-commits', enabled: false });
+  assert.equal(layoutConfig.mergeShowPrCommits, false, 'Hamburger choice is saved to global configuration');
+  assert.equal(events.at(-1).showPrCommits, false, 'All PRs receive the collapsed state');
+  await messageHandler({ type: 'show-pr-commits', enabled: 'false' });
+  assert.equal(layoutConfig.mergeShowPrCommits, false, 'Malformed toggle messages cannot change the setting');
+  await messageHandler({ type: 'show-pr-commits', enabled: true });
+  assert.equal(layoutConfig.mergeShowPrCommits, true, 'The same global preference reopens every commit graph');
+  assert.equal(events.at(-1).showPrCommits, true, 'Reopened history is published without switching PRs');
 
   assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 37, timeline: 34 });
   layoutConfig.mergeSidebarWidthPercent = 50;
