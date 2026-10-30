@@ -609,6 +609,12 @@
           "default": "",
           "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
         },
+        "scmToolkit.kefaniaAutoShareCodexChat": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Opt in to publishing a public ChatGPT snapshot of the active Codex chat whenever Kefania starts a pull request. The snapshot can expose your prompts and AI replies to anyone with the link, and Kefania adds the link to public PR Source details. Sweetiebot cannot unpublish or revoke it; treat sharing as permanent. Even with sharing off, Kefania may still send captured chat text to the drafting AI."
+        },
         "scmToolkit.kefaniaUseThemeColors": {
           "type": "boolean",
           "default": true,

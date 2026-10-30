@@ -23,6 +23,7 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | `scmToolkit.automaticWorkspaceCleanup` | `true` | Guarded managed workspace/worktree pruning |
 | `scmToolkit.autoPublishNewBranches` | `false` | Publish newly selected branches |
 | `scmToolkit.autoPublishPullRequests` | `true` | Publish *completed eligible* Kefania drafts |
+| `scmToolkit.kefaniaAutoShareCodexChat` | `false` | Opt in to making a public snapshot of the active Codex chat when clicking Kefania |
 | `scmToolkit.postCommitSpellcheck` | `true` | Permit a globally enabled post-commit spellcheck in this repo |
 | `scmToolkit.workspaceSearch.mode` | `hybrid` | Blend text and semantic ranking |
 | `scmToolkit.workspaceSearch.embeddingModel` | `qwen3-embedding:0.6b` | Local embedding model name |
@@ -34,6 +35,8 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | `scmToolkit.pullRequestQuickMerge` | `true` | Show guarded squash action |
 | `scmToolkit.automaticAppRepair` | `true` | Restore compatible patches |
 | `scmToolkit.codexKeepAwake` | `true` | Hold macOS awake while Codex works |
+
+**Kefania chat privacy:** In Magic Settings → Kefania, **Publicly share Codex chat when launching Kefania** is off by default. When enabled, clicking Kefania uses native Share on whichever Codex conversation is active, publicly exposing a snapshot of prompts and AI replies to anyone with the link; the link is also included in the PR's final expandable Source details block. Sweetiebot cannot unpublish or revoke a shared chat, so treat the action as permanent. This preference governs public links, not the separate transmission of captured conversation text to the AI preparing the PR draft.
 
 The retired `scm-toolkit.ai-commit-async` Git setting is ignored. Use `scmToolkit.durableBackgroundCommits` for background finalization, including commit-only actions; it does not require automatic pushing. Pending legacy commits retain recovery protection.
 

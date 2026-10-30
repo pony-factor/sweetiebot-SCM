@@ -365,6 +365,7 @@ SETTINGS = (
     Setting("mergeTimelineTimestampMode", "scm-toolkit.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "scm-toolkit.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
     Setting("mergeTimelineHeightPercent", "scm-toolkit.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
+    Setting("kefaniaAutoShareCodexChat", "scm-toolkit.kefania-auto-share-codex-chat", "Publicly share Codex chat when launching Kefania", "OFF by default. Clicking Kefania publishes a public snapshot of the currently open Codex chat, including your prompts and AI replies. Anyone with the link may read it, and the link goes into the PR Source details. Sweetiebot cannot unpublish or revoke a shared chat; treat sharing as permanent. Even when off, captured chat text may still be sent to Kefania's drafting AI.", "Kefania"),
     Setting("kefaniaUseThemeColors", "scm-toolkit.kefania-use-theme-colors", "Use VS Code theme colors", "Use the current theme for Kefania buttons, close icons, image controls, and page colors.", "Kefania"),
     Setting("kefaniaCloseAfterMerge", "scm-toolkit.kefania-close-after-merge", "Close Kefania after squash and merge", "Close the Kefania confirmation window after GitHub confirms a successful squash and merge.", "Kefania"),
     Setting("kefaniaShowCloseButton", "scm-toolkit.kefania-show-close-button", "Show Kefania X button", "Show the close-window X after publishing a PR in Kefania.", "Kefania"),
@@ -1148,8 +1149,19 @@ function scheduleAutosave(event) {{
 }}
 
 if (settingsForm) {{
-  settingsForm.addEventListener('input', scheduleAutosave);
-  settingsForm.addEventListener('change', scheduleAutosave);
+  // A check box must never publish future chats before the user accepts the
+  // irreversible-publication warning. Other settings retain normal autosave.
+  settingsForm.addEventListener('input', event => {{
+    if (event.target?.name !== 'kefaniaAutoShareCodexChat') scheduleAutosave(event);
+  }});
+  settingsForm.addEventListener('change', event => {{
+    if (event.target?.name === 'kefaniaAutoShareCodexChat' && event.target.checked &&
+        !window.confirm('Enable public chat sharing for Kefania? Every time you click Kefania, Sweetiebot will publish a snapshot of the currently open Codex chat, including your prompts and AI replies. Anyone with its link can read it, and the link may appear in a public GitHub pull request. Sweetiebot has no way to unpublish or revoke the shared chat. Continue?')) {{
+      event.target.checked = false;
+      return;
+    }}
+    scheduleAutosave(event);
+  }});
   settingsForm.addEventListener('submit', async event => {{
     event.preventDefault();
     if (autosaveTimer) {{
