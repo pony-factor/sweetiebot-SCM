@@ -87,7 +87,11 @@ async function run() {
   await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM',
     { env, now, fetchImpl: mockGitHub('kefania', {wrongSlug: true}).fetchImpl }), /different GitHub App/);
   await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM',
-    { env, now, fetchImpl: mockGitHub('kefania', {missingInstall: true}).fetchImpl }), /HTTP 404/);
+    { env, now, fetchImpl: mockGitHub('kefania', {missingInstall: true}).fetchImpl }), error => {
+    assert.match(error.message, /HTTP 404/);
+    assert.equal(error.code, 'SWEETIEBOT_APP_REPOSITORY_ACCESS');
+    return true;
+  });
   await assert.rejects(getRoleInstallationToken('lindsey', 'pony-factor/sweetiebot-SCM',
     { env, now, fetchImpl: mockGitHub('lindsey', {expired: true}).fetchImpl }), /unexpired/);
   await assert.rejects(getRoleInstallationToken('kefania', '../danger',
