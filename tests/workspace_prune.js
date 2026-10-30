@@ -331,7 +331,8 @@ function fixture({
 
   // Window shutdown detaches clean managed checkouts without deleting an
   // unmerged branch, its unpublished commits, or the original repository.
-  const closedBase = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-closed-worktree-'));
+  const closedBase = await fs.realpath(await fs.mkdtemp(
+    path.join(os.tmpdir(), 'sweetiebot-closed-worktree-')));
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
   try {
     const source = path.join(closedBase, 'source');
