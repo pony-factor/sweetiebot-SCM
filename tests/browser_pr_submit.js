@@ -209,7 +209,7 @@ assert.deepEqual(f.navigations, [fallbackGzUrl], 'Current assistant Markdown wit
 const resumeUrl='https://chatgpt.com/g/g-p-test123/c/11111111-2222-4333-8444-555555555555?sweetiebot_launch=resume#'+new URLSearchParams({sweetiebot_merge:'1',sweetiebot_collect:'1',return_to:mergeCallback});
 f=fixture({url:resumeUrl,text:'Keep this unsent draft',assistantCodes:[JSON.stringify({version:1,repository:'owner/repo',results:[]})],sidebar:true});
 f.tick(2500);
-assert.deepEqual(f.navigations,[mergeReturn],'An existing completed conversation can resume its nonce-bound collector');
+assert.deepEqual(f.navigations,[fallbackGzUrl],'An existing completed conversation can resume its nonce-bound collector with a compressed handoff');
 assert.equal(f.composer.innerText,'Keep this unsent draft');
 assert.equal(f.clicks(),0,'Collector recovery never sends another user prompt');
 assert.equal(f.sidebarClicks(),0,'Collector recovery preserves existing chat layout');
