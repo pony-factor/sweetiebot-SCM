@@ -307,6 +307,20 @@ async function switchRepository(vscode, root, destination, options) {
   }
 }
 
+// The branch picker's final fallback uses this path when its Git registry
+// shows an occupied worktree. Never call ordinary checkout in that case.
+async function routeExistingBranchWorktree(vscode, repository, destination, options = {}) {
+  if (!repository.rootUri?.fsPath) return false;
+  const root = await fs.realpath(repository.rootUri.fsPath);
+  const existing = await fs.realpath(destination).catch(() => null);
+  if (!existing) return false;
+  if (root === existing) return true;
+  if (await focusExistingBranchWindow(vscode, existing, options)) return true;
+  if (!vscode.workspace?.workspaceFolders?.length) return false;
+  await switchRepository(vscode, root, existing, options);
+  return true;
+}
+
 async function routeBranch(vscode, repository, { branch, create = false, adoptExisting = false, start,
   forkScript, source, expectedHead, ...options } = {}) {
   const run = options.run || git;
@@ -347,11 +361,9 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
-    // Reuse the live owner's window when present, retaining its editors, terminals,
-    // and chat. Otherwise reuse the abandoned checkout in this window.
-    if (await focusExistingBranchWindow(vscode, destination, options)) return true;
-    await switchRepository(vscode, root, destination, { ...options, branch });
-    return true;
+    // Reuse the live owner's window or repoint this window when the
+    // registered worktree has no live VS Code owner.
+    return routeExistingBranchWorktree(vscode, repository, destination, { ...options, branch });
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();
   const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original), fs, { branch });
@@ -464,4 +476,5 @@ function registerSharedMain(vscode, context) {
 }
 
 module.exports = { originalRepository, mainRoot, openSharedMainWorkspace, routeBranch,
+  routeExistingBranchWorktree,
   reconnectManagedMain, registerSharedMain };
