@@ -25,7 +25,11 @@ async function registerAutoPublish(vscode, context) {
       try {
         const { resolveDefaultBranch } = require('./actions');
         if (branch === await resolveDefaultBranch(repository, remote)) return;
-        const published = await vscode.commands.executeCommand('sweetiebot.publishBranch', root, { branch, remote });
+        // A merged PR head is retired even if its remote tracking ref was pruned.
+        // Preserve manual push warnings, but never show them from this watcher.
+        const published = await vscode.commands.executeCommand('sweetiebot.publishBranch', root, {
+          branch, remote, silentMerged: true
+        });
         reported = undefined;
         if (!published && !disposed && !closed) {
           clearTimeout(timer); timer = setTimeout(() => { void check(); }, 15000);
