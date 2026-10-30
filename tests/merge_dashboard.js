@@ -8,7 +8,7 @@ const {
 } = require('../extension/merge/dashboard');
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../extension/merge/dashboard_timestamps');
 const { renderMergeMarkdown } = require('../extension/merge/dashboard_markdown');
-const { mergeActivityPresentation, renderMergeActivitySummary } = require('../extension/merge/dashboard_activity');
+const { mergeActivityPresentation, renderMergeActivitySummary, mergeActivityElapsed } = require('../extension/merge/dashboard_activity');
 const { classifyMergePatchLine, renderMergePatch } = require('../extension/merge/dashboard_diff');
 const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../extension/merge/blocker_actions');
 const { createMergeDashboardPersistence, stateKey } = require('../extension/merge/dashboard_persistence');
@@ -16,6 +16,15 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
 (async () => {
   const sha = 'a'.repeat(40);
   const nextSha = 'b'.repeat(40);
+  const waitStart = '2026-10-27T15:00:00Z', waitUpdated = '2026-10-27T15:00:30Z';
+  const elapsedAt = Date.parse(waitStart) + 65000;
+  assert.equal(mergeActivityElapsed({ at: waitStart, phase: 'reviewing' }, elapsedAt),
+    '1m 5s in this step', 'A GPT wait must not invent a last update from its start time');
+  assert.equal(mergeActivityElapsed({ at: waitStart, updatedAt: 'not-a-date' }, elapsedAt),
+    '1m 5s in this step', 'An invalid last-update value cannot masquerade as progress');
+  assert.equal(mergeActivityElapsed({ at: waitStart, updatedAt: waitUpdated }, elapsedAt),
+    '1m 5s in this step · last update 35s ago',
+    'The two clocks measure independent events');
   const url = 'https://github.com/pony-factor/example/pull/12';
   const selection = { repository: 'pony-factor/example',
     pullRequests: [{ number: 12, title: 'Fix a conflict', url,
@@ -706,6 +715,8 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   dashboard.recordLocalProgress({...poll,nextPollAt:Date.now()+16000});
   assert.equal(events.at(-1).events.length,pollCount,'Unchanged check polls refresh the live status without flooding history');
   assert.equal(events.at(-1).prs[0].activity.at,stepStarted,'A poll cannot restart the elapsed step clock');
+  assert(Number.isFinite(Date.parse(events.at(-1).prs[0].activity.updatedAt)),
+    'A real GitHub polling event refreshes the last-update timestamp');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
   dashboard.recordLocalProgress({ number: 12, stage: 'invented' });
@@ -733,8 +744,27 @@ const { createMergeDashboardPersistence, stateKey } = require('../extension/merg
   const runningCount = events.at(-1).events.length;
   assert.equal(events.at(-1).prs[0].activity.phase, 'reviewing');
   assert.match(events.at(-1).events.at(-1).message, /waiting for GPT/);
+  assert.equal(events.at(-1).prs[0].activity.at, runningState.activities[12].at,
+    'The dashboard uses the actual runner step start');
+  assert.equal(Object.hasOwn(events.at(-1).prs[0].activity, 'updatedAt'), false,
+    'A new GPT review wait has no last-update timestamp');
   dashboard.recordBatchState(runningState);
   assert.equal(events.at(-1).events.length, runningCount, 'Repeated snapshots do not flood the activity log');
+  assert.equal(events.at(-1).prs[0].activity.at, runningState.activities[12].at);
+  assert.equal(Object.hasOwn(events.at(-1).prs[0].activity, 'updatedAt'), false);
+  const progressState = { ...runningState, activities: { 12: {
+    ...runningState.activities[12], message: 'GPT received a revised review prompt',
+    updatedAt: '2026-10-27T15:00:45Z'
+  } } };
+  dashboard.recordBatchState(progressState);
+  assert.equal(events.at(-1).prs[0].activity.at, runningState.activities[12].at,
+    'Same-phase progress preserves the step start');
+  assert.equal(events.at(-1).prs[0].activity.updatedAt, progressState.activities[12].updatedAt);
+  const progressedCount = events.at(-1).events.length;
+  dashboard.recordBatchState(progressState);
+  assert.equal(events.at(-1).events.length, progressedCount, 'Repeated progress snapshots create no events');
+  assert.equal(events.at(-1).prs[0].activity.updatedAt, progressState.activities[12].updatedAt,
+    'Replaying a progress snapshot must not reset the last-update clock');
   dashboard.recordBatchState(runningState, { restored: true });
   assert.equal(events.at(-1).prs[0].activity.phase, 'paused');
   assert.match(events.at(-1).prs[0].activity.message, /Runner not resumed/);
