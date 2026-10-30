@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
   REPORT_MARKER, REVIEW_MARKER, validateSelection, reportFromComments, normalizeInlineReviewComments,
-  mergePhase, normalizeFiles, githubGet, configuredTimelineMode, startMergeDashboard
+  mergePhase, normalizeFiles, githubGet, configuredTimelineMode, routineTimelineEvent, startMergeDashboard
 } = require('../extension/merge/dashboard');
 const { formatTimelineTimestamp, formatMergeOutcome } = require('../extension/merge/dashboard_timestamps');
 const { renderMergeMarkdown } = require('../extension/merge/dashboard_markdown');
-const { mergeActivityPresentation, renderMergeActivitySummary } = require('../extension/merge/dashboard_activity');
+const { mergeActivityPresentation, renderMergeActivitySummary, mergeActivityElapsed } = require('../extension/merge/dashboard_activity');
 const { classifyMergePatchLine, renderMergePatch } = require('../extension/merge/dashboard_diff');
 const { parseReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt, reportOptionsInstructions } = require('../extension/merge/blocker_actions');
 const { createMergeDashboardPersistence, stateKey } = require('../extension/merge/dashboard_persistence');
@@ -22,7 +22,34 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   assert.equal(allPullRequestsMerged([{state:'merged'}, {state:'merged'}]), true);
   const sha = 'a'.repeat(40);
   const nextSha = 'b'.repeat(40);
+  const waitStart = '2026-10-27T15:00:00Z', waitUpdated = '2026-10-27T15:00:30Z';
+  const elapsedAt = Date.parse(waitStart) + 65000;
+  assert.equal(mergeActivityElapsed({ at: waitStart, phase: 'reviewing' }, elapsedAt),
+    '1m 5s in this step', 'A GPT wait must not invent a last update from its start time');
+  assert.equal(mergeActivityElapsed({ at: waitStart, updatedAt: 'not-a-date' }, elapsedAt),
+    '1m 5s in this step', 'An invalid last-update value cannot masquerade as progress');
+  assert.equal(mergeActivityElapsed({ at: waitStart, updatedAt: waitUpdated }, elapsedAt),
+    '1m 5s in this step · last update 35s ago',
+    'The two clocks measure independent events');
   const url = 'https://github.com/pony-factor/example/pull/12';
+  assert(routineTimelineEvent({ state: 'progress',
+    message: 'Refreshing GitHub PR status, checks and review activity' }),
+  'Routine polling must not fill the timeline');
+  assert(routineTimelineEvent({ state: 'updated', message: 'GitHub status refresh completed' }),
+    'Old persisted refresh completions are hidden too');
+  assert(routineTimelineEvent({ state: 'progress', message: 'Review round 3 · waiting for GPT to return a current-base handoff' }),
+    'Review waits belong in Current activity rather than duplicate history');
+  assert(routineTimelineEvent({ state: 'progress', message: 'GitHub checks: pending · 3 checks reported' }),
+    'Repeated pending checks belong in the live status');
+  assert(!routineTimelineEvent({ state: 'merged', message: 'GitHub merge confirmed' }),
+    'A verified merge must stay in history');
+  assert(!routineTimelineEvent({ state: 'error', message: 'Fetch failed' }),
+    'An actual fetch failure must stay in history');
+  assert(!routineTimelineEvent({ state: 'progress', message: 'Prepared commit pushed to the PR branch · not merged' }),
+    'A pushed commit is a meaningful milestone');
+  assert(!routineTimelineEvent({ state: 'progress',
+    message: 'Repair commit verified · retiring stale patches and requesting a fresh review' }),
+    'A verified repair must remain visible in timeline history');
   const selection = { repository: 'pony-factor/example',
     pullRequests: [{ number: 12, title: 'Fix a conflict', url,
       head: 'feature', base: 'main', headSha: sha }] };
@@ -385,6 +412,14 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   assert.equal(apiRequests, 0, 'A dashboard opened in a background tab does not fetch');
   panel.visible = true;
   await dashboard.refresh();
+  const firstCheckAt = events.at(-1).prs[0].lastGitHubCheckAt;
+  assert(Number.isFinite(Date.parse(firstCheckAt)), 'Successful GitHub refreshes update Current activity metadata');
+  const initialEvents = events.at(-1).events.length;
+  await dashboard.refresh();
+  assert.equal(events.at(-1).events.length, initialEvents,
+    'An unchanged GitHub refresh records no start/completion history entries');
+  assert(Number.isFinite(Date.parse(events.at(-1).prs[0].lastGitHubCheckAt)),
+    'Routine polling still refreshes the current GitHub check time');
   panel.visible = false; const hiddenRequests = apiRequests; await dashboard.refresh();
   assert.equal(apiRequests, hiddenRequests, 'Hidden dashboards do not poll');
   panel.visible = true;
@@ -518,6 +553,11 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
     'Relative verified merge times continue updating');
   assert(!panel.webview.html.includes('__TIMESTAMP_FORMATTER__'));
   assert(panel.webview.html.includes('id="timeline-time-mode"'));
+  assert(panel.webview.html.includes('class="activity-github-check"') ||
+    panel.webview.html.includes("'activity-github-check'"),
+    'Successful background checks are shown inline in Current activity');
+  assert(panel.webview.html.includes("GitHub checked "),
+    'Current activity exposes the last successful GitHub polling time');
   assert(panel.webview.html.includes("dispatch('select-pr', pr.number)"));
   assert(panel.webview.html.includes('Saved activity · live GitHub state may have changed'));
   assert(panel.webview.html.includes('setInterval(refreshRelativeEventTimes, 30000)'));
@@ -775,18 +815,31 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   assert.match(blockedEvent.details, /PR changed after guarded push/);
   assert.equal(blockedEvent.commitSha, sha);
   assert.equal(events.at(-1).prs[0].state, stateBeforeProgress, 'Local push activity does not claim GitHub merged');
+  const beforeRoutineStages = events.at(-1).events.length;
   dashboard.recordLocalProgress({number:12,stage:'integrating'});
-  assert.equal(events.at(-1).events.at(-1).location,'local');
+  assert.equal(events.at(-1).prs[0].activity.location, 'local');
+  assert.equal(events.at(-1).events.length, beforeRoutineStages,
+    'Routine local integration updates Current activity without creating history');
   const poll={number:12,stage:'checks-polled',sha,state:'pending',nextPollAt:Date.now()+15000,
     evidence:[{name:'Regression tests',result:'in_progress'}]};
   dashboard.recordLocalProgress(poll);
   assert.equal(events.at(-1).prs[0].activity.location,'upstream');
   assert.equal(events.at(-1).prs[0].activity.phase,'waiting-checks');
-  assert.match(events.at(-1).events.at(-1).details,/Regression tests: in_progress/);
+  assert.deepEqual(events.at(-1).prs[0].activity.checks,
+    [{name:'Regression tests',result:'in_progress'}],
+    'Routine check evidence remains visible in Current activity');
+  assert.equal(events.at(-1).events.length, beforeRoutineStages,
+    'Pending GitHub check polls do not create historical entries');
   const pollCount=events.at(-1).events.length,stepStarted=events.at(-1).prs[0].activity.at;
   dashboard.recordLocalProgress({...poll,nextPollAt:Date.now()+16000});
   assert.equal(events.at(-1).events.length,pollCount,'Unchanged check polls refresh the live status without flooding history');
   assert.equal(events.at(-1).prs[0].activity.at,stepStarted,'A poll cannot restart the elapsed step clock');
+  assert(Number.isFinite(Date.parse(events.at(-1).prs[0].activity.updatedAt)),
+    'A real GitHub polling event refreshes the last-update timestamp');
+  dashboard.recordLocalProgress({...poll, state:'failed', evidence:[{name:'Regression tests', result:'failure'}]});
+  assert.equal(events.at(-1).events.at(-1).message, 'GitHub checks: failed · 1 checks reported',
+    'A failing check remains a meaningful timeline event');
+  assert.equal(events.at(-1).prs[0].activity.phase, 'checks_failed');
   const eventCount = events.at(-1).events.length;
   dashboard.recordLocalProgress({ number: 99, stage: 'preparing' });
   dashboard.recordLocalProgress({ number: 12, stage: 'invented' });
@@ -813,9 +866,31 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   dashboard.recordBatchState(runningState);
   const runningCount = events.at(-1).events.length;
   assert.equal(events.at(-1).prs[0].activity.phase, 'reviewing');
-  assert.match(events.at(-1).events.at(-1).message, /waiting for GPT/);
+  assert.match(events.at(-1).prs[0].activity.message, /waiting for GPT/,
+    'GPT review waits remain visible in Current activity, not history');
+  assert.equal(events.at(-1).events.length, runningCount,
+    'A routine review-wait status must not append a timeline event');
+  assert.equal(events.at(-1).prs[0].activity.at, runningState.activities[12].at,
+    'The dashboard uses the actual runner step start');
+  assert.equal(Object.hasOwn(events.at(-1).prs[0].activity, 'updatedAt'), false,
+    'A new GPT review wait has no last-update timestamp');
   dashboard.recordBatchState(runningState);
   assert.equal(events.at(-1).events.length, runningCount, 'Repeated snapshots do not flood the activity log');
+  assert.equal(events.at(-1).prs[0].activity.at, runningState.activities[12].at);
+  assert.equal(Object.hasOwn(events.at(-1).prs[0].activity, 'updatedAt'), false);
+  const progressState = { ...runningState, activities: { 12: {
+    ...runningState.activities[12], message: 'GPT received a revised review prompt',
+    updatedAt: '2026-10-27T15:00:45Z'
+  } } };
+  dashboard.recordBatchState(progressState);
+  assert.equal(events.at(-1).prs[0].activity.at, runningState.activities[12].at,
+    'Same-phase progress preserves the step start');
+  assert.equal(events.at(-1).prs[0].activity.updatedAt, progressState.activities[12].updatedAt);
+  const progressedCount = events.at(-1).events.length;
+  dashboard.recordBatchState(progressState);
+  assert.equal(events.at(-1).events.length, progressedCount, 'Repeated progress snapshots create no events');
+  assert.equal(events.at(-1).prs[0].activity.updatedAt, progressState.activities[12].updatedAt,
+    'Replaying a progress snapshot must not reset the last-update clock');
   dashboard.recordBatchState(runningState, { restored: true });
   assert.equal(events.at(-1).prs[0].activity.phase, 'paused');
   assert.match(events.at(-1).prs[0].activity.message, /Runner not resumed/);

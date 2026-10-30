@@ -20,7 +20,7 @@ function renderMergeActivityOrigin(parent, event) {
 }
 
 function mergeActivityElapsed(activity, now = Date.now()) {
-  const start = Date.parse(activity?.at), updated = Date.parse(activity?.updatedAt || activity?.at);
+  const start = Date.parse(activity?.at), updated = Date.parse(activity?.updatedAt);
   if (!Number.isFinite(start)) return '';
   const duration = ms => {
     const seconds = Math.max(0, Math.floor(ms / 1000));
