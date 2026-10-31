@@ -388,7 +388,8 @@ async function successiveMerges(checkState) {
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
    assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
-   assert.equal((message.match(/^Co-authored-by: Codex <noreply@openai\\.com>$/gm) || []).length, 1, 'Only one credited Codex trailer');
+   assert.equal(message.split('\n').filter(line => line === 'Co-authored-by: Codex <noreply@openai.com>').length,
+     1, 'Only one credited Codex trailer');
    const beforeThird = await branch('main');
    const third = await submit(final.continueUrl, 3);
    const integratedThird = await branch('feature-3');
