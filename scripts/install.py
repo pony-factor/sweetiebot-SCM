@@ -241,18 +241,18 @@ def graph_open_working_file_edits(js):
 
 def graph_open_commit_action_edits(js):
     """Replace only the native graph row's inline action; keep its context menu."""
-    ident = r"[A-Za-z_$][\\w$]*"
+    ident = r"[A-Za-z_$][\w$]*"
     # Workbench's history-item renderer has the native hover content and the
     # inline action together. Capture those locals from the same renderer.
     actions_pattern = re.compile(
-        rf"(?P<template>{ident})\\.actionBar\\.context=(?P<item>{ident})[,;]"
-        rf"(?P=template)\\.actionBar\\.setActions\\("
-        rf"(?P<actions>{ident}\\({ident},[\\\"']inline[\\\"']\\)\\.primary)\\)"
+        rf"(?P<template>{ident})\.actionBar\.context=(?P<item>{ident})[,;]"
+        rf"(?P=template)\.actionBar\.setActions\("
+        rf"(?P<actions>{ident}\({ident},[\\"']inline[\\"']\)\.primary)\)"
     )
     hover_pattern = re.compile(
-        rf"(?P<service>this\\.{ident})\\.setupDelayedHover\\("
-        rf"(?P<template>{ident})\\.element,\\{{\\.\\.\\.(?P<options>{ident}),"
-        rf"content(?::(?P<content>{ident}))?\\}}"
+        rf"(?P<service>this\.{ident})\.setupDelayedHover\("
+        rf"(?P<template>{ident})\.element,\{{\.\.\.(?P<options>{ident}),"
+        rf"content(?::(?P<content>{ident}))?\}}"
     )
     possible = []
     for action in actions_pattern.finditer(js):
