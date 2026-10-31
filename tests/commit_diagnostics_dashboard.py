@@ -52,6 +52,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                 {"timestamp": "2026-10-22T01:01:00+00:00", "component": "commit_title",
                  "event": "generation_completed", "duration_ms": 1200,
                  "repository": "example-repo", "job_id": "abcdef123456",
+                 "commit_sha": "b" * 40,
                  "outcome": "success", "title": "🖌️ Show final titles",
                  "rule": "priority",
                  "explanation": "This wording reflects the added title history.",
@@ -74,6 +75,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             correlated = next(e for e in result["events"] if e.get("job_id"))
             self.assertEqual(correlated["job_id"], "abcdef123456")
             self.assertEqual(correlated["repository"], "example-repo")
+            self.assertEqual(correlated["commit_sha"], "b" * 40)
             self.assertEqual(result["summary"]["pending"], 1)
             self.assertEqual(result["summary"]["generating"], 1)
             self.assertEqual(result["summary"]["blocked"], 0)
@@ -182,6 +184,7 @@ assert.equal(relativeTime('not-a-date', now), 'not-a-date');
         self.assertIn("<th>Job ID</th>", page)
         self.assertIn("cell(row, job.id)", page)
         self.assertIn("cell(row, event.job_id || '—')", page)
+        self.assertIn("event.commit_sha ? event.commit_sha.slice(0, 8)", page)
         self.assertIn("relativeFormatter.format(", page)
         self.assertIn("time.title = valid ? date.toLocaleString()", page)
         self.assertIn("relativeTimes.addEventListener('change', renderEventRows)", page)
