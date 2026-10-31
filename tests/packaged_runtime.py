@@ -42,6 +42,84 @@ class PackagedRuntimeTests(unittest.TestCase):
                 self.assertEqual(extension_files[relative].read_bytes(),
                                  bundled[stylesheet].read_bytes())
 
+    def test_every_runtime_extension_asset_is_in_both_installer_inventories(self):
+        import build_installer_app
+        import extension_assets
+
+        runtime = extension_assets.runtime_files(workspace_search.SOURCE)
+        signed = build_installer_app.source_files()
+        repaired = workspace_search.source_files()
+        for relative, source in runtime.items():
+            self.assertEqual(signed[Path("extension") / relative], source)
+            self.assertEqual(repaired[Path("codex-customizations/extension") / relative], source)
+            self.assertIn(relative, repaired)
+        self.assertEqual(
+            {path.relative_to("extension") for path in signed
+             if path.parts[0] == "extension"},
+            set(runtime),
+        )
+        self.assertEqual(
+            {path.relative_to("codex-customizations/extension") for path in repaired
+             if path.parts[:2] == ("codex-customizations", "extension")},
+            set(runtime),
+        )
+
+    def test_unknown_formats_are_packaged_and_temporary_files_excluded(self):
+        import build_installer_app
+        import extension_assets
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "extension"
+            nested = source / "merge/future"
+            nested.mkdir(parents=True)
+            (nested / "renderer.wasm").write_bytes(b"runtime-data")
+            (nested / "theme.woff2").write_bytes(b"font-data")
+            (source / ".future-config").write_text("keep this")
+            (source / ".DS_Store").write_bytes(b"junk")
+            (nested / "renderer.js.swp").write_bytes(b"swap")
+            (source / ".env.local").write_text("never package a local secret")
+            cache = source / "__pycache__"
+            cache.mkdir()
+            (cache / "cached.pyc").write_bytes(b"cached")
+            editor = source / ".vscode"
+            editor.mkdir()
+            (editor / "settings.json").write_text("{}")
+            expected = {
+                Path(".future-config"),
+                Path("merge/future/renderer.wasm"),
+                Path("merge/future/theme.woff2"),
+            }
+            self.assertEqual(set(extension_assets.runtime_files(source)), expected)
+            with patch.object(build_installer_app, "ROOT", root):
+                signed = build_installer_app.source_files()
+            repaired = workspace_search.source_files(root)
+            self.assertEqual(
+                {path.relative_to("extension") for path in signed
+                 if path.parts[0] == "extension"}, expected,
+            )
+            self.assertEqual(
+                {path for path in repaired if path.parts[0] != "codex-customizations"
+                 and path in expected}, expected,
+            )
+            self.assertEqual(
+                {path.relative_to("codex-customizations/extension") for path in repaired
+                 if path.parts[:2] == ("codex-customizations", "extension")},
+                expected,
+            )
+            for relative in expected:
+                self.assertEqual(signed[Path("extension") / relative].read_bytes(),
+                                 (source / relative).read_bytes())
+                self.assertEqual(repaired[relative].read_bytes(),
+                                 (source / relative).read_bytes())
+
+            external = root / "private.txt"
+            external.write_text("outside")
+            (source / "unexpected-link").symlink_to(external)
+            with self.assertRaisesRegex(ValueError, "symlinked"):
+                extension_assets.runtime_files(source)
+
     def test_all_installed_relative_javascript_dependencies_resolve(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

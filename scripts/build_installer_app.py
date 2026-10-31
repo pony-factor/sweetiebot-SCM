@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from extension_assets import runtime_files
+
 ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "Sweetiebot Installer.app"
 SIGNING_IDENTITY = "Sweetiebot Installer Local Signing"
@@ -20,7 +22,6 @@ FORMATS = (
     ("assets/codex", {".js", ".css"}),
     ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}),
     ("assets/browser", {".js"}),
-    ("extension", {".js", ".json", ".svg", ".md", ".html", ".css"}),
 )
 
 
@@ -32,6 +33,9 @@ def source_files():
         for source in (ROOT / directory).rglob("*"):
             if source.is_file() and source.suffix.lower() in suffixes:
                 files[source.relative_to(ROOT)] = source
+    # Package the entire runtime extension subtree, regardless of file format.
+    for relative, source in runtime_files(ROOT / "extension").items():
+        files[Path("extension") / relative] = source
     return dict(sorted(files.items()))
 
 
