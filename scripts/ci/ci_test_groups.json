@@ -350,6 +350,7 @@
       "tests": [
         "ci_browser_routing.py",
         "configurator.py",
+        "test_spellchecker_settings_label.py",
         "diagnostics.py",
         "extension_cache.js",
         "github_apps.py",
