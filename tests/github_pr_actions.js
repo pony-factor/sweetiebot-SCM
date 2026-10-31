@@ -82,11 +82,11 @@ async function main() {
         author: { login: 'JFWooten4', type: 'User' },
         commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' },
           committer: { name: 'GitHub', email: 'noreply@github.com' },
-          message: 'Change\\n\\nCo-authored-by: Codex <noreply@openai.com>' }
+          message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' }
       }];
       const prepared = squashMessage(open.title, 12, originals);
       return { stdout: JSON.stringify({ parents: [{ sha: 'b'.repeat(40) }, { sha: open.headRefOid }],
-        message: prepared.title + '\\n\\n' + prepared.message }) };
+        message: prepared.title + '\n\n' + prepared.message }) };
     }
     return protectedConfirm.execute(args);
   };
