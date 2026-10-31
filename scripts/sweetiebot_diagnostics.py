@@ -19,7 +19,7 @@ BACKUP_COUNT = 3
 FIELDS = frozenset({
     "model", "attempt", "attempts", "reason", "outcome", "error_type",
     "http_status", "duration_ms", "rule", "title", "explanation",
-    "repository", "job_id",
+    "repository", "job_id", "commit_sha",
 })
 
 
@@ -74,6 +74,9 @@ def log_event(component: str, event: str, **details: object) -> bool:
             if not isinstance(value, str) or not value or Path(value).name != value or "\\" in value:
                 continue
             value = value[:100]
+        elif key == "commit_sha":
+            if not isinstance(value, str) or not re.fullmatch(r"(?:[a-f0-9]{40}|[a-f0-9]{64})", value):
+                continue
         record[key] = value[:240 if key in {'title', 'explanation'} else 120] if isinstance(value, str) else value
 
     handler = None
