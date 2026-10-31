@@ -5,6 +5,7 @@ from collections import Counter
 import json
 import os
 from pathlib import Path
+import re
 
 from sweetiebot_diagnostics import log_path
 
@@ -47,8 +48,10 @@ def _active_jobs():
         if not isinstance(job.get("root"), str) or not isinstance(job.get("branch"), str):
             continue
         error = job.get("error")
+        sha = job.get("sha", "")
         jobs.append({
-            "id": job_id[:32], "repository": Path(job["root"]).name[:100],
+            "id": job_id[:64], "repository": Path(job["root"]).name[:100],
+            "commit": sha if isinstance(sha, str) and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", sha) else "",
             "branch": job["branch"].removeprefix("refs/heads/")[:120],
             "phase": str(job.get("phase", "unknown"))[:30],
             "error": error[:300] if isinstance(error, str) else "",
@@ -76,7 +79,7 @@ def _events():
             event = {
                 key: (value[:240 if key in {'title', 'explanation'} else 120] if isinstance(value, str) else value)
                 for key in ("timestamp", "component", "event", "model", "reason",
-                            "outcome", "error_type", "http_status", "attempt",
+                            "repository", "job_id", "outcome", "error_type", "http_status", "attempt",
                             "attempts", "duration_ms", "title", "rule", "explanation")
                 if isinstance((value := item.get(key)), (str, int)) and not isinstance(value, bool)
             }
@@ -125,6 +128,8 @@ DIAGNOSTICS_STYLE = """
 .diagnostics-error{display:block;color:#ffb3ad;font-size:12px;margin-top:4px}
 .diagnostics-phase[data-phase="blocked"]{color:#ffb3ad}
 .diagnostics-phase[data-phase="generating"]{color:#7ee787}
+.diagnostics-job-id{font-family:var(--vscode-editor-font-family,monospace);white-space:nowrap;user-select:text}
+.diagnostics-event-time{white-space:nowrap;cursor:help}
 .diagnostics-explanation{margin-top:6px;font-size:12px;max-width:440px}\n.diagnostics-explanation summary{cursor:pointer;color:var(--accent)}\n.diagnostics-explanation p{margin:5px 0 0;color:var(--muted);line-height:1.4}\n#diagnostics-status{color:var(--muted);font-size:12px;min-height:18px}
 """
 
@@ -134,6 +139,7 @@ DIAGNOSTICS_PANEL = """
 <div class="diagnostics-toolbar">
 <small>Validated AI titles and opt-in explanations are logged locally and included in exports; prompts, diffs and commit bodies are not. Queue errors may include local paths.</small>
 <label><input type="checkbox" id="diagnostics-auto-refresh" checked> Auto-refresh (10s)</label>
+<label><input type="checkbox" id="diagnostics-relative-times" checked> Relative times</label>
 <button type="button" id="diagnostics-refresh">Refresh</button>
 <button type="button" id="diagnostics-export" disabled>Export report</button>
 </div>
@@ -146,10 +152,10 @@ DIAGNOSTICS_PANEL = """
 </div>
 <p id="diagnostics-status" role="status" aria-live="polite">Loading diagnostics…</p>
 <h3>Queued commits — all repositories</h3>
-<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Repository</th><th>Branch</th><th>Phase / issue</th><th>Job</th></tr></thead><tbody id="diagnostics-jobs"></tbody></table></div>
+<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Repository</th><th>Branch</th><th>Phase / issue</th><th>Job ID</th><th>Commit</th></tr></thead><tbody id="diagnostics-jobs"></tbody></table></div>
 <h3>Recent diagnostic events</h3>
 <p class="status">Counts and averages use only retained logs (up to four rotating files). New successful AI generations show their final title and duration. Enable Explain AI commit title choices in Commits settings for optional notes; earlier events cannot be reconstructed.</p>
-<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Event</th><th>Final title</th><th>Duration</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
+<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Repository</th><th>Job ID</th><th>Event</th><th>Final title</th><th>Duration</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
 </div>
 """
 
