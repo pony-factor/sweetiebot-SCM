@@ -35,8 +35,8 @@ class GraphCommitActionTests(unittest.TestCase):
         original_js = workbench_fixture() + self.renderer
         stock = dict(install.DEFAULT_SETTINGS, graphPreferOpenCommit=False)
         custom = dict(stock, graphPreferOpenCommit=True)
-        untouched, _ = install.transform(original_js, "original-css", settings=stock)
-        self.assertIn('t.actionBar.setActions(g(a,"inline").primary)', untouched)
+        untouched = install.transform(original_js, "original-css", settings=stock)
+        self.assertIn('t.actionBar.setActions(g(a,"inline").primary)', untouched[0])
         enabled = install.transform(original_js, "original-css", settings=custom)
         self.assertIn('scmToolkitGraphCommitActions(g(a,"inline").primary,', enabled[0])
         self.assertEqual(install.transform(*enabled, remove=True, settings=custom),

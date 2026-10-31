@@ -254,8 +254,16 @@ def graph_open_commit_action_edits(js):
         rf"(?P<template>{ident})\.element,\{{\.\.\.(?P<options>{ident}),"
         rf"content(?::(?P<content>{ident}))?\}}"
     )
+    # Reject duplicate native action renderers even when only one has a
+    # matching nearby hover. Otherwise an unrelated or changed renderer could
+    # silently receive the patch, leaving another renderer inconsistent.
+    actions = list(actions_pattern.finditer(js))
+    if len(actions) != 1:
+        raise ValueError(
+            "Unsupported VS Code build: Source Control Graph inline action is ambiguous."
+        )
     possible = []
-    for action in actions_pattern.finditer(js):
+    for action in actions:
         nearby = js[max(0, action.start() - 6000):action.start()]
         hovers = [
             match for match in hover_pattern.finditer(nearby)
