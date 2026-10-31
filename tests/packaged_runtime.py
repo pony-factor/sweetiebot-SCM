@@ -120,6 +120,15 @@ class PackagedRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlinked"):
                 extension_assets.runtime_files(source)
 
+    def test_signed_installer_rejects_a_missing_extension_manifest(self):
+        import build_installer_app
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(build_installer_app, "ROOT", Path(directory)):
+                with self.assertRaisesRegex(FileNotFoundError, "extension/package.json"):
+                    build_installer_app.build(Path(directory) / "Installer.app")
+
     def test_all_installed_relative_javascript_dependencies_resolve(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
