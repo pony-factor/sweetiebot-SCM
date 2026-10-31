@@ -134,7 +134,7 @@ def transform_view_manifest(source, settings):
 def source_files(root: Path | None = None) -> dict[Path, Path]:
     here = root / "scripts" if root is not None else HERE
     source_root = root / "extension" if root is not None else SOURCE
-    files = runtime_files(source_root)
+    files = runtime_files(source_root, allow_missing=root is not None)
     image_root = here.parent / "assets/imgs"
     for icon_name, asset_path in IMAGE_SOURCES.items():
         files[Path("media") / icon_name] = image_root / asset_path
@@ -170,7 +170,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
             if source.is_file() and source.suffix.lower() in suffixes:
                 files[Path("codex-customizations") / source.relative_to(here.parent)] = source
     # Retain every extension runtime file for future repairs, not only known suffixes.
-    for relative, source in runtime_files(here.parent / "extension").items():
+    for relative, source in runtime_files(here.parent / "extension", allow_missing=root is not None).items():
         files[Path("codex-customizations/extension") / relative] = source
     return dict(sorted(files.items()))
 
