@@ -79,7 +79,7 @@ def _events():
             event = {
                 key: (value[:240 if key in {'title', 'explanation'} else 120] if isinstance(value, str) else value)
                 for key in ("timestamp", "component", "event", "model", "reason",
-                            "repository", "job_id", "outcome", "error_type", "http_status", "attempt",
+                            "repository", "job_id", "commit_sha", "outcome", "error_type", "http_status", "attempt",
                             "attempts", "duration_ms", "title", "rule", "explanation")
                 if isinstance((value := item.get(key)), (str, int)) and not isinstance(value, bool)
             }
@@ -89,6 +89,9 @@ def _events():
             job_id = event.get("job_id", "")
             if job_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", job_id):
                 event.pop("job_id", None)
+            sha = event.get("commit_sha", "")
+            if sha and not re.fullmatch(r"(?:[a-f0-9]{40}|[a-f0-9]{64})", sha):
+                event.pop("commit_sha", None)
             if event.get("timestamp") and event.get("event"):
                 result.append(event)
     return sorted(result, key=lambda e: e["timestamp"], reverse=True)
@@ -161,7 +164,7 @@ DIAGNOSTICS_PANEL = """
 <div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Repository</th><th>Branch</th><th>Phase / issue</th><th>Job ID</th><th>Commit</th></tr></thead><tbody id="diagnostics-jobs"></tbody></table></div>
 <h3>Recent diagnostic events</h3>
 <p class="status">Counts and averages use only retained logs (up to four rotating files). New successful AI generations show their final title and duration. Enable Explain AI commit title choices in Commits settings for optional notes; earlier events cannot be reconstructed.</p>
-<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Repository</th><th>Job ID</th><th>Event</th><th>Final title</th><th>Duration</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
+<div class="diagnostics-scroll"><table class="diagnostics-table"><thead><tr><th>Time</th><th>Repository</th><th>Job ID</th><th>Commit</th><th>Event</th><th>Final title</th><th>Duration</th><th>Details</th></tr></thead><tbody id="diagnostics-events"></tbody></table></div>
 </div>
 """
 
@@ -202,7 +205,7 @@ if (diagnosticsRoot) {
   function renderEventRows() {
     eventRows.replaceChildren();
     if (!diagnosticsReport || !diagnosticsReport.events.length) {
-      placeholder(eventRows, 7, 'No recorded diagnostic events.');
+      placeholder(eventRows, 8, 'No recorded diagnostic events.');
       return;
     }
     for (const event of diagnosticsReport.events) {
@@ -216,6 +219,9 @@ if (diagnosticsRoot) {
       cell(row, event.repository || '—');
       const id = cell(row, event.job_id || '—');
       id.className = 'diagnostics-job-id';
+      const commit = cell(row, event.commit_sha ? event.commit_sha.slice(0, 8) : '—');
+      commit.className = 'diagnostics-job-id';
+      commit.title = event.commit_sha || '';
       cell(row, (event.component || 'Sweetiebot') + ' · ' + event.event);
       const titleCell = cell(row, event.title || '—');
         if (event.title && (event.explanation || event.rule)) {
